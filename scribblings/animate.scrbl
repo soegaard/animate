@@ -3733,6 +3733,27 @@ rectangle. Clamping may reduce smoothness where a run touches a boundary.
 
 @subsubsection[#:tag "sampled-function-graphs"]{Sampled Function Graphs}
 
+@defproc[(vector-field [axes axes-visual?]
+                       [field (procedure-arity-includes/c 2)]
+                       [#:id id symbol?]
+                       [#:x-count x-count (and/c exact-integer? (>=/c 1)) 9]
+                       [#:y-count y-count (and/c exact-integer? (>=/c 1)) 7]
+                       [#:scale scale finite-real? 1/4]
+                       [#:opacity opacity opacity? 1]
+                       [#:stroke stroke any/c "seagreen"]
+                       [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2]
+                       [#:tip-length tip-length (and/c finite-real? (>/c 0)) 3/20]
+                       [#:tip-width tip-width (and/c finite-real? (>/c 0)) 1/8])
+         group-visual?]{
+
+Samples @racket[field] over a closed numeric axes grid. The procedure receives
+numeric x/y coordinates and must return exactly one @racket[vec2] vector.
+Each nonzero result becomes an arrow; zero vectors are omitted. The returned
+immutable group has stable child identities and can therefore use nested paths
+for lookup and animation. Sampling and axes transforms are captured at
+construction time; the group retains no procedure or renderer state.
+}
+
 @defproc[(sample-function-path
           [axes axes-visual?]
           [function (procedure-arity-includes/c 1)]

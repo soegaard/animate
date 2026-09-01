@@ -43,6 +43,7 @@
          "private/scene.rkt"
          "private/text-visual.rkt"
          "private/video-encoder.rkt"
+         "private/vector-field.rkt"
          "private/visual-model.rkt")
 
 ;; Exports
@@ -326,6 +327,7 @@
  parametric-curve
  data-series-path
  data-plot
+ vector-field
 
  ;; Relative layout
  (struct-out layout-box)
