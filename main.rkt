@@ -24,6 +24,7 @@
          "private/color-style.rkt"
          "private/coordinate-series.rkt"
          "private/derived-visual.rkt"
+         "private/derived-plot.rkt"
          "private/formula-parts-visual.rkt"
          "private/formula-visual.rkt"
          "private/frame-space.rkt"
@@ -324,6 +325,7 @@
  (struct-out parameter-range)
  sample-function-path
  function-graph
+ derived-function-graph
  sample-parametric-path
  parametric-curve
  data-series-path

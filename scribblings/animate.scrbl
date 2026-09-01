@@ -3907,6 +3907,42 @@ non-uniform scaling, fading, groups, layout, and custom path renderers. There is
 no graph-specific renderer or timeline request.
 }
 
+@defproc[(derived-function-graph
+          [axes axes-visual?]
+          [field (procedure-arity-includes/c 2)]
+          [#:id id symbol?]
+          [#:x-min x-min (or/c finite-real? false/c) #f]
+          [#:x-max x-max (or/c finite-real? false/c) #f]
+          [#:sample-count sample-count
+                          (and/c exact-integer? (>=/c 2))
+                          201]
+          [#:clip? clip? boolean? #t]
+          [#:max-jump max-jump
+                      (or/c false/c
+                            (and/c finite-real? (>=/c 0)))
+                      #f]
+          [#:detect-discontinuities? detect-discontinuities? boolean? #f]
+          [#:interpolation interpolation curve-interpolation? 'linear]
+          [#:opacity opacity opacity? 1]
+          [#:stroke stroke any/c "royalblue"]
+          [#:stroke-width stroke-width
+                          (and/c finite-real? (>=/c 0))
+                          3])
+         derived-visual?]{
+
+Creates a pure derived function graph. @racket[field] receives the sampled
+@racket[derived-context?] first and one numeric x coordinate second. It must
+return the same one-value result accepted by @racket[function-graph]. The
+ordinary graph options have the same meanings as in @racket[function-graph].
+
+For each resolved scene state, the field is sampled anew and produces one
+concrete path Visual with the requested identity, style, and axes transform.
+This permits an immutable @racket[parameter] or another resolved Visual to drive
+a plot without a mutable updater. As with any @racket[derived-visual?], animate
+its source values or dependencies rather than applying a direct Visual animation
+to the derived graph.
+}
+
 @subsubsection{Parametric Curves}
 
 @defstruct*[parameter-range ([start finite-real?]
@@ -8923,6 +8959,17 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.62.0 — SCENE-BN.} Added @racket[derived-function-graph], a pure
+       context-derived function graph whose two-argument field is sampled from
+       each immutable scene state. Parameter-driven plots now need no mutable
+       updater or imperative reconstruction.}
+ @item{@bold{0.61.0 — SCENE-BL.} Added @racket[sample-implicit-path] and
+       @racket[implicit-curve] for deterministic marching-squares contours,
+       stitched into stable open or closed semantic path subpaths.}
+ @item{@bold{0.60.0 — SCENE-BM.} Added @racket[vector-field], an immutable
+       group of stable arrow children sampled from a two-argument vector field.}
+ @item{@bold{0.59.0 — SCENE-BK.} Added opt-in discontinuity-aware sampling for
+       function graphs, avoiding false clipped segments across asymptotes.}
  @item{@bold{0.58.0 — SCENE-BF.} Added @racket[formula-correspondence-auto],
        deterministic appearance-based matching of unchanged formula parts.}
  @item{@bold{0.57.0 — SCENE-BE.} Documented the existing explicit
