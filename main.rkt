@@ -33,6 +33,7 @@
          "private/group-visual.rkt"
          "private/interpolation.rkt"
          "private/path-geometry.rkt"
+         "private/parameter.rkt"
          "private/parametric-data-plot.rkt"
          "private/pict-adapter.rkt"
          "private/pict-renderer.rkt"
@@ -58,6 +59,12 @@
  vec2-lerp
  interpolable?
  interpolate-value
+
+ ;; Scene value parameters
+ parameter
+ scene-parameter?
+ parameter-id
+ parameter-initial-value
 
  ;; Semantic colors
  (struct-out rgba-color)

@@ -26,6 +26,7 @@
          "geometry.rkt"
          "interpolation.rkt"
          "path-geometry.rkt"
+         "parameter.rkt"
          "scene-state.rkt"
          "visual-model.rkt")
 
@@ -447,11 +448,11 @@
 ;;; Public Animation Requests
 ;;;
 
-; value-to : symbol? interpolable? -> value-to-request?
+; value-to : (or/c symbol? scene-parameter?) interpolable? -> value-to-request?
 ;;   Creates an absolute animation request for one named scene semantic value.
-(define (value-to target-id destination)
-  (unless (symbol? target-id)
-    (raise-argument-error 'value-to "symbol?" target-id))
+(define (value-to target destination)
+  (define target-id
+    (parameter-target-id target 'value-to))
   (unless (interpolable? destination)
     (raise-argument-error 'value-to "interpolable?" destination))
   (value-to-request target-id destination))

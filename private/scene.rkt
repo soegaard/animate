@@ -26,6 +26,7 @@
          "camera-animation.rkt"
          "camera.rkt"
          "geometry.rkt"
+         "parameter.rkt"
          "scene-state.rkt")
 
 ;; Exports
@@ -327,40 +328,52 @@
       (scene-state-remove state target)))
   (struct-copy scene scn [current-state updated-state]))
 
-; scene-set-value : scene? symbol? interpolable? -> scene?
-;;   Adds or replaces one named semantic value instantaneously at the current scene time.
-(define (scene-set-value scn id value)
-  (unless (scene? scn)
-    (raise-argument-error 'scene-set-value "scene?" scn))
-  (struct-copy scene scn
-               [current-state
-                (scene-state-value-set
-                 (scene-current-state scn)
-                 id
-                 value)]))
+; scene-set-value : scene? scene-parameter? -> scene?
+;                   scene? (or/c symbol? scene-parameter?) interpolable? -> scene?
+;;   Adds a parameter's initial value or replaces one named semantic value
+;;   instantaneously at the current scene time.
+(define scene-set-value
+  (case-lambda
+    [(scn parameter-value)
+     (unless (scene? scn)
+       (raise-argument-error 'scene-set-value "scene?" scn))
+     (unless (scene-parameter? parameter-value)
+       (raise-argument-error 'scene-set-value "scene-parameter?" parameter-value))
+     (scene-set-value scn
+                      parameter-value
+                      (parameter-initial-value parameter-value))]
+    [(scn target value)
+     (unless (scene? scn)
+       (raise-argument-error 'scene-set-value "scene?" scn))
+     (struct-copy scene scn
+                  [current-state
+                   (scene-state-value-set
+                    (scene-current-state scn)
+                    target
+                    value)])]))
 
-; scene-remove-value : scene? symbol? -> scene?
+; scene-remove-value : scene? (or/c symbol? scene-parameter?) -> scene?
 ;;   Removes one named semantic value instantaneously at the current scene time.
-(define (scene-remove-value scn id)
+(define (scene-remove-value scn target)
   (unless (scene? scn)
     (raise-argument-error 'scene-remove-value "scene?" scn))
   (struct-copy scene scn
                [current-state
                 (scene-state-value-remove
                  (scene-current-state scn)
-                 id)]))
+                 target)]))
 
-; scene-current-value : scene? symbol? -> interpolable?
+; scene-current-value : scene? (or/c symbol? scene-parameter?) -> interpolable?
 ;;   Returns one named semantic value from the scene's stored endpoint state.
-(define (scene-current-value scn id)
+(define (scene-current-value scn target)
   (unless (scene? scn)
     (raise-argument-error 'scene-current-value "scene?" scn))
-  (scene-state-value-ref (scene-current-state scn) id))
+  (scene-state-value-ref (scene-current-state scn) target))
 
-; scene-value-at : scene? symbol? nonnegative-real? -> interpolable?
+; scene-value-at : scene? (or/c symbol? scene-parameter?) nonnegative-real? -> interpolable?
 ;;   Samples one named semantic value directly at absolute scene time.
-(define (scene-value-at scn id time)
-  (scene-state-value-ref (scene-sample scn time) id))
+(define (scene-value-at scn target time)
+  (scene-state-value-ref (scene-sample scn time) target))
 
 ; scene-set-camera : scene? camera? -> scene?
 ;;   Replaces the current camera instantaneously without appending a clip.

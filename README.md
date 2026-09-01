@@ -1,12 +1,24 @@
-# animate — SCENE-AY
+# animate — SCENE-AZ
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
+SCENE-AZ adds reusable immutable scene-value handles. They remove repeated
+symbols while retaining the timeline model from SCENE-AY:
+
+```racket
+(define center (parameter 'center (vec2 0 0)))
+
+(scene-play
+ (scene-set-value (make-scene) center)
+ (value-to center (vec2 4 2))
+ #:duration 2)
+```
+
 SCENE-AY makes named scene values generic interpolable semantic values. Scalars,
-points, and semantic RGBA colors can now use the same immutable timeline API:
+points, and semantic RGBA colors use the same immutable timeline API:
 
 ```racket
 (scene-play
@@ -52,10 +64,10 @@ Nested group children remain internal to their group and are not dependency
 lookup targets. Direct animation of a derived Visual itself is still rejected;
 animate its scalar sources or the ordinary Visuals it depends on instead.
 
-SCENE-AY v0.51.0 builds on the SCENE-AX dependency graph and its v0.50.1
-moving-text rasterization correction.
+SCENE-AZ v0.52.0 builds on SCENE-AY's generic interpolation, the SCENE-AX
+dependency graph, and its v0.50.1 moving-text rasterization correction.
 
-The public package version is `0.51.0`. The public module exports `456` bindings,
+The public package version is `0.52.0`. The public module exports `460` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2071,7 +2083,40 @@ Run the focused stage tests with:
 raco test tests/scene-l-render-test.rkt \
   tests/scene-aw-test.rkt tests/scene-aw-render-test.rkt \
   tests/scene-ax-test.rkt tests/scene-ax-render-test.rkt \
-  tests/scene-ax-text-raster-test.rkt tests/scene-ay-test.rkt
+  tests/scene-ax-text-raster-test.rkt tests/scene-ay-test.rkt \
+  tests/scene-az-test.rkt
+```
+
+## SCENE-AZ: immutable scene parameters
+
+Version `0.52.0` introduces `(parameter id initial-value)`, an immutable handle
+for one named scene value. It is deliberately distinct from Racket’s dynamic
+parameters: it has no mutable current value and only identifies a value in
+immutable scene state. Pass the handle to `scene-set-value` to install its
+initial value, or use it wherever an existing scene-value API accepts an ID:
+`value-to`, state lookup, scene lookup, removal, and derived-context lookup.
+
+```racket
+(define theta (parameter 'theta 0))
+
+(define rotating-dot
+  (derived-visual
+   (circle #:id 'dot #:radius 1 #:fill "blue")
+   (lambda (context template)
+     (visual-with-position
+      template
+      (vec2 (derived-context-value-ref context theta) 0)))))
+
+(scene-play
+ (scene-add (scene-set-value (make-scene) theta) rotating-dot)
+ (value-to theta 4)
+ #:duration 2)
+```
+
+Run the focused stage test with:
+
+```sh
+raco test tests/scene-az-test.rkt
 ```
 
 ## SCENE-AY: generic interpolable scene values

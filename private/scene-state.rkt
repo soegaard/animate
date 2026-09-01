@@ -22,6 +22,7 @@
 (require "derived-visual.rkt"
          "geometry.rkt"
          "interpolation.rkt"
+         "parameter.rkt"
          "visual-model.rkt")
 
 ;; Exports
@@ -254,22 +255,22 @@
 ;;; Named Scene Values
 ;;;
 
-; scene-state-value-has? : scene-state? symbol? -> boolean?
+; scene-state-value-has? : scene-state? (or/c symbol? scene-parameter?) -> boolean?
 ;;   Reports whether state contains one named semantic value.
-(define (scene-state-value-has? state id)
+(define (scene-state-value-has? state target)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-has? "scene-state?" state))
-  (unless (symbol? id)
-    (raise-argument-error 'scene-state-value-has? "symbol?" id))
-  (hash-has-key? (scene-state-values-by-id state) id))
+  (hash-has-key?
+   (scene-state-values-by-id state)
+   (parameter-target-id target 'scene-state-value-has?)))
 
-; scene-state-value-ref : scene-state? symbol? -> interpolable?
+; scene-state-value-ref : scene-state? (or/c symbol? scene-parameter?) -> interpolable?
 ;;   Returns one named semantic value.
-(define (scene-state-value-ref state id)
+(define (scene-state-value-ref state target)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-ref "scene-state?" state))
-  (unless (symbol? id)
-    (raise-argument-error 'scene-state-value-ref "symbol?" id))
+  (define id
+    (parameter-target-id target 'scene-state-value-ref))
   (define value
     (hash-ref
      (scene-state-values-by-id state)
@@ -287,13 +288,13 @@
      "value" value))
   value)
 
-; scene-state-value-set : scene-state? symbol? interpolable? -> scene-state?
+; scene-state-value-set : scene-state? (or/c symbol? scene-parameter?) interpolable? -> scene-state?
 ;;   Adds or replaces one named semantic value while preserving Visual state.
-(define (scene-state-value-set state id value)
+(define (scene-state-value-set state target value)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-set "scene-state?" state))
-  (unless (symbol? id)
-    (raise-argument-error 'scene-state-value-set "symbol?" id))
+  (define id
+    (parameter-target-id target 'scene-state-value-set))
   (unless (interpolable? value)
     (raise-argument-error 'scene-state-value-set "interpolable?" value))
   (when (hash-has-key? (scene-state-visuals-by-id state) id)
@@ -306,13 +307,13 @@
    (scene-state-drawing-order state)
    (hash-set (scene-state-values-by-id state) id value)))
 
-; scene-state-value-remove : scene-state? symbol? -> scene-state?
+; scene-state-value-remove : scene-state? (or/c symbol? scene-parameter?) -> scene-state?
 ;;   Removes one named semantic value.
-(define (scene-state-value-remove state id)
+(define (scene-state-value-remove state target)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-remove "scene-state?" state))
-  (unless (symbol? id)
-    (raise-argument-error 'scene-state-value-remove "symbol?" id))
+  (define id
+    (parameter-target-id target 'scene-state-value-remove))
   (unless (hash-has-key? (scene-state-values-by-id state) id)
     (raise-arguments-error
      'scene-state-value-remove

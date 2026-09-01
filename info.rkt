@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-AY: generic interpolable scene values")
+  "SCENE-AZ: ergonomic immutable scene parameters")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.51.0")
+(define version "0.52.0")
 
 ; license : symbol?
 ;;   Declares the package license.

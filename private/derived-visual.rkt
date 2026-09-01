@@ -20,6 +20,7 @@
 
 (require "geometry.rkt"
          "interpolation.rkt"
+         "parameter.rkt"
          "visual-model.rkt")
 
 (provide derived-visual
@@ -76,16 +77,16 @@
                          visual-has-proc
                          visual-ref-proc))
 
-; derived-context-value-has? : derived-context? symbol? -> boolean?
+; derived-context-value-has? : derived-context? (or/c symbol? scene-parameter?) -> boolean?
 ;;   Reports whether context contains one named semantic value.
-(define (derived-context-value-has? context id)
+(define (derived-context-value-has? context target)
   (unless (derived-context? context)
     (raise-argument-error
      'derived-context-value-has?
      "derived-context?"
      context))
-  (unless (symbol? id)
-    (raise-argument-error 'derived-context-value-has? "symbol?" id))
+  (define id
+    (parameter-target-id target 'derived-context-value-has?))
   (define result
     ((derived-context-value-value-has-proc context) id))
   (unless (boolean? result)
@@ -96,16 +97,16 @@
      "result" result))
   result)
 
-; derived-context-value-ref : derived-context? symbol? -> interpolable?
+; derived-context-value-ref : derived-context? (or/c symbol? scene-parameter?) -> interpolable?
 ;;   Returns one named semantic value from context.
-(define (derived-context-value-ref context id)
+(define (derived-context-value-ref context target)
   (unless (derived-context? context)
     (raise-argument-error
      'derived-context-value-ref
      "derived-context?"
      context))
-  (unless (symbol? id)
-    (raise-argument-error 'derived-context-value-ref "symbol?" id))
+  (define id
+    (parameter-target-id target 'derived-context-value-ref))
   (define value
     ((derived-context-value-value-ref-proc context) id))
   (unless (interpolable? value)

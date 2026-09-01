@@ -438,6 +438,29 @@ value and a progress of @racket[1] returns the original @racket[to] value.
 Mixed kinds and noninterpolable values raise an exception.
 }
 
+@subsection{Scene Parameters}
+
+@defproc[(parameter [id symbol?] [initial-value any/c]) scene-parameter?]{
+
+Creates an immutable declaration for one named interpolable scene value. This
+is a scene-timeline convenience handle, not a Racket dynamic parameter. Its
+identity and initial value are immutable, and it has no mutable current value.
+Pass it to @racket[scene-set-value] to install its initial value or wherever a
+scene-value API accepts an ID.
+}
+
+@defproc[(scene-parameter? [value any/c]) boolean?]{
+Returns @racket[#t] when @racket[value] is a scene parameter declaration.
+}
+
+@defproc[(parameter-id [value scene-parameter?]) symbol?]{
+Returns the stable named scene-value identity carried by @racket[value].
+}
+
+@defproc[(parameter-initial-value [value scene-parameter?]) any/c]{
+Returns the interpolable initial semantic value carried by @racket[value].
+}
+
 @defproc[(vec2+ [a vec2?] [b vec2?]) vec2?]{
 
 Returns the componentwise sum of @racket[a] and @racket[b].
@@ -4079,13 +4102,13 @@ derived resolver.
 }
 
 @defproc[(derived-context-value-has? [context derived-context?]
-                                     [id symbol?])
+                                     [id (or/c symbol? scene-parameter?)])
          boolean?]{
 Reports whether the sampled state contains the named semantic value @racket[id].
 }
 
 @defproc[(derived-context-value-ref [context derived-context?]
-                                    [id symbol?])
+                                    [id (or/c symbol? scene-parameter?)])
          any/c]{
 Returns named interpolable semantic value @racket[id] from the sampled immutable state. An absent
 value raises an exception.
@@ -4192,13 +4215,15 @@ consistently even when the dependent appears before its dependency in drawing
 order. The Pict scene adapter uses this operation without mutating stored state.
 }
 
-@defproc[(scene-state-value-has? [state scene-state?] [id symbol?]) boolean?]{
+@defproc[(scene-state-value-has? [state scene-state?]
+                                 [id (or/c symbol? scene-parameter?)]) boolean?]{
 Returns @racket[#t] when @racket[state] contains the named semantic value
 identified by @racket[id]. Named values are semantic state and are not rendered.
 Value and Visual identifiers share one global scene namespace.
 }
 
-@defproc[(scene-state-value-ref [state scene-state?] [id symbol?]) any/c]{
+@defproc[(scene-state-value-ref [state scene-state?]
+                                 [id (or/c symbol? scene-parameter?)]) any/c]{
 Returns the named interpolable semantic value identified by @racket[id]. Raises an exception
 when the value is absent.
 }
@@ -4215,7 +4240,7 @@ symbol is useful when the current Visual value is not in local scope. Target
 lookup is top level. A nested group child is not a direct animation target in
 this version.
 
-@defproc[(value-to [id symbol?] [destination any/c]) value-to-request?]{
+@defproc[(value-to [id (or/c symbol? scene-parameter?)] [destination any/c]) value-to-request?]{
 Creates an absolute animation request for one named interpolable semantic value.
 The value must already be present in the scene when the request is compiled, and
 its kind must match @racket[destination]. Interior samples use
@@ -4224,6 +4249,8 @@ source and requested destination representations. Named values use the
 same scheduler, easing, timing compositions, and conflict detection as Visual
 requests. They are not painted directly; SCENE-AW derived Visual resolvers may
 consume them and thereby change concrete rendered geometry.
+
+An immutable @racket[scene-parameter?] may be used in place of @racket[id].
 }
 
 @defproc[(value-to-request? [value any/c]) boolean?]{
@@ -5469,23 +5496,32 @@ exception. Nested group children are not searched. Supplying no targets returns
 an equivalent scene.
 }
 
-@defproc[(scene-set-value [scene scene?] [id symbol?] [value any/c]) scene?]{
+@defproc[(scene-set-value [scene scene?]
+                          [id (or/c symbol? scene-parameter?)]
+                          [value any/c]) scene?]{
 Adds or replaces one named interpolable semantic value instantaneously at the
 current scene time. No clip is appended and duration does not change. A value ID
 may not collide with a top-level Visual ID. Earlier clips retain their stored
 value snapshots.
+
+The two-argument shorthand @racket[(scene-set-value scene parameter)] accepts
+a @racket[scene-parameter?] and installs its declared initial value.
 }
 
-@defproc[(scene-remove-value [scene scene?] [id symbol?]) scene?]{
+@defproc[(scene-remove-value [scene scene?]
+                             [id (or/c symbol? scene-parameter?)]) scene?]{
 Removes one named semantic value instantaneously. Removing an absent value raises an
 exception and does not append a timeline clip.
 }
 
-@defproc[(scene-current-value [scene scene?] [id symbol?]) any/c]{
+@defproc[(scene-current-value [scene scene?]
+                              [id (or/c symbol? scene-parameter?)]) any/c]{
 Returns one named interpolable semantic value from the scene's stored endpoint state.
 }
 
-@defproc[(scene-value-at [scene scene?] [id symbol?] [time (and/c finite-real? (>=/c 0))]) any/c]{
+@defproc[(scene-value-at [scene scene?]
+                          [id (or/c symbol? scene-parameter?)]
+                          [time (and/c finite-real? (>=/c 0))]) any/c]{
 Samples one named interpolable semantic value directly at absolute scene @racket[time]. The same
 closed timeline bounds as @racket[scene-sample] apply.
 }
@@ -8787,6 +8823,10 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.52.0 — SCENE-AZ.} Added immutable @racket[parameter] handles
+       for ergonomic reusable scene-value identities and initial values. Handles
+       work with value installation, animation, state/scene lookup, removal,
+       and derived-context lookup without introducing mutable updater state.}
  @item{@bold{0.51.0 — SCENE-AY.} Generalized named scene values from finite
        reals to interpolable semantic values. Added @racket[interpolable?] and
        @racket[interpolate-value]; finite reals, @racket[vec2], and
