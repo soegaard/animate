@@ -27,8 +27,8 @@
                               #:x-count [x-count 65]
                               #:y-count [y-count 65])
   (check-implicit-arguments 'sample-implicit-path axes field level x-count y-count)
-  (define xs (implicit-grid-values (axes-visual-x-range axes) x-count))
-  (define ys (implicit-grid-values (axes-visual-y-range axes) y-count))
+  (define xs (implicit-grid-values axes 'x x-count))
+  (define ys (implicit-grid-values axes 'y y-count))
   (define samples
     (for/list ([y (in-list ys)])
       (for/list ([x (in-list xs)])
@@ -99,16 +99,15 @@
    #:stroke stroke
    #:stroke-width stroke-width))
 
-; implicit-grid-values : axis-range? exact-positive-integer? -> (listof finite-real?)
-(define (implicit-grid-values range count)
+; implicit-grid-values : axes-visual? symbol? exact-positive-integer?
+;                        -> (listof finite-real?)
+(define (implicit-grid-values axes direction count)
   (for/list ([index (in-range count)])
-    (cond
-      [(zero? index) (axis-range-minimum range)]
-      [(= index (sub1 count)) (axis-range-maximum range)]
+    (case direction
+      [(x) (axes-x-interpolate-coordinate axes (/ index (sub1 count)))]
+      [(y) (axes-y-interpolate-coordinate axes (/ index (sub1 count)))]
       [else
-       (real-lerp (axis-range-minimum range)
-                  (axis-range-maximum range)
-                  (/ index (sub1 count)))])))
+       (raise-argument-error 'implicit-grid-values "'x or 'y" direction)])))
 
 ; implicit-sample : procedure? finite-real? finite-real? -> (or/c finite-real? false/c)
 (define (implicit-sample field x y)
@@ -209,8 +208,9 @@
 ; implicit-segment-subpath : axes-visual? vec2? vec2? -> path-subpath?
 (define (implicit-segment-subpath axes start end)
   (define (local point)
-    (vec2 (* (vec2-x point) (axes-x-unit-length axes))
-          (* (vec2-y point) (axes-y-unit-length axes))))
+    (axes-coordinates->local-point axes
+                                   (vec2-x point)
+                                   (vec2-y point)))
   (path-subpath (local start) (list (line-path-segment (local end))) #f))
 
 

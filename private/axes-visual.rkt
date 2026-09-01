@@ -27,10 +27,15 @@
 (provide (struct-out axis-range)
          axis-range-contains?
          axis-range-tick-values
+         axis-scale?
          axes
          axes-visual?
          axes-visual-x-range
          axes-visual-y-range
+         axes-visual-x-scale
+         axes-visual-y-scale
+         axes-visual-x-log-base
+         axes-visual-y-log-base
          axes-visual-x-length
          axes-visual-y-length
          axes-visual-stroke
@@ -42,8 +47,13 @@
          axes-visual-y-tip?
          axes-x-unit-length
          axes-y-unit-length
+         axes-coordinates->local-point
          axes-coordinates->point
          axes-point->coordinates
+         axes-x-tick-values
+         axes-y-tick-values
+         axes-x-interpolate-coordinate
+         axes-y-interpolate-coordinate
          axes-visual-path-geometry)
 
 
@@ -75,12 +85,6 @@
        "minimum" minimum
        "maximum" maximum
        "span" span))
-    (unless (<= minimum 0 maximum)
-      (raise-arguments-error
-       who
-       "the range must contain zero"
-       "minimum" minimum
-       "maximum" maximum))
     (unless (and (finite-real? tick-step)
                  (positive? tick-step))
       (raise-argument-error who "positive finite real?" tick-step))
@@ -91,8 +95,10 @@
 ;;  - maximum    finite-real?           largest represented coordinate.
 ;;  - tick-step  positive finite real?  spacing between tick coordinates.
 ;;
-;; The interval must contain zero. Tick values are ordered from minimum to
-;; maximum and exclude zero because the two axes already intersect there.
+;; Tick values are ordered from minimum to maximum and exclude zero because
+;; ordinary Cartesian axes already intersect there. The axes constructor checks
+;; the zero-containing invariant only for a linear axis, allowing this shared
+;; range representation to describe the strictly-positive range of a log axis.
 
 ; axis-range-contains? : axis-range? any/c -> boolean?
 ;;   Reports whether value is a finite coordinate in range's closed interval.
@@ -129,6 +135,13 @@
              #:unless (zero? index))
     (* index step)))
 
+; axis-scale? : any/c -> boolean?
+;; Reports whether value names a supported coordinate scale.
+(define (axis-scale? value)
+  (and (symbol? value)
+       (memq value '(linear log))
+       #t))
+
 
 ;;;
 ;;; Axes Data Representation
@@ -140,6 +153,10 @@
    opacity
    x-range
    y-range
+   x-scale
+   y-scale
+   x-log-base
+   y-log-base
    x-length
    y-length
    stroke
@@ -208,6 +225,10 @@
 ;;  - opacity       opacity?                   global rendering opacity.
 ;;  - x-range       axis-range?                significant horizontal interval.
 ;;  - y-range       axis-range?                significant vertical interval.
+;;  - x-scale       axis-scale?                horizontal numeric scale.
+;;  - y-scale       axis-scale?                vertical numeric scale.
+;;  - x-log-base    positive-real?             logarithm base when x-scale is log.
+;;  - y-log-base    positive-real?             logarithm base when y-scale is log.
 ;;  - x-length      positive finite real?      local width of the x interval.
 ;;  - y-length      positive finite real?      local height of the y interval.
 ;;  - stroke        any/c                      opaque axis and tick style.
@@ -233,6 +254,10 @@
 ;        [#:opacity opacity?]
 ;        [#:x-range axis-range?]
 ;        [#:y-range axis-range?]
+;        [#:x-scale axis-scale?]
+;        [#:y-scale axis-scale?]
+;        [#:x-log-base positive-real?]
+;        [#:y-log-base positive-real?]
 ;        [#:x-length positive-real?]
 ;        [#:y-length positive-real?]
 ;        [#:stroke any/c]
@@ -251,6 +276,10 @@
               #:opacity [opacity 1]
               #:x-range [x-range (axis-range -6 6 1)]
               #:y-range [y-range (axis-range -3 3 1)]
+              #:x-scale [x-scale 'linear]
+              #:y-scale [y-scale 'linear]
+              #:x-log-base [x-log-base 10]
+              #:y-log-base [y-log-base 10]
               #:x-length [x-length 12]
               #:y-length [y-length 6]
               #:stroke [stroke "black"]
@@ -277,10 +306,16 @@
     (raise-argument-error 'axes "axis-range?" x-range))
   (unless (axis-range? y-range)
     (raise-argument-error 'axes "axis-range?" y-range))
+  (check-axis-scale 'axes "x-scale" x-scale)
+  (check-axis-scale 'axes "y-scale" y-scale)
+  (check-log-base 'axes "x-log-base" x-log-base)
+  (check-log-base 'axes "y-log-base" y-log-base)
+  (check-axis-range-for-scale 'axes "x-range" x-range x-scale)
+  (check-axis-range-for-scale 'axes "y-range" y-range y-scale)
   (check-positive-finite-real 'axes "x-length" x-length)
   (check-positive-finite-real 'axes "y-length" y-length)
-  (check-axis-unit-length 'axes "x-unit-length" x-range x-length)
-  (check-axis-unit-length 'axes "y-unit-length" y-range y-length)
+  (check-axis-unit-length 'axes "x-unit-length" x-range x-scale x-log-base x-length)
+  (check-axis-unit-length 'axes "y-unit-length" y-range y-scale y-log-base y-length)
   (check-nonnegative-finite-real 'axes "stroke-width" stroke-width)
   (check-nonnegative-finite-real 'axes "tick-size" tick-size)
   (check-positive-finite-real 'axes "tip-length" tip-length)
@@ -296,6 +331,10 @@
                opacity
                x-range
                y-range
+               x-scale
+               y-scale
+               x-log-base
+               y-log-base
                x-length
                y-length
                stroke
@@ -312,18 +351,32 @@
 ;;;
 
 ; axes-x-unit-length : axes-visual? -> positive-real?
-;;   Returns the unscaled local length representing one x coordinate unit.
+;;   Returns the unscaled local length representing one x display-space unit.
 (define (axes-x-unit-length axes)
   (check-axes-visual 'axes-x-unit-length axes)
-  (/ (axes-visual-x-length axes)
-     (axis-range-span (axes-visual-x-range axes))))
+  (axis-unit-length (axes-visual-x-range axes)
+                    (axes-visual-x-scale axes)
+                    (axes-visual-x-log-base axes)
+                    (axes-visual-x-length axes)))
 
 ; axes-y-unit-length : axes-visual? -> positive-real?
-;;   Returns the unscaled local length representing one y coordinate unit.
+;;   Returns the unscaled local length representing one y display-space unit.
 (define (axes-y-unit-length axes)
   (check-axes-visual 'axes-y-unit-length axes)
-  (/ (axes-visual-y-length axes)
-     (axis-range-span (axes-visual-y-range axes))))
+  (axis-unit-length (axes-visual-y-range axes)
+                    (axes-visual-y-scale axes)
+                    (axes-visual-y-log-base axes)
+                    (axes-visual-y-length axes)))
+
+; axes-coordinates->local-point : axes-visual? finite-real? finite-real? -> vec2?
+;; Converts numeric x/y coordinates to untransformed axes-local geometry.
+(define (axes-coordinates->local-point axes x y)
+  (check-axes-visual 'axes-coordinates->local-point axes)
+  (unless (finite-real? x)
+    (raise-argument-error 'axes-coordinates->local-point "finite real?" x))
+  (unless (finite-real? y)
+    (raise-argument-error 'axes-coordinates->local-point "finite real?" y))
+  (axes-local-point axes x y))
 
 ; axes-coordinates->point : axes-visual? finite-real? finite-real? -> vec2?
 ;;   Converts numeric x and y coordinates to the containing coordinate system.
@@ -335,8 +388,7 @@
     (raise-argument-error 'axes-coordinates->point "finite real?" y))
   (affine-transform-apply-point
    (visual-transform axes)
-   (vec2 (* x (axes-x-unit-length axes))
-         (* y (axes-y-unit-length axes)))))
+   (axes-coordinates->local-point axes x y)))
 
 ; axes-point->coordinates : axes-visual? vec2? -> vec2?
 ;;   Converts a containing-system point to numeric axis coordinates.
@@ -348,10 +400,52 @@
     (affine-transform-unapply-point
      (visual-transform axes)
      point))
-  (vec2 (/ (vec2-x local-point)
-           (axes-x-unit-length axes))
-        (/ (vec2-y local-point)
-           (axes-y-unit-length axes))))
+  (vec2 (axis-display-coordinate->numeric
+         (/ (vec2-x local-point)
+            (axes-x-unit-length axes))
+         (axes-visual-x-scale axes)
+         (axes-visual-x-log-base axes))
+        (axis-display-coordinate->numeric
+         (/ (vec2-y local-point)
+            (axes-y-unit-length axes))
+         (axes-visual-y-scale axes)
+         (axes-visual-y-log-base axes))))
+
+; axes-x-tick-values : axes-visual? -> (listof finite-real?)
+;; Returns the deterministic major tick coordinates for the horizontal scale.
+(define (axes-x-tick-values axes)
+  (check-axes-visual 'axes-x-tick-values axes)
+  (axis-tick-values (axes-visual-x-range axes)
+                    (axes-visual-x-scale axes)
+                    (axes-visual-x-log-base axes)))
+
+; axes-y-tick-values : axes-visual? -> (listof finite-real?)
+;; Returns the deterministic major tick coordinates for the vertical scale.
+(define (axes-y-tick-values axes)
+  (check-axes-visual 'axes-y-tick-values axes)
+  (axis-tick-values (axes-visual-y-range axes)
+                    (axes-visual-y-scale axes)
+                    (axes-visual-y-log-base axes)))
+
+; axes-x-interpolate-coordinate : axes-visual? finite-real? -> finite-real?
+;; Interpolates a horizontal numeric coordinate uniformly in display space.
+(define (axes-x-interpolate-coordinate axes progress)
+  (check-axes-visual 'axes-x-interpolate-coordinate axes)
+  (check-axis-interpolation-progress 'axes-x-interpolate-coordinate progress)
+  (axis-interpolate-coordinate (axes-visual-x-range axes)
+                               (axes-visual-x-scale axes)
+                               (axes-visual-x-log-base axes)
+                               progress))
+
+; axes-y-interpolate-coordinate : axes-visual? finite-real? -> finite-real?
+;; Interpolates a vertical numeric coordinate uniformly in display space.
+(define (axes-y-interpolate-coordinate axes progress)
+  (check-axes-visual 'axes-y-interpolate-coordinate axes)
+  (check-axis-interpolation-progress 'axes-y-interpolate-coordinate progress)
+  (axis-interpolate-coordinate (axes-visual-y-range axes)
+                               (axes-visual-y-scale axes)
+                               (axes-visual-y-log-base axes)
+                               progress))
 
 
 ;;;
@@ -366,20 +460,28 @@
     (axes-local-point axes
                       (axis-range-minimum
                        (axes-visual-x-range axes))
-                      0))
+                      (axis-reference-coordinate
+                       (axes-visual-y-range axes)
+                       (axes-visual-y-scale axes))))
   (define x-end
     (axes-local-point axes
                       (axis-range-maximum
                        (axes-visual-x-range axes))
-                      0))
+                      (axis-reference-coordinate
+                       (axes-visual-y-range axes)
+                       (axes-visual-y-scale axes))))
   (define y-start
     (axes-local-point axes
-                      0
+                      (axis-reference-coordinate
+                       (axes-visual-x-range axes)
+                       (axes-visual-x-scale axes))
                       (axis-range-minimum
                        (axes-visual-y-range axes))))
   (define y-end
     (axes-local-point axes
-                      0
+                      (axis-reference-coordinate
+                       (axes-visual-x-range axes)
+                       (axes-visual-x-scale axes))
                       (axis-range-maximum
                        (axes-visual-y-range axes))))
   (path-geometry
@@ -406,8 +508,16 @@
 ; axes-local-point : axes-visual? finite-real? finite-real? -> vec2?
 ;;   Converts numeric coordinates to local geometric coordinates.
 (define (axes-local-point axes x y)
-  (vec2 (* x (axes-x-unit-length axes))
-        (* y (axes-y-unit-length axes))))
+  (vec2 (* (axis-numeric->display-coordinate
+            x
+            (axes-visual-x-scale axes)
+            (axes-visual-x-log-base axes))
+           (axes-x-unit-length axes))
+        (* (axis-numeric->display-coordinate
+            y
+            (axes-visual-y-scale axes)
+            (axes-visual-y-log-base axes))
+           (axes-y-unit-length axes))))
 
 ; x-tick-subpaths : axes-visual? -> (listof path-subpath?)
 ;;   Returns vertical x-axis tick segments in increasing coordinate order.
@@ -418,10 +528,12 @@
       '()
       (for/list ([value
                   (in-list
-                   (axis-range-tick-values
-                    (axes-visual-x-range axes)))])
+                   (axes-x-tick-values axes))])
         (define center
-          (axes-local-point axes value 0))
+          (axes-local-point axes value
+                            (axis-reference-coordinate
+                             (axes-visual-y-range axes)
+                             (axes-visual-y-scale axes))))
         (open-line-subpath
          (vec2+ center (vec2 0 (- half-tick-size)))
          (vec2+ center (vec2 0 half-tick-size))))))
@@ -435,10 +547,13 @@
       '()
       (for/list ([value
                   (in-list
-                   (axis-range-tick-values
-                    (axes-visual-y-range axes)))])
+                   (axes-y-tick-values axes))])
         (define center
-          (axes-local-point axes 0 value))
+          (axes-local-point axes
+                            (axis-reference-coordinate
+                             (axes-visual-x-range axes)
+                             (axes-visual-x-scale axes))
+                            value))
         (open-line-subpath
          (vec2+ center (vec2 (- half-tick-size) 0))
          (vec2+ center (vec2 half-tick-size 0))))))
@@ -483,10 +598,116 @@
 ;;;
 
 ; axis-range-span : axis-range? -> positive-real?
-;;   Returns the validated finite distance from minimum to maximum.
+;;   Returns the validated finite numeric distance from minimum to maximum.
 (define (axis-range-span range)
   (- (axis-range-maximum range)
      (axis-range-minimum range)))
+
+; axis-unit-length : axis-range? axis-scale? positive-real? positive-real?
+;;   -> positive-real?
+;; Returns one local length per display-space unit.
+(define (axis-unit-length range scale base length)
+  (/ length (axis-display-range-span range scale base)))
+
+; axis-display-range-span : axis-range? axis-scale? positive-real? -> positive-real?
+;; Returns the finite positive span after linear or logarithmic conversion.
+(define (axis-display-range-span range scale base)
+  (- (axis-numeric->display-coordinate (axis-range-maximum range) scale base)
+     (axis-numeric->display-coordinate (axis-range-minimum range) scale base)))
+
+; axis-numeric->display-coordinate : finite-real? axis-scale? positive-real?
+;;                                    -> finite-real?
+(define (axis-numeric->display-coordinate value scale base)
+  (case scale
+    [(linear) value]
+    [(log)
+     (unless (positive? value)
+       (raise-argument-error
+        'axes-coordinates->local-point
+        "positive finite real for a logarithmic axis"
+        value))
+     (/ (log value) (log base))]
+    [else
+     (raise-argument-error 'axis-numeric->display-coordinate "axis-scale?" scale)]))
+
+; axis-display-coordinate->numeric : finite-real? axis-scale? positive-real?
+;;                                    -> finite-real?
+(define (axis-display-coordinate->numeric value scale base)
+  (case scale
+    [(linear) value]
+    [(log) (expt base value)]
+    [else
+     (raise-argument-error 'axis-display-coordinate->numeric "axis-scale?" scale)]))
+
+; axis-tick-values : axis-range? axis-scale? positive-real? -> (listof finite-real?)
+;; Returns linear multiples or powers of base at tick-step exponent intervals.
+(define (axis-tick-values range scale base)
+  (case scale
+    [(linear) (axis-range-tick-values range)]
+    [(log)
+     (define step (axis-range-tick-step range))
+     (define minimum-index
+       (tick-index-quotient-for-log range
+                                    (axis-range-minimum range)
+                                    base))
+     (define maximum-index
+       (tick-index-quotient-for-log range
+                                    (axis-range-maximum range)
+                                    base))
+     (define first-index
+       (integer-ceiling
+        (- (/ minimum-index step)
+           (tick-index-tolerance (/ minimum-index step)))))
+     (define last-index
+       (integer-floor
+        (+ (/ maximum-index step)
+           (tick-index-tolerance (/ maximum-index step)))))
+     (for/list ([index (in-range first-index (add1 last-index))])
+       (axis-display-coordinate->numeric (* index step) 'log base))]
+    [else
+     (raise-argument-error 'axis-tick-values "axis-scale?" scale)]))
+
+; axis-interpolate-coordinate : axis-range? axis-scale? positive-real?
+;;                               finite-real? -> finite-real?
+;; Interpolates numeric values after converting through the selected scale.
+(define (axis-interpolate-coordinate range scale base progress)
+  (axis-display-coordinate->numeric
+   (real-lerp (axis-numeric->display-coordinate (axis-range-minimum range)
+                                                scale
+                                                base)
+              (axis-numeric->display-coordinate (axis-range-maximum range)
+                                                scale
+                                                base)
+              progress)
+   scale
+   base))
+
+; tick-index-quotient-for-log : axis-range? positive-real? positive-real?
+;;                               -> finite-real?
+(define (tick-index-quotient-for-log range endpoint base)
+  (define quotient
+    (/ (log endpoint) (log base)))
+  (unless (finite-real? quotient)
+    (raise-arguments-error
+     'axes-x-tick-values
+     "the logarithmic range and base must produce finite tick indexes"
+     "range" range
+     "log base" base
+     "tick index" quotient))
+  quotient)
+
+; axis-reference-coordinate : axis-range? axis-scale? -> finite-real?
+;; Selects the Cartesian zero or visible log-scale unit as the shaft crossing.
+(define (axis-reference-coordinate range scale)
+  (case scale
+    [(linear) 0]
+    [(log)
+     (cond [(axis-range-contains? range 1) 1]
+           [(positive? (axis-range-minimum range))
+            (axis-range-minimum range)]
+           [else (axis-range-maximum range)])]
+    [else
+     (raise-argument-error 'axis-reference-coordinate "axis-scale?" scale)]))
 
 ; tick-index-relative-tolerance : positive-real?
 ;;   Gives the fixed relative tolerance for inexact range endpoint indexes.
@@ -553,12 +774,12 @@
      "an axes dimension must be a positive finite real"
      field-name value)))
 
-; check-axis-unit-length : symbol? string? axis-range? positive-real?
-;                          -> void?
+; check-axis-unit-length : symbol? string? axis-range? axis-scale? positive-real?
+;                          positive-real? -> void?
 ;;   Raises an argument error unless the range-to-length scale is finite.
-(define (check-axis-unit-length who field-name range length)
+(define (check-axis-unit-length who field-name range scale base length)
   (define unit-length
-    (/ length (axis-range-span range)))
+    (axis-unit-length range scale base length))
   (unless (and (finite-real? unit-length)
                (positive? unit-length))
     (raise-arguments-error
@@ -567,6 +788,44 @@
      field-name unit-length
      "range" range
      "length" length)))
+
+; check-axis-scale : symbol? string? any/c -> void?
+(define (check-axis-scale who field-name value)
+  (unless (axis-scale? value)
+    (raise-arguments-error who "an axis scale must be 'linear or 'log"
+                           field-name value)))
+
+; check-log-base : symbol? string? any/c -> void?
+(define (check-log-base who field-name value)
+  (unless (and (finite-real? value)
+               (> value 1))
+    (raise-arguments-error who
+                           "a logarithmic base must be finite and greater than one"
+                           field-name value)))
+
+; check-axis-range-for-scale : symbol? string? axis-range? axis-scale? -> void?
+;; Preserves historical zero-containing ranges for linear axes while permitting
+;; strictly-positive intervals for logarithmic axes.
+(define (check-axis-range-for-scale who field-name range scale)
+  (case scale
+    [(linear)
+     (unless (axis-range-contains? range 0)
+       (raise-arguments-error who
+                              "a linear axis range must contain zero"
+                              field-name range))]
+    [(log)
+     (unless (positive? (axis-range-minimum range))
+       (raise-arguments-error who
+                              "a logarithmic axis range must be strictly positive"
+                              field-name range))]
+    [else
+     (raise-argument-error who "axis-scale?" scale)]))
+
+; check-axis-interpolation-progress : symbol? any/c -> void?
+(define (check-axis-interpolation-progress who value)
+  (unless (and (finite-real? value)
+               (<= 0 value 1))
+    (raise-argument-error who "finite real in [0, 1]" value)))
 
 ; check-nonnegative-finite-real : symbol? string? any/c -> void?
 ;;   Raises an argument error unless value is nonnegative and finite.

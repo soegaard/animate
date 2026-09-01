@@ -112,12 +112,12 @@
 (define (numeric-coordinate->scatter-local axes point)
   (define axes-scale
     (visual-scale axes))
-  (vec2 (* (vec2-x point)
-           (axes-x-unit-length axes)
-           (vec2-x axes-scale))
-        (* (vec2-y point)
-           (axes-y-unit-length axes)
-           (vec2-y axes-scale))))
+  (define local
+    (axes-coordinates->local-point axes
+                                   (vec2-x point)
+                                   (vec2-y point)))
+  (vec2 (* (vec2-x local) (vec2-x axes-scale))
+        (* (vec2-y local) (vec2-y axes-scale))))
 
 
 ;;;
@@ -296,8 +296,11 @@
 ;;   Closes every open path run to the resolved local baseline.
 (define (coordinate-path->area-path axes geometry baseline clip?)
   (define local-baseline-y
-    (* (resolved-area-baseline axes baseline clip?)
-       (axes-y-unit-length axes)))
+    (vec2-y
+     (axes-coordinates->local-point
+      axes
+      (if (eq? (axes-visual-x-scale axes) 'log) 1 0)
+      (resolved-area-baseline axes baseline clip?))))
   (path-geometry
    (for/list ([subpath (in-list (path-geometry-subpaths geometry))])
      (path-subpath->area-subpath subpath local-baseline-y))))

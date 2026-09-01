@@ -302,10 +302,15 @@
  (struct-out axis-range)
  axis-range-contains?
  axis-range-tick-values
+ axis-scale?
  axes
  axes-visual?
  axes-visual-x-range
  axes-visual-y-range
+ axes-visual-x-scale
+ axes-visual-y-scale
+ axes-visual-x-log-base
+ axes-visual-y-log-base
  axes-visual-x-length
  axes-visual-y-length
  axes-visual-stroke

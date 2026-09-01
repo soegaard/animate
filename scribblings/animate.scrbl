@@ -3477,11 +3477,11 @@ The fields have these meanings:
        coordinates.}
 ]
 
-@racket[minimum] must be less than @racket[maximum], and the interval must
-contain zero. Zero may be either endpoint. The computed difference
+@racket[minimum] must be less than @racket[maximum]. The computed difference
 @racket[(- maximum minimum)] must also remain a positive finite real; this
 rejects an inexact endpoint pair whose subtraction overflows. The structure is immutable and
-transparent. Its public bindings include @racket[axis-range],
+transparent. Linear axes require their ranges to contain zero; logarithmic axes
+require strictly-positive ranges. Its public bindings include @racket[axis-range],
 @racket[axis-range?], the three field accessors, and
 @racket[struct:axis-range].
 }
@@ -3519,6 +3519,12 @@ of binary floating-point rounding. It raises an exception when dividing a range
 endpoint by the step produces an infinite or NaN index.
 }
 
+@defproc[(axis-scale? [value any/c]) boolean?]{
+
+Returns @racket[#t] for the supported scale symbols @racket['linear] and
+@racket['log].
+}
+
 @subsubsection{Cartesian Axes}
 
 @defproc[(axes
@@ -3529,6 +3535,14 @@ endpoint by the step produces an infinite or NaN index.
           [#:opacity opacity opacity? 1]
           [#:x-range x-range axis-range? (axis-range -6 6 1)]
           [#:y-range y-range axis-range? (axis-range -3 3 1)]
+          [#:x-scale x-scale axis-scale? 'linear]
+          [#:y-scale y-scale axis-scale? 'linear]
+          [#:x-log-base x-log-base
+                        (and/c finite-real? (>/c 1))
+                        10]
+          [#:y-log-base y-log-base
+                        (and/c finite-real? (>/c 1))
+                        10]
           [#:x-length x-length
                       (and/c finite-real? positive?)
                       12]
@@ -3552,19 +3566,30 @@ endpoint by the step produces an infinite or NaN index.
           [#:y-tip? y-tip? boolean? #t])
          axes-visual?]{
 
-Creates semantic two-dimensional Cartesian axes. Numeric coordinate
-@tt{(0, 0)} is the Visual's local origin and reference point before
-@racket[center], @racket[rotation], and @racket[scale] are applied.
+Creates semantic two-dimensional Cartesian axes. On the default linear scales,
+numeric coordinate @tt{(0, 0)} is the Visual's local origin and reference point
+before @racket[center], @racket[rotation], and @racket[scale] are applied.
 
 The full interval from @racket[(axis-range-minimum x-range)] to
 @racket[(axis-range-maximum x-range)] is mapped to @racket[x-length] local world
 units. The y interval is mapped independently to @racket[y-length]. The x and y
-unit lengths can therefore differ. Each resulting length-per-coordinate-unit
-must remain a positive finite real.
+unit lengths can therefore differ. Each resulting length-per-display-unit must
+remain a positive finite real.
 
-The x shaft is drawn at numeric y coordinate zero. The y shaft is drawn at
-numeric x coordinate zero. Regular nonzero ticks come from
-@racket[axis-range-tick-values]. @racket[tick-size] is the full local length of
+With @racket['log] for @racket[x-scale] or @racket[y-scale], that axis accepts
+only a strictly-positive @racket[axis-range]. Numeric coordinates are converted
+through @racket[(log value)] in the configured base before they are placed. A
+log axis uses numeric one as its shaft reference when it is visible (otherwise
+the minimum range value); coordinate zero is invalid. @racket[x-log-base] and
+@racket[y-log-base] must be finite and greater than one. The
+@racket[tick-step] of a log range is a step in base-logarithm exponent space, so
+the usual value of one produces ticks at successive powers of the base.
+
+The x shaft is drawn at numeric y coordinate zero on a linear y axis, and at
+numeric one (or the visible minimum) on a log y axis; the y shaft follows the
+same rule for its x coordinate. Regular ticks come from
+@racket[axis-range-tick-values] on linear axes and powers of the configured base
+on log axes. @racket[tick-size] is the full local length of
 each tick. A value of zero hides all ticks while preserving the ranges and
 coordinate conversion.
 
@@ -3591,6 +3616,30 @@ Returns the stored horizontal numeric range.
 @defproc[(axes-visual-y-range [axes axes-visual?]) axis-range?]{
 
 Returns the stored vertical numeric range.
+}
+
+@defproc[(axes-visual-x-scale [axes axes-visual?]) axis-scale?]{
+
+Returns the stored horizontal coordinate scale.
+}
+
+@defproc[(axes-visual-y-scale [axes axes-visual?]) axis-scale?]{
+
+Returns the stored vertical coordinate scale.
+}
+
+@defproc[(axes-visual-x-log-base [axes axes-visual?])
+         (and/c finite-real? (>/c 1))]{
+
+Returns the stored horizontal logarithm base. It affects coordinate conversion
+only when @racket[(axes-visual-x-scale axes)] is @racket['log].
+}
+
+@defproc[(axes-visual-y-log-base [axes axes-visual?])
+         (and/c finite-real? (>/c 1))]{
+
+Returns the stored vertical logarithm base. It affects coordinate conversion
+only when @racket[(axes-visual-y-scale axes)] is @racket['log].
 }
 
 @defproc[(axes-visual-x-length [axes axes-visual?])
@@ -3647,19 +3696,23 @@ Reports whether the maximum-y endpoint has a triangular tip.
 @defproc[(axes-x-unit-length [axes axes-visual?])
          (and/c finite-real? positive?)]{
 
-Returns the unscaled local length representing one numeric x unit. It is
+Returns the unscaled local length representing one x display-space unit. On a
+linear axis it is
 @racket[(/ (axes-visual-x-length axes)
            (- (axis-range-maximum (axes-visual-x-range axes))
-              (axis-range-minimum (axes-visual-x-range axes))))] for the stored x range.
+              (axis-range-minimum (axes-visual-x-range axes))))]. On a log
+axis the denominator is the corresponding base-logarithm span.
 }
 
 @defproc[(axes-y-unit-length [axes axes-visual?])
          (and/c finite-real? positive?)]{
 
-Returns the unscaled local length representing one numeric y unit. It is
+Returns the unscaled local length representing one y display-space unit. On a
+linear axis it is
 @racket[(/ (axes-visual-y-length axes)
            (- (axis-range-maximum (axes-visual-y-range axes))
-              (axis-range-minimum (axes-visual-y-range axes))))] for the stored y range.
+              (axis-range-minimum (axes-visual-y-range axes))))]. On a log
+axis the denominator is the corresponding base-logarithm span.
 }
 
 @defproc[(axes-coordinates->point
@@ -3669,11 +3722,13 @@ Returns the unscaled local length representing one numeric y unit. It is
          vec2?]{
 
 Converts numeric coordinate @tt{(x, y)} to a point in the axes' containing
-coordinate system. The procedure first multiplies x and y by their independent
-local unit lengths, then applies semantic scale, rotation, and translation.
+coordinate system. The procedure first maps each coordinate through its linear
+or logarithmic display scale, multiplies by the independent local unit lengths,
+then applies semantic scale, rotation, and translation.
 
 The numeric coordinates are not required to lie inside the displayed ranges.
-This permits extrapolation and placement just outside the visible axes.
+This permits extrapolation and placement just outside the visible axes. A value
+on a logarithmic axis must nevertheless be a positive finite real.
 }
 
 @defproc[(axes-point->coordinates [axes axes-visual?] [point vec2?]) vec2?]{
@@ -3805,6 +3860,11 @@ increasing order. The closed interval includes both endpoints. When
 @racket[x-min] or @racket[x-max] is @racket[#f], the corresponding bound comes
 from @racket[(axes-visual-x-range axes)]. The resolved minimum must be less than
 the resolved maximum. Their difference must remain a positive finite real.
+
+For a logarithmic x axis, spacing is uniform in the selected base-logarithm
+display coordinate instead. Thus a base-ten range from one through one thousand
+samples successive decades evenly. Explicit @racket[x-min] and @racket[x-max]
+bounds follow the same rule and must be strictly positive on a log axis.
 
 All arguments are checked before @racket[function] is called. When sampling
 completes without an error, the function is called exactly once for each sample
@@ -8959,6 +9019,10 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.63.0 — SCENE-BJ.} Added linear/log coordinate-scale selection,
+       configurable log bases, positive log ranges, logarithmic ticks and
+       coordinate conversion, and log-uniform function/vector/implicit sampling.
+       Also corrected vector-field's finite grid traversal.}
  @item{@bold{0.62.0 — SCENE-BN.} Added @racket[derived-function-graph], a pure
        context-derived function graph whose two-argument field is sampled from
        each immutable scene state. Parameter-driven plots now need no mutable

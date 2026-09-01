@@ -55,7 +55,8 @@
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (axis-range 1 3 1)))
+     (axes #:id 'bad-linear-range
+           #:x-range (axis-range 1 3 1))))
   (check-exn
    exn:fail:contract?
    (lambda ()

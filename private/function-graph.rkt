@@ -66,7 +66,8 @@
                              requested-x-min
                              requested-x-max))
   (define samples
-    (sample-function-values function
+    (sample-function-values axes
+                            function
                             x-min
                             x-max
                             sample-count))
@@ -149,13 +150,13 @@
 ;;; Sampling
 ;;;
 
-; sample-function-values : (procedure-arity-includes/c 1)
+; sample-function-values : axes-visual? (procedure-arity-includes/c 1)
 ;                          finite-real?
 ;                          finite-real?
 ;                          exact-integer-at-least-2?
 ;                          -> (listof (or/c vec2? false/c))
 ;;   Samples the closed x interval in increasing order, including both ends.
-(define (sample-function-values function x-min x-max sample-count)
+(define (sample-function-values axes function x-min x-max sample-count)
   (define last-index
     (sub1 sample-count))
   (for/list ([index (in-range sample-count)])
@@ -165,11 +166,23 @@
          x-min]
         [(= index last-index)
          x-max]
+        [(eq? (axes-visual-x-scale axes) 'log)
+         (logarithmic-domain-value axes x-min x-max (/ index last-index))]
         [else
          (real-lerp x-min
                     x-max
                     (/ index last-index))]))
     (sample-function-value function x)))
+
+; logarithmic-domain-value : axes-visual? positive-real? positive-real?
+;                            finite-real? -> finite-real?
+;; Interpolates requested function-graph bounds uniformly in log display space.
+(define (logarithmic-domain-value axes x-min x-max progress)
+  (define base (axes-visual-x-log-base axes))
+  (expt base
+        (real-lerp (/ (log x-min) (log base))
+                   (/ (log x-max) (log base))
+                   progress)))
 
 ; sample-function-value : (procedure-arity-includes/c 1) finite-real?
 ;                         -> (or/c vec2? false/c)
@@ -297,6 +310,13 @@
     (raise-arguments-error
      'sample-function-path
      "the sampling minimum must be less than the sampling maximum"
+     "x-min" x-min
+     "x-max" x-max))
+  (when (and (eq? (axes-visual-x-scale axes) 'log)
+             (not (positive? x-min)))
+    (raise-arguments-error
+     'sample-function-path
+     "the sampling interval for a logarithmic x axis must be strictly positive"
      "x-min" x-min
      "x-max" x-max))
   (define span

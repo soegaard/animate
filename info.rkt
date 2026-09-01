@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BN: immutable context-derived function graphs")
+  "SCENE-BJ: logarithmic Cartesian axes and log-space plots")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.62.0")
+(define version "0.63.0")
 
 ; license : symbol?
 ;;   Declares the package license.

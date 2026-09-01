@@ -58,11 +58,11 @@
    'axes-grid-lines "stroke-width" stroke-width)
   (define x-values
     (if x-grid?
-        (axis-values (axes-visual-x-range axes) include-zero?)
+        (axis-values axes 'x include-zero?)
         '()))
   (define y-values
     (if y-grid?
-        (axis-values (axes-visual-y-range axes) include-zero?)
+        (axis-values axes 'y include-zero?)
         '()))
   (define geometry
     (path-geometry
@@ -84,30 +84,20 @@
 ; vertical-grid-subpath : axes-visual? finite-real? -> path-subpath?
 ;;   Constructs one local vertical grid line.
 (define (vertical-grid-subpath axes x-value)
-  (define x
-    (* x-value
-       (axes-x-unit-length axes)))
   (define y-range
     (axes-visual-y-range axes))
-  (define y-unit
-    (axes-y-unit-length axes))
   (line-subpath
-   (vec2 x (* (axis-range-minimum y-range) y-unit))
-   (vec2 x (* (axis-range-maximum y-range) y-unit))))
+   (axes-coordinates->local-point axes x-value (axis-range-minimum y-range))
+   (axes-coordinates->local-point axes x-value (axis-range-maximum y-range))))
 
 ; horizontal-grid-subpath : axes-visual? finite-real? -> path-subpath?
 ;;   Constructs one local horizontal grid line.
 (define (horizontal-grid-subpath axes y-value)
-  (define y
-    (* y-value
-       (axes-y-unit-length axes)))
   (define x-range
     (axes-visual-x-range axes))
-  (define x-unit
-    (axes-x-unit-length axes))
   (line-subpath
-   (vec2 (* (axis-range-minimum x-range) x-unit) y)
-   (vec2 (* (axis-range-maximum x-range) x-unit) y)))
+   (axes-coordinates->local-point axes (axis-range-minimum x-range) y-value)
+   (axes-coordinates->local-point axes (axis-range-maximum x-range) y-value)))
 
 
 ;;;
@@ -137,16 +127,19 @@
   (check-nonnegative-finite-real 'axes-number-labels "x-gap" x-gap)
   (check-nonnegative-finite-real 'axes-number-labels "y-gap" y-gap)
   (define x-values
-    (axis-values (axes-visual-x-range axes) include-zero?))
+    (axis-values axes 'x include-zero?))
   (define y-values
-    (axis-values (axes-visual-y-range axes) #f))
+    (axis-values axes 'y #f))
   (append
    (for/list ([value (in-list x-values)]
               [index (in-naturals)])
      (define local-point
-       (vec2 (* value (axes-x-unit-length axes))
-             (- (+ (/ (axes-visual-tick-size axes) 2)
-                   x-gap))))
+       (let ([anchor
+              (axes-coordinates->local-point
+               axes value (axis-reference-value axes 'y))])
+         (vec2 (vec2-x anchor)
+               (- (vec2-y anchor)
+                  (+ (/ (axes-visual-tick-size axes) 2) x-gap)))))
      (plain-text
       (format-number-label
        'axes-number-labels
@@ -164,9 +157,12 @@
    (for/list ([value (in-list y-values)]
               [index (in-naturals)])
      (define local-point
-       (vec2 (- (+ (/ (axes-visual-tick-size axes) 2)
-                   y-gap))
-             (* value (axes-y-unit-length axes))))
+       (let ([anchor
+              (axes-coordinates->local-point
+               axes (axis-reference-value axes 'x) value)])
+         (vec2 (- (vec2-x anchor)
+                  (+ (/ (axes-visual-tick-size axes) 2) y-gap))
+               (vec2-y anchor))))
      (plain-text
       (format-number-label
        'axes-number-labels
@@ -243,14 +239,44 @@
 ;;; Shared Helpers
 ;;;
 
-; axis-values : axis-range? boolean? -> (listof finite-real?)
-;;   Returns regular increasing values and optionally inserts zero.
-(define (axis-values range include-zero?)
+; axis-values : axes-visual? symbol? boolean? -> (listof finite-real?)
+;; Returns scale-aware increasing ticks and optionally inserts linear zero.
+(define (axis-values axes direction include-zero?)
+  (define scale
+    (case direction
+      [(x) (axes-visual-x-scale axes)]
+      [(y) (axes-visual-y-scale axes)]
+      [else (raise-argument-error 'axis-values "'x or 'y" direction)]))
   (define values
-    (axis-range-tick-values range))
-  (if include-zero?
-      (sort (cons 0 values) <)
-      values))
+    (case direction
+      [(x) (axes-x-tick-values axes)]
+      [(y) (axes-y-tick-values axes)]))
+  (cond
+    [(not include-zero?) values]
+    [(eq? scale 'linear) (sort (cons 0 values) <)]
+    [else
+     (raise-arguments-error
+      'axes-grid-lines
+      "a logarithmic axis cannot include a zero grid line or label"
+      "direction" direction)]))
+
+; axis-reference-value : axes-visual? symbol? -> finite-real?
+;; Gives the coordinate where the two shafts meet for one scale.
+(define (axis-reference-value axes direction)
+  (define range
+    (case direction
+      [(x) (axes-visual-x-range axes)]
+      [(y) (axes-visual-y-range axes)]
+      [else (raise-argument-error 'axis-reference-value "'x or 'y" direction)]))
+  (define scale
+    (case direction
+      [(x) (axes-visual-x-scale axes)]
+      [(y) (axes-visual-y-scale axes)]))
+  (if (eq? scale 'linear)
+      0
+      (if (axis-range-contains? range 1)
+          1
+          (axis-range-minimum range))))
 
 ; line-subpath : vec2? vec2? -> path-subpath?
 ;;   Constructs one open line subpath.

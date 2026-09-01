@@ -350,10 +350,9 @@
 ; numeric-coordinate->axes-local : axes-visual? vec2? -> vec2?
 ;;   Maps one numeric coordinate to untransformed local axes geometry.
 (define (numeric-coordinate->axes-local axes point)
-  (vec2 (* (vec2-x point)
-           (axes-x-unit-length axes))
-        (* (vec2-y point)
-           (axes-y-unit-length axes))))
+  (axes-coordinates->local-point axes
+                                 (vec2-x point)
+                                 (vec2-y point)))
 
 
 ;;;

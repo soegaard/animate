@@ -40,13 +40,16 @@
                       #:tip-width [tip-width 1/8])
   (check-vector-field-arguments axes field id x-count y-count scale opacity
                                 stroke-width tip-length tip-width)
-  (define xs (axis-grid-values (axes-visual-x-range axes) x-count))
-  (define ys (axis-grid-values (axes-visual-y-range axes) y-count))
+  (define xs (axis-grid-values axes 'x x-count))
+  (define ys (axis-grid-values axes 'y y-count))
   (define arrows
-    (for*/list ([y (in-list ys)]
-                [y-index (in-naturals)]
-                [x (in-list xs)]
-                [x-index (in-naturals)]
+    ;; Use bounded numeric indexes as the nested traversal dimensions. Separate
+    ;; @racket[in-naturals] clauses in @racket[for*/list] would nest an infinite
+    ;; sequence before reaching the x grid.
+    (for*/list ([y-index (in-range y-count)]
+                [x-index (in-range x-count)]
+                #:do [(define y (list-ref ys y-index))]
+                #:do [(define x (list-ref xs x-index))]
                 #:do [(define vector (sample-field-value field x y))]
                 #:unless (and (zero? (vec2-x vector))
                               (zero? (vec2-y vector))))
@@ -66,23 +69,24 @@
   ;; a neutral group preserves arbitrary axes transforms exactly.
   (group arrows #:id id #:opacity opacity))
 
-; axis-grid-values : axis-range? exact-positive-integer? -> (listof finite-real?)
-;; Returns evenly spaced closed grid values in increasing numeric order.
-(define (axis-grid-values range count)
+; axis-grid-values : axes-visual? symbol? exact-positive-integer?
+;                    -> (listof finite-real?)
+;; Returns grid values uniformly spaced in the selected axes display space.
+(define (axis-grid-values axes direction count)
   (cond
     [(= count 1)
-     (list (/ (+ (axis-range-minimum range)
-                 (axis-range-maximum range))
-              2))]
+     (list (axis-grid-coordinate axes direction 1/2))]
     [else
      (for/list ([index (in-range count)])
-       (cond
-         [(zero? index) (axis-range-minimum range)]
-         [(= index (sub1 count)) (axis-range-maximum range)]
-         [else
-          (real-lerp (axis-range-minimum range)
-                     (axis-range-maximum range)
-                     (/ index (sub1 count)))]))]))
+       (axis-grid-coordinate axes direction (/ index (sub1 count))))]))
+
+; axis-grid-coordinate : axes-visual? symbol? finite-real? -> finite-real?
+(define (axis-grid-coordinate axes direction progress)
+  (case direction
+    [(x) (axes-x-interpolate-coordinate axes progress)]
+    [(y) (axes-y-interpolate-coordinate axes progress)]
+    [else
+     (raise-argument-error 'axis-grid-values "'x or 'y" direction)]))
 
 ; sample-field-value : procedure? finite-real? finite-real? -> vec2?
 ;; Calls a field procedure once and validates its single semantic vector result.
