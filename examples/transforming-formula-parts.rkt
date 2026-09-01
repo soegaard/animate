@@ -42,15 +42,26 @@
 (define transition-pause-duration
   1)
 
+; equation-term-spacing : positive-real?
+;;   Gives the compact center-to-center spacing between adjacent formula parts.
+(define equation-term-spacing
+  3/4)
+
+; equation-slot : exact-nonnegative-integer? -> real?
+;;   Returns the centered local x position for one of five equation parts.
+(define (equation-slot index)
+  (* equation-term-spacing
+     (- index 2)))
+
 ; make-source-equation : -> formula-assembly-visual?
 ;;   Creates the source equation a squared plus b squared equals c squared.
 (define (make-source-equation)
   (formula-assembly
-   (list (make-equation-part 'a-square "a^2" -12/5)
-         (make-equation-part 'plus     "+"   -6/5)
-         (make-equation-part 'b-square "b^2"  0)
-         (make-equation-part 'equals   "="    6/5)
-         (make-equation-part 'c-square "c^2"  12/5))
+   (list (make-equation-part 'a-square "a^2" (equation-slot 0))
+         (make-equation-part 'plus     "+"   (equation-slot 1))
+         (make-equation-part 'b-square "b^2" (equation-slot 2))
+         (make-equation-part 'equals   "="    (equation-slot 3))
+         (make-equation-part 'c-square "c^2" (equation-slot 4)))
    #:id 'equation
    #:center (vec2 -6 0)
    #:rotation -1/16
@@ -61,22 +72,22 @@
 ;;   Creates the algebraic rearrangement b squared equals c squared minus a squared.
 (define (make-rearranged-equation #:id [identifier 'rearranged-template])
   (formula-assembly
-   (list (make-equation-part 'b-square "b^2" -12/5)
-         (make-equation-part 'equals   "="    -6/5)
-         (make-equation-part 'c-square "c^2"  0)
-         (make-equation-part 'minus    "-"    6/5)
-         (make-equation-part 'a-square "a^2" 12/5))
+   (list (make-equation-part 'b-square "b^2" (equation-slot 0))
+         (make-equation-part 'equals   "="    (equation-slot 1))
+         (make-equation-part 'c-square "c^2" (equation-slot 2))
+         (make-equation-part 'minus    "-"    (equation-slot 3))
+         (make-equation-part 'a-square "a^2" (equation-slot 4)))
    #:id identifier))
 
 ; make-flipped-equation : -> formula-assembly-visual?
 ;;   Creates the equivalent equation c squared minus a squared equals b squared.
 (define (make-flipped-equation)
   (formula-assembly
-   (list (make-equation-part 'c-square "c^2" -12/5)
-         (make-equation-part 'minus    "-"   -6/5)
-         (make-equation-part 'a-square "a^2"  0)
-         (make-equation-part 'equals   "="    6/5)
-         (make-equation-part 'b-square "b^2" 12/5))
+   (list (make-equation-part 'c-square "c^2" (equation-slot 0))
+         (make-equation-part 'minus    "-"   (equation-slot 1))
+         (make-equation-part 'a-square "a^2" (equation-slot 2))
+         (make-equation-part 'equals   "="    (equation-slot 3))
+         (make-equation-part 'b-square "b^2" (equation-slot 4)))
    #:id 'flipped-template))
 
 ; make-rearrangement-correspondence : formula-assembly-visual?
