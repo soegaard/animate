@@ -51,8 +51,8 @@
 
 ; make-derived-context : (-> symbol? boolean?)
 ;                        (-> symbol? interpolable?)
-;                        (-> symbol? boolean?)
-;                        (-> symbol? visual?)
+;                        (-> (or/c symbol? visual-path?) boolean?)
+;                        (-> (or/c symbol? visual-path?) visual?)
 ;                        -> derived-context?
 ;;   Constructs the internal read-only context supplied to derived resolvers.
 (define (make-derived-context value-has-proc
@@ -117,16 +117,16 @@
      "value" value))
   value)
 
-; derived-context-visual-has? : derived-context? symbol? -> boolean?
-;;   Reports whether context contains one top-level Visual identity.
-(define (derived-context-visual-has? context id)
+; derived-context-visual-has? : derived-context? (or/c symbol? visual-path?) -> boolean?
+;;   Reports whether context contains one top-level or nested Visual identity.
+(define (derived-context-visual-has? context target)
   (unless (derived-context? context)
     (raise-argument-error
      'derived-context-visual-has?
      "derived-context?"
      context))
-  (unless (symbol? id)
-    (raise-argument-error 'derived-context-visual-has? "symbol?" id))
+  (define id
+    (visual-target-id target 'derived-context-visual-has?))
   (define result
     ((derived-context-value-visual-has-proc context) id))
   (unless (boolean? result)
@@ -137,16 +137,16 @@
      "result" result))
   result)
 
-; derived-context-visual-ref : derived-context? symbol? -> visual?
-;;   Returns one recursively resolved concrete top-level Visual from context.
-(define (derived-context-visual-ref context id)
+; derived-context-visual-ref : derived-context? (or/c symbol? visual-path?) -> visual?
+;;   Returns one recursively resolved concrete top-level or nested Visual from context.
+(define (derived-context-visual-ref context target)
   (unless (derived-context? context)
     (raise-argument-error
      'derived-context-visual-ref
      "derived-context?"
      context))
-  (unless (symbol? id)
-    (raise-argument-error 'derived-context-visual-ref "symbol?" id))
+  (define id
+    (visual-target-id target 'derived-context-visual-ref))
   (define visual
     ((derived-context-value-visual-ref-proc context) id))
   (unless (and (visual? visual)
@@ -156,11 +156,15 @@
      "the derivation context must return a concrete Visual"
      "visual-id" id
      "result" visual))
-  (unless (eq? (visual-id visual) id)
+  (define expected-id
+    (if (symbol? id)
+        id
+        (car (reverse id))))
+  (unless (eq? (visual-id visual) expected-id)
     (raise-arguments-error
      'derived-context-visual-ref
      "the derivation context Visual lookup must preserve the requested ID"
-     "requested visual-id" id
+     "requested visual-id" expected-id
      "result visual-id" (visual-id visual)))
   visual)
 

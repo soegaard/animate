@@ -994,14 +994,15 @@
     (raise-argument-error 'create "path-visual?" visual))
   (create-request visual))
 
-; uncreate : (or/c path-visual? symbol?) -> uncreate-request?
+; uncreate : (or/c path-visual? symbol? visual-path?) -> uncreate-request?
 ;;   Creates a request that hides and then removes a path Visual.
 (define (uncreate target)
   (unless (or (symbol? target)
+              (visual-path? target)
               (path-visual? target))
     (raise-argument-error
      'uncreate
-     "(or/c path-visual? symbol?)"
+     "(or/c path-visual? symbol? visual-path?)"
      target))
   (uncreate-request (visual-target-id target 'uncreate)))
 
@@ -2317,11 +2318,12 @@
 ;;   Validates a public stroke-width animation target argument.
 (define (check-stroke-width-request-target who target)
   (unless (or (symbol? target)
+              (visual-path? target)
               (and (visual? target)
                    (stroke-width-visual? target)))
     (raise-argument-error
      who
-     "(or/c symbol? (and/c visual? stroke-width-visual?))"
+     "(or/c symbol? visual-path? (and/c visual? stroke-width-visual?))"
      target))
   (when (and (visual? target)
              (stroke-width-visual? target))
@@ -2398,11 +2400,12 @@
 ;;   Validates a public fill-color animation target argument.
 (define (check-fill-color-request-target who target)
   (unless (or (symbol? target)
+              (visual-path? target)
               (and (visual? target)
                    (fill-color-visual? target)))
     (raise-argument-error
      who
-     "(or/c symbol? (and/c visual? fill-color-visual?))"
+     "(or/c symbol? visual-path? (and/c visual? fill-color-visual?))"
      target))
   (when (and (visual? target)
              (fill-color-visual? target))
@@ -2412,11 +2415,12 @@
 ;;   Validates a public stroke-color animation target argument.
 (define (check-stroke-color-request-target who target)
   (unless (or (symbol? target)
+              (visual-path? target)
               (and (visual? target)
                    (stroke-color-visual? target)))
     (raise-argument-error
      who
-     "(or/c symbol? (and/c visual? stroke-color-visual?))"
+     "(or/c symbol? visual-path? (and/c visual? stroke-color-visual?))"
      target))
   (when (and (visual? target)
              (stroke-color-visual? target))
@@ -2526,11 +2530,12 @@
 ;;   Validates a public opacity-animation target argument.
 (define (check-opacity-request-target who target)
   (unless (or (symbol? target)
+              (visual-path? target)
               (and (visual? target)
                    (opacity-visual? target)))
     (raise-argument-error
      who
-     "(or/c symbol? (and/c visual? opacity-visual?))"
+     "(or/c symbol? visual-path? (and/c visual? opacity-visual?))"
      target))
   (when (and (visual? target)
              (opacity-visual? target))
@@ -2629,10 +2634,11 @@
 ;;   Validates one public path-morph request constructor call.
 (define (check-path-morph-request-arguments who target destination)
   (unless (or (symbol? target)
+              (visual-path? target)
               (path-visual? target))
     (raise-argument-error
      who
-     "(or/c path-visual? symbol?)"
+     "(or/c path-visual? symbol? visual-path?)"
      target))
   (unless (path-geometry? destination)
     (raise-argument-error who "path-geometry?" destination)))

@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-AZ: ergonomic immutable scene parameters")
+  "SCENE-BC: stable nested Visual addressing and child animation")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.52.0")
+(define version "0.55.0")
 
 ; license : symbol?
 ;;   Declares the package license.

@@ -184,6 +184,8 @@
  visual-id
  visual-position
  visual-with-position
+ visual-path?
+ visual-target-path
  gen:affine-visual
  affine-visual?
  visual-transform
@@ -421,6 +423,8 @@
  make-scene
  scene-add
  scene-remove
+ scene-ref
+ scene-visual-at
  scene-set-value
  scene-remove-value
  scene-value-at

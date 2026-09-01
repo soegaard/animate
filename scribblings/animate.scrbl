@@ -2081,6 +2081,20 @@ color-managed or perceptual color-space conversion.
 
 @subsection{The Basic Visual Protocol}
 
+@defproc[(visual-path? [value any/c]) boolean?]{
+
+Returns @racket[#t] for a nonempty list of symbol identities used to address a
+nested built-in group child, such as @racket['(scatter marker)]. The first
+symbol identifies a top-level Visual and each remaining symbol names one child.
+}
+
+@defproc[(visual-target-path [target (or/c visual? symbol? visual-path?)])
+         visual-path?]{
+
+Converts a top-level Visual or symbol to its one-element path, and returns an
+existing nested path unchanged.
+}
+
 @defthing[#:kind "generic interface" gen:visual any/c]{
 
 The generic interface for semantic Visual values. A structure type implements
@@ -4115,20 +4129,21 @@ value raises an exception.
 }
 
 @defproc[(derived-context-visual-has? [context derived-context?]
-                                      [id symbol?])
+                                      [id (or/c symbol? visual-path?)])
          boolean?]{
-Reports whether the sampled scene state contains a top-level Visual with
-@racket[id]. Presence lookup does not force a derived dependency to resolve.
-Nested group children are not searched.
+Reports whether the sampled scene state contains the addressed Visual.
+@racket[id] may be a top-level symbol or a nonempty nested symbol path.
+Presence lookup does not force a derived dependency to resolve.
 }
 
 @defproc[(derived-context-visual-ref [context derived-context?]
-                                     [id symbol?])
+                                     [id (or/c symbol? visual-path?)])
          visual?]{
-Returns the concrete top-level Visual identified by @racket[id] in the same
-sampled immutable state. Ordinary Visuals return directly. Derived Visuals
-resolve recursively and may themselves read scalar or Visual dependencies.
-Lookup is independent of drawing order.
+Returns the concrete Visual identified by @racket[id] in the same sampled
+immutable state. @racket[id] may be a top-level symbol or a nested path.
+Ordinary Visuals return directly. Derived Visuals resolve recursively and may
+themselves read scalar or Visual dependencies. Lookup is independent of drawing
+order.
 
 Self-dependencies and longer cycles raise an exception identifying a derived
 Visual dependency cycle. Successfully resolved dependencies are memoized only
@@ -4160,22 +4175,22 @@ derived definition likewise counts as one top-level Visual.
 }
 
 @defproc[(scene-state-has? [state scene-state?]
-                           [target (or/c visual? symbol?)])
+                           [target (or/c visual? symbol? visual-path?)])
          boolean?]{
 
-Returns @racket[#t] when @racket[state] contains the top-level Visual
-identified by @racket[target]. A Visual argument is resolved through
-@racket[visual-id]. Nested group children are not searched. Frame-space Visuals are not valid
-@racket[camera-follow] targets.
+Returns @racket[#t] when @racket[state] contains the addressed Visual. A Visual
+argument is resolved through @racket[visual-id]; a @racket[visual-path?] follows
+built-in group children. Frame-space Visuals are not valid @racket[camera-follow]
+targets.
 }
 
 @defproc[(scene-state-ref [state scene-state?]
-                          [target (or/c visual? symbol?)])
+                          [target (or/c visual? symbol? visual-path?)])
          visual?]{
 
-Returns the stored top-level Visual identified by @racket[target]. Raises an
-exception when the identity is not present. Nested group children are not
-searched. For a derived Visual this returns the persistent
+Returns the stored Visual identified by @racket[target]. A nested path returns
+its locally stored child, without inheriting parent transforms. Raises an
+exception when the identity is not present. For a derived Visual this returns the persistent
 @racket[derived-visual?] definition rather than evaluating its resolver; use
 @racket[scene-state-resolved-ref] when concrete geometry is required.
 }
@@ -4193,10 +4208,10 @@ values.
 
 @defproc[(scene-state-resolved-ref
           [state scene-state?]
-          [target (or/c visual? symbol?)])
+          [target (or/c visual? symbol? visual-path?)])
          visual?]{
 
-Returns the concrete top-level Visual for @racket[target] in @racket[state].
+Returns the concrete addressed Visual for @racket[target] in @racket[state].
 Ordinary Visuals are returned unchanged. A @racket[derived-visual?] is evaluated
 against a read-only context built from this exact immutable state. SCENE-AX
 allows that resolver to recursively request other top-level Visuals. Dependency
@@ -4235,10 +4250,9 @@ stores a target identity and a requested endpoint or relative change. The
 request is compiled against the scene's current state when @racket[scene-play]
 is called.
 
-A target can be either a Visual value or its symbol identity. Passing the
-symbol is useful when the current Visual value is not in local scope. Target
-lookup is top level. A nested group child is not a direct animation target in
-this version.
+A target can be a Visual value, its top-level symbol identity, or a nonempty
+@racket[visual-path?]. A path follows built-in group children and is a direct
+animation target; child transforms remain local to their containing group.
 
 @defproc[(value-to [id (or/c symbol? scene-parameter?)] [destination any/c]) value-to-request?]{
 Creates an absolute animation request for one named interpolable semantic value.
@@ -5486,14 +5500,30 @@ equivalent scene.
 }
 
 @defproc[(scene-remove [scene scene?]
-                       [target (or/c visual? symbol?)] ...)
+                       [target (or/c visual? symbol? visual-path?)] ...)
          scene?]{
 
-Returns a scene with each top-level target removed instantaneously from the
-current state. No clip is appended and duration does not change. The drawing
-order of remaining Visuals is preserved. Removing an absent target raises an
-exception. Nested group children are not searched. Supplying no targets returns
-an equivalent scene.
+Returns a scene with each addressed target removed instantaneously from the
+current state. No clip is appended and duration does not change. Removing a
+nested path rebuilds only its ancestor groups; top-level drawing order is
+preserved. Removing an absent target raises an exception. Supplying no targets
+returns an equivalent scene.
+}
+
+@defproc[(scene-ref [scene scene?]
+                    [target (or/c visual? symbol? visual-path?)])
+         visual?]{
+
+Returns the concrete addressed Visual from the scene's current endpoint state.
+}
+
+@defproc[(scene-visual-at [scene scene?]
+                          [target (or/c visual? symbol? visual-path?)]
+                          [time (and/c finite-real? (>=/c 0))])
+         visual?]{
+
+Samples @racket[scene] at @racket[time] and returns the concrete addressed
+Visual. Nested child transforms remain local to their containing group.
 }
 
 @defproc[(scene-set-value [scene scene?]
@@ -8823,6 +8853,15 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.55.0 — SCENE-BC.} Enabled motion, transform, style, opacity,
+       and removal animation requests for nested Visual paths. Ancestor groups
+       rebuild immutably and scheduler conflicts compare paths structurally.}
+ @item{@bold{0.54.0 — SCENE-BB.} Added stable nonempty symbol paths for nested
+       built-in group children, path-aware scene/state and derived-context
+       lookup, and @racket[scene-ref]/@racket[scene-visual-at].}
+ @item{@bold{0.53.0 — SCENE-BA.} Established derived groups as stable
+       top-level @racket[derived-visual] identities whose concrete child
+       collections may vary per immutable sampled state.}
  @item{@bold{0.52.0 — SCENE-AZ.} Added immutable @racket[parameter] handles
        for ergonomic reusable scene-value identities and initial values. Handles
        work with value installation, animation, state/scene lookup, removal,

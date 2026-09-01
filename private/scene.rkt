@@ -44,6 +44,8 @@
          make-scene
          scene-add
          scene-remove
+         scene-ref
+         scene-visual-at
          scene-set-value
          scene-remove-value
          scene-value-at
@@ -327,6 +329,21 @@
               ([target (in-list targets)])
       (scene-state-remove state target)))
   (struct-copy scene scn [current-state updated-state]))
+
+; scene-ref : scene? (or/c visual? symbol? visual-path?) -> visual?
+;;   Resolves one Visual from the scene's current endpoint state.
+(define (scene-ref scn target)
+  (unless (scene? scn)
+    (raise-argument-error 'scene-ref "scene?" scn))
+  (scene-state-resolved-ref (scene-current-state scn) target))
+
+; scene-visual-at : scene? (or/c visual? symbol? visual-path?) nonnegative-real?
+;                    -> visual?
+;;   Resolves one Visual directly from an arbitrary sampled scene state.
+(define (scene-visual-at scn target time)
+  (unless (scene? scn)
+    (raise-argument-error 'scene-visual-at "scene?" scn))
+  (scene-state-resolved-ref (scene-sample scn time) target))
 
 ; scene-set-value : scene? scene-parameter? -> scene?
 ;                   scene? (or/c symbol? scene-parameter?) interpolable? -> scene?
@@ -1367,8 +1384,8 @@
         (define right-request
           (visual-request-spec-request right))
         (when (and
-               (eq? (animation-request-target-id left-request)
-                    (animation-request-target-id right-request))
+               (equal? (animation-request-target-id left-request)
+                       (animation-request-target-id right-request))
                (intervals-overlap?
                 (visual-request-spec-start left)
                 (visual-request-spec-duration left)
@@ -1417,8 +1434,8 @@
           #:unless (eq? removal other))
       (define other-request
         (visual-request-spec-request other))
-      (when (and (eq? target-id
-                      (animation-request-target-id other-request))
+      (when (and (equal? target-id
+                         (animation-request-target-id other-request))
                  (< (visual-request-spec-start other) removal-end)
                  (> (+ (visual-request-spec-start other)
                        (visual-request-spec-duration other))

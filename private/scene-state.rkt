@@ -21,6 +21,7 @@
 ;; Imports
 (require "derived-visual.rkt"
          "geometry.rkt"
+         "group-visual.rkt"
          "interpolation.rkt"
          "parameter.rkt"
          "visual-model.rkt")
@@ -76,25 +77,61 @@
 (define (scene-state-count state)
   (hash-count (scene-state-visuals-by-id state)))
 
-; scene-state-has? : scene-state? (or/c visual? symbol?) -> boolean?
-;;   Reports whether state contains target as a top-level Visual.
+; scene-state-has? : scene-state? (or/c visual? symbol? visual-path?) -> boolean?
+;;   Reports whether state contains target at its top-level or nested path.
 (define (scene-state-has? state target)
-  (hash-has-key? (scene-state-visuals-by-id state)
-                 (visual-target-id target 'scene-state-has?)))
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-has? "scene-state?" state))
+  (define path
+    (visual-target-path target 'scene-state-has?))
+  (with-handlers ([exn:fail? (lambda (ignored) #f)])
+    (scene-state-ref state path)
+    #t))
 
-; scene-state-ref : scene-state? (or/c visual? symbol?) -> visual?
-;;   Returns the top-level Visual identified by target.
+; scene-state-ref : scene-state? (or/c visual? symbol? visual-path?) -> visual?
+;;   Returns the stored Visual identified by target. Nested paths return their
+;; locally stored child Visual, without inheriting ancestor transforms.
 (define (scene-state-ref state target)
-  (define id
-    (visual-target-id target 'scene-state-ref))
-  (hash-ref
-   (scene-state-visuals-by-id state)
-   id
-   (lambda ()
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-ref "scene-state?" state))
+  (define path
+    (visual-target-path target 'scene-state-ref))
+  (define root
+    (hash-ref
+     (scene-state-visuals-by-id state)
+     (car path)
+     (lambda ()
+       (raise-arguments-error
+        'scene-state-ref
+        "the Visual path is not present in the scene"
+        "visual-path" path))))
+  (visual-descendant-ref root (cdr path) path 'scene-state-ref))
+
+; visual-descendant-ref : visual? (listof symbol?) visual-path? symbol? -> visual?
+;; Resolves descendant IDs through built-in semantic groups.
+(define (visual-descendant-ref visual descendant-ids full-path who)
+  (cond
+    [(null? descendant-ids)
+     visual]
+    [(not (group-visual? visual))
      (raise-arguments-error
-      'scene-state-ref
-      "the visual is not present in the scene"
-      "visual-id" id))))
+      who
+      "an intermediate Visual path entry must name a built-in group"
+      "visual-path" full-path
+      "visual" visual)]
+    [else
+     (define child-id (car descendant-ids))
+     (define child
+       (for/first ([candidate (in-list (group-visual-children visual))]
+                   #:when (eq? (visual-id candidate) child-id))
+         candidate))
+     (unless child
+       (raise-arguments-error
+        who
+        "the Visual path is not present in the scene"
+        "visual-path" full-path
+        "missing-visual-id" child-id))
+     (visual-descendant-ref child (cdr descendant-ids) full-path who)]))
 
 ; scene-state-visuals-in-drawing-order : scene-state? -> (listof visual?)
 ;;   Returns top-level Visuals in significant back-to-front order.
@@ -124,10 +161,10 @@
        (scene-state-value-has? state id))
      (lambda (id)
        (scene-state-value-ref state id))
-     (lambda (id)
-       (scene-state-has? state id))
-     (lambda (id)
-       (resolve-id id))))
+     (lambda (target)
+       (scene-state-has? state target))
+     (lambda (target)
+       (resolve-target target))))
 
   (define (resolve-id id)
     (unless (symbol? id)
@@ -157,17 +194,24 @@
        (hash-set! cache id resolved)
        resolved]))
 
-  resolve-id)
+  (define (resolve-target target)
+    (define path
+      (visual-target-path target 'scene-state-resolved-ref))
+    (visual-descendant-ref
+     (resolve-id (car path))
+     (cdr path)
+     path
+     'scene-state-resolved-ref))
 
-; scene-state-resolved-ref : scene-state? (or/c visual? symbol?) -> visual?
+  resolve-target)
+
+; scene-state-resolved-ref : scene-state? (or/c visual? symbol? visual-path?) -> visual?
 ;;   Resolves target against the state. Ordinary Visuals are returned unchanged;
 ;;   derived Visual definitions may recursively resolve top-level dependencies.
 (define (scene-state-resolved-ref state target)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-resolved-ref "scene-state?" state))
-  (define id
-    (visual-target-id target 'scene-state-resolved-ref))
-  ((make-scene-state-resolver state) id))
+  ((make-scene-state-resolver state) target))
 
 ; scene-state-resolved-visuals-in-drawing-order : scene-state? -> (listof visual?)
 ;;   Returns concrete top-level Visuals in significant back-to-front order.
@@ -210,45 +254,139 @@
    (append (scene-state-drawing-order state) (list id))
    (scene-state-values-by-id state)))
 
-; scene-state-remove : scene-state? (or/c visual? symbol?) -> scene-state?
+; scene-state-remove : scene-state? (or/c visual? symbol? visual-path?) -> scene-state?
 ;;   Removes target while preserving the order of remaining visuals.
 (define (scene-state-remove state target)
-  (define id
-    (visual-target-id target 'scene-state-remove))
-  (unless (hash-has-key? (scene-state-visuals-by-id state) id)
-    (raise-arguments-error
-     'scene-state-remove
-     "the visual is not present in the scene"
-     "visual-id" id))
-  (scene-state
-   (hash-remove (scene-state-visuals-by-id state) id)
-   (filter (lambda (existing-id)
-             (not (eq? existing-id id)))
-           (scene-state-drawing-order state))
-   (scene-state-values-by-id state)))
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-remove "scene-state?" state))
+  (define path
+    (visual-target-path target 'scene-state-remove))
+  (define root-id (car path))
+  (define root
+    (hash-ref
+     (scene-state-visuals-by-id state)
+     root-id
+     (lambda ()
+       (raise-arguments-error
+        'scene-state-remove
+        "the Visual path is not present in the scene"
+        "visual-path" path))))
+  (if (null? (cdr path))
+      (scene-state
+       (hash-remove (scene-state-visuals-by-id state) root-id)
+       (filter (lambda (existing-id)
+                 (not (eq? existing-id root-id)))
+               (scene-state-drawing-order state))
+       (scene-state-values-by-id state))
+      (scene-state
+       (hash-set
+        (scene-state-visuals-by-id state)
+        root-id
+        (remove-visual-descendant root (cdr path) path 'scene-state-remove))
+       (scene-state-drawing-order state)
+       (scene-state-values-by-id state))))
 
-; scene-state-update : scene-state? (or/c visual? symbol?) visual? -> scene-state?
+; scene-state-update : scene-state? (or/c visual? symbol? visual-path?) visual?
+;                       -> scene-state?
 ;;   Replaces target without changing its identity or drawing order.
 (define (scene-state-update state target replacement)
-  (define id
-    (visual-target-id target 'scene-state-update))
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-update "scene-state?" state))
+  (define path
+    (visual-target-path target 'scene-state-update))
+  (define root-id (car path))
+  (define target-id (car (reverse path)))
   (unless (visual? replacement)
     (raise-argument-error 'scene-state-update "visual?" replacement))
-  (unless (eq? id (visual-id replacement))
+  (unless (eq? target-id (visual-id replacement))
     (raise-arguments-error
      'scene-state-update
      "the replacement must preserve the visual ID"
-     "expected visual-id" id
+     "expected visual-id" target-id
      "replacement visual-id" (visual-id replacement)))
-  (unless (hash-has-key? (scene-state-visuals-by-id state) id)
-    (raise-arguments-error
-     'scene-state-update
-     "the visual is not present in the scene"
-     "visual-id" id))
+  (define root
+    (hash-ref
+     (scene-state-visuals-by-id state)
+     root-id
+     (lambda ()
+       (raise-arguments-error
+        'scene-state-update
+        "the Visual path is not present in the scene"
+        "visual-path" path))))
   (scene-state
-   (hash-set (scene-state-visuals-by-id state) id replacement)
+   (hash-set
+    (scene-state-visuals-by-id state)
+    root-id
+    (if (null? (cdr path))
+        replacement
+        (replace-visual-descendant
+         root (cdr path) replacement path 'scene-state-update)))
    (scene-state-drawing-order state)
    (scene-state-values-by-id state)))
+
+; replace-visual-descendant : group-visual? (listof symbol?) visual? visual-path?
+;                             symbol? -> group-visual?
+;; Rebuilds the ancestor group chain with one descendant replaced.
+(define (replace-visual-descendant group descendant-ids replacement full-path who)
+  (unless (group-visual? group)
+    (raise-arguments-error
+     who
+     "an intermediate Visual path entry must name a built-in group"
+     "visual-path" full-path
+     "visual" group))
+  (define child-id (car descendant-ids))
+  (define found? #f)
+  (define children
+    (for/list ([child (in-list (group-visual-children group))])
+      (if (eq? (visual-id child) child-id)
+          (begin
+            (set! found? #t)
+            (if (null? (cdr descendant-ids))
+                replacement
+                (replace-visual-descendant
+                 child (cdr descendant-ids) replacement full-path who)))
+          child)))
+  (unless found?
+    (raise-arguments-error
+     who
+     "the Visual path is not present in the scene"
+     "visual-path" full-path
+     "missing-visual-id" child-id))
+  (group-visual-with-children group children))
+
+; remove-visual-descendant : group-visual? (listof symbol?) visual-path? symbol?
+;                            -> group-visual?
+;; Rebuilds the ancestor group chain with one descendant removed.
+(define (remove-visual-descendant group descendant-ids full-path who)
+  (unless (group-visual? group)
+    (raise-arguments-error
+     who
+     "an intermediate Visual path entry must name a built-in group"
+     "visual-path" full-path
+     "visual" group))
+  (define child-id (car descendant-ids))
+  (define found? #f)
+  (define children
+    (for/list ([child (in-list (group-visual-children group))]
+               #:unless (and (eq? (visual-id child) child-id)
+                             (null? (cdr descendant-ids))))
+      (cond
+        [(eq? (visual-id child) child-id)
+         (set! found? #t)
+         (remove-visual-descendant child (cdr descendant-ids) full-path who)]
+        [else
+         child])))
+  (when (and (null? (cdr descendant-ids))
+             (for/or ([child (in-list (group-visual-children group))])
+               (eq? (visual-id child) child-id)))
+    (set! found? #t))
+  (unless found?
+    (raise-arguments-error
+     who
+     "the Visual path is not present in the scene"
+     "visual-path" full-path
+     "missing-visual-id" child-id))
+  (group-visual-with-children group children))
 
 
 ;;;

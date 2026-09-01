@@ -1,9 +1,24 @@
-# animate — SCENE-AZ
+# animate — SCENE-BC
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-BC makes group children stable animation targets. Use a nonempty symbol
+path to address a descendant; the original group tree is rebuilt immutably at
+each sample:
+
+```racket
+(scene-play
+ (scene-add
+  (make-scene)
+  (group (list (circle #:id 'marker #:radius 1 #:fill "blue"))
+         #:id 'scatter))
+ (fill-color-to '(scatter marker) "red")
+ (move-to '(scatter marker) (vec2 4 0))
+ #:duration 2)
+```
 
 SCENE-AZ adds reusable immutable scene-value handles. They remove repeated
 symbols while retaining the timeline model from SCENE-AY:
@@ -59,15 +74,15 @@ uses a local memo table for one traversal and detects dependency cycles such as
 `a -> b -> a` explicitly. Nothing is written back into the immutable scene
 state, so separate arbitrary-time samples still resolve from their own state.
 
-The context now exposes named semantic-value and top-level Visual presence/lookup operations.
-Nested group children remain internal to their group and are not dependency
-lookup targets. Direct animation of a derived Visual itself is still rejected;
-animate its scalar sources or the ordinary Visuals it depends on instead.
+The context exposes named semantic-value and Visual presence/lookup operations.
+Nested group children are available by stable paths, including to derived
+resolvers. Direct animation of a derived Visual itself is still rejected;
+animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-AZ v0.52.0 builds on SCENE-AY's generic interpolation, the SCENE-AX
-dependency graph, and its v0.50.1 moving-text rasterization correction.
+SCENE-BC v0.55.0 builds on SCENE-AZ and SCENE-AY, adds dynamically derived
+groups (SCENE-BA), and introduces stable nested addressing (SCENE-BB).
 
-The public package version is `0.52.0`. The public module exports `460` bindings,
+The public package version is `0.55.0`. The public module exports `464` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -997,9 +1012,9 @@ Those four requests affect disjoint components and can run simultaneously.
 `fade-in` can introduce an absent text, formula, or formula assembly, and
 `fade-out` removes it at the structural endpoint.
 
-Nested group children are still not direct scene-state lookup or timeline
-targets. Animate their top-level group, or place the child at the top level when
-it needs an independent target.
+Nested group children are direct scene-state lookup and timeline targets through
+paths such as `'(labeled-panel grouped-formula)`. Their local transforms remain
+relative to the containing group.
 
 ## Determinism and typesetting environments
 
@@ -2084,8 +2099,31 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-aw-test.rkt tests/scene-aw-render-test.rkt \
   tests/scene-ax-test.rkt tests/scene-ax-render-test.rkt \
   tests/scene-ax-text-raster-test.rkt tests/scene-ay-test.rkt \
-  tests/scene-az-test.rkt
+  tests/scene-az-test.rkt tests/scene-ba-test.rkt tests/scene-bb-test.rkt \
+  tests/scene-bc-test.rkt
 ```
+
+## SCENE-BC: group-child animation
+
+Version `0.55.0` applies the established motion, transform, style, opacity, and
+removal animation machinery to a nested path. Scheduling conflicts compare paths
+structurally, so a path constructed twice still names the same child component;
+different children can be animated in parallel. Child transforms remain local
+to their containing group.
+
+## SCENE-BB: stable nested Visual paths
+
+Version `0.54.0` adds nonempty symbol paths such as `'(scatter marker)`. Use
+`scene-ref`, `scene-visual-at`, scene-state lookup, or a derived context to read
+the addressed leaf. Nested updates rebuild only the ancestor groups and preserve
+the parent identities, transforms, opacity, child order, and unrelated children.
+
+## SCENE-BA: dynamically derived groups
+
+Version `0.53.0` confirms that a `derived-visual` may resolve to a concrete
+`group` with a stable top-level ID while its children vary at each sampled state.
+This supports pure, deterministic scene fragments such as a changing number of
+markers, ticks, vertices, or terms.
 
 ## SCENE-AZ: immutable scene parameters
 

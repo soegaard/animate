@@ -27,7 +27,9 @@
          visual-id
          visual-position
          visual-with-position
+         visual-path?
          visual-target-id
+         visual-target-path
          gen:affine-visual
          affine-visual?
          visual-transform
@@ -591,24 +593,45 @@
 ;;; Visual Identity
 ;;;
 
-; visual-target-id : (or/c visual? symbol?) [symbol?] -> symbol?
-;;   Resolves a visual value or visual id to a stable symbol id.
+; visual-path? : any/c -> boolean?
+;; Reports whether value is a nonempty stable path of Visual identities.
+(define (visual-path? value)
+  (and (list? value)
+       (pair? value)
+       (andmap symbol? value)))
+
+; visual-target-id : (or/c visual? symbol? visual-path?) [symbol?] ->
+;                     (or/c symbol? visual-path?)
+;; Resolves a Visual, top-level ID, or nested identity path to its stable
+;; address. A Visual object supplies only its own ID; nested targets therefore
+;; use an explicit path whose first entry identifies the top-level Visual.
 (define (visual-target-id target [who 'visual-target-id])
-  (define id
-    (cond
-      [(visual? target)
-       (visual-id target)]
-      [(symbol? target)
-       target]
-      [else
-       (raise-argument-error who "(or/c visual? symbol?)" target)]))
-  (unless (symbol? id)
-    (raise-arguments-error
-     who
-     "a Visual must have a symbol identity"
-     "visual" target
-     "visual-id" id))
-  id)
+  (cond
+    [(visual? target)
+     (define id (visual-id target))
+     (unless (symbol? id)
+       (raise-arguments-error
+        who
+        "a Visual must have a symbol identity"
+        "visual" target
+        "visual-id" id))
+     id]
+    [(symbol? target)
+     target]
+    [(visual-path? target)
+     target]
+    [else
+     (raise-argument-error who "(or/c visual? symbol? visual-path?)" target)]))
+
+; visual-target-path : (or/c visual? symbol? visual-path?) [symbol?]
+;;                      -> visual-path?
+;; Converts a Visual target to its nonempty path representation.
+(define (visual-target-path target [who 'visual-target-path])
+  (define id-or-path
+    (visual-target-id target who))
+  (if (symbol? id-or-path)
+      (list id-or-path)
+      id-or-path))
 
 
 ;;;
