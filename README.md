@@ -1,5 +1,7 @@
 # animate — SCENE-AX
 
+> **Work in progress:** this project is under active development and its API may change.
+
 This repository is the dependency-driven derived-geometry stage of a Manim-like
 animation system for Racket, with optional Rhombus examples.
 
