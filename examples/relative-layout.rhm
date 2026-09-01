@@ -1,0 +1,92 @@
+#lang rhombus
+
+// The SCENE-P layout API is an ordinary Racket value and function interface
+// that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def content =
+    [#{plain-text}(
+       "Renderer-aware layout",
+       ~#{id}: #'title,
+       ~#{font-size}: 2/5,
+       ~#{font-family}: #'swiss,
+       ~#{font-weight}: #'bold,
+       ~#{color}: "navy"
+     ),
+     #{latex-formula}(
+       "e^{i\\pi}+1=0",
+       ~#{id}: #'identity,
+       ~#{font-size}: 1/2
+     ),
+     #{latex-formula}(
+       "\\sum_{k=1}^{n} k = \\frac{n(n+1)}{2}",
+       ~#{id}: #'series,
+       ~#{font-size}: 1/3
+     ),
+     #{latex-formula}(
+       "f'(x)=2x",
+       ~#{id}: #'derivative,
+       ~#{mode}: #'inline,
+       ~#{font-size}: 2/5
+     )]
+
+  def arranged_content = #{arrange-visuals-vertically}(
+    content,
+    ~#{gap}: 1/3,
+    ~#{center}: origin,
+    ~#{camera}: default_camera,
+    ~#{renderers}: default_pict_renderers
+  )
+
+  def content_box = #{visuals-layout-box}(
+    arranged_content,
+    ~#{camera}: default_camera,
+    ~#{renderers}: default_pict_renderers
+  )
+
+  def background = rectangle(
+    ~#{id}: #'background,
+    ~#{center}: #{layout-box-center}(content_box),
+    ~#{width}: #{layout-box-width}(content_box) + 3/2,
+    ~#{height}: #{layout-box-height}(content_box) + 3/2,
+    ~#{fill}: "aliceblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 4
+  )
+
+  def card = #{group}(
+    [background] ++ arranged_content,
+    ~#{id}: #'layout-card,
+    ~#{center}: vec2(-6, 1),
+    ~#{rotation}: -1/10,
+    ~#{scale}: 4/5,
+    ~#{opacity}: 4/5
+  )
+
+  def entrance = #{scene-play}(
+    #{make-scene}(),
+    #{move-to}(card, origin),
+    #{rotate-to}(card, 0),
+    #{scale-to}(card, 1),
+    #{fade-in}(card),
+    ~#{duration}: 2
+  )
+
+  def emphasis = #{scene-play}(
+    entrance,
+    #{move-to}(card, vec2(0, 1/4)),
+    #{rotate-to}(card, 1/48),
+    #{scale-to}(card, 21/20),
+    #{fade-to}(card, 1),
+    ~#{duration}: 1
+  )
+
+  def demo = #{scene-wait}(emphasis, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-AR Rhombus bridge example.
+// The Racket module exports the semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("duration-scaled-compositions.rkt")
+
+#{make-demo-scene}()

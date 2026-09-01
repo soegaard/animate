@@ -1,0 +1,31 @@
+#lang rhombus
+
+// The implementation is a Racket module, but its ordinary values and
+// functions can be used directly from Rhombus.
+import:
+  "../main.rkt" open
+
+module main:
+  def moving_circle = circle(
+    ~#{id}: #'moving-circle,
+    ~#{center}: vec2(-3, 0),
+    ~#{radius}: 3/4,
+    ~#{fill}: "dodgerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def demo = #{scene-wait}(
+    #{scene-play}(
+      #{scene-add}(#{make-scene}(), moving_circle),
+      #{move-to}(moving_circle, vec2(3, 0)),
+      ~#{duration}: 1
+    ),
+    1/2
+  )
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

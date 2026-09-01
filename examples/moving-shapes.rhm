@@ -1,0 +1,46 @@
+#lang rhombus
+
+// The semantic Visual model and renderer protocol are implemented in Racket,
+// but their ordinary values and functions can be used directly from Rhombus.
+import:
+  "../main.rkt" open
+
+module main:
+  def moving_rectangle = rectangle(
+    ~#{id}: #'moving-rectangle,
+    ~#{center}: vec2(-3, 0),
+    ~#{width}: 2,
+    ~#{height}: 4/3,
+    ~#{fill}: "goldenrod",
+    ~#{stroke}: "saddlebrown",
+    ~#{stroke-width}: 3
+  )
+
+  def moving_circle = circle(
+    ~#{id}: #'moving-circle,
+    ~#{center}: vec2(3, 0),
+    ~#{radius}: 2/3,
+    ~#{fill}: "dodgerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def demo = #{scene-wait}(
+    #{scene-play}(
+      #{scene-add}(
+        #{make-scene}(),
+        moving_rectangle,
+        moving_circle
+      ),
+      #{move-to}(moving_rectangle, vec2(3, 0)),
+      #{move-to}(moving_circle, vec2(-3, 0)),
+      ~#{duration}: 1
+    ),
+    1/2
+  )
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

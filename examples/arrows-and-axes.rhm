@@ -1,0 +1,120 @@
+#lang rhombus
+
+// The SCENE-Q arrow, axes, layout, group, and timeline APIs are ordinary
+// Racket values and functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def coordinate_axes = axes(
+    ~#{id}: #'coordinate-axes,
+    ~#{x-range}: axis_range(-5, 5, 1),
+    ~#{y-range}: axis_range(-3, 3, 1),
+    ~#{x-length}: 10,
+    ~#{y-length}: 6,
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def vector_arrow = arrow(
+    #{axes-coordinates->point}(coordinate_axes, 0, 0),
+    #{axes-coordinates->point}(coordinate_axes, 3, 2),
+    ~#{id}: #'vector-arrow,
+    ~#{stroke}: "crimson",
+    ~#{stroke-width}: 4,
+    ~#{tip-length}: 2/5,
+    ~#{tip-width}: 1/3
+  )
+
+  def interval_arrow = arrow(
+    #{axes-coordinates->point}(coordinate_axes, -4, -2),
+    #{axes-coordinates->point}(coordinate_axes, -1, -2),
+    ~#{id}: #'interval-arrow,
+    ~#{stroke}: "seagreen",
+    ~#{stroke-width}: 3,
+    ~#{tip-length}: 3/10,
+    ~#{tip-width}: 1/4,
+    ~#{start-tip?}: #true,
+    ~#{end-tip?}: #true
+  )
+
+  def x_label = #{visual-place-right-of}(
+    #{plain-text}(
+      "x",
+      ~#{id}: #'x-label,
+      ~#{font-size}: 2/5,
+      ~#{font-family}: #'roman,
+      ~#{font-style}: #'italic,
+      ~#{color}: "navy"
+    ),
+    coordinate_axes,
+    ~#{gap}: 1/5,
+    ~#{vertical-alignment}: #'center
+  )
+
+  def y_label = #{visual-place-above}(
+    #{plain-text}(
+      "y",
+      ~#{id}: #'y-label,
+      ~#{font-size}: 2/5,
+      ~#{font-family}: #'roman,
+      ~#{font-style}: #'italic,
+      ~#{color}: "navy"
+    ),
+    coordinate_axes,
+    ~#{gap}: 1/5,
+    ~#{horizontal-alignment}: #'center
+  )
+
+  def vector_label = #{visual-place-above}(
+    #{plain-text}(
+      "v = (3, 2)",
+      ~#{id}: #'vector-label,
+      ~#{font-size}: 7/20,
+      ~#{font-family}: #'swiss,
+      ~#{font-weight}: #'bold,
+      ~#{color}: "crimson"
+    ),
+    vector_arrow,
+    ~#{gap}: 1/5,
+    ~#{horizontal-alignment}: #'right
+  )
+
+  def diagram = #{group}(
+    [coordinate_axes,
+     interval_arrow,
+     vector_arrow,
+     x_label,
+     y_label,
+     vector_label],
+    ~#{id}: #'coordinate-diagram,
+    ~#{center}: vec2(-6, 0),
+    ~#{rotation}: -1/12,
+    ~#{scale}: 4/5,
+    ~#{opacity}: 4/5
+  )
+
+  def entrance = #{scene-play}(
+    #{make-scene}(),
+    #{move-to}(diagram, origin),
+    #{rotate-to}(diagram, 0),
+    #{scale-to}(diagram, 1),
+    #{fade-in}(diagram),
+    ~#{duration}: 2
+  )
+
+  def emphasis = #{scene-play}(
+    entrance,
+    #{rotate-to}(diagram, 1/48),
+    #{scale-to}(diagram, 21/20),
+    #{fade-to}(diagram, 1),
+    ~#{duration}: 1
+  )
+
+  def demo = #{scene-wait}(emphasis, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

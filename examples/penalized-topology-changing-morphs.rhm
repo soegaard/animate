@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-AJ Rhombus bridge example.
+// The Racket module exports the same semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("penalized-topology-changing-morphs.rkt")
+
+#{make-demo-scene}()

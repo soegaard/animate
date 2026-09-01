@@ -1,0 +1,8 @@
+#lang rhombus
+
+// SCENE-AX Rhombus bridge example.
+
+import:
+  lib("dependency-driven-geometry.rkt")
+
+#{make-demo-scene}()

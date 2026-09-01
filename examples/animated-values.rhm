@@ -1,0 +1,8 @@
+#lang rhombus
+
+// SCENE-AV Rhombus bridge example.
+
+import:
+  lib("animated-values.rkt")
+
+#{make-demo-scene}()

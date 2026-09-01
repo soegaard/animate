@@ -1,0 +1,60 @@
+#lang rhombus
+
+// The SCENE-J opacity and timeline APIs are ordinary Racket values and
+// functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def panel = rectangle(
+    ~#{id}: #'panel,
+    ~#{center}: vec2(0, 0),
+    ~#{width}: 8,
+    ~#{height}: 4,
+    ~#{fill}: "cornflowerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def token = circle(
+    ~#{id}: #'token,
+    ~#{center}: vec2(-5, 0),
+    ~#{opacity}: 4/5,
+    ~#{radius}: 4/5,
+    ~#{fill}: "gold",
+    ~#{stroke}: "darkorange",
+    ~#{stroke-width}: 3
+  )
+
+  def guide = line(
+    vec2(-5, -2),
+    vec2(5, -2),
+    ~#{id}: #'guide,
+    ~#{stroke}: "crimson",
+    ~#{stroke-width}: 5
+  )
+
+  def entrance = #{scene-play}(
+    #{scene-add}(#{make-scene}(), panel, guide),
+    #{fade-to}(panel, 1/4),
+    #{move-to}(token, vec2(0, 0)),
+    #{rotate-by}(token, 1),
+    #{fade-in}(token),
+    ~#{duration}: 3/2
+  )
+
+  def exit = #{scene-play}(
+    entrance,
+    #{fade-to}(panel, 1),
+    #{move-to}(token, vec2(5, 0)),
+    #{fade-out}(guide),
+    ~#{duration}: 1
+  )
+
+  def demo = #{scene-wait}(exit, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

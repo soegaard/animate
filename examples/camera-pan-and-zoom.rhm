@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-U Rhombus bridge example.
+// The Racket module exports the same semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("camera-pan-and-zoom.rkt")
+
+#{make-demo-scene}()

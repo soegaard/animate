@@ -1,0 +1,8 @@
+#lang rhombus
+
+// SCENE-AW Rhombus bridge example.
+
+import:
+  lib("derived-visuals.rkt")
+
+#{make-demo-scene}()

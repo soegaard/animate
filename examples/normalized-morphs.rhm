@@ -1,0 +1,73 @@
+#lang rhombus
+
+// The SCENE-I normalization and timeline APIs are ordinary Racket values and
+// functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def panel_source_path = #{polygon-path}(
+    [vec2(-3, -1),
+     vec2(3, -1),
+     vec2(0, 2)]
+  )
+
+  def panel_destination_path = #{polygon-path}(
+    [vec2(-3, -2),
+     vec2(3, -2),
+     vec2(3, 2),
+     vec2(-3, 2)]
+  )
+
+  def wave_source_path = #{polyline-path}(
+    [vec2(-3, 0),
+     vec2(3, 0)]
+  )
+
+  def wave_destination_path = #{cubic-bezier-path}(
+    vec2(-3, 0),
+    [#{cubic-bezier-path-segment}(
+       vec2(-2, 2),
+       vec2(-1, 2),
+       origin
+     ),
+     #{cubic-bezier-path-segment}(
+       vec2(1, -2),
+       vec2(2, -2),
+       vec2(3, 0)
+     )]
+  )
+
+  def panel = #{make-path-visual}(
+    panel_source_path,
+    ~#{id}: #'panel,
+    ~#{center}: vec2(0, 2),
+    ~#{fill}: "cornflowerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def wave = #{make-path-visual}(
+    wave_source_path,
+    ~#{id}: #'wave,
+    ~#{center}: vec2(0, -2),
+    ~#{stroke}: "crimson",
+    ~#{stroke-width}: 5
+  )
+
+  def morphed = #{scene-play}(
+    #{scene-add}(#{make-scene}(), panel, wave),
+    #{morph-to-normalized}(panel, panel_destination_path),
+    #{rotate-by}(panel, 1/2),
+    #{morph-to-normalized}(wave, wave_destination_path),
+    #{scale-to}(wave, vec2(4/3, 3/4)),
+    ~#{duration}: 2
+  )
+
+  def demo = #{scene-wait}(morphed, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

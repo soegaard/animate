@@ -1,0 +1,50 @@
+#lang rhombus
+
+// The SCENE-E path API consists of ordinary Racket values and functions that
+// Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def moving_polygon = polygon(
+    [vec2(-4, -1),
+     vec2(-2, -2),
+     vec2(0, -1),
+     vec2(-2, 2)],
+    ~#{id}: #'moving-polygon,
+    ~#{fill}: "cornflowerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def moving_line = line(
+    vec2(2, -2),
+    vec2(4, 2),
+    ~#{id}: #'moving-line,
+    ~#{stroke}: "crimson",
+    ~#{stroke-width}: 5
+  )
+
+  def demo = #{scene-wait}(
+    #{scene-play}(
+      #{scene-add}(
+        #{make-scene}(),
+        moving_polygon,
+        moving_line
+      ),
+      #{move-to}(moving_polygon, vec2(2, 0)),
+      #{rotate-by}(moving_polygon, 3/2),
+      #{scale-to}(moving_polygon, vec2(1/2, 3/2)),
+      #{move-to}(moving_line, vec2(-2, 0)),
+      #{rotate-by}(moving_line, -1),
+      #{scale-by}(moving_line, vec2(3/2, 1/2)),
+      ~#{duration}: 2
+    ),
+    1/2
+  )
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

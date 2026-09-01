@@ -1,0 +1,56 @@
+#lang rhombus
+
+// The SCENE-F path reveal API consists of ordinary Racket values and functions
+// that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def panel = polygon(
+    [vec2(-4, -1),
+     vec2(-2, -2),
+     vec2(0, -1),
+     vec2(-2, 2)],
+    ~#{id}: #'panel,
+    ~#{fill}: "cornflowerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def diagonal = line(
+    vec2(2, -2),
+    vec2(4, 2),
+    ~#{id}: #'diagonal,
+    ~#{stroke}: "crimson",
+    ~#{stroke-width}: 5
+  )
+
+  def created = #{scene-play}(
+    #{make-scene}(),
+    create(panel),
+    create(diagonal),
+    ~#{duration}: 2
+  )
+
+  def transformed = #{scene-play}(
+    created,
+    #{move-to}(panel, vec2(2, 0)),
+    #{rotate-by}(panel, 1),
+    #{move-to}(diagonal, vec2(-2, 0)),
+    #{rotate-by}(diagonal, -1),
+    ~#{duration}: 1
+  )
+
+  def removed = #{scene-play}(
+    transformed,
+    uncreate(diagonal),
+    ~#{duration}: 1
+  )
+
+  def demo = #{scene-wait}(removed, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

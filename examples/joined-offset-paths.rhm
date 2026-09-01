@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-AA Rhombus bridge example.
+// The Racket module exports the same semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("joined-offset-paths.rkt")
+
+#{make-demo-scene}()

@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-AN Rhombus bridge example.
+// The Racket module exports the same semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("local-animation-timing.rkt")
+
+#{make-demo-scene}()

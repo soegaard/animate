@@ -1,0 +1,215 @@
+#lang rhombus
+
+// The SCENE-N named formula-part and correspondence APIs are ordinary Racket
+// values and functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def source_a = #{latex-formula-part}(
+    "a^2",
+    ~#{name}: #'a-square,
+    ~#{center}: vec2(-2, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def source_plus = #{latex-formula-part}(
+    "+",
+    ~#{name}: #'plus,
+    ~#{center}: vec2(-1, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def source_b = #{latex-formula-part}(
+    "b^2",
+    ~#{name}: #'b-square,
+    ~#{center}: vec2(0, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def source_equals = #{latex-formula-part}(
+    "=",
+    ~#{name}: #'equals,
+    ~#{center}: vec2(1, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def source_c = #{latex-formula-part}(
+    "c^2",
+    ~#{name}: #'c-square,
+    ~#{center}: vec2(2, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def source_equation = #{formula-assembly}(
+    [source_a, source_plus, source_b, source_equals, source_c],
+    ~#{id}: #'source-equation,
+    ~#{center}: vec2(0, -1/4)
+  )
+
+  def destination_c = #{latex-formula-part}(
+    "c^2",
+    ~#{name}: #'c-square,
+    ~#{center}: vec2(-2, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def destination_minus = #{latex-formula-part}(
+    "-",
+    ~#{name}: #'minus,
+    ~#{center}: vec2(-1, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def destination_a = #{latex-formula-part}(
+    "a^2",
+    ~#{name}: #'a-square,
+    ~#{center}: vec2(0, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def destination_equals = #{latex-formula-part}(
+    "=",
+    ~#{name}: #'equals,
+    ~#{center}: vec2(1, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def destination_b = #{latex-formula-part}(
+    "b^2",
+    ~#{name}: #'b-square,
+    ~#{center}: vec2(2, 0),
+    ~#{mode}: #'inline,
+    ~#{font-size}: 1/3,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def destination_equation = #{formula-assembly}(
+    [destination_c,
+     destination_minus,
+     destination_a,
+     destination_equals,
+     destination_b],
+    ~#{id}: #'destination-equation,
+    ~#{center}: vec2(0, -1/4)
+  )
+
+  def correspondence = #{formula-correspondence}(
+    source_equation,
+    destination_equation,
+    [#{formula-part-match}(#'a-square, #'a-square),
+     #{formula-part-match}(#'b-square, #'b-square),
+     #{formula-part-match}(#'c-square, #'c-square),
+     #{formula-part-match}(#'equals, #'equals)]
+  )
+
+  def source_card = #{group}(
+    [rectangle(
+       ~#{id}: #'source-background,
+       ~#{width}: 6,
+       ~#{height}: 5/2,
+       ~#{fill}: "aliceblue",
+       ~#{stroke}: "navy",
+       ~#{stroke-width}: 3
+     ),
+     #{plain-text}(
+       "Source",
+       ~#{id}: #'source-label,
+       ~#{center}: vec2(0, 3/4),
+       ~#{font-size}: 1/3,
+       ~#{font-family}: #'swiss,
+       ~#{font-weight}: #'bold,
+       ~#{color}: "navy"
+     ),
+     source_equation],
+    ~#{id}: #'source-card,
+    ~#{center}: vec2(-8, 5/4),
+    ~#{opacity}: 9/10
+  )
+
+  def destination_card = #{group}(
+    [rectangle(
+       ~#{id}: #'destination-background,
+       ~#{width}: 6,
+       ~#{height}: 5/2,
+       ~#{fill}: "aliceblue",
+       ~#{stroke}: "navy",
+       ~#{stroke-width}: 3
+     ),
+     #{plain-text}(
+       "Destination",
+       ~#{id}: #'destination-label,
+       ~#{center}: vec2(0, 3/4),
+       ~#{font-size}: 1/3,
+       ~#{font-family}: #'swiss,
+       ~#{font-weight}: #'bold,
+       ~#{color}: "navy"
+     ),
+     destination_equation],
+    ~#{id}: #'destination-card,
+    ~#{center}: vec2(8, -5/4),
+    ~#{opacity}: 9/10
+  )
+
+  def summary = #{plain-text}(
+    "4 explicit matches; 1 source-only; 1 destination-only",
+    ~#{id}: #'correspondence-summary,
+    ~#{center}: vec2(0, -7/2),
+    ~#{font-size}: 1/4,
+    ~#{font-family}: #'swiss,
+    ~#{color}: "dimgray"
+  )
+
+  def entrance = #{scene-play}(
+    #{make-scene}(),
+    #{move-to}(source_card, vec2(-7/2, 5/4)),
+    #{move-to}(destination_card, vec2(7/2, -5/4)),
+    #{fade-in}(source_card),
+    #{fade-in}(destination_card),
+    #{fade-in}(summary),
+    ~#{duration}: 2
+  )
+
+  def emphasis = #{scene-play}(
+    entrance,
+    #{rotate-to}(source_card, -1/24),
+    #{rotate-to}(destination_card, 1/24),
+    #{scale-to}(source_card, 11/10),
+    #{scale-to}(destination_card, 11/10),
+    #{fade-to}(summary, 1/2),
+    ~#{duration}: 1
+  )
+
+  def exit = #{scene-play}(
+    emphasis,
+    #{fade-out}(source_card),
+    #{fade-out}(destination_card),
+    #{fade-out}(summary),
+    ~#{duration}: 3/2
+  )
+
+  def demo = #{scene-wait}(exit, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

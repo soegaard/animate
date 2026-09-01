@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-X Rhombus bridge example.
+// The Racket module exports the same semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("fixed-overlays-and-callouts.rkt")
+
+#{make-demo-scene}()

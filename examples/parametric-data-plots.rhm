@@ -1,0 +1,71 @@
+#lang rhombus
+
+// The SCENE-S axes, parameter-domain, data-series, path, and timeline APIs are
+// ordinary Racket values and functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def coordinate_axes = axes(
+    ~#{id}: #'coordinate-axes,
+    ~#{x-range}: axis_range(-4, 4, 1),
+    ~#{y-range}: axis_range(-3, 3, 1),
+    ~#{x-length}: 8,
+    ~#{y-length}: 6,
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  fun loop_point(parameter):
+    def x = parameter * parameter - 2
+    vec2(x, parameter * x / 2)
+
+  def loop_curve = #{parametric-curve}(
+    coordinate_axes,
+    loop_point,
+    ~#{id}: #'loop-curve,
+    ~#{parameter-range}: parameter_range(-2, 2),
+    ~#{sample-count}: 181,
+    ~#{interpolation}: #'smooth,
+    ~#{stroke}: "crimson",
+    ~#{stroke-width}: 4
+  )
+
+  def observations = #{data-plot}(
+    coordinate_axes,
+    [vec2(-3, -3/2),
+     vec2(-2, 1/2),
+     vec2(-1, 1),
+     vec2(0, 1/4),
+     vec2(1, -1),
+     vec2(2, -1/2),
+     vec2(3, 3/2)],
+    ~#{id}: #'observations,
+    ~#{interpolation}: #'smooth,
+    ~#{opacity}: 4/5,
+    ~#{stroke}: "seagreen",
+    ~#{stroke-width}: 4
+  )
+
+  def entrance = #{scene-play}(
+    #{make-scene}(),
+    #{fade-in}(coordinate_axes),
+    create(loop_curve),
+    create(observations),
+    ~#{duration}: 5/2
+  )
+
+  def emphasis = #{scene-play}(
+    entrance,
+    #{fade-to}(observations, 1/3),
+    #{rotate-by}(loop_curve, 1/12),
+    ~#{duration}: 1
+  )
+
+  def demo = #{scene-wait}(emphasis, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

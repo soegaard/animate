@@ -1,0 +1,108 @@
+#lang rhombus
+
+// The SCENE-L plain-text and timeline APIs are ordinary Racket values and
+// functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def title = #{plain-text}(
+    "Visual Animation",
+    ~#{id}: #'title,
+    ~#{center}: vec2(0, 2/5),
+    ~#{font-size}: 4/5,
+    ~#{font-family}: #'swiss,
+    ~#{font-weight}: #'bold,
+    ~#{color}: "white"
+  )
+
+  def subtitle = #{plain-text}(
+    "Racket + Rhombus",
+    ~#{id}: #'subtitle,
+    ~#{center}: vec2(0, -3/5),
+    ~#{font-size}: 2/5,
+    ~#{font-family}: #'modern,
+    ~#{color}: "lightcyan"
+  )
+
+  def card = #{group}(
+    [rectangle(
+       ~#{id}: #'card-background,
+       ~#{width}: 7,
+       ~#{height}: 3,
+       ~#{fill}: "royalblue",
+       ~#{stroke}: "navy",
+       ~#{stroke-width}: 4
+     ),
+     title,
+     subtitle],
+    ~#{id}: #'card,
+    ~#{center}: vec2(-6, 1),
+    ~#{rotation}: -1/5,
+    ~#{scale}: 3/4,
+    ~#{opacity}: 9/10
+  )
+
+  def left_label = #{plain-text}(
+    "left anchor",
+    ~#{id}: #'left-label,
+    ~#{center}: vec2(-5, -5/2),
+    ~#{font-size}: 2/5,
+    ~#{font-family}: #'swiss,
+    ~#{font-style}: #'italic,
+    ~#{color}: "darkgreen",
+    ~#{horizontal-alignment}: #'left,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def right_label = #{plain-text}(
+    "right anchor",
+    ~#{id}: #'right-label,
+    ~#{center}: vec2(5, -5/2),
+    ~#{font-size}: 2/5,
+    ~#{font-family}: #'swiss,
+    ~#{font-style}: #'italic,
+    ~#{color}: "darkred",
+    ~#{horizontal-alignment}: #'right,
+    ~#{vertical-alignment}: #'baseline
+  )
+
+  def entrance = #{scene-play}(
+    #{make-scene}(),
+    #{move-to}(card, origin),
+    #{rotate-to}(card, 0),
+    #{scale-to}(card, 1),
+    #{fade-in}(card),
+    #{fade-in}(left_label),
+    #{fade-in}(right_label),
+    ~#{duration}: 2
+  )
+
+  def emphasis = #{scene-play}(
+    entrance,
+    #{move-to}(card, vec2(0, 1/2)),
+    #{rotate-by}(card, 1/12),
+    #{scale-to}(card, 6/5),
+    #{fade-to}(left_label, 2/5),
+    #{fade-to}(right_label, 2/5),
+    ~#{duration}: 1
+  )
+
+  def exit = #{scene-play}(
+    emphasis,
+    #{move-to}(card, vec2(6, 1)),
+    #{rotate-by}(card, 1/4),
+    #{scale-to}(card, 3/4),
+    #{fade-out}(card),
+    #{fade-out}(left_label),
+    #{fade-out}(right_label),
+    ~#{duration}: 3/2
+  )
+
+  def demo = #{scene-wait}(exit, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-AT Rhombus bridge example.
+// The Racket module exports the semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("animating-colors.rkt")
+
+#{make-demo-scene}()

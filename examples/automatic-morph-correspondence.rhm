@@ -1,0 +1,10 @@
+#lang rhombus
+
+// SCENE-AC Rhombus bridge example.
+// The Racket module exports the same semantic scene constructor used by the
+// command-line movie example.
+
+import:
+  lib("automatic-morph-correspondence.rkt")
+
+#{make-demo-scene}()

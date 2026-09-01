@@ -1,0 +1,86 @@
+#lang rhombus
+
+// The SCENE-K group and timeline APIs are ordinary Racket values and functions
+// that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def badge = #{group}(
+    [circle(
+       ~#{id}: #'badge-disc,
+       ~#{radius}: 3/5,
+       ~#{fill}: "gold",
+       ~#{stroke}: "darkorange",
+       ~#{stroke-width}: 3
+     ),
+     rectangle(
+       ~#{id}: #'badge-bar,
+       ~#{width}: 4/5,
+       ~#{height}: 1/5,
+       ~#{fill}: "crimson",
+       ~#{stroke}: #false,
+       ~#{stroke-width}: 0
+     )],
+    ~#{id}: #'badge,
+    ~#{center}: vec2(3/2, 0),
+    ~#{rotation}: 1/5,
+    ~#{scale}: 4/5
+  )
+
+  def assembly = #{group}(
+    [rectangle(
+       ~#{id}: #'body,
+       ~#{width}: 5,
+       ~#{height}: 2,
+       ~#{fill}: "cornflowerblue",
+       ~#{stroke}: "navy",
+       ~#{stroke-width}: 4
+     ),
+     circle(
+       ~#{id}: #'left-port,
+       ~#{center}: vec2(-3/2, 0),
+       ~#{radius}: 2/5,
+       ~#{fill}: "white",
+       ~#{stroke}: "navy",
+       ~#{stroke-width}: 3
+     ),
+     circle(
+       ~#{id}: #'right-port,
+       ~#{center}: vec2(0, 0),
+       ~#{radius}: 2/5,
+       ~#{fill}: "white",
+       ~#{stroke}: "navy",
+       ~#{stroke-width}: 3
+     ),
+     badge],
+    ~#{id}: #'assembly,
+    ~#{center}: vec2(-5, 0),
+    ~#{opacity}: 4/5
+  )
+
+  def entrance = #{scene-play}(
+    #{make-scene}(),
+    #{move-to}(assembly, origin),
+    #{rotate-to}(assembly, 1/2),
+    #{scale-to}(assembly, 3/2),
+    #{fade-in}(assembly),
+    ~#{duration}: 2
+  )
+
+  def exit = #{scene-play}(
+    entrance,
+    #{move-to}(assembly, vec2(5, 0)),
+    #{rotate-by}(assembly, 1),
+    #{scale-to}(assembly, 3/4),
+    #{fade-out}(assembly),
+    ~#{duration}: 3/2
+  )
+
+  def demo = #{scene-wait}(exit, 1/2)
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )

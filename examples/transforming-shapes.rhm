@@ -1,0 +1,50 @@
+#lang rhombus
+
+// The SCENE-C affine transform API consists of ordinary Racket values and
+// functions that Rhombus can import directly.
+import:
+  "../main.rkt" open
+
+module main:
+  def moving_rectangle = rectangle(
+    ~#{id}: #'moving-rectangle,
+    ~#{center}: vec2(-3, 0),
+    ~#{width}: 2,
+    ~#{height}: 4/3,
+    ~#{fill}: "goldenrod",
+    ~#{stroke}: "saddlebrown",
+    ~#{stroke-width}: 3
+  )
+
+  def moving_circle = circle(
+    ~#{id}: #'moving-circle,
+    ~#{center}: vec2(3, 0),
+    ~#{radius}: 2/3,
+    ~#{fill}: "dodgerblue",
+    ~#{stroke}: "navy",
+    ~#{stroke-width}: 3
+  )
+
+  def demo = #{scene-wait}(
+    #{scene-play}(
+      #{scene-add}(
+        #{make-scene}(),
+        moving_rectangle,
+        moving_circle
+      ),
+      #{move-to}(moving_rectangle, vec2(2, 0)),
+      #{rotate-by}(moving_rectangle, 3/2),
+      #{scale-to}(moving_rectangle, vec2(1/2, 3/2)),
+      #{move-to}(moving_circle, vec2(-2, 0)),
+      #{rotate-by}(moving_circle, -1),
+      #{scale-by}(moving_circle, vec2(3/2, 1/2)),
+      ~#{duration}: 2
+    ),
+    1/2
+  )
+
+  def frame_paths = #{render-frames!}(
+    demo,
+    "frames",
+    ~#{fps}: 30
+  )
