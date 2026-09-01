@@ -4,9 +4,10 @@ Rendered MP4 files live in the local sibling directory
 [`../rendered-examples/`](../rendered-examples/). They are generated artifacts
 and intentionally excluded from Git.
 
-All 49 visual examples below have been rendered locally. Rendering used two
-concurrent jobs with two frame workers each; temporary PNG chunks were kept in
-`/tmp` and discarded after encoding.
+All 63 visual examples below have been rendered locally. Temporary PNG frames
+were kept in `/tmp` and discarded after encoding. The formula and full-fidelity
+SVG examples were rendered with the local Racket 9.3 runtime; the remaining
+examples use the standard Racket runtime.
 
 ## Foundations
 
@@ -81,6 +82,30 @@ concurrent jobs with two frame workers each; temporary PNG chunks were kept in
 | [function-graphs](../rendered-examples/function-graphs.mp4) | Function sampling and graph creation on axes. |
 | [parametric-data-plots](../rendered-examples/parametric-data-plots.mp4) | Parametric curves and plotted observation data. |
 | [markers-scatter-areas](../rendered-examples/markers-scatter-areas.mp4) | Point markers, scatter plots, and filled chart areas. |
+
+## Later roadmap stages
+
+These are dedicated videos for the roadmap capabilities added after the
+original example set. The existing `named-formula-parts`,
+`transforming-formula-parts`, and `function-graphs` videos above already cover
+SCENE-BD, SCENE-BE, and SCENE-BK.
+
+| Video | What to look for |
+| --- | --- |
+| [generic-interpolable-values](../rendered-examples/generic-interpolable-values.mp4) | **SCENE-AY:** a derived dot reads and interpolates a vector position and an RGBA color. |
+| [parameter-handles](../rendered-examples/parameter-handles.mp4) | **SCENE-AZ:** immutable parameter handles drive a moving, recolored dot. |
+| [derived-groups](../rendered-examples/derived-groups.mp4) | **SCENE-BA:** a parameter changes the number of stable-ID children in a derived group. |
+| [nested-addressing](../rendered-examples/nested-addressing.mp4) | **SCENE-BB:** a halo follows a planet resolved through the nested `system/planet` path. |
+| [nested-child-animation](../rendered-examples/nested-child-animation.mp4) | **SCENE-BC:** individual children of one group move and restyle by nested path. |
+| [automatic-formula-matching](../rendered-examples/automatic-formula-matching.mp4) | **SCENE-BF:** automatic formula correspondence recognizes renamed parts as an expression is reordered. |
+| [svg-subpart-animation](../rendered-examples/svg-subpart-animation.mp4) | **SCENE-BG/BI:** semantic SVG import exposes `rocket` subparts for independent style and scale animation. |
+| [bitmap-image-visual](../rendered-examples/bitmap-image-visual.mp4) | **SCENE-BH:** a bitmap image participates in normal motion, rotation, scale, and opacity animation. |
+| [logarithmic-axes](../rendered-examples/logarithmic-axes.mp4) | **SCENE-BJ:** evenly spaced decades, logarithmic labels, and an identity graph on log–log axes. |
+| [implicit-curves](../rendered-examples/implicit-curves.mp4) | **SCENE-BL:** sampled zero contours draw a circle and hyperbola directly from equations. |
+| [vector-fields](../rendered-examples/vector-fields.mp4) | **SCENE-BM:** arrows sample the rotational field \((-y, x)\). |
+| [derived-function-graphs](../rendered-examples/derived-function-graphs.mp4) | **SCENE-BN:** a sine graph is resampled from an animated amplitude parameter. |
+| [renderer-resources](../rendered-examples/renderer-resources.mp4) | **SCENE-BO/BP:** one full-fidelity SVG moves while renderer-resource diagnostics report reuse (222 hits, 3 misses). |
+| [render-diagnostics](../rendered-examples/render-diagnostics.mp4) | **SCENE-BQ/BR:** three dots converge while frames render with four workers and report cache diagnostics (74 hits, 1 miss). |
 
 ## Non-video example
 
