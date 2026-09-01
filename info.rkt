@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BC: stable nested Visual addressing and child animation")
+  "SCENE-BF: addressable formula parts and automatic correspondence")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.55.0")
+(define version "0.58.0")
 
 ; license : symbol?
 ;;   Declares the package license.

@@ -34,6 +34,7 @@
          formula-assembly-visual-ref
          (struct-out formula-part-match)
          (struct-out formula-correspondence)
+         formula-correspondence-auto
          formula-correspondence-unmatched-source-names
          formula-correspondence-unmatched-destination-names
 
@@ -325,6 +326,60 @@
 ;; A source or destination part may be omitted. Formula-part transformations
 ;; fade omitted source parts out and omitted destination parts in. No match is
 ;; inferred automatically from equal names.
+
+; formula-correspondence-auto : formula-assembly-visual?
+;                               formula-assembly-visual?
+;                               -> formula-correspondence?
+;; Builds deterministic one-to-one matches for unchanged formula parts. Source
+;; order is significant; repeated equivalent fragments consume destination
+;; parts from their destination order.
+(define (formula-correspondence-auto source destination)
+  (check-formula-assembly 'formula-correspondence-auto source)
+  (check-formula-assembly 'formula-correspondence-auto destination)
+  (define-values (reversed-matches ignored-used)
+    (for/fold ([matches '()]
+               [used (hash)])
+              ([source-part
+                (in-list (formula-assembly-visual-parts source))])
+      (define destination-part
+        (for/first ([candidate
+                     (in-list (formula-assembly-visual-parts destination))]
+                    #:unless (hash-has-key? used (formula-part-name candidate))
+                    #:when (formula-parts-rendering-equivalent?
+                            source-part candidate))
+          candidate))
+      (if destination-part
+          (values
+           (cons
+            (formula-part-match
+             (formula-part-name source-part)
+             (formula-part-name destination-part))
+            matches)
+           (hash-set used (formula-part-name destination-part) #t))
+          (values matches used))))
+  (formula-correspondence source destination (reverse reversed-matches)))
+
+; formula-parts-rendering-equivalent? : formula-part? formula-part? -> boolean?
+;; Reports whether parts carry the exact same typeset semantic appearance.
+(define (formula-parts-rendering-equivalent? source destination)
+  (define source-formula (formula-part-formula source))
+  (define destination-formula (formula-part-formula destination))
+  (and (equal? (formula-visual-source source-formula)
+               (formula-visual-source destination-formula))
+       (eq? (formula-visual-mode source-formula)
+            (formula-visual-mode destination-formula))
+       (= (formula-visual-font-size source-formula)
+          (formula-visual-font-size destination-formula))
+       (equal? (formula-visual-preamble source-formula)
+               (formula-visual-preamble destination-formula))
+       (equal? (formula-visual-document-class-options source-formula)
+               (formula-visual-document-class-options destination-formula))
+       (equal? (formula-visual-preview-options source-formula)
+               (formula-visual-preview-options destination-formula))
+       (eq? (formula-visual-horizontal-alignment source-formula)
+            (formula-visual-horizontal-alignment destination-formula))
+       (eq? (formula-visual-vertical-alignment source-formula)
+            (formula-visual-vertical-alignment destination-formula))))
 
 ; formula-correspondence-unmatched-source-names : formula-correspondence?
 ;                                                 -> (listof symbol?)

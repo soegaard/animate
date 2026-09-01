@@ -3158,6 +3158,18 @@ also the order of matched transition layers created by
 @racket[transform-formula-parts].
 }
 
+@defproc[(formula-correspondence-auto [source formula-assembly-visual?]
+                                      [destination formula-assembly-visual?])
+         formula-correspondence?]{
+
+Builds a deterministic correspondence for unchanged formula parts. Each source
+part is considered in source order and matches the first still-unmatched
+destination part with the same LaTeX source and typesetting options. This allows
+stable part names to change without losing unchanged semantic content. Parts
+without a match remain unmatched and follow the ordinary fade-out/fade-in
+transition behavior.
+}
+
 @defproc[(formula-correspondence-unmatched-source-names
           [correspondence formula-correspondence?])
          (listof symbol?)]{
@@ -8853,6 +8865,14 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.58.0 — SCENE-BF.} Added @racket[formula-correspondence-auto],
+       deterministic appearance-based matching of unchanged formula parts.}
+ @item{@bold{0.57.0 — SCENE-BE.} Documented the existing explicit
+       @racket[formula-correspondence] and @racket[formula-part-match] mapping
+       workflow as the deliberate matching-transform API.}
+ @item{@bold{0.56.0 — SCENE-BD.} Extended stable nested Visual paths through
+       formula assemblies, making their named formula parts direct lookup and
+       compatible animation targets while preserving immutable assembly state.}
  @item{@bold{0.55.0 — SCENE-BC.} Enabled motion, transform, style, opacity,
        and removal animation requests for nested Visual paths. Ancestor groups
        rebuild immutably and scheduler conflicts compare paths structurally.}

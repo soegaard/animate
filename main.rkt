@@ -279,6 +279,7 @@
  formula-assembly-visual-ref
  (struct-out formula-part-match)
  (struct-out formula-correspondence)
+ formula-correspondence-auto
  formula-correspondence-unmatched-source-names
  formula-correspondence-unmatched-destination-names
 

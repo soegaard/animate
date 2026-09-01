@@ -20,6 +20,8 @@
 
 ;; Imports
 (require "derived-visual.rkt"
+         "formula-parts-visual.rkt"
+         "formula-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "interpolation.rkt"
@@ -108,21 +110,21 @@
   (visual-descendant-ref root (cdr path) path 'scene-state-ref))
 
 ; visual-descendant-ref : visual? (listof symbol?) visual-path? symbol? -> visual?
-;; Resolves descendant IDs through built-in semantic groups.
+;; Resolves descendant IDs through built-in semantic groups and formula assemblies.
 (define (visual-descendant-ref visual descendant-ids full-path who)
   (cond
     [(null? descendant-ids)
      visual]
-    [(not (group-visual? visual))
+    [(not (composite-visual? visual))
      (raise-arguments-error
       who
-      "an intermediate Visual path entry must name a built-in group"
+      "an intermediate Visual path entry must name a built-in group or formula assembly"
       "visual-path" full-path
       "visual" visual)]
     [else
      (define child-id (car descendant-ids))
      (define child
-       (for/first ([candidate (in-list (group-visual-children visual))]
+       (for/first ([candidate (in-list (composite-visual-children visual))]
                    #:when (eq? (visual-id candidate) child-id))
          candidate))
      (unless child
@@ -132,6 +134,52 @@
         "visual-path" full-path
         "missing-visual-id" child-id))
      (visual-descendant-ref child (cdr descendant-ids) full-path who)]))
+
+; composite-visual? : any/c -> boolean?
+;; Reports whether visual exposes built-in stable child identities.
+(define (composite-visual? visual)
+  (or (group-visual? visual)
+      (formula-assembly-visual? visual)))
+
+; composite-visual-children : composite-visual? -> (listof visual?)
+;; Returns one composite's significant local children in drawing order.
+(define (composite-visual-children visual)
+  (cond
+    [(group-visual? visual)
+     (group-visual-children visual)]
+    [(formula-assembly-visual? visual)
+     (group-visual-children
+      (formula-assembly-visual-group visual))]
+    [else
+     (raise-argument-error
+      'composite-visual-children
+      "(or/c group-visual? formula-assembly-visual?)"
+      visual)]))
+
+; composite-visual-with-children : composite-visual? (listof visual?) symbol?
+;;                                   -> composite-visual?
+;; Rebuilds a group or formula assembly while retaining its outer identity and
+;; transform. Formula assemblies retain the exact formula-part local names.
+(define (composite-visual-with-children visual children who)
+  (cond
+    [(group-visual? visual)
+     (group-visual-with-children visual children)]
+    [(formula-assembly-visual? visual)
+     (define parts
+       (for/list ([child (in-list children)])
+         (unless (formula-visual? child)
+           (raise-arguments-error
+            who
+            "formula assembly children must remain formula Visuals"
+            "assembly-id" (visual-id visual)
+            "child" child))
+         (formula-part (visual-id child) child)))
+     (formula-assembly-visual-with-parts visual parts)]
+    [else
+     (raise-argument-error
+      who
+      "(or/c group-visual? formula-assembly-visual?)"
+      visual)]))
 
 ; scene-state-visuals-in-drawing-order : scene-state? -> (listof visual?)
 ;;   Returns top-level Visuals in significant back-to-front order.
@@ -324,20 +372,20 @@
    (scene-state-drawing-order state)
    (scene-state-values-by-id state)))
 
-; replace-visual-descendant : group-visual? (listof symbol?) visual? visual-path?
-;                             symbol? -> group-visual?
-;; Rebuilds the ancestor group chain with one descendant replaced.
-(define (replace-visual-descendant group descendant-ids replacement full-path who)
-  (unless (group-visual? group)
+; replace-visual-descendant : composite-visual? (listof symbol?) visual? visual-path?
+;                             symbol? -> composite-visual?
+;; Rebuilds the ancestor composite chain with one descendant replaced.
+(define (replace-visual-descendant composite descendant-ids replacement full-path who)
+  (unless (composite-visual? composite)
     (raise-arguments-error
      who
-     "an intermediate Visual path entry must name a built-in group"
+     "an intermediate Visual path entry must name a built-in group or formula assembly"
      "visual-path" full-path
-     "visual" group))
+     "visual" composite))
   (define child-id (car descendant-ids))
   (define found? #f)
   (define children
-    (for/list ([child (in-list (group-visual-children group))])
+    (for/list ([child (in-list (composite-visual-children composite))])
       (if (eq? (visual-id child) child-id)
           (begin
             (set! found? #t)
@@ -352,22 +400,22 @@
      "the Visual path is not present in the scene"
      "visual-path" full-path
      "missing-visual-id" child-id))
-  (group-visual-with-children group children))
+  (composite-visual-with-children composite children who))
 
-; remove-visual-descendant : group-visual? (listof symbol?) visual-path? symbol?
-;                            -> group-visual?
-;; Rebuilds the ancestor group chain with one descendant removed.
-(define (remove-visual-descendant group descendant-ids full-path who)
-  (unless (group-visual? group)
+; remove-visual-descendant : composite-visual? (listof symbol?) visual-path? symbol?
+;                            -> composite-visual?
+;; Rebuilds the ancestor composite chain with one descendant removed.
+(define (remove-visual-descendant composite descendant-ids full-path who)
+  (unless (composite-visual? composite)
     (raise-arguments-error
      who
-     "an intermediate Visual path entry must name a built-in group"
+     "an intermediate Visual path entry must name a built-in group or formula assembly"
      "visual-path" full-path
-     "visual" group))
+     "visual" composite))
   (define child-id (car descendant-ids))
   (define found? #f)
   (define children
-    (for/list ([child (in-list (group-visual-children group))]
+    (for/list ([child (in-list (composite-visual-children composite))]
                #:unless (and (eq? (visual-id child) child-id)
                              (null? (cdr descendant-ids))))
       (cond
@@ -377,7 +425,7 @@
         [else
          child])))
   (when (and (null? (cdr descendant-ids))
-             (for/or ([child (in-list (group-visual-children group))])
+             (for/or ([child (in-list (composite-visual-children composite))])
                (eq? (visual-id child) child-id)))
     (set! found? #t))
   (unless found?
@@ -386,7 +434,7 @@
      "the Visual path is not present in the scene"
      "visual-path" full-path
      "missing-visual-id" child-id))
-  (group-visual-with-children group children))
+  (composite-visual-with-children composite children who))
 
 
 ;;;

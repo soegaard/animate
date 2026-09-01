@@ -1,23 +1,19 @@
-# animate — SCENE-BC
+# animate — SCENE-BF
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BC makes group children stable animation targets. Use a nonempty symbol
-path to address a descendant; the original group tree is rebuilt immutably at
-each sample:
+SCENE-BF adds deterministic automatic correspondence for unchanged formula
+parts. It builds on SCENE-BD’s addressable formula-part paths and SCENE-BE’s
+explicit correspondence:
 
 ```racket
-(scene-play
- (scene-add
-  (make-scene)
-  (group (list (circle #:id 'marker #:radius 1 #:fill "blue"))
-         #:id 'scatter))
- (fill-color-to '(scatter marker) "red")
- (move-to '(scatter marker) (vec2 4 0))
- #:duration 2)
+(define correspondence
+  (formula-correspondence-auto old-formula new-formula))
+
+(scene-play scene (transform-formula-parts correspondence) #:duration 2)
 ```
 
 SCENE-AZ adds reusable immutable scene-value handles. They remove repeated
@@ -79,10 +75,10 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BC v0.55.0 builds on SCENE-AZ and SCENE-AY, adds dynamically derived
-groups (SCENE-BA), and introduces stable nested addressing (SCENE-BB).
+SCENE-BF v0.58.0 builds on immutable parameters and generic values, dynamically
+derived groups, and stable nested addressing.
 
-The public package version is `0.55.0`. The public module exports `464` bindings,
+The public package version is `0.58.0`. The public module exports `465` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2100,8 +2096,28 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-ax-test.rkt tests/scene-ax-render-test.rkt \
   tests/scene-ax-text-raster-test.rkt tests/scene-ay-test.rkt \
   tests/scene-az-test.rkt tests/scene-ba-test.rkt tests/scene-bb-test.rkt \
-  tests/scene-bc-test.rkt
+  tests/scene-bc-test.rkt tests/scene-bd-bf-test.rkt
 ```
+
+## SCENE-BF: automatic formula correspondence
+
+Version `0.58.0` adds `formula-correspondence-auto`. It matches source parts to
+the first still-unmatched destination part with the same LaTeX source and
+typesetting options, in source/destination order. Renamed unchanged parts match
+without boilerplate; changed or unmatched parts keep the existing fade-out/fade-
+in behavior.
+
+## SCENE-BE: explicit formula correspondence
+
+`formula-correspondence` and `formula-part-match` remain the precise API for an
+intentional one-to-one mapping, including mappings between different part names.
+
+## SCENE-BD: addressable formula parts
+
+Version `0.56.0` makes formula-assembly children ordinary nested Visual paths.
+For example, `'(equation left-term)` can be read with `scene-ref` or animated
+with `move-to`, `fade-to`, and compatible style requests. Assembly updates
+rebuild its parts immutably and preserve the outer formula identity.
 
 ## SCENE-BC: group-child animation
 
