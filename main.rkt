@@ -45,6 +45,7 @@
          "private/scene-state.rkt"
          "private/scene.rkt"
          "private/svg-import.rkt"
+         "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
          "private/video-encoder.rkt"
          "private/vector-field.rkt"
@@ -244,6 +245,11 @@
  image-visual-source
  image-visual-width
  image-visual-height
+ svg-image
+ svg-image-visual?
+ svg-image-visual-source
+ svg-image-visual-width
+ svg-image-visual-height
  svg->visual
  group
  group-visual?
@@ -478,6 +484,17 @@
 
  ;; External output
  render-frames!
+ render-frames/report!
+ render-diagnostics
+ render-diagnostics?
+ render-diagnostics-paths
+ render-diagnostics-frame-count
+ render-diagnostics-workers
+ render-diagnostics-elapsed-milliseconds
+ render-diagnostics-frame-milliseconds
+ render-diagnostics-cache-hits
+ render-diagnostics-cache-misses
+ render-diagnostics-cache-evictions
  encode-mp4!)
 
 

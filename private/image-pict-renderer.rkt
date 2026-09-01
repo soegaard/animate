@@ -16,20 +16,16 @@
          "geometry.rkt"
          "image-visual.rkt"
          "pict-renderer.rkt"
+         "renderer-resources.rkt"
          "visual-model.rkt")
 
-(provide image-pict-renderer
+(provide (struct-out image-pict-renderer)
          make-image-raster-cache)
 
-(define maximum-image-raster-cache-entries 64)
-
-(struct image-raster-cache (table lock)
-  #:mutable)
-
-; image-raster-cache stores bitmap% values keyed by immutable source path.
-
+; make-image-raster-cache : -> renderer-resource-cache?
+;; Creates the bounded adapter-owned bitmap source cache.
 (define (make-image-raster-cache)
-  (image-raster-cache (make-hash) (make-semaphore 1)))
+  (make-renderer-resource-cache #:max-entries 64))
 
 (struct image-pict-renderer (raster-cache)
   #:transparent
@@ -41,7 +37,7 @@
                          camera
                          (image-pict-renderer-raster-cache renderer)))])
 
-; image-visual->pict : image-visual? camera? image-raster-cache? -> pict?
+; image-visual->pict : image-visual? camera? renderer-resource-cache? -> pict?
 (define (image-visual->pict visual camera cache)
   (define source-pict
     (bitmap (cached-image-bitmap cache (image-visual-source visual))))
@@ -73,25 +69,18 @@
            (/ desired-height source-height)))
   (rotate-pict-if-needed scaled (visual-rotation visual)))
 
-; cached-image-bitmap : image-raster-cache? immutable-string? -> bitmap%
+; cached-image-bitmap : renderer-resource-cache? immutable-string? -> bitmap%
 (define (cached-image-bitmap cache source)
-  (call-with-semaphore
-   (image-raster-cache-lock cache)
+  (renderer-resource-cache-ref!
+   cache
+   (list 'bitmap source)
    (lambda ()
-     (hash-ref!
-      (image-raster-cache-table cache)
-      source
-      (lambda ()
-        (when (>= (hash-count (image-raster-cache-table cache))
-                  maximum-image-raster-cache-entries)
-          ;; A full cache is discarded as one bounded, deterministic operation.
-          ;; It changes only loading cost, never semantic rendering choices.
-          (hash-clear! (image-raster-cache-table cache)))
-        (define loaded
-          (make-object bitmap% source))
-        (unless (send loaded ok?)
-          (raise-arguments-error
-           'image-visual->pict
-           "could not load the bitmap image source"
-           "source" source))
-        loaded)))))
+     (define loaded
+       (make-object bitmap% source))
+     (unless (send loaded ok?)
+       (raise-arguments-error
+        'image-visual->pict
+        "could not load the bitmap image source"
+        "source" source))
+     (values loaded
+             (* 4 (send loaded get-width) (send loaded get-height))))))

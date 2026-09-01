@@ -21,23 +21,27 @@
          "camera.rkt"
          "formula-visual.rkt"
          "pict-renderer.rkt"
+         "renderer-resources.rkt"
          "visual-model.rkt")
 
 ;; Exports
-(provide default-latex-formula-pict-renderer)
+(provide (struct-out latex-formula-pict-renderer)
+         default-latex-formula-pict-renderer)
 
 
 ;;;
 ;;; Renderer Data
 ;;;
 
-(struct latex-formula-pict-renderer ()
+(struct latex-formula-pict-renderer (appearance-cache)
   #:transparent
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (formula-visual? visual))
-   (define (pict-renderer-render _renderer visual camera)
-     (formula-visual->pict visual camera))])
+   (define (pict-renderer-render renderer visual camera)
+     (formula-visual->pict visual
+                            camera
+                            (latex-formula-pict-renderer-appearance-cache renderer)))])
 
 ;; latex-formula-pict-renderer typesets semantic formula Visuals through
 ;; latex-pict and returns centered local Pict geometry.
@@ -45,17 +49,54 @@
 ; default-latex-formula-pict-renderer : pict-renderer?
 ;;   Gives the built-in LaTeX formula renderer.
 (define default-latex-formula-pict-renderer
-  (latex-formula-pict-renderer))
+  (latex-formula-pict-renderer
+   (make-renderer-resource-cache #:max-entries 128)))
 
 
 ;;;
 ;;; Formula Conversion
 ;;;
 
-; formula-visual->pict : formula-visual? camera? -> pict?
+; formula-visual->pict : formula-visual? camera? renderer-resource-cache? -> pict?
 ;;   Typesets one formula and applies its semantic size, anchor, and transform.
-(define (formula-visual->pict visual camera)
-  (formula-visual->pict/using visual camera typeset-formula))
+(define (formula-visual->pict visual camera appearance-cache)
+  (formula-visual->pict/cached-using visual
+                                     camera
+                                     appearance-cache
+                                     typeset-formula))
+
+; formula-visual->pict/cached-using : formula-visual? camera?
+;                                      renderer-resource-cache?
+;                                      (-> formula-visual? pict?) -> pict?
+;; Caches the complete local appearance. Position and opacity are intentionally
+;; absent from the key because scene placement and cellophane occur later.
+(define (formula-visual->pict/cached-using visual camera appearance-cache typesetter)
+  (unless (renderer-resource-cache? appearance-cache)
+    (raise-argument-error
+     'formula-visual->pict/cached-using
+     "renderer-resource-cache?"
+     appearance-cache))
+  (renderer-resource-cache-ref!
+   appearance-cache
+   (list 'latex-formula (formula-appearance-cache-key visual camera))
+   (lambda ()
+     ;; Formula Picts can be vector-backed; an entry-count bound avoids forcing
+     ;; an additional rasterization solely to estimate bytes.
+     (values (formula-visual->pict/using visual camera typesetter) 0))))
+
+; formula-appearance-cache-key : formula-visual? camera? -> list?
+(define (formula-appearance-cache-key visual camera)
+  (list (formula-visual-source visual)
+        (formula-visual-mode visual)
+        (formula-visual-font-size visual)
+        (formula-visual-preamble visual)
+        (formula-visual-document-class-options visual)
+        (formula-visual-preview-options visual)
+        (formula-visual-horizontal-alignment visual)
+        (formula-visual-vertical-alignment visual)
+        (visual-scale visual)
+        (visual-rotation visual)
+        (camera-scale camera)))
 
 ; formula-visual->pict/using : formula-visual? camera?
 ;                              (-> formula-visual? pict?)
@@ -232,6 +273,7 @@
 
 (module+ test-support
   (provide formula-visual->pict/using
+           formula-visual->pict/cached-using
            typeset-formula/using
            formula-mode->latex-binding
            formula-document-font-points

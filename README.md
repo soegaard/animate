@@ -1,13 +1,33 @@
-# animate — SCENE-BG/BI
+# animate — SCENE-BQ/BR
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BG/BI adds semantic SVG import with stable nested element identities. SVG
-paths and common shapes become normal Visuals, and named `<g>`/element IDs work
-with nested scene targeting:
+SCENE-BQ/BR adds deterministic multi-worker PNG output and rendering
+diagnostics. `render-frames!` now accepts `#:workers`, retaining frame-order
+paths and byte-identical output. `render-frames/report!` also reports timing and
+built-in cache hit/miss/eviction deltas.
+
+SCENE-BO/BP adds bounded shared renderer resource caches and full-fidelity SVG
+Visuals via the catalog `svg` package. Use `svg-image` for an SVG that should
+keep gradients, clipping, text, CSS, and other renderer-level features while
+still participating in ordinary motion, scaling, rotation, and fades:
+
+```racket
+(define logo (svg-image "assets/logo.svg"
+                        #:id 'logo
+                        #:width 8 #:height 4))
+
+(scene-play (scene-add (make-scene) logo)
+            (fade-in logo)
+            #:duration 1)
+```
+
+Use `svg->visual` when you instead need stable nested elements for individual
+animation. Its SVG paths and common shapes become normal Visuals, and named
+`<g>`/element IDs work with nested scene targeting:
 
 ```racket
 (define logo (svg->visual "assets/logo.svg" #:id 'logo))
@@ -75,11 +95,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BG/BI v0.65.0 builds on immutable parameters and generic values, dynamically
-derived groups, stable nested addressing, formula correspondence, and sampled
-plots.
+SCENE-BQ/BR v0.67.0 builds on immutable parameters and generic values,
+dynamically derived groups, stable nested addressing, formula correspondence,
+sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.65.0`. The public module exports `480` bindings,
+The public package version is `0.67.0`. The public module exports `496` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2099,8 +2119,34 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-az-test.rkt tests/scene-ba-test.rkt tests/scene-bb-test.rkt \
   tests/scene-bc-test.rkt tests/scene-bd-bf-test.rkt tests/scene-bk-test.rkt \
   tests/scene-bm-test.rkt tests/scene-bl-test.rkt tests/scene-bn-test.rkt \
-  tests/scene-bj-test.rkt tests/scene-bh-test.rkt tests/scene-bg-test.rkt
+  tests/scene-bj-test.rkt tests/scene-bh-test.rkt tests/scene-bg-test.rkt \
+  tests/scene-svg-render-test.rkt tests/scene-bo-bp-test.rkt \
+  tests/scene-bq-br-test.rkt
 ```
+
+## SCENE-BQ/BR: concurrent output and diagnostics
+
+Version `0.67.0` adds a bounded `#:workers` thread pool to `render-frames!`.
+Each worker owns distinct frame filenames; returned paths and per-frame metrics
+remain in frame-index order. `render-frames/report!` returns a
+`render-diagnostics` value with elapsed time, worker count, per-frame durations,
+and built-in cache hit/miss/eviction deltas. The default is one worker. Custom
+renderers used with more than one worker must be safe for concurrent calls.
+
+## SCENE-BO/BP: renderer resources and full-fidelity SVGs
+
+Version `0.66.0` unifies image, plain-text, and formula appearance caching
+behind a bounded, thread-safe renderer-resource cache. Resource caches live only
+at the rendering boundary: they never change immutable scene values or timeline
+sampling. Plain text and image cache behavior is preserved, while repeated
+formula appearances now avoid redundant typesetting.
+
+It also adds `svg-image`, powered by the catalog `svg` package. This renders
+static SVG documents with the renderer's extensive support for transforms,
+gradients, clipping, masks, text, images, and CSS. Supply explicit world
+dimensions; the Visual otherwise has the same affine and opacity behavior as
+`image`. Use it for rendering fidelity, and retain `svg->visual` for semantic,
+per-element animation.
 
 ## SCENE-BG/BI: semantic SVG import and subpart identities
 

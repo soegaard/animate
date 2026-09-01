@@ -16,7 +16,7 @@
 Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
 semantic scene data separate from Pict rendering and file output.
 
-The public API in this manual is version @tt{0.50.1}. This is still a
+The public API in this manual is version @tt{0.67.0}. This is still a
 prototype, so later versions may change names or behavior.
 
 @table-of-contents[]
@@ -3385,6 +3385,55 @@ Returns the unscaled local world width.
 Returns the unscaled local world height.
 }
 
+@subsection{Full-Fidelity SVG Images}
+
+@defproc[(svg-image [source path-string?]
+                    [#:id id symbol?]
+                    [#:center center vec2? origin]
+                    [#:rotation rotation finite-real? 0]
+                    [#:scale scale scale-factor? 1]
+                    [#:opacity opacity opacity? 1]
+                    [#:width width (and/c finite-real? positive?)]
+                    [#:height height (and/c finite-real? positive?)])
+         svg-image-visual?]{
+
+Creates an immutable full-fidelity static SVG Visual. @racket[source] is not
+opened until rendering; the default renderer delegates then to the catalog
+@racketmodname[svg/svg] package. That renderer supports substantially more SVG
+than the semantic importer, including transforms, gradients, clipping, masks,
+text, local image references, CSS, and many static filters.
+
+@racket[width] and @racket[height] specify unscaled local world dimensions,
+independently of the SVG document's viewport. The Visual otherwise behaves like
+@racket[image]: standard movement, scaling, rotation, opacity animation,
+groups, layout, camera placement, and frame rendering work normally. The
+renderer has a bounded local source-Pict cache. Use @racket[svg->visual] rather
+than this constructor when individual SVG elements must be directly addressed
+or animated.
+}
+
+@defproc[(svg-image-visual? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a built-in full-fidelity SVG Visual.
+}
+
+@defproc[(svg-image-visual-source [visual svg-image-visual?]) immutable-string?]{
+
+Returns the copied renderer-resolved SVG source pathname.
+}
+
+@defproc[(svg-image-visual-width [visual svg-image-visual?])
+         (and/c finite-real? positive?)]{
+
+Returns the unscaled local world width.
+}
+
+@defproc[(svg-image-visual-height [visual svg-image-visual?])
+         (and/c finite-real? positive?)]{
+
+Returns the unscaled local world height.
+}
+
 @subsection{Semantic SVG Import}
 
 @defproc[(svg->visual [source path-string?]
@@ -6104,8 +6153,8 @@ renderer.
 @defthing[default-pict-renderers (listof pict-renderer?)]{
 
 The ordered built-in renderer list. It contains circle, rectangle, path,
-arrow, axes, and plain-text renderers, followed by the LaTeX formula renderer. Groups are
-composed by the high-level Pict adapter when no explicit renderer supports them.
+arrow, axes, bitmap-image, full-fidelity SVG, and plain-text renderers, followed
+by the LaTeX formula renderer. Groups are composed by the high-level Pict adapter when no explicit renderer supports them.
 Formula assemblies use the same recursive compositor through their internal
 ordered formula parts. Prepend a custom renderer when it should override a
 built-in leaf or complete composite.
@@ -6150,7 +6199,10 @@ opacity, and camera center, but includes text/font/color/alignment data, semanti
 scale and rotation, and camera pixel scale. Camera zoom and appearance transforms
 therefore rerasterize at their sampled resolution. Unknown adapter-native color
 objects bypass the cache while retaining stable local-origin rasterization.
-Formula rendering is unchanged.
+The same bounded renderer-resource mechanism caches complete formula
+appearances. Formula position, identity, opacity, and camera center do not
+invalidate an appearance, while formula source/options, semantic scale/rotation,
+and camera pixel scale do.
 
 An empty text string produces a transparent one-pixel Pict. Left and right
 anchors reserve symmetric space on the opposite side of the anchor, and top
@@ -6748,7 +6800,8 @@ The procedures in this section perform external effects. Their names end in
           [#:renderers renderers
                        pict-renderer-list?
                        default-pict-renderers]
-          [#:clean? clean? boolean? #t])
+          [#:clean? clean? boolean? #t]
+          [#:workers workers exact-positive-integer? 1])
          (listof path?)]{
 
 Creates @racket[output-directory] when needed and writes every sampled frame as
@@ -6779,6 +6832,49 @@ When @racket[clean?] is true, the procedure first deletes files in the output
 directory whose names match @tt{frame-} followed by at least six digits and
 @tt{.png}. Other files are preserved. When @racket[clean?] is false, no cleanup
 is performed.
+
+@racket[workers] is a bounded thread-pool size. Its default, one, retains
+sequential output. With more workers, independent frames render and write
+concurrently, but the returned paths remain in frame-index order and each frame
+keeps its deterministic filename. The built-in renderers synchronize their
+shared resources. A custom renderer used with more than one worker must itself
+be safe for concurrent calls.
+}
+
+@defproc[(render-frames/report!
+          [scene scene?]
+          [output-directory path-string?]
+          [#:fps fps exact-positive-integer? 30]
+          [#:camera camera (or/c camera? false/c) #f]
+          [#:renderers renderers
+                       pict-renderer-list?
+                       default-pict-renderers]
+          [#:clean? clean? boolean? #t]
+          [#:workers workers exact-positive-integer? 1])
+         render-diagnostics?]{
+
+Writes frames with the same behavior as @racket[render-frames!], but returns a
+@racket[render-diagnostics] value. Cache counts are deltas collected while this
+call runs from the built-in image, SVG, text, and formula resource caches;
+custom renderer caches are intentionally not inspected.
+}
+
+@defstruct*[render-diagnostics
+             ([paths (listof path?)]
+              [frame-count exact-nonnegative-integer?]
+              [workers exact-nonnegative-integer?]
+              [elapsed-milliseconds (and/c real? (>=/c 0))]
+              [frame-milliseconds (listof (and/c real? (>=/c 0)))]
+              [cache-hits exact-nonnegative-integer?]
+              [cache-misses exact-nonnegative-integer?]
+              [cache-evictions exact-nonnegative-integer?])] {
+
+The report returned by @racket[render-frames/report!]. @racket[paths] and
+@racket[frame-milliseconds] are both ordered by frame index, not completion
+order. @racket[workers] is the active worker count, so a zero-frame render
+reports zero workers. The elapsed and per-frame durations include sampling,
+Pict/bitmap conversion, and PNG writing. Cache fields are performance telemetry
+only; they never affect the sampled scene or output pixels.
 }
 
 @defproc[(encode-mp4! [frames-directory path-string?]
@@ -9099,6 +9195,15 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.67.0 — SCENE-BQ/BR.} Added deterministic bounded-worker PNG
+       output through @racket[render-frames!]'s @racket[#:workers] argument,
+       plus @racket[render-frames/report!] and @racket[render-diagnostics] for
+       per-frame timing and built-in renderer-cache telemetry.}
+ @item{@bold{0.66.0 — SCENE-BO/BP.} Added @racket[svg-image], a full-fidelity
+       static SVG Visual rendered through the catalog @racketmodname[svg/svg]
+       package, with ordinary affine and opacity behavior. Added a bounded,
+       thread-safe renderer-resource cache shared by bitmap, text, and formula
+       renderers; repeated formula appearances now avoid redundant typesetting.}
  @item{@bold{0.65.0 — SCENE-BG/BI.} Added @racket[svg->visual], importing a
        practical SVG geometry subset into nested semantic groups and preserving
        SVG element identities as stable paths for ordinary lookup and animation.}

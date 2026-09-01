@@ -47,11 +47,15 @@
          "latex-formula-pict-renderer.rkt"
          "path-geometry.rkt"
          "pict-renderer.rkt"
+         "renderer-resources.rkt"
+         "svg-pict-renderer.rkt"
          "text-visual.rkt"
          "visual-model.rkt")
 
 ;; Exports
-(provide default-pict-renderers)
+(provide default-pict-renderers
+         default-pict-renderer-cache-counters
+         (struct-out renderer-cache-counters))
 
 
 ;;;
@@ -127,19 +131,12 @@
 (define maximum-text-raster-cache-bytes
   (* 32 1024 1024))
 
-(struct text-raster-cache (table byte-count lock)
-  #:mutable)
-
-;; text-raster-cache is private adapter state owned by one text renderer. It is
-;; bounded, affects performance only, and never participates in semantic scene
-;; state or timeline sampling.
-
-; make-text-raster-cache : -> text-raster-cache?
+; make-text-raster-cache : -> renderer-resource-cache?
 ;;   Creates one empty bounded cache for a text Pict renderer.
 (define (make-text-raster-cache)
-  (text-raster-cache (make-hash)
-                     0
-                     (make-semaphore 1)))
+  (make-renderer-resource-cache
+   #:max-entries maximum-text-raster-cache-entries
+   #:max-bytes maximum-text-raster-cache-bytes))
 
 (struct text-pict-renderer (raster-cache)
   #:transparent
@@ -167,8 +164,39 @@
         (arrow-pict-renderer)
         (axes-pict-renderer)
         (image-pict-renderer (make-image-raster-cache))
+        (svg-pict-renderer (make-svg-pict-cache))
         (text-pict-renderer (make-text-raster-cache))
         default-latex-formula-pict-renderer))
+
+;; renderer-cache-counters summarize performance-only resources owned by the
+;; supplied built-in renderer instances. Unknown custom renderers contribute no
+;; counters because their caching policy is entirely their own.
+(struct renderer-cache-counters (hits misses evictions)
+  #:transparent)
+
+; default-pict-renderer-cache-counters : (listof pict-renderer?)
+;                                         -> renderer-cache-counters?
+(define (default-pict-renderer-cache-counters renderers)
+  (define-values (hits misses evictions)
+    (for/fold ([hits 0] [misses 0] [evictions 0])
+              ([renderer (in-list renderers)])
+      (define cache
+        (cond [(image-pict-renderer? renderer)
+               (image-pict-renderer-raster-cache renderer)]
+              [(svg-pict-renderer? renderer)
+               (svg-pict-renderer-pict-cache renderer)]
+              [(text-pict-renderer? renderer)
+               (text-pict-renderer-raster-cache renderer)]
+              [(latex-formula-pict-renderer? renderer)
+               (latex-formula-pict-renderer-appearance-cache renderer)]
+              [else #f]))
+      (if cache
+          (let ([statistics (renderer-resource-cache-statistics cache)])
+            (values (+ hits (renderer-resource-cache-stats-hits statistics))
+                    (+ misses (renderer-resource-cache-stats-misses statistics))
+                    (+ evictions (renderer-resource-cache-stats-evictions statistics))))
+          (values hits misses evictions))))
+  (renderer-cache-counters hits misses evictions))
 
 ; maximum-default-pict-stroke-width : exact-positive-integer?
 ;;   Gives racket/draw's maximum pen width. The semantic Visual model deliberately
@@ -301,7 +329,7 @@
 (define maximum-font-pixel-size
   1024)
 
-; text-visual->pict : text-visual? camera? text-raster-cache? -> pict?
+; text-visual->pict : text-visual? camera? renderer-resource-cache? -> pict?
 ;;   Converts one anchored text line to a stable local raster Pict. The glyphs
 ;;   are rasterized before scene placement, so changing only the Visual position
 ;;   translates identical pixels instead of asking the font backend to rasterize
@@ -313,14 +341,12 @@
                     (text-raster-cache-key visual camera)])
         (cond
           [cacheable?
-           (or (cached-text-raster-pict raster-cache cache-key)
-               (let-values ([(frozen-pict byte-count)
-                             (freeze-text-pict-at-local-origin
-                              (text-visual->live-pict visual camera))])
-                 (cache-text-raster-pict! raster-cache
-                                          cache-key
-                                          frozen-pict
-                                          byte-count)))]
+           (renderer-resource-cache-ref!
+            raster-cache
+            (list 'plain-text cache-key)
+            (lambda ()
+              (freeze-text-pict-at-local-origin
+               (text-visual->live-pict visual camera))))]
           [else
            (let-values ([(frozen-pict _byte-count)
                          (freeze-text-pict-at-local-origin
@@ -402,62 +428,6 @@
      (values #t color)]
     [else
      (values #f #f)]))
-
-; cached-text-raster-pict : text-raster-cache? any/c
-;                           -> (or/c pict? false/c)
-;;   Looks up one frozen local text raster under the renderer cache lock.
-(define (cached-text-raster-pict raster-cache cache-key)
-  (call-with-text-raster-cache-lock
-   raster-cache
-   (lambda ()
-     (hash-ref (text-raster-cache-table raster-cache)
-               cache-key
-               #f))))
-
-; cache-text-raster-pict! : text-raster-cache? any/c pict?
-;                           exact-nonnegative-integer? -> pict?
-;;   Inserts frozen-pict unless another thread won the same cache race. When the
-;;   bounded entry or byte budget would be exceeded, the performance-only cache
-;;   is cleared before installing the new appearance.
-(define (cache-text-raster-pict! raster-cache cache-key frozen-pict byte-count)
-  (if (> byte-count maximum-text-raster-cache-bytes)
-      frozen-pict
-      (call-with-text-raster-cache-lock
-       raster-cache
-       (lambda ()
-         (define table
-           (text-raster-cache-table raster-cache))
-         (define existing
-           (hash-ref table cache-key #f))
-         (cond
-           [existing
-            existing]
-           [else
-            (when (or (>= (hash-count table)
-                          maximum-text-raster-cache-entries)
-                      (> (+ (text-raster-cache-byte-count raster-cache)
-                            byte-count)
-                         maximum-text-raster-cache-bytes))
-              (hash-clear! table)
-              (set-text-raster-cache-byte-count! raster-cache 0))
-            (hash-set! table cache-key frozen-pict)
-            (set-text-raster-cache-byte-count!
-             raster-cache
-             (+ (text-raster-cache-byte-count raster-cache)
-                byte-count))
-            frozen-pict])))))
-
-; call-with-text-raster-cache-lock : text-raster-cache? (-> any/c) -> any/c
-;;   Serializes cache-table mutations while reliably releasing the lock.
-(define (call-with-text-raster-cache-lock raster-cache thunk)
-  (define lock
-    (text-raster-cache-lock raster-cache))
-  (semaphore-wait lock)
-  (dynamic-wind
-    void
-    thunk
-    (lambda ()
-      (semaphore-post lock))))
 
 ; text-line->pict : text-visual? camera? -> pict?
 ;;   Renders one untransformed text line at its camera-dependent local size.

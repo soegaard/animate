@@ -22,7 +22,7 @@
 ; deps : (listof string?)
 ;;   Lists runtime package dependencies.
 (define deps
-  '("base" "draw-lib" "latex-pict" "pict-lib"))
+  '("base" "draw-lib" "latex-pict" "pict-lib" "svg"))
 
 ; build-deps : (listof string?)
 ;;   Lists dependencies needed for tests and examples.
@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BG/BI: semantic SVG import with stable subpart identities")
+  "SCENE-BQ/BR: concurrent frame output and rendering diagnostics")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.65.0")
+(define version "0.67.0")
 
 ; license : symbol?
 ;;   Declares the package license.
