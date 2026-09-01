@@ -47,21 +47,20 @@
 (define equation-term-spacing
   3/4)
 
-; equation-slot : exact-nonnegative-integer? -> real?
-;;   Returns the centered local x position for one of five equation parts.
+; equation-slot : integer? -> real?
+;;   Returns one compact local x position relative to the equality sign.
 (define (equation-slot index)
-  (* equation-term-spacing
-     (- index 2)))
+  (* equation-term-spacing index))
 
 ; make-source-equation : -> formula-assembly-visual?
 ;;   Creates the source equation a squared plus b squared equals c squared.
 (define (make-source-equation)
   (formula-assembly
-   (list (make-equation-part 'a-square "a^2" (equation-slot 0))
-         (make-equation-part 'plus     "+"   (equation-slot 1))
-         (make-equation-part 'b-square "b^2" (equation-slot 2))
-         (make-equation-part 'equals   "="    (equation-slot 3))
-         (make-equation-part 'c-square "c^2" (equation-slot 4)))
+   (list (make-equation-part 'a-square "a^2" (equation-slot -3))
+         (make-equation-part 'plus     "+"   (equation-slot -2))
+         (make-equation-part 'b-square "b^2" (equation-slot -1))
+         (make-equation-part 'equals   "="    (equation-slot 0))
+         (make-equation-part 'c-square "c^2" (equation-slot 1)))
    #:id 'equation
    #:center (vec2 -6 0)
    #:rotation -1/16
@@ -72,35 +71,34 @@
 ;;   Creates the algebraic rearrangement b squared equals c squared minus a squared.
 (define (make-rearranged-equation #:id [identifier 'rearranged-template])
   (formula-assembly
-   (list (make-equation-part 'b-square "b^2" (equation-slot 0))
-         (make-equation-part 'equals   "="    (equation-slot 1))
-         (make-equation-part 'c-square "c^2" (equation-slot 2))
-         (make-equation-part 'minus    "-"    (equation-slot 3))
-         (make-equation-part 'a-square "a^2" (equation-slot 4)))
+   (list (make-equation-part 'b-square "b^2" (equation-slot -1))
+         (make-equation-part 'equals   "="    (equation-slot 0))
+         (make-equation-part 'c-square "c^2" (equation-slot 1))
+         (make-equation-part 'minus    "-"    (equation-slot 2))
+         (make-equation-part 'a-square "a^2" (equation-slot 3)))
    #:id identifier))
 
 ; make-flipped-equation : -> formula-assembly-visual?
 ;;   Creates the equivalent equation c squared minus a squared equals b squared.
 (define (make-flipped-equation)
   (formula-assembly
-   (list (make-equation-part 'c-square "c^2" (equation-slot 0))
-         (make-equation-part 'minus    "-"   (equation-slot 1))
-         (make-equation-part 'a-square "a^2" (equation-slot 2))
-         (make-equation-part 'equals   "="    (equation-slot 3))
-         (make-equation-part 'b-square "b^2" (equation-slot 4)))
+   (list (make-equation-part 'c-square "c^2" (equation-slot -3))
+         (make-equation-part 'minus    "-"   (equation-slot -2))
+         (make-equation-part 'a-square "a^2" (equation-slot -1))
+         (make-equation-part 'equals   "="    (equation-slot 0))
+         (make-equation-part 'b-square "b^2" (equation-slot 1)))
    #:id 'flipped-template))
 
 ; make-rearrangement-correspondence : formula-assembly-visual?
 ;                                      formula-assembly-visual?
 ;                                      -> formula-correspondence?
-;;   Matches every term while plus changes to the subtraction sign.
+;;   Keeps the unaffected equation stationary while the subtraction terms
+;;   fade out on the left and appear on the right.
 (define (make-rearrangement-correspondence source rearranged)
   (formula-correspondence
    source
    rearranged
-   (list (formula-part-match 'a-square 'a-square)
-         (formula-part-match 'plus     'minus)
-         (formula-part-match 'b-square 'b-square)
+   (list (formula-part-match 'b-square 'b-square)
          (formula-part-match 'equals   'equals)
          (formula-part-match 'c-square 'c-square))))
 
@@ -146,7 +144,7 @@
                #:stroke "navy"
                #:stroke-width 3))
   (define title
-    (plain-text "Rearrange, then swap equation sides"
+    (plain-text "Subtract a², then swap equation sides"
                 #:id 'title
                 #:center (vec2 0 1)
                 #:font-size 1/3
