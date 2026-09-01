@@ -38,6 +38,7 @@
 ;                        [#:sample-count exact-integer-at-least-2?]
 ;                        [#:clip? boolean?]
 ;                        [#:max-jump (or/c nonnegative-finite-real? false/c)]
+;                        [#:detect-discontinuities? boolean?]
 ;                        [#:interpolation curve-interpolation?]
 ;                        -> path-geometry?
 ;;   Samples a numeric function into axes-local path geometry.
@@ -47,6 +48,8 @@
                               #:sample-count [sample-count 201]
                               #:clip? [clip? #t]
                               #:max-jump [max-jump #f]
+                              #:detect-discontinuities?
+                              [detect-discontinuities? #f]
                               #:interpolation [interpolation 'linear])
   (check-sampling-arguments 'sample-function-path
                             axes
@@ -56,6 +59,7 @@
                             sample-count
                             clip?
                             max-jump
+                            detect-discontinuities?
                             interpolation)
   (define-values (x-min x-max)
     (resolve-sampling-domain axes
@@ -72,8 +76,10 @@
    #:clip? clip?
    #:break-between?
    (lambda (start end)
-     (and max-jump
-          (coordinate-y-distance-exceeds? start end max-jump)))
+     (or (and max-jump
+              (coordinate-y-distance-exceeds? start end max-jump))
+         (and detect-discontinuities?
+              (coordinate-pair-crosses-hidden-asymptote? axes start end))))
    #:interpolation interpolation))
 
 ; function-graph : axes-visual?
@@ -84,6 +90,7 @@
 ;                  [#:sample-count exact-integer-at-least-2?]
 ;                  [#:clip? boolean?]
 ;                  [#:max-jump (or/c nonnegative-finite-real? false/c)]
+;                  [#:detect-discontinuities? boolean?]
 ;                  [#:interpolation curve-interpolation?]
 ;                  [#:opacity opacity?]
 ;                  [#:stroke any/c]
@@ -97,6 +104,8 @@
                         #:sample-count [sample-count 201]
                         #:clip? [clip? #t]
                         #:max-jump [max-jump #f]
+                        #:detect-discontinuities?
+                        [detect-discontinuities? #f]
                         #:interpolation [interpolation 'linear]
                         #:opacity [opacity 1]
                         #:stroke [stroke "royalblue"]
@@ -122,6 +131,8 @@
                           #:sample-count sample-count
                           #:clip? clip?
                           #:max-jump max-jump
+                          #:detect-discontinuities?
+                          detect-discontinuities?
                           #:interpolation interpolation))
   (make-path-visual path
                     #:id id
@@ -205,7 +216,7 @@
 ;;;
 
 ; check-sampling-arguments : symbol? any/c any/c any/c any/c any/c any/c any/c
-;                            any/c -> void?
+;                            any/c any/c -> void?
 ;;   Validates common function-sampling arguments before procedure invocation.
 (define (check-sampling-arguments who
                                   axes
@@ -215,6 +226,7 @@
                                   sample-count
                                   clip?
                                   max-jump
+                                  detect-discontinuities?
                                   interpolation)
   (unless (axes-visual? axes)
     (raise-argument-error who "axes-visual?" axes))
@@ -245,11 +257,27 @@
      who
      "nonnegative finite real or #f"
      max-jump))
+  (unless (boolean? detect-discontinuities?)
+    (raise-argument-error who "boolean?" detect-discontinuities?))
   (unless (curve-interpolation? interpolation)
     (raise-argument-error
      who
      "curve-interpolation?"
      interpolation)))
+
+; coordinate-pair-crosses-hidden-asymptote? : axes-visual? vec2? vec2? -> boolean?
+;; Identifies the characteristic adjacent samples of a vertical asymptote: both
+;; endpoints lie beyond opposite sides of the visible numeric y interval. This
+;; avoids connecting clipped branches through the plotting window while leaving
+;; ordinary steep or discontinuous in-range data under caller control.
+(define (coordinate-pair-crosses-hidden-asymptote? axes start end)
+  (define y-range (axes-visual-y-range axes))
+  (define start-y (vec2-y start))
+  (define end-y (vec2-y end))
+  (or (and (< start-y (axis-range-minimum y-range))
+           (> end-y (axis-range-maximum y-range)))
+      (and (> start-y (axis-range-maximum y-range))
+           (< end-y (axis-range-minimum y-range)))))
 
 ; resolve-sampling-domain : axes-visual?
 ;                           (or/c finite-real? false/c)

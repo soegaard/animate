@@ -3746,6 +3746,7 @@ rectangle. Clamping may reduce smoothness where a run touches a boundary.
                       (or/c false/c
                             (and/c finite-real? (>=/c 0)))
                       #f]
+          [#:detect-discontinuities? detect-discontinuities? boolean? #f]
           [#:interpolation interpolation curve-interpolation? 'linear])
          path-geometry?]{
 
@@ -3795,6 +3796,12 @@ Smooth interpolation stores cubic Bézier segments through each accepted run.
 Breaks from non-finite values, explicit @racket[#f] results, maximum-jump
 rejection, or clipping keep the runs separate.
 
+When @racket[detect-discontinuities?] is true, two adjacent samples that lie
+beyond opposite sides of the visible numeric y interval are treated as the
+hidden sides of a vertical asymptote and are not connected. This opt-in rule
+prevents clipping from drawing a false segment through the plot window while
+preserving the historical default behavior for steep continuous graphs.
+
 The result contains zero or more open subpaths in sampling order. An isolated
 finite sample with no accepted adjacent pair does not create a point-only
 subpath. Every stored point uses the untransformed local coordinate system of
@@ -3822,6 +3829,7 @@ contains only immutable path geometry. Rendering it later does not call
                       (or/c false/c
                             (and/c finite-real? (>=/c 0)))
                       #f]
+          [#:detect-discontinuities? detect-discontinuities? boolean? #f]
           [#:interpolation interpolation curve-interpolation? 'linear]
           [#:opacity opacity opacity? 1]
           [#:stroke stroke any/c "royalblue"]
@@ -3831,7 +3839,7 @@ contains only immutable path geometry. Rendering it later does not call
          path-visual?]{
 
 Calls @racket[sample-function-path] with the same axes, function, interval,
-sample count, clipping, jump, and interpolation arguments. It wraps the result
+sample count, clipping, jump, discontinuity detection, and interpolation arguments. It wraps the result
 in a built-in path Visual.
 
 The graph copies the current translation, rotation, and scale of @racket[axes].

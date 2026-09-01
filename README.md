@@ -1,19 +1,19 @@
-# animate — SCENE-BF
+# animate — SCENE-BK
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BF adds deterministic automatic correspondence for unchanged formula
-parts. It builds on SCENE-BD’s addressable formula-part paths and SCENE-BE’s
-explicit correspondence:
+SCENE-BK adds opt-in discontinuity detection to sampled function graphs. It
+prevents a clipped vertical asymptote from becoming a false line through the
+plot window:
 
 ```racket
-(define correspondence
-  (formula-correspondence-auto old-formula new-formula))
+(sample-function-path axes
+                      (lambda (x) (/ 1 x))
+                      #:detect-discontinuities? #t)
 
-(scene-play scene (transform-formula-parts correspondence) #:duration 2)
 ```
 
 SCENE-AZ adds reusable immutable scene-value handles. They remove repeated
@@ -75,10 +75,10 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BF v0.58.0 builds on immutable parameters and generic values, dynamically
-derived groups, and stable nested addressing.
+SCENE-BK v0.59.0 builds on immutable parameters and generic values, dynamically
+derived groups, stable nested addressing, and formula correspondence.
 
-The public package version is `0.58.0`. The public module exports `465` bindings,
+The public package version is `0.59.0`. The public module exports `465` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2096,8 +2096,16 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-ax-test.rkt tests/scene-ax-render-test.rkt \
   tests/scene-ax-text-raster-test.rkt tests/scene-ay-test.rkt \
   tests/scene-az-test.rkt tests/scene-ba-test.rkt tests/scene-bb-test.rkt \
-  tests/scene-bc-test.rkt tests/scene-bd-bf-test.rkt
+  tests/scene-bc-test.rkt tests/scene-bd-bf-test.rkt tests/scene-bk-test.rkt
 ```
+
+## SCENE-BK: discontinuity-aware sampled graphs
+
+Version `0.59.0` adds `#:detect-discontinuities?` to `sample-function-path` and
+`function-graph`. When enabled, adjacent samples beyond opposite sides of the
+visible y range are treated as the hidden sides of a vertical asymptote rather
+than clipped into a connecting segment. The default remains `#f` for compatibility;
+`#:max-jump` continues to provide explicit numeric break control.
 
 ## SCENE-BF: automatic formula correspondence
 
