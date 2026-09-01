@@ -32,6 +32,7 @@
          "private/frame-renderer.rkt"
          "private/geometry.rkt"
          "private/group-visual.rkt"
+         "private/image-visual.rkt"
          "private/implicit-curve.rkt"
          "private/interpolation.rkt"
          "private/path-geometry.rkt"
@@ -237,6 +238,11 @@
  path-visual-with-path
  line
  polygon
+ image
+ image-visual?
+ image-visual-source
+ image-visual-width
+ image-visual-height
  group
  group-visual?
  group-visual-children

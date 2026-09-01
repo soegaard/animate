@@ -1,20 +1,18 @@
-# animate — SCENE-BJ
+# animate — SCENE-BH
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BJ adds logarithmic x and y scales to the existing semantic axes and
-plotting model. Function samples, vector-field grids, ticks, labels, and
-coordinate conversion all use the selected display scale:
+SCENE-BH adds semantic bitmap image Visuals. Image files are loaded only by the
+renderer, while scenes retain an immutable source path and explicit world size:
 
 ```racket
-(axes #:id 'decades
-      #:x-range (axis-range 1 1000 1)
-      #:y-range (axis-range 1 1000 1)
-      #:x-scale 'log
-      #:y-scale 'log)
+(image "assets/logo.png"
+       #:id 'logo
+       #:width 3
+       #:height 1)
 
 ```
 
@@ -77,11 +75,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BJ v0.63.0 builds on immutable parameters and generic values, dynamically
+SCENE-BH v0.64.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, formula correspondence, and sampled
 plots.
 
-The public package version is `0.63.0`. The public module exports `474` bindings,
+The public package version is `0.64.0`. The public module exports `479` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2101,8 +2099,16 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-az-test.rkt tests/scene-ba-test.rkt tests/scene-bb-test.rkt \
   tests/scene-bc-test.rkt tests/scene-bd-bf-test.rkt tests/scene-bk-test.rkt \
   tests/scene-bm-test.rkt tests/scene-bl-test.rkt tests/scene-bn-test.rkt \
-  tests/scene-bj-test.rkt
+  tests/scene-bj-test.rkt tests/scene-bh-test.rkt
 ```
+
+## SCENE-BH: bitmap image Visuals
+
+Version `0.64.0` adds `image`, an immutable bitmap source Visual with explicit
+world width and height. Images take part in standard affine movement, scaling,
+rotation, opacity animation, groups, layout, camera placement, and frame
+rendering. The default renderer lazily loads the source and keeps a bounded
+renderer-local bitmap cache.
 
 ## SCENE-BJ: logarithmic axes
 

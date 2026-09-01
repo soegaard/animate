@@ -43,6 +43,7 @@
          "camera.rkt"
          "color-style.rkt"
          "geometry.rkt"
+         "image-pict-renderer.rkt"
          "latex-formula-pict-renderer.rkt"
          "path-geometry.rkt"
          "pict-renderer.rkt"
@@ -165,6 +166,7 @@
         (path-pict-renderer)
         (arrow-pict-renderer)
         (axes-pict-renderer)
+        (image-pict-renderer (make-image-raster-cache))
         (text-pict-renderer (make-text-raster-cache))
         default-latex-formula-pict-renderer))
 

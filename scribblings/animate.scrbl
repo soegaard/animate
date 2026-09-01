@@ -3337,6 +3337,54 @@ segment before the implicit closing edge. The optional @racket[opacity] value is
 stored as semantic global opacity.
 }
 
+@subsection{Bitmap Images}
+
+@defproc[(image [source path-string?]
+                [#:id id symbol?]
+                [#:center center vec2? origin]
+                [#:rotation rotation finite-real? 0]
+                [#:scale scale scale-factor? 1]
+                [#:opacity opacity opacity? 1]
+                [#:width width (and/c finite-real? positive?)]
+                [#:height height (and/c finite-real? positive?)])
+         image-visual?]{
+
+Creates an immutable bitmap-image Visual. @racket[source] is copied as a path
+string but is not opened during construction, scene sampling, or timeline
+compilation. @racket[width] and @racket[height] specify the unscaled local
+world dimensions, independently of the bitmap's source-pixel dimensions.
+
+The built-in renderer loads the source lazily, scales it to the requested world
+size at the current camera scale, then applies the normal Visual scale and
+rotation. A missing or unreadable source therefore raises a renderer-time error.
+Its renderer-local bitmap cache is bounded and does not affect scene semantics.
+Image Visuals implement affine and opacity protocols, so standard movement,
+scaling, rotation, fading, grouping, layout, camera placement, and frame
+rendering work without a special timeline request.
+}
+
+@defproc[(image-visual? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a built-in bitmap image Visual.
+}
+
+@defproc[(image-visual-source [visual image-visual?]) immutable-string?]{
+
+Returns the copied renderer-resolved source pathname.
+}
+
+@defproc[(image-visual-width [visual image-visual?])
+         (and/c finite-real? positive?)]{
+
+Returns the unscaled local world width.
+}
+
+@defproc[(image-visual-height [visual image-visual?])
+         (and/c finite-real? positive?)]{
+
+Returns the unscaled local world height.
+}
+
 
 @subsection[#:tag "arrows-and-axes"]{Arrow and Cartesian Axes Visuals}
 
@@ -9019,6 +9067,9 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.64.0 — SCENE-BH.} Added immutable @racket[image] Visuals with
+       explicit world dimensions, normal affine/opacity behavior, lazy default
+       bitmap rendering, and a bounded renderer-local bitmap cache.}
  @item{@bold{0.63.0 — SCENE-BJ.} Added linear/log coordinate-scale selection,
        configurable log bases, positive log ranges, logarithmic ticks and
        coordinate conversion, and log-uniform function/vector/implicit sampling.

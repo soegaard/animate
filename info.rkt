@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BJ: logarithmic Cartesian axes and log-space plots")
+  "SCENE-BH: immutable bitmap image Visuals")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.63.0")
+(define version "0.64.0")
 
 ; license : symbol?
 ;;   Declares the package license.
