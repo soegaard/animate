@@ -15,15 +15,10 @@
   '("base" "draw-lib" "latex-pict" "pict-lib"))
 
 ; build-deps : (listof string?)
-;;   Lists dependencies needed for tests, examples, and documentation.
+;;   Lists dependencies needed for tests and examples.
 (define build-deps
-  '("doc-coverage"
-    "draw-doc"
-    "pict-doc"
-    "racket-doc"
-    "rackunit-lib"
-    "rhombus-lib"
-    "scribble-lib"))
+  '("rackunit-lib"
+    "rhombus-lib"))
 
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
@@ -39,12 +34,8 @@
 (define license
   'MIT)
 
-; scribblings : list?
-;;   Registers the public reference manual for raco setup.
-(define scribblings
-  '(("scribblings/visual-animation.scrbl" (multi-page))))
-
 ; test-omit-paths : (listof string?)
-;;   Excludes examples from package test discovery.
+;;   Excludes examples and the unregistered documentation coverage test.
 (define test-omit-paths
-  '("examples"))
+  '("examples"
+    "tests/documentation-test.rkt"))

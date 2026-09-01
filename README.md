@@ -43,33 +43,29 @@ SCENE-AX v0.50.0 is based on the green SCENE-AW v0.49.0 baseline. Version
 The public package version is `0.50.1`. The public module exports `454` bindings,
 all covered by the Scribble reference.
 
-## Reference manual
+## Documentation source
 
-The complete reference source is
-[`scribblings/visual-animation.scrbl`](scribblings/visual-animation.scrbl).
-It documents every public structure, constructor, predicate, accessor,
-operation, renderer protocol, and output function through version `0.50.1`.
+The complete Scribble reference source remains in
+[`scribblings/visual-animation.scrbl`](scribblings/visual-animation.scrbl), but
+it is deliberately not registered with Racket's documentation system. Installing
+this package therefore does not build or hook up documentation.
 
-Build a local HTML preview:
+Install the package from a checkout:
+
+```sh
+raco pkg install --auto --name visual-animation --link "$(pwd)"
+```
+
+Install directly from GitHub:
+
+```sh
+raco pkg install --auto --name visual-animation https://github.com/soegaard/animate.git
+```
+
+The documentation source can still be rendered manually when needed:
 
 ```sh
 scribble --htmls --dest doc scribblings/visual-animation.scrbl
-open doc/visual-animation/index.html
-```
-
-To integrate the manual with installed Racket documentation, link the package
-once and run setup:
-
-```sh
-raco pkg install --auto --link .
-raco setup -l visual-animation
-raco docs visual-animation
-```
-
-After the package has been linked, later documentation changes need only:
-
-```sh
-raco setup -l visual-animation
 ```
 
 Every public API addition must have a defining Scribble entry in the same
@@ -1897,22 +1893,8 @@ raco test tests/scene-a-test.rkt \
           tests/scene-an-render-test.rkt
 ```
 
-The shell wildcard also includes `tests/documentation-test.rkt`. Because
-`doc-coverage` reflects the installed collection name, link the checkout and
-build its documentation before using the wildcard form:
-
-```sh
-raco pkg install --auto --link .
-raco setup -l visual-animation
-raco test tests/*rkt
-```
-
-After package setup, verify public documentation coverage directly:
-
-```sh
-raco setup -l visual-animation
-raco test tests/documentation-test.rkt
-```
+The package test configuration excludes `tests/documentation-test.rkt`, because
+the package deliberately does not register its Scribble source.
 
 ## Module boundaries
 
