@@ -3731,7 +3731,36 @@ of its endpoints and controls, so the resulting visible curve stays inside the
 rectangle. Clamping may reduce smoothness where a run touches a boundary.
 }
 
-@subsubsection[#:tag "sampled-function-graphs"]{Sampled Function Graphs}
+@subsubsection[#:tag "sampled-function-graphs"]{Sampled Curves and Fields}
+
+@defproc[(sample-implicit-path [axes axes-visual?]
+                               [field (procedure-arity-includes/c 2)]
+                               [#:level level finite-real? 0]
+                               [#:x-count x-count (and/c exact-integer? (>=/c 2)) 65]
+                               [#:y-count y-count (and/c exact-integer? (>=/c 2)) 65])
+         path-geometry?]{
+
+Samples a two-argument scalar field with deterministic marching squares and
+returns axes-local open contour segments where the field equals @racket[level].
+Adjacent cell segments are stitched into deterministic open or closed
+subpaths. Non-finite field samples create gaps. The result is immutable path
+geometry and does not retain the callback.
+}
+
+@defproc[(implicit-curve [axes axes-visual?]
+                          [field (procedure-arity-includes/c 2)]
+                          [#:id id symbol?]
+                          [#:level level finite-real? 0]
+                          [#:x-count x-count (and/c exact-integer? (>=/c 2)) 65]
+                          [#:y-count y-count (and/c exact-integer? (>=/c 2)) 65]
+                          [#:opacity opacity opacity? 1]
+                          [#:stroke stroke any/c "darkorange"]
+                          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2])
+         path-visual?]{
+
+Constructs a styled path Visual from @racket[sample-implicit-path], copying the
+current axes transform as a semantic snapshot.
+}
 
 @defproc[(vector-field [axes axes-visual?]
                        [field (procedure-arity-includes/c 2)]

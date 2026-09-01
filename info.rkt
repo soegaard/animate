@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BM: immutable vector-field Visual groups")
+  "SCENE-BL: sampled implicit curves and contour paths")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.60.0")
+(define version "0.61.0")
 
 ; license : symbol?
 ;;   Declares the package license.

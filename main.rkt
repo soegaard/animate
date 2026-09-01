@@ -31,6 +31,7 @@
          "private/frame-renderer.rkt"
          "private/geometry.rkt"
          "private/group-visual.rkt"
+         "private/implicit-curve.rkt"
          "private/interpolation.rkt"
          "private/path-geometry.rkt"
          "private/parameter.rkt"
@@ -328,6 +329,8 @@
  data-series-path
  data-plot
  vector-field
+ sample-implicit-path
+ implicit-curve
 
  ;; Relative layout
  (struct-out layout-box)
