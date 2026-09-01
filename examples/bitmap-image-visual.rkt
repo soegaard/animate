@@ -8,8 +8,8 @@
 
 (define (make-demo-scene)
   (define badge
-    (image (build-path assets-directory "roadmap-bitmap.xpm")
-           #:id 'badge #:center (vec2 -3 0) #:width 3 #:height 9/4))
+    (image (build-path assets-directory "first-aid-kit-openclipart.png")
+           #:id 'badge #:center (vec2 -3 0) #:width 3 #:height 3))
   (define title
     (plain-text "SCENE-BH: bitmap image Visual" #:id 'title
                 #:center (vec2 0 3) #:font-size 2/5 #:color "navy"))

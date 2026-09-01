@@ -12,10 +12,10 @@
                #:id 'rocket #:center (vec2 -3 0) #:width 3 #:height 5))
   (define caption
     (plain-text "SCENE-BO/BP: cached SVG renderer resources" #:id 'caption
-                #:center (vec2 0 4) #:font-size 2/5 #:color "navy"))
+                #:center (vec2 0 7/2) #:font-size 2/5 #:color "navy"))
   (define detail
     (plain-text "The same source stays reusable while it moves." #:id 'detail
-                #:center (vec2 0 -4) #:font-size 1/3 #:color "dimgray"))
+                #:center (vec2 0 -7/2) #:font-size 1/3 #:color "dimgray"))
   (define start
     (scene-add (scene-add (scene-add (make-scene) rocket) caption) detail))
   (scene-wait

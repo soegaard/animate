@@ -24,7 +24,7 @@
                     #:stroke "seagreen" #:stroke-width 3))
   (define title
     (plain-text "SCENE-BL: implicit curves" #:id 'title
-                #:center (vec2 0 4) #:font-size 2/5 #:color "navy"))
+                #:center (vec2 0 7/2) #:font-size 2/5 #:color "navy"))
   (scene-wait
    (scene-play (make-scene)
                (animation-group (fade-in diagram)

@@ -12,7 +12,7 @@
                  #:id 'diagram #:center origin #:scale 1))
   (define title
     (plain-text "SCENE-BG/BI: animate imported SVG parts" #:id 'title
-                #:center (vec2 0 4) #:font-size 2/5 #:color "navy"))
+                #:center (vec2 0 7/2) #:font-size 2/5 #:color "navy"))
   (define start
     (scene-add (scene-add (make-scene) rocket) title))
   (scene-wait

@@ -10,6 +10,9 @@
           #:y-range (axis-range 1 1000 1)
           #:x-scale 'log #:y-scale 'log
           #:x-log-base 10 #:y-log-base 10
+          ;; Logarithmic coordinate 1 maps to local zero, so translate the
+          ;; positive-only display rectangle back around the scene origin.
+          #:center (vec2 -4 -3)
           #:x-length 8 #:y-length 6
           #:x-tip? #f #:y-tip? #f #:stroke "navy" #:stroke-width 3))
   (define grid
@@ -26,7 +29,7 @@
                     #:stroke "red" #:stroke-width 4))
   (define title
     (plain-text "SCENE-BJ: logarithmic axes" #:id 'title
-                #:center (vec2 0 4) #:font-size 2/5 #:color "navy"))
+                #:center (vec2 0 7/2) #:font-size 2/5 #:color "navy"))
   (scene-wait
    (scene-play (make-scene)
                (animation-group (fade-in diagram) (create graph) (fade-in title))

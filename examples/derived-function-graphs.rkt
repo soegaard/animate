@@ -18,7 +18,7 @@
      #:id 'sine-wave #:sample-count 161 #:stroke "purple" #:stroke-width 4))
   (define title
     (plain-text "SCENE-BN: a parameter-driven function graph" #:id 'title
-                #:center (vec2 0 4) #:font-size 2/5 #:color "navy"))
+                #:center (vec2 0 7/2) #:font-size 2/5 #:color "navy"))
   (define start
     (scene-add (scene-add (scene-add (scene-set-value (make-scene) amplitude) coordinate-axes) graph) title))
   (scene-wait
