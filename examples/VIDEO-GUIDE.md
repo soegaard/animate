@@ -97,7 +97,7 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [derived-groups](../rendered-examples/derived-groups.mp4) | **SCENE-BA:** a parameter changes the number of stable-ID children in a derived group. |
 | [nested-addressing](../rendered-examples/nested-addressing.mp4) | **SCENE-BB:** a halo follows a planet resolved through the nested `system/planet` path. |
 | [nested-child-animation](../rendered-examples/nested-child-animation.mp4) | **SCENE-BC:** individual children of one group move and restyle by nested path. |
-| [automatic-formula-matching](../rendered-examples/automatic-formula-matching.mp4) | **SCENE-BF:** automatic formula correspondence recognizes renamed parts as an expression is reordered. |
+| [automatic-formula-matching](../rendered-examples/automatic-formula-matching.mp4) | **SCENE-BF:** automatic correspondence reorders terms, adds a function name, then replaces it while unchanged parts persist. |
 | [svg-subpart-animation](../rendered-examples/svg-subpart-animation.mp4) | **SCENE-BG/BI:** semantic SVG import exposes `rocket` subparts for independent style and scale animation. |
 | [bitmap-image-visual](../rendered-examples/bitmap-image-visual.mp4) | **SCENE-BH:** a bitmap image participates in normal motion, rotation, scale, and opacity animation. |
 | [logarithmic-axes](../rendered-examples/logarithmic-axes.mp4) | **SCENE-BJ:** evenly spaced decades, logarithmic labels, and an identity graph on log–log axes. |
