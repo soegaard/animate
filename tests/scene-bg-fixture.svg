@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg">
+  <g id="orbit" transform="translate(1 2)" fill="none" stroke="navy" stroke-width="2">
+    <path id="triangle" d="M 0 0 L 10 0 L 10 10 Z"/>
+    <path id="curve" d="M 0 0 Q 5 10 10 0" stroke="crimson"/>
+    <circle id="planet" cx="4" cy="6" r="2" fill="gold"/>
+  </g>
+  <rect id="label-box" x="12" y="2" width="6" height="4" fill="#44aaee"/>
+</svg>

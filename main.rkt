@@ -44,6 +44,7 @@
          "private/relative-layout.rkt"
          "private/scene-state.rkt"
          "private/scene.rkt"
+         "private/svg-import.rkt"
          "private/text-visual.rkt"
          "private/video-encoder.rkt"
          "private/vector-field.rkt"
@@ -243,6 +244,7 @@
  image-visual-source
  image-visual-width
  image-visual-height
+ svg->visual
  group
  group-visual?
  group-visual-children

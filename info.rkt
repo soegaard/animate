@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BH: immutable bitmap image Visuals")
+  "SCENE-BG/BI: semantic SVG import with stable subpart identities")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.64.0")
+(define version "0.65.0")
 
 ; license : symbol?
 ;;   Declares the package license.

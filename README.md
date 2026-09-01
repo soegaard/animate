@@ -1,18 +1,18 @@
-# animate — SCENE-BH
+# animate — SCENE-BG/BI
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BH adds semantic bitmap image Visuals. Image files are loaded only by the
-renderer, while scenes retain an immutable source path and explicit world size:
+SCENE-BG/BI adds semantic SVG import with stable nested element identities. SVG
+paths and common shapes become normal Visuals, and named `<g>`/element IDs work
+with nested scene targeting:
 
 ```racket
-(image "assets/logo.png"
-       #:id 'logo
-       #:width 3
-       #:height 1)
+(define logo (svg->visual "assets/logo.svg" #:id 'logo))
+
+(stroke-color-to '(logo mark outline) "red")
 
 ```
 
@@ -75,11 +75,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BH v0.64.0 builds on immutable parameters and generic values, dynamically
+SCENE-BG/BI v0.65.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, formula correspondence, and sampled
 plots.
 
-The public package version is `0.64.0`. The public module exports `479` bindings,
+The public package version is `0.65.0`. The public module exports `480` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2099,8 +2099,17 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-az-test.rkt tests/scene-ba-test.rkt tests/scene-bb-test.rkt \
   tests/scene-bc-test.rkt tests/scene-bd-bf-test.rkt tests/scene-bk-test.rkt \
   tests/scene-bm-test.rkt tests/scene-bl-test.rkt tests/scene-bn-test.rkt \
-  tests/scene-bj-test.rkt tests/scene-bh-test.rkt
+  tests/scene-bj-test.rkt tests/scene-bh-test.rkt tests/scene-bg-test.rkt
 ```
+
+## SCENE-BG/BI: semantic SVG import and subpart identities
+
+Version `0.65.0` adds `svg->visual`. It reads a practical SVG subset as nested
+semantic paths, circles, rectangles, and ellipses; `<g>` nodes become groups.
+SVG `id` attributes become stable nested Visual paths, enabling normal lookup,
+styling, animation, and morphing. Unitless `translate` transforms and basic
+fill/stroke/opacity styles are supported; complex transforms should be flattened
+before importing.
 
 ## SCENE-BH: bitmap image Visuals
 

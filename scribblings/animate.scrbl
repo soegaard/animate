@@ -3385,6 +3385,38 @@ Returns the unscaled local world width.
 Returns the unscaled local world height.
 }
 
+@subsection{Semantic SVG Import}
+
+@defproc[(svg->visual [source path-string?]
+                      [#:id id symbol?]
+                      [#:center center vec2? origin]
+                      [#:rotation rotation finite-real? 0]
+                      [#:scale scale scale-factor? 1]
+                      [#:opacity opacity opacity? 1])
+         group-visual?]{
+
+Reads an SVG XML file once and converts supported geometry into an immutable
+semantic group. SVG @tt{path}, @tt{line}, @tt{polyline}, @tt{polygon},
+@tt{rect}, @tt{circle}, @tt{ellipse}, and nested @tt{g} elements are supported.
+The path importer accepts absolute and relative @tt{M}, @tt{L}, @tt{H}, @tt{V},
+@tt{C}, @tt{Q}, and @tt{Z} commands; quadratic segments are converted exactly
+to cubic semantic segments. Unsupported graphical tags are ignored.
+
+The root takes @racket[id]. An SVG element's nonempty @tt{id} becomes its stable
+child identity; missing IDs receive deterministic generated symbols. Nested
+@tt{g} elements become nested built-in groups, so imported IDs participate in
+@racket[scene-ref], @racket[scene-visual-at], derived-context lookup, and all
+nested style and transform requests. The constructor rejects duplicate IDs using
+the existing built-in group-tree invariant.
+
+SVG's screen-down y coordinate is converted to the semantic world-up y
+coordinate. Unitless @tt{translate(x[, y])} transforms are supported. Other
+SVG transforms must be flattened before import. Inherited @tt{fill}, @tt{stroke},
+@tt{stroke-width}, and @tt{opacity} attributes (including simple inline
+@tt{style} declarations) are preserved. CSS stylesheets, clipping, text, use
+elements, arcs, and paint servers are outside this deliberately semantic subset.
+}
+
 
 @subsection[#:tag "arrows-and-axes"]{Arrow and Cartesian Axes Visuals}
 
@@ -9067,6 +9099,9 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.65.0 — SCENE-BG/BI.} Added @racket[svg->visual], importing a
+       practical SVG geometry subset into nested semantic groups and preserving
+       SVG element identities as stable paths for ordinary lookup and animation.}
  @item{@bold{0.64.0 — SCENE-BH.} Added immutable @racket[image] Visuals with
        explicit world dimensions, normal affine/opacity behavior, lazy default
        bitmap rendering, and a bounded renderer-local bitmap cache.}
