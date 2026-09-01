@@ -1,7 +1,7 @@
-# visual-animation — SCENE-AX
+# animate — SCENE-AX
 
 This repository is the dependency-driven derived-geometry stage of a Manim-like
-animation system for Racket and Rhombus.
+animation system for Racket, with optional Rhombus examples.
 
 SCENE-AX extends SCENE-AW's pure derived Visuals so one derived Visual may read
 another resolved top-level Visual from the same immutable sampled scene state:
@@ -46,27 +46,33 @@ all covered by the Scribble reference.
 ## Documentation source
 
 The complete Scribble reference source remains in
-[`scribblings/visual-animation.scrbl`](scribblings/visual-animation.scrbl), but
+[`scribblings/animate.scrbl`](scribblings/animate.scrbl), but
 it is deliberately not registered with Racket's documentation system. Installing
 this package therefore does not build or hook up documentation.
 
 Install the package from a checkout:
 
 ```sh
-raco pkg install --auto --name visual-animation --link "$(pwd)"
+raco pkg install --auto --name animate --link "$(pwd)"
 ```
 
 Install directly from GitHub:
 
 ```sh
-raco pkg install --auto --name visual-animation https://github.com/soegaard/animate.git
+raco pkg install --auto --name animate https://github.com/soegaard/animate.git
 ```
 
 The documentation source can still be rendered manually when needed:
 
 ```sh
-scribble --htmls --dest doc scribblings/visual-animation.scrbl
+scribble --htmls --dest doc scribblings/animate.scrbl
 ```
+
+### Optional Rhombus examples
+
+Rhombus examples are preserved in [`examples/rhombus`](examples/rhombus), but
+the package omits that directory from normal compilation and test discovery.
+They can be run separately in an environment where Rhombus is installed.
 
 Every public API addition must have a defining Scribble entry in the same
 change. Every public signature or behavior change must update the existing
@@ -80,7 +86,7 @@ Run two relative rotations sequentially in one scene clip:
 ```racket
 #lang racket/base
 
-(require visual-animation)
+(require animate)
 
 (define card
   (rectangle #:id 'card
@@ -1301,43 +1307,6 @@ PLTCOLLECTS="/Users/soegaard/Dropbox/GitHub/latex-pict:" \
 The trailing colon preserves Racket's normal collection paths. Use the `racket`
 and `raco` executables from the same Racket installation.
 
-The equivalent Rhombus sources include:
-
-```text
-examples/animating-stroke-width.rhm
-examples/duration-scaled-compositions.rhm
-examples/lagged-start-animations.rhm
-examples/parallel-animation-groups.rhm
-examples/successive-animations.rhm
-examples/local-animation-timing.rhm
-examples/per-subpath-topology-penalties.rhm
-examples/per-pair-match-penalties.rkt
-examples/per-pair-match-penalties.rhm
-examples/per-subpath-topology-anchors.rhm
-examples/penalized-topology-changing-morphs.rhm
-examples/anchored-topology-changing-morphs.rhm
-examples/topology-changing-morphs.rhm
-examples/mixed-compound-morph-correspondence.rhm
-examples/open-compound-morph-correspondence.rhm
-examples/open-morph-correspondence.rhm
-examples/compound-morph-correspondence.rhm
-examples/automatic-morph-correspondence.rhm
-examples/reversed-and-cyclic-paths.rhm
-examples/joined-offset-paths.rhm
-examples/path-orientation-and-offsets.rhm
-examples/path-following.rhm
-examples/fixed-overlays-and-callouts.rhm
-examples/camera-framing-and-following.rhm
-examples/camera-pan-and-zoom.rhm
-examples/parametric-data-plots.rhm
-examples/function-graphs.rhm
-examples/arrows-and-axes.rhm
-examples/relative-layout.rhm
-examples/transforming-formula-parts.rhm
-examples/named-formula-parts.rhm
-examples/formula-visuals.rhm
-```
-
 Earlier examples remain available:
 
 ```text
@@ -1893,9 +1862,6 @@ raco test tests/scene-a-test.rkt \
           tests/scene-an-render-test.rkt
 ```
 
-The package test configuration excludes `tests/documentation-test.rkt`, because
-the package deliberately does not register its Scribble source.
-
 ## Module boundaries
 
 The pure semantic camera-animation, frame-space, arrow, axes, coordinate-series,
@@ -2343,7 +2309,7 @@ AR still keeps camera requests top-level/full-clip and rejects a timed wrapper
 around another timed wrapper.
 
 
-## SCENE-AQ: lagged Visual-animation starts
+## SCENE-AQ: lagged visual animation starts
 
 Version `0.43.0` adds `lagged-start`. For an assigned duration `D`, `n` direct
 children, and lag ratio `r`, each direct child receives
@@ -2377,7 +2343,7 @@ SCENE-AR lifts the Visual timing restriction while camera requests remain
 top-level/full-clip.
 
 
-## SCENE-AP: parallel Visual-animation groups
+## SCENE-AP: parallel visual animation groups
 
 Version `0.42.0` adds `animation-group`. A group occupies the interval assigned
 by its enclosing `scene-play` or parent composition, and every direct child
@@ -2414,7 +2380,7 @@ camera requests inside compositions. SCENE-AQ added lagged starts; SCENE-AR now
 adds explicit nested Visual timing while cameras remain top-level.
 
 
-## SCENE-AO: successive Visual-animation composition
+## SCENE-AO: successive visual animation composition
 
 Version `0.41.0` adds `succession`. One succession occupies the interval assigned
 by its enclosing `scene-play`; its direct children receive equal consecutive
@@ -2449,7 +2415,7 @@ successions. SCENE-AP extended its child grammar to include `animation-group`;
 SCENE-AQ added `lagged-start`; and SCENE-AR adds timed Visual/composition
 children. Camera requests remain invalid inside compositions.
 
-## SCENE-AN: local Visual-animation timing
+## SCENE-AN: local visual animation timing
 
 Version `0.40.0` starts the animation-composition track with `timed`. The wrapper
 accepts one ordinary Visual animation request and attaches a local start,

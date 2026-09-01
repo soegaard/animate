@@ -7,7 +7,17 @@
 ; collection : string?
 ;;   Names the installed Racket collection.
 (define collection
-  "visual-animation")
+  "animate")
+
+; pkg-name : string?
+;;   Names this package independently of its source directory.
+(define pkg-name
+  "animate")
+
+; pkg-authors : (listof symbol?)
+;;   Identifies the package maintainers for catalog metadata.
+(define pkg-authors
+  '(soegaard))
 
 ; deps : (listof string?)
 ;;   Lists runtime package dependencies.
@@ -17,8 +27,12 @@
 ; build-deps : (listof string?)
 ;;   Lists dependencies needed for tests and examples.
 (define build-deps
-  '("rackunit-lib"
-    "rhombus-lib"))
+  '("rackunit-lib"))
+
+; compile-omit-paths : (listof path-string?)
+;;   Keeps optional Rhombus examples out of normal Racket compilation.
+(define compile-omit-paths
+  '("examples/rhombus"))
 
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
@@ -35,7 +49,6 @@
   'MIT)
 
 ; test-omit-paths : (listof string?)
-;;   Excludes examples and the unregistered documentation coverage test.
+;;   Excludes examples from package test discovery.
 (define test-omit-paths
-  '("examples"
-    "tests/documentation-test.rkt"))
+  '("examples"))

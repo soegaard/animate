@@ -9,12 +9,11 @@
                      (only-in pict pict?)
                      "../main.rkt"))
 
-@title[#:tag "visual-animation"]{Visual Animation}
+@title[#:tag "animate"]{Visual Animation}
 
-@defmodule[visual-animation]
+@defmodule[animate]
 
-Visual Animation is a small, immutable animation library for Racket and
-Rhombus. It is an early step toward a Manim-like system. The library keeps
+Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
 semantic scene data separate from Pict rendering and file output.
 
 The public API in this manual is version @tt{0.50.1}. This is still a
@@ -32,7 +31,7 @@ the same time. Both curves use smooth cubic interpolation and the ordinary path
 @racketmod[
 racket/base
 
-(require visual-animation)
+(require animate)
 
 (define coordinate-axes
   (axes #:id 'coordinate-axes
@@ -5190,7 +5189,7 @@ Returns @racket[#t] when @racket[value] is a request wrapper created by
                          uncreate-request?)] ...)
          succession-animation-request?]{
 
-Creates a sequential Visual-animation composition. When a succession is passed
+Creates a sequential visual animation composition. When a succession is passed
 to @racket[scene-play], it occupies the enclosing play clip's complete duration;
 when nested, it occupies the interval assigned by its parent.
 
@@ -5258,7 +5257,7 @@ Returns @racket[#t] when @racket[value] is a composition created by
                          uncreate-request?)] ...)
          animation-group-animation-request?]{
 
-Creates a parallel Visual-animation composition. When a group is passed to
+Creates a parallel visual animation composition. When a group is passed to
 @racket[scene-play], it occupies the enclosing play clip's complete duration;
 when nested, it occupies the interval assigned by its parent.
 
@@ -5326,7 +5325,7 @@ Returns @racket[#t] when @racket[value] is a composition created by
           [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/4])
          lagged-start-animation-request?]{
 
-Creates a staggered Visual-animation composition. Each unwrapped direct child
+Creates a staggered visual animation composition. Each unwrapped direct child
 has one intrinsic timing unit; a direct @racket[timed] child has span
 @racket[(+ start duration)]. Let those spans be @italic{s0}, @italic{s1}, and so
 on. The first raw child starts at zero, and each following raw start is the
@@ -5899,7 +5898,7 @@ Here is a complete custom Visual and renderer:
 
 @racketblock[
 (require pict
-         visual-animation)
+         animate)
 
 (struct cross-visual (id position)
   #:transparent
@@ -6466,81 +6465,6 @@ The procedure returns @racket[output-file] after FFmpeg succeeds. It raises an
 exception when FFmpeg is not found or the process fails.
 }
 
-@section[#:tag "rhombus"]{Using the Library from Rhombus}
-
-Rhombus can import the Racket module directly. Racket names containing hyphens
-and keyword names are escaped with @tt{#{...}} notation.
-
-@verbatim{
-#lang rhombus
-
-import:
-  lib("visual-animation/main.rkt") open
-
-module main:
-  def formula = #{latex-formula}(
-    "e^{i\\pi}+1=0",
-    ~#{id}: #'formula,
-    ~#{center}: vec2(-1/2, 0),
-    ~#{font-size}: 4/5
-  )
-
-  def badge = #{group}(
-    [circle(~#{id}: #'disc,
-            ~#{radius}: 1/2,
-            ~#{fill}: "gold"),
-     rectangle(~#{id}: #'bar,
-               ~#{width}: 3/4,
-               ~#{height}: 1/5,
-               ~#{fill}: "crimson")],
-    ~#{id}: #'badge,
-    ~#{center}: vec2(3/2, 0),
-    ~#{scale}: 4/5
-  )
-
-  def assembly = #{group}(
-    [rectangle(~#{id}: #'body,
-               ~#{width}: 5,
-               ~#{height}: 2,
-               ~#{fill}: "cornflowerblue"),
-     formula,
-     badge],
-    ~#{id}: #'assembly,
-    ~#{center}: vec2(-5, 0),
-    ~#{opacity}: 4/5
-  )
-
-  def animation = #{scene-wait}(
-    #{scene-play}(
-      #{make-scene}(),
-      #{move-to}(assembly, origin),
-      #{rotate-to}(assembly, 1/2),
-      #{scale-to}(assembly, 3/2),
-      #{fade-in}(assembly),
-      ~#{duration}: 2
-    ),
-    1/2
-  )
-
-  def frame_paths = #{render-frames!}(
-    animation,
-    "frames",
-    ~#{fps}: 30
-  )
-}
-
-The public values are ordinary Racket values. Named formula parts,
-formula assemblies, correspondence structures, and relative-layout results work
-the same way. Complete examples are included in
-@filepath{examples/named-formula-parts.rhm},
-@filepath{examples/relative-layout.rhm},
-@filepath{examples/arrows-and-axes.rhm}, and
-@filepath{examples/function-graphs.rhm}. The same text, formula,
-typesetting-option, anchor, group hierarchy, path structure, arrow, axes,
-function sampling, clipping, coordinate-conversion, identity, transform,
-opacity, layout, fade, morph,
-reveal, timeline, and rendering rules
-apply in both languages.
 
 @section[#:tag "errors"]{Errors and Validation}
 
@@ -6703,7 +6627,7 @@ opaque at the model boundary. A rendering adapter may reject them later.
 The built-in coordinate, path, transform, camera, Visual, arrow, axis-range,
 axes, parameter-range, sampled-graph, parametric-curve, data-plot, plain-text,
 formula, formula-part, formula-assembly, formula-correspondence, group,
-layout-box, scene-state, Visual-animation request, camera-animation request, and
+layout-box, scene-state, visual animation request, camera-animation request, and
 scene values are immutable.
 Group child
 order, formula part and match order, opacity interpolation, formula-part
@@ -7312,7 +7236,7 @@ Render the canonical SCENE-AS example with:
 open animating-stroke-width.mp4
 }
 
-@section[#:tag "duration-scaled-animation-composition"]{Duration-Scaled Visual-Animation Composition}
+@section[#:tag "duration-scaled-animation-composition"]{Duration-Scaled Visual Animation Composition}
 
 SCENE-AR makes @racket[timed] compositional. A timed wrapper may now appear as a
 direct child of @racket[succession], @racket[animation-group], or
@@ -7423,7 +7347,7 @@ Render the canonical SCENE-AR example with:
 open duration-scaled-compositions.mp4
 }
 
-@section[#:tag "lagged-animation-composition"]{Lagged Visual-Animation Composition}
+@section[#:tag "lagged-animation-composition"]{Lagged Visual Animation Composition}
 
 SCENE-AQ adds staggered composition through @racket[lagged-start]. For an
 assigned interval of duration @italic{D}, @italic{n} direct children, and lag
@@ -7481,7 +7405,7 @@ Render the canonical SCENE-AQ example with:
 open lagged-start-animations.mp4
 }
 
-@section[#:tag "parallel-animation-composition"]{Parallel Visual-Animation Composition}
+@section[#:tag "parallel-animation-composition"]{Parallel Visual Animation Composition}
 
 SCENE-AP adds first-class parallel composition through @racket[animation-group].
 A group occupies the interval assigned by its enclosing @racket[scene-play] or
@@ -7563,7 +7487,7 @@ Render the canonical SCENE-AP example with:
 open parallel-animation-groups.mp4
 }
 
-@section[#:tag "successive-animation-composition"]{Successive Visual-Animation Composition}
+@section[#:tag "successive-animation-composition"]{Successive Visual Animation Composition}
 
 SCENE-AO adds first-class sequential composition through @racket[succession]. A
 succession occupies the interval assigned by its enclosing @racket[scene-play],
@@ -7635,7 +7559,7 @@ added @racket[animation-group], SCENE-AQ added @racket[lagged-start], and SCENE-
 adds timed Visual/composition children while preserving one-unit shares for every
 unwrapped direct child. Camera requests remain invalid composition children.
 
-@section[#:tag "local-animation-timing"]{Local Visual-Animation Timing}
+@section[#:tag "local-animation-timing"]{Local Visual Animation Timing}
 
 SCENE-AN begins the animation-composition track without changing the immutable
 scene model. @racket[timed] attaches a local interval to one existing Visual
@@ -8856,7 +8780,7 @@ open markers-scatter-areas.mp4
        sampled scene state. Resolution is drawing-order independent, uses
        traversal-local memoization, rejects self and multi-Visual dependency
        cycles explicitly, and remains nonpersistent across scene samples. Added
-       semantic/render regressions and Racket/Rhombus examples.}
+       semantic/render regressions and Racket examples.}
  @item{@bold{0.49.0 — SCENE-AW.} Added pure @racket[derived-visual]
 definitions driven by immutable sampled scalar values, together with
 @racket[derived-context?], scalar context lookup, and resolved scene-state
@@ -8865,7 +8789,7 @@ camera fitting, and named path-source lookup now resolve derived targets
 automatically. Resolver output is never persisted into scene state,
 preserves top-level identity, and direct Visual animation of derived definitions
 is rejected in favor of animating their scalar sources. Added semantic/render
-regressions and Racket/Rhombus examples.}
+regressions and Racket examples.}
  @item{@bold{0.48.0 — SCENE-AV.} Added immutable named finite-real scene values,
        @racket[value-to], @racket[scene-set-value], @racket[scene-remove-value],
        @racket[scene-value-at], @racket[scene-current-value], and scene-state value
@@ -8882,7 +8806,7 @@ regressions and Racket/Rhombus examples.}
        the existing fill-color, stroke-color, stroke-width, and opacity leaves,
        retaining exact endpoints, optional Visual protocol validation, fine-grained
        scheduler conflict components, and AN--AR timing semantics. Added semantic
-       and renderer regressions plus Racket/Rhombus examples.}
+       and renderer regressions plus Racket examples.}
  @item{@bold{0.46.2 — SCENE-AT (test correction).} Corrected the expected midpoint of black-to-gold interpolation and changed the transparent-endpoint renderer regression to sample exact scene time rather than an out-of-range frame index.}
  @item{@bold{0.46.1 — SCENE-AT (rebased).} Added renderer-independent
        @racket[rgba-color] values, X11-style/hex @racket[color-spec?] parsing, fill and
@@ -8893,7 +8817,7 @@ regressions and Racket/Rhombus examples.}
        boundary. Built on the corrected SCENE-AS v0.45.1 baseline and supersedes
        the earlier 0.46.0 archive. Added exactness-coercion and scatter/callout
        exclusion tests plus independent rendered checks for every built-in color
-       protocol path, alongside Racket/Rhombus examples.}
+       protocol path, alongside Racket examples.}
 
  @item{@bold{0.45.1 — SCENE-AS correction.} Tightened custom
        @racket[visual-with-stroke-width] validation so exact requested endpoints
@@ -8912,7 +8836,7 @@ regressions and Racket/Rhombus examples.}
        @racket[stroke-width-to] as a distinct animation component that composes
        with AN--AR local timing, succession, parallel groups, and lagged starts.
        Custom protocol endpoints are validated during scene compilation. Added
-       Racket/Rhombus examples and semantic/rendered regression coverage.}
+       Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.44.0 — SCENE-AR.} Extended @racket[timed] to wrap
        sequential, parallel, and lagged Visual compositions and allowed timed
@@ -8923,7 +8847,7 @@ regressions and Racket/Rhombus examples.}
        against the longest span, and lagged starts use previous-child spans while
        preserving ratio-zero/group and ratio-one/succession equivalence. Bare
        nested compositions remain one parent-level unit for AO--AQ compatibility.
-       Added Racket/Rhombus examples and semantic/rendered regression coverage.}
+       Added Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.43.1 — SCENE-AQ maintenance.} Scheduled Visual sampling now
        uses exact progress @racket[0] and @racket[1] at local start/end
@@ -8933,35 +8857,35 @@ regressions and Racket/Rhombus examples.}
        y-coordinate @racket[-2].}
 
  @item{@bold{0.43.0 — SCENE-AQ.} Added @racket[lagged-start] as a first-class
-       staggered Visual-animation composition with nonnegative
+       staggered visual animation composition with nonnegative
        @racket[#:lag-ratio]. Direct-child duration is scaled so the final child
        ends exactly at the assigned endpoint; ratio zero matches parallel-group
        timing, ratio one matches equal-slice succession, intermediate ratios
        overlap, and larger ratios create gaps. Lagged starts nest freely with
        successions and animation groups and expand to the existing SCENE-AN
-       scheduled-leaf representation. Added Racket/Rhombus examples and
+       scheduled-leaf representation. Added Racket examples and
        semantic/rendered regression coverage.}
 
  @item{@bold{0.42.0 — SCENE-AP.} Added @racket[animation-group] as a first-class
-       parallel Visual-animation composition. Every direct child receives the
+       parallel visual animation composition. Every direct child receives the
        group's complete assigned interval; groups and @racket[succession]
        compositions may nest in either direction. Mixed trees expand to the
        existing SCENE-AN scheduled-leaf representation, preserving exact boundary
        compilation, component-conflict rules, structural event ordering,
        camera-follow behavior, and arbitrary-time sampling. Timed/camera nested
        children remain deferred until explicit composite-duration semantics are
-       introduced. Added Racket/Rhombus examples and semantic/rendered regression
+       introduced. Added Racket examples and semantic/rendered regression
        coverage.}
 
  @item{@bold{0.41.0 — SCENE-AO.} Added @racket[succession] as a first-class
-       sequential Visual-animation composition. Direct children receive equal
+       sequential visual animation composition. Direct children receive equal
        consecutive shares of the enclosing interval; nested successions
        recursively subdivide their assigned share. Leaves compile against exact
        semantic boundary states and reuse SCENE-AN overlap, structural, and
        camera-follow behavior. Ordinary and timed top-level siblings remain
        composable, while timed/camera succession children are deferred until
        explicit composite-duration semantics are introduced. Added
-       Racket/Rhombus examples and semantic/rendered regression coverage.}
+       Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.40.0 — SCENE-AN.} Started the animation-composition track with
        @racket[timed] Visual requests carrying local start times, durations, and
@@ -8970,7 +8894,7 @@ regressions and Racket/Rhombus examples.}
        intervals are legal while positive overlap conflicts. Structural
        introductions occur at local start, removals cannot invalidate an active
        same-target animation, untimed requests retain full-clip behavior, and
-       camera-follow tracks actual locally timed motion. Added Racket/Rhombus
+       camera-follow tracks actual locally timed motion. Added Racket
        examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.39.0 — SCENE-AM.} Extended topology-changing morph preparation
@@ -8980,7 +8904,7 @@ regressions and Racket/Rhombus examples.}
        edges, work in both forced and numeric policy modes, preserve AJ exact-tie
        semantics, and remain independent of AL dummy-edge costs and AK anchors.
        Requests snapshot maps immutably; geometry preparation validates range and
-       topology. Added Racket/Rhombus examples and semantic/rendered regression
+       topology. Added Racket examples and semantic/rendered regression
        coverage.}
 
  @item{@bold{0.38.0 — SCENE-AL.} Extended topology-changing morph preparation
@@ -8990,7 +8914,7 @@ regressions and Racket/Rhombus examples.}
        nonempty maps require numeric mode. Cost overrides affect dummy edges only,
        while real geometric scores, AJ tie semantics, AI/AK anchor placement, and
        exact endpoint storage remain unchanged. Timeline requests snapshot maps
-       immutably. Added Racket/Rhombus examples and semantic/rendered regression
+       immutably. Added Racket examples and semantic/rendered regression
        coverage.}
 
  @item{@bold{0.37.0 — SCENE-AK.} Extended topology-changing morph preparation
@@ -9000,14 +8924,14 @@ regressions and Racket/Rhombus examples.}
        explicit @racket['bounds-center] entries may override a shared hub, and
        timeline requests snapshot maps immutably. SCENE-AJ penalty assignment is
        unchanged and uses the same indexed anchor policy for voluntary slots.
-       Added Racket/Rhombus examples and semantic/rendered regression coverage.}
+       Added Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.36.0 — SCENE-AJ.} Extended topology-changing morph preparation
        and timeline requests with paired @racket[#:birth-penalty] and
        @racket[#:death-penalty] policy options. The default @racket['forced]
        behavior is unchanged; finite nonnegative costs enable global voluntary
        death+birth replacement of poor real correspondences. Exact primary-cost
-       ties prefer fewer topology changes. Added Racket/Rhombus examples and
+       ties prefer fewer topology changes. Added Racket examples and
        semantic/rendered regression coverage.}
 
  @item{@bold{0.35.0 — SCENE-AI.} Extended
@@ -9016,7 +8940,7 @@ regressions and Racket/Rhombus examples.}
        @racket[#:birth-anchor] and @racket[#:death-anchor] options. Bounds-center
        placement remains the exact default; explicit finite local @racket[vec2]
        anchors may be shared by all unmatched subpaths on either side. Added
-       Racket/Rhombus examples and semantic/rendered regression coverage.}
+       Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.34.0 — SCENE-AH.} Added topology-changing automatic compound
        morph preparation through @racket[path-geometry-prepare-topology-changing-morph]:
@@ -9024,7 +8948,7 @@ regressions and Racket/Rhombus examples.}
        destinations grow from deterministic bounds-center seeds, and unmatched
        sources collapse to analogous seeds; added
        @racket[morph-to-topology-changing] with normalized interior interpolation
-       and exact endpoint preservation, plus Racket/Rhombus examples and
+       and exact endpoint preservation, plus Racket examples and
        semantic/rendered regression coverage.}
 
  @item{@bold{0.33.0 — SCENE-AG.} Added topology-aware automatic compound
@@ -9033,7 +8957,7 @@ regressions and Racket/Rhombus examples.}
        existing SCENE-AE/AF and SCENE-AC/AD scoring rules, then restored to source
        order; added @racket[morph-to-mixed-compound-aligned] with normalized
        interior interpolation and exact source/destination endpoint preservation,
-       plus Racket/Rhombus examples and semantic/rendered regression coverage.}
+       plus Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.32.0 — SCENE-AF.} Added deterministic global pairing for
        equal-count positive finite open compound paths through
@@ -9041,14 +8965,14 @@ regressions and Racket/Rhombus examples.}
        endpoint-direction scores and SCENE-AD minimum-total-cost assignment;
        added @racket[morph-to-open-compound-aligned] with normalized interior
        interpolation and exact source/destination endpoint preservation, plus
-       Racket/Rhombus examples and semantic/rendered regression coverage.}
+       Racket examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.31.0 — SCENE-AE.} Added deterministic automatic endpoint-direction
        correspondence for one positive finite open source/destination path through
        @racket[path-geometry-align-open-for-morph], including total-arc-length
        forward/reverse scoring and forward tie preference; added
        @racket[morph-to-open-aligned] with normalized interior interpolation and
-       exact source/destination endpoint preservation, plus Racket/Rhombus
+       exact source/destination endpoint preservation, plus Racket
        examples and semantic/rendered regression coverage.}
 
  @item{@bold{0.30.0 — SCENE-AD.} Added deterministic global pairing for
@@ -9056,7 +8980,7 @@ regressions and Racket/Rhombus examples.}
        @racket[path-geometry-align-compound-for-morph], reusing SCENE-AC
        phase/direction scores within every pair and solving a minimum-total-cost
        assignment; added @racket[morph-to-compound-aligned] with exact endpoint
-       preservation, plus Racket/Rhombus examples and semantic/rendered
+       preservation, plus Racket examples and semantic/rendered
        regression coverage.}
 
  @item{@bold{0.29.1 — SCENE-AC fix1.} Kept the SCENE-AC public API and animation semantics unchanged while correcting the renderer regression test to use frame indices with @racket[scene-frame->bitmap] and the public @racket[render-frames!] output API for deterministic PNG checks.}
@@ -9067,7 +8991,7 @@ regressions and Racket/Rhombus examples.}
        boundary candidates, fixed-round refinement, and forward tie preference;
        added @racket[morph-to-aligned] as an additive timeline request that
        reuses normalized cubic morphing while preserving the exact requested
-       endpoint; and added Racket/Rhombus examples plus semantic/rendered
+       endpoint; and added Racket examples plus semantic/rendered
        regression coverage.}
 
  @item{@bold{0.28.1 — SCENE-AB fix1.} Kept the SCENE-AB public API
@@ -9083,27 +9007,27 @@ regressions and Racket/Rhombus examples.}
        arc-length @racket[path-geometry-cycle-start] phase changes with
        deterministic line/cubic splitting; direct reuse by motion, tangent
        orientation, camera following, and normalized morph preparation; and
-       Racket/Rhombus examples with semantic/rendered regression coverage.}
+       Racket examples with semantic/rendered regression coverage.}
 
  @item{@bold{0.27.0 — SCENE-AA.} Added semantic
        @racket[path-geometry-offset] construction for continuous signed
        straight-path offsets; miter, bevel, and cubic round outside joins;
        inside-corner intersections; miter-limit fallback; open/closed path
        support; direct reuse by path motion/orientation and camera following;
-       and Racket/Rhombus examples with semantic/rendered regression coverage.}
+       and Racket examples with semantic/rendered regression coverage.}
 
  @item{@bold{0.26.0 — SCENE-Z.} Added total-arc-length unit tangent and left
        normal lookup; signed left-of-traversal normal offsets for
        @racket[move-along-path]; independent tangent-derived
        @racket[orient-along-path] rotation with reverse traversal and additive
        rotation offsets; transformed route handling shared with SCENE-Y;
-       camera-follow coverage for offset motion; and Racket/Rhombus examples.}
+       camera-follow coverage for offset motion; and Racket examples.}
 
  @item{@bold{0.25.0 — SCENE-Y.} Added total-arc-length point lookup and
        first-class @racket[move-along-path] translation with forward, reverse,
        and partial traversal; clip-start transformed path-Visual route
        resolution; explicit discontinuity rejection; sampled-state camera
-       following for nonlinear target motion; Racket/Rhombus examples; and a
+       following for nonlinear target motion; Racket examples; and a
        one-clip replacement for the SCENE-X graph-traversal workaround.}
 
  @item{@bold{0.24.1 — SCENE-X fix1.} Corrected the canonical fixed-overlay
@@ -9115,26 +9039,26 @@ regressions and Racket/Rhombus examples.}
  @item{@bold{0.24.0 — SCENE-X.} Added pure fixed-in-frame Visual wrappers, an
        origin-centered captured frame coordinate system, callouts with sampled
        world-space leader targets, frame-aware relative layout, explicit
-       separation from world-camera fit/follow semantics, and Racket/Rhombus
+       separation from world-camera fit/follow semantics, and Racket
        examples.}
 
  @item{@bold{0.23.0 — SCENE-W.} Added renderer-aware camera fitting from
        layout boxes, Visual lists, or current scene targets; clip-local camera
        following that preserves a target's frame position during simultaneous
        motion and zoom; deterministic camera-component conflicts; and
-       Racket/Rhombus examples.}
+       Racket examples.}
 
  @item{@bold{0.22.0 — SCENE-V.} Added semantic point markers,
        deterministic ordered scatter-plot groups, sampled function and data
        areas closed to horizontal baselines, renderer fallback through existing
-       primitives, and Racket/Rhombus examples. Also corrected fallback opacity
+       primitives, and Racket examples. Also corrected fallback opacity
        so number-line opacity is applied once.}
 
  @item{@bold{0.21.0 — SCENE-U.} Added immutable scene-camera state, absolute
        and relative camera pan and zoom requests, simultaneous Visual and camera
        animation, arbitrary-time camera sampling, instantaneous camera
        replacement, scene-camera rendering by default, static camera overrides,
-       and Racket/Rhombus examples.}
+       and Racket examples.}
 
  @item{@bold{0.20.0 — SCENE-T.} Added semantic number-line Visuals,
        numeric coordinate conversion, automatic axes grid lines, and ordered
@@ -9143,18 +9067,18 @@ regressions and Racket/Rhombus examples.}
  @item{@bold{0.19.0 — SCENE-S.} Added ordered parameter ranges,
        coordinate-valued parametric sampling, ordered data-series plots,
        explicit linear and smooth interpolation, shared clipping and run
-       construction, Euclidean distance rejection, and Racket/Rhombus examples.
+       construction, Euclidean distance rejection, and Racket examples.
        Function graphs gained the same interpolation option, and an accidental
        printed value was removed from a SCENE-R test.}
  @item{@bold{0.18.0 — SCENE-R.} Added deterministic coordinate-aware sampling
        of one-variable functions, explicit and non-finite gaps, optional jump
        rejection, rectangular segment clipping, axes-local path geometry,
-       transform-snapshot graph Visuals, and Racket/Rhombus examples. Also
+       transform-snapshot graph Visuals, and Racket examples. Also
        corrected a nonportable rotated-group height assertion in SCENE-Q.}
  @item{@bold{0.17.0 — SCENE-Q.} Added semantic arrows with optional endpoint
        tips, validated Cartesian axis ranges, ordered regular ticks, semantic
        axes, affine coordinate conversion and inversion, shared path-backed
-       rendering, renderer-aware label placement, and Racket/Rhombus examples.}
+       rendering, renderer-aware label placement, and Racket examples.}
  @item{@bold{0.16.0 — SCENE-P.} Added renderer-aware world-coordinate layout
        boxes, edge and center alignment, relative placement with measured gaps,
        ordered horizontal and vertical arrangement, union centering, fitted-card

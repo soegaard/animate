@@ -783,7 +783,7 @@ are specific to that application and are not commands for this repository.
 ## 15. Public Scribble documentation
 
 The authoritative public reference is
-`scribblings/visual-animation.scrbl`. Write it as a reference manual in simple,
+`scribblings/animate.scrbl`. Write it as a reference manual in simple,
 direct language. It must describe the actual API exported by `main.rkt`.
 
 Documentation is part of every public API change:
@@ -821,16 +821,12 @@ For public structures, document every field and whether field or child ordering
 is significant. For protocols, document the obligations placed on custom
 implementations, not only the dispatcher functions.
 
-Register the manual in `info.rkt` through `scribblings`. Build the manual after
-public API or documentation changes:
+The package does not register the manual through `scribblings`. Build it
+manually after public API or documentation changes:
 
 ```sh
-scribble --htmls --dest doc scribblings/visual-animation.scrbl
+scribble --htmls --dest doc scribblings/animate.scrbl
 ```
-
-After the package is linked and its documentation has been built with
-`raco setup -l visual-animation`, run `tests/documentation-test.rkt`. The
-`doc-coverage` check must report no undocumented exports.
 
 ## 16. Testing and build
 
@@ -887,14 +883,7 @@ raco test tests/scene-a-test.rkt \
           tests/scene-x-example-test.rkt \
           tests/scene-y-test.rkt \
           tests/scene-y-render-test.rkt
-scribble --htmls --dest doc scribblings/visual-animation.scrbl
-```
-
-After linking the package and running `raco setup -l visual-animation`, also
-run:
-
-```sh
-raco test tests/documentation-test.rkt
+scribble --htmls --dest doc scribblings/animate.scrbl
 ```
 
 Keep pure model tests separate from filesystem and rendering tests.
@@ -1021,9 +1010,9 @@ Change only intended project files. Leave unrelated user edits untouched.
 When a change affects the public API, update together:
 
 - `main.rkt`;
-- `scribblings/visual-animation.scrbl`;
+- `scribblings/animate.scrbl`;
 - examples when they illustrate the affected API;
-- tests, including documentation coverage;
+- tests;
 - `README.md`;
 - this house-style guide when the rule itself changes.
 
@@ -1196,8 +1185,6 @@ Testing/build:
   tests/scene-x-test.rkt tests/scene-x-render-test.rkt
   tests/scene-x-example-test.rkt
   tests/scene-y-test.rkt tests/scene-y-render-test.rkt.
-- Build scribblings/visual-animation.scrbl and run documentation-test.rkt after
-  package setup; all public exports must have defining Scribble entries.
 - Keep pure model tests separate from rendering/filesystem/FFmpeg tests.
 - Change only intended project files and leave unrelated user edits untouched.
 ```
@@ -1773,7 +1760,7 @@ Testing/build:
   scatter placement, baseline clamping, discontinuous areas, smooth area
   segments, ordinary timeline behavior, and deterministic PNG output.
 
-## Local Visual-animation timing
+## Local visual animation timing
 
 - Keep SCENE-AN/AR timing semantic and renderer-independent. A timed request
   stores one ordinary Visual request or one sequential/parallel/lagged
@@ -1816,7 +1803,7 @@ Testing/build:
   same-boundary endpoint ordering, camera follow, exact final state, legacy
   no-composition behavior, rendered timing, and deterministic repeated PNG output.
 
-## Successive Visual-animation composition
+## Successive visual animation composition
 
 - Keep SCENE-AO succession as pure schedule data. Through SCENE-AQ a succession
   stores ordered ordinary Visual animation children or nested sequential/parallel/
@@ -1852,7 +1839,7 @@ Testing/build:
   list-form construction, rendered chronology, exact final state, and
   deterministic repeated PNG output.
 
-## Parallel Visual-animation composition
+## Parallel visual animation composition
 
 - Keep SCENE-AP `animation-group` as pure schedule data. Through SCENE-AQ it
   stores a nonempty,
@@ -1883,7 +1870,7 @@ Testing/build:
   motion, exact final state, and deterministic repeated PNG output.
 
 
-## Lagged Visual-animation composition
+## Lagged visual animation composition
 
 - Keep SCENE-AQ `lagged-start` as pure schedule data: one nonempty immutable
   ordered child spine plus one nonnegative finite lag ratio. Never store compiled
@@ -1916,7 +1903,7 @@ Testing/build:
   structural introduction/removal, camera follow, exact endpoints, rendered
   stagger chronology, and deterministic repeated PNG output.
 
-## Duration-scaled Visual-animation composition
+## Duration-scaled visual animation composition
 
 - SCENE-AR makes `timed` the explicit duration/delay primitive inside Visual
   composition trees. Permit it to wrap an ordinary Visual request or one
