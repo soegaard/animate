@@ -75,7 +75,7 @@ concurrent jobs with two frame workers each; temporary PNG chunks were kept in
 | [text-visuals](../rendered-examples/text-visuals.mp4) | Plain-text faces, anchors, scale, and rotation. |
 | [formula-visuals](../rendered-examples/formula-visuals.mp4) | LaTeX formulas with semantic positioning and style. |
 | [named-formula-parts](../rendered-examples/named-formula-parts.mp4) | A formula assembly exposing stable named pieces. |
-| [transforming-formula-parts](../rendered-examples/transforming-formula-parts.mp4) | Explicit correspondence between formula parts. |
+| [transforming-formula-parts](../rendered-examples/transforming-formula-parts.mp4) | Rearrange an equation, then swap its sides using matched formula parts. |
 | [derived-visuals](../rendered-examples/derived-visuals.mp4) | Visual geometry derived from sampled scalar state. |
 | [dependency-driven-geometry](../rendered-examples/dependency-driven-geometry.mp4) | One derived Visual reading another’s resolved geometry. |
 | [function-graphs](../rendered-examples/function-graphs.mp4) | Function sampling and graph creation on axes. |

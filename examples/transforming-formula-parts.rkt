@@ -4,8 +4,8 @@
 ;;; Transforming Formula Parts Example
 ;;;
 
-;; Renders the canonical SCENE-O matched formula-part transformation as PNG
-;; frames and optionally assembles them as an MP4 file.
+;; Renders a two-step matched formula-part transformation as PNG frames and
+;; optionally assembles them as an MP4 file.
 
 
 ;;;
@@ -14,6 +14,13 @@
 
 (require racket/cmdline
          "../main.rkt")
+
+
+;;;
+;;; Exports
+;;;
+
+(provide make-demo-scene)
 
 
 ;;;
@@ -35,39 +42,65 @@
 (define (make-source-equation)
   (formula-assembly
    (list (make-equation-part 'a-square "a^2" -12/5)
-         (make-equation-part 'plus "+" -6/5)
-         (make-equation-part 'b-square "b^2" 0)
-         (make-equation-part 'equals "=" 6/5)
-         (make-equation-part 'c-square "c^2" 12/5))
+         (make-equation-part 'plus     "+"   -6/5)
+         (make-equation-part 'b-square "b^2"  0)
+         (make-equation-part 'equals   "="    6/5)
+         (make-equation-part 'c-square "c^2"  12/5))
    #:id 'equation
    #:center (vec2 -6 0)
    #:rotation -1/16
    #:scale 4/5
    #:opacity 4/5))
 
-; make-destination-equation : -> formula-assembly-visual?
-;;   Creates the destination layout c squared minus a squared equals b squared.
-(define (make-destination-equation)
+; make-rearranged-equation : [#:id symbol?] -> formula-assembly-visual?
+;;   Creates the algebraic rearrangement b squared equals c squared minus a squared.
+(define (make-rearranged-equation #:id [identifier 'rearranged-template])
+  (formula-assembly
+   (list (make-equation-part 'b-square "b^2" -12/5)
+         (make-equation-part 'equals   "="    -6/5)
+         (make-equation-part 'c-square "c^2"  0)
+         (make-equation-part 'minus    "-"    6/5)
+         (make-equation-part 'a-square "a^2" 12/5))
+   #:id identifier))
+
+; make-flipped-equation : -> formula-assembly-visual?
+;;   Creates the equivalent equation c squared minus a squared equals b squared.
+(define (make-flipped-equation)
   (formula-assembly
    (list (make-equation-part 'c-square "c^2" -12/5)
-         (make-equation-part 'minus "-" -6/5)
-         (make-equation-part 'a-square "a^2" 0)
-         (make-equation-part 'equals "=" 6/5)
+         (make-equation-part 'minus    "-"   -6/5)
+         (make-equation-part 'a-square "a^2"  0)
+         (make-equation-part 'equals   "="    6/5)
          (make-equation-part 'b-square "b^2" 12/5))
-   #:id 'destination-template))
+   #:id 'flipped-template))
 
-; make-correspondence : formula-assembly-visual?
-;                       formula-assembly-visual?
-;                       -> formula-correspondence?
-;;   Matches moving terms and cross-fades plus into minus.
-(define (make-correspondence source destination)
+; make-rearrangement-correspondence : formula-assembly-visual?
+;                                      formula-assembly-visual?
+;                                      -> formula-correspondence?
+;;   Matches every term while plus changes to the subtraction sign.
+(define (make-rearrangement-correspondence source rearranged)
   (formula-correspondence
    source
-   destination
+   rearranged
    (list (formula-part-match 'a-square 'a-square)
-         (formula-part-match 'plus 'minus)
+         (formula-part-match 'plus     'minus)
          (formula-part-match 'b-square 'b-square)
-         (formula-part-match 'equals 'equals))))
+         (formula-part-match 'equals   'equals)
+         (formula-part-match 'c-square 'c-square))))
+
+; make-side-swap-correspondence : formula-assembly-visual?
+;                                  formula-assembly-visual?
+;                                  -> formula-correspondence?
+;;   Matches every part while moving the two equation sides past each other.
+(define (make-side-swap-correspondence rearranged flipped)
+  (formula-correspondence
+   rearranged
+   flipped
+   (list (formula-part-match 'b-square 'b-square)
+         (formula-part-match 'equals   'equals)
+         (formula-part-match 'c-square 'c-square)
+         (formula-part-match 'minus    'minus)
+         (formula-part-match 'a-square 'a-square))))
 
 
 ;;;
@@ -75,14 +108,20 @@
 ;;;
 
 ; make-demo-scene : -> scene?
-;;   Introduces one equation and transforms its explicitly matched parts.
+;;   Introduces one equation, rearranges it, and then swaps its sides.
 (define (make-demo-scene)
   (define source
     (make-source-equation))
-  (define destination
-    (make-destination-equation))
-  (define correspondence
-    (make-correspondence source destination))
+  (define rearranged
+    (make-rearranged-equation))
+  (define rearranged-source
+    (make-rearranged-equation #:id 'equation))
+  (define flipped
+    (make-flipped-equation))
+  (define rearrangement-correspondence
+    (make-rearrangement-correspondence source rearranged))
+  (define side-swap-correspondence
+    (make-side-swap-correspondence rearranged-source flipped))
   (define background
     (rectangle #:id 'background
                #:width 9
@@ -91,7 +130,7 @@
                #:stroke "navy"
                #:stroke-width 3))
   (define title
-    (plain-text "Transform corresponding formula parts"
+    (plain-text "Rearrange, then swap equation sides"
                 #:id 'title
                 #:center (vec2 0 1)
                 #:font-size 1/3
@@ -107,15 +146,15 @@
                 (scale-to source 1)
                 (fade-in source)
                 #:duration 2))
-  (define transformation
+  (define rearrangement
     (scene-play entrance
-                (transform-formula-parts correspondence)
-                (move-to source (vec2 0 -1/2))
-                (rotate-to source 1/24)
-                (scale-to source 6/5)
-                (fade-to source 1)
+                (transform-formula-parts rearrangement-correspondence)
                 #:duration 2))
-  (scene-wait transformation 1/2))
+  (define side-swap
+    (scene-play rearrangement
+                (transform-formula-parts side-swap-correspondence)
+                #:duration 2))
+  (scene-wait side-swap 1/2))
 
 
 ;;;
