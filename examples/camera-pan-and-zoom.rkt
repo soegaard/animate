@@ -60,9 +60,32 @@
                     graph-value
                     #:id 'quadratic-graph
                     #:sample-count 241
-                    #:interpolation 'smooth
+                    ;; The marker routes use the same 1/20-unit linear
+                    ;; samples, so they coincide exactly with this graph.
+                    #:interpolation 'linear
                     #:stroke "crimson"
                     #:stroke-width 4))
+  (define left-marker-route
+    (sample-function-path coordinate-axes
+                          graph-value
+                          #:x-min -4
+                          #:x-max -2
+                          #:sample-count 41
+                          #:interpolation 'linear))
+  (define right-marker-route
+    (sample-function-path coordinate-axes
+                          graph-value
+                          #:x-min -2
+                          #:x-max 3
+                          #:sample-count 101
+                          #:interpolation 'linear))
+  (define return-marker-route
+    (sample-function-path coordinate-axes
+                          graph-value
+                          #:x-min 0
+                          #:x-max 3
+                          #:sample-count 61
+                          #:interpolation 'linear))
   (define marker
     (circle #:id 'marker
             #:center (axes-coordinates->point
@@ -98,32 +121,20 @@
      entrance
      (camera-pan-to (vec2 -2 -1))
      (camera-zoom-by 2)
-     (move-to marker
-              (axes-coordinates->point
-               coordinate-axes
-               -2
-               (graph-value -2)))
+     (move-along-path marker left-marker-route)
      #:duration 3/2))
   (define follow-right
     (scene-play
      focus-left
      (camera-pan-to (vec2 3 1/4))
-     (move-to marker
-              (axes-coordinates->point
-               coordinate-axes
-               3
-               (graph-value 3)))
+     (move-along-path marker right-marker-route)
      #:duration 3/2))
   (define overview
     (scene-play
      follow-right
      (camera-pan-to origin)
      (camera-zoom-to 14)
-     (move-to marker
-              (axes-coordinates->point
-               coordinate-axes
-               0
-               (graph-value 0)))
+     (move-along-path marker return-marker-route #:start 1 #:end 0)
      #:duration 3/2))
   (scene-wait overview 1/2))
 
