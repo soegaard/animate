@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-AX: dependency-driven geometry with stable moving text")
+  "SCENE-AY: generic interpolable scene values")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.50.1")
+(define version "0.51.0")
 
 ; license : symbol?
 ;;   Declares the package license.

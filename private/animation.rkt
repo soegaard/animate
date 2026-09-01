@@ -4,7 +4,7 @@
 ;;; Animation Model
 ;;;
 
-;; Defines transform, path-following, style, opacity, scalar-value, path-morph,
+;; Defines transform, path-following, style, opacity, named-value, path-morph,
 ;; path-reveal, and matched-formula requests with deterministic transitions.
 ;;
 ;; Animation requests capture destinations or relative changes. Scene
@@ -24,6 +24,7 @@
          "formula-parts-visual.rkt"
          "frame-space.rkt"
          "geometry.rkt"
+         "interpolation.rkt"
          "path-geometry.rkt"
          "scene-state.rkt"
          "visual-model.rkt")
@@ -96,9 +97,9 @@
 (struct value-to-request (target-id destination)
   #:transparent)
 
-;; value-to-request represents an uncompiled named scalar transition.
+;; value-to-request represents an uncompiled named semantic-value transition.
 ;;  - target-id    symbol?       stable scene value identity.
-;;  - destination  finite-real?  requested final scalar value.
+;;  - destination  interpolable? requested final semantic value.
 
 (struct move-to-request (target-id destination)
   #:transparent)
@@ -319,10 +320,10 @@
 (struct scalar-value-animation (target-id from to)
   #:transparent)
 
-;; scalar-value-animation represents one compiled named scalar transition.
+;; scalar-value-animation represents one compiled named semantic-value transition.
 ;;  - target-id  symbol?       stable scene value identity.
-;;  - from       finite-real?  scalar value at interval start.
-;;  - to         finite-real?  exact requested scalar endpoint.
+;;  - from       interpolable? semantic value at interval start.
+;;  - to         interpolable? exact requested semantic endpoint.
 
 (struct translation-animation (target-id from to)
   #:transparent)
@@ -446,13 +447,13 @@
 ;;; Public Animation Requests
 ;;;
 
-; value-to : symbol? finite-real? -> value-to-request?
-;;   Creates an absolute animation request for one named scene scalar value.
+; value-to : symbol? interpolable? -> value-to-request?
+;;   Creates an absolute animation request for one named scene semantic value.
 (define (value-to target-id destination)
   (unless (symbol? target-id)
     (raise-argument-error 'value-to "symbol?" target-id))
-  (unless (finite-real? destination)
-    (raise-argument-error 'value-to "finite-real?" destination))
+  (unless (interpolable? destination)
+    (raise-argument-error 'value-to "interpolable?" destination))
   (value-to-request target-id destination))
 
 ; move-to : (or/c visual? symbol?) vec2? -> move-to-request?
@@ -1072,10 +1073,18 @@
     (animation-request-target-id request))
   (cond
     [(value-to-request? request)
+     (define from
+       (scene-state-value-ref state target-id))
+     (define to
+       (value-to-request-destination request))
+     ;; Validate compatibility during compilation, before a scene acquires the
+     ;; clip. The result is deliberately discarded; sampling preserves exact
+     ;; endpoint representations through interpolate-value.
+     (interpolate-value from to 1/2)
      (scalar-value-animation
       target-id
-      (scene-state-value-ref state target-id)
-      (value-to-request-destination request))]
+      from
+      to)]
     [else
      (define visual
        (scene-state-ref state target-id))
@@ -1717,18 +1726,13 @@
 
 ; apply-scalar-value-animation : scene-state? scalar-value-animation? finite-real?
 ;                                -> scene-state?
-;;   Samples one named scalar while preserving exact semantic endpoints.
+;;   Samples one named semantic value while preserving exact endpoints.
 (define (apply-scalar-value-animation state animation progress)
   (define value
-    (cond
-      [(zero? progress)
-       (scalar-value-animation-from animation)]
-      [(= progress 1)
-       (scalar-value-animation-to animation)]
-      [else
-       (real-lerp (scalar-value-animation-from animation)
-                  (scalar-value-animation-to animation)
-                  progress)]))
+    (interpolate-value
+     (scalar-value-animation-from animation)
+     (scalar-value-animation-to animation)
+     progress))
   (scene-state-value-set
    state
    (scalar-value-animation-target-id animation)

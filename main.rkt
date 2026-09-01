@@ -31,6 +31,7 @@
          "private/frame-renderer.rkt"
          "private/geometry.rkt"
          "private/group-visual.rkt"
+         "private/interpolation.rkt"
          "private/path-geometry.rkt"
          "private/parametric-data-plot.rkt"
          "private/pict-adapter.rkt"
@@ -55,6 +56,8 @@
  vec2-scale
  vec2*
  vec2-lerp
+ interpolable?
+ interpolate-value
 
  ;; Semantic colors
  (struct-out rgba-color)

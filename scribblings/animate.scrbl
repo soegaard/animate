@@ -420,6 +420,24 @@ returns @racket[from], and a progress value of @racket[1] returns @racket[to].
 Values outside the unit interval perform linear extrapolation.
 }
 
+@defproc[(interpolable? [value any/c]) boolean?]{
+
+Returns @racket[#t] for a semantic scene value that supports
+@racket[interpolate-value]. In this version, finite real numbers,
+@racket[vec2] coordinates, and @racket[rgba-color] values are interpolable.
+}
+
+@defproc[(interpolate-value [from any/c]
+                            [to any/c]
+                            [progress (and/c finite-real? (>=/c 0) (<=/c 1))])
+         any/c]{
+
+Interpolates two values of the same interpolable semantic kind over the closed
+unit interval. A progress of @racket[0] returns the original @racket[from]
+value and a progress of @racket[1] returns the original @racket[to] value.
+Mixed kinds and noninterpolable values raise an exception.
+}
+
 @defproc[(vec2+ [a vec2?] [b vec2?]) vec2?]{
 
 Returns the componentwise sum of @racket[a] and @racket[b].
@@ -4018,7 +4036,7 @@ group is unchanged.
 @section[#:tag "derived-visuals"]{Pure Derived Visuals}
 
 SCENE-AW introduced persistent top-level derived Visual definitions driven by
-immutable sampled scalar values. SCENE-AX extends the same pure resolver model
+immutable sampled scene values. SCENE-AX extends the same pure resolver model
 with recursively resolved top-level Visual dependencies. No previous frame is
 required. Concrete dependency results may be memoized within one resolution
 traversal, but are never persisted into scene state or reused by a later sample.
@@ -4033,13 +4051,13 @@ template supplies the stable top-level identity and ordinary
 @racket[gen:visual] reference position for the persistent definition. The
 @racket[resolver] receives one read-only @racket[derived-context?] plus that
 immutable template whenever concrete scene-aware geometry is needed. The
-context exposes named scalar values and, through SCENE-AX, top-level Visual
+context exposes named semantic values and, through SCENE-AX, top-level Visual
 presence and recursively resolved Visual lookup.
 
 The template itself must be concrete rather than derived. The resolver must be
 pure, must return a non-derived @racket[visual?], and the returned Visual's
 @racket[visual-id] must be exactly the template ID. These requirements are
-checked when the definition is resolved. Missing scalar inputs therefore fail
+checked when the definition is resolved. Missing named inputs therefore fail
 at resolution/render time rather than at construction.
 
 The persistent definition still satisfies @racket[gen:visual] by delegating
@@ -4063,13 +4081,13 @@ derived resolver.
 @defproc[(derived-context-value-has? [context derived-context?]
                                      [id symbol?])
          boolean?]{
-Reports whether the sampled state contains the named scalar @racket[id].
+Reports whether the sampled state contains the named semantic value @racket[id].
 }
 
 @defproc[(derived-context-value-ref [context derived-context?]
                                     [id symbol?])
-         finite-real?]{
-Returns named scalar @racket[id] from the sampled immutable state. An absent
+         any/c]{
+Returns named interpolable semantic value @racket[id] from the sampled immutable state. An absent
 value raises an exception.
 }
 
@@ -4107,7 +4125,7 @@ Returns @racket[#t] when @racket[value] is a scene-state value.
 
 @defthing[empty-scene-state scene-state?]{
 
-An empty scene state with no top-level Visuals, no named scalar values, and an empty drawing order.
+An empty scene state with no top-level Visuals, no named semantic values, and an empty drawing order.
 }
 
 @defproc[(scene-state-count [state scene-state?])
@@ -4175,13 +4193,13 @@ order. The Pict scene adapter uses this operation without mutating stored state.
 }
 
 @defproc[(scene-state-value-has? [state scene-state?] [id symbol?]) boolean?]{
-Returns @racket[#t] when @racket[state] contains the named scalar value
-identified by @racket[id]. Named scalar values are semantic state and are not
-rendered. Scalar and Visual identifiers share one global scene namespace.
+Returns @racket[#t] when @racket[state] contains the named semantic value
+identified by @racket[id]. Named values are semantic state and are not rendered.
+Value and Visual identifiers share one global scene namespace.
 }
 
-@defproc[(scene-state-value-ref [state scene-state?] [id symbol?]) finite-real?]{
-Returns the named scalar value identified by @racket[id]. Raises an exception
+@defproc[(scene-state-value-ref [state scene-state?] [id symbol?]) any/c]{
+Returns the named interpolable semantic value identified by @racket[id]. Raises an exception
 when the value is absent.
 }
 
@@ -4197,11 +4215,12 @@ symbol is useful when the current Visual value is not in local scope. Target
 lookup is top level. A nested group child is not a direct animation target in
 this version.
 
-@defproc[(value-to [id symbol?] [destination finite-real?]) value-to-request?]{
-Creates an absolute animation request for one named scalar value. The value must
-already be present in the scene when the request is compiled. Interior samples
-use ordinary real interpolation and exact interval boundaries preserve the
-original source and requested destination representations. Named values use the
+@defproc[(value-to [id symbol?] [destination any/c]) value-to-request?]{
+Creates an absolute animation request for one named interpolable semantic value.
+The value must already be present in the scene when the request is compiled, and
+its kind must match @racket[destination]. Interior samples use
+@racket[interpolate-value], while exact interval boundaries preserve the original
+source and requested destination representations. Named values use the
 same scheduler, easing, timing compositions, and conflict detection as Visual
 requests. They are not painted directly; SCENE-AW derived Visual resolvers may
 consume them and thereby change concrete rendered geometry.
@@ -5450,23 +5469,24 @@ exception. Nested group children are not searched. Supplying no targets returns
 an equivalent scene.
 }
 
-@defproc[(scene-set-value [scene scene?] [id symbol?] [value finite-real?]) scene?]{
-Adds or replaces one named scalar instantaneously at the current scene time. No
-clip is appended and duration does not change. A scalar ID may not collide with
-a top-level Visual ID. Earlier clips retain their stored scalar snapshots.
+@defproc[(scene-set-value [scene scene?] [id symbol?] [value any/c]) scene?]{
+Adds or replaces one named interpolable semantic value instantaneously at the
+current scene time. No clip is appended and duration does not change. A value ID
+may not collide with a top-level Visual ID. Earlier clips retain their stored
+value snapshots.
 }
 
 @defproc[(scene-remove-value [scene scene?] [id symbol?]) scene?]{
-Removes one named scalar instantaneously. Removing an absent value raises an
+Removes one named semantic value instantaneously. Removing an absent value raises an
 exception and does not append a timeline clip.
 }
 
-@defproc[(scene-current-value [scene scene?] [id symbol?]) finite-real?]{
-Returns one named scalar from the scene's stored endpoint state.
+@defproc[(scene-current-value [scene scene?] [id symbol?]) any/c]{
+Returns one named interpolable semantic value from the scene's stored endpoint state.
 }
 
-@defproc[(scene-value-at [scene scene?] [id symbol?] [time (and/c finite-real? (>=/c 0))]) finite-real?]{
-Samples one named scalar directly at absolute scene @racket[time]. The same
+@defproc[(scene-value-at [scene scene?] [id symbol?] [time (and/c finite-real? (>=/c 0))]) any/c]{
+Samples one named interpolable semantic value directly at absolute scene @racket[time]. The same
 closed timeline bounds as @racket[scene-sample] apply.
 }
 
@@ -8767,6 +8787,12 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.51.0 — SCENE-AY.} Generalized named scene values from finite
+       reals to interpolable semantic values. Added @racket[interpolable?] and
+       @racket[interpolate-value]; finite reals, @racket[vec2], and
+       @racket[rgba-color] now share immutable value state, @racket[value-to],
+       and derived-context lookup with exact endpoints and compile-time kind
+       compatibility checks.}
  @item{@bold{0.50.1 — SCENE-AX text-raster correction.} Kept the @tt{0.50.0}
        public API and dependency semantics unchanged while rasterizing nonempty
        plain-text appearances at a stable local origin before scene placement.

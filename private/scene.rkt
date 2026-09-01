@@ -5,7 +5,7 @@
 ;;;
 
 ;; Defines immutable scenes, chronological clips, local Visual-animation timing,
-;; sequential/parallel/lagged/style animation composition, named scalar-value
+;; sequential/parallel/lagged/style animation composition, named semantic-value
 ;; animation, and arbitrary-time sampling.
 ;;
 ;; Every play clip stores complete starting Visual and camera states together
@@ -327,8 +327,8 @@
       (scene-state-remove state target)))
   (struct-copy scene scn [current-state updated-state]))
 
-; scene-set-value : scene? symbol? finite-real? -> scene?
-;;   Adds or replaces one named scalar instantaneously at the current scene time.
+; scene-set-value : scene? symbol? interpolable? -> scene?
+;;   Adds or replaces one named semantic value instantaneously at the current scene time.
 (define (scene-set-value scn id value)
   (unless (scene? scn)
     (raise-argument-error 'scene-set-value "scene?" scn))
@@ -340,7 +340,7 @@
                  value)]))
 
 ; scene-remove-value : scene? symbol? -> scene?
-;;   Removes one named scalar instantaneously at the current scene time.
+;;   Removes one named semantic value instantaneously at the current scene time.
 (define (scene-remove-value scn id)
   (unless (scene? scn)
     (raise-argument-error 'scene-remove-value "scene?" scn))
@@ -350,15 +350,15 @@
                  (scene-current-state scn)
                  id)]))
 
-; scene-current-value : scene? symbol? -> finite-real?
-;;   Returns one named scalar from the scene's stored endpoint state.
+; scene-current-value : scene? symbol? -> interpolable?
+;;   Returns one named semantic value from the scene's stored endpoint state.
 (define (scene-current-value scn id)
   (unless (scene? scn)
     (raise-argument-error 'scene-current-value "scene?" scn))
   (scene-state-value-ref (scene-current-state scn) id))
 
-; scene-value-at : scene? symbol? nonnegative-real? -> finite-real?
-;;   Samples one named scalar directly at absolute scene time.
+; scene-value-at : scene? symbol? nonnegative-real? -> interpolable?
+;;   Samples one named semantic value directly at absolute scene time.
 (define (scene-value-at scn id time)
   (scene-state-value-ref (scene-sample scn time) id))
 

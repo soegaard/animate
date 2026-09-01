@@ -11,7 +11,7 @@
 ;; ordinary gen:visual identity/position behavior required when the definition is
 ;; handled as model data, while scene-aware resolution computes the concrete
 ;; Visual from a read-only context. Through SCENE-AX that context exposes both
-;; named scalar values and recursively resolved top-level Visual dependencies.
+;; named semantic values and recursively resolved top-level Visual dependencies.
 
 
 ;;;
@@ -19,6 +19,7 @@
 ;;;
 
 (require "geometry.rkt"
+         "interpolation.rkt"
          "visual-model.rkt")
 
 (provide derived-visual
@@ -48,7 +49,7 @@
   (derived-context-value? value))
 
 ; make-derived-context : (-> symbol? boolean?)
-;                        (-> symbol? finite-real?)
+;                        (-> symbol? interpolable?)
 ;                        (-> symbol? boolean?)
 ;                        (-> symbol? visual?)
 ;                        -> derived-context?
@@ -76,7 +77,7 @@
                          visual-ref-proc))
 
 ; derived-context-value-has? : derived-context? symbol? -> boolean?
-;;   Reports whether context contains one named scalar value.
+;;   Reports whether context contains one named semantic value.
 (define (derived-context-value-has? context id)
   (unless (derived-context? context)
     (raise-argument-error
@@ -95,8 +96,8 @@
      "result" result))
   result)
 
-; derived-context-value-ref : derived-context? symbol? -> finite-real?
-;;   Returns one named scalar value from context.
+; derived-context-value-ref : derived-context? symbol? -> interpolable?
+;;   Returns one named semantic value from context.
 (define (derived-context-value-ref context id)
   (unless (derived-context? context)
     (raise-argument-error
@@ -107,10 +108,10 @@
     (raise-argument-error 'derived-context-value-ref "symbol?" id))
   (define value
     ((derived-context-value-value-ref-proc context) id))
-  (unless (finite-real? value)
+  (unless (interpolable? value)
     (raise-arguments-error
      'derived-context-value-ref
-     "the derivation context must return a finite real scalar value"
+     "the derivation context must return an interpolable semantic value"
      "value-id" id
      "value" value))
   value)

@@ -1,9 +1,22 @@
-# animate — SCENE-AX
+# animate — SCENE-AY
 
 > **Work in progress:** this project is under active development and its API may change.
 
-This repository is the dependency-driven derived-geometry stage of a Manim-like
-animation system for Racket, with optional Rhombus examples.
+This repository is a Manim-like animation system for Racket, with optional
+Rhombus examples.
+
+SCENE-AY makes named scene values generic interpolable semantic values. Scalars,
+points, and semantic RGBA colors can now use the same immutable timeline API:
+
+```racket
+(scene-play
+ (scene-set-value (make-scene) 'point (vec2 0 0))
+ (value-to 'point (vec2 4 2))
+ #:duration 2)
+```
+
+Derived Visuals read the sampled `vec2` directly, removing the need to maintain
+separate `x` and `y` tracker values.
 
 SCENE-AX extends SCENE-AW's pure derived Visuals so one derived Visual may read
 another resolved top-level Visual from the same immutable sampled scene state:
@@ -34,15 +47,15 @@ uses a local memo table for one traversal and detects dependency cycles such as
 `a -> b -> a` explicitly. Nothing is written back into the immutable scene
 state, so separate arbitrary-time samples still resolve from their own state.
 
-The context now exposes scalar and top-level Visual presence/lookup operations.
+The context now exposes named semantic-value and top-level Visual presence/lookup operations.
 Nested group children remain internal to their group and are not dependency
 lookup targets. Direct animation of a derived Visual itself is still rejected;
 animate its scalar sources or the ordinary Visuals it depends on instead.
 
-SCENE-AX v0.50.0 is based on the green SCENE-AW v0.49.0 baseline. Version
-`0.50.1` corrects moving plain-text rendering without changing the public API.
+SCENE-AY v0.51.0 builds on the SCENE-AX dependency graph and its v0.50.1
+moving-text rasterization correction.
 
-The public package version is `0.50.1`. The public module exports `454` bindings,
+The public package version is `0.51.0`. The public module exports `456` bindings,
 all covered by the Scribble reference.
 
 ## Documentation source
@@ -2058,13 +2071,44 @@ Run the focused stage tests with:
 raco test tests/scene-l-render-test.rkt \
   tests/scene-aw-test.rkt tests/scene-aw-render-test.rkt \
   tests/scene-ax-test.rkt tests/scene-ax-render-test.rkt \
-  tests/scene-ax-text-raster-test.rkt
+  tests/scene-ax-text-raster-test.rkt tests/scene-ay-test.rkt
+```
+
+## SCENE-AY: generic interpolable scene values
+
+Version `0.51.0` generalizes named scene values beyond finite-real scalars.
+`interpolable?` identifies the current semantic kinds—finite reals, `vec2`
+coordinates, and `rgba-color` values—and `interpolate-value` performs their
+closed-unit-interval interpolation while preserving exact source and destination
+objects at the endpoints. `scene-set-value`, `value-to`, scene value lookup, and
+derived-context lookup all use this common protocol. A `value-to` request whose
+source and destination kinds differ is rejected when its scene clip is compiled.
+
+```racket
+(define dot
+  (derived-visual
+   (circle #:id 'dot #:radius 1 #:fill "blue")
+   (lambda (context template)
+     (visual-with-position
+      template
+      (derived-context-value-ref context 'center)))))
+
+(scene-play
+ (scene-add (scene-set-value (make-scene) 'center (vec2 0 0)) dot)
+ (value-to 'center (vec2 4 2))
+ #:duration 2)
+```
+
+Run the focused stage test with:
+
+```sh
+raco test tests/scene-ay-test.rkt
 ```
 
 ## SCENE-AW: pure derived Visuals
 
 Version `0.49.0` adds pure top-level Visual definitions driven by immutable
-sampled scalar values.
+sampled scene values.
 
 ```racket
 (derived-visual
@@ -2080,7 +2124,7 @@ sampled scalar values.
 returns its concrete Visual. `scene-state-resolved-visuals-in-drawing-order`
 provides the resolved back-to-front top-level list used by rendering.
 
-SCENE-AW introduced scalar-only `derived-context?` lookup through
+SCENE-AW introduced value lookup through
 `derived-context-value-has?` and `derived-context-value-ref`. SCENE-AX extends
 that same context with resolved top-level Visual lookup. Resolvers remain pure,
 return a non-derived Visual, and preserve the template top-level ID. Concrete
@@ -2088,7 +2132,7 @@ results are never persisted into scene state, so arbitrary-time and repeated-
 frame sampling remain deterministic when the resolver is pure.
 
 Direct animation requests targeting a derived Visual are rejected. Animate the
-named scalar inputs with `value-to`; the derived Visual reflects those values at
+named inputs with `value-to`; the derived Visual reflects those values at
 each sampled state. Camera follow, `camera-fit-scene`, callout targets, and named
 path-source lookup resolve derived targets automatically.
 

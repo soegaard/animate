@@ -4,13 +4,13 @@
 ;;; Scene State Model
 ;;;
 
-;; Defines immutable snapshots of the top-level Visuals and named scalar values
+;; Defines immutable snapshots of the top-level Visuals and named semantic values
 ;; in a scene.
 ;;
 ;; Scene state preserves an explicit back-to-front drawing order independently
-;; of its Visual identity lookup table. Scalar values share the global scene ID
+;; of its Visual identity lookup table. Named values share the global scene ID
 ;; namespace with Visuals. They are not drawn directly, but derived Visuals may
-;; resolve their concrete geometry/style from scalars and other top-level Visuals
+;; resolve their concrete geometry/style from values and other top-level Visuals
 ;; in the same sampled immutable state.
 
 
@@ -21,6 +21,7 @@
 ;; Imports
 (require "derived-visual.rkt"
          "geometry.rkt"
+         "interpolation.rkt"
          "visual-model.rkt")
 
 ;; Exports
@@ -52,7 +53,7 @@
 ;;  - visuals-by-id  immutable hash?    maps ids to top-level Visual values.
 ;;  - drawing-order  (listof symbol?)   ids in back-to-front painting order.
 ;;                                     Ordering is significant.
-;;  - values-by-id   immutable hash?    maps ids to finite real scalar values.
+;;  - values-by-id   immutable hash?    maps ids to interpolable semantic values.
 
 
 ;;;
@@ -201,7 +202,7 @@
   (when (hash-has-key? (scene-state-values-by-id state) id)
     (raise-arguments-error
      'scene-state-add
-     "a scalar value with this ID is already present"
+     "a named scene value with this ID is already present"
      "id" id))
   (scene-state
    (hash-set (scene-state-visuals-by-id state) id visual)
@@ -250,11 +251,11 @@
 
 
 ;;;
-;;; Named Scalar Values
+;;; Named Scene Values
 ;;;
 
 ; scene-state-value-has? : scene-state? symbol? -> boolean?
-;;   Reports whether state contains one named scalar value.
+;;   Reports whether state contains one named semantic value.
 (define (scene-state-value-has? state id)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-has? "scene-state?" state))
@@ -262,31 +263,39 @@
     (raise-argument-error 'scene-state-value-has? "symbol?" id))
   (hash-has-key? (scene-state-values-by-id state) id))
 
-; scene-state-value-ref : scene-state? symbol? -> finite-real?
-;;   Returns one named scalar value.
+; scene-state-value-ref : scene-state? symbol? -> interpolable?
+;;   Returns one named semantic value.
 (define (scene-state-value-ref state id)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-ref "scene-state?" state))
   (unless (symbol? id)
     (raise-argument-error 'scene-state-value-ref "symbol?" id))
-  (hash-ref
-   (scene-state-values-by-id state)
-   id
-   (lambda ()
-     (raise-arguments-error
-      'scene-state-value-ref
-      "the scalar value is not present in the scene"
-      "value-id" id))))
+  (define value
+    (hash-ref
+     (scene-state-values-by-id state)
+     id
+     (lambda ()
+       (raise-arguments-error
+        'scene-state-value-ref
+        "the named scene value is not present in the scene"
+        "value-id" id))))
+  (unless (interpolable? value)
+    (raise-arguments-error
+     'scene-state-value-ref
+     "the scene state must contain an interpolable semantic value"
+     "value-id" id
+     "value" value))
+  value)
 
-; scene-state-value-set : scene-state? symbol? finite-real? -> scene-state?
-;;   Adds or replaces one named scalar while preserving Visual state.
+; scene-state-value-set : scene-state? symbol? interpolable? -> scene-state?
+;;   Adds or replaces one named semantic value while preserving Visual state.
 (define (scene-state-value-set state id value)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-set "scene-state?" state))
   (unless (symbol? id)
     (raise-argument-error 'scene-state-value-set "symbol?" id))
-  (unless (finite-real? value)
-    (raise-argument-error 'scene-state-value-set "finite-real?" value))
+  (unless (interpolable? value)
+    (raise-argument-error 'scene-state-value-set "interpolable?" value))
   (when (hash-has-key? (scene-state-visuals-by-id state) id)
     (raise-arguments-error
      'scene-state-value-set
@@ -298,7 +307,7 @@
    (hash-set (scene-state-values-by-id state) id value)))
 
 ; scene-state-value-remove : scene-state? symbol? -> scene-state?
-;;   Removes one named scalar value.
+;;   Removes one named semantic value.
 (define (scene-state-value-remove state id)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-value-remove "scene-state?" state))
@@ -307,7 +316,7 @@
   (unless (hash-has-key? (scene-state-values-by-id state) id)
     (raise-arguments-error
      'scene-state-value-remove
-     "the scalar value is not present in the scene"
+     "the named scene value is not present in the scene"
      "value-id" id))
   (scene-state
    (scene-state-visuals-by-id state)
