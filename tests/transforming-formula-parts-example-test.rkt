@@ -33,17 +33,23 @@
     (for/list ([part (in-list (formula-assembly-visual-parts equation))])
       (formula-visual-source (formula-part-formula part))))
 
-  ;; After the entrance, the source is the Pythagorean equation.
+  ;; The source equation holds for one second before the first transition.
   (check-equal?
    (equation-sources (equation-at 2))
    '("a^2" "+" "b^2" "=" "c^2"))
-
-  ;; The first transition subtracts a squared from both sides.
   (check-equal?
-   (equation-sources (equation-at 4))
+   (equation-sources (equation-at 3))
+   '("a^2" "+" "b^2" "=" "c^2"))
+
+  ;; The rearranged equation likewise holds before its side swap.
+  (check-equal?
+   (equation-sources (equation-at 5))
+   '("b^2" "=" "c^2" "-" "a^2"))
+  (check-equal?
+   (equation-sources (equation-at 6))
    '("b^2" "=" "c^2" "-" "a^2"))
 
   ;; The second transition swaps the sides without changing any term.
   (check-equal?
-   (equation-sources (equation-at 6))
+   (equation-sources (equation-at 8))
    '("c^2" "-" "a^2" "=" "b^2")))

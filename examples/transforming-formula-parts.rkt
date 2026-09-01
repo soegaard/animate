@@ -37,6 +37,11 @@
                       #:font-size 2/5
                       #:vertical-alignment 'baseline))
 
+; transition-pause-duration : positive-real?
+;;   Gives the reading pause shown before each formula transformation.
+(define transition-pause-duration
+  1)
+
 ; make-source-equation : -> formula-assembly-visual?
 ;;   Creates the source equation a squared plus b squared equals c squared.
 (define (make-source-equation)
@@ -146,12 +151,16 @@
                 (scale-to source 1)
                 (fade-in source)
                 #:duration 2))
+  (define source-pause
+    (scene-wait entrance transition-pause-duration))
   (define rearrangement
-    (scene-play entrance
+    (scene-play source-pause
                 (transform-formula-parts rearrangement-correspondence)
                 #:duration 2))
+  (define rearrangement-pause
+    (scene-wait rearrangement transition-pause-duration))
   (define side-swap
-    (scene-play rearrangement
+    (scene-play rearrangement-pause
                 (transform-formula-parts side-swap-correspondence)
                 #:duration 2))
   (scene-wait side-swap 1/2))
