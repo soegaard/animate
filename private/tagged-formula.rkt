@@ -17,6 +17,7 @@
          svg/svg
          "affine-transform.rkt"
          "animation.rkt"
+         "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
@@ -383,10 +384,16 @@
 ; transform-matching-formula : formula-assembly-visual?
 ;                              formula-assembly-visual?
 ;                              [#:matches (listof formula-part-match?)]
+;                              [#:path-arc finite-real?]
+;                              [#:part-paths (listof formula-part-path?)]
 ;                              -> transform-formula-parts-request?
 ;; Produces a Manim-like transition. Explicit matches take priority; all
 ;; remaining rendering-equivalent fragments are then paired in source order.
-(define (transform-matching-formula source destination #:matches [matches '()])
+;; `path-arc` is the default route, with `part-paths` as precise overrides.
+(define (transform-matching-formula source destination
+                                    #:matches [matches '()]
+                                    #:path-arc [path-arc 0]
+                                    #:part-paths [part-paths '()])
   (unless (formula-assembly-visual? source)
     (raise-argument-error
      'transform-matching-formula
@@ -420,18 +427,26 @@
    (formula-correspondence
     source
     destination
-    (append (formula-correspondence-matches explicit) remaining-auto))))
+    (append (formula-correspondence-matches explicit) remaining-auto))
+   #:path-arc path-arc
+   #:part-paths part-paths))
 
 ; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
 ;                          [#:key-map (hash/c string? string?)]
+;                          [#:path-arc finite-real?]
+;                          [#:path-map (hash/c (cons/c string? string?) formula-arc?)]
 ;                          -> transform-formula-parts-request?
 ;; A Manim-style shorthand for transitions between math-tex formulas. Exact
 ;; TeX fragments match automatically. `key-map` explicitly pairs every
 ;; source occurrence of one mapped string with the first available destination
 ;; occurrence of its mapped string. Key-map pairs take priority over automatic
-;; matches; named tagged-formulas remain the precise option when duplicate
-;; occurrences need individual control.
-(define (transform-matching-tex source destination #:key-map [key-map (hash)])
+;; matches. `path-arc` sets the default circular route; `path-map` selects
+;; routes by (cons source-TeX destination-TeX). Named tagged-formulas remain
+;; the precise option when duplicate occurrences need individual control.
+(define (transform-matching-tex source destination
+                                #:key-map [key-map (hash)]
+                                #:path-arc [path-arc 0]
+                                #:path-map [path-map (hash)])
   (unless (formula-assembly-visual? source)
     (raise-argument-error
      'transform-matching-tex
@@ -443,6 +458,7 @@
      "formula-assembly-visual?"
      destination))
   (check-tex-key-map key-map)
+  (check-tex-path-map path-map)
   ;; Key-map pairs are deliberate overrides, analogous to Manim's key_map.
   ;; Match them before exact-text pairing so a caller can redirect a source
   ;; fragment even if an identical target fragment also exists.
@@ -484,11 +500,15 @@
             (not (hash-has-key? used-destination
                                 (formula-part-match-destination-name match)))))
      (formula-correspondence-matches automatic)))
+  (define correspondence
+    (formula-correspondence
+     source
+     destination
+     (append (reverse mapped-reversed) automatic-remaining)))
   (transform-formula-parts
-   (formula-correspondence
-    source
-    destination
-    (append (reverse mapped-reversed) automatic-remaining))))
+   correspondence
+   #:path-arc path-arc
+   #:part-paths (tex-path-map->part-paths correspondence path-map)))
 
 (define (check-tex-key-map key-map)
   (unless (hash? key-map)
@@ -506,6 +526,52 @@
        "a hash mapping TeX source strings to TeX source strings"
        "key" source
        "value" destination))))
+
+(define (check-tex-path-map path-map)
+  (unless (hash? path-map)
+    (raise-argument-error 'transform-matching-tex "hash?" path-map))
+  (for ([(key route) (in-hash path-map)])
+    (unless (and (pair? key)
+                 (string? (car key))
+                 (string? (cdr key)))
+      (raise-arguments-error
+       'transform-matching-tex
+       "a hash mapping (cons TeX-source TeX-source) pairs to formula arcs"
+       "key" key
+       "value" route))
+    (unless (formula-arc? route)
+      (raise-arguments-error
+       'transform-matching-tex
+       "a hash mapping (cons TeX-source TeX-source) pairs to formula arcs"
+       "key" key
+       "value" route))))
+
+(define (tex-path-map->part-paths correspondence path-map)
+  (reverse
+   (for/fold ([result '()])
+             ([match (in-list (formula-correspondence-matches correspondence))])
+     (define source-part
+       (formula-assembly-visual-ref
+        (formula-correspondence-source correspondence)
+        (formula-part-match-source-name match)))
+     (define destination-part
+       (formula-assembly-visual-ref
+        (formula-correspondence-destination correspondence)
+        (formula-part-match-destination-name match)))
+     (define route
+       (hash-ref
+        path-map
+        (cons (formula-visual-source (formula-part-formula source-part))
+              (formula-visual-source (formula-part-formula destination-part)))
+        #f))
+     (if route
+         (cons
+          (formula-part-path
+           (formula-part-match-source-name match)
+           (formula-part-match-destination-name match)
+           route)
+          result)
+         result))))
 
 
 ;;; SVG Compilation

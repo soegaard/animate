@@ -8,9 +8,18 @@
 ;; tagged fragments and that formula correspondence retains specialised fragment
 ;; renderer data through interior timeline samples.
 
-(require rackunit
+(require (only-in racket/math pi)
+         rackunit
          (only-in pict pict?)
          "../main.rkt")
+
+(define (formula-for-source assembly source)
+  (formula-part-formula
+   (for/first ([part (in-list (formula-assembly-visual-parts assembly))]
+               #:when (string=? (formula-visual-source
+                                 (formula-part-formula part))
+                                source))
+     part)))
 
 (module+ test
   (define source
@@ -139,6 +148,84 @@
    '("b^2" "=" "c^2" "-" "a^2"))
   (check-true (pict? (scene->pict manim-animated 1)))
 
+  ;; A selected TeX pair can use an arc without bending every matched term.
+  ;; Both cross-fade layers occupy the same curved position at the midpoint.
+  (define arced-manim
+    (scene-play
+     (scene-add (make-scene) manim-source)
+     (transform-matching-tex
+      manim-source
+      manim-destination
+      #:key-map (hash "+" "-")
+      #:path-map
+      (hash (cons "+" "-")
+            (formula-arc #:angle (/ pi 2))))
+     #:duration 2))
+  (define arced-midpoint
+    (scene-state-ref (scene-sample arced-manim 1) 'manim-equation))
+  (define source-plus
+    (formula-part-formula
+     (for/first ([part (in-list (formula-assembly-visual-parts manim-source))]
+                 #:when (string=? (formula-visual-source
+                                   (formula-part-formula part))
+                                  "+"))
+       part)))
+  (define destination-minus
+    (formula-part-formula
+     (for/first
+         ([part (in-list (formula-assembly-visual-parts manim-destination))]
+          #:when (string=? (formula-visual-source
+                            (formula-part-formula part))
+                           "-"))
+       part)))
+  (define arced-plus
+    (formula-part-formula
+     (for/first ([part (in-list (formula-assembly-visual-parts arced-midpoint))]
+                 #:when (string=? (formula-visual-source
+                                   (formula-part-formula part))
+                                  "+"))
+       part)))
+  (define arced-minus
+    (formula-part-formula
+     (for/first ([part (in-list (formula-assembly-visual-parts arced-midpoint))]
+                 #:when (string=? (formula-visual-source
+                                   (formula-part-formula part))
+                                  "-"))
+       part)))
+  (check-equal? (visual-position arced-plus)
+                (visual-position arced-minus))
+  (check-true
+   (> (abs
+       (- (vec2-y (visual-position arced-plus))
+          (vec2-y
+           (vec2-lerp (visual-position source-plus)
+                      (visual-position destination-minus)
+                      1/2))))
+      1/1000))
+
+  ;; A global path arc is the concise Manim-style form. It affects all matched
+  ;; fragments, while unpaired source/destination fragments still fade in place.
+  (define globally-arced-manim
+    (scene-play
+     (scene-add (make-scene) manim-source)
+     (transform-matching-tex manim-source manim-destination
+                             #:path-arc (/ pi 2))
+     #:duration 2))
+  (define globally-arced-midpoint
+    (scene-state-ref (scene-sample globally-arced-manim 1) 'manim-equation))
+  (define source-a-square (formula-for-source manim-source "a^2"))
+  (define destination-a-square (formula-for-source manim-destination "a^2"))
+  (define arced-a-square
+    (formula-for-source globally-arced-midpoint "a^2"))
+  (check-true
+   (> (abs
+       (- (vec2-y (visual-position arced-a-square))
+          (vec2-y
+           (vec2-lerp (visual-position source-a-square)
+                      (visual-position destination-a-square)
+                      1/2))))
+      1/1000))
+
   ;; `key-map` permits an explicit changed-term pairing without exposing the
   ;; generated fragment names.
   (define mapped-source
@@ -156,6 +243,17 @@
      (transform-matching-tex manim-source
                              manim-destination
                              #:key-map (hash 'x "y"))))
+  (check-exn
+   exn:fail:contract?
+   (lambda ()
+     (transform-matching-tex
+      manim-source
+      manim-destination
+      #:path-map (hash (cons "+" "-") 'not-a-formula-arc))))
+  (check-exn
+   exn:fail:contract?
+   (lambda ()
+     (formula-arc #:angle +inf.0)))
 
   ;; Groups can occur beside ordinary TeX text, just as they can in Manim.
   (define inline-group

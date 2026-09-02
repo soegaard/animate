@@ -7,7 +7,8 @@
 ;; `math-tex` retains one TeX layout per endpoint. Its `{{ ... }}` groups make
 ;; the intended matchable pieces visible in source without naming every part.
 
-(require "../main.rkt"
+(require (only-in racket/math pi)
+         "../main.rkt"
          "private/run-demo.rkt")
 
 (provide make-demo-scene)
@@ -68,13 +69,16 @@
   (define before-isolating
     (scene-wait initial 1))
   ;; Identical grouped source strings move automatically. `key-map` says that
-  ;; the old `+` is the new `-`, so it travels with the rewrite and cross-fades
-  ;; into the changed glyph instead of independently fading out and in.
+  ;; the old `+` is the new `-`; its explicit arc travels below the fixed `=`
+  ;; while cross-fading into the changed glyph.
   (define b-isolated
     (scene-play before-isolating
                 (transform-matching-tex pythagoras
                                         isolated-b
-                                        #:key-map (hash "+" "-"))
+                                        #:key-map (hash "+" "-")
+                                        #:path-map
+                                        (hash (cons "+" "-")
+                                              (formula-arc #:angle (/ pi 2))))
                 #:duration 2))
   (define before-reversing
     (scene-wait b-isolated 1))

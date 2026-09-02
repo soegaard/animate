@@ -25,6 +25,7 @@
          "private/coordinate-series.rkt"
          "private/derived-visual.rkt"
          "private/derived-plot.rkt"
+         "private/formula-part-transition.rkt"
          "private/formula-parts-visual.rkt"
          "private/formula-visual.rkt"
          "private/tagged-formula.rkt"
@@ -286,6 +287,14 @@
  formula-visual-horizontal-alignment
  formula-visual-vertical-alignment
  formula-visual-with-source
+ formula-arc
+ formula-arc?
+ formula-arc-angle
+ formula-part-path
+ formula-part-path?
+ formula-part-path-source-name
+ formula-part-path-destination-name
+ formula-part-path-route
  (struct-out formula-fragment)
  tagged-formula
  math-tex

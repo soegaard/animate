@@ -16,14 +16,23 @@
 ;;;
 
 ;; Imports
-(require "affine-transform.rkt"
+(require (only-in racket/math pi)
+         "affine-transform.rkt"
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
          "visual-model.rkt")
 
 ;; Exports
-(provide formula-transition-plan?
+(provide formula-arc
+         formula-arc?
+         formula-arc-angle
+         formula-part-path
+         formula-part-path?
+         formula-part-path-source-name
+         formula-part-path-destination-name
+         formula-part-path-route
+         formula-transition-plan?
          make-formula-transition-plan
          formula-transition-plan-source-parts
          formula-transition-plan-destination-parts
@@ -34,8 +43,47 @@
 ;;; Compiled Transition Data
 ;;;
 
+;; A formula arc is a route descriptor rather than a precomputed path: its
+;; concrete endpoints are known only when scene-play compiles a transition.
+(struct formula-arc-route (angle)
+  #:transparent
+  #:guard
+  (lambda (angle who)
+    (unless (finite-real? angle)
+      (raise-argument-error who "finite real?" angle))
+    (unless (< (abs angle) (* 2 pi))
+      (raise-arguments-error
+       who
+       "an arc angle whose magnitude is smaller than 2*pi"
+       "angle" angle))
+    angle))
+
+; formula-arc : #:angle finite-real? -> formula-arc?
+;; Describes a circular source-to-destination route. Positive angles travel
+;; counter-clockwise in the formula's local coordinates. Zero is straight.
+(define (formula-arc #:angle angle)
+  (formula-arc-route angle))
+
+(define formula-arc? formula-arc-route?)
+(define formula-arc-angle formula-arc-route-angle)
+
+;; formula-part-path selects one named formula correspondence for a route.
+(struct formula-part-path (source-name destination-name route)
+  #:transparent
+  #:guard
+  (lambda (source-name destination-name route who)
+    (unless (symbol? source-name)
+      (raise-argument-error who "symbol?" source-name))
+    (unless (symbol? destination-name)
+      (raise-argument-error who "symbol?" destination-name))
+    (unless (formula-arc? route)
+      (raise-argument-error who "formula-arc?" route))
+    (values source-name destination-name route)))
+
+(define straight-formula-route (formula-arc #:angle 0))
+
 (struct formula-transition-layer
-  (name template from-transform to-transform from-opacity to-opacity)
+  (name template from-transform to-transform route from-opacity to-opacity)
   #:transparent)
 
 ;; formula-transition-layer represents one independently rendered interior layer.
@@ -43,6 +91,7 @@
 ;;  - template        formula-visual?     source of LaTeX and typesetting data.
 ;;  - from-transform  affine-transform?   local transform at progress zero.
 ;;  - to-transform    affine-transform?   local transform at progress one.
+;;  - route           formula-arc?        local translation trajectory.
 ;;  - from-opacity    opacity?            local opacity at progress zero.
 ;;  - to-opacity      opacity?            local opacity at progress one.
 
@@ -61,13 +110,14 @@
 ;; followed by a destination layer.
 
 (struct formula-transition-spec
-  (template from-transform to-transform from-opacity to-opacity)
+  (template from-transform to-transform route from-opacity to-opacity)
   #:transparent)
 
 ;; formula-transition-spec is one layer before a temporary name is allocated.
 ;;  - template        formula-visual?    source of LaTeX and typesetting data.
 ;;  - from-transform  affine-transform?  local transform at progress zero.
 ;;  - to-transform    affine-transform?  local transform at progress one.
+;;  - route           formula-arc?       local translation trajectory.
 ;;  - from-opacity    opacity?           local opacity at progress zero.
 ;;  - to-opacity      opacity?           local opacity at progress one.
 
@@ -78,9 +128,13 @@
 
 ; make-formula-transition-plan : formula-assembly-visual?
 ;                                formula-correspondence?
+;                                [#:path-arc finite-real?]
+;                                [#:part-paths (listof formula-part-path?)]
 ;                                -> formula-transition-plan?
 ;;   Compiles correspondence against the current source assembly.
-(define (make-formula-transition-plan current-source correspondence)
+(define (make-formula-transition-plan current-source correspondence
+                                      #:path-arc [path-arc 0]
+                                      #:part-paths [part-paths '()])
   (unless (formula-assembly-visual? current-source)
     (raise-argument-error
      'make-formula-transition-plan
@@ -96,13 +150,19 @@
     (formula-correspondence-destination correspondence))
   (define destination-parts
     (formula-assembly-visual-parts destination))
+  (define default-route (formula-arc #:angle path-arc))
+  (define part-paths-by-match
+    (make-part-paths-by-match correspondence part-paths))
   ;; Validate that the exact destination parts can occupy the current assembly
   ;; identity before any timeline is constructed.
   (formula-assembly-visual-with-parts current-source destination-parts)
   (define specs
     (append
      (make-unmatched-source-specs current-source correspondence)
-     (make-matched-specs current-source correspondence)
+     (make-matched-specs current-source
+                         correspondence
+                         default-route
+                         part-paths-by-match)
      (make-unmatched-destination-specs correspondence)))
   (formula-transition-plan
    (formula-assembly-visual-parts current-source)
@@ -147,14 +207,16 @@
      formula
      (visual-transform formula)
      (visual-transform formula)
+     straight-formula-route
      (visual-opacity formula)
      0)))
 
 ; make-matched-specs : formula-assembly-visual?
-;                      formula-correspondence?
+;                      formula-correspondence? formula-arc? hash?
 ;                      -> (listof formula-transition-spec?)
 ;;   Creates moving matched layers in explicit correspondence order.
-(define (make-matched-specs current-source correspondence)
+(define (make-matched-specs current-source correspondence default-route
+                            part-paths-by-match)
   (define destination
     (formula-correspondence-destination correspondence))
   (apply
@@ -172,12 +234,18 @@
         (formula-assembly-visual-ref
          destination
          (formula-part-match-destination-name match))))
-     (make-one-match-specs source-formula destination-formula))))
+     (define route
+       (hash-ref
+        part-paths-by-match
+        (match-key (formula-part-match-source-name match)
+                   (formula-part-match-destination-name match))
+        default-route))
+     (make-one-match-specs source-formula destination-formula route))))
 
-; make-one-match-specs : formula-visual? formula-visual?
+; make-one-match-specs : formula-visual? formula-visual? formula-arc?
 ;                        -> (listof formula-transition-spec?)
 ;;   Creates one moving layer or a moving cross-fade pair for a match.
-(define (make-one-match-specs source-formula destination-formula)
+(define (make-one-match-specs source-formula destination-formula route)
   (define source-transform
     (visual-transform source-formula))
   (define destination-transform
@@ -189,6 +257,7 @@
        source-formula
        source-transform
        destination-transform
+       route
        (visual-opacity source-formula)
        (visual-opacity destination-formula)))]
     [else
@@ -197,12 +266,14 @@
        source-formula
        source-transform
        destination-transform
+       route
        (visual-opacity source-formula)
        0)
       (formula-transition-spec
        destination-formula
        source-transform
        destination-transform
+       route
        0
        (visual-opacity destination-formula)))]))
 
@@ -223,6 +294,7 @@
      formula
      (visual-transform formula)
      (visual-transform formula)
+     straight-formula-route
      0
      (visual-opacity formula))))
 
@@ -275,6 +347,7 @@
          (formula-transition-spec-template spec)
          (formula-transition-spec-from-transform spec)
          (formula-transition-spec-to-transform spec)
+         (formula-transition-spec-route spec)
          (formula-transition-spec-from-opacity spec)
          (formula-transition-spec-to-opacity spec))
         layers)
@@ -342,10 +415,7 @@
   (define formula-with-transform
     (visual-with-transform
      formula-with-id
-     (affine-transform-lerp
-      (formula-transition-layer-from-transform layer)
-      (formula-transition-layer-to-transform layer)
-      progress)))
+     (formula-transition-transform-at layer progress)))
   (define sampled-formula
     (visual-with-opacity
      formula-with-transform
@@ -354,3 +424,78 @@
       (formula-transition-layer-to-opacity layer)
       progress)))
   (formula-part name sampled-formula))
+
+(define (formula-transition-transform-at layer progress)
+  (define from-transform (formula-transition-layer-from-transform layer))
+  (define to-transform (formula-transition-layer-to-transform layer))
+  (affine-transform-with-translation
+   (affine-transform-lerp from-transform to-transform progress)
+   (formula-arc-position-at
+    (formula-transition-layer-route layer)
+    (affine-transform-translation from-transform)
+    (affine-transform-translation to-transform)
+    progress)))
+
+(define (formula-arc-position-at route start end progress)
+  (define angle (formula-arc-angle route))
+  (define chord (vec2- end start))
+  (cond
+    [(or (zero? angle)
+         (and (zero? (vec2-x chord))
+              (zero? (vec2-y chord))))
+     (vec2-lerp start end progress)]
+    [else
+     (define half-chord (vec2-scale 1/2 chord))
+     (define center
+       (vec2+
+        (vec2+ start half-chord)
+        (vec2-scale (/ 1 (tan (/ angle 2)))
+                    (left-normal half-chord))))
+     (vec2+
+      center
+      (rotate-vector (vec2- start center) (* progress angle)))]))
+
+(define (left-normal vector)
+  (vec2 (- (vec2-y vector)) (vec2-x vector)))
+
+(define (rotate-vector vector angle)
+  (define cosine (cos angle))
+  (define sine (sin angle))
+  (vec2 (- (* cosine (vec2-x vector))
+           (* sine (vec2-y vector)))
+        (+ (* sine (vec2-x vector))
+           (* cosine (vec2-y vector)))))
+
+(define (make-part-paths-by-match correspondence part-paths)
+  (unless (and (list? part-paths)
+               (andmap formula-part-path? part-paths))
+    (raise-argument-error
+     'make-formula-transition-plan
+     "(listof formula-part-path?)"
+     part-paths))
+  (define valid-matches
+    (for/hash ([match (in-list (formula-correspondence-matches correspondence))])
+      (values
+       (match-key (formula-part-match-source-name match)
+                  (formula-part-match-destination-name match))
+       #t)))
+  (for/fold ([result (hash)]) ([part-path (in-list part-paths)])
+    (define key
+      (match-key (formula-part-path-source-name part-path)
+                 (formula-part-path-destination-name part-path)))
+    (unless (hash-has-key? valid-matches key)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "a part path for a matched source/destination pair"
+       "source-name" (formula-part-path-source-name part-path)
+       "destination-name" (formula-part-path-destination-name part-path)))
+    (when (hash-has-key? result key)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "at most one route for each matched source/destination pair"
+       "source-name" (formula-part-path-source-name part-path)
+       "destination-name" (formula-part-path-destination-name part-path)))
+    (hash-set result key (formula-part-path-route part-path))))
+
+(define (match-key source-name destination-name)
+  (cons source-name destination-name))

@@ -303,11 +303,13 @@
 ;;  - allow-reverse?  boolean?        whether reverse traversal may be selected.
 ;;  - sample-count    exact-integer?  deterministic alignment score resolution.
 
-(struct transform-formula-parts-request (correspondence)
+(struct transform-formula-parts-request (correspondence path-arc part-paths)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
 ;;  - correspondence  formula-correspondence?  explicit source-to-destination map.
+;;  - path-arc        finite-real?            default matched-part arc angle.
+;;  - part-paths      (listof formula-part-path?) per-match route overrides.
 
 (struct create-request (visual)
   #:transparent)
@@ -1024,15 +1026,31 @@
    sample-count))
 
 ; transform-formula-parts : formula-correspondence?
+;                         [#:path-arc finite-real?]
+;                         [#:part-paths (listof formula-part-path?)]
 ;                           -> transform-formula-parts-request?
-;;   Creates a request that moves and cross-fades explicitly matched parts.
-(define (transform-formula-parts correspondence)
+;; Creates a request that moves and cross-fades explicitly matched parts.
+;; `path-arc` applies to every matched part unless a `part-paths` entry selects
+;; that correspondence pair explicitly.
+(define (transform-formula-parts correspondence
+                                 #:path-arc [path-arc 0]
+                                 #:part-paths [part-paths '()])
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
      'transform-formula-parts
      "formula-correspondence?"
      correspondence))
-  (transform-formula-parts-request correspondence))
+  ;; Validate the public route descriptor at construction time. Per-pair
+  ;; selection requires the correspondence's current scene state and is
+  ;; completed when scene-play compiles the request.
+  (formula-arc #:angle path-arc)
+  (unless (and (list? part-paths)
+               (andmap formula-part-path? part-paths))
+    (raise-argument-error
+     'transform-formula-parts
+     "(listof formula-part-path?)"
+     part-paths))
+  (transform-formula-parts-request correspondence path-arc part-paths))
 
 ; create : path-visual? -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -1591,9 +1609,11 @@
      (check-formula-transform-target visual)
      (formula-parts-transform-animation
       target-id
-      (make-formula-transition-plan
+     (make-formula-transition-plan
        visual
-       (transform-formula-parts-request-correspondence request)))]
+       (transform-formula-parts-request-correspondence request)
+       #:path-arc (transform-formula-parts-request-path-arc request)
+       #:part-paths (transform-formula-parts-request-part-paths request)))]
     [(create-request? request)
      (define complete-visual
        (create-request-visual request))
