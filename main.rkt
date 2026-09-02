@@ -307,6 +307,7 @@
  (struct-out formula-fragment)
  tagged-formula
  math-tex
+ glyph-tex
  tagged-formula-fragment-visual?
  tagged-formula-fragment-visual-svg-source
  (struct-out formula-part)
@@ -463,6 +464,7 @@
  transform-formula-parts
  transform-formula-parts-request?
  transform-matching-formula
+ transform-matching-glyphs
  rewrite-formula
  create
  create-request?

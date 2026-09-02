@@ -565,22 +565,8 @@
 ; formula-rendering-equivalent? : formula-visual? formula-visual? -> boolean?
 ;;   Reports whether two formulas differ only in identity, transform, or opacity.
 (define (formula-rendering-equivalent? source destination)
-  (and (equal? (formula-visual-source source)
-               (formula-visual-source destination))
-       (eq? (formula-visual-mode source)
-            (formula-visual-mode destination))
-       (= (formula-visual-font-size source)
-          (formula-visual-font-size destination))
-       (equal? (formula-visual-preamble source)
-               (formula-visual-preamble destination))
-       (equal? (formula-visual-document-class-options source)
-               (formula-visual-document-class-options destination))
-       (equal? (formula-visual-preview-options source)
-               (formula-visual-preview-options destination))
-       (eq? (formula-visual-horizontal-alignment source)
-            (formula-visual-horizontal-alignment destination))
-       (eq? (formula-visual-vertical-alignment source)
-            (formula-visual-vertical-alignment destination))))
+  (equal? (formula-visual-rendering-key source)
+          (formula-visual-rendering-key destination)))
 
 ; name-transition-specs : symbol?
 ;                         formula-assembly-visual?

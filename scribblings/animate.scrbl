@@ -3011,6 +3011,38 @@ The returned assembly can be moved, rotated, scaled, faded, addressed through
 nested part paths, and used with the normal formula-correspondence operations.
 }
 
+@defproc[(glyph-tex
+          [#:id id symbol?]
+          [#:center center vec2? origin]
+          [#:rotation rotation finite-real? 0]
+          [#:scale scale scale-factor? 1]
+          [#:opacity opacity opacity? 1]
+          [#:mode mode formula-mode? 'display]
+          [#:font-size font-size (and/c finite-real? positive?) 1]
+          [#:preamble preamble string? ""]
+          [#:document-class-options document-class-options
+                                    (listof latex-option?)
+                                    '()]
+          [source string?] ...)
+         formula-assembly-visual?]{
+
+Typesets one complete TeX expression and exposes each visible dvisvgm glyph
+leaf as a formula part named @racket['glyph-0], @racket['glyph-1], and so on,
+in painter order. The complete expression is still typeset as one unit, so its
+ordinary TeX spacing, kerning, and script placement are retained. Construction
+has the same external @tt{latex} and @tt{dvisvgm} requirements as
+@racket[tagged-formula].
+
+The generated glyph parts retain the complete author TeX source, but their
+matching identity is the referenced dvisvgm path outline together with their
+typesetting options. Consequently, exact unchanged glyphs can match between
+two separately compiled expressions despite dvisvgm assigning different local
+font-definition ids on each compilation. Use @racket[tagged-formula] or
+@racket[math-tex] when several glyphs need one semantic identity: glyph leaves
+are not TeX tokens, a superscript or accent can contain several leaves, and
+repeated outlines match greedily in source order.
+}
+
 @defproc[(tagged-formula-fragment-visual? [value any/c]) boolean?]{
 
 Returns @racket[#t] for a generated fragment Visual inside a tagged formula.
@@ -3043,6 +3075,28 @@ Changed explicit matches are moving cross-fades, and unmatched fragments use the
 normal fade-out/fade-in behavior. This operation does not infer algebraic
 equivalence, parse TeX tokens, choose paths/arcs for the movement, or morph
 glyph outlines.
+}
+
+@defproc[(transform-matching-glyphs
+          [source formula-assembly-visual?]
+          [destination formula-assembly-visual?]
+          [#:matches matches (listof formula-part-match?) '()]
+          [#:path-arc path-arc finite-real? 0]
+          [#:part-paths part-paths (listof formula-part-path?) '()]
+          [#:copies copies (listof formula-part-copy?) '()]
+          [#:mismatch-mode mismatch-mode (or/c 'fade 'fade-transform) 'fade])
+         transform-formula-parts-request?]{
+
+Builds the glyph-level counterpart to @racket[transform-matching-formula]. Both
+assemblies must have been produced by @racket[glyph-tex]. Exact dvisvgm path
+outlines pair automatically in source order; use @racket[matches] for a
+deliberate changed glyph, such as mapping the generated plus-sign part to the
+destination minus-sign part. The remaining keywords have the same meanings as
+for @racket[transform-matching-formula].
+
+This matches and moves whole rendered glyph leaves. It does not derive a
+mathematical operation, identify TeX characters or terms, or morph one outline
+into another; changed matches are the ordinary moving cross-fade.
 }
 
 @defproc[(rewrite-formula
@@ -9394,6 +9448,12 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.73.0 — SCENE-BY.} Added @racket[glyph-tex] and
+       @racket[transform-matching-glyphs]. One complete TeX expression now
+       exposes its visible dvisvgm glyph leaves as positional formula parts;
+       exact SVG path outlines match automatically across separate TeX
+       compilations. Changed glyphs remain explicit moving cross-fades rather
+       than outline morphs.}
  @item{@bold{0.72.0 — SCENE-BX.} Added @racket[rewrite-formula], an anchored
        formula-transition convenience operation. Its anchor is resolved from
        the current scene formula when a clip compiles, so staged algebra keeps

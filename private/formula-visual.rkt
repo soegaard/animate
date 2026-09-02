@@ -30,17 +30,26 @@
          latex-formula
          (struct-out formula-visual)
          formula-visual-with-source
+         formula-visual-rendering-key
+         formula-visual-default-rendering-key
          formula-visual-document-font-points
 
          ;; Composite animation support
          gen:formula-identity-visual
-         formula-visual-with-id)
+         formula-visual-with-id
+         gen:formula-rendering-key)
 
 ;; Internal protocol for formula Visual subclasses that must preserve their
 ;; specialised renderer data while a formula-part transition gives them a
 ;; temporary identity.
 (define-generics formula-identity-visual
   (generic-formula-visual-with-id formula-identity-visual id))
+
+;; Internal protocol for formula Visual subclasses whose renderer artifact has
+;; a stable matching identity different from its complete TeX source.  Glyph
+;; fragments use it to match one dvisvgm outline across complete formulas.
+(define-generics formula-rendering-key
+  (generic-formula-rendering-key formula-rendering-key))
 
 
 ;;;
@@ -114,7 +123,10 @@
   #:methods gen:formula-identity-visual
   [(define (generic-formula-visual-with-id visual id)
      (check-formula-id 'formula-visual-with-id id)
-     (struct-copy formula-visual visual [id id]))])
+     (struct-copy formula-visual visual [id id]))]
+  #:methods gen:formula-rendering-key
+  [(define (generic-formula-rendering-key visual)
+     (formula-visual-default-rendering-key visual))])
 
 ;; formula-visual represents one semantic LaTeX mathematical formula.
 ;;  - id                      symbol?                     stable Visual identity.
@@ -248,6 +260,35 @@
                  'formula-visual-with-source
                  "source"
                  source)]))
+
+; formula-visual-rendering-key : formula-visual? -> immutable?
+;;   Returns the immutable appearance identity used by formula matching.
+(define (formula-visual-rendering-key visual)
+  (unless (formula-visual? visual)
+    (raise-argument-error
+     'formula-visual-rendering-key
+     "formula-visual?"
+     visual))
+  (generic-formula-rendering-key visual))
+
+; formula-visual-default-rendering-key : formula-visual? -> immutable?
+;;   Returns the normal source-and-options appearance identity for a formula.
+;;   Tagged glyph subclasses replace only the source component with their
+;;   dvisvgm outline key.
+(define (formula-visual-default-rendering-key visual)
+  (unless (formula-visual? visual)
+    (raise-argument-error
+     'formula-visual-default-rendering-key
+     "formula-visual?"
+     visual))
+  (list (formula-visual-source visual)
+        (formula-visual-mode visual)
+        (formula-visual-font-size visual)
+        (formula-visual-preamble visual)
+        (formula-visual-document-class-options visual)
+        (formula-visual-preview-options visual)
+        (formula-visual-horizontal-alignment visual)
+        (formula-visual-vertical-alignment visual)))
 
 ; formula-visual-document-font-points : formula-visual? -> (or/c 10 11 12)
 ;;   Returns the standard document base used to calibrate semantic font size.

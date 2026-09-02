@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BX: anchored formula rewrites")
+  "SCENE-BY: automatic dvisvgm glyph formula matching")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.72.0")
+(define version "0.73.0")
 
 ; license : symbol?
 ;;   Declares the package license.

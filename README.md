@@ -1,9 +1,24 @@
-# animate — SCENE-BX
+# animate — SCENE-BY
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-BY adds `glyph-tex`: it asks `dvisvgm` to expose the visible glyph leaves
+of one complete TeX expression as `glyph-0`, `glyph-1`, and so on. Matching is
+then automatic when two leaves have the same rendered outline, even though TeX
+and dvisvgm were run separately for the two formulas. Use an ordinary explicit
+`formula-part-match` only for a changed glyph such as `+` becoming `-`.
+
+```racket
+(define before (glyph-tex #:id 'equation "x + 3 = 7"))
+(define after  (glyph-tex #:id 'equation "x = 7 - 3"))
+
+(transform-matching-glyphs
+ before after
+ #:matches (list (formula-part-match 'glyph-1 'glyph-3)))
+```
 
 SCENE-BX adds `rewrite-formula`, a formula-aware convenience operation for
 staged algebra. It combines ordinary matching, copies, routes, and mismatch
@@ -143,11 +158,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BX v0.72.0 builds on immutable parameters and generic values, dynamically
+SCENE-BY v0.73.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.72.0`. The public module's bindings are covered
+The public package version is `0.73.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -656,6 +671,35 @@ racket examples/tagged-formula-transitions.rkt \
 solves \(2x+1=5\) through \(2x=5-1\), \(2x=4\),
 \(\frac{2x}{2}=\frac{4}{2}\), and \(x=2\), keeping the equals sign fixed
 throughout.
+
+### Automatic glyph layouts
+
+`glyph-tex` is the lower-level complement to explicit `formula-fragment` and
+`math-tex` groups. It typesets one complete expression, then exposes its visible
+dvisvgm `<use>` leaves as `glyph-0`, `glyph-1`, and so on. Each glyph keeps the
+complete expression's TeX layout, but `transform-matching-glyphs` compares the
+referenced dvisvgm path outline instead of the whole formula source. Thus exact
+unchanged glyphs move automatically between separately compiled formulas:
+
+```racket
+(define before (glyph-tex #:id 'equation "x + 3 = 7"))
+(define after  (glyph-tex #:id 'equation "x = 7 - 3"))
+
+(scene-play (scene-add (make-scene) before)
+            (transform-matching-glyphs
+             before after
+             #:matches
+             (list (formula-part-match 'glyph-1 'glyph-3)))
+            #:duration 2)
+```
+
+The explicit match cross-fades the old `+` into the new `-`; the unchanged
+`x`, `3`, `=`, and `7` leaves are detected automatically. The generated names
+are intentionally positional. Use `tagged-formula` or `math-tex` when an author
+needs a stable semantic term such as `a-square` or an entire fraction; dvisvgm
+glyph leaves are not TeX tokens, and repeated glyphs pair greedily in source
+order. `rewrite-formula` also works directly with `glyph-tex` assemblies when
+one generated glyph should be anchored.
 
 ## Named formula parts
 
@@ -2234,7 +2278,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.71.0`. Every completed SCENE
+This is the running design backlog for version `0.73.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2251,24 +2295,25 @@ precisely; do not silently lose the follow-on idea that led to the work.
   fragments together, but it is not a TeX parser: every fragment must be a
   contiguous valid TeX piece with visible ink.
 - `formula-correspondence-auto` and `transform-matching-formula` match whole
-  rendering-equivalent fragments in order. They do not perform algebra,
-  semantic name/token matching, character-level matching, or glyph-outline
-  morphing. Formula colour remains controlled by explicit LaTeX source and
-  preamble commands.
+  rendering-equivalent fragments in order. `glyph-tex` and
+  `transform-matching-glyphs` additionally match exact dvisvgm glyph outlines
+  in source order. Neither mode performs algebra, semantic name/token matching,
+  or glyph-outline morphing. Formula colour remains controlled by explicit
+  LaTeX source and preamble commands.
 - `formula-part-copy` can copy one whole named fragment to any number of
   explicitly named unmatched destinations, and formula parts can now follow
   circular or normalized custom paths. It still has no semantic algebra,
   automatic choice of pedagogically meaningful copies/routes, glyph-level
-  selection, or true TeX-outline morphing.
+  grouping, or true TeX-outline morphing.
 - `rewrite-formula` keeps one explicit named anchor fixed by translating the
   whole destination layout when the clip compiles. It does not infer which
   other terms should remain stationary, preserve several independent anchors,
   or know algebraic operations such as cancellation or adding a term to both
   sides.
 - Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
-  `write-in` expands their dvisvgm path definitions once while the clip is
-  compiled, but there is not yet a public glyph map, semantic TeX parser,
-  glyph-outline matching, or per-glyph motion API.
+  `glyph-tex` exposes dvisvgm glyph leaves with positional names and supports
+  per-glyph motion through formula transitions, but it has no TeX/Unicode glyph
+  map, semantic TeX parser, semantic grouping, or glyph-outline morphing.
 
 ### Geometry and transforms
 
@@ -2440,6 +2485,23 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 `unwrite` removes an existing writable Visual by reversing both leaf order and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
+
+## SCENE-BY: automatic glyph-level formula matching
+
+Version `0.73.0` adds `glyph-tex` and `transform-matching-glyphs`. `glyph-tex`
+uses one `latex` → `dvisvgm` compilation for a complete expression, then makes
+each visible dvisvgm glyph leaf an individually movable `glyph-N` formula part.
+Its automatic correspondence compares the stable SVG path outline rather than
+dvisvgm's per-compilation font-definition names, so unchanged glyphs match
+across independently compiled equations.
+
+This is deliberately a renderer-level facility, not a TeX parser. A superscript
+or accented character can consist of several leaves, repeated outlines match
+greedily, and changed outlines cross-fade rather than morph. Use explicit
+`formula-fragment` or `math-tex` groups whenever a semantic mathematical term
+needs one stable identity. `examples/glyph-level-formula-matching.rkt` shows
+`x + 3 = 7` changing to `x = 7 - 3` with `=` anchored and only `+` → `-`
+declared explicitly.
 
 ## SCENE-BX: anchored formula rewrites
 

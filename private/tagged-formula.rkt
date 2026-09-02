@@ -29,9 +29,11 @@
 (provide (struct-out formula-fragment)
          tagged-formula
          math-tex
+         glyph-tex
          tagged-formula-fragment-visual?
          tagged-formula-fragment-visual-svg-source
          transform-matching-formula
+         transform-matching-glyphs
          rewrite-formula
          transform-matching-tex)
 
@@ -58,7 +60,7 @@
 ;; The parent formula-visual representation preserves compatibility with
 ;; formula-part and formula-correspondence. It also lets the established formula
 ;; transition compiler move an unchanged fragment as one rigid object.
-(struct tagged-formula-fragment-visual formula-visual (svg-source)
+(struct tagged-formula-fragment-visual formula-visual (svg-source glyph-key)
   #:transparent
   #:methods gen:visual
   [(define (visual-id visual)
@@ -113,6 +115,21 @@
       id
       (formula-visual-transform visual)
       (formula-visual-opacity visual)))]
+  #:methods gen:formula-rendering-key
+  [(define (generic-formula-rendering-key visual)
+     (define glyph-key
+       (tagged-formula-fragment-visual-glyph-key visual))
+     (if glyph-key
+         (list 'dvisvgm-glyph
+               glyph-key
+               (formula-visual-mode visual)
+               (formula-visual-font-size visual)
+               (formula-visual-preamble visual)
+               (formula-visual-document-class-options visual)
+               (formula-visual-preview-options visual)
+               (formula-visual-horizontal-alignment visual)
+               (formula-visual-vertical-alignment visual))
+         (formula-visual-default-rendering-key visual)))]
   #:methods gen:write-path-source
   [(define (write-path-source->visual visual)
      (tagged-formula-fragment->write-proxy visual))])
@@ -130,7 +147,8 @@
    (formula-visual-preview-options visual)
    (formula-visual-horizontal-alignment visual)
    (formula-visual-vertical-alignment visual)
-   (tagged-formula-fragment-visual-svg-source visual)))
+   (tagged-formula-fragment-visual-svg-source visual)
+   (tagged-formula-fragment-visual-glyph-key visual)))
 
 ;; tagged-formula-fragment->write-proxy : tagged-formula-fragment-visual?
 ;;                                            -> group-visual?
@@ -318,6 +336,124 @@
          #:document-class-options document-class-options
          fragments))
 
+; glyph-tex : #:id symbol?
+;             [#:center vec2?]
+;             [#:rotation finite-real?]
+;             [#:scale scale-factor?]
+;             [#:opacity opacity?]
+;             [#:mode formula-mode?]
+;             [#:font-size positive-real?]
+;             [#:preamble string?]
+;             [#:document-class-options (listof latex-option?)]
+;             string? ...
+;             -> formula-assembly-visual?
+;; Typesets one complete TeX expression and exposes each dvisvgm glyph leaf as
+;; a formula part named `glyph-0`, `glyph-1`, and so on.  Glyphs with the same
+;; rendered outline automatically match across separate expressions; explicit
+;; tags remain the better abstraction when several glyphs form one term.
+(define (glyph-tex #:id id
+                   #:center [center origin]
+                   #:rotation [rotation 0]
+                   #:scale [scale 1]
+                   #:opacity [opacity 1]
+                   #:mode [mode 'display]
+                   #:font-size [font-size 1]
+                   #:preamble [preamble ""]
+                   #:document-class-options
+                   [document-class-options '()]
+                   . tex-strings)
+  (unless (and (pair? tex-strings)
+               (andmap string? tex-strings))
+    (raise-argument-error 'glyph-tex "nonempty list of strings" tex-strings))
+  (define source
+    (string-join tex-strings " "))
+  ;; Reuse latex-formula's option and transform validation before invoking the
+  ;; external compiler. Its source remains the complete user expression; glyph
+  ;; matching uses a separate dvisvgm outline key.
+  (define base
+    (latex-formula
+     source
+     #:id id
+     #:center center
+     #:rotation rotation
+     #:scale scale
+     #:opacity opacity
+     #:mode mode
+     #:font-size font-size
+     #:preamble preamble
+     #:document-class-options document-class-options))
+  (define artifact
+    (compile-tagged-formula-svg
+     'glyph-tex
+     (list (formula-fragment 'glyph-source source))
+     (formula-visual-mode base)
+     (formula-visual-preamble base)
+     (formula-visual-document-class-options base)))
+  (define glyph-count
+    (svg-glyph-count artifact))
+  (unless (positive? glyph-count)
+    (error 'glyph-tex "dvisvgm produced no visible glyph leaves"))
+  (define full-pict
+    (svg-string->pict artifact))
+  (define full-width
+    (pict-width full-pict))
+  (define full-height
+    (pict-height full-pict))
+  (unless (and (positive? full-width)
+               (positive? full-height))
+    (error 'glyph-tex "dvisvgm produced an SVG with nonpositive dimensions"))
+  (define values-per-pict-x
+    (/ (view-box-width artifact full-width) full-width))
+  (define values-per-pict-y
+    (/ (view-box-height artifact full-height) full-height))
+  (define world-per-pict-unit
+    (/ (formula-visual-font-size base)
+       (formula-visual-document-font-points base)))
+  (define parts
+    (for/list ([index (in-range glyph-count)])
+      (define isolated
+        (svg-with-visible-glyph artifact index))
+      (define bounds
+        (visible-pict-bounds 'glyph-tex (svg-string->pict isolated)))
+      (define left (list-ref bounds 0))
+      (define top (list-ref bounds 1))
+      (define width (list-ref bounds 2))
+      (define height (list-ref bounds 3))
+      (define cropped
+        (svg-with-visible-glyph artifact
+                                index
+                                #:view-box
+                                (list (+ (view-box-x artifact)
+                                         (* left values-per-pict-x))
+                                      (+ (view-box-y artifact)
+                                         (* top values-per-pict-y))
+                                      (* width values-per-pict-x)
+                                      (* height values-per-pict-y))
+                                #:width width
+                                #:height height))
+      (define local-center
+        (vec2 (* (- (+ left (/ width 2)) (/ full-width 2))
+                 world-per-pict-unit)
+              (* (- (/ full-height 2) (+ top (/ height 2)))
+                 world-per-pict-unit)))
+      (define name
+        (string->symbol (format "glyph-~a" index)))
+      (formula-part
+       name
+       (make-tagged-fragment-visual
+        base
+        name
+        source
+        local-center
+        cropped
+        #:glyph-key (svg-glyph-key artifact index)))))
+  (formula-assembly parts
+                    #:id id
+                    #:center center
+                    #:rotation rotation
+                    #:scale scale
+                    #:opacity opacity))
+
 ;; math-tex-split : string? -> (listof nonempty-string?)
 ;; Splits Manim's double-brace form wherever it occurs. Nested TeX braces and
 ;; escaped braces are retained inside a group. Whitespace-only pieces cannot
@@ -404,6 +540,34 @@
   (transform-formula-parts
    (make-matching-formula-correspondence
     'transform-matching-formula source destination matches)
+   #:path-arc path-arc
+   #:part-paths part-paths
+   #:copies copies
+   #:mismatch-mode mismatch-mode))
+
+; transform-matching-glyphs : formula-assembly-visual?
+;                            formula-assembly-visual?
+;                            [#:matches (listof formula-part-match?)]
+;                            [#:path-arc finite-real?]
+;                            [#:part-paths (listof formula-part-path?)]
+;                            [#:copies (listof formula-part-copy?)]
+;                            [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                            -> transform-formula-parts-request?
+;; Produces automatic rendered-glyph matching between two glyph-tex values.
+;; Explicit matches remain available for an intentional changed glyph, such as
+;; a plus sign becoming a minus sign.
+(define (transform-matching-glyphs source destination
+                                   #:matches [matches '()]
+                                   #:path-arc [path-arc 0]
+                                   #:part-paths [part-paths '()]
+                                   #:copies [copies '()]
+                                   #:mismatch-mode [mismatch-mode 'fade])
+  (check-glyph-assembly 'transform-matching-glyphs source)
+  (check-glyph-assembly 'transform-matching-glyphs destination)
+  (transform-matching-formula
+   source
+   destination
+   #:matches matches
    #:path-arc path-arc
    #:part-paths part-paths
    #:copies copies
@@ -809,6 +973,140 @@
      "{opacity:1}</style>"))
   (regexp-replace #px"<svg\\b[^>]*>" source root))
 
+; svg-glyph-count : string? -> exact-nonnegative-integer?
+;;   Counts dvisvgm glyph leaves, which are represented by visible <use> tags.
+(define (svg-glyph-count source)
+  (length (svg-glyph-use-elements source)))
+
+; svg-glyph-key : string? exact-nonnegative-integer? -> immutable-string?
+;;   Returns a rendered dvisvgm outline identity for one visible glyph leaf.
+;;   dvisvgm numbers font definitions per compilation, so the stable key is the
+;; referenced path geometry rather than the local definition id.
+(define (svg-glyph-key source index)
+  (define uses
+    (svg-glyph-use-elements source))
+  (check-glyph-index 'svg-glyph-key index uses)
+  (define glyph-use
+    (list-ref uses index))
+  (define href
+    (regexp-match
+     #px"(?:xlink:)?href\\s*=\\s*['\"]#([^'\"]+)['\"]"
+     glyph-use))
+  (unless href
+    (raise-arguments-error
+     'svg-glyph-key
+     "a dvisvgm <use> element with a local href"
+     "glyph index" index
+     "use" glyph-use))
+  (define definition-id
+    (cadr href))
+  (define path-definition
+    (for/first ([path-element
+                 (in-list (regexp-match* #px"<path\\b[^>]*>" source))]
+                #:when (regexp-match
+                        (pregexp
+                         (string-append
+                          "(?:^|[[:space:]])id\\s*=\\s*['\"]"
+                          (regexp-quote definition-id)
+                          "['\"]"))
+                        path-element))
+      path-element))
+  (unless path-definition
+    (raise-arguments-error
+     'svg-glyph-key
+     "an SVG <path> definition for the glyph href"
+     "glyph index" index
+     "href" definition-id))
+  (define path-data
+    (regexp-match #px"(?:^|[[:space:]])d\\s*=\\s*['\"]([^'\"]+)['\"]"
+                  path-definition))
+  (unless path-data
+    (raise-arguments-error
+     'svg-glyph-key
+     "an SVG glyph path with d data"
+     "glyph index" index
+     "path" path-definition))
+  (string->immutable-string (cadr path-data)))
+
+; svg-with-visible-glyph : string? exact-nonnegative-integer?
+;                          [#:view-box (or/c #f (list/c real? real? real? real?))]
+;                          [#:width (or/c #f positive-real?)]
+;                          [#:height (or/c #f positive-real?)]
+;                          -> string?
+;;   Returns an SVG that paints just one dvisvgm glyph leaf from one tagged
+;; formula. Each <use> receives a deterministic temporary id before CSS hides
+;; all but the selected leaf.
+(define (svg-with-visible-glyph source index
+                                #:view-box [view-box #f]
+                                #:width [width #f]
+                                #:height [height #f])
+  (define uses
+    (svg-glyph-use-elements source))
+  (check-glyph-index 'svg-with-visible-glyph index uses)
+  (define annotated
+    (svg-with-glyph-identifiers source))
+  (define source-pict
+    (svg-string->pict annotated))
+  (define actual-view-box
+    (or view-box
+        (list (view-box-x annotated)
+              (view-box-y annotated)
+              (view-box-width annotated (pict-width source-pict))
+              (view-box-height annotated (pict-height source-pict)))))
+  (define actual-width
+    (or width (pict-width source-pict)))
+  (define actual-height
+    (or height (pict-height source-pict)))
+  (define root
+    (string-append
+     "<svg xmlns=\"http://www.w3.org/2000/svg\" "
+     "xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\""
+     (number->string actual-width)
+     "\" height=\""
+     (number->string actual-height)
+     "\" viewBox=\""
+     (string-join (map number->string actual-view-box) " ")
+     "\">\n<style>g[id^=\"animate-fragment-\"]{opacity:0}"
+     "#animate-fragment-0{opacity:1}"
+     "use[id^=\"animate-glyph-\"]{opacity:0}"
+     "#animate-glyph-"
+     (number->string index)
+     "{opacity:1}</style>"))
+  (regexp-replace #px"<svg\\b[^>]*>" annotated root))
+
+; svg-glyph-use-elements : string? -> (listof string?)
+;;   Extracts dvisvgm <use> tags in their significant painter order.
+(define (svg-glyph-use-elements source)
+  (regexp-match* #px"<use\\b[^>]*>" source))
+
+; svg-with-glyph-identifiers : string? -> string?
+;;   Adds one private selector id to each dvisvgm glyph use element.
+(define (svg-with-glyph-identifiers source)
+  (define index 0)
+  (regexp-replace*
+   #px"<use\\b"
+   source
+   (lambda (matched)
+     (define result
+       (string-append
+        matched
+        " id=\"animate-glyph-"
+        (number->string index)
+        "\""))
+     (set! index (add1 index))
+     result)))
+
+; check-glyph-index : symbol? exact-nonnegative-integer? list? -> void?
+;;   Validates a glyph index against extracted dvisvgm glyph leaves.
+(define (check-glyph-index who index uses)
+  (unless (and (exact-nonnegative-integer? index)
+               (< index (length uses)))
+    (raise-arguments-error
+     who
+     "a glyph index within the dvisvgm SVG"
+     "glyph index" index
+     "glyph count" (length uses))))
+
 (define (visible-pict-bounds who source)
   (define bitmap (pict->bitmap source))
   (define width (send bitmap get-width))
@@ -871,7 +1169,12 @@
 
 ;;; Construction Helpers
 
-(define (make-tagged-fragment-visual base name source center svg-source)
+; make-tagged-fragment-visual : formula-visual? symbol? string? vec2? string?
+;                                      [#:glyph-key (or/c #f string?)]
+;                                      -> tagged-formula-fragment-visual?
+;;   Combines a semantic TeX endpoint with an already isolated SVG artifact.
+(define (make-tagged-fragment-visual base name source center svg-source
+                                     #:glyph-key [glyph-key #f])
   (define ordinary
     (latex-formula
      source
@@ -894,7 +1197,26 @@
    (formula-visual-preview-options ordinary)
    (formula-visual-horizontal-alignment ordinary)
    (formula-visual-vertical-alignment ordinary)
-   (string->immutable-string svg-source)))
+   (string->immutable-string svg-source)
+   (and glyph-key (string->immutable-string glyph-key))))
+
+; check-glyph-assembly : symbol? any/c -> void?
+;;   Requires an assembly whose every part was generated by glyph-tex.
+(define (check-glyph-assembly who assembly)
+  (unless (formula-assembly-visual? assembly)
+    (raise-argument-error who "formula-assembly-visual?" assembly))
+  (unless
+      (andmap
+       (lambda (part)
+         (define formula
+           (formula-part-formula part))
+         (and (tagged-formula-fragment-visual? formula)
+              (string? (tagged-formula-fragment-visual-glyph-key formula))))
+       (formula-assembly-visual-parts assembly))
+    (raise-argument-error
+     who
+     "a formula assembly returned by glyph-tex"
+     assembly)))
 
 (define (check-fragment-list who fragments)
   (unless (and (pair? fragments)
