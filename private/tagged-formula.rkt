@@ -27,9 +27,11 @@
 
 (provide (struct-out formula-fragment)
          tagged-formula
+         math-tex
          tagged-formula-fragment-visual?
          tagged-formula-fragment-visual-svg-source
-         transform-matching-formula)
+         transform-matching-formula
+         transform-matching-tex)
 
 
 ;;; Fragment Definitions
@@ -259,6 +261,125 @@
                     #:scale scale
                     #:opacity opacity))
 
+
+;;; Manim-Style Formula Convenience
+
+; math-tex : #:id symbol?
+;            [#:center vec2?]
+;            [#:rotation finite-real?]
+;            [#:scale scale-factor?]
+;            [#:opacity opacity?]
+;            [#:mode formula-mode?]
+;            [#:font-size positive-real?]
+;            [#:preamble string?]
+;            [#:document-class-options (listof latex-option?)]
+;            string? ...
+;            -> formula-assembly-visual?
+;; Typesets a complete TeX formula while using Manim-style `{{ ... }}` groups
+;; to declare matchable fragments. Text between those groups is matchable too.
+;; This is shorthand for tagged-formula; use tagged-formula directly when
+;; repeated terms need stable, author-chosen identities.
+(define (math-tex #:id id
+                  #:center [center origin]
+                  #:rotation [rotation 0]
+                  #:scale [scale 1]
+                  #:opacity [opacity 1]
+                  #:mode [mode 'display]
+                  #:font-size [font-size 1]
+                  #:preamble [preamble ""]
+                  #:document-class-options
+                  [document-class-options '()]
+                  . tex-strings)
+  (unless (and (pair? tex-strings)
+               (andmap string? tex-strings))
+    (raise-argument-error 'math-tex "nonempty list of strings" tex-strings))
+  (define fragments
+    (for/list ([source (in-list (math-tex-split (string-join tex-strings " ")))]
+               [index (in-naturals)])
+      (formula-fragment
+       (string->symbol (format "math-tex-part-~a" index))
+       source)))
+  (unless (pair? fragments)
+    (raise-arguments-error
+     'math-tex
+     "at least one `{{ ... }}` group or ordinary TeX fragment with visible ink"
+     "tex-strings" tex-strings))
+  (apply tagged-formula
+         #:id id
+         #:center center
+         #:rotation rotation
+         #:scale scale
+         #:opacity opacity
+         #:mode mode
+         #:font-size font-size
+         #:preamble preamble
+         #:document-class-options document-class-options
+         fragments))
+
+;; math-tex-split : string? -> (listof nonempty-string?)
+;; Splits Manim's double-brace form wherever it occurs. Nested TeX braces and
+;; escaped braces are retained inside a group. Whitespace-only pieces cannot
+;; be rendered as formula fragments.
+(define (math-tex-split source)
+  (define length (string-length source))
+  (define pieces-reversed '())
+  (define output (open-output-string))
+  (define (emit-current!)
+    (define piece (string-trim (get-output-string output)))
+    (unless (string=? piece "")
+      (set! pieces-reversed (cons piece pieces-reversed)))
+    (set! output (open-output-string)))
+  (define (starts-with? index text)
+    (and (<= (+ index (string-length text)) length)
+         (string=? (substring source index (+ index (string-length text)))
+                   text)))
+  (let loop ([index 0] [inside-group? #f] [brace-depth 0])
+    (cond
+      [(= index length)
+       (when inside-group?
+         (raise-arguments-error
+          'math-tex
+          "balanced Manim-style `{{ ... }}` groups"
+          "source" source))
+       (emit-current!)
+       (reverse pieces-reversed)]
+      [else
+       (define character (string-ref source index))
+       ;; Treat an escaped brace/backslash as literal TeX input. The two
+       ;; characters must stay together so `\\}}` cannot terminate a group.
+       (cond
+         [(and (char=? character #\\)
+               (< (add1 index) length)
+               (let ([next (string-ref source (add1 index))])
+                 (or (char=? next #\\)
+                     (char=? next #\{)
+                     (char=? next #\}))))
+          (write-char character output)
+          (write-char (string-ref source (add1 index)) output)
+         (loop (+ index 2) inside-group? brace-depth)]
+         [(not inside-group?)
+          (if (starts-with? index "{{")
+              (begin
+                (emit-current!)
+                (loop (+ index 2) #t 0))
+              (begin
+                (write-char character output)
+                (loop (add1 index) #f 0)))]
+         [(char=? character #\{)
+          (write-char character output)
+          (loop (add1 index) #t (add1 brace-depth))]
+         [(and (char=? character #\})
+               (zero? brace-depth)
+               (starts-with? index "}}"))
+          (emit-current!)
+          (loop (+ index 2) #f 0)]
+         [(char=? character #\})
+          (write-char character output)
+          (loop (add1 index) #t (sub1 brace-depth))]
+         [else
+          (write-char character output)
+          (loop (add1 index) #t brace-depth)])])))
+
 ; transform-matching-formula : formula-assembly-visual?
 ;                              formula-assembly-visual?
 ;                              [#:matches (listof formula-part-match?)]
@@ -300,6 +421,91 @@
     source
     destination
     (append (formula-correspondence-matches explicit) remaining-auto))))
+
+; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
+;                          [#:key-map (hash/c string? string?)]
+;                          -> transform-formula-parts-request?
+;; A Manim-style shorthand for transitions between math-tex formulas. Exact
+;; TeX fragments match automatically. `key-map` explicitly pairs every
+;; source occurrence of one mapped string with the first available destination
+;; occurrence of its mapped string. Key-map pairs take priority over automatic
+;; matches; named tagged-formulas remain the precise option when duplicate
+;; occurrences need individual control.
+(define (transform-matching-tex source destination #:key-map [key-map (hash)])
+  (unless (formula-assembly-visual? source)
+    (raise-argument-error
+     'transform-matching-tex
+     "formula-assembly-visual?"
+     source))
+  (unless (formula-assembly-visual? destination)
+    (raise-argument-error
+     'transform-matching-tex
+     "formula-assembly-visual?"
+     destination))
+  (check-tex-key-map key-map)
+  ;; Key-map pairs are deliberate overrides, analogous to Manim's key_map.
+  ;; Match them before exact-text pairing so a caller can redirect a source
+  ;; fragment even if an identical target fragment also exists.
+  (define-values (mapped-reversed used-source used-destination)
+    (for/fold ([matches '()]
+               [source-used (hash)]
+               [destination-used (hash)])
+              ([source-part (in-list (formula-assembly-visual-parts source))])
+      (define source-name (formula-part-name source-part))
+      (define mapped-source
+        (formula-visual-source (formula-part-formula source-part)))
+      (define destination-source
+        (hash-ref key-map mapped-source #f))
+      (define destination-part
+        (and destination-source
+             (for/first ([candidate
+                          (in-list (formula-assembly-visual-parts destination))]
+                         #:unless (hash-has-key? destination-used
+                                                  (formula-part-name candidate))
+                         #:when (string=? destination-source
+                                          (formula-visual-source
+                                           (formula-part-formula candidate))))
+               candidate)))
+      (if destination-part
+          (values
+           (cons (formula-part-match source-name
+                                     (formula-part-name destination-part))
+                 matches)
+           (hash-set source-used source-name #t)
+           (hash-set destination-used (formula-part-name destination-part) #t))
+          (values matches source-used destination-used))))
+  (define automatic
+    (formula-correspondence-auto source destination))
+  (define automatic-remaining
+    (filter
+     (lambda (match)
+       (and (not (hash-has-key? used-source
+                                (formula-part-match-source-name match)))
+            (not (hash-has-key? used-destination
+                                (formula-part-match-destination-name match)))))
+     (formula-correspondence-matches automatic)))
+  (transform-formula-parts
+   (formula-correspondence
+    source
+    destination
+    (append (reverse mapped-reversed) automatic-remaining))))
+
+(define (check-tex-key-map key-map)
+  (unless (hash? key-map)
+    (raise-argument-error 'transform-matching-tex "hash?" key-map))
+  (for ([(source destination) (in-hash key-map)])
+    (unless (string? source)
+      (raise-arguments-error
+       'transform-matching-tex
+       "a hash mapping TeX source strings to TeX source strings"
+       "key" source
+       "value" destination))
+    (unless (string? destination)
+      (raise-arguments-error
+       'transform-matching-tex
+       "a hash mapping TeX source strings to TeX source strings"
+       "key" source
+       "value" destination))))
 
 
 ;;; SVG Compilation

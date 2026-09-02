@@ -288,6 +288,7 @@
  formula-visual-with-source
  (struct-out formula-fragment)
  tagged-formula
+ math-tex
  tagged-formula-fragment-visual?
  tagged-formula-fragment-visual-svg-source
  (struct-out formula-part)
@@ -304,6 +305,7 @@
  formula-correspondence-auto
  formula-correspondence-unmatched-source-names
  formula-correspondence-unmatched-destination-names
+ transform-matching-tex
 
  ;; Arrows and axes
  arrow
