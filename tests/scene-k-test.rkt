@@ -238,7 +238,9 @@
   (check-equal? (group-visual-children empty-group) '())
   (check-equal? (group-visual-resolved-children empty-group) '())
 
-  ;; Group trees require affine children and unique descendant identities.
+  ;; Group trees require affine children, unique direct siblings, and identities
+  ;; distinct from each enclosing group. Equal names are allowed in separate
+  ;; branches because their full nested paths remain unambiguous.
 
   (struct position-marker (id position)
     #:transparent
@@ -267,11 +269,11 @@
                (group (list back-circle
                             (circle #:id 'back-circle))
                       #:id 'duplicate-group)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (group (list inner-group
-                            (circle #:id 'nested-leaf))
-                      #:id 'duplicate-tree)))
+  (check-true
+   (group-visual?
+    (group (list inner-group
+                 (circle #:id 'nested-leaf))
+           #:id 'same-leaf-in-separate-branches)))
   (check-exn exn:fail:contract?
              (lambda ()
                (group 42 #:id 'not-a-list)))

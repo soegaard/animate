@@ -214,7 +214,10 @@
      (lambda (target)
        (scene-state-has? state target))
      (lambda (target)
-       (resolve-target-world target))))
+       ;; A nested resolver must see the stored graph/group tree while another
+       ;; child is resolving. Resolving the entire root tree here would revisit
+       ;; sibling derived edges and create an artificial cycle.
+       (resolve-target-world/raw target))))
 
   (define (resolve-id id)
     (unless (symbol? id)
@@ -244,7 +247,27 @@
        (hash-set! cache id resolved)
        resolved]))
 
-  (define (resolve-target target)
+  ;; Resolve one derived child at a time, recursively rebuilding ordinary
+  ;; groups only for the public sampled result. Stored scene state is never
+  ;; changed. This supports derived children such as live graph edges while
+  ;; retaining normal group rendering and nested lookup.
+  (define (resolve-visual-tree visual)
+    (cond
+      [(derived-visual? visual)
+       (resolve-visual-tree
+        (resolve-derived-visual visual context))]
+      [(group-visual? visual)
+       (group-visual-with-children
+        visual
+        (for/list ([child (in-list (group-visual-children visual))])
+          (resolve-visual-tree child)))]
+      [else
+       visual]))
+
+  ;; These raw lookups are used only by the derived context above. In
+  ;; particular, resolving a graph edge asks for a vertex without eagerly
+  ;; resolving every sibling edge in the graph's `edges` group.
+  (define (resolve-target/raw target)
     (define path
       (visual-target-path target 'scene-state-resolved-ref))
     (visual-descendant-ref
@@ -253,11 +276,28 @@
      path
      'scene-state-resolved-ref))
 
-  (define (resolve-target-world target)
+  (define (resolve-target-world/raw target)
     (define path
       (visual-target-path target 'scene-state-resolved-ref))
     (resolved-world-descendant-ref
      (resolve-id (car path))
+     (cdr path)
+     path))
+
+  (define (resolve-target target)
+    (define path
+      (visual-target-path target 'scene-state-resolved-ref))
+    (visual-descendant-ref
+     (resolve-visual-tree (resolve-id (car path)))
+     (cdr path)
+     path
+     'scene-state-resolved-ref))
+
+  (define (resolve-target-world target)
+    (define path
+      (visual-target-path target 'scene-state-resolved-world-ref))
+    (resolved-world-descendant-ref
+     (resolve-visual-tree (resolve-id (car path)))
      (cdr path)
      path))
 
@@ -364,10 +404,10 @@
      'scene-state-resolved-visuals-in-drawing-order
      "scene-state?"
      state))
-  (define resolve-id
+  (define resolve-target
     (make-scene-state-resolver state))
   (for/list ([id (in-list (scene-state-drawing-order state))])
-    (resolve-id id)))
+    (resolve-target id)))
 
 ;;;
 ;;; Immutable Updates

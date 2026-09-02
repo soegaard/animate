@@ -24,8 +24,8 @@
   (define (visual-at scene time id)
     (scene-state-ref (scene-sample scene time) id))
 
-  ;; lagged-start is a first-class Visual composition. It accepts separate
-  ;; children or one list, and all three composition forms may nest.
+  ;; lagged-start is a first-class Visual/camera composition. It accepts
+  ;; separate children or one list, and all three composition forms may nest.
   (define staggered
     (lagged-start (move-to dot (vec2 4 0))
                   (rotate-by dot 2)
@@ -57,9 +57,9 @@
   (check-exn exn:fail:contract?
              (lambda ()
                (lagged-start (move-to dot (vec2 1 0)) #:lag-ratio +inf.0)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (lagged-start (camera-pan-to (vec2 1 0)) #:lag-ratio 1/2)))
+  (check-true
+   (lagged-start-animation-request?
+    (lagged-start (camera-pan-to (vec2 1 0)) #:lag-ratio 1/2)))
   ;; SCENE-AR extends the child grammar with timed leaves/compositions.
   (check-true
    (lagged-start-animation-request?

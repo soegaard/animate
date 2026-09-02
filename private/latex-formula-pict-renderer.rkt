@@ -15,10 +15,14 @@
 ;; Imports
 (require (only-in pict
                   blank
+                  colorize
                   pict?
                   scale)
+         (only-in racket/draw make-color)
          "anchored-pict.rkt"
          "camera.rkt"
+         "color-style.rkt"
+         "formula-style.rkt"
          "formula-visual.rkt"
          "pict-renderer.rkt"
          "renderer-resources.rkt"
@@ -160,8 +164,26 @@
   (define scaled-pict
     (scale-pict-if-needed anchored-pict
                           (visual-scale visual)))
-  (rotate-pict-if-needed scaled-pict
+  (define painted-pict
+    (if (formula-styled-visual? visual)
+        (colorize scaled-pict
+                  (formula-style-draw-color
+                   (formula-styled-visual-color visual)))
+        scaled-pict))
+  (rotate-pict-if-needed painted-pict
                          (visual-rotation visual)))
+
+;; formula-style-draw-color : color-spec? -> color%
+;; Converts semantic RGBA values only at the Pict boundary. Strings remain
+;; accepted by Pict directly, but conversion gives colorize the same alpha
+;; semantics as the ordinary path/text renderers.
+(define (formula-style-draw-color color)
+  (define resolved
+    (color-spec->rgba-color color 'formula-style-draw-color))
+  (make-color (inexact->exact (round (rgba-color-red resolved)))
+              (inexact->exact (round (rgba-color-green resolved)))
+              (inexact->exact (round (rgba-color-blue resolved)))
+              (rgba-color-alpha resolved)))
 
 ; check-typesetter-result : formula-visual? any/c -> pict?
 ;;   Raises an error unless a formula typesetter returns a Pict.

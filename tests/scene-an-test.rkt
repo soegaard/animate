@@ -17,14 +17,15 @@
   (define (dot-at state)
     (scene-state-ref state 'dot))
 
-  ;; timed is a first-class wrapper for Visual requests only.
+  ;; timed is a first-class wrapper for Visual and camera requests.
   (define delayed-request
     (timed (move-to dot (vec2 4 0))
            #:start 1
            #:duration 2))
   (check-true (timed-animation-request? delayed-request))
-  (check-exn exn:fail:contract?
-             (lambda () (timed (camera-pan-to (vec2 1 0)))))
+  (check-true
+   (timed-animation-request?
+    (timed (camera-pan-to (vec2 1 0)))))
   (check-exn exn:fail:contract?
              (lambda () (timed (move-to dot origin) #:start -1)))
   (check-exn exn:fail:contract?

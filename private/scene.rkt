@@ -67,7 +67,7 @@
   #:transparent)
 
 ;; timed-animation-request wraps one Visual leaf or composition with local timing.
-;;  - request   timable-visual-request?          Visual request/composition to schedule.
+;;  - request   timable-request?                 Visual/camera request/composition to schedule.
 ;;  - start     nonnegative finite real?        local delay/timing units.
 ;;  - duration  positive finite real?           active duration/timing units.
 ;;  - easing    (or/c false/c (-> real? real?)) local mapping; #f inherits the
@@ -131,6 +131,17 @@
 ;;                                                   exactly batch start.
 ;;  - animations     (listof scheduled-visual-animation?)
 
+(struct scheduled-camera-animation (start duration easing animation)
+  #:transparent)
+
+;; scheduled-camera-animation stores one compiled camera leaf in the local
+;; scheduler. Its from-value is the exact camera state at start, while its
+;; easing applies only over [start,start+duration].
+;;  - start      nonnegative finite real?       local start time.
+;;  - duration   positive finite real?          local active duration.
+;;  - easing     (-> real? real?)               local progress mapping.
+;;  - animation  compiled-camera-animation?     one component transition.
+
 (struct play-clip
   (start-time
    duration
@@ -164,9 +175,8 @@
 
 ;; timed-play-clip represents one locally scheduled Visual/scalar interval. It
 ;; extends the SCENE-AN scheduler with nested sequential/parallel/lagged/style
-;; expansion and explicit timed-child scaling. Camera requests
-;; deliberately remain full-clip requests, while camera-follow samples the
-;; actual locally scheduled Visual state.
+;; expansion and explicit timed-child scaling for both Visual and camera
+;; leaves. camera-follow samples the actual locally scheduled Visual state.
 
 (struct wait-clip (start-time duration state camera)
   #:transparent)
@@ -192,15 +202,15 @@
 ;;; Public Animation Composition
 ;;;
 
-; timed : timable-visual-request?
+; timed : timable-request?
 ;         [#:start nonnegative-real?]
 ;         [#:duration positive-real?]
 ;         [#:easing (or/c false/c (-> real? real?))]
 ;         -> timed-animation-request?
-;;   Adds local timing to one Visual leaf or composition. A false easing inherits
-;;   the enclosing timing context. Camera requests and another
-;;   timed wrapper are not accepted, but style and sequential/parallel/lagged
-;;   compositions may be wrapped directly.
+;;   Adds local timing to one Visual/camera leaf or composition. A false easing
+;;   inherits the enclosing timing context. Another timed wrapper is not
+;;   accepted, but style and sequential/parallel/lagged compositions may be
+;;   wrapped directly.
 (define (timed request
                #:start [start 0]
                #:duration [duration 1]
@@ -208,7 +218,7 @@
   (unless (timable-visual-request? request)
     (raise-argument-error
      'timed
-     "Visual/scalar animation request, style transition, or sequential/parallel/lagged composition"
+     "Visual/scalar or camera animation request, style transition, or sequential/parallel/lagged composition"
      request))
   (check-nonnegative-time 'timed start)
   (check-positive-duration 'timed duration)
@@ -510,15 +520,27 @@
 ; scene-play/scheduled : scene? positive-real? easing? list? -> scene?
 ;;   Compiles locally scheduled Visual leaves against exact local start states.
 (define (scene-play/scheduled scn duration easing requests)
-  (define visual-specs
+  ;; One expansion calculates the local timing tree for both Visual and camera
+  ;; leaves. Keeping a single source of spans means a camera in a succession or
+  ;; lagged group receives exactly the same interval as an equivalent Visual.
+  (define scheduled-specs
     (append-map
      (lambda (request)
        (request->visual-specs request duration easing))
-     (filter visual-scene-play-request? requests)))
-  (define camera-requests
-    (filter camera-animation-request? requests))
+     requests))
+  (define visual-specs
+    (filter (lambda (spec)
+              (animation-request?
+               (visual-request-spec-request spec)))
+            scheduled-specs))
+  (define camera-specs
+    (filter (lambda (spec)
+              (camera-animation-request?
+               (visual-request-spec-request spec)))
+            scheduled-specs))
   (check-scheduled-component-conflicts visual-specs)
   (check-scheduled-removal-boundaries visual-specs)
+  (check-scheduled-camera-component-conflicts camera-specs)
   (define start-state
     (scene-current-state scn))
   (define visual-batches
@@ -527,15 +549,12 @@
     (sample-scheduled-visual-state start-state visual-batches duration))
   (define start-camera
     (scene-current-camera scn))
-  (define camera-start-state
-    (if (ormap camera-follow-request? camera-requests)
-        (sample-scheduled-visual-state start-state visual-batches 0)
-        start-state))
   (define compiled-camera-animations
-    (compile-camera-animation-requests start-camera
-                                       camera-start-state
-                                       end-state
-                                       camera-requests))
+    (compile-scheduled-camera-animations
+     start-camera
+     start-state
+     visual-batches
+     camera-specs))
   (define clip
     (timed-play-clip (scene-duration scn)
                      duration
@@ -544,20 +563,15 @@
                      visual-batches
                      compiled-camera-animations
                      easing))
-  (define endpoint-progress
-    (scene-eased-progress easing 1))
-  (define (endpoint-easing _progress)
-    endpoint-progress)
-  (define endpoint-motion-state
-    (and
-     (compiled-camera-animations-require-scene-state?
-      compiled-camera-animations)
-     end-state))
   (define end-camera
-    (complete-compiled-camera-animations start-camera
-                                         compiled-camera-animations
-                                         endpoint-easing
-                                         endpoint-motion-state))
+    (sample-scheduled-camera
+     start-camera
+     compiled-camera-animations
+     duration
+     (lambda (local-time)
+       (sample-scheduled-visual-state
+        start-state visual-batches local-time
+        #:finalize-at-time? #f))))
   (scene (append (scene-clips scn) (list clip))
          end-state
          end-camera
@@ -585,13 +599,16 @@
 ;;;
 
 ; request->visual-specs : (or/c animation-request?
+;                                 camera-animation-request?
 ;                                 timed-animation-request?
 ;                                 succession-animation-request?
 ;                                 animation-group-animation-request?
 ;                                 lagged-start-animation-request?)
 ;                         positive-real? easing?
 ;                         -> (listof visual-request-spec?)
-;;   Resolves one top-level Visual request into concrete local schedule leaves.
+;;   Resolves one top-level Visual or camera request into concrete local schedule
+;;   leaves. The historical name remains because SCENE-AN introduced this as the
+;;   Visual scheduler; callers filter the resulting leaves by request kind.
 ;;   Top-level timed values keep their literal second-based start/duration. A
 ;;   timed composition scales its descendants into that explicit active interval.
 (define (request->visual-specs request clip-duration clip-easing)
@@ -617,7 +634,8 @@
       duration
       (or (timed-animation-request-easing request)
           clip-easing))]
-    [(animation-request? request)
+    [(or (animation-request? request)
+         (camera-animation-request? request))
      (list
       (visual-request-spec request 0 clip-duration clip-easing))]
     [(succession-animation-request? request)
@@ -631,7 +649,7 @@
     [else
      (raise-argument-error
       'request->visual-specs
-      "Visual/scalar, timed composition, style transition, or composition animation request"
+      "Visual/scalar or camera request, timed composition, style transition, or composition animation request"
       request)]))
 
 ; style-to->visual-specs : style-to-animation-request?
@@ -863,7 +881,8 @@
       active-duration
       (or (timed-animation-request-easing request)
           easing))]
-    [(animation-request? request)
+    [(or (animation-request? request)
+         (camera-animation-request? request))
      (list (visual-request-spec request start duration easing))]
     [(succession-animation-request? request)
      (succession->visual-specs request start duration easing)]
@@ -876,15 +895,16 @@
     [else
      (raise-argument-error
       'composition-request->visual-specs
-      "Visual/scalar, timed composition, style transition, or sequential/parallel/lagged composition"
+      "Visual/scalar or camera request, timed composition, style transition, or sequential/parallel/lagged composition"
       request)]))
 
-; expand-timed-content : timable-visual-request? nonnegative-real? positive-real?
+; expand-timed-content : timable-request? nonnegative-real? positive-real?
 ;                        easing? -> (listof visual-request-spec?)
 ;;   Places the active content of a timed wrapper in one concrete interval.
 (define (expand-timed-content request start duration easing)
   (cond
-    [(animation-request? request)
+    [(or (animation-request? request)
+         (camera-animation-request? request))
      (list (visual-request-spec request start duration easing))]
     [(succession-animation-request? request)
      (succession->visual-specs request start duration easing)]
@@ -897,7 +917,7 @@
     [else
      (raise-argument-error
       'expand-timed-content
-      "Visual/scalar animation request, style transition, or sequential/parallel/lagged composition"
+      "Visual/scalar or camera animation request, style transition, or sequential/parallel/lagged composition"
       request)]))
 
 ; compile-scheduled-visual-batches : scene-state? (listof visual-request-spec?)
@@ -977,7 +997,9 @@
 ;;   boundaries are processed semantically: old component endpoints first, then
 ;;   structural finalization, then same-time introductions and new progress-zero
 ;;   values. No rendered or earlier sampled frame is required.
-(define (sample-scheduled-visual-state start-state batches local-time)
+(define (sample-scheduled-visual-state start-state batches local-time
+                                       #:finalize-at-time?
+                                       [finalize-at-time? #t])
   (define events
     (scheduled-event-times-through batches local-time))
   (let loop ([state start-state]
@@ -1000,7 +1022,12 @@
        (define ending
          (filter
           (lambda (entry)
-            (<= (active-scheduled-end entry) event-time))
+            (and (<= (active-scheduled-end entry) event-time)
+                 ;; Camera-follow needs the pre-removal motion value at its
+                 ;; own endpoint, just as historical full-clip follow does.
+                 ;; Earlier endpoints are still finalized normally.
+                 (or finalize-at-time?
+                     (< event-time local-time))))
           active))
        (define finalized-state
          (for/fold ([finalized boundary-component-state])
@@ -1012,7 +1039,10 @@
        (define continuing
          (filter
           (lambda (entry)
-            (> (active-scheduled-end entry) event-time))
+            (or (> (active-scheduled-end entry) event-time)
+                (and (not finalize-at-time?)
+                     (= event-time local-time)
+                     (= (active-scheduled-end entry) event-time))))
           active))
        (define starting-batches
          (filter
@@ -1113,6 +1143,141 @@
    (list animation)
    progress
    easing))
+
+
+;;;
+;;; Scheduled Camera Compilation and Sampling
+;;;
+
+; compile-scheduled-camera-animations : camera? scene-state?
+;                                        (listof scheduled-visual-batch?)
+;                                        (listof visual-request-spec?)
+;                                        -> (listof scheduled-camera-animation?)
+;;   Compiles locally timed camera leaves in start/request order. Each leaf is
+;;   based on the exact camera and Visual states at its local start, so a later
+;;   pan or zoom begins from the completed value of an earlier one rather than
+;;   from the enclosing clip start.
+(define (compile-scheduled-camera-animations start-camera
+                                              start-state
+                                              visual-batches
+                                              specs)
+  (define ordered-specs
+    (append-map
+     (lambda (batch) batch)
+     (group-visual-specs-by-start specs)))
+  (let loop ([remaining ordered-specs]
+             [compiled '()])
+    (cond
+      [(null? remaining)
+       compiled]
+      [else
+       (define spec
+         (car remaining))
+       (define local-start
+         (visual-request-spec-start spec))
+       (define local-duration
+         (visual-request-spec-duration spec))
+       (define local-end
+         (+ local-start local-duration))
+       (define (visual-motion-state-at local-time)
+         (sample-scheduled-visual-state
+          start-state visual-batches local-time
+          #:finalize-at-time? #f))
+       (define camera-at-start
+         (sample-scheduled-camera
+          start-camera
+          compiled
+          local-start
+          visual-motion-state-at))
+       (define compiled-leaf
+         (compile-camera-animation-requests
+          camera-at-start
+          (visual-motion-state-at local-start)
+          (visual-motion-state-at local-end)
+          (list (visual-request-spec-request spec))))
+       (loop
+        (cdr remaining)
+        (append
+         compiled
+         (list
+          (scheduled-camera-animation
+           local-start
+           local-duration
+           (visual-request-spec-easing spec)
+           (car compiled-leaf)))))])))
+
+; sample-scheduled-camera : camera?
+;                           (listof scheduled-camera-animation?)
+;                           nonnegative-real?
+;                           (-> nonnegative-real? scene-state?)
+;                           -> camera?
+;;   Samples the latest started transition for each camera component. Scheduled
+;;   component conflicts guarantee that those selections never overlap on the
+;;   same component; a pan/follow and a zoom may, however, run together.
+(define (sample-scheduled-camera start-camera animations local-time state-at)
+  (define width-entry
+    (latest-scheduled-camera-entry animations local-time 'world-width))
+  (define center-entry
+    (latest-scheduled-camera-entry animations local-time 'center))
+  (define camera-with-width
+    (if width-entry
+        (sample-scheduled-camera-entry
+         start-camera width-entry local-time state-at)
+        start-camera))
+  (cond
+    [(not center-entry)
+     camera-with-width]
+    [(eq? center-entry width-entry)
+     ;; A camera-fit supplies both components together and has already been
+     ;; sampled above.
+     camera-with-width]
+    [else
+     (sample-scheduled-camera-entry
+      camera-with-width center-entry local-time state-at)]))
+
+; latest-scheduled-camera-entry : (listof scheduled-camera-animation?)
+;                                 nonnegative-real? symbol?
+;                                 -> (or/c scheduled-camera-animation? false/c)
+;;   Returns the latest entry begun by local-time that writes component. The
+;;   compile order is chronological and preserves user order for equal starts.
+(define (latest-scheduled-camera-entry animations local-time component)
+  (for/fold ([latest #f])
+            ([entry (in-list animations)]
+             #:when
+             (and (<= (scheduled-camera-animation-start entry) local-time)
+                  (memq component
+                        (compiled-camera-animation-components
+                         (scheduled-camera-animation-animation entry)))))
+    entry))
+
+; sample-scheduled-camera-entry : camera? scheduled-camera-animation?
+;                                  nonnegative-real?
+;                                  (-> nonnegative-real? scene-state?)
+;                                  -> camera?
+;;   Samples one scheduled leaf. A completed follow receives the Visual motion
+;;   state at its own endpoint, preventing it from accidentally tracking later
+;;   unrelated movement after its scheduled interval ends.
+(define (sample-scheduled-camera-entry camera entry local-time state-at)
+  (define start
+    (scheduled-camera-animation-start entry))
+  (define duration
+    (scheduled-camera-animation-duration entry))
+  (define end
+    (+ start duration))
+  (define effective-time
+    (min local-time end))
+  (define progress
+    (cond
+      [(<= effective-time start) 0]
+      [(>= effective-time end) 1]
+      [else
+       (/ (- effective-time start) duration)]))
+  (apply-compiled-camera-animations
+   camera
+   (list (scheduled-camera-animation-animation entry))
+   progress
+   (scheduled-camera-animation-easing entry)
+   (state-at effective-time)))
 
 ;;;
 ;;; Timeline Sampling
@@ -1240,22 +1405,18 @@
          (clip-progress clip time)
          (play-clip-easing clip))])]
     [(timed-play-clip? clip)
-     (define camera-animations
-       (timed-play-clip-camera-animations clip))
-     (cond
-       [(null? camera-animations)
-        (timed-play-clip-start-camera clip)]
-       [(compiled-camera-animations-require-scene-state?
-         camera-animations)
-        (define-values (_sampled-state sampled-camera)
-          (clip->scene-values-at clip time))
-        sampled-camera]
-       [else
-        (apply-compiled-camera-animations
-         (timed-play-clip-start-camera clip)
-         camera-animations
-         (timed-clip-progress clip time)
-         (timed-play-clip-easing clip))])]
+     (define local-time
+       (timed-clip-local-time clip time))
+     (sample-scheduled-camera
+      (timed-play-clip-start-camera clip)
+      (timed-play-clip-camera-animations clip)
+      local-time
+      (lambda (sample-time)
+        (sample-scheduled-visual-state
+         (timed-play-clip-start-state clip)
+         (timed-play-clip-visual-batches clip)
+         sample-time
+         #:finalize-at-time? #f)))]
     [(wait-clip? clip)
      (wait-clip-camera clip)]
     [else
@@ -1299,18 +1460,18 @@
         (timed-play-clip-start-state clip)
         (timed-play-clip-visual-batches clip)
         local-time))
-     (define eased-camera-progress
-       (scene-eased-progress
-        (timed-play-clip-easing clip)
-        (timed-clip-progress clip time)))
      (values
       sampled-state
-      (apply-compiled-camera-animations
+      (sample-scheduled-camera
        (timed-play-clip-start-camera clip)
        (timed-play-clip-camera-animations clip)
-       eased-camera-progress
-       linear
-       sampled-state))]
+       local-time
+       (lambda (sample-time)
+         (sample-scheduled-visual-state
+          (timed-play-clip-start-state clip)
+          (timed-play-clip-visual-batches clip)
+          sample-time
+          #:finalize-at-time? #f))))]
     [(wait-clip? clip)
      (values (wait-clip-state clip)
              (wait-clip-camera clip))]
@@ -1330,12 +1491,6 @@
 ;;   Returns local seconds from the timed clip start.
 (define (timed-clip-local-time clip time)
   (- time (timed-play-clip-start-time clip)))
-
-; timed-clip-progress : timed-play-clip? real? -> real?
-;;   Returns normalized full-clip progress for camera requests.
-(define (timed-clip-progress clip time)
-  (/ (timed-clip-local-time clip time)
-     (timed-play-clip-duration clip)))
 
 ; clip-contains? : (or/c play-clip? timed-play-clip? wait-clip?) real? -> boolean?
 ;;   Reports whether clip contains time in its half-open interval.
@@ -1461,6 +1616,48 @@
          "animation-end" (+ (visual-request-spec-start other)
                              (visual-request-spec-duration other)))))))
 
+; check-scheduled-camera-component-conflicts :
+;   (listof visual-request-spec?) -> void?
+;;   Rejects positive-measure overlap on center or world-width while permitting
+;;   a pan/follow and zoom to run together. Touching intervals provide the
+;;   normal deterministic handoff for camera successions.
+(define (check-scheduled-camera-component-conflicts specs)
+  (let outer ([remaining specs])
+    (when (pair? remaining)
+      (define left
+        (car remaining))
+      (for ([right (in-list (cdr remaining))])
+        (when
+            (intervals-overlap?
+             (visual-request-spec-start left)
+             (visual-request-spec-duration left)
+             (visual-request-spec-start right)
+             (visual-request-spec-duration right))
+          (define left-components
+            (camera-animation-request-components
+             (visual-request-spec-request left)))
+          (define right-components
+            (camera-animation-request-components
+             (visual-request-spec-request right)))
+          (define duplicate-component
+            (for/first ([component (in-list left-components)]
+                        #:when (memq component right-components))
+              component))
+          (when duplicate-component
+            (raise-arguments-error
+             'scene-play
+             "two overlapping scheduled camera animations target the same camera component"
+             "component" duplicate-component
+             "first-interval"
+             (cons (visual-request-spec-start left)
+                   (+ (visual-request-spec-start left)
+                      (visual-request-spec-duration left)))
+             "second-interval"
+             (cons (visual-request-spec-start right)
+                   (+ (visual-request-spec-start right)
+                      (visual-request-spec-duration right))))))
+      (outer (cdr remaining))))))
+
 ; removing-animation-request? : animation-request? -> boolean?
 ;;   Reports whether request removes its whole top-level target at completion.
 (define (removing-animation-request? request)
@@ -1510,10 +1707,12 @@
       (style-to-animation-request? value)))
 
 ; timable-visual-request? : any/c -> boolean?
-;;   Reports whether value may be wrapped by timed. Nested timed wrappers and
-;;   camera requests remain intentionally unsupported inside timed wrappers.
+;;   Reports whether value may be wrapped by timed. Nested timed wrappers remain
+;;   intentionally unsupported, while camera leaves share the ordinary local
+;;   scheduling rules.
 (define (timable-visual-request? value)
   (or (animation-request? value)
+      (camera-animation-request? value)
       (succession-animation-request? value)
       (animation-group-animation-request? value)
       (lagged-start-animation-request? value)
@@ -1521,9 +1720,8 @@
 
 ; composition-child-request? : any/c -> boolean?
 ;;   Reports whether value may occur directly inside a sequential/parallel/lagged
-;;   composition. Timed Visual/composition wrappers and style
-;;   transitions may nest like other Visual compositions; camera requests remain
-;;   top-level.
+;;   composition. Timed Visual/camera composition wrappers and style transitions
+;;   may nest like other composition leaves.
 (define (composition-child-request? value)
   (or (timed-animation-request? value)
       (timable-visual-request? value)))
@@ -1540,7 +1738,7 @@
   (unless (andmap composition-child-request? requests)
     (raise-argument-error
      who
-     "list of Visual/scalar, timed composition, style transitions, or sequential/parallel/lagged compositions"
+     "list of Visual/scalar or camera requests, timed compositions, style transitions, or sequential/parallel/lagged compositions"
      requests)))
 
 ; normalize-animation-requests : list? -> list?

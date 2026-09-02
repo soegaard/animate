@@ -289,9 +289,12 @@
                (plain-text "bad vertical alignment"
                            #:id 'bad-vertical
                            #:vertical-alignment 'middle)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (text-visual-with-content greeting "a\nb")))
+  ;; SCENE-CS extends immutable text replacement to explicit multi-line
+  ;; paragraph content.  Plain-text itself remains single-line, but changing
+  ;; an existing text Visual may install an explicit line break.
+  (check-true
+   (text-visual?
+    (text-visual-with-content greeting "a\nb")))
   (check-exn exn:fail:contract?
              (lambda ()
                (text-visual-with-content 42 "text")))

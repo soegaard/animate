@@ -36,6 +36,8 @@
          camera-fit-request?
          make-camera-fit-request
          camera-animation-request?
+         camera-animation-request-components
+         compiled-camera-animation-components
          compile-camera-animation-requests
          apply-compiled-camera-animations
          complete-compiled-camera-animations

@@ -16,12 +16,16 @@
 ;; Imports
 (require "private/affine-transform.rkt"
          "private/attachment.rkt"
+         "private/annotation-geometry.rkt"
+         "private/authoring-timeline.rkt"
          "private/arrow-visual.rkt"
          "private/axes-visual.rkt"
+         "private/dynamic-endpoint-geometry.rkt"
          "private/animation.rkt"
          "private/camera-animation.rkt"
          "private/camera-framing.rkt"
          "private/camera.rkt"
+         "private/calculus-helpers.rkt"
          "private/color-style.rkt"
          "private/coordinate-series.rkt"
          "private/derived-visual.rkt"
@@ -29,16 +33,19 @@
          "private/formula-part-transition.rkt"
          "private/formula-derivation.rkt"
          "private/formula-parts-visual.rkt"
+         "private/formula-style.rkt"
          "private/formula-visual.rkt"
          "private/tagged-formula.rkt"
          "private/frame-space.rkt"
          "private/function-graph.rkt"
          "private/frame-renderer.rkt"
+         "private/graph-visual.rkt"
          "private/geometry.rkt"
          "private/group-visual.rkt"
          "private/image-visual.rkt"
          "private/implicit-curve.rkt"
          "private/interpolation.rkt"
+         "private/matrix-table.rkt"
          "private/path-geometry.rkt"
          "private/parameter.rkt"
          "private/parametric-data-plot.rkt"
@@ -51,6 +58,7 @@
          "private/svg-import.rkt"
          "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
+         "private/traced-path.rkt"
          "private/video-encoder.rkt"
          "private/vector-field.rkt"
          "private/visual-model.rkt")
@@ -183,6 +191,12 @@
 
  ;; Live world-space attachments
  attach-to
+ layout-attached-visual?
+ layout-attached-visual-content
+ layout-attached-visual-target
+ layout-attached-visual-target-anchor
+ layout-attached-visual-self-anchor
+ layout-attached-visual-offset
 
  ;; Pure derived Visuals
  derived-visual
@@ -269,9 +283,21 @@
  text-font-weight?
  text-horizontal-alignment?
  text-vertical-alignment?
+ text-span
+ text-span?
+ text-span-content
+ text-span-font-size
+ text-span-font-face
+ text-span-font-family
+ text-span-font-style
+ text-span-font-weight
+ text-span-color
  plain-text
+ paragraph
+ rich-text
  text-visual?
  text-visual-content
+ text-visual-spans
  text-visual-font-size
  text-visual-font-face
  text-visual-font-family
@@ -280,7 +306,11 @@
  text-visual-color
  text-visual-horizontal-alignment
  text-visual-vertical-alignment
+ text-visual-width
+ text-visual-line-spacing
+ text-visual-line-alignment
  text-visual-with-content
+ text-visual-with-spans
  formula-mode?
  latex-option?
  latex-formula
@@ -326,6 +356,27 @@
  formula-assembly-visual-part-names
  formula-assembly-visual-has-part?
  formula-assembly-visual-ref
+ formula-select
+ formula-style
+ formula-color
+ formula-color-map
+
+ ;; SCENE-CT matrices and tables
+ matrix
+ matrix-row-id
+ matrix-column-id
+ matrix-row-path
+ matrix-entry-path
+ matrix-bracket-path
+ table
+ table-row-id
+ table-column-id
+ table-row-path
+ table-cell-path
+
+ ;; SCENE-CU deterministic traced paths
+ traced-path
+
  (struct-out formula-part-match)
  (struct-out formula-correspondence)
  formula-correspondence-auto
@@ -351,6 +402,42 @@
  arrow-visual-start
  arrow-visual-end
  arrow-visual-point-at
+
+ ;; SCENE-CN dynamic endpoint geometry
+ anchor-of
+ line-between
+ segment-between
+ arrow-between
+ ray-from
+ dynamic-endpoint-visual?
+ dynamic-endpoint-visual-has-renderer-anchors?
+
+ ;; SCENE-CO mathematical annotation geometry
+ arc
+ dashed-path
+ dashed-line
+ angle
+ right-angle
+ brace
+ brace-between
+ brace-label
+ surrounding-rectangle
+ surrounding-rectangle-visual?
+ surrounding-rectangle-visual-target
+ surrounding-rectangle-visual-padding
+
+ ;; SCENE-CP coordinate-system and calculus helpers
+ graph-point
+ graph-label
+ vertical-line-to-graph
+ horizontal-line-to-graph
+ tangent-line
+ secant-line
+ secant-slope-group
+ area-under-graph
+ area-between-curves
+ riemann-rectangles
+
  (struct-out axis-range)
  axis-range-contains?
  axis-range-tick-values
@@ -382,6 +469,8 @@
  (struct-out parameter-range)
  sample-function-path
  function-graph
+ sample-adaptive-function-path
+ adaptive-function-graph
  derived-function-graph
  sample-parametric-path
  parametric-curve
@@ -543,6 +632,8 @@
  ;; External output
  render-frames!
  render-frames/report!
+ render-frame-indices!
+ render-frame-indices/report!
  render-diagnostics
  render-diagnostics?
  render-diagnostics-paths
@@ -576,3 +667,11 @@
   (all-from-out "private/point-marker-visual.rkt")
   point-marker-visual->visual)
  (all-from-out "private/scatter-area-plot.rkt"))
+
+
+;; SCENE-CW authored timelines, selected rendering, and cue metadata
+(provide (all-from-out "private/authoring-timeline.rkt"))
+
+
+;; SCENE-CX immutable graph and digraph group trees
+(provide (all-from-out "private/graph-visual.rkt"))

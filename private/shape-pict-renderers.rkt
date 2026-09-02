@@ -21,8 +21,10 @@
                   blank
                   colorize
                   dc
+                  draw-pict
                   filled-ellipse
                   filled-rectangle
+                  hb-append
                   pict-ascent
                   pict-descent
                   pict-height
@@ -140,7 +142,8 @@
                         camera
                         (text-pict-renderer-raster-cache renderer)))])
 
-;; text-pict-renderer renders semantic one-line text Visuals with Pict fonts.
+;; text-pict-renderer renders immutable plain, paragraph, and rich text Visuals
+;; with Pict fonts.
 
 
 ;;;
@@ -326,7 +329,7 @@
   1024)
 
 ; text-visual->pict : text-visual? camera? renderer-resource-cache? -> pict?
-;;   Converts one anchored text line to a stable local raster Pict. The glyphs
+;;   Converts anchored text content to a stable local raster Pict. The glyphs
 ;;   are rasterized before scene placement, so changing only the Visual position
 ;;   translates identical pixels instead of asking the font backend to rasterize
 ;;   the glyph run at a new device-space origin on every frame.
@@ -352,11 +355,11 @@
 ; text-visual->live-pict : text-visual? camera? -> pict?
 ;;   Builds the ordinary vector/font Pict at local origin before it is frozen.
 (define (text-visual->live-pict visual camera)
-  (define line-pict
-    (text-line->pict visual camera))
+  (define content-pict
+    (text-content->pict visual camera))
   (define anchored-pict
     (anchor-pict
-     line-pict
+     content-pict
      (text-visual-horizontal-alignment visual)
      (text-visual-vertical-alignment visual)))
   (define scaled-pict
@@ -391,20 +394,22 @@
 ;;   be snapshotted safely. Position and opacity deliberately do not participate:
 ;;   placement and cellophane happen after the local glyph raster is selected.
 (define (text-raster-cache-key visual camera)
-  (define-values (color-cacheable? color-key)
-    (text-color-cache-key (text-visual-color visual)))
+  (define-values (spans-cacheable? span-key)
+    (text-spans-cache-key visual))
   (values
-   color-cacheable?
-   (and color-cacheable?
-        (list (text-visual-content visual)
+   spans-cacheable?
+   (and spans-cacheable?
+        (list span-key
               (text-visual-font-size visual)
               (text-visual-font-face visual)
               (text-visual-font-family visual)
               (text-visual-font-style visual)
               (text-visual-font-weight visual)
-              color-key
               (text-visual-horizontal-alignment visual)
               (text-visual-vertical-alignment visual)
+              (text-visual-width visual)
+              (text-visual-line-spacing visual)
+              (text-visual-line-alignment visual)
               (visual-scale visual)
               (visual-rotation visual)
               (camera-scale camera)))))
@@ -425,30 +430,252 @@
     [else
      (values #f #f)]))
 
-; text-line->pict : text-visual? camera? -> pict?
-;;   Renders one untransformed text line at its camera-dependent local size.
-(define (text-line->pict visual camera)
+;; text-spans-cache-key : text-visual? -> (values boolean? any/c)
+;; A whole frozen text layout can be cached only when every effective inline
+;; colour is an immutable/cache-safe value.
+(define (text-spans-cache-key visual)
+  (let loop ([remaining (text-visual-spans visual)]
+             [keys '()])
+    (cond
+      [(null? remaining)
+       (values #t (reverse keys))]
+      [else
+       (define span (car remaining))
+       (define-values (cacheable? color-key)
+         (text-color-cache-key
+          (or (text-span-color span) (text-visual-color visual))))
+       (if cacheable?
+           (loop
+            (cdr remaining)
+            (cons
+             (list (text-span-content span)
+                   (text-span-font-size span)
+                   (text-span-font-face span)
+                   (text-span-font-family span)
+                   (text-span-font-style span)
+                   (text-span-font-weight span)
+                   color-key)
+             keys))
+           (values #f #f))])))
+
+(struct text-layout-token (kind pict) #:transparent)
+
+;; text-content->pict : text-visual? camera? -> pict?
+;; Keeps the old direct Pict route for one unwrapped run, while paragraphs and
+;; rich spans receive deterministic renderer-measured line layout.
+(define (text-content->pict visual camera)
+  (define spans (text-visual-spans visual))
+  (cond
+    [(and (= (length spans) 1)
+          (not (text-visual-width visual))
+          (not (text-string-has-line-break?
+                (text-span-content (car spans)))))
+     (text-span-content->pict visual
+                              (car spans)
+                              (text-span-content (car spans))
+                              camera)]
+    [else
+     (text-paragraph->pict visual camera)]))
+
+;; text-span-content->pict : text-visual? text-span? string? camera? -> pict?
+;; Renders one inline run at its camera-dependent local size.
+(define (text-span-content->pict visual span content camera)
+  (define effective-font-size
+    (or (text-span-font-size span) (text-visual-font-size visual)))
   (define requested-pixel-size
     (camera-length->pixels camera
-                           (text-visual-font-size visual)))
+                           effective-font-size))
   (define direct-pixel-size
     (min maximum-font-pixel-size
          (max minimum-font-pixel-size
               requested-pixel-size)))
   (define font
     (make-font #:size direct-pixel-size
-               #:face (text-visual-font-face visual)
-               #:family (text-visual-font-family visual)
-               #:style (text-visual-font-style visual)
-               #:weight (text-visual-font-weight visual)
+               #:face (or (text-span-font-face span)
+                           (text-visual-font-face visual))
+               #:family (or (text-span-font-family span)
+                            (text-visual-font-family visual))
+               #:style (or (text-span-font-style span)
+                            (text-visual-font-style visual))
+               #:weight (or (text-span-font-weight span)
+                            (text-visual-font-weight visual))
                #:size-in-pixels? #t))
   (define colored-pict
-    (colorize (text (text-visual-content visual) font)
-              (text-visual-color visual)))
+    (colorize (text content font)
+              (or (text-span-color span) (text-visual-color visual))))
   (if (= direct-pixel-size requested-pixel-size)
       colored-pict
       (scale colored-pict
              (/ requested-pixel-size direct-pixel-size))))
+
+;; text-paragraph->pict : text-visual? camera? -> pict?
+;; Positions rich runs by their individual Pict baselines. The returned Pict's
+;; baseline is the first line's baseline, so it can align with a neighbouring
+;; formula or label through the existing anchored-pict protocol.
+(define (text-paragraph->pict visual camera)
+  (define maximum-width
+    (and (text-visual-width visual)
+         (camera-length->pixels camera (text-visual-width visual))))
+  (define tokens
+    (apply append
+           (for/list ([span (in-list (text-visual-spans visual))])
+             (text-span->layout-tokens visual span camera))))
+  (define default-line-pict
+    (text-span-content->pict visual
+                             (text-span "")
+                             ""
+                             camera))
+  (define lines
+    (layout-text-tokens tokens maximum-width))
+  (define line-picts
+    (for/list ([line (in-list lines)])
+      (if (null? line)
+          default-line-pict
+          (apply hb-append
+                 (for/list ([token (in-list line)])
+                   (text-layout-token-pict token))))))
+  (define maximum-ascent (apply max (map pict-ascent line-picts)))
+  (define maximum-descent (apply max (map pict-descent line-picts)))
+  (define natural-height (+ maximum-ascent maximum-descent))
+  (define line-advance (* natural-height (text-visual-line-spacing visual)))
+  (define layout-width (max 1 (apply max (map pict-width line-picts))))
+  (define layout-height
+    (+ natural-height (* (sub1 (length line-picts)) line-advance)))
+  (dc
+   (lambda (drawing-context x y)
+     (for ([line (in-list line-picts)]
+           [index (in-naturals)])
+       (draw-pict
+        line
+        drawing-context
+        (+ x (line-layout-x (text-visual-line-alignment visual)
+                            layout-width
+                            (pict-width line)))
+        (+ y
+           (- maximum-ascent (pict-ascent line))
+           (* index line-advance)))))
+   layout-width
+   layout-height
+   maximum-ascent
+   (- layout-height maximum-ascent)))
+
+;; text-span->layout-tokens : text-visual? text-span? camera?
+;;                              -> (listof text-layout-token?)
+;; The token stream separates explicit line breaks, collapsible wrapping spaces,
+;; and visible words without inspecting or altering Unicode word characters.
+(define (text-span->layout-tokens visual span camera)
+  (define content (text-span-content span))
+  (define length (string-length content))
+  (define tokens-reversed '())
+  (define (add! kind start end)
+    (define piece (substring content start end))
+    (set! tokens-reversed
+          (cons (text-layout-token
+                 kind
+                 (and (not (eq? kind 'break))
+                      (text-span-content->pict visual span piece camera)))
+                tokens-reversed)))
+  (let loop ([index 0])
+    (cond
+      [(= index length) (reverse tokens-reversed)]
+      [else
+       (define character (string-ref content index))
+       (cond
+         [(or (char=? character #\return)
+              (char=? character #\newline))
+          (define next-index
+            (if (and (char=? character #\return)
+                     (< (+ index 1) length)
+                     (char=? (string-ref content (+ index 1)) #\newline))
+                (+ index 2)
+                (+ index 1)))
+          (add! 'break index next-index)
+          (loop next-index)]
+         [(or (char=? character #\space)
+              (char=? character #\tab))
+          (define next-index
+            (let scan ([cursor (+ index 1)])
+              (if (and (< cursor length)
+                       (let ([next-character (string-ref content cursor)])
+                         (or (char=? next-character #\space)
+                             (char=? next-character #\tab))))
+                  (scan (+ cursor 1))
+                  cursor)))
+          (add! 'space index next-index)
+          (loop next-index)]
+         [else
+          (define next-index
+            (let scan ([cursor (+ index 1)])
+              (if (and (< cursor length)
+                       (let ([next-character (string-ref content cursor)])
+                         (not (or (char=? next-character #\return)
+                                  (char=? next-character #\newline)
+                                  (char=? next-character #\space)
+                                  (char=? next-character #\tab)))))
+                  (scan (+ cursor 1))
+                  cursor)))
+          (add! 'word index next-index)
+          (loop next-index)])])))
+
+;; layout-text-tokens : (listof text-layout-token?) (or/c false/c real?)
+;;                       -> (listof (listof text-layout-token?))
+;; Explicit line breaks are always retained. When a maximum width is supplied,
+;; word wrapping avoids leading/trailing inter-word whitespace but does not
+;; hyphenate or split an overlong word.
+(define (layout-text-tokens tokens maximum-width)
+  (define lines-reversed '())
+  (define current '())
+  (define current-width 0)
+  (define (flush!)
+    (define settled
+      (if maximum-width
+          (trim-trailing-space current)
+          current))
+    (set! lines-reversed (cons settled lines-reversed))
+    (set! current '())
+    (set! current-width 0))
+  (define (append-token! token)
+    (set! current (append current (list token)))
+    (set! current-width (+ current-width (pict-width (text-layout-token-pict token)))))
+  (define (line-has-word?)
+    (for/or ([token (in-list current)])
+      (eq? (text-layout-token-kind token) 'word)))
+  (for ([token (in-list tokens)])
+    (case (text-layout-token-kind token)
+      [(break) (flush!)]
+      [(space)
+       (when (or (not maximum-width) (pair? current))
+         (append-token! token))]
+      [(word)
+       (define candidate-width
+         (+ current-width (pict-width (text-layout-token-pict token))))
+       (when (and maximum-width
+                  (line-has-word?)
+                  (> candidate-width maximum-width))
+         (flush!))
+       (append-token! token)]))
+  (flush!)
+  (reverse lines-reversed))
+
+(define (trim-trailing-space tokens)
+  (reverse
+   (let loop ([remaining (reverse tokens)])
+     (cond
+       [(and (pair? remaining)
+             (eq? (text-layout-token-kind (car remaining)) 'space))
+        (loop (cdr remaining))]
+       [else remaining]))))
+
+(define (line-layout-x alignment layout-width line-width)
+  (case alignment
+    [(left) 0]
+    [(center) (/ (- layout-width line-width) 2)]
+    [(right) (- layout-width line-width)]))
+
+(define (text-string-has-line-break? value)
+  (for/or ([character (in-string value)])
+    (or (char=? character #\return)
+        (char=? character #\newline))))
 
 ;;;
 ;;; Path Conversion

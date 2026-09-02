@@ -24,8 +24,8 @@
   (define (visual-at scene time id)
     (scene-state-ref (scene-sample scene time) id))
 
-  ;; timed may now wrap a composition, and timed wrappers may be direct children
-  ;; of any Visual composition. Cameras and nested timed wrappers remain invalid.
+  ;; timed may wrap a composition or camera leaf, and timed wrappers may be
+  ;; direct children of any composition. Nested timed wrappers remain invalid.
   (define timed-sequence
     (timed
      (succession (move-to dot (vec2 2 0))
@@ -46,16 +46,16 @@
     (lagged-start (move-to dot (vec2 1 0))
                   (timed (rotate-by dot 1) #:duration 2)
                   #:lag-ratio 1/2)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (timed (camera-pan-to (vec2 1 0)) #:duration 1)))
+  (check-true
+   (timed-animation-request?
+    (timed (camera-pan-to (vec2 1 0)) #:duration 1)))
   (check-exn exn:fail:contract?
              (lambda ()
                (timed (timed (move-to dot (vec2 1 0)) #:duration 1)
                       #:duration 1)))
-  (check-exn exn:fail:contract?
-             (lambda ()
-               (succession (camera-pan-to (vec2 1 0)))))
+  (check-true
+   (succession-animation-request?
+    (succession (camera-pan-to (vec2 1 0)))) )
   (check-exn
    exn:fail:contract?
    (lambda ()

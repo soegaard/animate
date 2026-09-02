@@ -48,11 +48,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-CL: explicit stationary parts in narrated formula derivations")
+  "SCENE-CX: mathematical graphs and networks")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.86.0")
+(define version "0.98.0")
 
 ; license : symbol?
 ;;   Declares the package license.

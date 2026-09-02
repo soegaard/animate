@@ -1,9 +1,83 @@
-# animate — SCENE-CL
+# animate — SCENE-CX
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-CX adds immutable mathematical graph and directed-network diagrams.
+`graph` and `digraph` return ordinary nested group trees: vertices live at
+paths such as `'(network vertices A)` and derived edges at
+`'(network edges A->B)`. Moving a vertex with the usual scene API regenerates
+its incident line or arrow from the sampled endpoint positions; labels follow
+the same immutable dependency relationship. Manual, circle, and rooted-tree
+layouts provide deterministic initial placement.
+
+SCENE-CW adds an immutable authoring layer around ordinary scenes.
+`make-authored-timeline` stores named half-open sections, cue markers, and
+audio-placement metadata without altering scene sampling. A selected section
+uses the full scene's original output-frame grid, but writes its PNGs locally
+from `frame-000000.png`, ready for direct MP4 encoding. An optional explicit
+cache key reuses a validated section manifest; it deliberately does not infer a
+hash of scene procedures, renderer state, or external files. Audio records are
+metadata for a later muxer, not audio mixed into video yet.
+
+SCENE-CV makes camera animation composable. `camera-pan-to`, `camera-pan-by`,
+`camera-zoom-to`, `camera-zoom-by`, `camera-follow`, and camera-fit requests
+can now be wrapped with `timed` and placed in `succession`,
+`animation-group`, or `lagged-start`. They use the same deterministic local
+intervals as Visual requests: touching camera motions hand off exactly, while
+overlapping requests may still only change disjoint camera components. A timed
+follow samples its target only within its own interval, then holds its final
+camera view.
+
+SCENE-CU adds `traced-path`: a pure position function is sampled over an
+explicit animated phase parameter from `#:start-time` to the current value.
+The trace is reconstructed at arbitrary time, not accumulated from previously
+rendered frames. `#:trail-length` supplies a deterministic moving window, and
+`#:dissipate?` returns independently faded path segments.
+
+SCENE-CT adds regular matrix and table group trees. `matrix` places affine
+Visual entries in named `row-N`/`col-N` groups with individually targetable
+square brackets; `table` uses the same paths and adds a shared grid. Existing
+nested animation, attention, copying, styling, and attachment APIs therefore
+work on cells directly—for example, `(matrix-entry-path 'A 1 2)` returns
+`'(A row-1 col-2)`.
+
+SCENE-CS adds renderer-measured paragraphs and rich text spans. `paragraph`
+supports explicit lines, wrapping at a local world-space width, line spacing,
+and per-line alignment; `rich-text` combines ordinary strings with styled
+`text-span` values. The resulting immutable Visual keeps the existing anchor,
+affine-transform, opacity, cache, and renderer-aware layout behavior.
+
+SCENE-CR adds semantic styling for named formula fragments. `formula-select`
+returns the ordinary nested Visual path for a part, while `formula-style`,
+`formula-color`, and `formula-color-map` immutably colour or fade selected
+parts. `tagged-formula`, `math-tex`, and `glyph-tex` also accept `#:color-map`.
+Styled tagged SVG fragments are recoloured by the SVG adapter itself, so their
+existing TeX layout, semantic identity, matching, and motion all remain intact.
+
+SCENE-CQ adds adaptive function plotting. `sample-adaptive-function-path` and
+`adaptive-function-graph` begin from a deterministic display-space grid, then
+subdivide intervals whose midpoint departs from its chord. They preserve gaps at
+explicit exclusions and detected vertical asymptotes rather than clipping a
+false connecting line through a pole.
+
+SCENE-CP adds axes-aware helpers for coordinate-system and calculus diagrams:
+graph points and labels, projections, secants, numeric tangents, filled areas,
+and midpoint Riemann rectangles. They are ordinary immutable values, so a
+`derived-visual` can rebuild one from an animated parameter without an updater.
+
+SCENE-CO adds mathematical annotation geometry: cubic arcs, dashed paths,
+angle and right-angle marks, braces with labels, and a renderer-aware
+`surrounding-rectangle`. They are ordinary semantic paths/groups where possible,
+so they compose with the existing style and path-animation machinery.
+
+SCENE-CN adds dynamic endpoint geometry. `line-between`, `segment-between`,
+`arrow-between`, and `ray-from` sample literal points, parameter handles, and
+top-level or nested Visual references at each scene time. `anchor-of` also
+selects a live rendered-box edge or corner, so diagram edges remain connected
+to moving vertices without frame-by-frame mutation.
 
 SCENE-CL adds explicit stationary formula parts. Alongside a rewrite's primary
 anchor, `#:stationary` names matched fragments that retain their current
@@ -230,12 +304,16 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-CL v0.86.0 builds on immutable parameters and generic values, dynamically
+SCENE-CX v0.98.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, renderer-resource caching, live attention,
-canonical primitive morphs, and explicit stationary formula parts.
+canonical primitive morphs, stationary formula parts, live layout anchors,
+mathematical annotations, coordinate/calculus helpers, semantic formula part
+styling, renderer-measured multiline rich text, addressable matrices/tables,
+deterministic traced loci, composable camera timing, reproducible
+section-oriented rendering metadata, and live endpoint-derived network edges.
 
-The public package version is `0.86.0`. The public module's bindings are covered
+The public package version is `0.98.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -441,12 +519,73 @@ Bézier curve lies in the convex hull of its control points, the resulting curve
 remains inside the displayed rectangle. Clamping can reduce tangent continuity
 near a clipping boundary.
 
+### Adaptive subdivision
+
+`sample-adaptive-function-path` and `adaptive-function-graph` use the same
+immutable axes-local result as the fixed sampler, but begin with a small,
+display-uniform exploration grid and recursively sample interval midpoints:
+
+```racket
+(adaptive-function-graph coordinate-axes
+                         (lambda (x) (/ 1 x))
+                         #:id 'reciprocal
+                         #:initial-sample-count 17
+                         #:max-deviation 1/100
+                         #:max-depth 12)
+```
+
+An interval is subdivided when its sampled midpoint differs from the chord
+midpoint by more than `#:max-deviation`, measured in the untransformed local
+geometry of the axes. `#:max-depth` bounds this work per initial interval. On a
+log x axis, both the initial grid and every refinement midpoint are uniform in
+log display space.
+
+The adaptive sampler treats an exact division-by-zero evaluation as a gap and,
+by default, refines then breaks sample pairs that lie beyond opposite visible y
+boundaries. `#:max-jump` remains available as an explicit numeric break rule.
+Use `#:excluded-intervals` to force a gap even when a finite function does not
+identify it itself:
+
+```racket
+(sample-adaptive-function-path coordinate-axes f
+                               #:excluded-intervals
+                               (list (cons -1/10 1/10)))
+```
+
+Each exclusion is an increasing `(cons minimum maximum)` or two-element list;
+overlaps are merged. No finite exploration grid can discover a frequency that
+aliases all of its initial samples, so increase `#:initial-sample-count` for
+that case.
+
 ### Axes-local geometry and transform snapshots
 
 `sample-function-path` returns path geometry in the untransformed local axes
 coordinates. `function-graph` wraps that geometry in a path Visual whose
 translation, rotation, and scale copy the axes transform at construction time.
 The axes and graph are independent immutable values afterward.
+
+## Coordinate and calculus helpers
+
+SCENE-CP provides compact static builders for the diagrams that repeatedly
+occur in introductory calculus. `graph-point` and `graph-label` use the axes'
+actual coordinate conversion; `vertical-line-to-graph` and
+`horizontal-line-to-graph` draw projection lines. `secant-line`, `tangent-line`,
+and `secant-slope-group` express the derivative picture directly:
+
+```racket
+(secant-slope-group coordinate-axes parabola 1 h #:id 'secant)
+(tangent-line coordinate-axes parabola 1 #:id 'tangent)
+```
+
+`area-under-graph` and `area-between-curves` produce closed filled paths, while
+`riemann-rectangles` produces one closed subpath per midpoint rectangle. All
+three use display-uniform samples, including on log x axes. They require finite
+function values; use the adaptive graph APIs for discontinuous strokes rather
+than attempting to fill across a pole.
+
+The helpers are snapshots. To animate a changing secant or Riemann construction,
+rebuild the helper in a `derived-visual` from an immutable scene parameter. See
+[`examples/secant-to-tangent.rkt`](examples/secant-to-tangent.rkt).
 
 ## Parametric curves and data plots
 
@@ -812,6 +951,29 @@ racket examples/tagged-formula-transitions.rkt \
 solves \(2x+1=5\) through \(2x=5-1\), \(2x=4\),
 \(\frac{2x}{2}=\frac{4}{2}\), and \(x=2\), keeping the equals sign fixed
 throughout.
+
+### Semantic formula styling
+
+Named tagged fragments are also a styling namespace. Colour at construction
+time without putting colour commands into TeX:
+
+```racket
+(tagged-formula
+ #:id 'equation
+ #:color-map (hash 'unknown "royalblue" 'constant "firebrick")
+ (formula-fragment 'unknown "2x")
+ (formula-fragment 'plus " + ")
+ (formula-fragment 'constant "3")
+ (formula-fragment 'equals " = ")
+ (formula-fragment 'result "7"))
+```
+
+For an existing assembly, `(formula-select formula 'constant)` produces the
+nested path `'(equation constant)` understood by `indicate`, `circumscribe`,
+and `fill-color-to`. `formula-color`, `formula-style`, and `formula-color-map`
+instead return new assemblies with selected whole fragments styled. They keep
+the formula's original TeX layout and SVG crop; matching fragments with equal
+paint retain their normal rigid motion in a rewrite.
 
 ### Automatic glyph layouts
 
@@ -2420,7 +2582,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.86.0`. Every completed SCENE
+This is the running design backlog for version `0.98.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2428,8 +2590,89 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Text, formulas, and layout
 
-- Plain text is single-line only: there are no paragraphs, wrapping, rich spans,
-  or baseline alignment between separate text/formula Visuals.
+- SCENE-CS adds explicit multiline `paragraph` text, measured word wrapping,
+  line spacing/alignment, rich inline text spans, and a first-line baseline
+  anchor. It does not hyphenate, justify, shape bidirectional/complex scripts,
+  flow text around Visuals, embed formula/Visual spans, or provide a general
+  markup/CSS language. Adjacent spans are independent Pict runs, so the font
+  backend cannot kern or ligate across a span boundary.
+
+### Matrices and tables
+
+- SCENE-CT gives matrices and tables a regular, immutable nested-group shape:
+  rows are `row-N`, cells are `col-N`, and matrix brackets/table grid lines are
+  ordinary addressable path Visuals. Cell dimensions and inter-cell gaps are
+  explicit world-space values; the constructors do not yet measure entries to
+  choose column widths, row heights, or delimiter size automatically. A cell's
+  supplied reference position is intentionally replaced by its grid position.
+- Matrix delimiters are square brackets only. Tables currently have one shared
+  rectangular grid and no header semantics, per-cell fills, alternating rows,
+  spanning cells, decimal alignment, separators, or automatic overflow/wrapping.
+  A future presentation table should build on these stable paths rather than
+  bypassing them with a renderer-only object.
+
+### Traces and temporal sampling
+
+- SCENE-CU traces one author-supplied position procedure over an explicit scalar
+  phase parameter. It has no frame-history dependence, but cannot infer a locus
+  from arbitrary moving Visuals, reconstruct a nonfunctional simulation, adapt
+  sample density to curvature, split discontinuities automatically, or retain a
+  physical fading history. `#:dissipate?` uses deterministic piecewise-opacity
+  path segments; it is not a particle/trail simulation.
+
+### Composable camera motion
+
+- SCENE-CV schedules existing pan, zoom, fit, and clip-local follow requests in
+  the same `timed`, sequential, parallel, and lagged trees as Visuals. It does
+  not add camera rotation, animated pixel dimensions/background, persistent
+  follow across clips, continuously recomputed fit, safe-area framing, or
+  overlapping camera clips. A `camera-fit` remains the static center/width
+  snapshot created by the existing fit helpers.
+- Positive-duration overlap may still update each camera component only once:
+  center changes (pan, follow, fit) conflict with one another and width changes
+  (zoom, fit) conflict with one another. A pan/follow and a zoom may run in
+  parallel. Follow expects a world-space target to remain available for its
+  active interval; it is not a general relation that survives a removal.
+
+### Video authoring workflow
+
+- SCENE-CW stores named half-open sections, cue markers, and audio-placement
+  metadata around an immutable scene. It has no timeline editor, section-aware
+  preview player, automatic section discovery, subtitle generation, waveform
+  display, or user-interface for arranging clips.
+- A selected section samples the existing full-scene output grid and writes a
+  locally numbered PNG sequence. Consequently its first frame may begin after
+  the literal section start when that time falls between output samples. It is
+  not an independently resampled mini-scene, and the initial release has no
+  partial MP4 cache or automatic concatenation of selected sections.
+- Cache reuse is deliberately opt-in through a caller-supplied symbol or string
+  key. The manifest checks that key, bounds, FPS, global source indices, and
+  expected PNGs, but does not hash scene procedures, renderer choices, fonts,
+  SVG/image files, or camera resources. Authors must change the key when any of
+  those inputs change.
+- `audio-cue` does not open audio files. It records intended placement only;
+  this release does not trim, mix, fade, inspect duration, generate subtitles,
+  or invoke FFmpeg to mux audio. A later audio layer should consume the same
+  immutable metadata rather than changing scene sampling.
+
+### Mathematical graphs and networks
+
+- SCENE-CX supplies deterministic manual, circle, and rooted-tree layouts,
+  addressable vertex/edge group paths, labels, and center-to-center live line
+  or arrow edges. It does not provide force-directed, planar, layered DAG,
+  automatic collision-avoiding, or incremental layout algorithms; it does not
+  infer a preferred mathematical graph drawing.
+- Edges join distinct vertex centres and are shortened by the shared marker
+  size so arrowheads remain visible. Parallel edges overlap, self-loops are
+  rejected, edge labels sit at geometric midpoints, and there are no curved
+  edges, loop arcs, weighted styling scales, incidence matrices, or graph
+  algorithms such as traversal/shortest path.
+- A graph is currently intended as a top-level semantic group. Its own affine
+  motion, rotation, and scale are supported, but embedding a graph inside an
+  arbitrary separate group cannot yet rewrite the internally stored endpoint
+  paths. Animate its named vertex paths to rearrange it. Derived edge geometry
+  requires endpoints to remain distinct at every sampled time.
+
 - Renderer layout boxes are symmetric semantic boxes, not tight visible-ink
   bounds. SCENE-CC now provides all nine cardinal/corner anchors plus generic
   one-time placement/alignment, but there are still no live constraints,
@@ -2448,8 +2691,13 @@ precisely; do not silently lose the follow-on idea that led to the work.
   globally paired without reversal. Accents or glyphs using multiple painted
   paths, open geometry, incompatible contour topology, changed paint styles,
   and unsupported SVG geometry keep the moving cross-fade. Neither mode
-  performs algebra or semantic name/token matching. Formula colour remains
-  controlled by explicit LaTeX source and preamble commands.
+  performs algebra or semantic name/token matching.
+- SCENE-CR styles only whole, author-named formula parts. It does not parse TeX
+  to find substrings, infer algebraic terms, create rich inline spans,
+  cancellation marks, underbraces, gradients, or per-glyph semantic groups
+  (except when an author explicitly uses `glyph-tex`). A fragment whose colour
+  changes across a rewrite uses the established cross-fade fallback; use
+  `fill-color-to` on `formula-select` for a deliberate in-place colour change.
 - `formula-part-copy` can copy one whole named fragment to any number of
   explicitly named unmatched destinations, and formula parts can now follow
   circular or normalized custom paths. It still has no semantic algebra,
@@ -2512,14 +2760,34 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 - Derived Visuals are read-only computed output and cannot be animated directly;
   animate their values or the ordinary Visuals they depend on instead.
-  `attach-to` is a deliberately small derived-Visual convenience: it follows a
-  target's sampled reference point plus one fixed world-space offset. It does
-  not yet attach to render-box edges, avoid other labels, rotate with a target,
-  or supply a general constraint system.
-- Arrow and axes Visuals do not yet support direct endpoint animation or
-  `create`/`uncreate`.
-- Plot sampling is fixed rather than adaptive. There are no per-point style
-  tables, error bars, filled areas between curves, or pixel-fixed marker sizes.
+  `attach-to` retains its pure derived-Visual centre-to-centre operation and now
+  also supports live renderer-box target/self anchors. Renderer-aware attachments
+  are top-level render-time wrappers, so they remain deterministic for one sampled
+  state/camera/renderer combination without introducing derived-layout feedback
+  cycles. They do not yet avoid other labels, inherit target rotation, support
+  attachment chains, or provide a general constraint solver.
+- SCENE-CN supplies deterministic live endpoints for new lines, segments,
+  arrows, and finite rays. Existing `line`/`arrow` values remain static
+  geometry, and dynamic endpoint definitions cannot yet be `create`d,
+  `uncreate`d, grouped, chained, or used as another relationship's target.
+- SCENE-CO adds semantic static annotation constructors and a live
+  `surrounding-rectangle`. The arc/angle/brace constructors do not yet directly
+  accept dynamic endpoint descriptions, infer right angles or tangencies,
+  provide dashed fills, rounded enclosure corners, or collision-aware labels.
+  A `derived-visual` can nevertheless rebuild ordinary annotations from sampled
+  geometry, as the stage example does.
+- SCENE-CP supplies axes-aware numeric snapshots for common calculus diagrams.
+  Tangents use a symmetric finite difference rather than symbolic or automatic
+  differentiation; areas require a finite function over one interval; Riemann
+  rectangles have no adaptive error estimate or signed-area bookkeeping. The
+  helpers do not infer pedagogical labels, choose an approximation method, or
+  become live by themselves.
+- SCENE-CQ adaptively subdivides by one midpoint/chord-deviation test and breaks
+  visible opposite-side asymptotes or caller-excluded intervals. It does not
+  prove continuity, locate a pole exactly, solve roots, use a pixel-space error
+  tolerance, preserve an error bound after smooth interpolation, or detect a
+  curve that aliases every initial sample. There are still no per-point style
+  tables, error bars, or pixel-fixed marker sizes.
 - `svg->visual` is intentionally structural and supports groups plus common
   geometric leaves with unitless translation transforms. Complex SVG transforms
   and renderer features should use `svg-image`, which preserves their appearance
@@ -2548,9 +2816,8 @@ precisely; do not silently lose the follow-on idea that led to the work.
   so the outline follows same-clip motion, rotation, scale, and formula shape
   changes. It still follows rendered boxes rather than visible glyph contours,
   and does not respond to camera/renderer changes in the same clip.
-- Local `timed` scheduling and nested visual compositions are supported, but
-  camera requests remain top-level full-clip requests: they cannot be timed or
-  nested in a composition. Separate `scene-play` clips cannot overlap or be
+- Local `timed` scheduling and nested compositions apply to both Visual and
+  camera requests. Separate `scene-play` clips still cannot overlap or be
   scheduled relative to one another.
 
 ### Outside the current scope
@@ -2739,6 +3006,317 @@ formula transition begins.
 
 The feature sequences explicit mathematics; it does not parse TeX, prove that a
 rewrite is valid, select a pedagogical route, or infer explanations.
+
+## SCENE-CX: mathematical graphs and networks
+
+Version `0.98.0` adds graph diagrams without introducing mutable updater
+objects. A graph is a normal immutable group tree; the important public paths
+are stable and work with existing `move-to`, `indicate`, copy, attachment, and
+style operations:
+
+```racket
+(define network
+  (digraph
+   (list (graph-vertex 'A #:position (vec2 -2 0) #:label "A")
+         (graph-vertex 'B #:position (vec2 2 0) #:label "B"))
+   (list (graph-edge 'A 'B #:label "f"))
+   #:id 'network))
+
+(scene-play
+ (scene-add (make-scene) network)
+ (move-to (graph-vertex-path 'network 'B) (vec2 2 2))
+ #:duration 2)
+```
+
+The graph contains `vertices` and `edges` subgroups. The concrete arrow at
+`'(network edges A->B line)` is a derived child that queries the sampled world
+positions of `'(network vertices A)` and `'(network vertices B)`, then returns
+local geometry for the graph group to render. This preserves arbitrary-time
+sampling: no edge remembers any prior frame. `graph` creates plain lines;
+`digraph` uses arrowheads in the declared source-to-target order. Circle and
+rooted-tree layouts calculate initial positions deterministically from declared
+vertex/edge order. See `examples/graphs-and-networks.rkt`.
+
+## SCENE-CW: video-authoring workflow
+
+Version `0.97.0` separates production metadata from the immutable scene model.
+An authored timeline decorates an ordinary scene with named half-open sections,
+cues, and intended audio placements:
+
+```racket
+(define timeline
+  (make-authored-timeline
+   scene
+   #:sections (list (section 'opening 0 2)
+                    (section 'derivation 2 6))
+   #:cues (list (cue 'begin-derivation 2))
+   #:audio-cues (list (audio-cue "narration.wav" #:start 0))))
+```
+
+`timeline-section-frame-indices` selects the same global output samples that a
+complete scene render would use. `render-timeline-section!` writes precisely
+those samples with fresh local names, so the result starts at
+`frame-000000.png` and can be passed straight to `encode-mp4!`:
+
+```racket
+(render-timeline-section!
+ timeline 'derivation "tmp/derivation-frames"
+ #:fps 30 #:workers 4 #:cache-key 'derivation-v1)
+(encode-mp4! "tmp/derivation-frames" "derivation.mp4" #:fps 30)
+```
+
+The cache key is explicit by design. The saved manifest verifies its key,
+section bounds, FPS, selected global source frames, and expected PNGs, but does
+not pretend to hash arbitrary Racket procedures or external renderer assets.
+`authored-timeline-metadata` exposes portable section/cue/audio records to a
+future audio muxer or authoring UI. This first release does not decode, mix, or
+embed audio. See `examples/authoring-sections.rkt`.
+
+## SCENE-CV: composable camera motion
+
+Version `0.96.0` gives camera requests the same local scheduler as Visual
+requests. A camera leaf can be delayed, sequenced, or grouped without creating
+extra clips:
+
+```racket
+(scene-play
+ scene
+ (succession
+  (camera-pan-to (vec2 -4 0))
+  (animation-group
+   (camera-follow marker)
+   (camera-zoom-by 2)))
+ #:duration 4)
+```
+
+The first pan occupies the first half of the clip. In the second half, follow
+updates the camera center from the sampled `marker`, while zoom independently
+updates visible world width. `timed` applies literal local seconds at the
+top-level and the established scaled spans inside a composition. A later camera
+request is compiled from the exact view at its local start, so touching relative
+operations such as `camera-zoom-by` chain from the prior endpoint.
+
+The camera has two conflict components: `center` and `world-width`. Overlapping
+requests must write disjoint components. Thus pan/follow plus zoom is legal,
+but two simultaneous pans or a fit plus zoom is rejected. A timed follow holds
+the view calculated at its own endpoint rather than tracking a target's later
+motion. See `examples/composable-camera-movements.rkt`.
+
+## SCENE-CU: deterministic traced paths
+
+Version `0.95.0` makes a locus a pure derived Visual driven by an explicit
+animated scalar parameter:
+
+```racket
+(define phase (parameter 'phase 0))
+(define locus
+  (traced-path phase
+               (lambda (_context t) (vec2 (- t (sin t)) (- 1 (cos t))))
+               #:id 'cycloid #:sample-count 181))
+```
+
+At every sampled frame, `traced-path` resamples the interval from
+`#:start-time` to the current `phase`, so its result is independent of which
+other frames were rendered first. Set `#:trail-length` for a deterministic
+sliding interval; `#:dissipate?` expresses its age gradient as ordinary faded
+path segments. `examples/traced-cycloid.rkt` shows the construction.
+
+## SCENE-CT: matrices and tables
+
+Version `0.94.0` adds regular matrices and tables without creating a separate
+animation hierarchy. Both constructors return ordinary immutable groups, with
+each row and cell available by a stable nested path:
+
+```racket
+(define A
+  (matrix (list (list a11 a12)
+                (list a21 a22))
+          #:id 'A
+          #:entry-width 3/4
+          #:entry-height 3/4))
+
+(matrix-entry-path 'A 1 2) ; => '(A row-1 col-2)
+(table-cell-path 'results 2 3) ; => '(results row-2 col-3)
+```
+
+The entry Visuals are re-based at their cell centres, retaining their identity,
+rotation, scale, appearance, and children. This makes the cell group itself a
+convenient target for `indicate`, `circumscribe`, `move-to`, `attach-to`, or a
+source for `transform-from-copy`. Matrix square brackets are named
+`left-bracket` and `right-bracket`; a table also exposes its shared grid-line
+paths. Separate row branches may reuse a local `col-N` identity because their
+complete paths are distinct.
+
+`examples/matrices-and-tables.rkt` selects a matrix row and vector entry, then
+uses the normal copy animation to introduce the product alongside a compact
+calculation table.
+
+## SCENE-CS: multiline and rich text
+
+Version `0.93.0` adds immutable paragraph layout and styled inline runs:
+
+```racket
+(rich-text
+ #:id 'instruction
+ #:width 4
+ #:line-spacing 6/5
+ (text-span "Step 1\n" #:font-weight 'bold #:color "navy")
+ "Subtract "
+ (text-span "3" #:font-weight 'bold #:color "firebrick")
+ " from both sides.")
+```
+
+`paragraph` accepts one ordinary string; explicit `\n`, `\r`, and `\r\n`
+break lines, while `#:width` wraps at word boundaries based on the active
+renderer's actual font metrics. `#:line-alignment` controls the left, centre,
+or right placement of each resulting line, independent of the Visual's outer
+`#:horizontal-alignment` anchor. `#:vertical-alignment 'baseline` anchors the
+first line's baseline, making a paragraph usable beside a formula or label.
+
+`rich-text` accepts ordinary strings and `text-span` values. Each span can
+override the surrounding font size, face/family, style, weight, and colour; an
+unspecified property inherits the outer text style. The layout is still one
+immutable `text-visual`, so it can move, fade, rotate, scale, participate in
+renderer-aware layout, and use the usual cached text rendering path.
+
+`examples/multiline-rich-text.rkt` places a styled, wrapped explanation beside
+the real algebraic step `2x + 3 = 7` to `2x = 7 - 3`.
+
+## SCENE-CR: semantic formula styling
+
+Version `0.92.0` adds immutable styling operations for named formula parts:
+
+```racket
+(define styled
+  (formula-color-map
+   formula
+   (hash 'unknown "royalblue"
+         'constant "firebrick")))
+
+(formula-select styled 'constant) ; => '(equation constant)
+```
+
+`formula-style` accepts one name or a nonempty list of names and can set a
+colour, opacity, or both. `formula-color` is its colour-only shorthand. The
+returned assembly preserves its identity, part order, TeX/SVG artifact, and
+ordinary transform/opacity behaviour, so existing nested effects and matching
+formula rewrites continue to apply. Tagged constructors also accept a
+construction-time `#:color-map`.
+
+Styled tagged fragments retain their actual SVG crop and are recoloured by the
+SVG adapter rather than by an unreliable outer Pict colour wrapper. Equal paint
+styles therefore move as one matching fragment. A changed paint participates in
+the existing formula fade/cross-fade policy; animate it explicitly with
+`fill-color-to` when an in-place colour transition is desired.
+
+`examples/formula-styling.rkt` shows the real algebraic step
+`2x + 3 = 7` to `2x = 7 - 3`: the named unknown, constant, and result retain
+their colours while the equals sign stays fixed.
+
+## SCENE-CQ: adaptive plotting
+
+Version `0.91.0` adds `sample-adaptive-function-path` and
+`adaptive-function-graph`. They begin with a deterministic initial grid and
+recursively split intervals whose actual midpoint differs from the midpoint of
+the chord. The path is still ordinary axes-local geometry, so clipping, smooth
+interpolation, styling, and every usual path animation continue to work.
+
+```racket
+(adaptive-function-graph axes-value tan
+                         #:id 'tangent
+                         #:initial-sample-count 17
+                         #:max-deviation 1/100
+                         #:max-depth 12)
+```
+
+The sampler preserves a gap for an exact division-by-zero evaluation, detects
+the visible signature of a vertical asymptote by default, and accepts merged
+`#:excluded-intervals` when the gap is author-known. The stage example compares
+the separated branches of `1/x` with an adaptively refined `sin(30x)` curve.
+
+## SCENE-CP: coordinate and calculus helpers
+
+Version `0.90.0` adds static axes-aware diagram builders:
+
+```racket
+(secant-slope-group axes-value parabola 1 h #:id 'secant)
+(tangent-line axes-value parabola 1 #:id 'tangent)
+(riemann-rectangles axes-value parabola #:id 'rectangles #:count 8)
+```
+
+`graph-point`, graph labels and projection lines use the same linear/log axes
+conversion as graphs. Areas and Riemann rectangles create ordinary closed path
+geometry. `examples/secant-to-tangent.rkt` rebuilds `secant-slope-group` inside
+a `derived-visual`, demonstrating the intended functional way to animate a
+numeric construction.
+
+## SCENE-CO: mathematical annotation geometry
+
+Version `0.89.0` adds common explanatory marks as ordinary semantic paths:
+
+```racket
+(angle A C B #:id 'angle-mark #:radius 1/2)
+(right-angle B A C #:id 'right-mark #:size 2/5)
+(brace-label A B "base" #:id 'base-brace #:offset -1/2)
+(surrounding-rectangle '(annotations angle-mark) #:id 'outline)
+```
+
+`arc` uses cubic Bézier segments with exact cardinal endpoints; `dashed-path`
+selects arc-length pieces without flattening curves. `angle`, `right-angle`,
+`brace`, `brace-between`, and `brace-label` are ordinary path/group Visuals.
+`surrounding-rectangle` alone needs renderer measurement, so it tracks a
+top-level or nested target's current rendered bounding box with world-space
+padding. It remains a top-level render-time definition to avoid layout cycles.
+
+`examples/mathematical-annotations.rkt` uses a `derived-visual` to rebuild a
+right triangle's marks from moving vertex positions, while a surrounding
+rectangle follows its nested angle arc.
+
+## SCENE-CN: dynamic endpoint geometry
+
+Version `0.88.0` adds a small declarative vocabulary for geometry that stays
+connected as its sources move:
+
+```racket
+(arrow-between 'A B #:id 'edge)
+(line-between (anchor-of 'card 'right) (vec2 4 0) #:id 'leader)
+(ray-from origin (vec2 3 4) #:length 2 #:id 'ray)
+```
+
+An endpoint may be a literal `vec2`, a point-valued `parameter` handle, a
+top-level/nested Visual path, or `anchor-of` a Visual's selected rendered-box
+anchor. Plain Visual references select the semantic center; a non-center
+`anchor-of` is measured after scene sampling with the active Pict renderers.
+The first three kinds return a pure `derived-visual`; the latter returns a
+top-level renderer-aware definition. Both are deterministic at arbitrary sample
+times. A finite `ray-from` starts at its first endpoint and points through the
+second endpoint with the specified visible length.
+
+`examples/dynamic-endpoint-geometry.rkt` moves three triangle vertices while
+its sides and a corner-anchored arrow remain connected.
+
+## SCENE-CM: live anchor constraints
+
+Version `0.87.0` extends `attach-to` beyond SCENE-CD's renderer-independent
+reference-point following. Supplying a non-center `#:target-anchor` or
+`#:self-anchor` creates a top-level renderer-aware attachment:
+
+```racket
+(attach-to label 'card
+           #:target-anchor 'top-right
+           #:self-anchor 'bottom-left
+           #:offset (vec2 1/5 1/5))
+```
+
+At every render, the sampled target is measured with the active camera and
+Pict renderers. The selected anchor of `label` is then placed at the selected
+anchor of `card`, plus the world-space offset. This makes labels and badges
+follow target motion, scale, rotation, and layout changes without mutable
+updaters. To avoid a layout feedback loop, renderer-aware attachments are
+top-level only and cannot themselves be the target.
+
+`examples/live-anchor-constraints.rkt` demonstrates a label following a card's
+live upper-right corner through movement, scaling, and rotation.
 
 ## SCENE-CJ: shape-aware perimeter morphs
 

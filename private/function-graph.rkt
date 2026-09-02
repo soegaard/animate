@@ -16,7 +16,8 @@
 ;;;
 
 ;; Imports
-(require "axes-visual.rkt"
+(require racket/list
+         "axes-visual.rkt"
          "coordinate-series.rkt"
          "geometry.rkt"
          "path-geometry.rkt"
@@ -24,7 +25,9 @@
 
 ;; Exports
 (provide sample-function-path
-         function-graph)
+         function-graph
+         sample-adaptive-function-path
+         adaptive-function-graph)
 
 
 ;;;
@@ -147,6 +150,114 @@
 
 
 ;;;
+;;; Adaptive Public Construction
+;;;
+
+; sample-adaptive-function-path : axes-visual?
+;                                 (procedure-arity-includes/c 1)
+;                                 [#:x-min (or/c finite-real? false/c)]
+;                                 [#:x-max (or/c finite-real? false/c)]
+;                                 [#:initial-sample-count exact-integer-at-least-2?]
+;                                 [#:max-deviation nonnegative-finite-real?]
+;                                 [#:max-depth exact-nonnegative-integer?]
+;                                 [#:clip? boolean?]
+;                                 [#:max-jump (or/c nonnegative-finite-real? false/c)]
+;                                 [#:detect-discontinuities? boolean?]
+;                                 [#:excluded-intervals (listof numeric-interval-spec?)]
+;                                 [#:interpolation curve-interpolation?]
+;                                 -> path-geometry?
+;; Samples a function with deterministic midpoint subdivision in axes-local
+;; geometry.  Explicit exclusions and detected poles become path breaks.
+(define (sample-adaptive-function-path axes function
+                                       #:x-min [requested-x-min #f]
+                                       #:x-max [requested-x-max #f]
+                                       #:initial-sample-count
+                                       [initial-sample-count 17]
+                                       #:max-deviation [max-deviation 1/100]
+                                       #:max-depth [max-depth 12]
+                                       #:clip? [clip? #t]
+                                       #:max-jump [max-jump #f]
+                                       #:detect-discontinuities?
+                                       [detect-discontinuities? #t]
+                                       #:excluded-intervals
+                                       [excluded-intervals '()]
+                                       #:interpolation [interpolation 'linear])
+  (check-adaptive-sampling-arguments
+   'sample-adaptive-function-path
+   axes function requested-x-min requested-x-max initial-sample-count
+   max-deviation max-depth clip? max-jump detect-discontinuities?
+   excluded-intervals interpolation)
+  (define-values (x-min x-max)
+    (resolve-sampling-domain axes requested-x-min requested-x-max))
+  (define excluded
+    (normalize-excluded-intervals excluded-intervals))
+  (define active-intervals
+    (subtract-excluded-intervals x-min x-max excluded))
+  (define samples
+    (adaptive-function-samples axes function active-intervals
+                               initial-sample-count max-deviation max-depth
+                               max-jump detect-discontinuities?))
+  (coordinate-samples->path
+   axes samples #:clip? clip? #:interpolation interpolation))
+
+; adaptive-function-graph : axes-visual?
+;                           (procedure-arity-includes/c 1)
+;                           #:id symbol? ... -> path-visual?
+;; Wraps adaptive path geometry in the same immutable axes transform snapshot
+;; used by function-graph.
+(define (adaptive-function-graph axes function
+                                 #:id id
+                                 #:x-min [x-min #f]
+                                 #:x-max [x-max #f]
+                                 #:initial-sample-count
+                                 [initial-sample-count 17]
+                                 #:max-deviation [max-deviation 1/100]
+                                 #:max-depth [max-depth 12]
+                                 #:clip? [clip? #t]
+                                 #:max-jump [max-jump #f]
+                                 #:detect-discontinuities?
+                                 [detect-discontinuities? #t]
+                                 #:excluded-intervals
+                                 [excluded-intervals '()]
+                                 #:interpolation [interpolation 'linear]
+                                 #:opacity [opacity 1]
+                                 #:stroke [stroke "royalblue"]
+                                 #:stroke-width [stroke-width 3])
+  (unless (symbol? id)
+    (raise-argument-error 'adaptive-function-graph "symbol?" id))
+  (unless (opacity? opacity)
+    (raise-argument-error
+     'adaptive-function-graph
+     "finite real in [0, 1]"
+     opacity))
+  (unless (and (finite-real? stroke-width)
+               (not (negative? stroke-width)))
+    (raise-argument-error
+     'adaptive-function-graph
+     "nonnegative finite real?"
+     stroke-width))
+  (define path
+    (sample-adaptive-function-path
+     axes function
+     #:x-min x-min #:x-max x-max
+     #:initial-sample-count initial-sample-count
+     #:max-deviation max-deviation #:max-depth max-depth
+     #:clip? clip? #:max-jump max-jump
+     #:detect-discontinuities? detect-discontinuities?
+     #:excluded-intervals excluded-intervals
+     #:interpolation interpolation))
+  (make-path-visual path
+                    #:id id
+                    #:center (visual-position axes)
+                    #:rotation (visual-rotation axes)
+                    #:scale (visual-scale axes)
+                    #:opacity opacity
+                    #:fill #f
+                    #:stroke stroke
+                    #:stroke-width stroke-width))
+
+
+;;;
 ;;; Sampling
 ;;;
 
@@ -161,18 +272,21 @@
     (sub1 sample-count))
   (for/list ([index (in-range sample-count)])
     (define x
-      (cond
-        [(zero? index)
-         x-min]
-        [(= index last-index)
-         x-max]
-        [(eq? (axes-visual-x-scale axes) 'log)
-         (logarithmic-domain-value axes x-min x-max (/ index last-index))]
-        [else
-         (real-lerp x-min
-                    x-max
-                    (/ index last-index))]))
+      (sampling-domain-value axes x-min x-max (/ index last-index)))
     (sample-function-value function x)))
+
+; sampling-domain-value : axes-visual? finite-real? finite-real? finite-real?
+;                         -> finite-real?
+;; Returns one point uniformly spaced in the x display coordinate.  Keeping this
+;; shared lets adaptive sampling use the same log-axis semantics as fixed grids.
+(define (sampling-domain-value axes x-min x-max progress)
+  (cond
+    [(zero? progress) x-min]
+    [(= progress 1) x-max]
+    [(eq? (axes-visual-x-scale axes) 'log)
+     (logarithmic-domain-value axes x-min x-max progress)]
+    [else
+     (real-lerp x-min x-max progress)]))
 
 ; logarithmic-domain-value : axes-visual? positive-real? positive-real?
 ;                            finite-real? -> finite-real?
@@ -187,13 +301,20 @@
 ; sample-function-value : (procedure-arity-includes/c 1) finite-real?
 ;                         -> (or/c vec2? false/c)
 ;;   Converts one function result to a finite sample or an explicit gap.
-(define (sample-function-value function x)
+(define (sample-function-value function x
+                               #:who [who 'sample-function-path]
+                               #:divide-by-zero-gap?
+                               [divide-by-zero-gap? #f])
   (define results
     (with-handlers
-        ([exn:fail?
+        ([(lambda (exception)
+            (and divide-by-zero-gap?
+                 (exn:fail:contract:divide-by-zero? exception)))
+          (lambda (_exception) (list #f))]
+         [exn:fail?
           (lambda (exception)
             (raise-arguments-error
-             'sample-function-path
+             who
              "the sampling procedure raised an exception"
              "x" x
              "exception message" (exn-message exception)))])
@@ -203,7 +324,7 @@
        list)))
   (unless (= (length results) 1)
     (raise-arguments-error
-     'sample-function-path
+     who
      "the sampling procedure must return exactly one value"
      "x" x
      "result count" (length results)))
@@ -218,15 +339,274 @@
      #f]
     [else
      (raise-arguments-error
-      'sample-function-path
+      who
       "the sampling procedure must return a real number or #f"
       "x" x
       "result" result)]))
 
 
 ;;;
+;;; Adaptive Sampling
+;;;
+
+;; An adaptive-segment is one accepted numeric-coordinate chord. A #f in the
+;; segment stream records a mandatory gap; later conversion merges only truly
+;; adjacent chords into a path run.
+(struct adaptive-segment (start end)
+  #:transparent)
+
+;; An excluded-interval records a closed numeric interval which must remain a
+;; gap. The endpoint values may still become the visible ends of neighbouring
+;; branches; no segment can cross the interval's interior.
+(struct excluded-interval (minimum maximum)
+  #:transparent)
+
+; adaptive-function-samples : axes-visual? procedure?
+;                             (listof (list finite-real? finite-real?)) ...
+;                             -> (listof (or/c vec2? false/c))
+;; Builds a deterministic series of finite samples and explicit gaps. Function
+;; results are cached by exact x value, so shared adaptive boundaries are never
+;; evaluated twice.
+(define (adaptive-function-samples axes function active-intervals
+                                   initial-sample-count max-deviation max-depth
+                                   max-jump detect-discontinuities?)
+  (define sample-cache (make-hash))
+  (define (sample-at x)
+    (hash-ref!
+     sample-cache x
+     (lambda ()
+       (sample-function-value function x
+                              #:who 'sample-adaptive-function-path
+                              #:divide-by-zero-gap? #t))))
+  (define (break-between? start end)
+    (or (and max-jump
+             (coordinate-y-distance-exceeds? start end max-jump))
+        (and detect-discontinuities?
+             (coordinate-pair-crosses-hidden-asymptote? axes start end))))
+  (define (chord-deviation start middle end)
+    ;; x is sampled at the display-space midpoint, so comparing the sampled
+    ;; local point to the chord midpoint is the standard midpoint flatness
+    ;; test. It deliberately measures rendered axes-local geometry.
+    (define start-local
+      (axes-coordinates->local-point axes (vec2-x start) (vec2-y start)))
+    (define middle-local
+      (axes-coordinates->local-point axes (vec2-x middle) (vec2-y middle)))
+    (define end-local
+      (axes-coordinates->local-point axes (vec2-x end) (vec2-y end)))
+    (vec2-distance middle-local
+                   (vec2-scale 1/2 (vec2+ start-local end-local))))
+  (define (must-refine? start middle end)
+    (or (not start)
+        (not middle)
+        (not end)
+        (break-between? start middle)
+        (break-between? middle end)
+        (> (chord-deviation start middle end) max-deviation)))
+  (define (sample-interval x-start start x-end end depth)
+    (define x-middle
+      (sampling-domain-value axes x-start x-end 1/2))
+    (define middle (sample-at x-middle))
+    (define needs-refinement?
+      (must-refine? start middle end))
+    (cond
+      [(and needs-refinement? (< depth max-depth))
+       (append (sample-interval x-start start x-middle middle (add1 depth))
+               (sample-interval x-middle middle x-end end (add1 depth)))]
+      [(or (not start)
+           (not middle)
+           (not end)
+           (break-between? start end)
+           (and detect-discontinuities?
+                (or (break-between? start middle)
+                    (break-between? middle end))))
+       (list #f)]
+      [else
+       (list (adaptive-segment start end))]))
+  (define segment-stream
+    (append*
+     (for/list ([interval (in-list active-intervals)])
+       (define x-min (car interval))
+       (define x-max (cadr interval))
+       (define xs
+         (for/list ([index (in-range initial-sample-count)])
+           (sampling-domain-value axes x-min x-max
+                                  (/ index (sub1 initial-sample-count)))))
+       (append
+        (for/fold ([segments '()])
+                  ([x-start (in-list xs)] [x-end (in-list (cdr xs))])
+          (append segments
+                  (sample-interval x-start (sample-at x-start)
+                                   x-end (sample-at x-end) 0)))
+        (list #f)))))
+  (adaptive-segments->samples segment-stream))
+
+; adaptive-segments->samples : (listof (or/c adaptive-segment? false/c))
+;                              -> (listof (or/c vec2? false/c))
+;; Joins contiguous accepted chords and retains explicit breaks between runs.
+(define (adaptive-segments->samples segment-stream)
+  (define reversed-runs
+    (let loop ([remaining segment-stream]
+               [current-reversed '()]
+               [runs '()])
+      (cond
+        [(null? remaining)
+         (flush-adaptive-run current-reversed runs)]
+        [(not (car remaining))
+         (loop (cdr remaining) '()
+               (flush-adaptive-run current-reversed runs))]
+        [else
+         (define segment (car remaining))
+         (define start (adaptive-segment-start segment))
+         (define end (adaptive-segment-end segment))
+         (cond
+           [(null? current-reversed)
+            (loop (cdr remaining) (list end start) runs)]
+           [(equal? (car current-reversed) start)
+            (loop (cdr remaining) (cons end current-reversed) runs)]
+           [else
+           (loop (cdr remaining) (list end start)
+                  (flush-adaptive-run current-reversed runs))])])))
+  (define runs (reverse reversed-runs))
+  (cond
+    [(null? runs) '()]
+    [else
+     (append*
+      (for/list ([run (in-list runs)] [index (in-naturals)])
+        (append run (if (= index (sub1 (length runs))) '() (list #f)))))]))
+
+; flush-adaptive-run : (listof vec2?) (listof (listof vec2?))
+;                      -> (listof (listof vec2?))
+;; Ignores insignificant point-only runs, just like coordinate-series paths.
+(define (flush-adaptive-run reversed-points runs)
+  (if (>= (length reversed-points) 2)
+      (cons (reverse reversed-points) runs)
+      runs))
+
+; vec2-distance : vec2? vec2? -> nonnegative-finite-real?
+;; Returns a stable Euclidean distance for the local midpoint flatness test.
+(define (vec2-distance first second)
+  (define dx (abs (- (vec2-x second) (vec2-x first))))
+  (define dy (abs (- (vec2-y second) (vec2-y first))))
+  (define scale (max dx dy))
+  (if (zero? scale)
+      0
+      (* scale
+         (sqrt (+ (sqr (/ dx scale))
+                  (sqr (/ dy scale)))))))
+
+(define (sqr value)
+  (* value value))
+
+; normalize-excluded-intervals : (listof numeric-interval-spec?)
+;                                -> (listof excluded-interval?)
+;; Converts flexible pair/list input to sorted, merged intervals.
+(define (normalize-excluded-intervals interval-specifications)
+  (define raw-intervals
+    (for/list ([specification (in-list interval-specifications)])
+      (define-values (minimum maximum)
+        (numeric-interval-specification-values specification))
+      (excluded-interval minimum maximum)))
+  (define sorted
+    (sort raw-intervals < #:key excluded-interval-minimum))
+  (reverse
+   (for/fold ([merged-reversed '()]) ([current (in-list sorted)])
+     (cond
+       [(null? merged-reversed)
+        (list current)]
+       [else
+        (define previous (car merged-reversed))
+        (if (<= (excluded-interval-minimum current)
+                (excluded-interval-maximum previous))
+            (cons (excluded-interval
+                   (excluded-interval-minimum previous)
+                   (max (excluded-interval-maximum previous)
+                        (excluded-interval-maximum current)))
+                  (cdr merged-reversed))
+            (cons current merged-reversed))]))))
+
+; subtract-excluded-intervals : finite-real? finite-real?
+;                               (listof excluded-interval?)
+;                               -> (listof (list finite-real? finite-real?))
+;; Splits one requested domain at excluded intervals. It leaves only positive
+;; spans, in increasing order, and preserves boundary values for clipping.
+(define (subtract-excluded-intervals x-min x-max excluded)
+  (define-values (reversed-pieces final-start)
+    (for/fold ([pieces '()] [current-start x-min])
+              ([current (in-list excluded)])
+      (define start (excluded-interval-minimum current))
+      (define end (excluded-interval-maximum current))
+      (cond
+        [(<= end current-start)
+         (values pieces current-start)]
+        [(>= start x-max)
+         (values pieces current-start)]
+        [else
+         (define before-end (min start x-max))
+         (values (if (< current-start before-end)
+                     (cons (list current-start before-end) pieces)
+                     pieces)
+                 (max current-start end))])))
+  (reverse
+   (if (< final-start x-max)
+       (cons (list final-start x-max) reversed-pieces)
+       reversed-pieces)))
+
+
+;;;
 ;;; Validation
 ;;;
+
+; check-adaptive-sampling-arguments : symbol? any/c any/c any/c any/c any/c
+;                                      any/c any/c any/c any/c any/c any/c
+;                                      -> void?
+;; Validates adaptive controls before any callback invocation.
+(define (check-adaptive-sampling-arguments who
+                                           axes function x-min x-max
+                                           initial-sample-count max-deviation
+                                           max-depth clip? max-jump
+                                           detect-discontinuities?
+                                           excluded-intervals interpolation)
+  (check-sampling-arguments who axes function x-min x-max
+                            initial-sample-count clip? max-jump
+                            detect-discontinuities? interpolation)
+  (unless (and (finite-real? max-deviation)
+               (not (negative? max-deviation)))
+    (raise-argument-error who "nonnegative finite real?" max-deviation))
+  (unless (and (exact-integer? max-depth)
+               (not (negative? max-depth)))
+    (raise-argument-error who "exact nonnegative integer?" max-depth))
+  (unless (list? excluded-intervals)
+    (raise-argument-error who "list of increasing numeric interval pairs"
+                          excluded-intervals))
+  (for ([specification (in-list excluded-intervals)])
+    (define-values (minimum maximum)
+      (numeric-interval-specification-values specification))
+    (unless (< minimum maximum)
+      (raise-arguments-error
+       who
+       "each excluded interval must have an increasing finite range"
+       "interval" specification))))
+
+; numeric-interval-specification-values : any/c -> (values finite-real? finite-real?)
+;; Accepts either the concise (cons minimum maximum) spelling or a two-element
+;; list. Both are convenient in quoted Racket data and keep exclusions free of
+;; a public wrapper structure.
+(define (numeric-interval-specification-values specification)
+  (cond
+    [(and (pair? specification)
+          (finite-real? (car specification))
+          (finite-real? (cdr specification)))
+     (values (car specification) (cdr specification))]
+    [(and (list? specification)
+          (= (length specification) 2)
+          (finite-real? (car specification))
+          (finite-real? (cadr specification)))
+     (values (car specification) (cadr specification))]
+    [else
+     (raise-argument-error
+      'sample-adaptive-function-path
+      "numeric interval as (cons minimum maximum) or (list minimum maximum)"
+      specification)]))
 
 ; check-sampling-arguments : symbol? any/c any/c any/c any/c any/c any/c any/c
 ;                            any/c any/c -> void?

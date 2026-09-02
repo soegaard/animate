@@ -4,7 +4,7 @@ Rendered MP4 files live in the local sibling directory
 [`../rendered-examples/`](../rendered-examples/). They are generated artifacts
 and intentionally excluded from Git.
 
-All 67 visual examples below have been rendered locally. Temporary PNG frames
+All 70 visual examples below have been rendered locally. Temporary PNG frames
 are kept in the repository-local `tmp/` directory and discarded after encoding. The formula and full-fidelity
 SVG examples were rendered with the local Racket 9.3 runtime; the remaining
 examples use the standard Racket runtime.
@@ -121,6 +121,18 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [perimeter-shape-morph](../rendered-examples/perimeter-shape-morph.mp4) | **SCENE-CJ:** matching cardinal perimeter anchors makes a square round evenly into a circle. |
 | [live-attention-follow](../rendered-examples/live-attention-follow.mp4) | **SCENE-CK:** circumscribe and a callout leader follow a card while it moves and scales. |
 | [stationary-formula-derivation](../rendered-examples/stationary-formula-derivation.mp4) | **SCENE-CL:** an anchored derivation explicitly keeps selected formula parts stationary. |
+| [live-anchor-constraints](../rendered-examples/live-anchor-constraints.mp4) | **SCENE-CM:** a label's selected edge follows a moving, rotating, scaling card's live rendered-box corner. |
+| [dynamic-endpoint-geometry](../rendered-examples/dynamic-endpoint-geometry.mp4) | **SCENE-CN:** moving triangle vertices keep their three sides and a corner-anchored altitude arrow connected. |
+| [mathematical-annotations](../rendered-examples/mathematical-annotations.mp4) | **SCENE-CO:** a deforming right triangle retains a right-angle mark, angle arc, base brace/label, and a nested live enclosure. |
+| [secant-to-tangent](../rendered-examples/secant-to-tangent.mp4) | **SCENE-CP:** a parameter shrinks a secant construction until it approaches the numeric tangent. |
+| [adaptive-plotting](../rendered-examples/adaptive-plotting.mp4) | **SCENE-CQ:** midpoint subdivision captures a high-frequency sine curve and leaves reciprocal branches separated at their pole. |
+| [formula-styling](../rendered-examples/formula-styling.mp4) | **SCENE-CR:** named terms keep their semantic colours while `2x + 3 = 7` is rewritten around a fixed equals sign. |
+| [multiline-rich-text](../rendered-examples/multiline-rich-text.mp4) | **SCENE-CS:** a wrapped, styled explanatory paragraph remains readable beside a fixed-equals algebra rewrite. |
+| [matrices-and-tables](../rendered-examples/matrices-and-tables.mp4) | **SCENE-CT:** independently addressable matrix rows/cells and a grid table use normal nested targeting, attention, and copy animations. |
+| [traced-cycloid](../rendered-examples/traced-cycloid.mp4) | **SCENE-CU:** a rolling point’s cycloid is deterministically reconstructed from an animated phase parameter, without frame-history state. |
+| [composable-camera-movements](../rendered-examples/composable-camera-movements.mp4) | **SCENE-CV:** a camera pan succeeds into a parallel moving-point follow and zoom, using the same composition tree as Visual animation. |
+| [authoring-sections](../rendered-examples/authoring-sections.mp4) | **SCENE-CW:** named opening, derivation, and conclusion sections share one global frame grid while a playhead and cue markers show their production metadata. |
+| [graphs-and-networks](../rendered-examples/graphs-and-networks.mp4) | **SCENE-CX:** named vertices rearrange while directed edges and their labels are regenerated from the sampled endpoint positions. |
 
 ## Non-video example
 

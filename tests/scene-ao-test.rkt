@@ -24,8 +24,9 @@
   (define (visual-at scene time id)
     (scene-state-ref (scene-sample scene time) id))
 
-  ;; succession is a first-class Visual composition request. It accepts either
-  ;; separate children or one list, and nested successions remain compositions.
+  ;; succession is a first-class Visual/camera composition request. It accepts
+  ;; either separate children or one list, and nested successions remain
+  ;; compositions.
   (define two-step
     (succession (move-to dot (vec2 2 0))
                 (move-to dot (vec2 6 0))))
@@ -43,8 +44,9 @@
                  (scale-by dot 2)))))
   (check-exn exn:fail:contract?
              (lambda () (succession)))
-  (check-exn exn:fail:contract?
-             (lambda () (succession (camera-pan-to (vec2 1 0)))))
+  (check-true
+   (succession-animation-request?
+    (succession (camera-pan-to (vec2 1 0)))))
   ;; SCENE-AR extends the child grammar with timed leaves/compositions.
   (check-true
    (succession-animation-request?

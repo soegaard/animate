@@ -70,9 +70,13 @@
 ;;  - children   (listof affine-visual?)  local children in back-to-front
 ;;                                        order. Ordering is significant.
 ;;
-;; Every Visual identity exposed through the built-in group tree is unique and
-;; differs from the group identity. Custom affine Visuals are treated as leaves.
-;; Child positions are coordinates local to the group.
+;; Direct sibling identities are unique and every descendant differs from its
+;; enclosing group identity. The same local child identity may occur below two
+;; different branches: their complete nested Visual paths remain distinct. This
+;; is important for regular structures such as a matrix, where every row can
+;; naturally contain a child named `col-1`.
+;; Custom affine Visuals are treated as leaves. Child positions are coordinates
+;; local to the group.
 
 
 ;;;
@@ -232,6 +236,9 @@
     (for/list ([child (in-list children)])
       (check-group-child who child)
       child))
+  (define child-ids
+    (for/list ([child (in-list checked-children)])
+      (visual-target-id child who)))
   (define child-tree-ids
     (for*/list ([child (in-list checked-children)]
                 [id (in-list (visual-tree-ids child who))])
@@ -242,11 +249,11 @@
      "a group identity must differ from every descendant identity"
      "group-id" group-id))
   (define duplicate-id
-    (find-duplicate-id child-tree-ids))
+    (find-duplicate-id child-ids))
   (when duplicate-id
     (raise-arguments-error
      who
-     "every Visual identity in a built-in group tree must be unique"
+     "direct children of a built-in group must have distinct identities"
      "duplicate visual-id" duplicate-id))
   checked-children)
 

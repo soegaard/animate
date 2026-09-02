@@ -24,9 +24,9 @@
   (define (visual-at scene time id)
     (scene-state-ref (scene-sample scene time) id))
 
-  ;; animation-group is a first-class Visual composition. It accepts separate
-  ;; children or one list, and sequential/parallel compositions may nest in
-  ;; either direction.
+  ;; animation-group is a first-class Visual/camera composition. It accepts
+  ;; separate children or one list, and sequential/parallel compositions may
+  ;; nest in either direction.
   (define parallel-pair
     (animation-group (move-to dot (vec2 4 0))
                      (rotate-by dot 2)))
@@ -50,8 +50,9 @@
      (scale-by dot 2))))
   (check-exn exn:fail:contract?
              (lambda () (animation-group)))
-  (check-exn exn:fail:contract?
-             (lambda () (animation-group (camera-pan-to (vec2 1 0)))))
+  (check-true
+   (animation-group-animation-request?
+    (animation-group (camera-pan-to (vec2 1 0)))))
   ;; SCENE-AR extends the child grammar with timed leaves/compositions.
   (check-true
    (animation-group-animation-request?

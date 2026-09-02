@@ -30,15 +30,19 @@
          (only-in racket/draw
                   make-pen)
          "anchored-pict.rkt"
+         "annotation-geometry.rkt"
          "camera.rkt"
          "derived-visual.rkt"
+         "dynamic-endpoint-geometry.rkt"
          "formula-parts-visual.rkt"
          "frame-space.rkt"
          "geometry.rkt"
          "group-visual.rkt"
+         "layout-attachment.rkt"
          "number-line-visual.rkt"
          "pict-renderer.rkt"
          "point-marker-visual.rkt"
+         "path-geometry.rkt"
          "scene-state.rkt"
          "shape-pict-renderers.rkt"
          "visual-model.rkt")
@@ -95,6 +99,21 @@
       (transient-visual-underlying visual)
       camera
       renderers)]
+    [(layout-attached-visual? visual)
+     (raise-arguments-error
+      'visual->pict
+      "a layout-attached Visual placed as a top-level scene decoration"
+      "visual-id" (visual-id visual))]
+    [(dynamic-endpoint-visual? visual)
+     (raise-arguments-error
+      'visual->pict
+      "dynamic endpoint geometry placed as a top-level scene decoration"
+      "visual-id" (visual-id visual))]
+    [(surrounding-rectangle-visual? visual)
+     (raise-arguments-error
+      'visual->pict
+      "a surrounding rectangle placed as a top-level scene decoration"
+      "visual-id" (visual-id visual))]
     [else
      (define renderer
        (find-supporting-pict-renderer visual renderers))
@@ -305,10 +324,86 @@
   (cond
     [(callout-visual? visual)
      (place-callout-on-pict frame state visual camera renderers)]
+    [(dynamic-endpoint-visual? visual)
+     (place-dynamic-endpoint-visual-on-pict
+      frame state visual camera renderers)]
+    [(surrounding-rectangle-visual? visual)
+     (place-surrounding-rectangle-on-pict
+      frame state visual camera renderers)]
+    [(layout-attached-visual? visual)
+     (place-layout-attached-visual-on-pict
+      frame state visual camera renderers)]
     [(frame-space-visual? visual)
      (place-frame-space-visual-on-pict frame visual camera renderers)]
     [else
      (place-world-visual-on-pict frame visual camera renderers)]))
+
+; place-dynamic-endpoint-visual-on-pict : pict? scene-state?
+;                                         dynamic-endpoint-visual? camera?
+;                                         (listof pict-renderer?) -> pict?
+;; Resolves edge/corner anchors only after the target's sampled renderer extent
+;; is known, then paints the ordinary concrete line or arrow in world space.
+(define (place-dynamic-endpoint-visual-on-pict frame state definition camera renderers)
+  (define concrete
+    (dynamic-endpoint-visual-resolve-renderer
+     definition
+     (lambda (parameter)
+       (define value (scene-state-value-ref state parameter))
+       (unless (vec2? value)
+         (raise-arguments-error
+          'scene-state->pict
+          "a point-valued endpoint parameter"
+          "parameter" parameter
+          "sampled-value" value))
+       value)
+     (lambda (target anchor offset)
+       (vec2+
+        (target-layout-world-point
+         state target anchor camera renderers 'scene-state->pict
+         (visual-id definition))
+        offset))))
+  (place-world-visual-on-pict frame concrete camera renderers))
+
+; place-surrounding-rectangle-on-pict : pict? scene-state?
+;                                       surrounding-rectangle-visual? camera?
+;                                       (listof pict-renderer?) -> pict?
+;; Measures one sampled target's complete Pict box, adds world-space padding,
+;; and paints the resulting ordinary rectangle in the enclosing scene layer.
+(define (place-surrounding-rectangle-on-pict frame state enclosure camera renderers)
+  (define target
+    (surrounding-rectangle-visual-target enclosure))
+  (define target-visual
+    (checked-layout-target
+     state target 'scene-state->pict (visual-id enclosure)))
+  (define target-pict
+    (visual->pict target-visual camera #:renderers renderers))
+  (define scale (camera-scale camera))
+  (define padding (surrounding-rectangle-visual-padding enclosure))
+  (define template
+    ;; The model constructor owns the styles and opacity; only the live measured
+    ;; center and dimensions vary across samples.
+    (surrounding-rectangle-template enclosure))
+  (define width (+ (/ (pict-width target-pict) scale) (* 2 padding)))
+  (define height (+ (/ (pict-height target-pict) scale) (* 2 padding)))
+  ;; A path Visual gives #f its established transparent-fill meaning, while an
+  ;; author-supplied fill remains available for a highlighted enclosure. The
+  ;; rectangle primitive intentionally has its legacy opaque-fill treatment.
+  (define half-width (/ width 2))
+  (define half-height (/ height 2))
+  (define concrete
+    (make-path-visual
+     (polygon-path
+      (list (vec2 (- half-width) (- half-height))
+            (vec2 half-width (- half-height))
+            (vec2 half-width half-height)
+            (vec2 (- half-width) half-height)))
+     #:id (visual-id enclosure)
+     #:center (visual-position target-visual)
+     #:opacity (visual-opacity template)
+     #:fill (rectangle-visual-fill template)
+     #:stroke (rectangle-visual-stroke template)
+     #:stroke-width (rectangle-visual-stroke-width template)))
+  (place-world-visual-on-pict frame concrete camera renderers))
 
 ; place-world-visual-on-pict : pict? visual? camera? (listof pict-renderer?)
 ;                              -> pict?
@@ -319,6 +414,74 @@
   (define-values (center-x center-y)
     (camera-world->pixel camera (visual-position visual)))
   (pin-centered-pict frame center-x center-y visual-pict))
+
+; place-layout-attached-visual-on-pict : pict? scene-state?
+;                                        layout-attached-visual? camera?
+;                                        (listof pict-renderer?) -> pict?
+;; Places concrete world-space content by matching one of its rendered-box
+;; anchors to a live anchor of a different sampled target.  This is intentionally
+;; resolved in the adapter, after all ordinary scene state has been sampled,
+;; rather than being smuggled into the renderer-independent derived-Visual
+;; resolver.
+(define (place-layout-attached-visual-on-pict frame state attachment camera renderers)
+  (define content
+    (layout-attached-visual-content attachment))
+  (when (frame-space-visual? content)
+    (raise-arguments-error
+     'scene-state->pict
+     "layout-attached content in world space, not frame space"
+     "attachment-id" (visual-id attachment)
+     "content" content))
+  (define target-point
+    (target-layout-world-point
+     state
+     (layout-attached-visual-target attachment)
+     (layout-attached-visual-target-anchor attachment)
+     camera
+     renderers
+     'scene-state->pict
+     (visual-id attachment)))
+  (define content-pict
+    (visual->pict content camera #:renderers renderers))
+  (define content-center
+    (layout-anchor-content-center
+     target-point
+     (layout-attached-visual-self-anchor attachment)
+     (layout-attached-visual-offset attachment)
+     content-pict
+     camera))
+  (define-values (center-x center-y)
+    (camera-world->pixel camera content-center))
+  (pin-centered-pict frame center-x center-y content-pict))
+
+; layout-anchor-content-center : vec2? symbol? vec2? pict? camera? -> vec2?
+;; Converts the desired location of a content anchor into the world-space point
+;; at which that content Pict must be centred.  Picts have symmetric semantic
+;; layout boxes in this adapter, matching visual-layout-box and callout anchors.
+(define (layout-anchor-content-center target-point self-anchor offset content-pict camera)
+  (define half-width
+    (/ (pict-width content-pict) (camera-scale camera) 2))
+  (define half-height
+    (/ (pict-height content-pict) (camera-scale camera) 2))
+  (define desired-anchor
+    (vec2+ target-point offset))
+  (define center-offset
+    (case self-anchor
+      [(bottom-left) (vec2 half-width half-height)]
+      [(bottom) (vec2 0 half-height)]
+      [(bottom-right) (vec2 (- half-width) half-height)]
+      [(left) (vec2 half-width 0)]
+      [(center) origin]
+      [(right) (vec2 (- half-width) 0)]
+      [(top-left) (vec2 half-width (- half-height))]
+      [(top) (vec2 0 (- half-height))]
+      [(top-right) (vec2 (- half-width) (- half-height))]
+      [else
+       (raise-argument-error
+        'layout-anchor-content-center
+        "supported layout anchor"
+        self-anchor)]))
+  (vec2+ desired-anchor center-offset))
 
 ; place-frame-space-visual-on-pict : pict? frame-space-visual? camera?
 ;                                    (listof pict-renderer?) -> pict?
@@ -383,39 +546,80 @@
 ;                              (listof pict-renderer?) -> vec2?
 ;;   Resolves one callout target against the sampled world state.
 (define (callout-target-world-point state callout camera renderers)
-  (define target
-    (callout-visual-target callout))
+  (target-layout-world-point
+   state
+   (callout-visual-target callout)
+   (callout-visual-target-anchor callout)
+   camera
+   renderers
+   'scene-state->pict
+   (visual-id callout)))
+
+; target-layout-world-point : scene-state? (or/c vec2? visual-path?) symbol?
+;                             camera? (listof pict-renderer?) symbol? symbol?
+;                             -> vec2?
+;; Resolves a literal world point or a live rendered-box anchor of a world-space
+;; Visual.  Both callout leaders and SCENE-CM layout attachments use exactly this
+;; operation so their anchor vocabulary and camera scaling cannot drift apart.
+(define (target-layout-world-point state target anchor camera renderers who owner-id)
   (cond
-    [(vec2? target) target]
+    [(vec2? target)
+     (unless (eq? anchor 'center)
+       (raise-arguments-error
+        who
+        "the center anchor for a literal target point"
+        "owner-id" owner-id
+        "target" target
+        "anchor" anchor))
+     target]
     [else
-     (unless (scene-state-has? state target)
-       (raise-arguments-error
-        'scene-state->pict
-        "a callout target is not present at its Visual path"
-        "callout-id" (visual-id callout)
-        "target-path" target))
      (define target-visual
-       (scene-state-resolved-world-ref state target))
-     (when (frame-space-visual? target-visual)
-       (raise-arguments-error
-        'scene-state->pict
-        "a callout target must belong to world space"
-        "callout-id" (visual-id callout)
-        "target-path" target))
-     (define position
-       (visual-position target-visual))
-     (unless (vec2? position)
-       (raise-arguments-error
-        'scene-state->pict
-        "a callout target must return a world-space vec2 position"
-        "callout-id" (visual-id callout)
-        "target-path" target
-        "visual-position" position))
-     (callout-target-layout-anchor
-      target-visual
-      (callout-visual-target-anchor callout)
-      camera
-      renderers)]))
+       (checked-layout-target state target who owner-id))
+     (callout-target-layout-anchor target-visual anchor camera renderers)]))
+
+; checked-layout-target : scene-state? visual-path? symbol? symbol? -> visual?
+;; Resolves one independently drawable world-space target used by live layout
+;; relationships. Renderer-aware wrapper definitions deliberately cannot become
+;; targets: treating their template position as measured geometry would create
+;; a silent feedback/error cycle.
+(define (checked-layout-target state target who owner-id)
+  (define target-visual
+    ;; Resolve directly instead of checking raw scene-state membership first:
+    ;; a top-level derived group may expose its child paths only after sampled
+    ;; resolution has constructed the current concrete group.
+    (with-handlers
+        ([exn:fail?
+          (lambda (_exception)
+            (raise-arguments-error
+             who
+             "a target present at its Visual path"
+             "owner-id" owner-id
+             "target-path" target))])
+      (scene-state-resolved-world-ref state target)))
+  (when (or (dynamic-endpoint-visual? target-visual)
+            (layout-attached-visual? target-visual)
+            (surrounding-rectangle-visual? target-visual))
+    (raise-arguments-error
+     who
+     "a concrete world-space target, not another renderer-aware layout definition"
+     "owner-id" owner-id
+     "target-path" target))
+  (when (frame-space-visual? target-visual)
+    (raise-arguments-error
+     who
+     "a target in world space, not frame space"
+     "owner-id" owner-id
+     "target-path" target))
+  (define position
+    (visual-position target-visual))
+  (unless (vec2? position)
+    (raise-arguments-error
+     who
+     "a world-space target that returns a vec2 position"
+     "owner-id" owner-id
+     "target-path" target
+     "visual-position" position))
+  target-visual)
 
 ; callout-target-layout-anchor : visual? symbol? camera?
 ;                                (listof pict-renderer?) -> vec2?

@@ -27,6 +27,8 @@
 ;; Exports
 (provide render-frames!
          render-frames/report!
+         render-frame-indices!
+         render-frame-indices/report!
          (struct-out render-diagnostics))
 
 
@@ -109,6 +111,78 @@
     (raise-argument-error 'render-frames! "boolean?" clean?))
   (unless (exact-positive-integer? workers)
     (raise-argument-error 'render-frames! "exact-positive-integer?" workers))
+  (render-frame-indices/report!
+   scene
+   (build-list frame-count values)
+   output-directory
+   #:fps fps
+   #:camera camera
+   #:renderers renderers
+   #:clean? clean?
+   #:workers workers))
+
+; render-frame-indices! : scene? (listof exact-nonnegative-integer?) path-string?
+;                         [#:fps exact-positive-integer?]
+;                         [#:camera (or/c camera? false/c)]
+;                         [#:renderers (listof pict-renderer?)]
+;                         [#:clean? boolean?]
+;                         [#:workers exact-positive-integer?]
+;                         -> (listof path?)
+;; Renders selected scene-frame indices in the supplied order, naming the
+;; output locally from frame-000000.png. This keeps a rendered timeline section
+;; directly encodable without first copying or renumbering global frames.
+(define (render-frame-indices! scene frame-indices output-directory
+                               #:fps [fps 30]
+                               #:camera [camera #f]
+                               #:renderers [renderers default-pict-renderers]
+                               #:clean? [clean? #t]
+                               #:workers [workers 1])
+  (render-diagnostics-paths
+   (render-frame-indices/report!
+    scene frame-indices output-directory
+    #:fps fps
+    #:camera camera
+    #:renderers renderers
+    #:clean? clean?
+    #:workers workers)))
+
+; render-frame-indices/report! : scene? (listof exact-nonnegative-integer?)
+;                                path-string? ... -> render-diagnostics?
+;; Like render-frame-indices!, returning the normal renderer diagnostics. The
+;; requested global indices are validated before any output directory changes.
+(define (render-frame-indices/report! scene frame-indices output-directory
+                                      #:fps [fps 30]
+                                      #:camera [camera #f]
+                                      #:renderers [renderers default-pict-renderers]
+                                      #:clean? [clean? #t]
+                                      #:workers [workers 1])
+  (define available-frame-count
+    (scene-frame-count scene #:fps fps))
+  (unless (and (list? frame-indices)
+               (andmap exact-nonnegative-integer? frame-indices)
+               (andmap (lambda (frame-index)
+                         (< frame-index available-frame-count))
+                       frame-indices))
+    (raise-argument-error
+     'render-frame-indices!
+     (format "list of frame indices in [0, ~a)" available-frame-count)
+     frame-indices))
+  (unless (path-string? output-directory)
+    (raise-argument-error
+     'render-frame-indices!
+     "path-string?"
+     output-directory))
+  (unless (or (not camera)
+              (camera? camera))
+    (raise-argument-error
+     'render-frame-indices!
+     "(or/c camera? false/c)"
+     camera))
+  (check-pict-renderer-list 'render-frame-indices! renderers)
+  (unless (boolean? clean?)
+    (raise-argument-error 'render-frame-indices! "boolean?" clean?))
+  (unless (exact-positive-integer? workers)
+    (raise-argument-error 'render-frame-indices! "exact-positive-integer?" workers))
   (make-directory* output-directory)
   (when clean?
     (delete-old-frames! output-directory))
@@ -116,18 +190,18 @@
     (default-pict-renderer-cache-counters renderers))
   (define started-at (current-inexact-milliseconds))
   (define-values (paths frame-milliseconds active-workers)
-    (render-frame-jobs! scene
-                        output-directory
-                        frame-count
-                        fps
-                        camera
-                        renderers
-                        workers))
+    (render-frame-index-jobs! scene
+                              frame-indices
+                              output-directory
+                              fps
+                              camera
+                              renderers
+                              workers))
   (define after-counters
     (default-pict-renderer-cache-counters renderers))
   (render-diagnostics
    paths
-   frame-count
+   (length frame-indices)
    active-workers
    (- (current-inexact-milliseconds) started-at)
    frame-milliseconds
@@ -138,15 +212,19 @@
    (- (renderer-cache-counters-evictions after-counters)
       (renderer-cache-counters-evictions before-counters))))
 
-; render-frame-jobs! : scene? path-string? exact-nonnegative-integer?
-;                      exact-positive-integer? (or/c camera? false/c)
-;                      (listof pict-renderer?) exact-positive-integer?
-;                      -> (values (listof path?) (listof nonnegative-real?)
-;                                 exact-nonnegative-integer?)
+; render-frame-index-jobs! : scene? (listof exact-nonnegative-integer?)
+;                            path-string? exact-positive-integer?
+;                            (or/c camera? false/c) (listof pict-renderer?)
+;                            exact-positive-integer?
+;                            -> (values (listof path?)
+;                                       (listof nonnegative-real?)
+;                                       exact-nonnegative-integer?)
 ;; Runs independent frame render/write jobs through a bounded thread pool. Each
-;; job owns a unique output filename, while the returned lists are rebuilt in
-;; deterministic frame-index order after all workers complete.
-(define (render-frame-jobs! scene output-directory frame-count fps camera renderers workers)
+;; job owns a unique local output filename, while the returned lists are rebuilt
+;; in the requested global-frame order after all workers complete.
+(define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers)
+  (define frame-count
+    (length frame-indices))
   (define active-workers
     (if (zero? frame-count)
         0
@@ -172,12 +250,14 @@
      (lambda ()
        (unless first-failure
          (set! first-failure exception)))))
-  (define (render-one! frame-index)
-    (define path (frame-index->path output-directory frame-index))
+  (define (render-one! local-index)
+    (define source-index
+      (list-ref frame-indices local-index))
+    (define path (frame-index->path output-directory local-index))
     (define started-at (current-inexact-milliseconds))
     (define bitmap
       (scene-frame->bitmap scene
-                           frame-index
+                           source-index
                            #:fps fps
                            #:camera camera
                            #:renderers renderers))
@@ -186,15 +266,15 @@
        'render-frames!
        "could not save a PNG frame"
        "path" path))
-    (vector-set! paths frame-index path)
-    (vector-set! durations frame-index
+    (vector-set! paths local-index path)
+    (vector-set! durations local-index
                  (- (current-inexact-milliseconds) started-at)))
   (define (worker)
     (let loop ()
-      (define frame-index (take-frame-index!))
-      (when frame-index
+      (define local-index (take-frame-index!))
+      (when local-index
         (with-handlers ([exn:fail? record-failure!])
-          (render-one! frame-index))
+          (render-one! local-index))
         (loop))))
   (define worker-threads
     (for/list ([_ (in-range active-workers)])

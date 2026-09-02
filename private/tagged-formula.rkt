@@ -19,6 +19,7 @@
          "animation.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
+         "formula-style.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
@@ -186,6 +187,7 @@
 ;                  [#:font-size positive-real?]
 ;                  [#:preamble string?]
 ;                  [#:document-class-options (listof latex-option?)]
+;                  [#:color-map (hash/c symbol? color-spec?)]
 ;                  formula-fragment? ...
 ;                  -> formula-assembly-visual?
 ;; Typesets all fragments together once. The returned assembly has the given
@@ -201,6 +203,7 @@
                         #:preamble [preamble ""]
                         #:document-class-options
                         [document-class-options '()]
+                        #:color-map [color-map (hash)]
                         . fragments)
   (check-fragment-list 'tagged-formula fragments)
   ;; Reuse latex-formula's option and transform validation before starting an
@@ -275,12 +278,14 @@
         (formula-fragment-source fragment)
         local-center
         cropped))))
-  (formula-assembly parts
-                    #:id id
-                    #:center center
-                    #:rotation rotation
-                    #:scale scale
-                    #:opacity opacity))
+  (formula-color-map
+   (formula-assembly parts
+                     #:id id
+                     #:center center
+                     #:rotation rotation
+                     #:scale scale
+                     #:opacity opacity)
+   color-map))
 
 
 ;;; Manim-Style Formula Convenience
@@ -294,6 +299,7 @@
 ;            [#:font-size positive-real?]
 ;            [#:preamble string?]
 ;            [#:document-class-options (listof latex-option?)]
+;            [#:color-map (hash/c symbol? color-spec?)]
 ;            string? ...
 ;            -> formula-assembly-visual?
 ;; Typesets a complete TeX formula while using Manim-style `{{ ... }}` groups
@@ -310,6 +316,7 @@
                   #:preamble [preamble ""]
                   #:document-class-options
                   [document-class-options '()]
+                  #:color-map [color-map (hash)]
                   . tex-strings)
   (unless (and (pair? tex-strings)
                (andmap string? tex-strings))
@@ -335,6 +342,7 @@
          #:font-size font-size
          #:preamble preamble
          #:document-class-options document-class-options
+         #:color-map color-map
          fragments))
 
 ; glyph-tex : #:id symbol?
@@ -346,6 +354,7 @@
 ;             [#:font-size positive-real?]
 ;             [#:preamble string?]
 ;             [#:document-class-options (listof latex-option?)]
+;             [#:color-map (hash/c symbol? color-spec?)]
 ;             string? ...
 ;             -> formula-assembly-visual?
 ;; Typesets one complete TeX expression and exposes each dvisvgm glyph leaf as
@@ -362,6 +371,7 @@
                    #:preamble [preamble ""]
                    #:document-class-options
                    [document-class-options '()]
+                   #:color-map [color-map (hash)]
                    . tex-strings)
   (unless (and (pair? tex-strings)
                (andmap string? tex-strings))
@@ -448,12 +458,14 @@
         local-center
         cropped
         #:glyph-key (svg-glyph-key artifact index)))))
-  (formula-assembly parts
-                    #:id id
-                    #:center center
-                    #:rotation rotation
-                    #:scale scale
-                    #:opacity opacity))
+  (formula-color-map
+   (formula-assembly parts
+                     #:id id
+                     #:center center
+                     #:rotation rotation
+                     #:scale scale
+                     #:opacity opacity)
+   color-map))
 
 ;; math-tex-split : string? -> (listof nonempty-string?)
 ;; Splits Manim's double-brace form wherever it occurs. Nested TeX braces and

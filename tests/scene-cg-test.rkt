@@ -71,16 +71,21 @@
     (for/list ([segment (in-list (path-subpath-segments perimeter-subpath))])
       (cubic-bezier-path-segment-end segment)))
   (define root-half 0.7071067811865476)
-  (define half-diagonal (/ (+ 1 root-half) 2))
+  ;; The source square has unit half-extent while the destination disk has
+  ;; radius 3/2.  At the half sample, cardinal points and diagonal perimeter
+  ;; points interpolate those respective radii independently.
+  (define half-cardinal (real-lerp 1 3/2 1/2))
+  (define half-diagonal
+    (real-lerp 1 (* 3/2 root-half) 1/2))
   (define expected-perimeter-ends
     (list (vec2 half-diagonal half-diagonal)
-          (vec2 0 1)
+          (vec2 0 half-cardinal)
           (vec2 (- half-diagonal) half-diagonal)
-          (vec2 -1 0)
+          (vec2 (- half-cardinal) 0)
           (vec2 (- half-diagonal) (- half-diagonal))
-          (vec2 0 -1)
+          (vec2 0 (- half-cardinal))
           (vec2 half-diagonal (- half-diagonal))
-          (vec2 1 0)))
+          (vec2 half-cardinal 0)))
   (for ([actual (in-list perimeter-ends)]
         [expected (in-list expected-perimeter-ends)])
     (check-= (vec2-x actual) (vec2-x expected) 1e-10)

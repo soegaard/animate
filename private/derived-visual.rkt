@@ -18,7 +18,8 @@
 ;;; Imports and Exports
 ;;;
 
-(require "geometry.rkt"
+(require "affine-transform.rkt"
+         "geometry.rkt"
          "interpolation.rkt"
          "parameter.rkt"
          "visual-model.rkt")
@@ -180,6 +181,16 @@
 (define template-visual-position visual-position)
 (define template-visual-with-position visual-with-position)
 
+;; A derived definition remains non-animatable as a scene leaf, but it can be
+;; an affine/opacity child of a semantic group.  The group then changes only the
+;; immutable template placement; the resolver still determines the concrete
+;; child at sampling time. This is what lets a graph edge live below the graph's
+;; named `edges` group while retaining normal nested addressing.
+(define template-visual-transform visual-transform)
+(define template-visual-with-transform visual-with-transform)
+(define template-visual-opacity visual-opacity)
+(define template-visual-with-opacity visual-with-opacity)
+
 (struct derived-visual-value (template resolver)
   #:transparent
   #:methods gen:visual
@@ -214,7 +225,36 @@
         "position" position
         "result" replacement))
      (struct-copy derived-visual-value definition
-                  [template replacement]))])
+                  [template replacement]))]
+  #:methods gen:affine-visual
+  [(define (visual-transform definition)
+     (template-visual-transform
+      (derived-visual-value-template definition)))
+   (define (visual-with-transform definition transform)
+     (unless (affine-transform? transform)
+       (raise-argument-error
+        'visual-with-transform "affine-transform?" transform))
+     (struct-copy
+      derived-visual-value
+      definition
+      [template
+       (template-visual-with-transform
+        (derived-visual-value-template definition)
+        transform)]))]
+  #:methods gen:opacity-visual
+  [(define (visual-opacity definition)
+     (template-visual-opacity
+      (derived-visual-value-template definition)))
+   (define (visual-with-opacity definition opacity)
+     (unless (opacity? opacity)
+       (raise-argument-error 'visual-with-opacity "opacity?" opacity))
+     (struct-copy
+      derived-visual-value
+      definition
+      [template
+       (template-visual-with-opacity
+        (derived-visual-value-template definition)
+        opacity)]))])
 
 ; derived-visual? : any/c -> boolean?
 ;;   Reports whether value is a SCENE-AW derived Visual definition.
