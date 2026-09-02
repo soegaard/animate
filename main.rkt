@@ -15,6 +15,7 @@
 
 ;; Imports
 (require "private/affine-transform.rkt"
+         "private/attachment.rkt"
          "private/arrow-visual.rkt"
          "private/axes-visual.rkt"
          "private/animation.rkt"
@@ -26,6 +27,7 @@
          "private/derived-visual.rkt"
          "private/derived-plot.rkt"
          "private/formula-part-transition.rkt"
+         "private/formula-derivation.rkt"
          "private/formula-parts-visual.rkt"
          "private/formula-visual.rkt"
          "private/tagged-formula.rkt"
@@ -162,6 +164,7 @@
  camera-fit-layout-box
  camera-fit-visuals
  camera-fit-scene
+ camera-focus
 
  ;; Frame-space overlays and callouts
  frame-space-visual?
@@ -174,8 +177,12 @@
  callout-visual?
  callout-visual-content
  callout-visual-target
+ callout-visual-target-anchor
  callout-visual-connector-stroke
  callout-visual-connector-width
+
+ ;; Live world-space attachments
+ attach-to
 
  ;; Pure derived Visuals
  derived-visual
@@ -326,6 +333,11 @@
  formula-correspondence-unmatched-destination-names
  transform-matching-tex
 
+ ;; Structured formula derivations
+ formula-step
+ formula-derivation-step?
+ formula-derivation
+
  ;; Arrows and axes
  arrow
  arrow-visual?
@@ -383,11 +395,16 @@
  (struct-out layout-box)
  layout-horizontal-alignment?
  layout-vertical-alignment?
+ layout-box-anchor?
  layout-box-width
  layout-box-height
  layout-box-center
+ layout-box-anchor
  visual-layout-box
+ visual-layout-anchor
  visuals-layout-box
+ visual-place-at
+ visual-align-to
  visual-align-horizontal
  visual-align-vertical
  visual-place-above
@@ -455,6 +472,8 @@
  morph-to-topology-changing-request?
  morph-to-compound-aligned
  morph-to-compound-aligned-request?
+ transform-shape
+ transform-shape-request?
  transform-from-copy
  transform-from-copy-request?
  circumscribe

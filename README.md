@@ -1,9 +1,67 @@
-# animate — SCENE-CB
+# animate — SCENE-CL
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-CL adds explicit stationary formula parts. Alongside a rewrite's primary
+anchor, `#:stationary` names matched fragments that retain their current
+individual transforms. This makes it possible to keep, for example, `2x`, `=`,
+and an existing `5` still while introducing `- 1` on the right.
+
+SCENE-CK makes attention effects live. `circumscribe` and `indicate` measure
+their target from the sampled state after simultaneous motion, scale, rotation,
+or formula changes. `callout` also accepts `#:target-anchor` to follow one of a
+target's nine live rendered-box anchors rather than only its reference point.
+
+SCENE-CJ adds shape-aware primitive contour morphing. A circle/rectangle pair
+uses a canonical eight-segment perimeter beginning at the right midpoint and
+passing through matching cardinal and corner positions. A square therefore
+rounds into a circle evenly instead of inheriting an arbitrary path start.
+
+SCENE-CI makes source-package creation reproducible. `info.rkt` omits local
+`tmp/` experiments, rendered MP4s, compiled artifacts, and Finder metadata
+from `raco pkg create --source`; the preserved Rhombus examples remain in the
+source package but are excluded from normal compilation.
+
+SCENE-CH adds automatic explanatory camera framing. `camera-focus` frames one
+top-level or nested Visual path together with an explicit list of contextual
+Visuals; `camera-fit-scene` now accepts the same nested paths. Both measure the
+selected child in its fully composed world coordinates, which makes it natural
+to zoom from an overview into an SVG or formula detail without hand-computing a
+camera center and width.
+
+SCENE-CG adds `transform-shape`, a high-level Visual replacement transition.
+It transforms one top-level Visual into a fresh destination Visual: path,
+circle, and rectangle endpoints use automatic contour correspondence and an
+interpolated outline, while groups and unsupported/custom Visuals use the safe
+cross-fade fallback. The exact destination Visual is installed at the end, so
+ordinary geometry diagrams can change representation without leaking temporary
+path proxies into later clips.
+
+SCENE-CF adds structured formula derivations. `formula-step` describes an
+explicit algebraic rewrite, including correspondence and mismatch choices;
+`formula-derivation` turns those steps into anchored rewrite clips with a pause
+and optional explanatory label before every transition. It deliberately
+sequences author-provided mathematics rather than attempting algebra inference.
+
+SCENE-CE extends `circumscribe` and `indicate` to nested Visual paths. Their
+temporary renderer-measured outlines are placed around the selected child in
+its fully composed world coordinates, so an imported SVG part or formula child
+can be emphasized without rebuilding its parent diagram.
+
+SCENE-CD adds live attachments to top-level and nested Visual paths.
+`attach-to` makes an ordinary world-space Visual follow the sampled reference
+point of its target, while `callout` now accepts the same nested paths for its
+frame-fixed leader. Both compose every enclosing group/formula transform, so an
+SVG subpart may move, rotate, and scale with its parent without manual geometry.
+
+SCENE-CC adds named layout anchors for renderer-aware composition. Every
+measured render box has the same nine anchors—`top-left`, `top`, `top-right`,
+`left`, `center`, `right`, `bottom-left`, `bottom`, and `bottom-right`—so a
+Visual can be placed at a point or aligned to a different anchor of another
+Visual without manually calculating text, formula, SVG, or stroke extents.
 
 SCENE-CB extends `transform-from-copy` to nested Visual paths. A source such as
 `'(rocket-diagram rocket window)` is resolved to its independently drawable
@@ -172,11 +230,12 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-CB v0.76.0 builds on immutable parameters and generic values, dynamically
+SCENE-CL v0.86.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
-sampled plots, SVG/image import, and renderer-resource caching.
+sampled plots, SVG/image import, renderer-resource caching, live attention,
+canonical primitive morphs, and explicit stationary formula parts.
 
-The public package version is `0.76.0`. The public module's bindings are covered
+The public package version is `0.86.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -191,6 +250,16 @@ Install the package from a checkout:
 ```sh
 raco pkg install --auto --name animate --link "$(pwd)"
 ```
+
+Create a clean source archive for distribution:
+
+```sh
+raco pkg create --source .
+```
+
+The package metadata omits generated frames, rendered videos, local `tmp/`
+experiments, compiled bytecode, and Finder metadata. Rhombus examples remain in
+the archive for reference but are omitted from normal compilation.
 
 Install directly from GitHub:
 
@@ -492,6 +561,29 @@ renderer choice can therefore change layout. Use the same `#:camera` and
 
 ### Alignment and placement
 
+SCENE-CC's common anchor vocabulary is:
+
+```racket
+'top-left     'top     'top-right
+'left         'center  'right
+'bottom-left  'bottom  'bottom-right
+```
+
+`visual-layout-anchor` measures the selected point, `visual-place-at` moves a
+selected point to an explicit coordinate, and `visual-align-to` aligns two
+independently chosen points. For example, this positions a caption's lower-left
+corner at a panel's upper-right corner:
+
+```racket
+(visual-align-to caption panel
+                 #:anchor 'bottom-left
+                 #:reference-anchor 'top-right)
+```
+
+As with every layout operation, the result is an immutable snapshot. It uses the
+same camera and renderer list as final rendering, but does not create a live
+constraint that tracks later animation.
+
 The independent alignment functions preserve the unselected coordinate:
 
 ```racket
@@ -567,12 +659,13 @@ overlay, and completion installs the exact destination value.
 ```
 
 `circumscribe` draws, holds, and erases a rounded outline. `indicate` pulses
-the same kind of outline. Both are temporary and do not change the selected
-Visual's transform, style, or opacity:
+the same kind of outline. Both accept a top-level id or an explicit nested path,
+are temporary, and do not change the selected Visual's transform, style, or
+opacity:
 
 ```racket
 (scene-play scene
-            (circumscribe 'equation #:color "goldenrod")
+            (circumscribe '(rocket-diagram rocket window) #:color "goldenrod")
             #:duration 1)
 
 (scene-play scene
@@ -582,7 +675,8 @@ Visual's transform, style, or opacity:
 
 The outline is measured through the ordinary Pict renderer when the clip is
 compiled, so it follows the rendered extent of text, SVG, tagged TeX, and
-composites rather than relying on a guessed formula box.
+composites rather than relying on a guessed formula box. It is a clip-start
+snapshot: use a later clip when a target itself moves or changes shape.
 
 ### Copying formula parts
 
@@ -633,6 +727,31 @@ or use the same route directly in `formula-part-copy`. `transform-matching-tex`
 also accepts these routes in `#:path-map`. See
 `examples/copying-and-emphasizing-formula-parts.rkt` for the complete rendered
 example.
+
+### Structured formula derivations
+
+`formula-step` stores one explicit destination formula and its animation
+choices. `formula-derivation` applies the steps in order, pauses before every
+rewrite, and can replace one explanatory label at a chosen position:
+
+```racket
+(formula-derivation
+ scene initial-equation
+ #:anchor 'equals
+ #:explanation-position (vec2 0 -5/2)
+ #:steps
+ (list
+  (formula-step after-subtracting-six
+                #:explanation "Subtract 6 from both sides")
+  (formula-step after-evaluating
+                #:explanation "Evaluate 21 - 6")))
+```
+
+The builder chains endpoint templates safely, so the named anchor is resolved
+from the actual preceding scene formula. Each `formula-step` still accepts
+explicit matches, copy paths, routes, mismatch policy, duration, and a per-step
+anchor override. It does not parse TeX, verify the algebra, choose steps, or
+decide which parts should move.
 
 ## Tagged formula layouts
 
@@ -2301,7 +2420,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.76.0`. Every completed SCENE
+This is the running design backlog for version `0.86.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2312,7 +2431,10 @@ precisely; do not silently lose the follow-on idea that led to the work.
 - Plain text is single-line only: there are no paragraphs, wrapping, rich spans,
   or baseline alignment between separate text/formula Visuals.
 - Renderer layout boxes are symmetric semantic boxes, not tight visible-ink
-  bounds. There are no constraints, responsive reflow, or automatic layout.
+  bounds. SCENE-CC now provides all nine cardinal/corner anchors plus generic
+  one-time placement/alignment, but there are still no live constraints,
+  responsive reflow, automatic collision avoidance, or baseline alignment
+  between separate Visuals.
 - Ordinary formula assemblies typeset parts independently, so their positions
   and spacing remain explicit. `tagged-formula` typesets author-declared
   fragments together, but it is not a TeX parser: every fragment must be a
@@ -2333,11 +2455,15 @@ precisely; do not silently lose the follow-on idea that led to the work.
   circular or normalized custom paths. It still has no semantic algebra,
   automatic choice of pedagogically meaningful copies/routes, glyph-level
   grouping, or true TeX-outline morphing.
-- `rewrite-formula` keeps one explicit named anchor fixed by translating the
-  whole destination layout when the clip compiles. It does not infer which
-  other terms should remain stationary, preserve several independent anchors,
-  or know algebraic operations such as cancellation or adding a term to both
-  sides.
+- `rewrite-formula` translates the full destination layout around one explicit
+  named anchor and now accepts `#:stationary` matched fragments whose exact
+  current transforms override that layout. It still cannot infer which parts
+  should be fixed, preserve an arbitrary constraint relationship between
+  several changing terms, or know algebraic operations such as cancellation or
+  adding a term to both sides. SCENE-CF's `formula-derivation` sequences
+  explicit rewrite steps, pauses, labels, and per-step stationary choices, but
+  still does not validate algebra, parse TeX, select a pedagogical next step,
+  or make the explanation labels reflow automatically.
 - Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
   `glyph-tex` exposes dvisvgm glyph leaves with positional names and supports
   per-glyph motion plus conservative closed-contour outline morphs, but it has
@@ -2361,6 +2487,15 @@ precisely; do not silently lose the follow-on idea that led to the work.
   clip compilation. Copies do not follow a simultaneously animated source or
   route, cannot start in a derived root, and still introduce only a new
   top-level destination.
+- `transform-shape` replaces a top-level source with a fresh top-level
+  destination. Circle/rectangle pairs now use a canonical cardinal perimeter
+  correspondence, while other atomic path/circle/rectangle pairs retain the
+  general geometry policy. Groups, images, text, formulas, SVG trees, and
+  custom Visuals use the static-position cross-fade fallback. It has no
+  semantic subobject pairing, shape-tree morphing, renderer-specific outline
+  conversion, appearance-aware contour scoring, or animated fallback route.
+  Explicit `#:mode 'morph` rejects an endpoint pair without one safe atomic
+  outline correspondence.
 - Path morphing has no semantic hole/topology inference, direct open-to-closed
   correspondence, appearance-aware matching, arbitrary per-pair scoring
   callbacks, or general global geometric optimisation beyond its current
@@ -2377,6 +2512,10 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 - Derived Visuals are read-only computed output and cannot be animated directly;
   animate their values or the ordinary Visuals they depend on instead.
+  `attach-to` is a deliberately small derived-Visual convenience: it follows a
+  target's sampled reference point plus one fixed world-space offset. It does
+  not yet attach to render-box edges, avoid other labels, rotate with a target,
+  or supply a general constraint system.
 - Arrow and axes Visuals do not yet support direct endpoint animation or
   `create`/`uncreate`.
 - Plot sampling is fixed rather than adaptive. There are no per-point style
@@ -2392,17 +2531,23 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Cameras, overlays, and timelines
 
-- Cameras have pan, zoom, fit, and clip-scoped follow, but no rotation, animated
-  pixel dimensions/background, persistent follow across clips, continuously
-  recomputed fitting, asymmetric safe areas, or multiple simultaneous views.
-- There are no frame-corner/edge anchors, automatic overlay collision avoidance,
-  responsive overlay wrapping, curved or arrow-headed callout leaders, or
-  callout attachment to nested-child geometry. Frame-space wrappers cannot be
-  placed directly inside ordinary world-space groups.
-- `circumscribe` and `indicate` currently target top-level Visuals only. Their
-  rounded outlines use one renderer-measured bounding box at clip compilation,
-  rather than tracking nested children, visible glyph contours, an animated
-  target, or camera/renderer changes within the same clip.
+- Cameras have pan, zoom, fit, nested-path focus, and clip-scoped follow, but
+  no rotation, animated pixel dimensions/background, persistent follow across
+  clips, continuously recomputed fitting, asymmetric safe areas, automatic
+  choice of explanatory context, or multiple simultaneous views. `camera-focus`
+  is a clip-start snapshot and still requires the author to select the context
+  that belongs in the explanation.
+- World-space render boxes now have cardinal/corner layout anchors, and SCENE-CD
+  callout leaders can follow nested-child paths through parent transforms.
+  SCENE-CK additionally lets a leader select a live target-box edge or corner.
+  Frame corner/edge anchors, automatic overlay collision avoidance, responsive
+  overlay wrapping, curved or arrow-headed leaders, and frame-space wrappers
+  inside ordinary world-space groups are still absent.
+- `circumscribe` and `indicate` target nested Visual paths using a composed
+  world-space render box. SCENE-CK remeasures that box from the sampled target,
+  so the outline follows same-clip motion, rotation, scale, and formula shape
+  changes. It still follows rendered boxes rather than visible glyph contours,
+  and does not respond to camera/renderer changes in the same clip.
 - Local `timed` scheduling and nested visual compositions are supported, but
   camera requests remain top-level full-clip requests: they cannot be timed or
   nested in a composition. Separate `scene-play` clips cannot overlap or be
@@ -2517,6 +2662,166 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
 
+## SCENE-CI: source-package hygiene
+
+Version `0.83.0` adds explicit source-package omission metadata. A
+`raco pkg create --source` archive includes the Racket implementation, examples,
+tests, README, and Scribble source while excluding generated MP4s, temporary
+frames/experiments, compiled artifacts, and local Finder metadata. The Rhombus
+examples remain present for reference, but `compile-omit-paths` keeps them out
+of normal Racket compilation.
+
+## SCENE-CH: explanatory camera focus
+
+Version `0.82.0` adds `camera-focus`, a focused fit for an instructional
+subject and the Visuals that explain it:
+
+```racket
+(scene-play scene
+            (camera-focus scene
+                          '(launch rocket-diagram rocket window)
+                          #:context (list 'focus-note)
+                          #:padding 1/2)
+            #:duration 1)
+```
+
+The subject can be a top-level Visual, its identity, or a nested Visual path.
+The optional `#:context` list accepts the same forms. Each selected child is
+resolved with all enclosing transforms and opacity composed into world space
+before renderer-aware box measurement. `camera-fit-scene` now supports nested
+paths in `#:targets` as well. These requests remain snapshots of the scene's
+current endpoint, so they frame the author-selected explanation cleanly but do
+not independently track later motion or choose context automatically.
+
+`examples/explanatory-camera-focus.rkt` moves from a rocket overview to its
+nested window plus an explanatory card, then restores the overview.
+
+## SCENE-CG: general shape transforms
+
+Version `0.81.0` adds `transform-shape`, which replaces a present top-level
+Visual by a fresh top-level destination:
+
+```racket
+(scene-play scene
+            (transform-shape square disk)
+            #:duration 1)
+```
+
+In the default `#:mode 'auto`, a path, circle, or rectangle on each side is
+converted to a local path and given automatic topology-aware correspondence.
+Circle/rectangle pairs first use SCENE-CJ's canonical eight-segment perimeter
+at the right midpoint, cardinal points, and interleaved corners. This makes
+square-to-circle morphs symmetric. Pass `#:correspondence 'perimeter` to
+require that primitive policy or `#:correspondence 'path` to select the
+general stored-path policy.
+The intermediate outline moves with interpolated placement while source and
+destination paint styles cross-fade. The exact destination Visual replaces the
+source at completion. Composite, image, text, formula, SVG-tree, and custom
+Visual endpoints do not pretend to have a single contour: they automatically
+cross-fade instead. Use `#:mode 'morph` to require a geometric transition or
+`#:mode 'cross-fade` to select the fallback explicitly.
+
+`examples/general-shape-transform.rkt` shows a rectangle becoming a circle by
+outline interpolation, followed by a composite diagram changing through the
+safe cross-fade policy.
+
+## SCENE-CF: structured formula derivations
+
+Version `0.80.0` adds `formula-step` and `formula-derivation`. A step stores a
+caller-selected formula endpoint, correspondence/mismatch choices, transition
+duration, pre-transition pause, and optional one-line explanation. The builder
+applies every step through `rewrite-formula`, so an anchor such as `equals` is
+resolved from the actual previous scene endpoint instead of a stale template.
+
+`examples/structured-formula-derivation.rkt` reduces `3x + 6 = 21` to `x = 5`.
+Each author-selected algebraic step pauses with a concise explanation before its
+formula transition begins.
+
+The feature sequences explicit mathematics; it does not parse TeX, prove that a
+rewrite is valid, select a pedagogical route, or infer explanations.
+
+## SCENE-CJ: shape-aware perimeter morphs
+
+Version `0.84.0` refines `transform-shape` for circle/rectangle endpoints. The
+automatic primitive policy creates paired eight-segment perimeters
+beginning at the right midpoint. Their cardinal and diagonal positions match,
+so a square's corners round uniformly while preserving exact endpoint Visuals.
+
+`examples/perimeter-shape-morph.rkt` is the canonical square-to-circle example.
+
+## SCENE-CK: live attention and callout anchors
+
+Version `0.85.0` remeasures `circumscribe` and `indicate` from the sampled
+target after ordinary components in their play clip. Attention therefore
+follows target motion, rotation, scaling, and formula rewrites. `callout` gains
+`#:target-anchor`, selecting `center` by default or any of the standard eight
+edges/corners from the target's live rendered box.
+
+`examples/live-attention-follow.rkt` moves and scales a card while both an
+outline and a right-edge callout leader follow it.
+
+## SCENE-CL: stationary formula derivations
+
+Version `0.86.0` adds `#:stationary` to `rewrite-formula` and `formula-step`.
+Each entry is a same-name symbol or explicit `formula-part-match`; it is made a
+required correspondence and the destination fragment keeps its current source
+transform. This supplements, rather than replaces, the one whole-layout anchor.
+
+`examples/stationary-formula-derivation.rkt` keeps `2x`, `=`, and `5` still
+while turning `2x + 1 = 5` into `2x = 5 - 1`.
+
+## SCENE-CE: nested attention
+
+Version `0.79.0` extends `circumscribe` and `indicate` from top-level Visuals
+to an explicit nested group/formula path. When the play clip compiles, Animate
+resolves the selected child with every enclosing transform and opacity composed,
+measures its ordinary rendered box, and installs a temporary top-level outline
+at that world-space box. The target itself is never mutated.
+
+`examples/nested-attention.rkt` circumscribes and then pulses the `window`
+inside an imported, rotated rocket SVG through the path
+`(launch rocket-diagram rocket window)`.
+
+SCENE-CK later made the outline live-follow a moving, rotating, scaling, or
+rewritten target within the same clip. It still fits the renderer box rather
+than visible glyph contours.
+
+## SCENE-CD: live nested attachments
+
+Version `0.78.0` adds `attach-to`, a small declarative way to keep ordinary
+world-space content at a target's sampled reference point plus a fixed offset:
+
+```racket
+(attach-to badge '(rocket-diagram rocket window))
+```
+
+Nested dependencies now compose every enclosing group or formula transform
+before a derived Visual reads their reference positions. This makes an attached
+badge follow an SVG child as its parent moves, rotates, or scales. The existing
+frame-space `callout` accepts the same explicit path, so its leader line follows
+the child while the label itself remains fixed to the output frame.
+
+`examples/nested-live-attachments.rkt` moves and rotates an imported rocket;
+both its gold window badge and its callout leader remain attached to the nested
+`(launch rocket-diagram rocket window)` path.
+
+## SCENE-CC: named layout anchors
+
+Version `0.77.0` adds one canonical nine-point vocabulary to the existing
+renderer-aware layout system: the four corners, the four cardinal edges, and
+the center. `layout-box-anchor` queries a measured box; `visual-layout-anchor`
+queries a Visual; `visual-place-at` moves a selected Visual anchor to a point;
+and `visual-align-to` aligns independently selected anchors of two Visuals.
+
+The layout calculation deliberately remains immutable and one-time. It measures
+the complete rendered Pict boxes using the supplied camera and renderer list,
+including renderer padding and cosmetic strokes. It therefore supports text,
+formula, SVG, group, and custom-renderer Visuals, but it does not watch later
+motion or reflow a scene automatically.
+
+`examples/named-layout-anchors.rkt` renders the nine points around one panel and
+uses the API to attach its captions without manually deriving their text bounds.
+
 ## SCENE-CB: nested TransformFromCopy sources
 
 Version `0.76.0` lets `transform-from-copy` take a nested Visual path through
@@ -2615,7 +2920,7 @@ Version `0.71.0` adds `transform-from-copy`, `circumscribe`, and `indicate`.
 Copies are transient interior overlays: the source remains at its original
 endpoint, the destination is absent at progress zero, and the exact destination
 Visual is installed only when the clip completes. Attention effects use the
-normal Pict renderer to measure a top-level target, then add a temporary rounded
+normal Pict renderer to measure the selected target, then add a temporary rounded
 outline without modifying the target itself.
 
 Formula transitions gain `formula-part-copy` through `#:copies`, allowing one
@@ -2625,7 +2930,7 @@ alongside the existing `formula-arc`. This makes deliberate curved term motion
 possible while preserving formula correspondence's explicit, whole-fragment
 model. SCENE-CB later extends the general copy source to nested Visual paths.
 The limitations backlog records the remaining boundaries: no live-tracked
-attention targets, no algebraic inference, and no general glyph-outline
+attention outlines, no algebraic inference, and no general glyph-outline
 morphing.
 
 The complete demonstration is:

@@ -591,6 +591,7 @@
 ; rewrite-formula : formula-assembly-visual? formula-assembly-visual?
 ;                   #:anchor (or/c symbol? formula-part-match?)
 ;                   [#:matches (listof formula-part-match?)]
+;                   [#:stationary (listof (or/c symbol? formula-part-match?))]
 ;                   [#:path-arc finite-real?]
 ;                   [#:part-paths (listof formula-part-path?)]
 ;                   [#:copies (listof formula-part-copy?)]
@@ -598,27 +599,34 @@
 ;                   -> transform-formula-parts-request?
 ;;   Builds a matching formula rewrite whose named anchor stays at its current
 ;;   position, even when an earlier rewrite has already repositioned the scene.
+;;   `stationary` names additional matched fragments that keep their current
+;;   individual transforms instead of being moved by the destination layout.
 (define (rewrite-formula source destination
                          #:anchor anchor
                          #:matches [matches '()]
+                         #:stationary [stationary '()]
                          #:path-arc [path-arc 0]
                          #:part-paths [part-paths '()]
                          #:copies [copies '()]
                          #:mismatch-mode [mismatch-mode 'fade])
   (define anchor-match
     (rewrite-anchor->match anchor))
+  (define stationary-matches
+    (rewrite-stationary->matches stationary))
   (define correspondence
     (make-matching-formula-correspondence
      'rewrite-formula
      source
      destination
-     (add-rewrite-anchor-match source destination matches anchor-match)))
+     (add-rewrite-required-matches
+      source destination matches (cons anchor-match stationary-matches))))
   (transform-formula-parts/anchored
    correspondence
    anchor-match
    #:path-arc path-arc
    #:part-paths part-paths
    #:copies copies
+   #:stationary stationary-matches
    #:mismatch-mode mismatch-mode))
 
 ; make-matching-formula-correspondence : symbol? formula-assembly-visual?
@@ -671,13 +679,41 @@
      (raise-argument-error
       'rewrite-formula
       "(or/c symbol? formula-part-match?)"
-      anchor)]))
+     anchor)]))
+
+; rewrite-stationary->matches : list? -> (listof formula-part-match?)
+;; Converts the convenient same-name stationary shorthand before the full
+;; correspondence validates names and one-to-one use against both formulas.
+(define (rewrite-stationary->matches stationary)
+  (unless (list? stationary)
+    (raise-argument-error
+     'rewrite-formula
+     "(listof (or/c symbol? formula-part-match?))"
+     stationary))
+  (for/list ([entry (in-list stationary)])
+    (cond
+      [(symbol? entry) (formula-part-match entry entry)]
+      [(formula-part-match? entry) entry]
+      [else
+       (raise-argument-error
+        'rewrite-formula
+        "(listof (or/c symbol? formula-part-match?))"
+        stationary)])))
 
 ; add-rewrite-anchor-match : formula-assembly-visual? formula-assembly-visual?
 ;                            (listof formula-part-match?) formula-part-match?
 ;                            -> (listof formula-part-match?)
 ;;   Makes the anchored pair explicit, rejecting a conflicting caller match.
-(define (add-rewrite-anchor-match source destination matches anchor)
+(define (add-rewrite-required-matches source destination matches required)
+  (for/fold ([result matches])
+            ([match (in-list required)])
+    (add-rewrite-required-match source destination result match)))
+
+; add-rewrite-required-match : formula-assembly-visual? formula-assembly-visual?
+;                              (listof formula-part-match?) formula-part-match?
+;                              -> (listof formula-part-match?)
+;; Makes a required anchored or stationary pair explicit, rejecting conflicts.
+(define (add-rewrite-required-match source destination matches anchor)
   ;; This first correspondence validates the list and all named parts before
   ;; inspecting individual match fields below.
   (formula-correspondence source destination matches)
@@ -699,10 +735,10 @@
      matches]
     [else
      (raise-arguments-error
-      'rewrite-formula
-      "an anchor that does not conflict with an explicit match"
-      "anchor" anchor
-      "match" overlapping)]))
+     'rewrite-formula
+     "an anchor or stationary part that does not conflict with an explicit match"
+     "required-match" anchor
+     "match" overlapping)]))
 
 ; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
 ;                          [#:key-map (hash/c string? string?)]

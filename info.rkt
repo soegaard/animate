@@ -34,14 +34,25 @@
 (define compile-omit-paths
   '("examples/rhombus"))
 
+; source-omit-files : (listof path-string?)
+;; Keeps generated renders, local experiments, and macOS Finder metadata out of
+;; source archives produced by `raco pkg create --source`. Rhombus examples are
+;; retained as requested; compile-omit-paths above keeps them out of the build.
+(define source-omit-files
+  '("tmp"
+    "rendered-examples"
+    ".DS_Store"
+    "examples/.DS_Store"
+    "examples/private/.DS_Store"))
+
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-CB: TransformFromCopy from nested Visual paths")
+  "SCENE-CL: explicit stationary parts in narrated formula derivations")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.76.0")
+(define version "0.86.0")
 
 ; license : symbol?
 ;;   Declares the package license.

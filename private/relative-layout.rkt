@@ -30,11 +30,16 @@
 (provide (struct-out layout-box)
          layout-horizontal-alignment?
          layout-vertical-alignment?
+         layout-box-anchor?
          layout-box-width
          layout-box-height
          layout-box-center
+         layout-box-anchor
          visual-layout-box
+         visual-layout-anchor
          visuals-layout-box
+         visual-place-at
+         visual-align-to
          visual-align-horizontal
          visual-align-vertical
          visual-place-above
@@ -101,6 +106,16 @@
        (memq value '(bottom center top))
        #t))
 
+; layout-box-anchor? : any/c -> boolean?
+;;   Reports whether value names one of the nine canonical render-box anchors.
+(define (layout-box-anchor? value)
+  (and (symbol? value)
+       (memq value
+             '(bottom-left bottom bottom-right
+               left center right
+               top-left top top-right))
+       #t))
+
 
 ;;;
 ;;; Layout-Box Queries
@@ -130,6 +145,31 @@
         (/ (+ (layout-box-bottom box)
               (layout-box-top box))
            2)))
+
+; layout-box-anchor : layout-box? layout-box-anchor? -> vec2?
+;;   Returns the requested canonical anchor of box in its containing coordinates.
+(define (layout-box-anchor box anchor)
+  (check-layout-box 'layout-box-anchor box)
+  (check-layout-box-anchor 'layout-box-anchor anchor)
+  (case anchor
+    [(bottom-left)
+     (vec2 (layout-box-left box) (layout-box-bottom box))]
+    [(bottom)
+     (vec2 (vec2-x (layout-box-center box)) (layout-box-bottom box))]
+    [(bottom-right)
+     (vec2 (layout-box-right box) (layout-box-bottom box))]
+    [(left)
+     (vec2 (layout-box-left box) (vec2-y (layout-box-center box)))]
+    [(center)
+     (layout-box-center box)]
+    [(right)
+     (vec2 (layout-box-right box) (vec2-y (layout-box-center box)))]
+    [(top-left)
+     (vec2 (layout-box-left box) (layout-box-top box))]
+    [(top)
+     (vec2 (vec2-x (layout-box-center box)) (layout-box-top box))]
+    [(top-right)
+     (vec2 (layout-box-right box) (layout-box-top box))]))
 
 
 ;;;
@@ -170,6 +210,20 @@
               (+ (vec2-x position) half-width)
               (+ (vec2-y position) half-height)))
 
+; visual-layout-anchor : visual? layout-box-anchor?
+;                        [#:camera camera?]
+;                        [#:renderers (listof pict-renderer?)]
+;                        -> vec2?
+;;   Measures visual and returns one canonical render-box anchor.
+(define (visual-layout-anchor visual
+                              anchor
+                              #:camera [camera default-camera]
+                              #:renderers [renderers default-pict-renderers])
+  (check-layout-box-anchor 'visual-layout-anchor anchor)
+  (layout-box-anchor
+   (visual-layout-box visual #:camera camera #:renderers renderers)
+   anchor))
+
 ; visuals-layout-box : (listof visual?)
 ;                      [#:camera camera?]
 ;                      [#:renderers (listof pict-renderer?)]
@@ -200,6 +254,65 @@
 ;;;
 ;;; Alignment
 ;;;
+
+; visual-place-at : visual? vec2? [#:anchor layout-box-anchor?]
+;                   [#:camera camera?]
+;                   [#:renderers (listof pict-renderer?)]
+;                   -> visual?
+;;   Moves visual so its requested render-box anchor is at position.
+(define (visual-place-at visual
+                         position
+                         #:anchor [anchor 'center]
+                         #:camera [camera default-camera]
+                         #:renderers [renderers default-pict-renderers])
+  (check-layout-context 'visual-place-at camera renderers)
+  (unless (vec2? position)
+    (raise-argument-error 'visual-place-at "vec2?" position))
+  (check-layout-box-anchor 'visual-place-at anchor)
+  (define current-anchor
+    (visual-layout-anchor visual
+                          anchor
+                          #:camera camera
+                          #:renderers renderers))
+  (shift-visual-position
+   'visual-place-at
+   visual
+   (vec2- position current-anchor)))
+
+; visual-align-to : visual? visual?
+;                   [#:anchor layout-box-anchor?]
+;                   [#:reference-anchor layout-box-anchor?]
+;                   [#:camera camera?]
+;                   [#:renderers (listof pict-renderer?)]
+;                   -> visual?
+;;   Aligns visual's selected render-box anchor with reference's selected anchor.
+(define (visual-align-to visual
+                         reference
+                         #:anchor [anchor 'center]
+                         #:reference-anchor [reference-anchor anchor]
+                         #:camera [camera default-camera]
+                         #:renderers [renderers default-pict-renderers])
+  (check-layout-context 'visual-align-to camera renderers)
+  (check-layout-box-anchor 'visual-align-to anchor)
+  (check-layout-box-anchor 'visual-align-to reference-anchor)
+  (check-compatible-layout-coordinate-space
+   'visual-align-to
+   visual
+   reference)
+  (define visual-anchor
+    (visual-layout-anchor visual
+                          anchor
+                          #:camera camera
+                          #:renderers renderers))
+  (define reference-point
+    (visual-layout-anchor reference
+                          reference-anchor
+                          #:camera camera
+                          #:renderers renderers))
+  (shift-visual-position
+   'visual-align-to
+   visual
+   (vec2- reference-point visual-anchor)))
 
 ; visual-align-horizontal : visual? visual? layout-horizontal-alignment?
 ;                           [#:camera camera?]
@@ -767,6 +880,12 @@
      who
      "layout-vertical-alignment?"
      alignment)))
+
+; check-layout-box-anchor : symbol? any/c -> void?
+;;   Raises an argument error unless anchor selects a canonical render-box point.
+(define (check-layout-box-anchor who anchor)
+  (unless (layout-box-anchor? anchor)
+    (raise-argument-error who "layout-box-anchor?" anchor)))
 
 ; check-optional-layout-center : symbol? any/c -> void?
 ;;   Raises an argument error unless center is false or a vec2.

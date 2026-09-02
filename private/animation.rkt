@@ -80,6 +80,8 @@
          morph-to-topology-changing-request?
          morph-to-compound-aligned
          morph-to-compound-aligned-request?
+         transform-shape
+         transform-shape-request?
          transform-from-copy
          transform-from-copy-request?
          circumscribe
@@ -312,8 +314,20 @@
 ;;  - allow-reverse?  boolean?        whether reverse traversal may be selected.
 ;;  - sample-count    exact-integer?  deterministic alignment score resolution.
 
+(struct transform-shape-request
+  (source-id destination mode correspondence allow-reverse? sample-count)
+  #:transparent)
+
+;; transform-shape-request replaces one top-level Visual with a fresh Visual.
+;;  - source-id       symbol?  stable identity already present at clip start.
+;;  - destination     affine/opacity Visual installed at clip completion.
+;;  - mode            (or/c 'auto 'morph 'cross-fade) transition policy.
+;;  - correspondence  (or/c 'auto 'perimeter 'path) geometric pairing policy.
+;;  - allow-reverse?  boolean?  whether geometric correspondence may reverse.
+;;  - sample-count    exact-integer?  deterministic correspondence resolution.
+
 (struct transform-formula-parts-request
-  (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor)
+  (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
@@ -324,6 +338,7 @@
 ;;  - mismatch-mode   (or/c 'fade 'fade-transform) handling of unmatched parts.
 ;;  - outline-morphs  (listof formula-part-outline-morph?) optional interiors.
 ;;  - anchor          (or/c #f formula-part-match?) current-state layout anchor.
+;;  - stationary      (listof formula-part-match?) parts held at current positions.
 
 (struct transform-from-copy-request
   (source-id destination route)
@@ -501,11 +516,21 @@
 ;; original source stays in the scene. `destination` is added structurally only
 ;; when the clip completes.
 
-(struct attention-animation (overlay-id kind visual)
+(struct transform-shape-animation
+  (source-id source destination overlay-id normalized-source normalized-destination)
   #:transparent)
 
-;; attention-animation stores a prepared, renderer-measured outline. It is
-;; never part of either structural endpoint.
+;; transform-shape-animation renders an interior replacement layer, then swaps
+;; source for destination structurally at the clip boundary. Normalized paths
+;; are false for an intentional cross-fade fallback.
+
+(struct attention-animation (overlay-id target-path kind padding color stroke-width)
+  #:transparent)
+
+;; attention-animation stores a declarative target and outline style. Its
+;; renderer-measured box is resolved from the fully sampled scene state, so it
+;; is never part of either structural endpoint and follows a simultaneous
+;; motion, scale, rotation, or formula rewrite.
 
 (struct path-reveal-animation (target-id path from to remove-at-end?)
   #:transparent)
@@ -1074,6 +1099,64 @@
    allow-reverse?
    sample-count))
 
+; transform-shape : (or/c visual? symbol?)
+;                   (and/c visual? affine-visual? opacity-visual?)
+;                   [#:mode (or/c 'auto 'morph 'cross-fade)]
+;                   [#:correspondence (or/c 'auto 'perimeter 'path)]
+;                   [#:allow-reverse? boolean?]
+;                   [#:sample-count exact-integer?]
+;                   -> transform-shape-request?
+;; Replaces a top-level source Visual with destination. In 'auto mode, paths,
+;; circles, and rectangles use topology-aware geometric correspondence when
+;; possible; unsupported Visuals or incompatible geometry cross-fade. 'morph
+;; requires a geometric transition, while 'cross-fade always selects the
+;; graceful fallback. `perimeter` gives circle/rectangle pairs a canonical
+;; eight-segment contour with matching cardinal anchors; `path`
+;; retains the general topology-aware stored-path policy. Source and
+;; destination identities must differ.
+(define (transform-shape source destination
+                         #:mode [mode 'auto]
+                         #:correspondence [correspondence 'auto]
+                         #:allow-reverse? [allow-reverse? #t]
+                         #:sample-count [sample-count 64])
+  (unless (or (visual? source) (symbol? source))
+    (raise-argument-error 'transform-shape "(or/c visual? symbol?)" source))
+  (unless (and (visual? destination)
+               (affine-visual? destination)
+               (opacity-visual? destination))
+    (raise-argument-error
+     'transform-shape
+     "(and/c visual? affine-visual? opacity-visual?)"
+     destination))
+  (unless (memq mode '(auto morph cross-fade))
+    (raise-argument-error
+     'transform-shape
+     "(or/c 'auto 'morph 'cross-fade)"
+     mode))
+  (unless (memq correspondence '(auto perimeter path))
+    (raise-argument-error
+     'transform-shape
+     "(or/c 'auto 'perimeter 'path)"
+     correspondence))
+  (unless (boolean? allow-reverse?)
+    (raise-argument-error 'transform-shape "boolean?" allow-reverse?))
+  (unless (and (exact-integer? sample-count)
+               (>= sample-count 8))
+    (raise-argument-error
+     'transform-shape
+     "exact integer greater than or equal to 8"
+     sample-count))
+  (define source-id
+    (visual-target-id source 'transform-shape))
+  (when (eq? source-id (visual-id destination))
+    (raise-arguments-error
+     'transform-shape
+     "source and destination must have distinct Visual identities"
+     "source-id" source-id
+     "destination-id" (visual-id destination)))
+  (transform-shape-request
+   source-id destination mode correspondence allow-reverse? sample-count))
+
 ; transform-from-copy : (or/c visual? symbol? visual-path?)
 ;                       (and/c visual? affine-visual? opacity-visual?)
 ;                       [#:path-arc finite-real?]
@@ -1115,14 +1198,14 @@
    destination
    checked-route))
 
-; circumscribe : (or/c visual? symbol?)
+; circumscribe : (or/c visual? symbol? visual-path?)
 ;               [#:padding nonnegative-finite-real?]
 ;               [#:color any/c]
 ;               [#:stroke-width nonnegative-finite-real?]
 ;               -> circumscribe-request?
-;; Draws a rounded temporary outline around a top-level Visual, pauses briefly,
-;; then erases it.  Bounds are measured through the normal Pict renderer so
-;; TeX, SVG, text, and composites use their actual rendered extents.
+;; Draws a rounded temporary outline around a Visual path, pauses briefly, then
+;; erases it. Bounds are measured through the normal Pict renderer so TeX, SVG,
+;; text, and composites use their actual rendered extents.
 (define (circumscribe target
                       #:padding [padding 1/5]
                       #:color [color "gold"]
@@ -1130,12 +1213,12 @@
   (make-attention-request
    'circumscribe target padding color stroke-width 'circumscribe))
 
-; indicate : (or/c visual? symbol?)
+; indicate : (or/c visual? symbol? visual-path?)
 ;            [#:padding nonnegative-finite-real?]
 ;            [#:color any/c]
 ;            [#:stroke-width nonnegative-finite-real?]
 ;            -> indicate-request?
-;; Pulses a temporary rounded outline around a top-level Visual without
+;; Pulses a temporary rounded outline around a Visual path without
 ;; changing that Visual's transform, fill, stroke, or opacity.
 (define (indicate target
                   #:padding [padding 1/5]
@@ -1146,8 +1229,9 @@
 
 (define (make-attention-request kind target padding color stroke-width who)
   (unless (or (visual? target)
-              (symbol? target))
-    (raise-argument-error who "(or/c visual? symbol?)" target))
+              (symbol? target)
+              (visual-path? target))
+    (raise-argument-error who "(or/c visual? symbol? visual-path?)" target))
   (unless (and (finite-real? padding)
                (not (negative? padding)))
     (raise-argument-error who "nonnegative finite real?" padding))
@@ -1181,34 +1265,37 @@
                                  #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'transform-formula-parts
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs #f))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs #f '()))
 
 ; transform-formula-parts/anchored : formula-correspondence? formula-part-match?
 ;                                    [#:path-arc finite-real?]
 ;                                    [#:part-paths (listof formula-part-path?)]
 ;                                    [#:copies (listof formula-part-copy?)]
 ;                                    [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                                    [#:stationary (listof formula-part-match?)]
 ;                                    -> transform-formula-parts-request?
 ;;   Internal constructor used by rewrite-formula to align one destination part
 ;;   to the corresponding part in the current formula when scene-play compiles.
+;;   Additional stationary pairs retain their individual current transforms.
 (define (transform-formula-parts/anchored correspondence anchor
                                          #:path-arc [path-arc 0]
                                          #:part-paths [part-paths '()]
                                          #:copies [copies '()]
                                          #:mismatch-mode [mismatch-mode 'fade]
+                                         #:stationary [stationary '()]
                                          #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'rewrite-formula
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary))
 
 ; make-transform-formula-parts-request : symbol? formula-correspondence?
 ;                                         finite-real? list? list? list? symbol? list?
-;                                         (or/c #f formula-part-match?)
+;                                         (or/c #f formula-part-match?) list?
 ;                                         -> transform-formula-parts-request?
 ;;   Validates the common ordinary and anchored formula-transition inputs.
 (define (make-transform-formula-parts-request who correspondence path-arc
                                               part-paths copies mismatch-mode
-                                              outline-morphs anchor)
+                                              outline-morphs anchor stationary)
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
      who
@@ -1247,8 +1334,23 @@
      who
      "(or/c #f formula-part-match?)"
      anchor))
+  (unless (and (list? stationary)
+               (andmap formula-part-match? stationary))
+    (raise-argument-error
+     who
+     "(listof formula-part-match?)"
+     stationary))
+  (define correspondence-matches
+    (formula-correspondence-matches correspondence))
+  (for ([match (in-list stationary)])
+    (unless (member match correspondence-matches)
+      (raise-arguments-error
+       who
+       "stationary pairs included in the formula correspondence"
+       "stationary" match
+       "correspondence" correspondence)))
   (transform-formula-parts-request
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary))
 
 ; create : path-visual? -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -1448,6 +1550,8 @@
   (define target-id
     (animation-request-target-id request))
   (cond
+    [(transform-shape-request? request)
+     (compile-transform-shape-request state request)]
     [(transform-from-copy-request? request)
      (compile-transform-from-copy-request state request)]
     [(attention-request? request)
@@ -1813,7 +1917,8 @@
        (anchor-formula-correspondence
         visual
         (transform-formula-parts-request-correspondence request)
-        (transform-formula-parts-request-anchor request)))
+        (transform-formula-parts-request-anchor request)
+        (transform-formula-parts-request-stationary request)))
      (formula-parts-transform-animation
       target-id
      (make-formula-transition-plan
@@ -1866,6 +1971,243 @@
       "animation request"
       request)])]))
 
+; compile-transform-shape-request : scene-state? transform-shape-request?
+;                                    -> transform-shape-animation?
+;; Chooses a geometric interior only when both endpoints can be represented by
+;; one atomic path. The automatic policy deliberately degrades to a visual
+;; cross-fade instead of exposing low-level contour restrictions to a diagram
+;; author.
+(define (compile-transform-shape-request state request)
+  (define source-id
+    (transform-shape-request-source-id request))
+  (define destination
+    (transform-shape-request-destination request))
+  (define destination-id
+    (visual-id destination))
+  (unless (scene-state-has? state source-id)
+    (raise-arguments-error
+     'transform-shape
+     "a source Visual present at the start of the clip"
+     "source-id" source-id))
+  (check-absent-introduction-target state destination-id 'transform-shape)
+  (define source
+    (scene-state-ref state source-id))
+  (when (derived-visual? source)
+    (raise-arguments-error
+     'transform-shape
+     "a non-derived source Visual"
+     "source-id" source-id
+     "source" source))
+  (unless (and (affine-visual? source)
+               (opacity-visual? source))
+    (raise-arguments-error
+     'transform-shape
+     "a source Visual that supports affine placement and opacity"
+     "source-id" source-id
+     "source" source))
+  (define morph-paths
+    (case (transform-shape-request-mode request)
+      [(cross-fade) #f]
+      [else
+       (make-transform-shape-morph-paths
+        source
+        destination
+        (transform-shape-request-correspondence request)
+        (transform-shape-request-allow-reverse? request)
+        (transform-shape-request-sample-count request))]))
+  (when (and (eq? (transform-shape-request-mode request) 'morph)
+             (not morph-paths))
+    (raise-arguments-error
+     'transform-shape
+     "two atomic path, circle, or rectangle Visuals whose outlines can be morphed"
+     "source-id" source-id
+     "source" source
+     "destination" destination))
+  (define overlay-id
+    (transform-shape-overlay-id source-id destination-id))
+  (check-absent-introduction-target state overlay-id 'transform-shape)
+  (transform-shape-animation
+   source-id
+   source
+   destination
+   overlay-id
+   (and morph-paths (car morph-paths))
+   (and morph-paths (cdr morph-paths))))
+
+; make-transform-shape-morph-paths : visual? visual? symbol? boolean? exact-integer?
+;                                     -> (or/c false/c (cons/c path-geometry?
+;                                                                  path-geometry?))
+;; Returns normalized interiors for the broadest safe built-in shape morph. A
+;; failure means the caller can choose a cross-fade rather than committing a
+;; timeline with malformed or non-corresponding contours.
+(define (make-transform-shape-morph-paths source destination correspondence allow-reverse?
+                                          sample-count)
+  (define (normalize source-path destination-path)
+    (define-values (normalized-source normalized-destination)
+      (path-geometry-normalize-for-morph source-path destination-path))
+    (cons normalized-source normalized-destination))
+  (define primitive-perimeter-paths
+    (and (memq correspondence '(auto perimeter))
+         (primitive-perimeter-morph-paths source destination normalize)))
+  (cond
+    [primitive-perimeter-paths primitive-perimeter-paths]
+    [(eq? correspondence 'perimeter) #f]
+    [else
+     (define source-path-visual
+       (transform-shape-path-proxy source))
+     (define destination-path-visual
+       (transform-shape-path-proxy destination))
+     (and source-path-visual
+          destination-path-visual
+          (with-handlers ([exn:fail? (lambda (ignored) #f)])
+            (define source-path
+              (path-visual-path source-path-visual))
+            (define destination-path
+              (path-visual-path destination-path-visual))
+            ;; Prefer the no-birth/death pairing, which selects the best
+            ;; closed-loop phase and open-path direction. When topologies
+            ;; differ, fall through to seeded births/deaths.
+            (or (with-handlers ([exn:fail? (lambda (ignored) #f)])
+                  (normalize
+                   source-path
+                   (path-geometry-align-mixed-compound-for-morph
+                    source-path
+                    destination-path
+                    #:allow-reverse? allow-reverse?
+                    #:sample-count sample-count)))
+                (let ()
+                  (define-values (prepared-source prepared-destination)
+                    (path-geometry-prepare-topology-changing-morph
+                     source-path
+                     destination-path
+                     #:allow-reverse? allow-reverse?
+                     #:sample-count sample-count))
+                  (normalize prepared-source prepared-destination)))))]))
+
+; primitive-perimeter-morph-paths : visual? visual?
+;                                  (-> path-geometry? path-geometry? pair?)
+;                                  -> (or/c false/c pair?)
+;; Circle and rectangle primitives have a useful semantic correspondence that
+;; stored SVG/path order cannot infer: the right midpoint and the matching
+;; eighth-perimeter positions.  This is the contour preparation used
+;; for an evenly rounded square-to-circle transformation.
+(define (primitive-perimeter-morph-paths source destination normalize)
+  (define source-proxy (primitive-perimeter-proxy source))
+  (define destination-proxy (primitive-perimeter-proxy destination))
+  (and source-proxy
+       destination-proxy
+       (with-handlers ([exn:fail? (lambda (ignored) #f)])
+         (normalize (path-visual-path source-proxy)
+                    (path-visual-path destination-proxy)))))
+
+; transform-shape-path-proxy : visual? -> (or/c false/c path-visual?)
+;; The generic shape operation intentionally has a small structural contract:
+;; one painted path (including circle/rectangle primitives). Groups and custom
+;; Visuals retain their exact rendering through the cross-fade fallback.
+(define (transform-shape-path-proxy visual)
+  (cond
+    [(path-visual? visual) visual]
+    [(circle-visual? visual) (write-circle-proxy visual)]
+    [(rectangle-visual? visual) (write-rectangle-proxy visual)]
+    [else #f]))
+
+; primitive-perimeter-proxy : visual? -> (or/c false/c path-visual?)
+;; A separate proxy keeps write-in's document-order paths untouched. Its eight
+;; segments begin at the right midpoint and visit matching cardinal/corner
+;; perimeter locations for both supported primitive families.
+(define (primitive-perimeter-proxy visual)
+  (cond
+    [(circle-visual? visual)
+     (make-primitive-perimeter-proxy
+      visual
+      (primitive-circle-perimeter-path (circle-visual-radius visual))
+      (circle-visual-fill visual)
+      (circle-visual-stroke visual)
+      (circle-visual-stroke-width visual))]
+    [(rectangle-visual? visual)
+     (make-primitive-perimeter-proxy
+      visual
+      (primitive-rectangle-perimeter-path
+       (rectangle-visual-width visual)
+       (rectangle-visual-height visual))
+      (rectangle-visual-fill visual)
+      (rectangle-visual-stroke visual)
+      (rectangle-visual-stroke-width visual))]
+    [else #f]))
+
+(define (make-primitive-perimeter-proxy visual path fill stroke stroke-width)
+  (make-path-visual
+   path
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill fill
+   #:stroke stroke
+   #:stroke-width stroke-width))
+
+(define (primitive-rectangle-perimeter-path width height)
+  (define half-width (/ width 2))
+  (define half-height (/ height 2))
+  ;; Closed subpaths have an implicit final closing edge.  Make this edge
+  ;; explicit here so all eight rectangle eighths correspond directly to the
+  ;; eight cubic circle arcs below.  Leaving it implicit would make generic
+  ;; path normalization split an unrelated edge, which produces a lopsided
+  ;; halfway contour.
+  (define anchors
+    (list (vec2 half-width 0)
+          (vec2 half-width half-height)
+          (vec2 0 half-height)
+          (vec2 (- half-width) half-height)
+          (vec2 (- half-width) 0)
+          (vec2 (- half-width) (- half-height))
+          (vec2 0 (- half-height))
+          (vec2 half-width (- half-height))))
+  (path-geometry
+   (list
+    (path-subpath
+     (car anchors)
+     (for/list ([point (in-list (append (cdr anchors)
+                                         (list (car anchors))))])
+       (line-path-segment point))
+     #t))))
+
+(define (primitive-circle-perimeter-path radius)
+  ;; One 45-degree cubic segment has this tangent length relative to its
+  ;; radius. Keeping the same eight cardinal/diagonal anchors as rectangles
+  ;; gives each square corner an equal share of the interpolation.
+  (define root-half 0.7071067811865476)
+  (define k 0.265216489839544)
+  (define anchors
+    (list (vec2 radius 0)
+          (vec2 (* radius root-half) (* radius root-half))
+          (vec2 0 radius)
+          (vec2 (* -1 radius root-half) (* radius root-half))
+          (vec2 (- radius) 0)
+          (vec2 (* -1 radius root-half) (* -1 radius root-half))
+          (vec2 0 (- radius))
+          (vec2 (* radius root-half) (* -1 radius root-half))))
+  (define (tangent point)
+    (vec2 (- (vec2-y point)) (vec2-x point)))
+  (define (next points)
+    (append (cdr points) (list (car points))))
+  (path-geometry
+   (list
+    (path-subpath
+     (car anchors)
+     (for/list ([from (in-list anchors)]
+                [to (in-list (next anchors))])
+       (cubic-bezier-path-segment
+        (vec2+ from (vec2-scale k (tangent from)))
+        (vec2- to (vec2-scale k (tangent to)))
+        to))
+     #t))))
+
+(define (transform-shape-overlay-id source-id destination-id)
+  (string->symbol
+   (format "__transform-shape-~s-to-~s" source-id destination-id)))
+
 (define (compile-transform-from-copy-request state request)
   (define source-target
     (transform-from-copy-request-source-id request))
@@ -1910,35 +2252,27 @@
 (define (compile-attention-request state request)
   (define target-id
     (attention-request-target-id request))
-  (unless (for/or ([visual (in-list (scene-state-visuals-in-drawing-order state))])
-            (eq? (visual-id visual) target-id))
+  (define target-path
+    (visual-target-path target-id (attention-request-kind request)))
+  (unless (scene-state-has? state target-path)
     (raise-arguments-error
      (attention-request-kind request)
-     "a top-level Visual present in the scene"
-     "target-id" target-id))
-  (define target
-    (scene-state-resolved-ref state target-id))
-  (define box
-    (renderer-layout-box target))
+     "a Visual present at the requested path in the scene"
+     "target-path" target-path))
   (define overlay-id
-    (attention-overlay-id target-id (attention-request-kind request)))
+    (attention-overlay-id target-path (attention-request-kind request)))
   (check-absent-introduction-target state overlay-id (attention-request-kind request))
   (attention-animation
    overlay-id
+   target-path
    (attention-request-kind request)
-   (make-attention-outline
-    overlay-id
-    box
-    (attention-request-padding request)
-    (attention-request-color request)
-    (attention-request-stroke-width request))))
+   (attention-request-padding request)
+   (attention-request-color request)
+   (attention-request-stroke-width request)))
 
-(define (attention-overlay-id target-id kind)
+(define (attention-overlay-id target-path kind)
   (string->symbol
-   (string-append "__"
-                  (symbol->string kind)
-                  "-"
-                  (symbol->string target-id))))
+   (format "__~a-~s" kind target-path)))
 
 (define (make-attention-outline id box padding color stroke-width)
   (define half-width
@@ -2021,9 +2355,10 @@
 (define (check-request-component-conflicts requests)
   (define keys
     (for*/list ([request (in-list requests)]
+                [target-id (in-list (animation-request-affected-ids request))]
                 [component
                  (in-list (animation-request-components request))])
-      (cons (animation-request-target-id request)
+      (cons target-id
             component)))
   (define duplicate-key
     (find-duplicate-key keys))
@@ -2033,6 +2368,16 @@
      "two simultaneous animations target the same animation component"
      "target-id" (car duplicate-key)
      "component" (cdr duplicate-key))))
+
+; animation-request-affected-ids : animation-request? -> (listof symbol?)
+;; Most requests change one identity. Shape replacement also reserves the
+;; destination identity, which prevents a simultaneous introduction or a second
+;; replacement from silently colliding at the clip boundary.
+(define (animation-request-affected-ids request)
+  (if (transform-shape-request? request)
+      (list (transform-shape-request-source-id request)
+            (visual-id (transform-shape-request-destination request)))
+      (list (animation-request-target-id request))))
 
 ; find-duplicate-key : list? -> any/c
 ;;   Returns the first duplicate key or #f when all keys are distinct.
@@ -2073,6 +2418,7 @@
       (morph-to-mixed-compound-aligned-request? value)
       (morph-to-topology-changing-request? value)
       (morph-to-compound-aligned-request? value)
+      (transform-shape-request? value)
       (transform-from-copy-request? value)
       (attention-request? value)
       (transform-formula-parts-request? value)
@@ -2150,6 +2496,8 @@
      (morph-to-topology-changing-request-target-id request)]
     [(morph-to-compound-aligned-request? request)
      (morph-to-compound-aligned-request-target-id request)]
+    [(transform-shape-request? request)
+     (transform-shape-request-source-id request)]
     [(transform-from-copy-request? request)
      (visual-id (transform-from-copy-request-destination request))]
     [(attention-request? request)
@@ -2210,6 +2558,9 @@
          (morph-to-topology-changing-request? request)
          (morph-to-compound-aligned-request? request))
      '(path-geometry)]
+    [(transform-shape-request? request)
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts presence)]
     [(transform-from-copy-request? request)
      '(presence)]
     [(attention-request? request)
@@ -2287,8 +2638,16 @@
      write-scene-rate-func))
   (define eased-progress
     (clamp-unit (easing (clamp-unit progress))))
+  ;; Attention is a derived overlay, not a semantic update to its target.
+  ;; Sampling it after all ordinary components makes simultaneous motion and
+  ;; resizing order-independent while retaining its frontmost draw position.
+  (define ordered-animations
+    (append
+     (filter (lambda (animation) (not (attention-animation? animation)))
+             animations)
+     (filter attention-animation? animations)))
   (for/fold ([sampled-state state])
-            ([animation (in-list animations)])
+            ([animation (in-list ordered-animations)])
     ;; Write samples need the raw clip clock.  Their per-leaf rate function is
     ;; applied only after staggering, which matches Manim's `get_sub_alpha`.
     ;; All historical animation kinds keep the shared eased progress exactly.
@@ -2316,6 +2675,7 @@
       (opacity-animation? value)
       (path-morph-animation? value)
       (normalized-path-morph-animation? value)
+      (transform-shape-animation? value)
       (transform-from-copy-animation? value)
       (attention-animation? value)
       (formula-parts-transform-animation? value)
@@ -2352,6 +2712,8 @@
      (apply-path-morph-animation state animation progress)]
     [(normalized-path-morph-animation? animation)
      (apply-normalized-path-morph-animation state animation progress)]
+    [(transform-shape-animation? animation)
+     (apply-transform-shape-animation state animation progress)]
     [(transform-from-copy-animation? animation)
      (apply-transform-from-copy-animation state animation progress)]
     [(attention-animation? animation)
@@ -2649,6 +3011,92 @@
    id
    (path-visual-with-path visual path)))
 
+; apply-transform-shape-animation : scene-state? transform-shape-animation?
+;                                    finite-real? -> scene-state?
+;; Hides the structural source only for interior samples and paints a temporary
+;; pair of layers in front of the scene. Two styled layers make paint changes
+;; cross-fade while their shared outline performs the geometric morph.
+(define (apply-transform-shape-animation state animation progress)
+  (define overlay-id
+    (transform-shape-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(or (zero? progress) (= progress 1))
+     without-prior-overlay]
+    [else
+     (define source
+       (transform-shape-animation-source animation))
+     (define destination
+       (transform-shape-animation-destination animation))
+     (define-values (source-layer destination-layer)
+       (if (transform-shape-animation-normalized-source animation)
+           (transform-shape-morph-layers animation progress)
+           (values source destination)))
+     (define hidden-source-state
+       (scene-state-update
+        without-prior-overlay
+        (transform-shape-animation-source-id animation)
+        (visual-with-opacity source 0)))
+     (scene-state-add
+      hidden-source-state
+      (group
+       (list
+        (transient-visual
+         (copy-overlay-child-id overlay-id 'source)
+         (visual-with-opacity
+          source-layer
+          (* (visual-opacity source-layer) (- 1 progress))))
+        (transient-visual
+         (copy-overlay-child-id overlay-id 'destination)
+         (visual-with-opacity
+          destination-layer
+          (* (visual-opacity destination-layer) progress))))
+       #:id overlay-id))]))
+
+; transform-shape-morph-layers : transform-shape-animation? finite-real?
+;                                -> (values path-visual? path-visual?)
+;; Samples one shared geometry but preserves the endpoint styles in separate
+;; alpha layers. The structural endpoint remains the caller's exact destination
+;; Visual, rather than a normalised path proxy.
+(define (transform-shape-morph-layers animation progress)
+  (define source
+    (transform-shape-animation-source animation))
+  (define destination
+    (transform-shape-animation-destination animation))
+  (define source-proxy
+    (transform-shape-path-proxy source))
+  (define destination-proxy
+    (transform-shape-path-proxy destination))
+  ;; The compiler only constructs geometric animations after both conversions
+  ;; have succeeded. Retain an explicit check here so a malformed compiled
+  ;; value cannot yield a renderer-specific failure.
+  (unless (and source-proxy destination-proxy)
+    (raise-arguments-error
+     'transform-shape
+     "compiled geometric path proxies"
+     "source" source
+     "destination" destination))
+  (define geometry
+    (path-geometry-lerp
+     (transform-shape-animation-normalized-source animation)
+     (transform-shape-animation-normalized-destination animation)
+     progress))
+  (define transform
+    (affine-transform-lerp
+     (visual-transform source-proxy)
+     (visual-transform destination-proxy)
+     progress))
+  (values
+   (visual-with-transform
+    (path-visual-with-path source-proxy geometry)
+    transform)
+   (visual-with-transform
+    (path-visual-with-path destination-proxy geometry)
+    transform)))
+
 ; apply-transform-from-copy-animation : scene-state?
 ;                                       transform-from-copy-animation?
 ;                                       finite-real? -> scene-state?
@@ -2709,9 +3157,9 @@
 
 ; apply-attention-animation : scene-state? attention-animation? finite-real?
 ;                            -> scene-state?
-;; Adds the measured emphasis outline for interior samples only.  Keeping it
-;; outside the target Visual makes attention safe to combine with motion and
-;; formula transitions in the same clip.
+;; Adds an emphasis outline measured from the fully sampled target for interior
+;; samples only. Keeping it outside the target Visual makes attention safe to
+;; combine with motion, resizing, and formula transitions in the same clip.
 (define (apply-attention-animation state animation progress)
   (define overlay-id
     (attention-animation-overlay-id animation))
@@ -2723,8 +3171,22 @@
     [(or (zero? progress) (= progress 1))
      without-prior-overlay]
     [else
+     (define target-path
+       (attention-animation-target-path animation))
+     (unless (scene-state-has? without-prior-overlay target-path)
+       (raise-arguments-error
+        'attention
+        "a target Visual present at its requested path while sampled"
+        "target-path" target-path))
+     (define target
+       (scene-state-resolved-world-ref without-prior-overlay target-path))
      (define outline
-       (attention-animation-visual animation))
+       (make-attention-outline
+        overlay-id
+        (renderer-layout-box target)
+        (attention-animation-padding animation)
+        (attention-animation-color animation)
+        (attention-animation-stroke-width animation)))
      (define sampled
        (case (attention-animation-kind animation)
          [(circumscribe)
@@ -3196,6 +3658,20 @@
        'scene-play
        visual
        (opacity-animation-to animation)))]
+    [(transform-shape-animation? animation)
+     (define cleaned-state
+       (if (scene-state-has?
+            state
+            (transform-shape-animation-overlay-id animation))
+           (scene-state-remove
+            state
+            (transform-shape-animation-overlay-id animation))
+           state))
+     (scene-state-add
+      (scene-state-remove
+       cleaned-state
+       (transform-shape-animation-source-id animation))
+      (transform-shape-animation-destination animation))]
     [(transform-from-copy-animation? animation)
      (define cleaned-state
        (if (scene-state-has?
@@ -3760,14 +4236,19 @@
 
 ; anchor-formula-correspondence : formula-assembly-visual? formula-correspondence?
 ;                                 (or/c #f formula-part-match?)
+;                                 (listof formula-part-match?)
 ;                                 -> formula-correspondence?
 ;;   Translates the complete destination layout so an anchor pair coincides
 ;;   with the current formula at clip compilation. Keeping this late makes a
 ;;   rewrite reliable after earlier transitions have repositioned the formula.
-(define (anchor-formula-correspondence current-source correspondence anchor)
-  (cond
-    [(not anchor) correspondence]
-    [else
+;;   Explicit stationary pairs then retain their own current transforms, which
+;;   lets more than one formula part remain fixed when the target layout calls
+;;   for a different local spacing.
+(define (anchor-formula-correspondence current-source correspondence anchor stationary)
+  (define anchored-correspondence
+    (cond
+      [(not anchor) correspondence]
+      [else
      (define destination
        (formula-correspondence-destination correspondence))
      (define source-anchor
@@ -3796,6 +4277,35 @@
       (formula-correspondence-source correspondence)
       anchored-destination
       (formula-correspondence-matches correspondence))]))
+  (if (null? stationary)
+      anchored-correspondence
+      (let* ([destination
+              (formula-correspondence-destination anchored-correspondence)]
+             [stationary-by-destination
+              (for/hash ([match (in-list stationary)])
+                (values (formula-part-match-destination-name match) match))]
+             [fixed-destination
+              (formula-assembly-visual-with-parts
+               destination
+               (for/list ([part (in-list (formula-assembly-visual-parts destination))])
+                 (define match
+                   (hash-ref stationary-by-destination (formula-part-name part) #f))
+                 (if match
+                     (let ([current-formula
+                            (formula-part-formula
+                             (formula-assembly-visual-ref
+                              current-source
+                              (formula-part-match-source-name match)))])
+                       (formula-part
+                        (formula-part-name part)
+                        (visual-with-transform
+                         (formula-part-formula part)
+                         (visual-transform current-formula))))
+                     part)))])
+        (formula-correspondence
+         (formula-correspondence-source anchored-correspondence)
+         fixed-destination
+         (formula-correspondence-matches anchored-correspondence)))))
 
 ; check-path-morph-request-arguments : symbol? any/c any/c -> void?
 ;;   Validates one public path-morph request constructor call.

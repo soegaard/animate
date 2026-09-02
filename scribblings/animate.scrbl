@@ -16,10 +16,20 @@
 Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
 semantic scene data separate from Pict rendering and file output.
 
-The public API in this manual is version @tt{0.70.0}. This is still a
+The public API in this manual is version @tt{0.86.0}. This is still a
 prototype, so later versions may change names or behavior.
 
 @table-of-contents[]
+
+@section[#:tag "package-source"]{Source Package Hygiene}
+
+The package is distributed as source. Create a clean source archive from a
+checkout with @tt{raco pkg create --source .}. Its @filepath{info.rkt}
+configuration omits local @filepath{tmp} experiments, generated rendered videos,
+compiled artifacts, and Finder metadata. The optional Rhombus examples remain
+in the source archive for reference, but @tt{compile-omit-paths} keeps them
+out of normal Racket compilation. This manual is source-only: the package does
+not register or build it automatically during installation.
 
 @section[#:tag "quick-start"]{Quick Start}
 
@@ -223,6 +233,12 @@ real-match penalties keyed by original source/destination index pairs.
 equal-count closed subpaths and applies the same loop alignment within every
 pair. @racket[create] and @racket[uncreate] animate semantic partial paths. None of
 these operations animate a finished Pict.
+
+@racket[transform-shape] is the higher-level replacement operation for ordinary
+diagram shapes. It changes a present top-level Visual into a fresh destination
+Visual. Atomic built-in paths, circles, and rectangles use automatic outline
+correspondence; groups and other endpoint types use an intentional cross-fade
+fallback rather than claiming a contour correspondence they do not have.
 
 @subsection{Arrows and Cartesian Axes}
 
@@ -1769,8 +1785,9 @@ Returns @racket[#t] when @racket[value] is a request created by
 
 Returns @racket[#t] when @racket[value] is a camera-fit request created
 by @racket[camera-fit-layout-box], @racket[camera-fit-visuals], or
-@racket[camera-fit-scene]. A fit request changes camera center and visible world
-width together. It therefore reserves both camera components in one play clip.
+@racket[camera-fit-scene], including the @racket[camera-focus] specialization.
+A fit request changes camera center and visible world width together. It
+therefore reserves both camera components in one play clip.
 }
 
 @defproc[(camera-fit-layout-box
@@ -1838,7 +1855,7 @@ measurement camera that describe the intended view as closely as possible.
           [#:targets targets
                      (or/c false/c
                            (and/c pair?
-                                  (listof (or/c visual? symbol?))))
+                                  (listof (or/c visual? symbol? visual-path?))))
                      #f]
           [#:renderers renderers
                        pict-renderer-list?
@@ -1852,16 +1869,46 @@ Creates a fit request from @racket[scene]'s current endpoint state and current
 camera. When @racket[targets] is @racket[#f], all current top-level
 @emph{world-space} Visuals are measured in back-to-front order; frame-space
 overlays and callouts are ignored. Otherwise, @racket[targets] must be a
-nonempty list of Visual values or symbols, and every resolved target must be a
-world-space Visual. Each target is resolved by stable identity
-against @racket[(scene-current-state scene)], so a stale constructor value still
-selects the current scene value. SCENE-AW derived definitions are additionally
-evaluated against the current endpoint scalar values before measurement.
+nonempty list of Visual values, symbols, or explicit nonempty Visual paths, and
+every resolved target must be a world-space Visual. A top-level target is
+resolved by stable identity against @racket[(scene-current-state scene)], so a
+stale constructor value still selects the current scene value. A nested path is
+resolved with every enclosing group/formula transform and opacity composed into
+an independently measurable world-space Visual. SCENE-AW derived definitions
+are additionally evaluated against the current endpoint scalar values before
+measurement.
 
 A scene with no world-space Visuals, an empty target list, a missing target, or
-an explicitly selected frame-space target raises an exception. Nested group
-children are not searched. The result is a snapshot of the current endpoint
-state and does not follow later scene changes.
+an explicitly selected frame-space target raises an exception. The result is a
+snapshot of the current endpoint state and does not follow later scene changes.
+}
+
+@defproc[(camera-focus
+          [scene scene?]
+          [focus (or/c visual? symbol? visual-path?)]
+          [#:context context
+                     (listof (or/c visual? symbol? visual-path?))
+                     '()]
+          [#:renderers renderers
+                       pict-renderer-list?
+                       default-pict-renderers]
+          [#:padding padding
+                     (and/c finite-real? (>=/c 0))
+                     1/2])
+         camera-fit-request?]{
+
+Creates a renderer-aware fit around one explanatory subject and zero or more
+explicit context Visuals. @racket[focus] and every value in @racket[context]
+may be a current top-level Visual, its symbol identity, or an explicit nested
+Visual path. The request is equivalent to a @racket[camera-fit-scene] selection
+whose first target is the focus, but its named @racket[#:context] argument makes
+the pedagogical framing decision clear at the call site.
+
+All selected targets are measured in fully composed world coordinates. This
+makes an imported SVG element or formula/group child a useful focus subject
+without rebuilding its parent. Frame-space targets are rejected. The request is
+a current-scene snapshot: it does not choose context automatically, remeasure
+during the clip, or live-follow later subject/context motion.
 }
 
 @section[#:tag "frame-space"]{Frame-Space Overlays and Callouts}
@@ -1945,12 +1992,17 @@ not a scene-state child and cannot be targeted directly while it is wrapped.
 
 @defproc[(callout
           [content visual?]
-          [target (or/c visual? symbol? vec2?)]
+          [target (or/c visual? symbol? visual-path? vec2?)]
           [#:camera camera camera? default-camera]
           [#:at position (or/c vec2? false/c) #f]
           [#:rotation rotation finite-real? 0]
           [#:scale scale scale-factor? 1]
           [#:opacity opacity opacity? 1]
+          [#:target-anchor target-anchor
+                           (or/c 'bottom-left 'bottom 'bottom-right
+                                 'left 'center 'right
+                                 'top-left 'top 'top-right)
+                           'center]
           [#:connector-stroke connector-stroke any/c "black"]
           [#:connector-width connector-width
                              (and/c finite-real? (>=/c 0))
@@ -1960,21 +2012,27 @@ not a scene-state child and cannot be targeted directly while it is wrapped.
 Creates a fixed frame-space annotation with a leader line to a world-space
 target. The frame placement and outer transform use the same semantics as
 @racket[fixed-in-frame]. A Visual target is stored by stable identity. A symbol
-is already a target identity. A @racket[vec2] is a fixed world-space point.
+is already a top-level target identity, and a nonempty @racket[visual-path?]
+selects a built-in group/formula descendant. A @racket[vec2] is a fixed
+world-space point.
 
-Symbol targets are resolved against each sampled top-level scene state when a
-complete scene is converted to a Pict. This makes the connector follow ordinary
-movement of the target without adding observer state to the timeline. SCENE-AW
-derived targets are resolved from the same sampled scalar state before their
-world position is read. The resolved Visual must exist at top level and must
-belong to world space. A
-missing target or a frame-space target raises an exception at scene rendering.
+Visual-path targets are resolved against each sampled scene state when a
+complete scene is converted to a Pict. A nested result has every enclosing
+group/formula transform and opacity composed before its world position is read.
+This makes the connector follow ordinary movement of a target or its parent
+without adding observer state to the timeline. SCENE-AW derived targets are
+resolved from the same sampled scalar state. The resolved Visual must belong to
+world space. A missing target or a frame-space target raises an exception at
+scene rendering.
 
 The connector is drawn beneath the annotation from the target's current world
-pixel position to the edge of the complete annotation Pict box. Its width is a
-cosmetic pixel width. A false @racket[connector-stroke] or a zero
-@racket[connector-width] suppresses the line. The callout's outer opacity also
-applies to the connector.
+pixel position to the edge of the complete annotation Pict box. For a Visual
+target, @racket[target-anchor] selects the target's live renderer-box center,
+edge, or corner; it is measured as each scene sample is rendered, so it follows
+target size changes as well as movement. A literal @racket[vec2] target accepts
+only the default @racket['center] anchor. Its width is a cosmetic pixel width.
+A false @racket[connector-stroke] or a zero @racket[connector-width] suppresses
+the line. The callout's outer opacity also applies to the connector.
 
 @racket[visual->pict] on a callout returns only its local annotation Pict,
 because resolving a symbolic connector target requires a complete sampled scene
@@ -1993,11 +2051,16 @@ Returns the semantic annotation content stored by @racket[visual].
 }
 
 @defproc[(callout-visual-target [visual callout-visual?])
-         (or/c symbol? vec2?)]{
+         (or/c symbol? visual-path? vec2?)]{
 
 Returns the normalized callout target. Visual-valued constructor targets appear
-here as their stable symbol identity; fixed world points remain @racket[vec2]
-values.
+here as their stable symbol identity; an explicit nested path is preserved;
+fixed world points remain @racket[vec2] values.
+}
+
+@defproc[(callout-visual-target-anchor [visual callout-visual?]) symbol?]{
+
+Returns the selected live renderer-box anchor for a Visual target.
 }
 
 @defproc[(callout-visual-connector-stroke [visual callout-visual?]) any/c]{
@@ -3118,6 +3181,9 @@ should be paired.
           [destination formula-assembly-visual?]
           [#:anchor anchor (or/c symbol? formula-part-match?)]
           [#:matches matches (listof formula-part-match?) '()]
+          [#:stationary stationary
+                        (listof (or/c symbol? formula-part-match?))
+                        '()]
           [#:path-arc path-arc finite-real? 0]
           [#:part-paths part-paths (listof formula-part-path?) '()]
           [#:copies copies (listof formula-part-copy?) '()]
@@ -3134,9 +3200,16 @@ destination layout so the destination anchor coincides with the corresponding
 part in the @italic{current} source formula. Consequently, a sequence of
 rewrites keeps the anchor fixed even when the formula values passed as earlier
 templates were constructed at their own default positions. The translation
-preserves the target formula's TeX spacing and baselines. It does not pin any
-other term, infer an algebraic operation, or make several independent anchors
-stationary.
+preserves the target formula's TeX spacing and baselines.
+
+Each @racket[stationary] entry names an additional matched pair: a symbol means
+the same source and destination part name, while a @racket[formula-part-match]
+permits different names. The pair is made explicit, and at clip compilation
+the destination fragment receives the current source fragment's exact affine
+transform. Thus several selected terms can remain fixed even if the rest of the
+destination layout moves or reflows. This is an explicit presentation choice;
+it does not infer which terms should remain still or maintain a general layout
+constraint between them.
 
 The remaining keywords have the same meaning as in
 @racket[transform-matching-formula]: explicit matches take priority, routes and
@@ -3144,6 +3217,73 @@ copies select intentional term motion, and @racket['fade-transform] cross-fades
 remaining unmatched parts while moving them. Like the lower-level operation,
 this is whole-fragment correspondence rather than TeX parsing or glyph-outline
 morphing.
+}
+
+@defproc[(formula-step
+          [destination formula-assembly-visual?]
+          [#:anchor anchor (or/c false/c symbol? formula-part-match?) #f]
+          [#:stationary stationary
+                        (listof (or/c symbol? formula-part-match?))
+                        '()]
+          [#:matches matches (listof formula-part-match?) '()]
+          [#:path-arc path-arc finite-real? 0]
+          [#:part-paths part-paths (listof formula-part-path?) '()]
+          [#:copies copies (listof formula-part-copy?) '()]
+          [#:mismatch-mode mismatch-mode (or/c 'fade 'fade-transform) 'fade]
+          [#:duration duration (and/c finite-real? positive?) 1]
+          [#:pause pause (and/c finite-real? (>=/c 0)) 1/2]
+          [#:explanation explanation (or/c false/c string?) #f])
+         formula-derivation-step?]{
+
+Describes one explicit rewrite endpoint for @racket[formula-derivation]. The
+destination and rewrite keywords have the same meanings as @racket[rewrite-formula].
+@racket[pause] is the amount of time to hold the optional explanation before
+this step's transition begins. An explanation must be one line of plain text.
+
+@racket[anchor] defaults to @racket[#f], which means that the derivation's
+shared anchor is used. A step can override it with a same-name symbol or an
+explicit @racket[formula-part-match]. @racket[stationary] has the same meaning
+as in @racket[rewrite-formula] and makes additional matched parts fixed for
+this one step. This data does not claim that the rewrite is algebraically valid;
+it records the author's chosen presentation.
+}
+
+@defproc[(formula-derivation-step? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] was created by @racket[formula-step].
+}
+
+@defproc[(formula-derivation
+          [scene scene?]
+          [initial formula-assembly-visual?]
+          [#:anchor anchor (or/c symbol? formula-part-match?)]
+          [#:steps steps (listof formula-derivation-step?)]
+          [#:explanation-position explanation-position
+                                  (or/c false/c vec2?)
+                                  #f]
+          [#:explanation-id explanation-id symbol? 'derivation-note]
+          [#:explanation-font-size explanation-font-size
+                                    (and/c finite-real? positive?)
+                                    1/4]
+          [#:explanation-color explanation-color any/c "darkslategray"])
+         scene?]{
+
+Appends an ordered derivation to @racket[scene]. @racket[initial] must already
+be present in the scene under its formula identity. For each @racket[steps]
+entry, the builder first replaces its own optional explanation label, waits for
+that step's @racket[pause], and then appends a @racket[rewrite-formula] clip
+with the requested duration and correspondence options. The resulting endpoint
+becomes the construction template for the next step, while every rewrite still
+resolves its anchor from the current sampled scene formula.
+
+When any step has an explanation, supply @racket[explanation-position]. The
+builder creates plain text with @racket[explanation-id], which must be absent
+from the initial scene. Later explanations replace only that generated Visual.
+The final explanation remains visible unless a later step omits it.
+
+This is immutable convenience syntax over existing scene and formula APIs. It
+does not parse TeX, infer operations, prove a derivation, choose matches/routes,
+or automatically lay out the explanation.
 }
 
 @subsection[#:tag "formula-parts"]{Named Formula Parts and Correspondence}
@@ -4624,14 +4764,35 @@ Presence lookup does not force a derived dependency to resolve.
          visual?]{
 Returns the concrete Visual identified by @racket[id] in the same sampled
 immutable state. @racket[id] may be a top-level symbol or a nested path.
-Ordinary Visuals return directly. Derived Visuals resolve recursively and may
-themselves read scalar or Visual dependencies. Lookup is independent of drawing
-order.
+Ordinary top-level Visuals return directly. A nested result composes every
+enclosing built-in group/formula transform and opacity into world coordinates,
+so its @racket[visual-position] is suitable for a separate top-level dependent.
+Derived Visuals resolve recursively and may themselves read scalar or Visual
+dependencies. Lookup is independent of drawing order.
 
 Self-dependencies and longer cycles raise an exception identifying a derived
 Visual dependency cycle. Successfully resolved dependencies are memoized only
 within the current resolution traversal; no concrete result replaces the
 persistent derived definition in scene state.
+}
+
+@defproc[(attach-to
+          [content visual?]
+          [target (or/c visual? symbol? visual-path?)]
+          [#:offset offset vec2? origin])
+         derived-visual?]{
+
+Creates one world-space derived Visual whose reference position is the sampled
+world-space reference position of @racket[target] plus @racket[offset].
+@racket[target] may be a top-level Visual, its symbol identity, or a nested
+built-in group/formula path. It is looked up anew at every scene sample, so the
+attachment follows target motion and enclosing parent transforms.
+
+The content must be a concrete, non-frame-space Visual. The result is a derived
+Visual and therefore cannot be animated directly; animate the target or the
+ordinary inputs that drive it. This API follows only a reference point. It does
+not measure render-box edges, rotate content with the target, avoid collisions,
+or create an automatic constraint solver.
 }
 
 @section[#:tag "scene-state"]{Scene States}
@@ -5474,6 +5635,63 @@ or @racket[uncreate] on the same target.
 
 Returns @racket[#t] when @racket[value] is a request created by
 @racket[morph-to-compound-aligned].
+}
+
+@defproc[(transform-shape
+          [source (or/c visual? symbol?)]
+          [destination (and/c visual? affine-visual? opacity-visual?)]
+          [#:mode mode (or/c 'auto 'morph 'cross-fade) 'auto]
+          [#:correspondence correspondence (or/c 'auto 'perimeter 'path) 'auto]
+          [#:allow-reverse? allow-reverse? boolean? #t]
+          [#:sample-count sample-count
+                          (and/c exact-integer? (>=/c 8))
+                          64])
+         transform-shape-request?]{
+
+Replaces the present top-level Visual named by @racket[source] with the fresh
+top-level @racket[destination]. The source and destination identities must be
+distinct; the source must be present, and the destination identity must be
+absent, when @racket[scene-play] compiles the request. Both endpoints require
+affine placement and global opacity. A nested @racket[visual-path?] is not
+accepted because this operation removes the source structural identity at the
+clip boundary.
+
+The default @racket['auto] first tries a geometric transition when each endpoint
+is one built-in @racket[path-visual?], @racket[circle-visual?], or
+@racket[rectangle-visual?]. Circle/rectangle pairs use a canonical
+eight-segment perimeter: both start at their right midpoint and correspond at
+the cardinal and diagonal positions. This produces an evenly rounded
+square-to-circle interior. Pass @racket['perimeter] to require that primitive
+correspondence, or @racket['path] to use only the general stored-path policy.
+Other geometric pairs use automatic topology-class pairing, including
+closed-loop phase/direction and open-path direction; when counts differ, they
+try deterministic birth/death preparation. The source and destination styles
+are alpha layers over the same intermediate outline, so a fill/stroke change
+fades naturally while the geometry moves. Their transforms are interpolated too.
+
+If either endpoint is a group, image, text, formula, SVG tree, custom Visual,
+or atomic geometry that cannot be prepared safely, @racket['auto] keeps the
+exact endpoint trees and cross-fades them at their own positions. This is a
+deliberate graceful fallback: it does not flatten a group or manufacture a
+semantic mapping between its children. @racket['morph] requires the geometric
+case and raises an exception otherwise. @racket['cross-fade] always selects the
+fallback and ignores the correspondence controls.
+
+At exact start, the source is unchanged. At interior samples it is hidden and a
+temporary frontmost layer is drawn. At structural completion, regardless of the
+easing result, the source is removed and the exact caller-supplied destination
+Visual is installed. Temporary path conversions and normalized outlines are
+therefore never retained in later clips.
+
+The operation reserves all ordinary Visual components and presence for both
+source and destination identities. It cannot be combined in one play clip with
+another animation of either endpoint.
+}
+
+@defproc[(transform-shape-request? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a request created by
+@racket[transform-shape].
 }
 
 @defproc[(transform-formula-parts
@@ -6676,6 +6894,31 @@ Returns @racket[(- (layout-box-top box) (layout-box-bottom box))].
 Returns the midpoint of @racket[box].
 }
 
+@defproc[(layout-box-anchor? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is one of the nine canonical
+render-box anchors:
+
+@racketblock[
+'bottom-left  'bottom  'bottom-right
+'left         'center  'right
+'top-left     'top     'top-right
+]
+
+These names select both coordinates at once. They are distinct from the
+one-axis alignment predicates and intentionally do not infer a baseline from a
+renderer.
+}
+
+@defproc[(layout-box-anchor [box layout-box?]
+                            [anchor layout-box-anchor?])
+         vec2?]{
+
+Returns the point selected by @racket[anchor] in @racket[box]'s containing
+coordinate system. For example, @racket['top-right] gives
+@racket[(vec2 (layout-box-right box) (layout-box-top box))].
+}
+
 @defproc[(visual-layout-box
           [visual visual?]
           [#:camera camera camera? default-camera]
@@ -6703,6 +6946,20 @@ This procedure can perform adapter effects. In particular, measuring a nonempty
 formula through the built-in formula renderer can run TeX.
 }
 
+@defproc[(visual-layout-anchor
+          [visual visual?]
+          [anchor layout-box-anchor?]
+          [#:camera camera camera? default-camera]
+          [#:renderers renderers
+                       pict-renderer-list?
+                       default-pict-renderers])
+         vec2?]{
+
+Measures @racket[visual] as @racket[visual-layout-box] would and returns the
+selected canonical anchor. The result is in the Visual's containing world or
+frame coordinate system.
+}
+
 @defproc[(visuals-layout-box
           [visuals (listof visual?)]
           [#:camera camera camera? default-camera]
@@ -6718,6 +6975,39 @@ an empty list.
 The camera and renderer list are validated even for an empty list. Every
 nonempty Visual is measured with @racket[visual-layout-box] using the supplied
 context.
+}
+
+@defproc[(visual-place-at
+          [visual visual?]
+          [position vec2?]
+          [#:anchor anchor layout-box-anchor? 'center]
+          [#:camera camera camera? default-camera]
+          [#:renderers renderers
+                       pict-renderer-list?
+                       default-pict-renderers])
+         visual?]{
+
+Returns an immutable copy of @racket[visual] whose measured @racket[anchor] is
+exactly @racket[position]. The default moves its render-box center. Identity,
+appearance, and all transform components other than translation are preserved.
+}
+
+@defproc[(visual-align-to
+          [visual visual?]
+          [reference visual?]
+          [#:anchor anchor layout-box-anchor? 'center]
+          [#:reference-anchor reference-anchor layout-box-anchor? anchor]
+          [#:camera camera camera? default-camera]
+          [#:renderers renderers
+                       pict-renderer-list?
+                       default-pict-renderers])
+         visual?]{
+
+Returns an immutable copy of @racket[visual] whose selected @racket[anchor]
+equals @racket[reference]'s selected @racket[reference-anchor]. The default
+aligns centers. Both Visuals must be measured in compatible world or frame
+coordinate systems. This is a compile-time layout calculation, not a live
+constraint: later animation of either Visual does not update the returned one.
 }
 
 @defproc[(visual-align-horizontal
@@ -6941,6 +7231,55 @@ union box:
 The example adds three quarters of a world unit on every side. The background
 is first in the group child list, so it is painted behind the content.
 
+
+@section[#:tag "attention"]{Temporary Attention Effects}
+
+@defproc[(circumscribe
+          [target (or/c visual? symbol? visual-path?)]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/5]
+          [#:color color any/c "gold"]
+          [#:stroke-width stroke-width
+                          (and/c finite-real? (>=/c 0))
+                          3])
+         circumscribe-request?]{
+
+Creates a temporary rounded outline that draws, holds, and erases over one
+play clip. @racket[target] may be a top-level Visual/id or an explicit nested
+built-in group/formula path. At every interior sample, its resolved world-space
+Visual is measured through the ordinary renderer; the outline consequently
+follows simultaneous target translation, rotation, scale, and formula-layout
+changes regardless of request order in the play clip.
+
+The outline does not mutate the target and is absent at both structural clip
+endpoints. It measures a renderer box rather than visible glyph contours, and
+does not respond to camera or renderer changes within the same clip.
+}
+
+@defproc[(circumscribe-request? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a request created by
+@racket[circumscribe].
+}
+
+@defproc[(indicate
+          [target (or/c visual? symbol? visual-path?)]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/5]
+          [#:color color any/c "gold"]
+          [#:stroke-width stroke-width
+                          (and/c finite-real? (>=/c 0))
+                          3])
+         indicate-request?]{
+
+Creates a temporary rounded outline that pulses once over one play clip. Target
+resolution, renderer-aware nested live measurement, and endpoint behavior are
+the same as @racket[circumscribe].
+}
+
+@defproc[(indicate-request? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a request created by
+@racket[indicate].
+}
 
 @section[#:tag "rendering"]{Pict, Bitmap, and Frame Conversion}
 
@@ -7712,9 +8051,11 @@ The current scene can be fitted directly:
 With no @racket[#:targets], every current top-level world-space Visual is
 included and frame-space overlays are ignored. Otherwise, each Visual value or
 symbol is resolved by stable identity against @racket[(scene-current-state
-scene)]. Nested group children are not searched. An empty world scene, empty
+scene)]. An explicit nested @racket[visual-path?] is also accepted and measured
+after every enclosing transform/opacity is composed. An empty world scene, empty
 target list, missing target, or explicitly selected frame-space target raises an
-exception.
+exception. For a focused explanation, @racket[camera-focus] names one nested or
+top-level subject and its chosen context directly.
 
 Both operations are snapshots. Geometry, transforms, text metrics, renderer
 results, or scene membership changed later in the same play clip are not
@@ -9462,6 +9803,45 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.86.0 — SCENE-CL.} Added @racket[#:stationary] to
+       @racket[rewrite-formula] and @racket[formula-step]. Extra explicit
+       matches retain their current transforms, supplementing the primary
+       anchored destination translation in a narrated derivation.}
+ @item{@bold{0.85.0 — SCENE-CK.} Made @racket[circumscribe] and
+       @racket[indicate] measure their target from the sampled scene state.
+       Added @racket[#:target-anchor] to @racket[callout] for live rendered-box
+       edge and corner leaders.}
+ @item{@bold{0.84.0 — SCENE-CJ.} Added canonical eight-segment perimeter
+       correspondence for circle/rectangle @racket[transform-shape] pairs,
+       producing symmetric square-to-circle interiors.}
+ @item{@bold{0.83.0 — SCENE-CI.} Added source-package omission metadata, so
+       @tt{raco pkg create --source} excludes generated renders, local
+       experiments, compiled artifacts, and Finder metadata while retaining the
+       compile-omitted Rhombus examples as source.}
+ @item{@bold{0.82.0 — SCENE-CH.} Added @racket[camera-focus] for a nested or
+       top-level explanatory subject plus explicit contextual targets. Extended
+       @racket[camera-fit-scene] target selection to nested Visual paths using
+       fully composed world-space renderer measurement.}
+ @item{@bold{0.81.0 — SCENE-CG.} Added @racket[transform-shape], a safe
+       top-level Visual replacement transition. Atomic path/circle/rectangle
+       pairs use automatic outline correspondence and exact destination
+       restoration; unsupported or composite endpoints deliberately cross-fade.}
+ @item{@bold{0.80.0 — SCENE-CF.} Added explicit @racket[formula-step] values
+       and @racket[formula-derivation], which sequence anchored formula
+       rewrites with optional explanatory pre-transition pauses. The author
+       still supplies all algebra, endpoints, and matching choices.}
+ @item{@bold{0.79.0 — SCENE-CE.} Extended @racket[circumscribe] and
+       @racket[indicate] to nested Visual paths. SCENE-CK later made their
+       renderer-measured outlines live within the same play clip.}
+ @item{@bold{0.78.0 — SCENE-CD.} Added @racket[attach-to] for sampled
+       world-space following of a top-level or nested Visual path. Nested
+       derived dependencies now compose enclosing transforms, and
+       @racket[callout] leaders accept the same paths.}
+ @item{@bold{0.77.0 — SCENE-CC.} Added the common nine-point render-box anchor
+       vocabulary with @racket[layout-box-anchor], @racket[visual-layout-anchor],
+       @racket[visual-place-at], and @racket[visual-align-to]. These are
+       renderer-aware, immutable layout calculations rather than live
+       constraints.}
  @item{@bold{0.76.0 — SCENE-CB.} Extended
        @racket[transform-from-copy] to accept a nested Visual path through
        built-in groups/formula assemblies. The selected source is frozen with

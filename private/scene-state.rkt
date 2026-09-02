@@ -214,7 +214,7 @@
      (lambda (target)
        (scene-state-has? state target))
      (lambda (target)
-       (resolve-target target))))
+       (resolve-target-world target))))
 
   (define (resolve-id id)
     (unless (symbol? id)
@@ -252,6 +252,14 @@
      (cdr path)
      path
      'scene-state-resolved-ref))
+
+  (define (resolve-target-world target)
+    (define path
+      (visual-target-path target 'scene-state-resolved-ref))
+    (resolved-world-descendant-ref
+     (resolve-id (car path))
+     (cdr path)
+     path))
 
   resolve-target)
 

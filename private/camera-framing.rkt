@@ -29,7 +29,8 @@
 ;; Exports
 (provide camera-fit-layout-box
          camera-fit-visuals
-         camera-fit-scene)
+         camera-fit-scene
+         camera-focus)
 
 
 ;;;
@@ -121,12 +122,12 @@
 ;                    [#:targets
 ;                     (or/c false/c
 ;                           (and/c
-;                            (listof (or/c visual? symbol?))
+;                            (listof (or/c visual? symbol? visual-path?))
 ;                            pair?))]
 ;                    [#:renderers (listof pict-renderer?)]
 ;                    [#:padding nonnegative-real?]
 ;                    -> camera-fit-request?
-;;   Creates a request that fits current top-level scene targets or all Visuals.
+;;   Creates a request that fits current scene targets or all top-level Visuals.
 (define (camera-fit-scene scn
                           #:targets [targets #f]
                           #:renderers [renderers default-pict-renderers]
@@ -145,7 +146,9 @@
        (check-camera-fit-targets 'camera-fit-scene targets)
        (define resolved
          (for/list ([target (in-list targets)])
-           (scene-state-resolved-ref state target)))
+           ;; A selected descendant must be independently drawable in world
+           ;; coordinates. Top-level targets are unchanged by this resolver.
+           (scene-state-resolved-world-ref state target)))
        (for ([visual (in-list resolved)])
          (when (frame-space-visual? visual)
            (raise-arguments-error
@@ -162,6 +165,31 @@
                       #:camera (scene-current-camera scn)
                       #:renderers renderers
                       #:padding padding))
+
+; camera-focus : scene? (or/c visual? symbol? visual-path?)
+;                [#:context (listof (or/c visual? symbol? visual-path?))]
+;                [#:renderers (listof pict-renderer?)]
+;                [#:padding nonnegative-real?]
+;                -> camera-fit-request?
+;; Creates a current-state fit centered on one explanatory subject plus any
+;; explicitly selected world-space context. It is a readable specialization of
+;; camera-fit-scene for an instructional zoom; all selection is snapshot-based.
+(define (camera-focus scn focus
+                      #:context [context '()]
+                      #:renderers [renderers default-pict-renderers]
+                      #:padding [padding 1/2])
+  (check-camera-focus-target 'camera-focus focus)
+  (unless (and (list? context)
+               (andmap camera-focus-target? context))
+    (raise-argument-error
+     'camera-focus
+     "list of Visuals, symbols, or nonempty Visual paths"
+     context))
+  (camera-fit-scene
+   scn
+   #:targets (cons focus context)
+   #:renderers renderers
+   #:padding padding))
 
 
 ;;;
@@ -181,14 +209,23 @@
 (define (check-camera-fit-targets who value)
   (unless (and (list? value)
                (pair? value)
-               (andmap (lambda (target)
-                         (or (visual? target)
-                             (symbol? target)))
-                       value))
+               (andmap camera-focus-target? value))
     (raise-argument-error
      who
-     "#f or a nonempty list of Visuals or symbols"
+     "#f or a nonempty list of Visuals, symbols, or nonempty Visual paths"
      value)))
+
+(define (camera-focus-target? target)
+  (or (visual? target)
+      (symbol? target)
+      (visual-path? target)))
+
+(define (check-camera-focus-target who target)
+  (unless (camera-focus-target? target)
+    (raise-argument-error
+     who
+     "Visual, symbol, or nonempty Visual path"
+     target)))
 
 ; check-nonempty-world-visual-list : symbol? any/c -> void?
 ;;   Raises unless value is a nonempty list containing only world Visuals.

@@ -349,7 +349,7 @@
     (camera-world->pixel frame-camera
                          (visual-position callout)))
   (define target-point
-    (callout-target-world-point state callout))
+    (callout-target-world-point state callout camera renderers))
   (define-values (target-x target-y)
     (camera-world->pixel camera target-point))
   (define frame-with-connector
@@ -379,29 +379,29 @@
 ;;; Callout Connectors
 ;;;
 
-; callout-target-world-point : scene-state? callout-visual? -> vec2?
-;;   Resolves one callout target against the sampled top-level world state.
-(define (callout-target-world-point state callout)
+; callout-target-world-point : scene-state? callout-visual? camera?
+;                              (listof pict-renderer?) -> vec2?
+;;   Resolves one callout target against the sampled world state.
+(define (callout-target-world-point state callout camera renderers)
   (define target
     (callout-visual-target callout))
   (cond
-    [(vec2? target)
-     target]
+    [(vec2? target) target]
     [else
      (unless (scene-state-has? state target)
        (raise-arguments-error
         'scene-state->pict
-        "a callout target is not present as a top-level Visual"
+        "a callout target is not present at its Visual path"
         "callout-id" (visual-id callout)
-        "target-id" target))
+        "target-path" target))
      (define target-visual
-       (scene-state-resolved-ref state target))
+       (scene-state-resolved-world-ref state target))
      (when (frame-space-visual? target-visual)
        (raise-arguments-error
         'scene-state->pict
         "a callout target must belong to world space"
         "callout-id" (visual-id callout)
-        "target-id" target))
+        "target-path" target))
      (define position
        (visual-position target-visual))
      (unless (vec2? position)
@@ -409,9 +409,45 @@
         'scene-state->pict
         "a callout target must return a world-space vec2 position"
         "callout-id" (visual-id callout)
-        "target-id" target
+        "target-path" target
         "visual-position" position))
-     position]))
+     (callout-target-layout-anchor
+      target-visual
+      (callout-visual-target-anchor callout)
+      camera
+      renderers)]))
+
+; callout-target-layout-anchor : visual? symbol? camera?
+;                                (listof pict-renderer?) -> vec2?
+;; Uses the target's current rendered extent, rather than a constructor-time
+;; snapshot, so leaders can remain attached to an animated edge or corner.
+(define (callout-target-layout-anchor visual anchor camera renderers)
+  (define center
+    (visual-position visual))
+  (if (eq? anchor 'center)
+      center
+      (let* ([rendered (visual->pict visual camera #:renderers renderers)]
+             [scale (camera-scale camera)]
+             [half-width (/ (pict-width rendered) scale 2)]
+             [half-height (/ (pict-height rendered) scale 2)]
+             [left (- (vec2-x center) half-width)]
+             [right (+ (vec2-x center) half-width)]
+             [bottom (- (vec2-y center) half-height)]
+             [top (+ (vec2-y center) half-height)])
+        (case anchor
+          [(bottom-left) (vec2 left bottom)]
+          [(bottom) (vec2 (vec2-x center) bottom)]
+          [(bottom-right) (vec2 right bottom)]
+          [(left) (vec2 left (vec2-y center))]
+          [(right) (vec2 right (vec2-y center))]
+          [(top-left) (vec2 left top)]
+          [(top) (vec2 (vec2-x center) top)]
+          [(top-right) (vec2 right top)]
+          [else
+           (raise-argument-error
+            'callout-target-layout-anchor
+            "supported layout anchor"
+            anchor)]))))
 
 ; place-callout-connector-on-pict : pict? callout-visual? pict?
 ;                                   real? real? real? real? -> pict?

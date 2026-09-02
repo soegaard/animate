@@ -4,7 +4,7 @@ Rendered MP4 files live in the local sibling directory
 [`../rendered-examples/`](../rendered-examples/). They are generated artifacts
 and intentionally excluded from Git.
 
-All 65 visual examples below have been rendered locally. Temporary PNG frames
+All 67 visual examples below have been rendered locally. Temporary PNG frames
 are kept in the repository-local `tmp/` directory and discarded after encoding. The formula and full-fidelity
 SVG examples were rendered with the local Racket 9.3 runtime; the remaining
 examples use the standard Racket runtime.
@@ -112,6 +112,15 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [glyph-outline-morph](../rendered-examples/glyph-outline-morph.mp4) | **SCENE-BZ:** subtracting \(2b\) from both sides morphs a compatible \(+\) into \(-\), while newly introduced terms cross-fade. |
 | [compound-glyph-outline-morph](../rendered-examples/compound-glyph-outline-morph.mp4) | **SCENE-CA:** multiplying an inequality by \(-1\) moves terms and morphs the multi-contour \(\leq\) relation into \(\geq\). |
 | [nested-transform-from-copy](../rendered-examples/nested-transform-from-copy.mp4) | **SCENE-CB:** an independently moving copy of the imported rocket's nested window leaves the original window in place. |
+| [named-layout-anchors](../rendered-examples/named-layout-anchors.mp4) | **SCENE-CC:** one nine-point layout vocabulary positions captions at measured panel anchors. |
+| [nested-live-attachments](../rendered-examples/nested-live-attachments.mp4) | **SCENE-CD:** a badge and callout leader remain attached to a moving nested SVG window. |
+| [nested-attention](../rendered-examples/nested-attention.mp4) | **SCENE-CE:** renderer-measured outlines circumscribe and pulse a nested SVG window. |
+| [structured-formula-derivation](../rendered-examples/structured-formula-derivation.mp4) | **SCENE-CF:** an explicit three-step equation reduction pauses to explain each rewrite. |
+| [general-shape-transform](../rendered-examples/general-shape-transform.mp4) | **SCENE-CG:** a rectangle morphs into a circle, while a composite diagram uses the automatic cross-fade fallback. |
+| [explanatory-camera-focus](../rendered-examples/explanatory-camera-focus.mp4) | **SCENE-CH:** the camera frames a nested rocket window together with the explanatory note, then restores the overview. |
+| [perimeter-shape-morph](../rendered-examples/perimeter-shape-morph.mp4) | **SCENE-CJ:** matching cardinal perimeter anchors makes a square round evenly into a circle. |
+| [live-attention-follow](../rendered-examples/live-attention-follow.mp4) | **SCENE-CK:** circumscribe and a callout leader follow a card while it moves and scales. |
+| [stationary-formula-derivation](../rendered-examples/stationary-formula-derivation.mp4) | **SCENE-CL:** an anchored derivation explicitly keeps selected formula parts stationary. |
 
 ## Non-video example
 

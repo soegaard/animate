@@ -34,6 +34,7 @@
          callout-visual?
          callout-visual-content
          callout-visual-target
+         callout-visual-target-anchor
          callout-visual-connector-stroke
          callout-visual-connector-width)
 
@@ -83,7 +84,7 @@
 ;; Its containing-coordinate position is ignored during overlay rendering.
 
 (struct callout-visual
-  (id transform opacity content frame-width target connector-stroke connector-width)
+  (id transform opacity content frame-width target target-anchor connector-stroke connector-width)
   #:transparent
   #:methods gen:visual
   [(define (visual-id visual)
@@ -119,12 +120,13 @@
 ;;  - opacity           opacity?            opacity of annotation and connector.
 ;;  - content           visual?             semantic annotation content.
 ;;  - frame-width       positive real?      captured frame-space visible width.
-;;  - target            (or/c symbol? vec2?) top-level Visual id or world point.
+;;  - target            (or/c visual-path? vec2?) Visual path or world point.
+;;  - target-anchor     layout-anchor?      live rendered target point.
 ;;  - connector-stroke  any/c               opaque connector style for adapter.
 ;;  - connector-width   nonnegative real?   cosmetic connector width in pixels.
 ;;
-;; Symbol targets are resolved against the sampled top-level scene state. A
-;; vec2 target is a fixed point in world coordinates.
+;; Visual paths are resolved against the sampled scene state. A vec2 target is
+;; a fixed point in world coordinates.
 
 
 ;;;
@@ -166,12 +168,13 @@
    content
    (camera-world-width camera)))
 
-; callout : visual? (or/c visual? symbol? vec2?)
+; callout : visual? (or/c visual? symbol? visual-path? vec2?)
 ;           [#:camera camera?]
 ;           [#:at (or/c vec2? false/c)]
 ;           [#:rotation finite-real?]
 ;           [#:scale scale-factor?]
 ;           [#:opacity opacity?]
+;           [#:target-anchor layout-anchor?]
 ;           [#:connector-stroke any/c]
 ;           [#:connector-width nonnegative-real?]
 ;           -> callout-visual?
@@ -183,6 +186,7 @@
                  #:rotation [rotation 0]
                  #:scale [scale 1]
                  #:opacity [opacity 1]
+                 #:target-anchor [target-anchor 'center]
                  #:connector-stroke [connector-stroke "black"]
                  #:connector-width [connector-width 2])
   (check-frame-content 'callout content)
@@ -192,7 +196,15 @@
   (check-frame-rotation 'callout rotation)
   (check-frame-scale 'callout scale)
   (check-frame-opacity 'callout opacity)
+  (check-callout-target-anchor 'callout target-anchor)
   (check-connector-width 'callout connector-width)
+  (when (and (vec2? target)
+             (not (eq? target-anchor 'center)))
+    (raise-arguments-error
+     'callout
+     "a point target with the center anchor"
+     "target" target
+     "target-anchor" target-anchor))
   (define id
     (visual-target-id content 'callout))
   (define frame-position
@@ -208,6 +220,7 @@
    content
    (camera-world-width camera)
    (normalize-callout-target target)
+   target-anchor
    connector-stroke
    connector-width))
 
@@ -252,8 +265,9 @@
 ;;; Target Normalization
 ;;;
 
-; normalize-callout-target : (or/c visual? symbol? vec2?) -> (or/c symbol? vec2?)
-;;   Converts a Visual target to its stable top-level identity.
+; normalize-callout-target : (or/c visual? symbol? visual-path? vec2?)
+;                            -> (or/c symbol? visual-path? vec2?)
+;;   Converts a Visual target to its stable path address.
 (define (normalize-callout-target target)
   (if (vec2? target)
       target
@@ -292,14 +306,15 @@
   position)
 
 ; check-callout-target : symbol? any/c -> void?
-;;   Raises an argument error unless target is a world point or Visual/id target.
+;;   Raises an argument error unless target is a world point or Visual/path target.
 (define (check-callout-target who target)
   (unless (or (vec2? target)
               (symbol? target)
+              (visual-path? target)
               (visual? target))
     (raise-argument-error
      who
-     "(or/c vec2? visual? symbol?)"
+     "(or/c vec2? visual? symbol? visual-path?)"
      target))
   (when (and (visual? target)
              (frame-space-visual? target))
@@ -310,6 +325,20 @@
   (unless (vec2? target)
     (visual-target-id target who))
   (void))
+
+; check-callout-target-anchor : symbol? any/c -> void?
+;;   Validates the one of nine live renderer-box locations that a callout
+;;   connector may follow on a Visual target.
+(define (check-callout-target-anchor who anchor)
+  (unless (and (symbol? anchor)
+               (memq anchor
+                     '(bottom-left bottom bottom-right
+                       left center right
+                       top-left top top-right)))
+    (raise-argument-error
+     who
+     "(or/c 'bottom-left 'bottom 'bottom-right 'left 'center 'right 'top-left 'top 'top-right)"
+     anchor)))
 
 ; check-frame-camera : symbol? any/c -> void?
 ;;   Raises an argument error unless value is a camera.
