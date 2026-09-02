@@ -22,6 +22,7 @@
          "formula-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
+         "path-geometry.rkt"
          "svg-write-paths.rkt"
          "write-in-adapter.rkt"
          "visual-model.rkt")
@@ -552,26 +553,40 @@
 ;                            [#:part-paths (listof formula-part-path?)]
 ;                            [#:copies (listof formula-part-copy?)]
 ;                            [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                            [#:changed-mode (or/c 'fade 'morph)]
 ;                            -> transform-formula-parts-request?
 ;; Produces automatic rendered-glyph matching between two glyph-tex values.
 ;; Explicit matches remain available for an intentional changed glyph, such as
-;; a plus sign becoming a minus sign.
+;; a plus sign becoming a minus sign. `morph` replaces conservative compatible
+;; changed-glyph interiors with outline interpolation; it falls back to the
+;; normal moving cross-fade when a glyph has several contours or styles differ.
 (define (transform-matching-glyphs source destination
                                    #:matches [matches '()]
                                    #:path-arc [path-arc 0]
                                    #:part-paths [part-paths '()]
                                    #:copies [copies '()]
-                                   #:mismatch-mode [mismatch-mode 'fade])
+                                   #:mismatch-mode [mismatch-mode 'fade]
+                                   #:changed-mode [changed-mode 'fade])
   (check-glyph-assembly 'transform-matching-glyphs source)
   (check-glyph-assembly 'transform-matching-glyphs destination)
-  (transform-matching-formula
-   source
-   destination
-   #:matches matches
+  (unless (memq changed-mode '(fade morph))
+    (raise-argument-error
+     'transform-matching-glyphs
+     "(or/c 'fade 'morph)"
+     changed-mode))
+  (define correspondence
+    (make-matching-formula-correspondence
+     'transform-matching-glyphs source destination matches))
+  (transform-formula-parts
+   correspondence
    #:path-arc path-arc
    #:part-paths part-paths
    #:copies copies
-   #:mismatch-mode mismatch-mode))
+   #:mismatch-mode mismatch-mode
+   #:outline-morphs
+   (if (eq? changed-mode 'morph)
+       (glyph-outline-morphs source correspondence)
+       '())))
 
 ; rewrite-formula : formula-assembly-visual? formula-assembly-visual?
 ;                   #:anchor (or/c symbol? formula-part-match?)
@@ -1199,6 +1214,98 @@
    (formula-visual-vertical-alignment ordinary)
    (string->immutable-string svg-source)
    (and glyph-key (string->immutable-string glyph-key))))
+
+;; glyph-outline-morphs : formula-assembly-visual? formula-correspondence?
+;;                        -> (listof formula-part-outline-morph?)
+;; Selects only safe dvisvgm changed-glyph pairs.  A glyph with a hole or more
+;; than one contour stays on the existing moving cross-fade path: preserving
+;; its fill topology matters more than forcing a morph.  One closed contour is
+;; enough for common operators such as + and -, and retaining traversal order
+;; prevents an intermediate outline from reversing its winding.
+(define (glyph-outline-morphs source correspondence)
+  (define destination
+    (formula-correspondence-destination correspondence))
+  (for/fold ([morphs '()])
+            ([match (in-list (formula-correspondence-matches correspondence))])
+    (define source-name (formula-part-match-source-name match))
+    (define destination-name (formula-part-match-destination-name match))
+    (define source-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref source source-name)))
+    (define destination-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref destination destination-name)))
+    (define morph
+      (and (not (equal? (formula-visual-rendering-key source-formula)
+                        (formula-visual-rendering-key destination-formula)))
+           (compatible-glyph-outline-morph
+            source-name destination-name source-formula destination-formula)))
+    (if morph
+        (append morphs (list morph))
+        morphs)))
+
+;; compatible-glyph-outline-morph : symbol? symbol?
+;;                                  tagged-formula-fragment-visual?
+;;                                  tagged-formula-fragment-visual?
+;;                                  -> (or/c formula-part-outline-morph? #f)
+;; Converts both cropped glyph SVG fragments to local vector paths, keeps only
+;; the one-contour case, and normalizes the destination to the source's phase.
+;; Any unsupported SVG/path difference deliberately returns #f so callers
+;; retain the established cross-fade instead of receiving a fragile animation.
+(define (compatible-glyph-outline-morph source-name destination-name
+                                        source-formula destination-formula)
+  (with-handlers ([exn:fail? (lambda (_exception) #f)])
+    (define source-path-visual
+      (tagged-glyph->single-path-visual source-formula))
+    (define destination-path-visual
+      (tagged-glyph->single-path-visual destination-formula))
+    (and source-path-visual
+         destination-path-visual
+         (equal? (path-visual-fill source-path-visual)
+                 (path-visual-fill destination-path-visual))
+         (equal? (path-visual-stroke source-path-visual)
+                 (path-visual-stroke destination-path-visual))
+         (= (path-visual-stroke-width source-path-visual)
+            (path-visual-stroke-width destination-path-visual))
+         (let* ([source-path (path-visual-path source-path-visual)]
+                [destination-path (path-visual-path destination-path-visual)]
+                [aligned-destination
+                 (path-geometry-align-for-morph
+                  source-path destination-path #:allow-reverse? #f)])
+           (define-values (normalized-source normalized-destination)
+             (path-geometry-normalize-for-morph source-path aligned-destination))
+           (and (path-geometry-morph-compatible?
+                 normalized-source normalized-destination)
+                (formula-part-outline-morph
+                 source-name
+                 destination-name
+                 normalized-source
+                 normalized-destination
+                 (path-visual-fill source-path-visual)
+                 (path-visual-stroke source-path-visual)
+                 (path-visual-stroke-width source-path-visual)))))))
+
+;; tagged-glyph->single-path-visual : tagged-formula-fragment-visual?
+;;                                    -> (or/c path-visual? #f)
+;; Returns only a simple, filled, closed dvisvgm glyph contour.  This explicit
+;; boundary keeps complex letters (counter shapes, accents, and multi-piece
+;; relations) on the correctness-preserving cross-fade fallback.
+(define (tagged-glyph->single-path-visual visual)
+  (define world-per-pict-unit
+    (/ (formula-visual-font-size visual)
+       (formula-visual-document-font-points visual)))
+  (define paths
+    (svg-string->write-path-visuals
+     (tagged-formula-fragment-visual-svg-source visual)
+     (formula-visual-id visual)
+     world-per-pict-unit))
+  (and (= (length paths) 1)
+       (let* ([path-visual-value (car paths)]
+              [subpaths (path-geometry-subpaths
+                         (path-visual-path path-visual-value))])
+         (and (= (length subpaths) 1)
+              (path-subpath-closed? (car subpaths))
+              path-visual-value))))
 
 ; check-glyph-assembly : symbol? any/c -> void?
 ;;   Requires an assembly whose every part was generated by glyph-tex.

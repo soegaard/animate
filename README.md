@@ -1,9 +1,14 @@
-# animate — SCENE-BY
+# animate — SCENE-BZ
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-BZ adds opt-in, conservative glyph-outline morphing to SCENE-BY's
+`glyph-tex` formulas. Compatible one-contour dvisvgm glyphs such as `+` and
+`-` interpolate their outlines through the motion; complex or differently
+painted glyphs retain the established moving cross-fade.
 
 SCENE-BY adds `glyph-tex`: it asks `dvisvgm` to expose the visible glyph leaves
 of one complete TeX expression as `glyph-0`, `glyph-1`, and so on. Matching is
@@ -17,7 +22,8 @@ and dvisvgm were run separately for the two formulas. Use an ordinary explicit
 
 (transform-matching-glyphs
  before after
- #:matches (list (formula-part-match 'glyph-1 'glyph-3)))
+ #:matches (list (formula-part-match 'glyph-1 'glyph-3))
+ #:changed-mode 'morph)
 ```
 
 SCENE-BX adds `rewrite-formula`, a formula-aware convenience operation for
@@ -158,11 +164,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BY v0.73.0 builds on immutable parameters and generic values, dynamically
+SCENE-BZ v0.74.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.73.0`. The public module's bindings are covered
+The public package version is `0.74.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -693,8 +699,9 @@ unchanged glyphs move automatically between separately compiled formulas:
             #:duration 2)
 ```
 
-The explicit match cross-fades the old `+` into the new `-`; the unchanged
-`x`, `3`, `=`, and `7` leaves are detected automatically. The generated names
+By default, the explicit match cross-fades the old `+` into the new `-`; add
+`#:changed-mode 'morph` to interpolate compatible one-contour glyph outlines.
+The unchanged `x`, `3`, `=`, and `7` leaves are detected automatically. The generated names
 are intentionally positional. Use `tagged-formula` or `math-tex` when an author
 needs a stable semantic term such as `a-square` or an entire fraction; dvisvgm
 glyph leaves are not TeX tokens, and repeated glyphs pair greedily in source
@@ -2278,7 +2285,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.73.0`. Every completed SCENE
+This is the running design backlog for version `0.74.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2297,9 +2304,12 @@ precisely; do not silently lose the follow-on idea that led to the work.
 - `formula-correspondence-auto` and `transform-matching-formula` match whole
   rendering-equivalent fragments in order. `glyph-tex` and
   `transform-matching-glyphs` additionally match exact dvisvgm glyph outlines
-  in source order. Neither mode performs algebra, semantic name/token matching,
-  or glyph-outline morphing. Formula colour remains controlled by explicit
-  LaTeX source and preamble commands.
+  in source order. Its opt-in `#:changed-mode 'morph` interpolates only one
+  closed, identically painted dvisvgm contour while preserving its traversal
+  direction; letters with counters, accents, multi-contour glyphs, changed
+  paint styles, and unsupported SVG geometry keep the moving cross-fade.
+  Neither mode performs algebra or semantic name/token matching. Formula colour
+  remains controlled by explicit LaTeX source and preamble commands.
 - `formula-part-copy` can copy one whole named fragment to any number of
   explicitly named unmatched destinations, and formula parts can now follow
   circular or normalized custom paths. It still has no semantic algebra,
@@ -2312,8 +2322,9 @@ precisely; do not silently lose the follow-on idea that led to the work.
   sides.
 - Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
   `glyph-tex` exposes dvisvgm glyph leaves with positional names and supports
-  per-glyph motion through formula transitions, but it has no TeX/Unicode glyph
-  map, semantic TeX parser, semantic grouping, or glyph-outline morphing.
+  per-glyph motion plus conservative one-contour outline morphs, but it has no
+  TeX/Unicode glyph map, semantic TeX parser, semantic grouping, general
+  multi-contour/counter morphing, or automatic choice of changed glyphs.
 
 ### Geometry and transforms
 
@@ -2486,6 +2497,22 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
 
+## SCENE-BZ: conservative glyph outline morphing
+
+Version `0.74.0` adds `#:changed-mode 'morph` to
+`transform-matching-glyphs`. It is intentionally opt-in and applies only to a
+declared changed glyph whose cropped dvisvgm SVG expands to one closed path on
+both sides with identical fill, stroke, and stroke width. The destination is
+phase-aligned without reversing its winding, then both contours are normalized
+to compatible cubic segments and interpolated only during interior frames.
+The ordinary tagged SVG fragments remain the exact start and end frames.
+
+Everything outside that safe subset keeps SCENE-BY's moving cross-fade. This
+avoids corrupting holes in letters, multi-piece accents/relations, or glyphs
+whose paint style changes. `examples/glyph-outline-morph.rkt` renders the
+valid algebraic step `a + b = c` to `a - b = c - 2b`, where the explicitly
+matched binary `+` morphs into `-` while `2b` fades in.
+
 ## SCENE-BY: automatic glyph-level formula matching
 
 Version `0.73.0` adds `glyph-tex` and `transform-matching-glyphs`. `glyph-tex`
@@ -2497,7 +2524,8 @@ across independently compiled equations.
 
 This is deliberately a renderer-level facility, not a TeX parser. A superscript
 or accented character can consist of several leaves, repeated outlines match
-greedily, and changed outlines cross-fade rather than morph. Use explicit
+greedily, and changed outlines cross-fade by default. The opt-in SCENE-BZ mode
+only morphs the deliberately conservative one-contour subset. Use explicit
 `formula-fragment` or `math-tex` groups whenever a semantic mathematical term
 needs one stable identity. `examples/glyph-level-formula-matching.rkt` shows
 `x + 3 = 7` changing to `x = 7 - 3` with `=` anchored and only `+` → `-`

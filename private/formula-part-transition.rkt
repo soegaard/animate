@@ -21,6 +21,7 @@
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
+         "glyph-outline-morph-visual.rkt"
          "path-geometry.rkt"
          "visual-model.rkt")
 
@@ -44,6 +45,7 @@
          formula-part-copy-source-name
          formula-part-copy-destination-name
          formula-part-copy-route
+         (struct-out formula-part-outline-morph)
          formula-transition-plan?
          make-formula-transition-plan
          formula-transition-plan-source-parts
@@ -160,6 +162,32 @@
       (raise-argument-error who "formula-route?" route))
     (values source-name destination-name route)))
 
+;; formula-part-outline-morph supplies one conservative interior replacement
+;; for an explicitly matched pair.  The endpoints remain their original
+;; tagged SVG fragments; source/destination paths have already been aligned
+;; and normalized by the glyph adapter before this generic transition compiler
+;; sees them.
+(struct formula-part-outline-morph
+  (source-name destination-name source-path destination-path fill stroke stroke-width)
+  #:transparent
+  #:guard
+  (lambda (source-name destination-name source-path destination-path
+                       fill stroke stroke-width who)
+    (unless (symbol? source-name)
+      (raise-argument-error who "symbol?" source-name))
+    (unless (symbol? destination-name)
+      (raise-argument-error who "symbol?" destination-name))
+    (unless (path-geometry-morph-compatible? source-path destination-path)
+      (raise-arguments-error
+       who
+       "compatible normalized path geometries"
+       "source-path" source-path
+       "destination-path" destination-path))
+    (unless (and (finite-real? stroke-width) (not (negative? stroke-width)))
+      (raise-argument-error who "nonnegative finite real?" stroke-width))
+    (values source-name destination-name source-path destination-path
+            fill stroke stroke-width)))
+
 (define straight-formula-route (formula-arc #:angle 0))
 
 (struct formula-transition-layer
@@ -212,13 +240,15 @@
 ;                                [#:part-paths (listof formula-part-path?)]
 ;                                [#:copies (listof formula-part-copy?)]
 ;                                [#:mismatch-mode formula-mismatch-mode?]
+;                                [#:outline-morphs (listof formula-part-outline-morph?)]
 ;                                -> formula-transition-plan?
 ;;   Compiles correspondence against the current source assembly.
 (define (make-formula-transition-plan current-source correspondence
                                       #:path-arc [path-arc 0]
                                       #:part-paths [part-paths '()]
                                       #:copies [copies '()]
-                                      #:mismatch-mode [mismatch-mode 'fade])
+                                      #:mismatch-mode [mismatch-mode 'fade]
+                                      #:outline-morphs [outline-morphs '()])
   (unless (formula-assembly-visual? current-source)
     (raise-argument-error
      'make-formula-transition-plan
@@ -244,6 +274,8 @@
     (make-part-paths-by-match correspondence part-paths))
   (define copies-by-destination
     (make-copies-by-destination current-source correspondence copies))
+  (define outline-morphs-by-match
+    (make-outline-morphs-by-match correspondence outline-morphs))
   ;; A tagged TeX fragment has a crop from the complete formula in which it
   ;; was typeset.  Two fragments with equal TeX can consequently have distinct
   ;; SVG view boxes.  Retain the source artifact for an unchanged fragment at
@@ -269,7 +301,8 @@
      (make-matched-specs current-source
                          correspondence
                          default-route
-                         part-paths-by-match)
+                         part-paths-by-match
+                         outline-morphs-by-match)
      (make-copy-specs current-source
                       correspondence
                       copies-by-destination)
@@ -356,10 +389,11 @@
 
 ; make-matched-specs : formula-assembly-visual?
 ;                      formula-correspondence? formula-arc? hash?
+;                      hash?
 ;                      -> (listof formula-transition-spec?)
 ;;   Creates moving matched layers in explicit correspondence order.
 (define (make-matched-specs current-source correspondence default-route
-                            part-paths-by-match)
+                            part-paths-by-match outline-morphs-by-match)
   (define destination
     (formula-correspondence-destination correspondence))
   (apply
@@ -383,7 +417,13 @@
         (match-key (formula-part-match-source-name match)
                    (formula-part-match-destination-name match))
         default-route))
-     (make-one-match-specs source-formula destination-formula route))))
+     (define outline-morph
+       (hash-ref
+        outline-morphs-by-match
+        (match-key (formula-part-match-source-name match)
+                   (formula-part-match-destination-name match))
+        #f))
+     (make-one-match-specs source-formula destination-formula route outline-morph))))
 
 ; make-copy-specs : formula-assembly-visual? formula-correspondence? hash?
 ;                   -> (listof formula-transition-spec?)
@@ -414,7 +454,8 @@
 ; make-one-match-specs : formula-visual? formula-visual? formula-arc?
 ;                        -> (listof formula-transition-spec?)
 ;;   Creates one moving layer or a moving cross-fade pair for a match.
-(define (make-one-match-specs source-formula destination-formula route)
+(define (make-one-match-specs source-formula destination-formula route
+                              [outline-morph #f])
   (define source-transform
     (visual-transform source-formula))
   (define destination-transform
@@ -424,6 +465,21 @@
      (list
       (formula-transition-spec
        source-formula
+       source-transform
+       destination-transform
+       route
+       (visual-opacity source-formula)
+       (visual-opacity destination-formula)))]
+    [outline-morph
+     (list
+      (formula-transition-spec
+       (make-glyph-outline-morph-visual
+        source-formula
+        (formula-part-outline-morph-source-path outline-morph)
+        (formula-part-outline-morph-destination-path outline-morph)
+        (formula-part-outline-morph-fill outline-morph)
+        (formula-part-outline-morph-stroke outline-morph)
+        (formula-part-outline-morph-stroke-width outline-morph))
        source-transform
        destination-transform
        route
@@ -659,8 +715,10 @@
   (define name
     (formula-transition-layer-name layer))
   (define formula-with-id
-    (formula-visual-with-id
-     (formula-transition-layer-template layer)
+   (formula-visual-with-id
+     (formula-visual-at-transition-progress
+      (formula-transition-layer-template layer)
+      progress)
      name))
   (define formula-with-transform
     (visual-with-transform
@@ -776,6 +834,41 @@
        "source-name" (formula-part-path-source-name part-path)
        "destination-name" (formula-part-path-destination-name part-path)))
     (hash-set result key (formula-part-path-route part-path))))
+
+; make-outline-morphs-by-match : formula-correspondence? any/c -> hash?
+;; Validates the glyph adapter's optional interior replacements.  The generic
+;; compiler never infers them: callers must explicitly opt in and every entry
+;; must correspond to one declared or automatically matched pair.
+(define (make-outline-morphs-by-match correspondence outline-morphs)
+  (unless (and (list? outline-morphs)
+               (andmap formula-part-outline-morph? outline-morphs))
+    (raise-argument-error
+     'make-formula-transition-plan
+     "(listof formula-part-outline-morph?)"
+     outline-morphs))
+  (define valid-matches
+    (for/hash ([match (in-list (formula-correspondence-matches correspondence))])
+      (values
+       (match-key (formula-part-match-source-name match)
+                  (formula-part-match-destination-name match))
+       #t)))
+  (for/fold ([result (hash)]) ([outline-morph (in-list outline-morphs)])
+    (define key
+      (match-key (formula-part-outline-morph-source-name outline-morph)
+                 (formula-part-outline-morph-destination-name outline-morph)))
+    (unless (hash-has-key? valid-matches key)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "an outline morph for a matched source/destination pair"
+       "source-name" (formula-part-outline-morph-source-name outline-morph)
+       "destination-name" (formula-part-outline-morph-destination-name outline-morph)))
+    (when (hash-has-key? result key)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "at most one outline morph for each matched source/destination pair"
+       "source-name" (formula-part-outline-morph-source-name outline-morph)
+       "destination-name" (formula-part-outline-morph-destination-name outline-morph)))
+    (hash-set result key outline-morph)))
 
 (define (make-copies-by-destination current-source correspondence copies)
   (unless (and (list? copies)

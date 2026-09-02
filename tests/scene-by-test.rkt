@@ -6,7 +6,8 @@
 
 (require (only-in pict pict?)
          rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../private/glyph-outline-morph-visual.rkt")
 
 (define (glyph index)
   (string->symbol (format "glyph-~a" index)))
@@ -58,6 +59,56 @@
      (transform-matching-glyphs
       (math-tex #:id 'other "{{ x }}")
       destination)))
+
+  ;; SCENE-BZ is opt-in. The explicit + -> - pair has one closed dvisvgm
+  ;; contour on each side, so its interior is one outline-morph formula layer
+  ;; rather than the historical moving cross-fade pair.
+  (define outline-morphed
+    (scene-play
+     (scene-add (make-scene) source)
+     (transform-matching-glyphs
+      source
+      destination
+      #:matches (list (formula-part-match (glyph 1) (glyph 3)))
+      #:changed-mode 'morph)
+     #:duration 2))
+  (define interior-parts
+    (formula-assembly-visual-parts
+     (scene-visual-at outline-morphed 'equation 1)))
+  (check-true
+   (for/or ([part (in-list interior-parts)])
+     (glyph-outline-morph-visual?
+      (formula-part-formula part))))
+  (check-false
+   (for/or ([part (in-list
+                   (formula-assembly-visual-parts
+                    (scene-visual-at outline-morphed 'equation 0)))])
+     (glyph-outline-morph-visual?
+      (formula-part-formula part))))
+  (check-true (pict? (scene->pict outline-morphed 1)))
+
+  ;; The fallback is intentional: an italic a/b pair contains counter paths,
+  ;; so requesting a morph retains the visible moving cross-fade rather than
+  ;; risking a broken fill orientation.
+  (define complex-source
+    (glyph-tex #:id 'complex "a"))
+  (define complex-destination
+    (glyph-tex #:id 'complex "b"))
+  (define complex-transition
+    (scene-play
+     (scene-add (make-scene) complex-source)
+     (transform-matching-glyphs
+      complex-source
+      complex-destination
+      #:matches (list (formula-part-match (glyph 0) (glyph 0)))
+      #:changed-mode 'morph)
+     #:duration 1))
+  (check-false
+   (for/or ([part (in-list
+                   (formula-assembly-visual-parts
+                    (scene-visual-at complex-transition 'complex 1/2)))])
+     (glyph-outline-morph-visual?
+      (formula-part-formula part))))
 
   ;; Anchored rewrites work directly with glyph assemblies. = remains fixed
   ;; even though it has a different generated index at the destination.

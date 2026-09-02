@@ -313,7 +313,7 @@
 ;;  - sample-count    exact-integer?  deterministic alignment score resolution.
 
 (struct transform-formula-parts-request
-  (correspondence path-arc part-paths copies mismatch-mode anchor)
+  (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
@@ -322,6 +322,7 @@
 ;;  - part-paths      (listof formula-part-path?) per-match route overrides.
 ;;  - copies          (listof formula-part-copy?) source-preserving copies.
 ;;  - mismatch-mode   (or/c 'fade 'fade-transform) handling of unmatched parts.
+;;  - outline-morphs  (listof formula-part-outline-morph?) optional interiors.
 ;;  - anchor          (or/c #f formula-part-match?) current-state layout anchor.
 
 (struct transform-from-copy-request
@@ -1164,6 +1165,7 @@
 ;                         [#:part-paths (listof formula-part-path?)]
 ;                         [#:copies (listof formula-part-copy?)]
 ;                         [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                         [#:outline-morphs (listof formula-part-outline-morph?)]
 ;                           -> transform-formula-parts-request?
 ;; Creates a request that moves and cross-fades explicitly matched parts.
 ;; `path-arc` applies to every matched part unless a `part-paths` entry selects
@@ -1174,10 +1176,11 @@
                                  #:path-arc [path-arc 0]
                                  #:part-paths [part-paths '()]
                                  #:copies [copies '()]
-                                 #:mismatch-mode [mismatch-mode 'fade])
+                                 #:mismatch-mode [mismatch-mode 'fade]
+                                 #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'transform-formula-parts
-   correspondence path-arc part-paths copies mismatch-mode #f))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs #f))
 
 ; transform-formula-parts/anchored : formula-correspondence? formula-part-match?
 ;                                    [#:path-arc finite-real?]
@@ -1191,19 +1194,20 @@
                                          #:path-arc [path-arc 0]
                                          #:part-paths [part-paths '()]
                                          #:copies [copies '()]
-                                         #:mismatch-mode [mismatch-mode 'fade])
+                                         #:mismatch-mode [mismatch-mode 'fade]
+                                         #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'rewrite-formula
-   correspondence path-arc part-paths copies mismatch-mode anchor))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor))
 
 ; make-transform-formula-parts-request : symbol? formula-correspondence?
-;                                         finite-real? list? list? list? symbol?
+;                                         finite-real? list? list? list? symbol? list?
 ;                                         (or/c #f formula-part-match?)
 ;                                         -> transform-formula-parts-request?
 ;;   Validates the common ordinary and anchored formula-transition inputs.
 (define (make-transform-formula-parts-request who correspondence path-arc
                                               part-paths copies mismatch-mode
-                                              anchor)
+                                              outline-morphs anchor)
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
      who
@@ -1230,6 +1234,12 @@
      who
      "(or/c 'fade 'fade-transform)"
      mismatch-mode))
+  (unless (and (list? outline-morphs)
+               (andmap formula-part-outline-morph? outline-morphs))
+    (raise-argument-error
+     who
+     "(listof formula-part-outline-morph?)"
+     outline-morphs))
   (unless (or (not anchor)
               (formula-part-match? anchor))
     (raise-argument-error
@@ -1237,7 +1247,7 @@
      "(or/c #f formula-part-match?)"
      anchor))
   (transform-formula-parts-request
-   correspondence path-arc part-paths copies mismatch-mode anchor))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor))
 
 ; create : path-visual? -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -1812,7 +1822,9 @@
        #:part-paths (transform-formula-parts-request-part-paths request)
        #:copies (transform-formula-parts-request-copies request)
        #:mismatch-mode
-       (transform-formula-parts-request-mismatch-mode request)))]
+       (transform-formula-parts-request-mismatch-mode request)
+       #:outline-morphs
+       (transform-formula-parts-request-outline-morphs request)))]
     [(create-request? request)
      (define complete-visual
        (create-request-visual request))

@@ -67,6 +67,11 @@
   ;; snippets stored on tagged-formula fragments.
   (define visible-fragment-id
     (svg-visible-fragment-id source))
+  ;; glyph-tex performs the same selection at the <use> leaf level.  Honouring
+  ;; both selectors matters here because an outline morph must receive one
+  ;; glyph contour, rather than every reusable path from the complete formula.
+  (define visible-glyph-id
+    (svg-visible-glyph-id source))
   (define emitted-reversed '())
   (define glyph-index 0)
   (define (emit! geometry matrix style)
@@ -112,7 +117,11 @@
              (or (not visible-fragment-id)
                  (not (and (string? node-id)
                            (string-prefix? node-id "animate-fragment-")))
-                 (string=? node-id visible-fragment-id))))
+                 (string=? node-id visible-fragment-id))
+             (or (not visible-glyph-id)
+                 (not (and (string? node-id)
+                           (string-prefix? node-id "animate-glyph-")))
+                 (string=? node-id visible-glyph-id))))
       (define style
         (svg-write-style-with-attributes inherited-style attributes))
       (define node-matrix
@@ -233,6 +242,13 @@
   (define match
     (regexp-match
      #px"#(animate-fragment-[[:alnum:]-]+)\\s*\\{\\s*opacity\\s*:\\s*1"
+     source))
+  (and match (cadr match)))
+
+(define (svg-visible-glyph-id source)
+  (define match
+    (regexp-match
+     #px"#(animate-glyph-[[:alnum:]-]+)\\s*\\{\\s*opacity\\s*:\\s*1"
      source))
   (and match (cadr match)))
 

@@ -43,8 +43,10 @@
          "camera.rkt"
          "color-style.rkt"
          "geometry.rkt"
+         "glyph-outline-morph-pict-renderer.rkt"
          "image-pict-renderer.rkt"
          "latex-formula-pict-renderer.rkt"
+         (only-in "path-pict-renderer.rkt" path-pict-renderer)
          "path-geometry.rkt"
          "pict-renderer.rkt"
          "renderer-resources.rkt"
@@ -83,17 +85,6 @@
 
 ;; rectangle-pict-renderer renders semantic rectangle Visuals with the Pict
 ;; backend.
-
-(struct path-pict-renderer ()
-  #:transparent
-  #:methods gen:pict-renderer
-  [(define (pict-renderer-supports? _renderer visual)
-     (path-visual? visual))
-   (define (pict-renderer-render _renderer visual camera)
-     (path-visual->pict visual camera))])
-
-;; path-pict-renderer renders semantic line and cubic path Visuals with
-;; racket/draw.
 
 (struct arrow-pict-renderer ()
   #:transparent
@@ -167,6 +158,7 @@
         (image-pict-renderer (make-image-raster-cache))
         (svg-pict-renderer (make-svg-pict-cache))
         (text-pict-renderer (make-text-raster-cache))
+        (glyph-outline-morph-pict-renderer)
         (tagged-formula-pict-renderer (make-tagged-formula-pict-cache))
         default-latex-formula-pict-renderer))
 

@@ -37,7 +37,9 @@
          ;; Composite animation support
          gen:formula-identity-visual
          formula-visual-with-id
-         gen:formula-rendering-key)
+         gen:formula-rendering-key
+         formula-visual-at-transition-progress
+         gen:formula-transition-sampling)
 
 ;; Internal protocol for formula Visual subclasses that must preserve their
 ;; specialised renderer data while a formula-part transition gives them a
@@ -50,6 +52,15 @@
 ;; fragments use it to match one dvisvgm outline across complete formulas.
 (define-generics formula-rendering-key
   (generic-formula-rendering-key formula-rendering-key))
+
+;; Internal protocol for formula Visual subclasses whose interior appearance
+;; varies while a formula-part transition is sampled.  Ordinary formula Visuals
+;; are rigid: subclasses such as glyph-outline-morph-visual override this
+;; protocol without changing either exact endpoint artifact.
+(define-generics formula-transition-sampling
+  (generic-formula-visual-at-transition-progress
+   formula-transition-sampling
+   progress))
 
 
 ;;;
@@ -126,7 +137,13 @@
      (struct-copy formula-visual visual [id id]))]
   #:methods gen:formula-rendering-key
   [(define (generic-formula-rendering-key visual)
-     (formula-visual-default-rendering-key visual))])
+     (formula-visual-default-rendering-key visual))]
+  #:methods gen:formula-transition-sampling
+  [(define (generic-formula-visual-at-transition-progress visual progress)
+     (check-transition-progress
+      'formula-visual-at-transition-progress
+      progress)
+     visual)])
 
 ;; formula-visual represents one semantic LaTeX mathematical formula.
 ;;  - id                      symbol?                     stable Visual identity.
@@ -144,6 +161,21 @@
 ;; Option ordering is preserved because LaTeX packages can interpret option
 ;; order. The formula source and option strings are copied into immutable model
 ;; storage. The model does not contain a typeset Pict or a TeX process result.
+
+; formula-visual-at-transition-progress : formula-visual? finite-real?
+;                                               -> formula-visual?
+;; Samples a specialised formula template for an interior formula transition.
+;; The base formula type is rigid and therefore returns itself.
+(define (formula-visual-at-transition-progress visual progress)
+  (unless (formula-visual? visual)
+    (raise-argument-error
+     'formula-visual-at-transition-progress
+     "formula-visual?"
+     visual))
+  (check-transition-progress
+   'formula-visual-at-transition-progress
+   progress)
+  (generic-formula-visual-at-transition-progress visual progress))
 
 
 ;;;
@@ -314,6 +346,13 @@
 (define (check-formula-id who id)
   (unless (symbol? id)
     (raise-argument-error who "symbol?" id)))
+
+; check-transition-progress : symbol? any/c -> void?
+;;   Validates the interior sampling coordinate shared by formula subclasses.
+(define (check-transition-progress who progress)
+  (unless (and (finite-real? progress)
+               (<= 0 progress 1))
+    (raise-argument-error who "finite real in [0, 1]" progress)))
 
 ; check-formula-font-size : symbol? any/c -> void?
 ;;   Raises an argument error unless size is positive and finite.

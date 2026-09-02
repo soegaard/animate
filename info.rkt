@@ -22,7 +22,7 @@
 ; deps : (listof string?)
 ;;   Lists runtime package dependencies.
 (define deps
-  '("base" "draw-lib" "latex-pict" "pict-lib" "svg"))
+  '("base" "draw-lib" "latex-pict" "pict-lib" ("svg" #:version "0.3")))
 
 ; build-deps : (listof string?)
 ;;   Lists dependencies needed for tests and examples.
@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BY: automatic dvisvgm glyph formula matching")
+  "SCENE-BZ: conservative dvisvgm glyph outline morphing")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.73.0")
+(define version "0.74.0")
 
 ; license : symbol?
 ;;   Declares the package license.

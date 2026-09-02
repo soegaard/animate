@@ -3084,7 +3084,8 @@ glyph outlines.
           [#:path-arc path-arc finite-real? 0]
           [#:part-paths part-paths (listof formula-part-path?) '()]
           [#:copies copies (listof formula-part-copy?) '()]
-          [#:mismatch-mode mismatch-mode (or/c 'fade 'fade-transform) 'fade])
+          [#:mismatch-mode mismatch-mode (or/c 'fade 'fade-transform) 'fade]
+          [#:changed-mode changed-mode (or/c 'fade 'morph) 'fade])
          transform-formula-parts-request?]{
 
 Builds the glyph-level counterpart to @racket[transform-matching-formula]. Both
@@ -3094,9 +3095,20 @@ deliberate changed glyph, such as mapping the generated plus-sign part to the
 destination minus-sign part. The remaining keywords have the same meanings as
 for @racket[transform-matching-formula].
 
-This matches and moves whole rendered glyph leaves. It does not derive a
-mathematical operation, identify TeX characters or terms, or morph one outline
-into another; changed matches are the ordinary moving cross-fade.
+This matches and moves whole rendered glyph leaves. @racket['fade] is the
+default: changed matches use the ordinary moving cross-fade. With
+@racket[#:changed-mode 'morph], a changed matched pair instead interpolates its
+outline only when both cropped dvisvgm SVG fragments expand to one closed path
+with the same fill, stroke, and stroke width. Animate phase-aligns the
+destination without reversing its winding, normalizes both paths to compatible
+cubic segments, and uses that path geometry only for interior frames; the
+ordinary tagged SVG fragments remain exact endpoints. A letter with a counter,
+an accent, multiple contours, changed paint, or unsupported geometry safely
+falls back to the moving cross-fade.
+
+This operation does not derive a mathematical operation, identify TeX
+characters or terms, perform semantic grouping, or infer which changed glyphs
+should be paired.
 }
 
 @defproc[(rewrite-formula
@@ -9448,6 +9460,13 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.74.0 — SCENE-BZ.} Added opt-in
+       @racket[#:changed-mode 'morph] to
+       @racket[transform-matching-glyphs]. A deliberately conservative
+       one-contour, identically painted dvisvgm changed-glyph pair now morphs
+       through normalized cubic outline geometry while retaining exact SVG
+       endpoint artifacts; all other changed glyphs retain the moving
+       cross-fade.}
  @item{@bold{0.73.0 — SCENE-BY.} Added @racket[glyph-tex] and
        @racket[transform-matching-glyphs]. One complete TeX expression now
        exposes its visible dvisvgm glyph leaves as positional formula parts;
