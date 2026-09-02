@@ -24,11 +24,35 @@
                                  "="))
       part))))
 
+(define (part-position scene time name)
+  (visual-position
+   (formula-part-formula
+    (formula-assembly-visual-ref (formula-at scene time) name))))
+
+(define (source-position scene time source)
+  (visual-position
+   (formula-part-formula
+    (for/first ([part (in-list (formula-assembly-visual-parts
+                                (formula-at scene time)))]
+                #:when (string=? (formula-visual-source
+                                  (formula-part-formula part))
+                                 source))
+      part))))
+
 (module+ test
   (define demo (make-demo-scene))
   (check-equal? (formula-sources demo 0) '("x" "=" "2"))
   (check-equal? (formula-sources demo 7) '("x" "+" "x" "=" "2" "+" "x"))
   (check-equal? (equals-position demo 0) (equals-position demo 7))
+  ;; Existing terms retain their exact coordinates while copies form the new
+  ;; outside terms. In particular, 2 must not slide as the target formula is
+  ;; installed at the end of the clip.
+  (check-equal? (source-position demo 5 "2")
+                (source-position demo 6 "2"))
+  (check-equal? (source-position demo 5 "2")
+                (source-position demo 7 "2"))
+  (check-equal? (part-position demo 5 'original-x)
+                (part-position demo 7 'added-x-left))
   ;; The operation midpoint contains the ordinary transformed source x and
   ;; two independently travelling copies.
   (check-equal?

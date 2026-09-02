@@ -13,6 +13,11 @@
 
 (provide make-demo-scene)
 
+;; Stop at clip boundaries with zero velocity, so a transient copy hands over
+;; to its exact endpoint without looking like it snaps into place.
+(define (smoothstep progress)
+  (* progress progress (- 3 (* 2 progress))))
+
 (define (start-equation)
   (tagged-formula
    #:id 'equation
@@ -55,6 +60,57 @@
        (formula-part-formula part)
        (vec2+ (visual-position (formula-part-formula part)) shift))))))
 
+;; `tagged-formula` can give otherwise equivalent full layouts slightly
+;; different vertical origins. Keep existing terms on their current y values,
+;; and use the equals-sign baseline for newly introduced punctuation/copies.
+;; This makes the end-state replacement continuous in both coordinates.
+(define (formula-with-stable-y assembly source)
+  (define source-y-by-name
+    (for/hash ([part (in-list (formula-assembly-visual-parts source))])
+      (values (formula-part-name part)
+              (vec2-y (visual-position (formula-part-formula part))))))
+  (define equation-y
+    (hash-ref source-y-by-name 'equals))
+  (define x-y
+    (hash-ref source-y-by-name 'original-x))
+  (formula-assembly-visual-with-parts
+   assembly
+   (for/list ([part (in-list (formula-assembly-visual-parts assembly))])
+     (define name (formula-part-name part))
+     (define formula (formula-part-formula part))
+     (define y
+       (cond
+         [(hash-has-key? source-y-by-name name)
+          (hash-ref source-y-by-name name)]
+         [(memq name '(added-x-left added-x-right)) x-y]
+         [else equation-y]))
+     (formula-part
+      name
+      (visual-with-position
+       formula
+       (vec2 (vec2-x (visual-position formula)) y))))))
+
+;; The right-hand side is extended *after* the existing 2.  The complete
+;; TeX layout is initially centred, so preserving its equals sign alone would
+;; move 2 slightly right.  Keep the whole pre-existing right-hand group in
+;; place instead; the new + x follows it.
+(define (formula-with-stationary-right-hand-side assembly source)
+  (define shift
+    (vec2- (part-position source 'two)
+           (part-position assembly 'two)))
+  (formula-assembly-visual-with-parts
+   assembly
+   (for/list ([part (in-list (formula-assembly-visual-parts assembly))])
+     (define name (formula-part-name part))
+     (define formula (formula-part-formula part))
+     (formula-part
+      name
+      (if (memq name '(two plus-right added-x-right))
+          (visual-with-position
+           formula
+           (vec2+ (visual-position formula) shift))
+          formula)))))
+
 (define upper-copy-route
   (formula-relative-path
    (polyline-path
@@ -68,9 +124,13 @@
 (define (make-demo-scene)
   (define source (start-equation))
   (define destination
-    (formula-with-equals-at
-     (after-adding-x)
-     (part-position source 'equals)))
+    (formula-with-stationary-right-hand-side
+     (formula-with-stable-y
+      (formula-with-equals-at
+       (after-adding-x)
+       (part-position source 'equals))
+      source)
+     source))
   (define marker
     (circle #:id 'marker #:center (vec2 -5/2 11/10)
             #:radius 3/20 #:fill "royalblue" #:stroke "navy"))
@@ -104,15 +164,18 @@
     (scene-play
      (scene-wait initial 3/4)
      (transform-from-copy 'marker marker-copy #:path-arc 3/4)
-     #:duration 1))
+     #:duration 1
+     #:easing smoothstep))
   (define outlined
     (scene-play (scene-wait copied-marker 1/2)
                 (circumscribe 'equation #:color "goldenrod")
-                #:duration 1))
+                #:duration 1
+                #:easing smoothstep))
   (define pulsed
     (scene-play (scene-wait outlined 1/4)
                 (indicate 'equation #:color "goldenrod")
-                #:duration 1))
+                #:duration 1
+                #:easing smoothstep))
   (define after-operation
     (scene-play
      (scene-wait pulsed 1/2)
@@ -120,13 +183,16 @@
       source
       destination
       #:matches
-      (list (formula-part-match 'original-x 'original-x)
+      ;; The original x remains in place as the newly explicit x on the
+      ;; left. Two copies then travel to form the new left and right terms.
+      (list (formula-part-match 'original-x 'added-x-left)
             (formula-part-match 'equals 'equals)
             (formula-part-match 'two 'two))
       #:copies
-      (list (formula-part-copy 'original-x 'added-x-left upper-copy-route)
+      (list (formula-part-copy 'original-x 'original-x upper-copy-route)
             (formula-part-copy 'original-x 'added-x-right lower-copy-route)))
-     #:duration 2))
+     #:duration 2
+     #:easing smoothstep))
   (scene-wait after-operation 1))
 
 (module+ main
