@@ -32,6 +32,7 @@
          tagged-formula-fragment-visual?
          tagged-formula-fragment-visual-svg-source
          transform-matching-formula
+         rewrite-formula
          transform-matching-tex)
 
 
@@ -400,14 +401,61 @@
                                     #:part-paths [part-paths '()]
                                     #:copies [copies '()]
                                     #:mismatch-mode [mismatch-mode 'fade])
+  (transform-formula-parts
+   (make-matching-formula-correspondence
+    'transform-matching-formula source destination matches)
+   #:path-arc path-arc
+   #:part-paths part-paths
+   #:copies copies
+   #:mismatch-mode mismatch-mode))
+
+; rewrite-formula : formula-assembly-visual? formula-assembly-visual?
+;                   #:anchor (or/c symbol? formula-part-match?)
+;                   [#:matches (listof formula-part-match?)]
+;                   [#:path-arc finite-real?]
+;                   [#:part-paths (listof formula-part-path?)]
+;                   [#:copies (listof formula-part-copy?)]
+;                   [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                   -> transform-formula-parts-request?
+;;   Builds a matching formula rewrite whose named anchor stays at its current
+;;   position, even when an earlier rewrite has already repositioned the scene.
+(define (rewrite-formula source destination
+                         #:anchor anchor
+                         #:matches [matches '()]
+                         #:path-arc [path-arc 0]
+                         #:part-paths [part-paths '()]
+                         #:copies [copies '()]
+                         #:mismatch-mode [mismatch-mode 'fade])
+  (define anchor-match
+    (rewrite-anchor->match anchor))
+  (define correspondence
+    (make-matching-formula-correspondence
+     'rewrite-formula
+     source
+     destination
+     (add-rewrite-anchor-match source destination matches anchor-match)))
+  (transform-formula-parts/anchored
+   correspondence
+   anchor-match
+   #:path-arc path-arc
+   #:part-paths part-paths
+   #:copies copies
+   #:mismatch-mode mismatch-mode))
+
+; make-matching-formula-correspondence : symbol? formula-assembly-visual?
+;                                        formula-assembly-visual?
+;                                        (listof formula-part-match?)
+;                                        -> formula-correspondence?
+;;   Combines explicit priority matches with deterministic remaining matches.
+(define (make-matching-formula-correspondence who source destination matches)
   (unless (formula-assembly-visual? source)
     (raise-argument-error
-     'transform-matching-formula
+     who
      "formula-assembly-visual?"
      source))
   (unless (formula-assembly-visual? destination)
     (raise-argument-error
-     'transform-matching-formula
+     who
      "formula-assembly-visual?"
      destination))
   ;; formula-correspondence validates the explicit one-to-one part map.
@@ -429,15 +477,53 @@
             (not (hash-has-key? explicit-destination
                                 (formula-part-match-destination-name match)))))
      (formula-correspondence-matches automatic)))
-  (transform-formula-parts
-   (formula-correspondence
-    source
-    destination
-   (append (formula-correspondence-matches explicit) remaining-auto))
-   #:path-arc path-arc
-   #:part-paths part-paths
-   #:copies copies
-   #:mismatch-mode mismatch-mode))
+  (formula-correspondence
+   source
+   destination
+   (append (formula-correspondence-matches explicit) remaining-auto)))
+
+; rewrite-anchor->match : (or/c symbol? formula-part-match?) -> formula-part-match?
+;;   Interprets a symbol as an identically named source/destination anchor.
+(define (rewrite-anchor->match anchor)
+  (cond
+    [(symbol? anchor) (formula-part-match anchor anchor)]
+    [(formula-part-match? anchor) anchor]
+    [else
+     (raise-argument-error
+      'rewrite-formula
+      "(or/c symbol? formula-part-match?)"
+      anchor)]))
+
+; add-rewrite-anchor-match : formula-assembly-visual? formula-assembly-visual?
+;                            (listof formula-part-match?) formula-part-match?
+;                            -> (listof formula-part-match?)
+;;   Makes the anchored pair explicit, rejecting a conflicting caller match.
+(define (add-rewrite-anchor-match source destination matches anchor)
+  ;; This first correspondence validates the list and all named parts before
+  ;; inspecting individual match fields below.
+  (formula-correspondence source destination matches)
+  (define source-name (formula-part-match-source-name anchor))
+  (define destination-name (formula-part-match-destination-name anchor))
+  (define overlapping
+    (for/first ([match (in-list matches)]
+                #:when (or (eq? source-name
+                                (formula-part-match-source-name match))
+                           (eq? destination-name
+                                (formula-part-match-destination-name match))))
+      match))
+  (cond
+    [(not overlapping) (append matches (list anchor))]
+    [(and (eq? source-name
+               (formula-part-match-source-name overlapping))
+          (eq? destination-name
+               (formula-part-match-destination-name overlapping)))
+     matches]
+    [else
+     (raise-arguments-error
+      'rewrite-formula
+      "an anchor that does not conflict with an explicit match"
+      "anchor" anchor
+      "match" overlapping)]))
 
 ; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
 ;                          [#:key-map (hash/c string? string?)]

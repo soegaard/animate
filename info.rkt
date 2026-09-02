@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BW: source-preserving copies, attention, and flexible formula routes")
+  "SCENE-BX: anchored formula rewrites")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.71.0")
+(define version "0.72.0")
 
 ; license : symbol?
 ;;   Declares the package license.

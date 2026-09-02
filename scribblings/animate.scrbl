@@ -3045,6 +3045,39 @@ equivalence, parse TeX tokens, choose paths/arcs for the movement, or morph
 glyph outlines.
 }
 
+@defproc[(rewrite-formula
+          [source formula-assembly-visual?]
+          [destination formula-assembly-visual?]
+          [#:anchor anchor (or/c symbol? formula-part-match?)]
+          [#:matches matches (listof formula-part-match?) '()]
+          [#:path-arc path-arc finite-real? 0]
+          [#:part-paths part-paths (listof formula-part-path?) '()]
+          [#:copies copies (listof formula-part-copy?) '()]
+          [#:mismatch-mode mismatch-mode (or/c 'fade 'fade-transform) 'fade])
+         transform-formula-parts-request?]{
+
+Builds a matching formula transition with one fixed named anchor. Pass a symbol
+such as @racket['equals] when the part has the same name at both endpoints, or
+a @racket[formula-part-match] when its names differ. The anchor is made an
+explicit match; a conflicting value in @racket[matches] raises an error.
+
+When @racket[scene-play] compiles the request, Animate translates the complete
+destination layout so the destination anchor coincides with the corresponding
+part in the @italic{current} source formula. Consequently, a sequence of
+rewrites keeps the anchor fixed even when the formula values passed as earlier
+templates were constructed at their own default positions. The translation
+preserves the target formula's TeX spacing and baselines. It does not pin any
+other term, infer an algebraic operation, or make several independent anchors
+stationary.
+
+The remaining keywords have the same meaning as in
+@racket[transform-matching-formula]: explicit matches take priority, routes and
+copies select intentional term motion, and @racket['fade-transform] cross-fades
+remaining unmatched parts while moving them. Like the lower-level operation,
+this is whole-fragment correspondence rather than TeX parsing or glyph-outline
+morphing.
+}
+
 @subsection[#:tag "formula-parts"]{Named Formula Parts and Correspondence}
 
 A formula assembly is a composite Visual made from independently typeset LaTeX
@@ -9361,6 +9394,17 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.72.0 — SCENE-BX.} Added @racket[rewrite-formula], an anchored
+       formula-transition convenience operation. Its anchor is resolved from
+       the current scene formula when a clip compiles, so staged algebra keeps
+       a named term such as @racket['equals] fixed without pre-translating each
+       construction template. Semantically unchanged tagged fragments also
+       retain their source SVG crop at the destination transform, preventing a
+       final-frame renderer-resource swap.}
+ @item{@bold{0.71.0 — SCENE-BW.} Added source-preserving
+       @racket[transform-from-copy], renderer-measured @racket[circumscribe]
+       and @racket[indicate], formula-part copies, and arbitrary normalized
+       formula routes.}
  @item{@bold{0.70.0 — SCENE-BU.} Refined @racket[write-in] to reveal ordered
        Bézier-curve slots by default, apply easing after each leaf's stagger
        offset, and support reversed writing. Added @racket[unwrite] for

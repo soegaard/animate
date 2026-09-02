@@ -87,6 +87,7 @@
          indicate
          indicate-request?
          transform-formula-parts
+         transform-formula-parts/anchored
          transform-formula-parts-request?
          create
          create-request?
@@ -312,7 +313,7 @@
 ;;  - sample-count    exact-integer?  deterministic alignment score resolution.
 
 (struct transform-formula-parts-request
-  (correspondence path-arc part-paths copies mismatch-mode)
+  (correspondence path-arc part-paths copies mismatch-mode anchor)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
@@ -321,6 +322,7 @@
 ;;  - part-paths      (listof formula-part-path?) per-match route overrides.
 ;;  - copies          (listof formula-part-copy?) source-preserving copies.
 ;;  - mismatch-mode   (or/c 'fade 'fade-transform) handling of unmatched parts.
+;;  - anchor          (or/c #f formula-part-match?) current-state layout anchor.
 
 (struct transform-from-copy-request
   (source-id destination route)
@@ -1173,9 +1175,38 @@
                                  #:part-paths [part-paths '()]
                                  #:copies [copies '()]
                                  #:mismatch-mode [mismatch-mode 'fade])
+  (make-transform-formula-parts-request
+   'transform-formula-parts
+   correspondence path-arc part-paths copies mismatch-mode #f))
+
+; transform-formula-parts/anchored : formula-correspondence? formula-part-match?
+;                                    [#:path-arc finite-real?]
+;                                    [#:part-paths (listof formula-part-path?)]
+;                                    [#:copies (listof formula-part-copy?)]
+;                                    [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                                    -> transform-formula-parts-request?
+;;   Internal constructor used by rewrite-formula to align one destination part
+;;   to the corresponding part in the current formula when scene-play compiles.
+(define (transform-formula-parts/anchored correspondence anchor
+                                         #:path-arc [path-arc 0]
+                                         #:part-paths [part-paths '()]
+                                         #:copies [copies '()]
+                                         #:mismatch-mode [mismatch-mode 'fade])
+  (make-transform-formula-parts-request
+   'rewrite-formula
+   correspondence path-arc part-paths copies mismatch-mode anchor))
+
+; make-transform-formula-parts-request : symbol? formula-correspondence?
+;                                         finite-real? list? list? list? symbol?
+;                                         (or/c #f formula-part-match?)
+;                                         -> transform-formula-parts-request?
+;;   Validates the common ordinary and anchored formula-transition inputs.
+(define (make-transform-formula-parts-request who correspondence path-arc
+                                              part-paths copies mismatch-mode
+                                              anchor)
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
-     'transform-formula-parts
+     who
      "formula-correspondence?"
      correspondence))
   ;; Validate the public route descriptor at construction time. Per-pair
@@ -1185,22 +1216,28 @@
   (unless (and (list? part-paths)
                (andmap formula-part-path? part-paths))
     (raise-argument-error
-     'transform-formula-parts
+     who
      "(listof formula-part-path?)"
      part-paths))
   (unless (and (list? copies)
                (andmap formula-part-copy? copies))
     (raise-argument-error
-     'transform-formula-parts
+     who
      "(listof formula-part-copy?)"
      copies))
   (unless (formula-mismatch-mode? mismatch-mode)
     (raise-argument-error
-     'transform-formula-parts
+     who
      "(or/c 'fade 'fade-transform)"
      mismatch-mode))
+  (unless (or (not anchor)
+              (formula-part-match? anchor))
+    (raise-argument-error
+     who
+     "(or/c #f formula-part-match?)"
+     anchor))
   (transform-formula-parts-request
-   correspondence path-arc part-paths copies mismatch-mode))
+   correspondence path-arc part-paths copies mismatch-mode anchor))
 
 ; create : path-visual? -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -1761,11 +1798,16 @@
       destination)]
     [(transform-formula-parts-request? request)
      (check-formula-transform-target visual)
+     (define correspondence
+       (anchor-formula-correspondence
+        visual
+        (transform-formula-parts-request-correspondence request)
+        (transform-formula-parts-request-anchor request)))
      (formula-parts-transform-animation
       target-id
      (make-formula-transition-plan
        visual
-       (transform-formula-parts-request-correspondence request)
+       correspondence
        #:path-arc (transform-formula-parts-request-path-arc request)
        #:part-paths (transform-formula-parts-request-part-paths request)
        #:copies (transform-formula-parts-request-copies request)
@@ -3695,6 +3737,45 @@
      "transform-formula-parts requires a formula assembly"
      "visual-id" (visual-id visual)
      "visual" visual)))
+
+; anchor-formula-correspondence : formula-assembly-visual? formula-correspondence?
+;                                 (or/c #f formula-part-match?)
+;                                 -> formula-correspondence?
+;;   Translates the complete destination layout so an anchor pair coincides
+;;   with the current formula at clip compilation. Keeping this late makes a
+;;   rewrite reliable after earlier transitions have repositioned the formula.
+(define (anchor-formula-correspondence current-source correspondence anchor)
+  (cond
+    [(not anchor) correspondence]
+    [else
+     (define destination
+       (formula-correspondence-destination correspondence))
+     (define source-anchor
+       (formula-part-formula
+        (formula-assembly-visual-ref
+         current-source
+         (formula-part-match-source-name anchor))))
+     (define destination-anchor
+       (formula-part-formula
+        (formula-assembly-visual-ref
+         destination
+         (formula-part-match-destination-name anchor))))
+     (define shift
+       (vec2- (visual-position source-anchor)
+              (visual-position destination-anchor)))
+     (define anchored-destination
+       (formula-assembly-visual-with-parts
+        destination
+        (for/list ([part (in-list (formula-assembly-visual-parts destination))])
+          (formula-part
+           (formula-part-name part)
+           (visual-with-position
+            (formula-part-formula part)
+            (vec2+ (visual-position (formula-part-formula part)) shift))))))
+     (formula-correspondence
+      (formula-correspondence-source correspondence)
+      anchored-destination
+      (formula-correspondence-matches correspondence))]))
 
 ; check-path-morph-request-arguments : symbol? any/c any/c -> void?
 ;;   Validates one public path-morph request constructor call.

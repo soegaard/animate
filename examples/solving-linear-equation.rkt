@@ -4,8 +4,8 @@
 ;;; Solving a Linear Equation with a Fixed Equals Sign
 ;;;
 
-;; A staged tagged-formula example. Every endpoint is laid out by TeX, then
-;; translated as a whole so that the equals sign remains in one fixed place.
+;; A staged tagged-formula example. `rewrite-formula` lays out each endpoint
+;; with TeX, then anchors the equals sign at the current scene position.
 
 (require "../main.rkt"
          "private/run-demo.rkt")
@@ -56,37 +56,12 @@
    (formula-fragment 'equals "=")
    (formula-fragment 'right-two "2")))
 
-(define (formula-part-position assembly name)
-  (visual-position
-   (formula-part-formula
-    (formula-assembly-visual-ref assembly name))))
-
-;; Reposition a TeX-laid-out equation as one rigid unit so `=` stays fixed,
-;; while retaining TeX's spacing between all of its own fragments.
-(define (formula-with-equals-at assembly position)
-  (define shift
-    (vec2- position (formula-part-position assembly 'equals)))
-  (formula-assembly-visual-with-parts
-   assembly
-   (for/list ([part (in-list (formula-assembly-visual-parts assembly))])
-     (formula-part
-      (formula-part-name part)
-      (visual-with-position
-       (formula-part-formula part)
-       (vec2+ (formula-part-position assembly (formula-part-name part))
-              shift))))))
-
 (define (make-demo-scene)
   (define initial-equation (equation-with-one))
-  (define equals-position (formula-part-position initial-equation 'equals))
-  (define after-subtracting-one
-    (formula-with-equals-at (equation-after-subtracting-one) equals-position))
-  (define after-evaluating
-    (formula-with-equals-at (equation-with-four) equals-position))
-  (define after-dividing
-    (formula-with-equals-at (equation-divided-by-two) equals-position))
-  (define solution
-    (formula-with-equals-at (solution-equation) equals-position))
+  (define after-subtracting-one (equation-after-subtracting-one))
+  (define after-evaluating (equation-with-four))
+  (define after-dividing (equation-divided-by-two))
+  (define solution (solution-equation))
   (define title
     (plain-text
      "Solving 2x + 1 = 5 with a fixed equals sign"
@@ -105,9 +80,10 @@
   (define after-subtraction
     (scene-play
      before-subtracting-one
-     (transform-matching-formula
+     (rewrite-formula
       initial-equation
       after-subtracting-one
+      #:anchor 'equals
       #:matches
       (list (formula-part-match 'left-2x 'left-2x)
             (formula-part-match 'equals 'equals)
@@ -118,16 +94,20 @@
   (define after-evaluation
     (scene-play
      before-evaluating
-     (transform-matching-formula after-subtracting-one after-evaluating)
+     (rewrite-formula
+      after-subtracting-one
+      after-evaluating
+      #:anchor 'equals)
      #:duration 1))
   (define before-dividing
     (scene-wait after-evaluation 1))
   (define after-division
     (scene-play
      before-dividing
-     (transform-matching-formula
+     (rewrite-formula
       after-evaluating
       after-dividing
+      #:anchor 'equals
       #:matches
       (list (formula-part-match 'left-2x 'left-fraction)
             (formula-part-match 'equals 'equals)
@@ -138,9 +118,10 @@
   (define solved
     (scene-play
      before-simplifying
-     (transform-matching-formula
+     (rewrite-formula
       after-dividing
       solution
+      #:anchor 'equals
       #:matches
       (list (formula-part-match 'left-fraction 'left-x)
             (formula-part-match 'equals 'equals)

@@ -463,6 +463,7 @@
  transform-formula-parts
  transform-formula-parts-request?
  transform-matching-formula
+ rewrite-formula
  create
  create-request?
  uncreate

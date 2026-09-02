@@ -1,9 +1,21 @@
-# animate — SCENE-BW
+# animate — SCENE-BX
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-BX adds `rewrite-formula`, a formula-aware convenience operation for
+staged algebra. It combines ordinary matching, copies, routes, and mismatch
+policy with one fixed named anchor—normally `=`. The target TeX layout is
+translated when `scene-play` compiles the transition, so each later rewrite
+uses the actual preceding equation rather than a stale construction template.
+
+```racket
+(scene-play scene
+            (rewrite-formula before after #:anchor 'equals)
+            #:duration 1)
+```
 
 SCENE-BW adds source-preserving copies, temporary attention effects, and
 arbitrary routes for formula parts. `transform-from-copy` keeps an existing
@@ -131,11 +143,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BW v0.71.0 builds on immutable parameters and generic values, dynamically
+SCENE-BX v0.72.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.71.0`. The public module's bindings are covered
+The public package version is `0.72.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -763,7 +775,7 @@ Compilation uses the **current** formula values, transforms, and opacities, so a
 preceding clip may have changed them without invalidating the correspondence.
 
 The correspondence destination is a part-layout template. At completion, its
-exact ordered part list replaces the current source part list, but these outer
+ordered part list replaces the current source part list, but these outer
 destination fields are not copied:
 
 ```text
@@ -774,7 +786,9 @@ scale
 opacity
 ```
 
-The current source assembly keeps those fields. A simultaneous `move-to`,
+The current source assembly keeps those fields. A semantically unchanged tagged
+fragment retains its source SVG crop at the destination transform, preventing a
+last-frame renderer-resource swap. A simultaneous `move-to`,
 `rotate-to`, `rotate-by`, `scale-to`, `scale-by`, or `fade-to` request can change
 the corresponding independent component.
 
@@ -834,10 +848,10 @@ correspondences. Exact destination names are restored at completion.
 ### Endpoints, easing, and conflicts
 
 Progress zero uses the exact current source part list. Ordinary interior samples
-use the shared eased progress. Structural completion installs the exact
-destination part list even when an unusual easing procedure does not return one
-at the end. Such easing can therefore create a deliberate discontinuity at the
-clip boundary.
+use the shared eased progress. Structural completion installs the destination
+part layout even when an unusual easing procedure does not return one at the
+end. Such easing can therefore create a deliberate discontinuity at the clip
+boundary.
 
 `transform-formula-parts` changes the formula-parts and presence coordination
 components. It can run with affine changes and `fade-to`, but it conflicts with:
@@ -2246,6 +2260,11 @@ precisely; do not silently lose the follow-on idea that led to the work.
   circular or normalized custom paths. It still has no semantic algebra,
   automatic choice of pedagogically meaningful copies/routes, glyph-level
   selection, or true TeX-outline morphing.
+- `rewrite-formula` keeps one explicit named anchor fixed by translating the
+  whole destination layout when the clip compiles. It does not infer which
+  other terms should remain stationary, preserve several independent anchors,
+  or know algebraic operations such as cancellation or adding a term to both
+  sides.
 - Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
   `write-in` expands their dvisvgm path definitions once while the clip is
   compiled, but there is not yet a public glyph map, semantic TeX parser,
@@ -2421,6 +2440,27 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 `unwrite` removes an existing writable Visual by reversing both leaf order and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
+
+## SCENE-BX: anchored formula rewrites
+
+Version `0.72.0` adds `rewrite-formula`, the concise form for staged formula
+changes with a fixed reference term:
+
+```racket
+(scene-play scene
+            (rewrite-formula before after #:anchor 'equals)
+            #:duration 1)
+```
+
+`#:anchor` accepts one shared part name or an explicit `formula-part-match`
+when the names differ. The target layout is translated at clip compilation from
+the current source formula, so a sequence may safely use independently
+constructed TeX templates while retaining one fixed `=`. It preserves the
+target's TeX layout as a rigid whole; it intentionally does not infer an
+algebraic operation or choose other stationary terms.
+
+`examples/solving-linear-equation.rkt` is the canonical staged example. It
+solves `2x + 1 = 5` to `x = 2` without manual position-adjustment helpers.
 
 ## SCENE-BW: copies, attention, and flexible formula routes
 
