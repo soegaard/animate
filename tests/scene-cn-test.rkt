@@ -6,8 +6,12 @@
 
 (require rackunit
          racket/class
+         racket/runtime-path
          (only-in pict pict->bitmap)
          "../main.rkt")
+
+(define-runtime-path dynamic-endpoint-example
+  "../examples/dynamic-endpoint-geometry.rkt")
 
 (define (bitmap->argb-bytes bitmap)
   (define width (send bitmap get-width))
@@ -128,4 +132,34 @@
       (scene-add
        (scene-set-value (make-scene #:camera camera) (parameter 'bad-value 1))
        (line-between (parameter 'bad-value 1) (vec2 2 0) #:id 'bad-line))
-      0))))
+      0)))
+
+  ;; The stage example's altitude is not a fixed directional hint: after the
+  ;; base endpoints move, its sampled arrow remains perpendicular to the live
+  ;; line through A and B and ends on that line.
+  (define make-dynamic-endpoint-example
+    (dynamic-require dynamic-endpoint-example 'make-demo-scene))
+  (define example-scene
+    (make-dynamic-endpoint-example))
+  (define example-time 3)
+  (define example-a (scene-visual-at example-scene 'A example-time))
+  (define example-b (scene-visual-at example-scene 'B example-time))
+  (define altitude (scene-visual-at example-scene 'height-hint example-time))
+  (define base-vector
+    (vec2- (visual-position example-b) (visual-position example-a)))
+  (define altitude-vector
+    (vec2- (arrow-visual-end altitude) (arrow-visual-start altitude)))
+  (define foot-from-a
+    (vec2- (arrow-visual-end altitude) (visual-position example-a)))
+  (check-true (arrow-visual? altitude))
+  (check-true (arrow-visual-end-tip? altitude))
+  (check-=
+   (+ (* (vec2-x base-vector) (vec2-x altitude-vector))
+      (* (vec2-y base-vector) (vec2-y altitude-vector)))
+   0
+   1e-9)
+  (check-=
+   (- (* (vec2-x base-vector) (vec2-y foot-from-a))
+      (* (vec2-y base-vector) (vec2-x foot-from-a)))
+   0
+   1e-9))

@@ -11,13 +11,34 @@
 (require "../main.rkt" "private/run-demo.rkt")
 (provide make-demo-scene)
 
+;; The perpendicular foot of point c on the infinite line through a and b.
+;; This is deliberately a pure vector calculation: its three inputs are read
+;; from one sampled scene state by the derived altitude Visual below.
+(define (projection-on-line a b c)
+  (define ab (vec2- b a))
+  (define ac (vec2- c a))
+  (define denominator
+    (+ (* (vec2-x ab) (vec2-x ab))
+       (* (vec2-y ab) (vec2-y ab))))
+  (unless (positive? denominator)
+    (raise-arguments-error
+     'projection-on-line
+     "two distinct points defining the base line"
+     "a" a
+     "b" b))
+  (define projection-scale
+    (/ (+ (* (vec2-x ac) (vec2-x ab))
+          (* (vec2-y ac) (vec2-y ab)))
+       denominator))
+  (vec2+ a (vec2-scale projection-scale ab)))
+
 (define (make-demo-scene)
   (define title
     (plain-text "SCENE-CN: dynamic endpoint geometry"
                 #:id 'title #:center (vec2 0 17/5)
                 #:font-size 2/5 #:font-weight 'bold #:color "navy"))
   (define explanation
-    (plain-text "Move the vertices; the sides remain connected."
+    (plain-text "Move the vertices; sides stay connected and the altitude stays perpendicular."
                 #:id 'explanation #:center (vec2 0 14/5)
                 #:font-size 1/5 #:color "darkslategray"))
   (define A
@@ -47,15 +68,28 @@
   (define AB (segment-between 'A 'B #:id 'AB #:stroke "steelblue" #:stroke-width 4))
   (define BC (segment-between 'B 'C #:id 'BC #:stroke "steelblue" #:stroke-width 4))
   (define CA (segment-between 'C 'A #:id 'CA #:stroke "steelblue" #:stroke-width 4))
-  ;; The arrow starts at C's currently rendered lower edge, avoiding an overlap
-  ;; with the marker as it moves.
+  ;; Rebuild a genuine altitude from the sampled triangle: its endpoint is the
+  ;; perpendicular projection of C onto the live line through A and B. The
+  ;; arrow is painted behind the triangle, so AB cleanly covers its contact
+  ;; point and C naturally covers its centre start.
   (define height-hint
-    (arrow-between (anchor-of 'C 'bottom) (vec2 1/2 -1)
-                   #:id 'height-hint #:stroke "crimson" #:stroke-width 3
-                   #:tip-length 1/4 #:tip-width 1/4))
+    (derived-visual
+     (arrow origin (vec2 1 0)
+            #:id 'height-hint #:stroke "crimson" #:stroke-width 3
+            #:tip-length 1/4 #:tip-width 1/4)
+     (lambda (context _template)
+       (define a
+         (visual-position (derived-context-visual-ref context 'A)))
+       (define b
+         (visual-position (derived-context-visual-ref context 'B)))
+       (define c
+         (visual-position (derived-context-visual-ref context 'C)))
+       (arrow c (projection-on-line a b c)
+              #:id 'height-hint #:stroke "crimson" #:stroke-width 3
+              #:tip-length 1/4 #:tip-width 1/4))))
   (define initial
     (scene-add (make-scene)
-               AB BC CA height-hint A B C A-label B-label C-label
+               height-hint AB BC CA A B C A-label B-label C-label
                title explanation))
   (scene-wait
    (scene-play initial

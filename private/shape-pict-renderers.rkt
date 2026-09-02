@@ -282,13 +282,73 @@
 ;;;
 
 ; arrow-visual->pict : arrow-visual? camera? -> pict?
-;;   Converts one semantic arrow through the shared path renderer.
+;;   Converts one semantic arrow through the shared path renderer.  Arrow tips
+;;   are filled but deliberately not stroked: a mitered outline at an acute
+;;   triangular apex projects beyond the semantic endpoint.
 (define (arrow-visual->pict visual camera)
-  (diagram-path->pict visual
-                      (arrow-visual-path-geometry visual)
-                      (arrow-visual-stroke visual)
-                      (arrow-visual-stroke-width visual)
-                      camera))
+  (arrow-path-visual->pict
+   (make-path-visual
+    (arrow-render-path-geometry visual)
+    #:id (visual-id visual)
+    #:center (visual-position visual)
+    #:rotation (visual-rotation visual)
+    #:scale (visual-scale visual)
+    #:fill (arrow-visual-stroke visual)
+    #:stroke (arrow-visual-stroke visual)
+    #:stroke-width (arrow-visual-stroke-width visual))
+   camera))
+
+; arrow-render-path-geometry : arrow-visual? -> path-geometry?
+;;   Gives the rendering geometry for an arrow.  The semantic endpoint is the
+;; apex of each tip, while the stroked shaft stops at the base of that tip.
+;; This avoids a round shaft cap protruding through a filled arrowhead.
+(define (arrow-render-path-geometry visual)
+  (define original-geometry
+    (arrow-visual-path-geometry visual))
+  (define original-shaft
+    (for/first ([subpath
+                 (in-list
+                  (path-geometry-subpaths original-geometry))]
+                #:unless (path-subpath-closed? subpath))
+      subpath))
+  (define local-start
+    (path-subpath-start original-shaft))
+  (define local-end
+    (line-path-segment-end
+     (car (path-subpath-segments original-shaft))))
+  (define direction
+    (vec2- local-end local-start))
+  (define length
+    (sqrt (+ (* (vec2-x direction) (vec2-x direction))
+             (* (vec2-y direction) (vec2-y direction)))))
+  (define start-inset
+    (if (arrow-visual-start-tip? visual)
+        (arrow-visual-tip-length visual)
+        0))
+  (define end-inset
+    (if (arrow-visual-end-tip? visual)
+        (arrow-visual-tip-length visual)
+        0))
+  (define shaft-subpaths
+    (if (> length (+ start-inset end-inset))
+        (let* ([unit-direction
+                (vec2-scale (/ 1 length) direction)]
+               [shaft-start
+                (vec2+ local-start
+                       (vec2-scale start-inset unit-direction))]
+               [shaft-end
+                (vec2- local-end
+                       (vec2-scale end-inset unit-direction))])
+          (list (path-subpath shaft-start
+                              (list (line-path-segment shaft-end))
+                              #f)))
+        '()))
+  (define tip-subpaths
+    (filter path-subpath-closed?
+            (path-geometry-subpaths
+             original-geometry)))
+  (path-geometry
+   (append shaft-subpaths tip-subpaths)))
 
 ; axes-visual->pict : axes-visual? camera? -> pict?
 ;;   Converts semantic axes through the shared path renderer.
@@ -710,6 +770,37 @@
               width
               height)))))
 
+; arrow-path-visual->pict : path-visual? camera? -> pict?
+;;   Draws arrow geometry like a normal path except that the closed triangular
+;;   tips receive fill only.  An outlined, acute triangular tip uses a miter
+;;   join whose visible apex can overshoot the arrow's semantic endpoint.
+(define (arrow-path-visual->pict visual camera)
+  (define pixel-geometry
+    (path-visual->pixel-geometry visual camera))
+  (if (path-geometry-empty? pixel-geometry)
+      (empty-path-pict)
+      (begin
+        (check-default-pict-stroke-width
+         'arrow-path-visual->pict
+         (path-visual-stroke-width visual))
+        (let-values ([(half-width half-height)
+                      (path-pict-half-extents pixel-geometry
+                                              (path-visual-stroke-width visual))])
+          (define width
+            (* 2 half-width))
+          (define height
+            (* 2 half-height))
+          (dc (lambda (drawing-context x y)
+                (draw-arrow-path-geometry!
+                 drawing-context
+                 pixel-geometry
+                 (+ x half-width)
+                 (+ y half-height)
+                 (path-visual-stroke visual)
+                 (path-visual-stroke-width visual)))
+              width
+              height)))))
+
 ; path-visual->pixel-geometry : path-visual? camera? -> path-geometry?
 ;;   Applies local affine deformation and converts y-up units to y-down pixels.
 (define (path-visual->pixel-geometry visual camera)
@@ -808,6 +899,40 @@
                            y-offset
                            stroke
                            stroke-width))
+    (lambda ()
+      (send drawing-context set-pen old-pen)
+      (send drawing-context set-brush old-brush))))
+
+; draw-arrow-path-geometry! : dc<%> path-geometry? real? real? any/c
+;                              nonnegative-real? -> void?
+;;   Draws the normally stroked shaft followed by filled, unoutlined arrowheads.
+;; The separate styling preserves a precise visible arrow tip.
+(define (draw-arrow-path-geometry! drawing-context
+                                   geometry
+                                   x-offset
+                                   y-offset
+                                   stroke
+                                   stroke-width)
+  (define old-pen
+    (send drawing-context get-pen))
+  (define old-brush
+    (send drawing-context get-brush))
+  (dynamic-wind
+    void
+    (lambda ()
+      (draw-open-subpaths! drawing-context
+                           geometry
+                           x-offset
+                           y-offset
+                           stroke
+                           stroke-width)
+      (draw-closed-subpaths! drawing-context
+                             geometry
+                             x-offset
+                             y-offset
+                             stroke
+                             #f
+                             0))
     (lambda ()
       (send drawing-context set-pen old-pen)
       (send drawing-context set-brush old-brush))))
