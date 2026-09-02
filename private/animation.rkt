@@ -303,13 +303,15 @@
 ;;  - allow-reverse?  boolean?        whether reverse traversal may be selected.
 ;;  - sample-count    exact-integer?  deterministic alignment score resolution.
 
-(struct transform-formula-parts-request (correspondence path-arc part-paths)
+(struct transform-formula-parts-request
+  (correspondence path-arc part-paths mismatch-mode)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
 ;;  - correspondence  formula-correspondence?  explicit source-to-destination map.
 ;;  - path-arc        finite-real?            default matched-part arc angle.
 ;;  - part-paths      (listof formula-part-path?) per-match route overrides.
+;;  - mismatch-mode   (or/c 'fade 'fade-transform) handling of unmatched parts.
 
 (struct create-request (visual)
   #:transparent)
@@ -1028,13 +1030,16 @@
 ; transform-formula-parts : formula-correspondence?
 ;                         [#:path-arc finite-real?]
 ;                         [#:part-paths (listof formula-part-path?)]
+;                         [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                           -> transform-formula-parts-request?
 ;; Creates a request that moves and cross-fades explicitly matched parts.
 ;; `path-arc` applies to every matched part unless a `part-paths` entry selects
-;; that correspondence pair explicitly.
+;; that correspondence pair explicitly. `mismatch-mode` controls remaining
+;; unmatched source/destination pieces.
 (define (transform-formula-parts correspondence
                                  #:path-arc [path-arc 0]
-                                 #:part-paths [part-paths '()])
+                                 #:part-paths [part-paths '()]
+                                 #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
      'transform-formula-parts
@@ -1050,7 +1055,13 @@
      'transform-formula-parts
      "(listof formula-part-path?)"
      part-paths))
-  (transform-formula-parts-request correspondence path-arc part-paths))
+  (unless (formula-mismatch-mode? mismatch-mode)
+    (raise-argument-error
+     'transform-formula-parts
+     "(or/c 'fade 'fade-transform)"
+     mismatch-mode))
+  (transform-formula-parts-request
+   correspondence path-arc part-paths mismatch-mode))
 
 ; create : path-visual? -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -1613,7 +1624,9 @@
        visual
        (transform-formula-parts-request-correspondence request)
        #:path-arc (transform-formula-parts-request-path-arc request)
-       #:part-paths (transform-formula-parts-request-part-paths request)))]
+       #:part-paths (transform-formula-parts-request-part-paths request)
+       #:mismatch-mode
+       (transform-formula-parts-request-mismatch-mode request)))]
     [(create-request? request)
      (define complete-visual
        (create-request-visual request))

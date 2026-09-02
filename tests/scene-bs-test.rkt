@@ -226,6 +226,31 @@
                       1/2))))
       1/1000))
 
+  ;; `fade-transform` pairs unmatched pieces in source/destination order.
+  ;; The unmatched + and - therefore share one travelling midpoint instead of
+  ;; fading independently at their endpoint positions.
+  (define mismatch-fade-transformed
+    (scene-play
+     (scene-add (make-scene) manim-source)
+     (transform-matching-tex manim-source
+                             manim-destination
+                             #:mismatch-mode 'fade-transform)
+     #:duration 2))
+  (define mismatch-fade-transform-midpoint
+    (scene-state-ref (scene-sample mismatch-fade-transformed 1)
+                     'manim-equation))
+  (define mismatch-fade-transform-plus
+    (formula-for-source mismatch-fade-transform-midpoint "+"))
+  (define mismatch-fade-transform-minus
+    (formula-for-source mismatch-fade-transform-midpoint "-"))
+  (check-equal? (visual-position mismatch-fade-transform-plus)
+                (visual-position mismatch-fade-transform-minus))
+  (check-equal?
+   (visual-position mismatch-fade-transform-plus)
+   (vec2-lerp (visual-position source-plus)
+              (visual-position destination-minus)
+              1/2))
+
   ;; `key-map` permits an explicit changed-term pairing without exposing the
   ;; generated fragment names.
   (define mapped-source
@@ -254,6 +279,12 @@
    exn:fail:contract?
    (lambda ()
      (formula-arc #:angle +inf.0)))
+  (check-exn
+   exn:fail:contract?
+   (lambda ()
+     (transform-matching-tex manim-source
+                             manim-destination
+                             #:mismatch-mode 'transform)))
 
   ;; Groups can occur beside ordinary TeX text, just as they can in Manim.
   (define inline-group

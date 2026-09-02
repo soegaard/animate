@@ -27,6 +27,7 @@
 (provide formula-arc
          formula-arc?
          formula-arc-angle
+         formula-mismatch-mode?
          formula-part-path
          formula-part-path?
          formula-part-path-source-name
@@ -66,6 +67,14 @@
 
 (define formula-arc? formula-arc-route?)
 (define formula-arc-angle formula-arc-route-angle)
+
+; formula-mismatch-mode? : any/c -> boolean?
+;; Recognises the policies for source/destination formula parts that have no
+;; correspondence.  `fade` leaves each one in place while fading it; a
+;; `fade-transform` pairs remaining source and destination parts by order and
+;; cross-fades each pair while it travels between its endpoints.
+(define (formula-mismatch-mode? value)
+  (and (memq value '(fade fade-transform)) #t))
 
 ;; formula-part-path selects one named formula correspondence for a route.
 (struct formula-part-path (source-name destination-name route)
@@ -130,11 +139,13 @@
 ;                                formula-correspondence?
 ;                                [#:path-arc finite-real?]
 ;                                [#:part-paths (listof formula-part-path?)]
+;                                [#:mismatch-mode formula-mismatch-mode?]
 ;                                -> formula-transition-plan?
 ;;   Compiles correspondence against the current source assembly.
 (define (make-formula-transition-plan current-source correspondence
                                       #:path-arc [path-arc 0]
-                                      #:part-paths [part-paths '()])
+                                      #:part-paths [part-paths '()]
+                                      #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-assembly-visual? current-source)
     (raise-argument-error
      'make-formula-transition-plan
@@ -145,6 +156,11 @@
      'make-formula-transition-plan
      "formula-correspondence?"
      correspondence))
+  (unless (formula-mismatch-mode? mismatch-mode)
+    (raise-argument-error
+     'make-formula-transition-plan
+     "(or/c 'fade 'fade-transform)"
+     mismatch-mode))
   (check-current-source-names current-source correspondence)
   (define destination
     (formula-correspondence-destination correspondence))
@@ -156,14 +172,19 @@
   ;; Validate that the exact destination parts can occupy the current assembly
   ;; identity before any timeline is constructed.
   (formula-assembly-visual-with-parts current-source destination-parts)
+  (define-values (mismatch-before-specs mismatch-after-specs)
+    (make-mismatch-specs current-source
+                         correspondence
+                         default-route
+                         mismatch-mode))
   (define specs
     (append
-     (make-unmatched-source-specs current-source correspondence)
+     mismatch-before-specs
      (make-matched-specs current-source
                          correspondence
                          default-route
                          part-paths-by-match)
-     (make-unmatched-destination-specs correspondence)))
+     mismatch-after-specs))
   (formula-transition-plan
    (formula-assembly-visual-parts current-source)
    (name-transition-specs
@@ -191,15 +212,45 @@
      "expected part-names" expected-names
      "current part-names" current-names)))
 
-; make-unmatched-source-specs : formula-assembly-visual?
-;                               formula-correspondence?
+; make-mismatch-specs : formula-assembly-visual? formula-correspondence?
+;                       formula-arc? formula-mismatch-mode?
+;                       -> (values (listof formula-transition-spec?)
+;                                  (listof formula-transition-spec?))
+;; Creates interior layers for unmatched pieces. `fade` preserves the existing
+;; stationary fade behaviour. `fade-transform` pairs the remaining source and
+;; destination names by their respective orders; every pair receives the same
+;; moving cross-fade used for an explicit changed-part correspondence. The two
+;; resulting lists preserve the historical layer order: source-side layers,
+;; then matched layers, then destination-side layers.
+(define (make-mismatch-specs current-source correspondence route mismatch-mode)
+  (define source-names
+    (formula-correspondence-unmatched-source-names correspondence))
+  (define destination-names
+    (formula-correspondence-unmatched-destination-names correspondence))
+  (case mismatch-mode
+    [(fade)
+     (values
+      (make-unmatched-source-specs current-source source-names)
+      (make-unmatched-destination-specs correspondence destination-names))]
+    [(fade-transform)
+     (define-values (pair-specs remaining-source remaining-destination)
+       (make-fade-transform-mismatch-specs current-source
+                                           correspondence
+                                           source-names
+                                           destination-names
+                                           route))
+     (values
+      (append pair-specs
+              (make-unmatched-source-specs current-source remaining-source))
+      (make-unmatched-destination-specs correspondence
+                                        remaining-destination))]))
+
+; make-unmatched-source-specs : formula-assembly-visual? (listof symbol?)
 ;                               -> (listof formula-transition-spec?)
-;;   Creates stationary fade-out layers in current source order.
-(define (make-unmatched-source-specs current-source correspondence)
+;; Creates stationary fade-out layers in current source order.
+(define (make-unmatched-source-specs current-source source-names)
   (for/list ([name
-              (in-list
-               (formula-correspondence-unmatched-source-names
-                correspondence))])
+              (in-list source-names)])
     (define formula
       (formula-part-formula
        (formula-assembly-visual-ref current-source name)))
@@ -277,16 +328,14 @@
        0
        (visual-opacity destination-formula)))]))
 
-; make-unmatched-destination-specs : formula-correspondence?
+; make-unmatched-destination-specs : formula-correspondence? (listof symbol?)
 ;                                    -> (listof formula-transition-spec?)
 ;;   Creates stationary fade-in layers in destination order.
-(define (make-unmatched-destination-specs correspondence)
+(define (make-unmatched-destination-specs correspondence destination-names)
   (define destination
     (formula-correspondence-destination correspondence))
   (for/list ([name
-              (in-list
-               (formula-correspondence-unmatched-destination-names
-                correspondence))])
+              (in-list destination-names)])
     (define formula
       (formula-part-formula
        (formula-assembly-visual-ref destination name)))
@@ -297,6 +346,48 @@
      straight-formula-route
      0
      (visual-opacity formula))))
+
+; make-fade-transform-mismatch-specs : formula-assembly-visual?
+;                                      formula-correspondence?
+;                                      (listof symbol?) (listof symbol?) formula-arc?
+;                                      -> (values (listof formula-transition-spec?)
+;                                                 (listof symbol?)
+;                                                 (listof symbol?))
+;; Pairs uncorresponded pieces in source/destination order. If one side has
+;; more parts than the other, its remaining parts retain the ordinary fade
+;; behaviour. This mirrors Manim's useful `fade_transform_mismatches` policy
+;; while making the pairing deterministic and visible in Animate's API.
+(define (make-fade-transform-mismatch-specs current-source
+                                            correspondence
+                                            source-names
+                                            destination-names
+                                            route)
+  (let loop ([remaining-source source-names]
+             [remaining-destination destination-names]
+             [reversed-specs '()])
+    (cond
+      [(and (pair? remaining-source)
+            (pair? remaining-destination))
+       (define source-formula
+         (formula-part-formula
+          (formula-assembly-visual-ref current-source
+                                       (car remaining-source))))
+       (define destination-formula
+         (formula-part-formula
+          (formula-assembly-visual-ref
+           (formula-correspondence-destination correspondence)
+           (car remaining-destination))))
+       (loop
+        (cdr remaining-source)
+        (cdr remaining-destination)
+        (append (reverse (make-one-match-specs source-formula
+                                               destination-formula
+                                               route))
+                reversed-specs))]
+      [else
+       (values (reverse reversed-specs)
+               remaining-source
+               remaining-destination)])))
 
 ; formula-rendering-equivalent? : formula-visual? formula-visual? -> boolean?
 ;;   Reports whether two formulas differ only in identity, transform, or opacity.

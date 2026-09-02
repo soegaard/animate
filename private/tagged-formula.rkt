@@ -386,14 +386,17 @@
 ;                              [#:matches (listof formula-part-match?)]
 ;                              [#:path-arc finite-real?]
 ;                              [#:part-paths (listof formula-part-path?)]
+;                              [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                              -> transform-formula-parts-request?
 ;; Produces a Manim-like transition. Explicit matches take priority; all
 ;; remaining rendering-equivalent fragments are then paired in source order.
 ;; `path-arc` is the default route, with `part-paths` as precise overrides.
+;; `mismatch-mode` controls what happens to the remaining unmatched pieces.
 (define (transform-matching-formula source destination
                                     #:matches [matches '()]
                                     #:path-arc [path-arc 0]
-                                    #:part-paths [part-paths '()])
+                                    #:part-paths [part-paths '()]
+                                    #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-assembly-visual? source)
     (raise-argument-error
      'transform-matching-formula
@@ -427,14 +430,16 @@
    (formula-correspondence
     source
     destination
-    (append (formula-correspondence-matches explicit) remaining-auto))
+   (append (formula-correspondence-matches explicit) remaining-auto))
    #:path-arc path-arc
-   #:part-paths part-paths))
+   #:part-paths part-paths
+   #:mismatch-mode mismatch-mode))
 
 ; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
 ;                          [#:key-map (hash/c string? string?)]
 ;                          [#:path-arc finite-real?]
 ;                          [#:path-map (hash/c (cons/c string? string?) formula-arc?)]
+;                          [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                          -> transform-formula-parts-request?
 ;; A Manim-style shorthand for transitions between math-tex formulas. Exact
 ;; TeX fragments match automatically. `key-map` explicitly pairs every
@@ -443,10 +448,12 @@
 ;; matches. `path-arc` sets the default circular route; `path-map` selects
 ;; routes by (cons source-TeX destination-TeX). Named tagged-formulas remain
 ;; the precise option when duplicate occurrences need individual control.
+;; `mismatch-mode` can turn remaining unmatched pieces into moving cross-fades.
 (define (transform-matching-tex source destination
                                 #:key-map [key-map (hash)]
                                 #:path-arc [path-arc 0]
-                                #:path-map [path-map (hash)])
+                                #:path-map [path-map (hash)]
+                                #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-assembly-visual? source)
     (raise-argument-error
      'transform-matching-tex
@@ -508,7 +515,8 @@
   (transform-formula-parts
    correspondence
    #:path-arc path-arc
-   #:part-paths (tex-path-map->part-paths correspondence path-map)))
+   #:part-paths (tex-path-map->part-paths correspondence path-map)
+   #:mismatch-mode mismatch-mode))
 
 (define (check-tex-key-map key-map)
   (unless (hash? key-map)
