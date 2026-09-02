@@ -18,6 +18,8 @@
 
 ;; Imports
 (require racket/list
+         (only-in racket/math pi)
+         racket/runtime-path
          "affine-transform.rkt"
          "color-style.rkt"
          "derived-visual.rkt"
@@ -78,6 +80,12 @@
          morph-to-topology-changing-request?
          morph-to-compound-aligned
          morph-to-compound-aligned-request?
+         transform-from-copy
+         transform-from-copy-request?
+         circumscribe
+         circumscribe-request?
+         indicate
+         indicate-request?
          transform-formula-parts
          transform-formula-parts-request?
          create
@@ -304,14 +312,37 @@
 ;;  - sample-count    exact-integer?  deterministic alignment score resolution.
 
 (struct transform-formula-parts-request
-  (correspondence path-arc part-paths mismatch-mode)
+  (correspondence path-arc part-paths copies mismatch-mode)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
 ;;  - correspondence  formula-correspondence?  explicit source-to-destination map.
 ;;  - path-arc        finite-real?            default matched-part arc angle.
 ;;  - part-paths      (listof formula-part-path?) per-match route overrides.
+;;  - copies          (listof formula-part-copy?) source-preserving copies.
 ;;  - mismatch-mode   (or/c 'fade 'fade-transform) handling of unmatched parts.
+
+(struct transform-from-copy-request
+  (source-id destination route)
+  #:transparent)
+
+;; transform-from-copy-request represents a source-preserving introduction.
+;;  - source-id    symbol?          Visual already present at clip start.
+;;  - destination  affine opacity Visual introduced at clip completion.
+;;  - route        formula-route?  centre trajectory for the temporary copy.
+
+(struct attention-request (target-id kind padding color stroke-width)
+  #:transparent)
+
+;; attention-request is a non-mutating temporary visual emphasis. `kind` is
+;; either `circumscribe` (draw, pause, erase) or `indicate` (a short pulse).
+(define (circumscribe-request? value)
+  (and (attention-request? value)
+       (eq? (attention-request-kind value) 'circumscribe)))
+
+(define (indicate-request? value)
+  (and (attention-request? value)
+       (eq? (attention-request-kind value) 'indicate)))
 
 (struct create-request (visual)
   #:transparent)
@@ -459,6 +490,19 @@
 ;; formula-parts-transform-animation represents one compiled part transition.
 ;;  - target-id  symbol?                    stable assembly identity.
 ;;  - plan       formula-transition-plan?  exact endpoints and interior layers.
+
+(struct transform-from-copy-animation (source destination route overlay-id)
+  #:transparent)
+
+;; transform-from-copy-animation renders two transient moving layers while the
+;; original source stays in the scene. `destination` is added structurally only
+;; when the clip completes.
+
+(struct attention-animation (overlay-id kind visual)
+  #:transparent)
+
+;; attention-animation stores a prepared, renderer-measured outline. It is
+;; never part of either structural endpoint.
 
 (struct path-reveal-animation (target-id path from to remove-at-end?)
   #:transparent)
@@ -1027,18 +1071,107 @@
    allow-reverse?
    sample-count))
 
+; transform-from-copy : (or/c visual? symbol?)
+;                       (and/c visual? affine-visual? opacity-visual?)
+;                       [#:path-arc finite-real?]
+;                       [#:route formula-route?]
+;                       -> transform-from-copy-request?
+;; Keeps the source Visual visible, then introduces `destination` through a
+;; moving cross-fade.  The destination id must be absent at the start of the
+;; clip.  `route`, when supplied, overrides the default circular `path-arc`.
+(define (transform-from-copy source destination
+                             #:path-arc [path-arc 0]
+                             #:route [route #f])
+  (unless (or (visual? source)
+              (symbol? source))
+    (raise-argument-error
+     'transform-from-copy
+     "(or/c visual? symbol?)"
+     source))
+  (unless (and (visual? destination)
+               (affine-visual? destination)
+               (opacity-visual? destination))
+    (raise-argument-error
+     'transform-from-copy
+     "(and/c visual? affine-visual? opacity-visual?)"
+     destination))
+  (define checked-route
+    (cond
+      [route
+       (unless (formula-route? route)
+         (raise-argument-error
+          'transform-from-copy
+          "formula-route?"
+          route))
+       route]
+      [else
+       (formula-arc #:angle path-arc)]))
+  (transform-from-copy-request
+   (visual-target-id source 'transform-from-copy)
+   destination
+   checked-route))
+
+; circumscribe : (or/c visual? symbol?)
+;               [#:padding nonnegative-finite-real?]
+;               [#:color any/c]
+;               [#:stroke-width nonnegative-finite-real?]
+;               -> circumscribe-request?
+;; Draws a rounded temporary outline around a top-level Visual, pauses briefly,
+;; then erases it.  Bounds are measured through the normal Pict renderer so
+;; TeX, SVG, text, and composites use their actual rendered extents.
+(define (circumscribe target
+                      #:padding [padding 1/5]
+                      #:color [color "gold"]
+                      #:stroke-width [stroke-width 3])
+  (make-attention-request
+   'circumscribe target padding color stroke-width 'circumscribe))
+
+; indicate : (or/c visual? symbol?)
+;            [#:padding nonnegative-finite-real?]
+;            [#:color any/c]
+;            [#:stroke-width nonnegative-finite-real?]
+;            -> indicate-request?
+;; Pulses a temporary rounded outline around a top-level Visual without
+;; changing that Visual's transform, fill, stroke, or opacity.
+(define (indicate target
+                  #:padding [padding 1/5]
+                  #:color [color "gold"]
+                  #:stroke-width [stroke-width 3])
+  (make-attention-request
+   'indicate target padding color stroke-width 'indicate))
+
+(define (make-attention-request kind target padding color stroke-width who)
+  (unless (or (visual? target)
+              (symbol? target))
+    (raise-argument-error who "(or/c visual? symbol?)" target))
+  (unless (and (finite-real? padding)
+               (not (negative? padding)))
+    (raise-argument-error who "nonnegative finite real?" padding))
+  (unless (and (finite-real? stroke-width)
+               (not (negative? stroke-width)))
+    (raise-argument-error who "nonnegative finite real?" stroke-width))
+  (attention-request
+   (visual-target-id target who)
+   kind
+   padding
+   color
+   stroke-width))
+
 ; transform-formula-parts : formula-correspondence?
 ;                         [#:path-arc finite-real?]
 ;                         [#:part-paths (listof formula-part-path?)]
+;                         [#:copies (listof formula-part-copy?)]
 ;                         [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                           -> transform-formula-parts-request?
 ;; Creates a request that moves and cross-fades explicitly matched parts.
 ;; `path-arc` applies to every matched part unless a `part-paths` entry selects
 ;; that correspondence pair explicitly. `mismatch-mode` controls remaining
-;; unmatched source/destination pieces.
+;; unmatched source/destination pieces. `copies` supplies source-preserving
+;; motions for otherwise unmatched destination parts.
 (define (transform-formula-parts correspondence
                                  #:path-arc [path-arc 0]
                                  #:part-paths [part-paths '()]
+                                 #:copies [copies '()]
                                  #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
@@ -1055,13 +1188,19 @@
      'transform-formula-parts
      "(listof formula-part-path?)"
      part-paths))
+  (unless (and (list? copies)
+               (andmap formula-part-copy? copies))
+    (raise-argument-error
+     'transform-formula-parts
+     "(listof formula-part-copy?)"
+     copies))
   (unless (formula-mismatch-mode? mismatch-mode)
     (raise-argument-error
      'transform-formula-parts
      "(or/c 'fade 'fade-transform)"
      mismatch-mode))
   (transform-formula-parts-request
-   correspondence path-arc part-paths mismatch-mode))
+   correspondence path-arc part-paths copies mismatch-mode))
 
 ; create : path-visual? -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -1261,6 +1400,10 @@
   (define target-id
     (animation-request-target-id request))
   (cond
+    [(transform-from-copy-request? request)
+     (compile-transform-from-copy-request state request)]
+    [(attention-request? request)
+     (compile-attention-request state request)]
     [(value-to-request? request)
      (define from
        (scene-state-value-ref state target-id))
@@ -1625,6 +1768,7 @@
        (transform-formula-parts-request-correspondence request)
        #:path-arc (transform-formula-parts-request-path-arc request)
        #:part-paths (transform-formula-parts-request-part-paths request)
+       #:copies (transform-formula-parts-request-copies request)
        #:mismatch-mode
        (transform-formula-parts-request-mismatch-mode request)))]
     [(create-request? request)
@@ -1666,6 +1810,149 @@
       'compile-animation-request
       "animation request"
       request)])]))
+
+(define (compile-transform-from-copy-request state request)
+  (define source-id
+    (transform-from-copy-request-source-id request))
+  (define destination
+    (transform-from-copy-request-destination request))
+  (define destination-id
+    (visual-id destination))
+  (check-absent-introduction-target
+   state destination-id 'transform-from-copy)
+  (define source
+    (scene-state-ref state source-id))
+  (unless (and (affine-visual? source)
+               (opacity-visual? source))
+    (raise-arguments-error
+     'transform-from-copy
+     "a source Visual that supports affine placement and opacity"
+     "source-id" source-id
+     "source" source))
+  (when (derived-visual? source)
+    (raise-arguments-error
+     'transform-from-copy
+     "a non-derived source Visual"
+     "source-id" source-id))
+  (transform-from-copy-animation
+   source
+   destination
+   (transform-from-copy-request-route request)
+   (copy-overlay-id destination-id)))
+
+(define (copy-overlay-id destination-id)
+  (string->symbol
+   (string-append "__transform-from-copy-"
+                  (symbol->string destination-id))))
+
+(define (compile-attention-request state request)
+  (define target-id
+    (attention-request-target-id request))
+  (unless (for/or ([visual (in-list (scene-state-visuals-in-drawing-order state))])
+            (eq? (visual-id visual) target-id))
+    (raise-arguments-error
+     (attention-request-kind request)
+     "a top-level Visual present in the scene"
+     "target-id" target-id))
+  (define target
+    (scene-state-resolved-ref state target-id))
+  (define box
+    (renderer-layout-box target))
+  (define overlay-id
+    (attention-overlay-id target-id (attention-request-kind request)))
+  (check-absent-introduction-target state overlay-id (attention-request-kind request))
+  (attention-animation
+   overlay-id
+   (attention-request-kind request)
+   (make-attention-outline
+    overlay-id
+    box
+    (attention-request-padding request)
+    (attention-request-color request)
+    (attention-request-stroke-width request))))
+
+(define (attention-overlay-id target-id kind)
+  (string->symbol
+   (string-append "__"
+                  (symbol->string kind)
+                  "-"
+                  (symbol->string target-id))))
+
+(define (make-attention-outline id box padding color stroke-width)
+  (define half-width
+    (+ (/ (renderer-layout-box-width box) 2) padding))
+  (define half-height
+    (+ (/ (renderer-layout-box-height box) 2) padding))
+  (make-path-visual
+   (rounded-rectangle-path half-width half-height)
+   #:id id
+   #:center (renderer-layout-box-center box)
+   #:fill #f
+   #:stroke color
+   #:stroke-width stroke-width))
+
+;; Relative layout intentionally lives at the Pict-adapter boundary. Loading
+;; its procedures only when attention is compiled avoids a static dependency
+;; cycle through tagged-formula -> animation while still measuring exactly what
+;; the renderer will draw.
+(define-runtime-path relative-layout-module "relative-layout.rkt")
+
+(define (relative-layout-procedure name)
+  (dynamic-require relative-layout-module name))
+
+(define (renderer-layout-box visual)
+  ((relative-layout-procedure 'visual-layout-box) visual))
+
+(define (renderer-layout-box-width box)
+  ((relative-layout-procedure 'layout-box-width) box))
+
+(define (renderer-layout-box-height box)
+  ((relative-layout-procedure 'layout-box-height) box))
+
+(define (renderer-layout-box-center box)
+  ((relative-layout-procedure 'layout-box-center) box))
+
+(define (rounded-rectangle-path half-width half-height)
+  (define radius
+    (min 1/4 half-width half-height))
+  (define k
+    (* radius 0.5522847498307936))
+  (define left (- half-width))
+  (define right half-width)
+  (define bottom (- half-height))
+  (define top half-height)
+  (if (zero? radius)
+      (polygon-path
+       (list (vec2 left bottom)
+             (vec2 right bottom)
+             (vec2 right top)
+             (vec2 left top)))
+      (path-geometry
+       (list
+        (path-subpath
+         (vec2 (- right radius) bottom)
+         (list
+          (line-path-segment (vec2 (+ left radius) bottom))
+          (cubic-bezier-path-segment
+           (vec2 (+ left radius (- k)) bottom)
+           (vec2 left (+ bottom radius (- k)))
+           (vec2 left (+ bottom radius)))
+          (line-path-segment (vec2 left (- top radius)))
+          (cubic-bezier-path-segment
+           (vec2 left (+ top (- radius) k))
+           (vec2 (+ left radius (- k)) top)
+           (vec2 (+ left radius) top))
+          (line-path-segment (vec2 (- right radius) top))
+          (cubic-bezier-path-segment
+           (vec2 (+ right (- radius) k) top)
+           (vec2 right (+ top (- radius) k))
+           (vec2 right (- top radius)))
+          (line-path-segment (vec2 right (+ bottom radius)))
+          (cubic-bezier-path-segment
+           (vec2 right (+ bottom radius (- k)))
+           (vec2 (+ right (- radius) k) bottom)
+           (vec2 (- right radius) bottom)))
+         #t)))))
 
 ; check-request-component-conflicts : (listof animation-request?) -> void?
 ;;   Rejects duplicate updates to one animation component in a play clip.
@@ -1724,6 +2011,8 @@
       (morph-to-mixed-compound-aligned-request? value)
       (morph-to-topology-changing-request? value)
       (morph-to-compound-aligned-request? value)
+      (transform-from-copy-request? value)
+      (attention-request? value)
       (transform-formula-parts-request? value)
       (create-request? value)
       (uncreate-request? value)
@@ -1799,6 +2088,10 @@
      (morph-to-topology-changing-request-target-id request)]
     [(morph-to-compound-aligned-request? request)
      (morph-to-compound-aligned-request-target-id request)]
+    [(transform-from-copy-request? request)
+     (visual-id (transform-from-copy-request-destination request))]
+    [(attention-request? request)
+     (attention-request-target-id request)]
     [(transform-formula-parts-request? request)
      (visual-id
       (formula-correspondence-source
@@ -1855,6 +2148,10 @@
          (morph-to-topology-changing-request? request)
          (morph-to-compound-aligned-request? request))
      '(path-geometry)]
+    [(transform-from-copy-request? request)
+     '(presence)]
+    [(attention-request? request)
+     '(attention)]
     [(transform-formula-parts-request? request)
      '(formula-parts presence)]
     [(or (create-request? request)
@@ -1957,6 +2254,8 @@
       (opacity-animation? value)
       (path-morph-animation? value)
       (normalized-path-morph-animation? value)
+      (transform-from-copy-animation? value)
+      (attention-animation? value)
       (formula-parts-transform-animation? value)
       (path-reveal-animation? value)
       (write-in-animation? value)))
@@ -1991,6 +2290,10 @@
      (apply-path-morph-animation state animation progress)]
     [(normalized-path-morph-animation? animation)
      (apply-normalized-path-morph-animation state animation progress)]
+    [(transform-from-copy-animation? animation)
+     (apply-transform-from-copy-animation state animation progress)]
+    [(attention-animation? animation)
+     (apply-attention-animation state animation progress)]
     [(formula-parts-transform-animation? animation)
      (apply-formula-parts-transform-animation state animation progress)]
     [(path-reveal-animation? animation)
@@ -2283,6 +2586,108 @@
    state
    id
    (path-visual-with-path visual path)))
+
+; apply-transform-from-copy-animation : scene-state?
+;                                       transform-from-copy-animation?
+;                                       finite-real? -> scene-state?
+;; Adds a frontmost transient group only for interior samples.  Its child ids
+;; are fresh transient wrappers, so source and destination composite trees may
+;; reuse ordinary descendant identities. This lets every supported affine
+;; Visual be copied without adding a general identity-replacement protocol.
+(define (apply-transform-from-copy-animation state animation progress)
+  (define overlay-id
+    (transform-from-copy-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(or (zero? progress) (= progress 1))
+     without-prior-overlay]
+    [else
+     (define source
+       (transform-from-copy-animation-source animation))
+     (define destination
+       (transform-from-copy-animation-destination animation))
+     (define route
+       (transform-from-copy-animation-route animation))
+     (define from-transform (visual-transform source))
+     (define to-transform (visual-transform destination))
+     (define moving-transform
+       (affine-transform-with-translation
+        (affine-transform-lerp from-transform to-transform progress)
+        (formula-route-position-at
+         route
+         (affine-transform-translation from-transform)
+         (affine-transform-translation to-transform)
+         progress)))
+     (define source-layer
+       (visual-with-opacity
+        (visual-with-transform source moving-transform)
+        (* (visual-opacity source) (- 1 progress))))
+     (define destination-layer
+       (visual-with-opacity
+        (visual-with-transform destination moving-transform)
+        (* (visual-opacity destination) progress)))
+     (scene-state-add
+      without-prior-overlay
+      (group (list (transient-visual
+                    (copy-overlay-child-id overlay-id 'source)
+                    source-layer)
+                   (transient-visual
+                    (copy-overlay-child-id overlay-id 'destination)
+                    destination-layer))
+             #:id overlay-id))]))
+
+(define (copy-overlay-child-id overlay-id role)
+  (string->symbol
+   (string-append (symbol->string overlay-id)
+                  "-"
+                  (symbol->string role))))
+
+; apply-attention-animation : scene-state? attention-animation? finite-real?
+;                            -> scene-state?
+;; Adds the measured emphasis outline for interior samples only.  Keeping it
+;; outside the target Visual makes attention safe to combine with motion and
+;; formula transitions in the same clip.
+(define (apply-attention-animation state animation progress)
+  (define overlay-id
+    (attention-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(or (zero? progress) (= progress 1))
+     without-prior-overlay]
+    [else
+     (define outline
+       (attention-animation-visual animation))
+     (define sampled
+       (case (attention-animation-kind animation)
+         [(circumscribe)
+          (define path-progress
+            (cond
+              [(< progress 1/3) (* 3 progress)]
+              [(< progress 2/3) 1]
+              [else (* 3 (- 1 progress))]))
+          (path-visual-with-path
+           outline
+           (path-geometry-partial
+            (path-visual-path outline)
+            0
+            path-progress))]
+         [(indicate)
+          (define pulse (sin (* pi progress)))
+          (visual-with-opacity
+           (visual-with-scale outline (+ 1 (* 1/8 pulse)))
+           (* (visual-opacity outline) pulse))]
+         [else
+          (raise-argument-error
+           'apply-attention-animation
+           "supported attention kind"
+           (attention-animation-kind animation))]))
+     (scene-state-add without-prior-overlay sampled)]))
 
 ; apply-formula-parts-transform-animation : scene-state?
 ;                                            formula-parts-transform-animation?
@@ -2729,6 +3134,22 @@
        'scene-play
        visual
        (opacity-animation-to animation)))]
+    [(transform-from-copy-animation? animation)
+     (define cleaned-state
+       (if (scene-state-has?
+            state
+            (transform-from-copy-animation-overlay-id animation))
+           (scene-state-remove
+            state
+            (transform-from-copy-animation-overlay-id animation))
+           state))
+     (scene-state-add
+      cleaned-state
+      (transform-from-copy-animation-destination animation))]
+    [(attention-animation? animation)
+     (if (scene-state-has? state (attention-animation-overlay-id animation))
+         (scene-state-remove state (attention-animation-overlay-id animation))
+         state)]
     [(formula-parts-transform-animation? animation)
      (define id
        (formula-parts-transform-animation-target-id animation))

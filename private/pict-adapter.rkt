@@ -89,11 +89,18 @@
      'visual->pict
      "a derived Visual must be resolved against a scene state before rendering"
      "visual-id" (visual-id visual)))
-  (define renderer
-    (find-supporting-pict-renderer visual renderers))
   (cond
-    [renderer
-     (render-visual-with-pict-renderer renderer visual camera)]
+    [(transient-visual? visual)
+     (render-visual-or-composite
+      (transient-visual-underlying visual)
+      camera
+      renderers)]
+    [else
+     (define renderer
+       (find-supporting-pict-renderer visual renderers))
+     (cond
+      [renderer
+       (render-visual-with-pict-renderer renderer visual camera)]
     [(fixed-in-frame-visual? visual)
      (frame-space-content->pict
       visual
@@ -127,7 +134,7 @@
      (raise-arguments-error
       'visual->pict
       "no Pict renderer supports the Visual"
-      "visual" visual)]))
+      "visual" visual)])]))
 
 ; frame-space-content->pict : frame-space-visual? visual? camera?
 ;                             (listof pict-renderer?) -> pict?

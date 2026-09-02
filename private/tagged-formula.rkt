@@ -386,16 +386,19 @@
 ;                              [#:matches (listof formula-part-match?)]
 ;                              [#:path-arc finite-real?]
 ;                              [#:part-paths (listof formula-part-path?)]
+;                              [#:copies (listof formula-part-copy?)]
 ;                              [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                              -> transform-formula-parts-request?
 ;; Produces a Manim-like transition. Explicit matches take priority; all
 ;; remaining rendering-equivalent fragments are then paired in source order.
 ;; `path-arc` is the default route, with `part-paths` as precise overrides.
-;; `mismatch-mode` controls what happens to the remaining unmatched pieces.
+;; `copies` preserve a source part while directing transient copies to
+;; otherwise unmatched destinations. `mismatch-mode` controls the rest.
 (define (transform-matching-formula source destination
                                     #:matches [matches '()]
                                     #:path-arc [path-arc 0]
                                     #:part-paths [part-paths '()]
+                                    #:copies [copies '()]
                                     #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-assembly-visual? source)
     (raise-argument-error
@@ -433,12 +436,13 @@
    (append (formula-correspondence-matches explicit) remaining-auto))
    #:path-arc path-arc
    #:part-paths part-paths
+   #:copies copies
    #:mismatch-mode mismatch-mode))
 
 ; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
 ;                          [#:key-map (hash/c string? string?)]
 ;                          [#:path-arc finite-real?]
-;                          [#:path-map (hash/c (cons/c string? string?) formula-arc?)]
+;                          [#:path-map (hash/c (cons/c string? string?) formula-route?)]
 ;                          [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                          -> transform-formula-parts-request?
 ;; A Manim-style shorthand for transitions between math-tex formulas. Exact
@@ -544,13 +548,13 @@
                  (string? (cdr key)))
       (raise-arguments-error
        'transform-matching-tex
-       "a hash mapping (cons TeX-source TeX-source) pairs to formula arcs"
+       "a hash mapping (cons TeX-source TeX-source) pairs to formula routes"
        "key" key
        "value" route))
-    (unless (formula-arc? route)
+    (unless (formula-route? route)
       (raise-arguments-error
        'transform-matching-tex
-       "a hash mapping (cons TeX-source TeX-source) pairs to formula arcs"
+       "a hash mapping (cons TeX-source TeX-source) pairs to formula routes"
        "key" key
        "value" route))))
 

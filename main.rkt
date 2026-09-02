@@ -290,11 +290,20 @@
  formula-arc
  formula-arc?
  formula-arc-angle
+ formula-relative-path
+ formula-relative-path?
+ formula-relative-path-geometry
+ formula-route?
  formula-part-path
  formula-part-path?
  formula-part-path-source-name
  formula-part-path-destination-name
  formula-part-path-route
+ formula-part-copy
+ formula-part-copy?
+ formula-part-copy-source-name
+ formula-part-copy-destination-name
+ formula-part-copy-route
  (struct-out formula-fragment)
  tagged-formula
  math-tex
@@ -445,6 +454,12 @@
  morph-to-topology-changing-request?
  morph-to-compound-aligned
  morph-to-compound-aligned-request?
+ transform-from-copy
+ transform-from-copy-request?
+ circumscribe
+ circumscribe-request?
+ indicate
+ indicate-request?
  transform-formula-parts
  transform-formula-parts-request?
  transform-matching-formula

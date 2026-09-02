@@ -1,9 +1,17 @@
-# animate — SCENE-BU
+# animate — SCENE-BW
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-BW adds source-preserving copies, temporary attention effects, and
+arbitrary routes for formula parts. `transform-from-copy` keeps an existing
+Visual in the scene while a transient copy travels to a newly introduced
+destination. `circumscribe` and `indicate` measure a rendered top-level Visual,
+then draw a temporary outline around it without mutating the target.
+`formula-part-copy` applies the same idea to named TeX fragments, so one term
+can remain visible while copies travel into newly added formula positions.
 
 SCENE-BU refines `write-in` to closely follow Manim's `Write`: it reveals each
 path by ordered Bézier-curve slots, then transitions the completed outline to
@@ -123,11 +131,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BU v0.70.0 builds on immutable parameters and generic values, dynamically
+SCENE-BW v0.71.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.70.0`. The public module's bindings are covered
+The public package version is `0.71.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -483,6 +491,100 @@ Pass `#:center` to translate the completed union as one composition:
 `visuals-center-at` performs only that final union-centering operation. Empty
 lists are valid and remain empty.
 
+## Copies, attention, and flexible formula routes
+
+`transform-from-copy` is Animate's counterpart to Manim's
+`TransformFromCopy`. It leaves a present source Visual unchanged, renders a
+moving temporary cross-fade, and adds the destination Visual only when the clip
+finishes:
+
+```racket
+(define source-dot
+  (circle #:id 'source-dot #:center (vec2 -2 0) #:radius 1))
+(define copied-dot
+  (circle #:id 'copied-dot #:center (vec2 2 0) #:radius 1))
+
+(scene-play (scene-add (make-scene) source-dot)
+            (transform-from-copy 'source-dot copied-dot
+                                 #:path-arc 3/4)
+            #:duration 1)
+```
+
+The source must be a present top-level affine opacity Visual and the destination
+must be absent at clip start. During the interior of the clip, the original is
+still rendered in its old position; the temporary copy cross-fades from the
+source's rendered form to the destination's rendered form along the requested
+route. At progress zero and one there is no temporary overlay, and completion
+installs the exact destination value.
+
+`circumscribe` draws, holds, and erases a rounded outline. `indicate` pulses
+the same kind of outline. Both are temporary and do not change the selected
+Visual's transform, style, or opacity:
+
+```racket
+(scene-play scene
+            (circumscribe 'equation #:color "goldenrod")
+            #:duration 1)
+
+(scene-play scene
+            (indicate 'equation #:color "goldenrod")
+            #:duration 1)
+```
+
+The outline is measured through the ordinary Pict renderer when the clip is
+compiled, so it follows the rendered extent of text, SVG, tagged TeX, and
+composites rather than relying on a guessed formula box.
+
+### Copying formula parts
+
+`formula-part-copy` names an existing source part, an otherwise unmatched
+destination part, and a route. Pass those descriptors through `#:copies` on
+`transform-formula-parts` or `transform-matching-formula`. The source remains
+in the ordinary correspondence; each named destination receives a transient
+copy instead of an ordinary fade-in.
+
+This is useful for showing one operation on both sides of an equation. The
+following step is algebraically valid: it adds `x` to both sides of `x = 2`.
+The original `x` is matched normally while two copies travel to the added terms:
+
+```racket
+(transform-matching-formula
+ source
+ destination
+ #:matches
+ (list (formula-part-match 'original-x 'original-x)
+       (formula-part-match 'equals 'equals)
+       (formula-part-match 'two 'two))
+ #:copies
+ (list (formula-part-copy 'original-x 'added-x-left upper-route)
+       (formula-part-copy 'original-x 'added-x-right lower-route)))
+```
+
+The destination of a `formula-part-copy` must be unmatched in the ordinary
+correspondence, and at most one copy can claim it. One source part may create
+any number of copies. Copies use the same rigid-fragment move or cross-fade as
+matched formula parts, so they do not morph TeX glyph outlines.
+
+`formula-arc` remains the concise route descriptor. For a custom route, use
+`formula-relative-path` with a path beginning at `(vec2 0 0)` and ending at
+`(vec2 1 0)`. It is mapped at compilation to the actual chord between the
+source and destination; positive local y points to the chord's left:
+
+```racket
+(define upper-route
+  (formula-relative-path
+   (polyline-path
+    (list (vec2 0 0) (vec2 1/2 2/5) (vec2 1 0)))))
+
+(formula-part-path 'left-term 'moved-left-term upper-route)
+```
+
+Use a `formula-part-path` in `#:part-paths` to route an ordinary matched pair,
+or use the same route directly in `formula-part-copy`. `transform-matching-tex`
+also accepts these routes in `#:path-map`. See
+`examples/copying-and-emphasizing-formula-parts.rkt` for the complete rendered
+example.
+
 ## Tagged formula layouts
 
 `tagged-formula` is the full-layout alternative to manually positioned formula
@@ -707,13 +809,21 @@ outlines.
 
 Source-only parts keep their current local transform and fade to zero.
 Destination-only parts appear at their destination local transform and fade
-from zero.
+from zero. `#:mismatch-mode 'fade-transform` instead pairs remaining source and
+destination parts in their respective orders, then moves and cross-fades each
+pair.
+
+`#:copies` claims selected otherwise-unmatched destination names before either
+unmatched policy is applied. A claimed destination is supplied by a transient
+copy of the named current source part; that source can still be matched and
+remain visible in the formula.
 
 At an interior sample, layer order is:
 
-1. source-only layers in source part order;
+1. unmatched-source or mismatch cross-fade layers;
 2. matched layers in explicit correspondence order;
-3. destination-only layers in destination part order.
+3. copy layers in destination part order;
+4. remaining destination-only layers in destination part order.
 
 A changed matched pair contributes its source layer immediately followed by its
 destination layer. Interior layers use deterministic temporary local symbols
@@ -2110,7 +2220,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.70.0`. Every completed SCENE
+This is the running design backlog for version `0.71.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2131,10 +2241,15 @@ precisely; do not silently lose the follow-on idea that led to the work.
   semantic name/token matching, character-level matching, or glyph-outline
   morphing. Formula colour remains controlled by explicit LaTeX source and
   preamble commands.
+- `formula-part-copy` can copy one whole named fragment to any number of
+  explicitly named unmatched destinations, and formula parts can now follow
+  circular or normalized custom paths. It still has no semantic algebra,
+  automatic choice of pedagogically meaningful copies/routes, glyph-level
+  selection, or true TeX-outline morphing.
 - Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
   `write-in` expands their dvisvgm path definitions once while the clip is
   compiled, but there is not yet a public glyph map, semantic TeX parser,
-  glyph-outline matching, or path-arc/Bézier motion option for fragments.
+  glyph-outline matching, or per-glyph motion API.
 
 ### Geometry and transforms
 
@@ -2147,6 +2262,10 @@ precisely; do not silently lose the follow-on idea that led to the work.
   offset-self-intersection cleanup, or curvature-aware banking.
 - `move-along-path` deliberately requires one positive-length continuous
   subpath; it cannot traverse discontinuous multi-subpath geometry.
+- `transform-from-copy` is a whole-Visual moving cross-fade, not a shape or
+  glyph morph. Its source is a top-level affine opacity Visual frozen at clip
+  compilation; copies do not follow a simultaneously animated source or route,
+  and nested source paths are not yet supported.
 - Path morphing has no semantic hole/topology inference, direct open-to-closed
   correspondence, appearance-aware matching, arbitrary per-pair scoring
   callbacks, or general global geometric optimisation beyond its current
@@ -2185,6 +2304,10 @@ precisely; do not silently lose the follow-on idea that led to the work.
   responsive overlay wrapping, curved or arrow-headed callout leaders, or
   callout attachment to nested-child geometry. Frame-space wrappers cannot be
   placed directly inside ordinary world-space groups.
+- `circumscribe` and `indicate` currently target top-level Visuals only. Their
+  rounded outlines use one renderer-measured bounding box at clip compilation,
+  rather than tracking nested children, visible glyph contours, an animated
+  target, or camera/renderer changes within the same clip.
 - Local `timed` scheduling and nested visual compositions are supported, but
   camera requests remain top-level full-clip requests: they cannot be timed or
   nested in a composition. Separate `scene-play` clips cannot overlap or be
@@ -2298,6 +2421,32 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 `unwrite` removes an existing writable Visual by reversing both leaf order and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
+
+## SCENE-BW: copies, attention, and flexible formula routes
+
+Version `0.71.0` adds `transform-from-copy`, `circumscribe`, and `indicate`.
+Copies are transient interior overlays: the source remains at its original
+endpoint, the destination is absent at progress zero, and the exact destination
+Visual is installed only when the clip completes. Attention effects use the
+normal Pict renderer to measure a top-level target, then add a temporary rounded
+outline without modifying the target itself.
+
+Formula transitions gain `formula-part-copy` through `#:copies`, allowing one
+matched source fragment to populate several otherwise-unmatched destinations.
+They also accept `formula-relative-path`, a route in unit-chord coordinates,
+alongside the existing `formula-arc`. This makes deliberate curved term motion
+possible while preserving formula correspondence's explicit, whole-fragment
+model. The limitations backlog records the remaining boundaries: no nested or
+live-tracked attention targets, no algebraic inference, and no glyph-outline
+morphing.
+
+The complete demonstration is:
+
+```sh
+racket examples/copying-and-emphasizing-formula-parts.rkt \
+  frames/copying-and-emphasizing-formula-parts \
+  copying-and-emphasizing-formula-parts.mp4
+```
 
 ## SCENE-BQ/BR: concurrent output and diagnostics
 

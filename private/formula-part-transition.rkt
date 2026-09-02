@@ -21,18 +21,29 @@
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
+         "path-geometry.rkt"
          "visual-model.rkt")
 
 ;; Exports
 (provide formula-arc
          formula-arc?
          formula-arc-angle
+         formula-relative-path
+         formula-relative-path?
+         formula-relative-path-geometry
+         formula-route?
+         formula-route-position-at
          formula-mismatch-mode?
          formula-part-path
          formula-part-path?
          formula-part-path-source-name
          formula-part-path-destination-name
          formula-part-path-route
+         formula-part-copy
+         formula-part-copy?
+         formula-part-copy-source-name
+         formula-part-copy-destination-name
+         formula-part-copy-route
          formula-transition-plan?
          make-formula-transition-plan
          formula-transition-plan-source-parts
@@ -68,6 +79,51 @@
 (define formula-arc? formula-arc-route?)
 (define formula-arc-angle formula-arc-route-angle)
 
+;; A relative path is expressed in a unit chord coordinate system: `(0, 0)` is
+;; the source centre and `(1, 0)` is the destination centre.  At compilation
+;; it is mapped onto the actual source/destination chord, with positive local
+;; y pointing to the chord's left.  This keeps author supplied routes portable
+;; across formula layout changes.
+(struct formula-relative-path-route (geometry)
+  #:transparent
+  #:guard
+  (lambda (geometry who)
+    (unless (path-geometry? geometry)
+      (raise-argument-error who "path-geometry?" geometry))
+    (unless (positive? (path-geometry-length geometry))
+      (raise-arguments-error
+       who
+       "a nonempty route with positive length"
+       "path" geometry))
+    (unless (vec2-coordinate=? (path-geometry-point-at geometry 0)
+                               (vec2 0 0))
+      (raise-arguments-error
+       who
+       "a route beginning at (vec2 0 0)"
+       "start" (path-geometry-point-at geometry 0)))
+    (unless (vec2-coordinate=? (path-geometry-point-at geometry 1)
+                               (vec2 1 0))
+      (raise-arguments-error
+       who
+       "a route ending at (vec2 1 0)"
+       "end" (path-geometry-point-at geometry 1)))
+    geometry))
+
+; formula-relative-path : path-geometry? -> formula-relative-path?
+;; Describes an arbitrary source-to-destination route in unit chord
+;; coordinates.  The path must begin at `(vec2 0 0)` and end at `(vec2 1 0)`.
+(define (formula-relative-path geometry)
+  (formula-relative-path-route geometry))
+
+(define formula-relative-path? formula-relative-path-route?)
+(define formula-relative-path-geometry formula-relative-path-route-geometry)
+
+; formula-route? : any/c -> boolean?
+;; Recognises a supported formula-part movement route.
+(define (formula-route? value)
+  (or (formula-arc? value)
+      (formula-relative-path? value)))
+
 ; formula-mismatch-mode? : any/c -> boolean?
 ;; Recognises the policies for source/destination formula parts that have no
 ;; correspondence.  `fade` leaves each one in place while fading it; a
@@ -85,8 +141,23 @@
       (raise-argument-error who "symbol?" source-name))
     (unless (symbol? destination-name)
       (raise-argument-error who "symbol?" destination-name))
-    (unless (formula-arc? route)
-      (raise-argument-error who "formula-arc?" route))
+    (unless (formula-route? route)
+      (raise-argument-error who "formula-route?" route))
+    (values source-name destination-name route)))
+
+;; formula-part-copy directs one existing source part to an otherwise unmatched
+;; destination part while leaving the source part in place.  It is the
+;; formula-aware counterpart of TransformFromCopy.
+(struct formula-part-copy (source-name destination-name route)
+  #:transparent
+  #:guard
+  (lambda (source-name destination-name route who)
+    (unless (symbol? source-name)
+      (raise-argument-error who "symbol?" source-name))
+    (unless (symbol? destination-name)
+      (raise-argument-error who "symbol?" destination-name))
+    (unless (formula-route? route)
+      (raise-argument-error who "formula-route?" route))
     (values source-name destination-name route)))
 
 (define straight-formula-route (formula-arc #:angle 0))
@@ -100,7 +171,7 @@
 ;;  - template        formula-visual?     source of LaTeX and typesetting data.
 ;;  - from-transform  affine-transform?   local transform at progress zero.
 ;;  - to-transform    affine-transform?   local transform at progress one.
-;;  - route           formula-arc?        local translation trajectory.
+;;  - route           formula-route?      local translation trajectory.
 ;;  - from-opacity    opacity?            local opacity at progress zero.
 ;;  - to-opacity      opacity?            local opacity at progress one.
 
@@ -126,7 +197,7 @@
 ;;  - template        formula-visual?    source of LaTeX and typesetting data.
 ;;  - from-transform  affine-transform?  local transform at progress zero.
 ;;  - to-transform    affine-transform?  local transform at progress one.
-;;  - route           formula-arc?       local translation trajectory.
+;;  - route           formula-route?     local translation trajectory.
 ;;  - from-opacity    opacity?           local opacity at progress zero.
 ;;  - to-opacity      opacity?           local opacity at progress one.
 
@@ -139,12 +210,14 @@
 ;                                formula-correspondence?
 ;                                [#:path-arc finite-real?]
 ;                                [#:part-paths (listof formula-part-path?)]
+;                                [#:copies (listof formula-part-copy?)]
 ;                                [#:mismatch-mode formula-mismatch-mode?]
 ;                                -> formula-transition-plan?
 ;;   Compiles correspondence against the current source assembly.
 (define (make-formula-transition-plan current-source correspondence
                                       #:path-arc [path-arc 0]
                                       #:part-paths [part-paths '()]
+                                      #:copies [copies '()]
                                       #:mismatch-mode [mismatch-mode 'fade])
   (unless (formula-assembly-visual? current-source)
     (raise-argument-error
@@ -169,6 +242,8 @@
   (define default-route (formula-arc #:angle path-arc))
   (define part-paths-by-match
     (make-part-paths-by-match correspondence part-paths))
+  (define copies-by-destination
+    (make-copies-by-destination current-source correspondence copies))
   ;; Validate that the exact destination parts can occupy the current assembly
   ;; identity before any timeline is constructed.
   (formula-assembly-visual-with-parts current-source destination-parts)
@@ -176,7 +251,8 @@
     (make-mismatch-specs current-source
                          correspondence
                          default-route
-                         mismatch-mode))
+                         mismatch-mode
+                         (hash-keys copies-by-destination)))
   (define specs
     (append
      mismatch-before-specs
@@ -184,6 +260,9 @@
                          correspondence
                          default-route
                          part-paths-by-match)
+     (make-copy-specs current-source
+                      correspondence
+                      copies-by-destination)
      mismatch-after-specs))
   (formula-transition-plan
    (formula-assembly-visual-parts current-source)
@@ -222,11 +301,14 @@
 ;; moving cross-fade used for an explicit changed-part correspondence. The two
 ;; resulting lists preserve the historical layer order: source-side layers,
 ;; then matched layers, then destination-side layers.
-(define (make-mismatch-specs current-source correspondence route mismatch-mode)
+(define (make-mismatch-specs current-source correspondence route mismatch-mode
+                             copied-destination-names)
   (define source-names
     (formula-correspondence-unmatched-source-names correspondence))
   (define destination-names
-    (formula-correspondence-unmatched-destination-names correspondence))
+    (filter (lambda (name)
+              (not (member name copied-destination-names)))
+            (formula-correspondence-unmatched-destination-names correspondence)))
   (case mismatch-mode
     [(fade)
      (values
@@ -292,6 +374,32 @@
                    (formula-part-match-destination-name match))
         default-route))
      (make-one-match-specs source-formula destination-formula route))))
+
+; make-copy-specs : formula-assembly-visual? formula-correspondence? hash?
+;                   -> (listof formula-transition-spec?)
+;; Constructs the independently rendered transient copies in destination order.
+(define (make-copy-specs current-source correspondence copies-by-destination)
+  (define destination
+    (formula-correspondence-destination correspondence))
+  (apply
+   append
+   (for/list ([destination-name
+               (in-list
+                (formula-assembly-visual-part-names destination))]
+              #:when (hash-has-key? copies-by-destination destination-name))
+     (define copy
+       (hash-ref copies-by-destination destination-name))
+     (define source-formula
+       (formula-part-formula
+        (formula-assembly-visual-ref
+         current-source
+         (formula-part-copy-source-name copy))))
+     (define destination-formula
+       (formula-part-formula
+        (formula-assembly-visual-ref destination destination-name)))
+     (make-one-match-specs source-formula
+                           destination-formula
+                           (formula-part-copy-route copy)))))
 
 ; make-one-match-specs : formula-visual? formula-visual? formula-arc?
 ;                        -> (listof formula-transition-spec?)
@@ -521,11 +629,20 @@
   (define to-transform (formula-transition-layer-to-transform layer))
   (affine-transform-with-translation
    (affine-transform-lerp from-transform to-transform progress)
-   (formula-arc-position-at
+   (formula-route-position-at
     (formula-transition-layer-route layer)
     (affine-transform-translation from-transform)
     (affine-transform-translation to-transform)
     progress)))
+
+(define (formula-route-position-at route start end progress)
+  (cond
+    [(formula-arc? route)
+     (formula-arc-position-at route start end progress)]
+    [(formula-relative-path? route)
+     (formula-relative-path-position-at route start end progress)]
+    [else
+     (raise-argument-error 'formula-route-position-at "formula-route?" route)]))
 
 (define (formula-arc-position-at route start end progress)
   (define angle (formula-arc-angle route))
@@ -546,8 +663,29 @@
       center
       (rotate-vector (vec2- start center) (* progress angle)))]))
 
+(define (formula-relative-path-position-at route start end progress)
+  (define chord (vec2- end start))
+  (cond
+    [(and (zero? (vec2-x chord))
+          (zero? (vec2-y chord)))
+     start]
+    [else
+     (define point
+       (path-geometry-point-at
+        (formula-relative-path-geometry route)
+        progress))
+     (vec2+
+      start
+      (vec2+
+       (vec2-scale (vec2-x point) chord)
+       (vec2-scale (vec2-y point) (left-normal chord))))]))
+
 (define (left-normal vector)
   (vec2 (- (vec2-y vector)) (vec2-x vector)))
+
+(define (vec2-coordinate=? left right)
+  (and (= (vec2-x left) (vec2-x right))
+       (= (vec2-y left) (vec2-y right))))
 
 (define (rotate-vector vector angle)
   (define cosine (cos angle))
@@ -587,6 +725,37 @@
        "source-name" (formula-part-path-source-name part-path)
        "destination-name" (formula-part-path-destination-name part-path)))
     (hash-set result key (formula-part-path-route part-path))))
+
+(define (make-copies-by-destination current-source correspondence copies)
+  (unless (and (list? copies)
+               (andmap formula-part-copy? copies))
+    (raise-argument-error
+     'make-formula-transition-plan
+     "(listof formula-part-copy?)"
+     copies))
+  (define source-names
+    (formula-assembly-visual-part-names current-source))
+  (define unmatched-destination-names
+    (formula-correspondence-unmatched-destination-names correspondence))
+  (for/fold ([result (hash)]) ([copy (in-list copies)])
+    (define source-name (formula-part-copy-source-name copy))
+    (define destination-name (formula-part-copy-destination-name copy))
+    (unless (member source-name source-names)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "a copy source part present in the current source formula"
+       "source-name" source-name))
+    (unless (member destination-name unmatched-destination-names)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "a copy destination part that is unmatched in the correspondence"
+       "destination-name" destination-name))
+    (when (hash-has-key? result destination-name)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "at most one copy for each destination part"
+       "destination-name" destination-name))
+    (hash-set result destination-name copy)))
 
 (define (match-key source-name destination-name)
   (cons source-name destination-name))

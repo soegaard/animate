@@ -56,6 +56,9 @@
          stroke-color-visual?
          visual-stroke-color
          visual-with-stroke-color
+         transient-visual
+         transient-visual?
+         transient-visual-underlying
          circle
          circle-visual?
          circle-visual-radius
@@ -143,6 +146,69 @@
 (define-generics stroke-color-visual
   (visual-stroke-color stroke-color-visual)
   (visual-with-stroke-color stroke-color-visual color))
+
+
+;;;
+;;; Transient Visual Wrapper
+;;;
+
+;; A transient wrapper gives a temporary rendering layer a fresh outer identity
+;; without rebuilding the wrapped Visual tree.  Animation overlays use it when
+;; two otherwise independent trees may share descendant ids (for example two
+;; tagged formulas with the same part names).  Render adapters deliberately
+;; unwrap it; only scene/group identity validation sees the fresh id.
+(struct transient-visual (id underlying)
+  #:transparent
+  #:guard
+  (lambda (id underlying who)
+    (unless (symbol? id)
+      (raise-argument-error who "symbol?" id))
+    (unless (and (visual? underlying)
+                 (affine-visual? underlying)
+                 (opacity-visual? underlying))
+      (raise-argument-error
+       who
+       "(and/c visual? affine-visual? opacity-visual?)"
+       underlying))
+    (values id underlying))
+  #:methods gen:visual
+  [(define/generic generic-visual-position visual-position)
+   (define/generic generic-visual-with-position visual-with-position)
+   (define (visual-id transient)
+     (transient-visual-id transient))
+   (define (visual-position transient)
+     (generic-visual-position (transient-visual-underlying transient)))
+   (define (visual-with-position transient position)
+     (struct-copy
+      transient-visual
+      transient
+      [underlying
+       (generic-visual-with-position (transient-visual-underlying transient)
+                                      position)]))]
+  #:methods gen:affine-visual
+  [(define/generic generic-visual-transform visual-transform)
+   (define/generic generic-visual-with-transform visual-with-transform)
+   (define (visual-transform transient)
+     (generic-visual-transform (transient-visual-underlying transient)))
+   (define (visual-with-transform transient transform)
+     (struct-copy
+      transient-visual
+      transient
+      [underlying
+       (generic-visual-with-transform (transient-visual-underlying transient)
+                                       transform)]))]
+  #:methods gen:opacity-visual
+  [(define/generic generic-visual-opacity visual-opacity)
+   (define/generic generic-visual-with-opacity visual-with-opacity)
+   (define (visual-opacity transient)
+     (generic-visual-opacity (transient-visual-underlying transient)))
+   (define (visual-with-opacity transient opacity)
+     (struct-copy
+      transient-visual
+      transient
+      [underlying
+       (generic-visual-with-opacity (transient-visual-underlying transient)
+                                     opacity)]))])
 
 
 ;;;
