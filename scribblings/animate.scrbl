@@ -16,7 +16,7 @@
 Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
 semantic scene data separate from Pict rendering and file output.
 
-The public API in this manual is version @tt{0.67.0}. This is still a
+The public API in this manual is version @tt{0.70.0}. This is still a
 prototype, so later versions may change names or behavior.
 
 @table-of-contents[]
@@ -141,9 +141,10 @@ identity exposed through its nested built-in groups to be unique and different
 from the group identity. A custom affine Visual is treated as one leaf. Nested
 child identities are semantic identities, but they are not direct scene-state
 lookup or animation targets in this version. Formula-part names form a separate
-local namespace inside one formula assembly. They are not top-level scene
-identities or direct animation targets. A formula-part transformation targets
-the containing top-level assembly and updates its parts collectively.
+local namespace inside one formula assembly. Address one with a nonempty nested
+Visual path such as @racket['(equation numerator)] for lookup or compatible
+animation. A formula-part transformation still targets the containing top-level
+assembly and updates its parts collectively.
 
 @subsection{Text and Formulas}
 
@@ -173,12 +174,14 @@ Formula rendering is a separate adapter effect. A nonempty formula requires
 @racketmodname[latex-pict], LaTeX, and Poppler when it is converted to a Pict.
 
 A @deftech{formula assembly} stores explicitly named formula parts in
-back-to-front order. Each part is an independently typeset formula Visual at a
-local position. A @deftech{formula correspondence} records an explicit
-one-to-one list of source-part and destination-part names. Equal names are not
-matched automatically. Correspondence is pure model data. The
-@racket[transform-formula-parts] request compiles it against the current source
-assembly and produces deterministic moving and fading layers.
+back-to-front order. An ordinary assembly uses independently typeset formula
+Visuals at caller-selected local positions. A @deftech{tagged formula} instead
+typesets all author-declared fragments in one TeX document and records each
+fragment as an SVG group at its TeX-determined local position. A
+@deftech{formula correspondence} records an explicit one-to-one list of source
+and destination-part names. The @racket[transform-formula-parts] request
+compiles it against the current source assembly and produces deterministic
+moving and fading layers.
 
 @subsection{Paths}
 
@@ -2959,6 +2962,89 @@ unchanged. Multiline and empty source are accepted.
 }
 
 
+@subsection[#:tag "tagged-formulas"]{Tagged Formula Layouts}
+
+@defstruct*[formula-fragment ([name symbol?]
+                              [source string?])
+  #:transparent]{
+
+Represents one author-declared contiguous TeX fragment. @racket[name] is the
+local part name in a @racket[tagged-formula]; @racket[source] must be a nonempty
+string. Names must be unique within each tagged formula.
+
+Fragments are deliberately explicit. Animate does not parse arbitrary TeX into
+tokens, so a fragment must be a valid piece of the complete math expression and
+must produce visible ink.
+}
+
+@defproc[(tagged-formula
+          [#:id id symbol?]
+          [#:center center vec2? origin]
+          [#:rotation rotation finite-real? 0]
+          [#:scale scale scale-factor? 1]
+          [#:opacity opacity opacity? 1]
+          [#:mode mode formula-mode? 'display]
+          [#:font-size font-size (and/c finite-real? positive?) 1]
+          [#:preamble preamble string? ""]
+          [#:document-class-options document-class-options
+                                    (listof latex-option?)
+                                    '()]
+          [fragment formula-fragment?] ...)
+         formula-assembly-visual?]{
+
+Builds one full-layout formula from one or more @racket[formula-fragment]
+values. Unlike @racket[formula-assembly], the fragments are typeset together.
+Their positions, ordinary TeX spacing, kerning, scripts, and alignment come
+from the complete formula rather than from manually supplied part positions.
+
+Construction runs the external @tt{latex} and @tt{dvisvgm} executables once.
+It wraps every fragment in a dvisvgm SVG group, measures the group, and returns
+an ordinary formula assembly whose parts render as the resulting SVG fragments.
+Those SVG fragments are renderer-cached, so sampling or rendering animation
+frames does not run TeX again. Both executables must be available on
+@tt{PATH} when this constructor is called.
+
+All keyword options have the same validation and semantic meaning as for
+@racket[latex-formula], except that Preview-package options and per-fragment
+anchors are not applicable to a formula whose layout is computed as one unit.
+The returned assembly can be moved, rotated, scaled, faded, addressed through
+nested part paths, and used with the normal formula-correspondence operations.
+}
+
+@defproc[(tagged-formula-fragment-visual? [value any/c]) boolean?]{
+
+Returns @racket[#t] for a generated fragment Visual inside a tagged formula.
+The subtype is also a @racket[formula-visual?].
+}
+
+@defproc[(tagged-formula-fragment-visual-svg-source
+          [visual tagged-formula-fragment-visual?])
+         string?]{
+
+Returns the immutable SVG source used to render one generated tagged fragment.
+This is provided for inspection and renderer integration; construct fragments
+through @racket[tagged-formula], not by manufacturing this renderer detail.
+}
+
+@defproc[(transform-matching-formula
+          [source formula-assembly-visual?]
+          [destination formula-assembly-visual?]
+          [#:matches matches (listof formula-part-match?) '()])
+         transform-formula-parts-request?]{
+
+Builds a correspondence transform in the style of Manim's matching formula
+transitions. Explicit @racket[matches] have priority. Animate then automatically
+pairs every remaining source fragment with the first still-unmatched destination
+fragment that has exactly the same formula source and typesetting options, in
+source order.
+
+Exact matches render as one rigid SVG group that moves with its local transform.
+Changed explicit matches are moving cross-fades, and unmatched fragments use the
+normal fade-out/fade-in behavior. This operation does not infer algebraic
+equivalence, parse TeX tokens, choose paths/arcs for the movement, or morph
+glyph outlines.
+}
+
 @subsection[#:tag "formula-parts"]{Named Formula Parts and Correspondence}
 
 A formula assembly is a composite Visual made from independently typeset LaTeX
@@ -4336,9 +4422,10 @@ repeated identity anywhere in the built-in group tree, or a descendant whose
 identity equals @racket[id]. For a custom affine child, its reported position
 must agree with the translation in its reported affine transform.
 
-Nested children are not direct scene-state lookup or animation targets in this
-version. Animate the group itself, or remove the child from the group and add it
-as a top-level Visual.
+Nested children are addressed by nonempty paths such as @racket['(parent child)]
+for scene-state lookup and compatible animation requests. Their identity remains
+local to the containing group, so a bare child symbol is not a top-level scene
+identity.
 }
 
 @defproc[(group-visual? [value any/c]) boolean?]{
@@ -5436,6 +5523,76 @@ Returns @racket[#t] when @racket[value] is a request created by
 @racket[uncreate].
 }
 
+@defproc[(write-in
+          [visual visual?]
+          [#:order order (or/c 'document 'left-to-right) 'document]
+          [#:lag-ratio lag-ratio (or/c #f nonnegative-real?) #f]
+          [#:outline-stroke-width outline-stroke-width nonnegative-real? 2]
+          [#:reveal reveal (or/c 'bezier 'arc-length) 'bezier]
+          [#:reverse? reverse? boolean? #f]
+          [#:rate-func rate-func (-> finite-real? finite-real?) linear])
+         write-in-request?]{
+
+Creates a Manim-like vector introduction for @racket[visual]. Every writable
+path leaf first appears as a progressively traced outline. In the second half
+of its local interval, the full outline transitions to the leaf's final fill,
+stroke, and cosmetic stroke width. Path leaves overlap by a small default
+stagger, @racket[(min 1/5 (/ 4 N))] for @racket[N] leaves. Pass
+@racket[#:lag-ratio] to select another nonnegative overlap ratio.
+
+The default @racket['bezier] reveal gives every ordered line or Bézier segment
+equal writing time, matching Manim's partial-@tt{VMobject} behavior.
+@racket['arc-length] retains constant-speed geometric progress as an explicit
+alternative. @racket[#:reverse? #t] writes both leaves and their path traversal
+in reverse. The scene easing and @racket[#:rate-func] are applied to each leaf
+after its stagger offset, so nonlinear easing does not delay the start of later
+leaves.
+
+@racket['document] follows group/SVG path order. @racket['left-to-right] sorts
+the path leaves by their resolved horizontal position before calculating the
+same stagger. The supplied Visual must be absent from the scene at the clip
+start. The endpoint is installed exactly as supplied, so semantic SVG circles
+and rectangles, and tagged formula fragments rendered through their normal SVG
+renderer, are restored without a proxy representation at completion.
+
+Built-in path Visuals, groups whose leaves are writable, circles, rectangles,
+and @racket[tagged-formula] assemblies are supported. Tagged formulas expand
+dvisvgm's local glyph-path @tt{<defs>} and @tt{<use>} references only while the
+request is constructed; sampling and rendering the clip never invoke TeX.
+Arbitrary renderer Visuals, gradients, masks, filters, and SVG text are not
+writable. The request reserves all target Visual components, so it cannot run
+simultaneously with another same-target Visual animation.
+
+The name is @racket[write-in], rather than @racket[write], so requiring the
+library does not shadow Racket's ordinary output procedure.
+}
+
+@defproc[(unwrite
+          [target (or/c visual? symbol? visual-path?)]
+          [#:order order (or/c 'document 'left-to-right) 'document]
+          [#:lag-ratio lag-ratio (or/c #f nonnegative-real?) #f]
+          [#:outline-stroke-width outline-stroke-width nonnegative-real? 2]
+          [#:rate-func rate-func (-> finite-real? finite-real?) linear])
+         unwrite-request?]{
+
+Removes a writable Visual already present in the scene. Its leaves and path
+traversal are processed in reverse order; the endpoint structurally removes the
+target. The current scene Visual supplies the writing proxy, so an @racket[unwrite]
+uses the current geometry and style rather than a stale caller copy.
+}
+
+@defproc[(write-in-request? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a request created by
+@racket[write-in].
+}
+
+@defproc[(unwrite-request? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a request created by
+@racket[unwrite].
+}
+
 @defproc[(linear [progress finite-real?]) finite-real?]{
 
 Returns @racket[progress] unchanged. This is the default easing procedure. The
@@ -5896,13 +6053,17 @@ included in frame sampling. Follow it with @racket[scene-wait] or
                          transform-formula-parts-request?
                          create-request?
                          uncreate-request?
+                         write-in-request?
+                         unwrite-request?
                          camera-pan-to-request?
                          camera-pan-by-request?
                          camera-zoom-to-request?
                          camera-zoom-by-request?
                          camera-follow-request?
                          camera-fit-request?)] ...
-          [#:duration duration (and/c finite-real? positive?) 1]
+          [#:duration duration
+                      (or/c false/c (and/c finite-real? positive?))
+                      #f]
           [#:easing easing (procedure-arity-includes/c 1) linear])
          scene?]{
 
@@ -5911,6 +6072,11 @@ Appends one play clip. When no @racket[timed], @racket[succession],
 camera @racket[request] values retain the historical behavior: they run
 simultaneously and share @racket[duration] and @racket[easing]. The exact
 pre-SCENE-AN compilation path is used unchanged.
+
+When @racket[#:duration] is omitted, ordinary requests retain the historical
+one-second default. A direct @racket[write-in] uses Manim's default instead:
+one second for fewer than fifteen writable leaves and two seconds for fifteen
+or more. An explicit positive duration always takes precedence.
 
 When at least one timing/composition value is present, every Visual or scalar request
 resolves to one or more concrete local intervals. A top-level @racket[timed]
@@ -9195,6 +9361,20 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.70.0 — SCENE-BU.} Refined @racket[write-in] to reveal ordered
+       Bézier-curve slots by default, apply easing after each leaf's stagger
+       offset, and support reversed writing. Added @racket[unwrite] for
+       reverse-order vector removal; arc-length writing remains opt-in.}
+ @item{@bold{0.69.0 — SCENE-BT.} Added @racket[write-in], a two-phase
+       outline-then-fill vector introduction for paths, groups, common semantic
+       SVG shapes, and tagged dvisvgm formula glyphs. Endpoints retain their
+       exact original Visuals after the write interval.}
+ @item{@bold{0.68.0 — SCENE-BS.} Added @racket[formula-fragment],
+       @racket[tagged-formula], and @racket[transform-matching-formula]. Tagged
+       formulas use one @tt{latex} to @tt{dvisvgm} compilation for complete TeX
+       layout, expose author-declared fragments as cached SVG groups, and
+       automatically move rendering-equivalent fragments while changed pieces
+       retain cross-fade behavior.}
  @item{@bold{0.67.0 — SCENE-BQ/BR.} Added deterministic bounded-worker PNG
        output through @racket[render-frames!]'s @racket[#:workers] argument,
        plus @racket[render-frames/report!] and @racket[render-diagnostics] for

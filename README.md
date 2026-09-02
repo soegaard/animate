@@ -1,14 +1,42 @@
-# animate — SCENE-BQ/BR
+# animate — SCENE-BU
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BQ/BR adds deterministic multi-worker PNG output and rendering
-diagnostics. `render-frames!` now accepts `#:workers`, retaining frame-order
-paths and byte-identical output. `render-frames/report!` also reports timing and
-built-in cache hit/miss/eviction deltas.
+SCENE-BU refines `write-in` to closely follow Manim's `Write`: it reveals each
+path by ordered Bézier-curve slots, then transitions the completed outline to
+the final fill and stroke. `#:reveal 'arc-length` remains available when a
+constant-speed pen motion is preferable. `unwrite` removes an existing writable
+Visual in reverse leaf and path order. The effects work with path Visuals,
+groups, the common shapes from `svg->visual`, and tagged TeX formulas. SVG/TeX
+endpoints retain their ordinary renderer exactly; the path-only representation
+is used only while an animation runs.
+
+```racket
+(scene-play (make-scene)
+            (write-in logo #:order 'document)
+            #:duration 2)
+
+(scene-play scene-with-logo
+            (unwrite 'logo)
+            #:duration 2)
+```
+
+`#:order` may be `'document` (the default) or `'left-to-right`.  Leaves overlap
+by a small default stagger; `#:lag-ratio` and `#:outline-stroke-width` make that
+timing and outline explicit. The name is `write-in`, rather than `write`, to
+avoid shadowing Racket's output procedure. `#:reverse? #t` reverses a write,
+and `#:rate-func` is evaluated separately for each staggered leaf.
+
+SCENE-BS adds full-layout tagged TeX formulas. `tagged-formula` typesets one
+complete formula through `latex` and `dvisvgm`, then turns explicitly declared
+fragments into rigid SVG groups at their TeX-determined positions.
+`transform-matching-formula` moves unchanged fragments automatically and fades
+changed fragments. This requires the external `latex` and `dvisvgm` executables
+when a tagged formula is constructed; rendering sampled animation frames does
+not rerun TeX.
 
 SCENE-BO/BP adds bounded shared renderer resource caches and full-fidelity SVG
 Visuals via the catalog `svg` package. Use `svg-image` for an SVG that should
@@ -95,12 +123,12 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BQ/BR v0.67.0 builds on immutable parameters and generic values,
-dynamically derived groups, stable nested addressing, formula correspondence,
+SCENE-BU v0.70.0 builds on immutable parameters and generic values, dynamically
+derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.67.0`. The public module exports `496` bindings,
-all covered by the Scribble reference.
+The public package version is `0.70.0`. The public module's bindings are covered
+by the Scribble reference source.
 
 ## Documentation source
 
@@ -455,6 +483,66 @@ Pass `#:center` to translate the completed union as one composition:
 `visuals-center-at` performs only that final union-centering operation. Empty
 lists are valid and remain empty.
 
+## Tagged formula layouts
+
+`tagged-formula` is the full-layout alternative to manually positioned formula
+parts. Give each contiguous TeX fragment a name, and Animate typesets the whole
+formula as one document. The resulting `formula-assembly` preserves TeX's
+normal spacing, kerning, scripts, and alignment while exposing each declared
+fragment as a rigid movable part:
+
+```racket
+(define initial
+  (tagged-formula
+   #:id 'equation
+   #:font-size 2/5
+   (formula-fragment 'a-square "a^2")
+   (formula-fragment 'plus "+")
+   (formula-fragment 'b-square "b^2")
+   (formula-fragment 'equals "=")
+   (formula-fragment 'c-square "c^2")))
+
+(define rearranged
+  (tagged-formula
+   #:id 'rearranged
+   #:font-size 2/5
+   (formula-fragment 'b-square "b^2")
+   (formula-fragment 'equals "=")
+   (formula-fragment 'c-square "c^2")
+   (formula-fragment 'minus "-")
+   (formula-fragment 'a-square "a^2")))
+
+(scene-play (scene-add (make-scene) initial)
+            (transform-matching-formula initial rearranged)
+            #:duration 2)
+```
+
+`transform-matching-formula` first accepts optional explicit
+`formula-part-match` values through `#:matches`; it then pairs every remaining
+fragment whose source and typesetting options are exactly equal, in source
+order. In the example, `a^2`, `b^2`, `=`, and `c^2` move rigidly, while `+`
+fades out and `-` fades in. It does not infer algebraic meaning or morph glyph
+outlines.
+
+The constructor invokes `latex` and `dvisvgm` once for each endpoint formula,
+so those executables must be on `PATH` when the scene is built. A fragment must
+be a nonempty contiguous piece of valid TeX that leaves visible ink. The
+resulting SVG groups are cached by the normal renderer; frame sampling and
+rendering use no external TeX process.
+
+Run the example with:
+
+```sh
+racket examples/tagged-formula-transitions.rkt \
+  frames/tagged-formula-transitions \
+  tagged-formula-transitions.mp4
+```
+
+`examples/solving-linear-equation.rkt` is a second tagged-formula example. It
+solves \(2x+1=5\) through \(2x=5-1\), \(2x=4\),
+\(\frac{2x}{2}=\frac{4}{2}\), and \(x=2\), keeping the equals sign fixed
+throughout.
+
 ## Named formula parts
 
 `formula-part` associates a local symbol name with one `formula-visual`. The
@@ -480,10 +568,11 @@ formula Visual identity:
                     #:font-size 1/3)
 ```
 
-Part names are local to one formula assembly. They are not top-level scene
-identities and are not direct `scene-play` targets. formula-part transformations update them
-collectively through the containing assembly and a checked correspondence. Two
-different assemblies may use the same local names.
+Part names are local to one formula assembly. Address a part as a nested Visual
+path such as `'(equation numerator)` for ordinary lookup or compatible nested
+animation. Formula-part transformations update the complete containing assembly
+through a checked correspondence. Two different assemblies may use the same
+local names.
 
 A formula assembly stores parts in explicit back-to-front order:
 
@@ -2019,48 +2108,94 @@ scene, group, or formula-assembly placement
 bitmap / PNG / optional MP4
 ```
 
-## Current limitations
+## Limitations and follow-on ideas
 
-This prototype still does not provide:
+This is the running design backlog for version `0.70.0`. Every completed SCENE
+stage must update it with the limitations, edge cases, and useful next ideas
+revealed by that stage. When a later stage delivers an item, retain its history
+in that stage's notes and revise this list to state the remaining boundary
+precisely; do not silently lose the follow-on idea that led to the work.
 
-- multiple text lines, wrapping, paragraphs, or rich spans;
-- baseline alignment between separate text or formula Visuals;
-- tight visible-ink bounds distinct from symmetric renderer boxes;
-- constraints, wrapping, dynamic reflow, or responsive layout;
-- automatic TeX tokenization or character-level identities;
-- automatic spacing or layout of independently typeset formula parts;
-- direct animation of a nested formula part or group child;
-- automatic name, token, or glyph matching between formula parts;
-- glyph-outline morphing between changed formula parts;
-- formula coloring outside explicit LaTeX source and preamble commands;
-- non-uniform group scale, shear, reflection, or arbitrary affine matrices;
-- a motion route that deforms dynamically while its path Visual is animated in
-  the same clip, exact cubic-source offset curves, offset self-intersection
-  cleanup, or curvature-aware banking;
-- discontinuous multi-subpath motion traversal; `move-along-path` deliberately
-  requires one positive-length continuous subpath;
-- semantic hole/topology inference, direct open-to-closed correspondence,
-  appearance-aware matching, arbitrary per-pair scoring callbacks beyond
-  SCENE-AM numeric additive pair penalties, or general global geometric path
-  optimization beyond topology-class assignment;
-- quadratic Bézier or arc segment types;
-- direct endpoint animation or `Create`/`Uncreate` support for arrow and axes
-  Visuals;
-- logarithmic axes;
-- adaptive error-controlled sampling, per-point style tables, error bars,
-  filled areas between two curves, or pixel-fixed marker sizes;
-- camera rotation, animated pixel dimensions, or animated background styles;
-- persistent camera-follow state across clips, continuously recomputed fit while
-  target geometry changes, asymmetric safe areas, or multiple simultaneous views;
-- anchor presets such as frame corners/edges, automatic overlay collision
-  avoidance, responsive wrapping, curved or arrow-headed callout leaders, or
-  callout attachment to nested child geometry rather than a top-level reference
-  position;
-- mixing frame-space wrappers directly inside ordinary world-space groups;
-- timed camera requests, nested timed wrappers, explicit trailing holds inside
-  a timed child span, or timeline-relative scheduling across separate play clips;
-- three-dimensional scenes;
-- a browser editor.
+### Text, formulas, and layout
+
+- Plain text is single-line only: there are no paragraphs, wrapping, rich spans,
+  or baseline alignment between separate text/formula Visuals.
+- Renderer layout boxes are symmetric semantic boxes, not tight visible-ink
+  bounds. There are no constraints, responsive reflow, or automatic layout.
+- Ordinary formula assemblies typeset parts independently, so their positions
+  and spacing remain explicit. `tagged-formula` typesets author-declared
+  fragments together, but it is not a TeX parser: every fragment must be a
+  contiguous valid TeX piece with visible ink.
+- `formula-correspondence-auto` and `transform-matching-formula` match whole
+  rendering-equivalent fragments in order. They do not perform algebra,
+  semantic name/token matching, character-level matching, or glyph-outline
+  morphing. Formula colour remains controlled by explicit LaTeX source and
+  preamble commands.
+- Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
+  `write-in` expands their dvisvgm path definitions once while the clip is
+  compiled, but there is not yet a public glyph map, semantic TeX parser,
+  glyph-outline matching, or path-arc/Bézier motion option for fragments.
+
+### Geometry and transforms
+
+- Group transforms are uniform-scale affine transforms; non-uniform group scale,
+  shear, reflection, and arbitrary affine matrices are not available.
+- Core path geometry has line and cubic Bézier segments, but no quadratic Bézier
+  or arc segment type. SVG quadratic commands are converted to cubics on import.
+- A motion route is a clip-start snapshot. It does not deform with an animated
+  route Visual in the same clip, and there is no exact cubic offsetting,
+  offset-self-intersection cleanup, or curvature-aware banking.
+- `move-along-path` deliberately requires one positive-length continuous
+  subpath; it cannot traverse discontinuous multi-subpath geometry.
+- Path morphing has no semantic hole/topology inference, direct open-to-closed
+  correspondence, appearance-aware matching, arbitrary per-pair scoring
+  callbacks, or general global geometric optimisation beyond its current
+  topology-class assignment and numeric additive pair penalties.
+- `write-in` now follows each leaf by Bézier-curve order, which matches Manim's
+  partial-VMobject reveal; `#:reveal 'arc-length` is an explicit constant-speed
+  alternative. `#:reverse?` and `unwrite` reverse leaf/path traversal, but
+  there is still no pen nib geometry or independent per-contour scheduling.
+  Gradients, patterns, masks, filters, SVG text, and arbitrary custom renderer
+  Visuals are not writable. Unsupported paint specifications become exact only
+  at the endpoint rather than interpolating through the fill phase.
+
+### Visuals, plots, and SVG
+
+- Derived Visuals are read-only computed output and cannot be animated directly;
+  animate their values or the ordinary Visuals they depend on instead.
+- Arrow and axes Visuals do not yet support direct endpoint animation or
+  `create`/`uncreate`.
+- Plot sampling is fixed rather than adaptive. There are no per-point style
+  tables, error bars, filled areas between curves, or pixel-fixed marker sizes.
+- `svg->visual` is intentionally structural and supports groups plus common
+  geometric leaves with unitless translation transforms. Complex SVG transforms
+  and renderer features should use `svg-image`, which preserves their appearance
+  but does not expose their elements for individual animation.
+- The dvisvgm adapter used by tagged-formula `write-in` expands path `<defs>`
+  and local `<use>` references with matrix, translation, and scale transforms.
+  It is deliberately not a general animated SVG renderer; author SVGs needing
+  broad SVG fidelity still belong in `svg-image`.
+
+### Cameras, overlays, and timelines
+
+- Cameras have pan, zoom, fit, and clip-scoped follow, but no rotation, animated
+  pixel dimensions/background, persistent follow across clips, continuously
+  recomputed fitting, asymmetric safe areas, or multiple simultaneous views.
+- There are no frame-corner/edge anchors, automatic overlay collision avoidance,
+  responsive overlay wrapping, curved or arrow-headed callout leaders, or
+  callout attachment to nested-child geometry. Frame-space wrappers cannot be
+  placed directly inside ordinary world-space groups.
+- Local `timed` scheduling and nested visual compositions are supported, but
+  camera requests remain top-level full-clip requests: they cannot be timed or
+  nested in a composition. Separate `scene-play` clips cannot overlap or be
+  scheduled relative to one another.
+
+### Outside the current scope
+
+- Three-dimensional scenes and a browser editor are not provided.
+- Formula source and preamble are trusted input; the optional TeX renderer is
+  not sandboxed. The Scribble source is included but intentionally not registered
+  with Racket's documentation system.
 
 
 
@@ -2121,8 +2256,48 @@ raco test tests/scene-l-render-test.rkt \
   tests/scene-bm-test.rkt tests/scene-bl-test.rkt tests/scene-bn-test.rkt \
   tests/scene-bj-test.rkt tests/scene-bh-test.rkt tests/scene-bg-test.rkt \
   tests/scene-svg-render-test.rkt tests/scene-bo-bp-test.rkt \
-  tests/scene-bq-br-test.rkt
+  tests/scene-bq-br-test.rkt tests/scene-bs-test.rkt
 ```
+
+## SCENE-BS: tagged full-formula layouts
+
+Version `0.68.0` adds `formula-fragment`, `tagged-formula`, and
+`transform-matching-formula`. A tagged formula uses one `latex` → `dvisvgm`
+compilation to preserve TeX's complete layout, then isolates each declared
+fragment as an SVG group. Exact unchanged fragments move as a single rigid
+layer; changed or unmatched fragments retain the existing fade behavior.
+Explicit `#:matches` take precedence before the remaining exact fragments are
+automatically paired. Construction needs `latex` and `dvisvgm`; rendering the
+finished scene does not rerun either program. The formula limitations backlog
+above records the deliberately retained boundaries: author-declared fragments,
+no semantic algebra/glyph matching, and no glyph-outline morph.
+
+## SCENE-BT: animated vector write
+
+Version `0.69.0` adds `write-in`, a generic two-phase vector introduction for
+path Visuals and ordered path groups. Each leaf is first revealed by arc length
+as a temporary outline; once complete, that outline transitions to the leaf's
+final fill and stroke. The default stagger is `min(0.2, 4/N)` for `N` leaves.
+Use `#:order 'left-to-right` when visual placement rather than SVG/document
+order should control the sequence, or pass `#:lag-ratio` explicitly.
+
+`svg->visual` circles and rectangles are normalised to temporary paths, and a
+tagged formula expands dvisvgm's glyph path definitions and local `<use>`
+instances only while `write-in` is compiled. The endpoint remains the original
+semantic SVG tree or tagged formula, so its normal renderer is restored exactly
+after the clip. Construction remains the only step that invokes TeX; rendering
+or sampling a write animation never invokes it again.
+
+## SCENE-BU: Manim-style write refinement
+
+Version `0.70.0` makes `write-in` use Manim's equal-Bézier-curve partial reveal
+by default, rather than measuring physical arc length. The former behavior is
+still available through `#:reveal 'arc-length`. Staggered leaves now receive
+clip and write rate functions after their own start offsets, so nonlinear
+easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
+`unwrite` removes an existing writable Visual by reversing both leaf order and
+path traversal. The outline-to-fill phase and exact endpoint restoration remain
+unchanged.
 
 ## SCENE-BQ/BR: concurrent output and diagnostics
 

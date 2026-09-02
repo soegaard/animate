@@ -402,7 +402,7 @@
   (struct-copy scene scn [current-camera camera]))
 
 ; scene-play : scene?
-;              [#:duration positive-real?]
+;              [#:duration (or/c false/c positive-real?)]
 ;              [#:easing (-> real? real?)]
 ;              (or/c animation-request?
 ;                    timed-animation-request?
@@ -416,12 +416,11 @@
 ;;   one timed request or composition is present, Visual/scalar requests use the
 ;;   local scheduler while ordinary Visual requests still span the full clip.
 (define (scene-play scn
-                    #:duration [duration 1]
+                    #:duration [duration #f]
                     #:easing [easing linear]
                     . animations)
   (unless (scene? scn)
     (raise-argument-error 'scene-play "scene?" scn))
-  (check-positive-duration 'scene-play duration)
   (check-easing 'scene-play easing)
   (define requests
     (normalize-animation-requests animations))
@@ -435,9 +434,20 @@
      'scene-play
      "list of Visual/scalar, timed, style/composition, or camera animation requests"
      requests))
+  ;; Manim Write chooses one second for fewer than fifteen leaves and two
+  ;; seconds otherwise.  Only a direct write-in opts into that convention;
+  ;; historic requests retain the one-second default and any explicit duration
+  ;; always takes precedence.
+  (define resolved-duration
+    (or duration
+        (for/or ([request (in-list requests)]
+                 #:when (animation-request? request))
+          (animation-request-default-duration request))
+        1))
+  (check-positive-duration 'scene-play resolved-duration)
   (if (ormap scheduled-scene-play-request? requests)
-      (scene-play/scheduled scn duration easing requests)
-      (scene-play/legacy scn duration easing requests)))
+      (scene-play/scheduled scn resolved-duration easing requests)
+      (scene-play/legacy scn resolved-duration easing requests)))
 
 ; scene-play/legacy : scene? positive-real? easing? list? -> scene?
 ;;   Preserves the exact SCENE-AM simultaneous-play implementation.
@@ -1270,7 +1280,9 @@
         (play-clip-start-state clip)
         (play-clip-animations clip)
         eased-progress
-        linear))
+        linear
+        #:write-progress progress
+        #:write-scene-rate-func (play-clip-easing clip)))
      (values
       sampled-state
       (apply-compiled-camera-animations

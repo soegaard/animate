@@ -178,9 +178,11 @@
 ;;  - parts  (listof formula-part?) named parts in back-to-front drawing order.
 ;;                                  Ordering is significant.
 ;;
-;; Part names form a local namespace. They are not top-level scene identities
-;; or direct scene-play targets. A formula correspondence can animate their
-;; assembly collectively. Each part is typeset independently at its local position.
+;; Part names form a local namespace. They are addressable with nested Visual
+;; paths through their assembly, while a formula correspondence animates the
+;; complete assembly collectively. Ordinary parts are typeset independently at
+;; their local positions; specialised formula Visuals may supply a full-layout
+;; renderer instead.
 
 ; formula-assembly : (listof formula-part?)
 ;                    #:id symbol?

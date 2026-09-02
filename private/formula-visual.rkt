@@ -16,7 +16,8 @@
 ;;;
 
 ;; Imports
-(require "affine-transform.rkt"
+(require racket/generic
+         "affine-transform.rkt"
          "geometry.rkt"
          (only-in "text-visual.rkt"
                   text-horizontal-alignment?
@@ -27,20 +28,19 @@
 (provide formula-mode?
          latex-option?
          latex-formula
-         formula-visual?
-         formula-visual-source
-         formula-visual-mode
-         formula-visual-font-size
-         formula-visual-preamble
-         formula-visual-document-class-options
-         formula-visual-preview-options
-         formula-visual-horizontal-alignment
-         formula-visual-vertical-alignment
+         (struct-out formula-visual)
          formula-visual-with-source
          formula-visual-document-font-points
 
          ;; Composite animation support
+         gen:formula-identity-visual
          formula-visual-with-id)
+
+;; Internal protocol for formula Visual subclasses that must preserve their
+;; specialised renderer data while a formula-part transition gives them a
+;; temporary identity.
+(define-generics formula-identity-visual
+  (generic-formula-visual-with-id formula-identity-visual id))
 
 
 ;;;
@@ -110,7 +110,11 @@
         'visual-with-opacity
         "finite real in [0, 1]"
         opacity))
-     (struct-copy formula-visual visual [opacity opacity]))])
+     (struct-copy formula-visual visual [opacity opacity]))]
+  #:methods gen:formula-identity-visual
+  [(define (generic-formula-visual-with-id visual id)
+     (check-formula-id 'formula-visual-with-id id)
+     (struct-copy formula-visual visual [id id]))])
 
 ;; formula-visual represents one semantic LaTeX mathematical formula.
 ;;  - id                      symbol?                     stable Visual identity.
@@ -228,7 +232,7 @@
      "formula-visual?"
      visual))
   (check-formula-id 'formula-visual-with-id id)
-  (struct-copy formula-visual visual [id id]))
+  (generic-formula-visual-with-id visual id))
 
 ; formula-visual-with-source : formula-visual? string? -> formula-visual?
 ;;   Returns visual with its immutable LaTeX source replaced.

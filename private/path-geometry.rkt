@@ -51,6 +51,7 @@
          path-geometry-normal-at
          path-geometry-offset
          path-geometry-partial
+         path-geometry-partial-by-curves
          path-geometry-cycle-start
          polyline-path
          polygon-path
@@ -3779,6 +3780,131 @@
            geometry
            (* start total-length)
            (* end total-length))))]))
+
+; path-geometry-partial-by-curves : path-geometry? finite-real? finite-real?
+;                                  -> path-geometry?
+;; Extracts the interval between start and end by assigning equal time to each
+;; stored path segment.  This is deliberately distinct from
+;; `path-geometry-partial`: Manim's VMobject partial-reveal operation advances
+;; by Bézier-curve index, not by geometric arc length.  The implicit closing
+;; edge of a closed subpath is one curve slot, just as it is for traversal.
+(define (path-geometry-partial-by-curves geometry start end)
+  (check-path-geometry 'path-geometry-partial-by-curves geometry)
+  (check-path-fraction 'path-geometry-partial-by-curves "start" start)
+  (check-path-fraction 'path-geometry-partial-by-curves "end" end)
+  (when (> start end)
+    (raise-arguments-error
+     'path-geometry-partial-by-curves
+     "the start fraction must not be greater than the end fraction"
+     "start" start
+     "end" end))
+  (cond
+    [(= start end)
+     empty-path-geometry]
+    [(and (zero? start)
+          (= end 1))
+     geometry]
+    [else
+     (define subpaths
+       (path-geometry-subpaths geometry))
+     (define curve-count
+       (for/sum ([subpath (in-list subpaths)])
+         (length (path-subpath-edges subpath))))
+     (if (zero? curve-count)
+         empty-path-geometry
+         (let-values ([(reversed-subpaths _offset)
+                       (for/fold ([reversed-subpaths '()]
+                                  [offset 0])
+                                 ([subpath (in-list subpaths)])
+                         (define local-count
+                           (length (path-subpath-edges subpath)))
+                         (define next-offset
+                           (+ offset local-count))
+                         (define overlap-start
+                           (max (* start curve-count) offset))
+                         (define overlap-end
+                           (min (* end curve-count) next-offset))
+                         (define partial-subpath
+                           (and (< overlap-start overlap-end)
+                                (path-subpath-partial-by-curves
+                                 subpath
+                                 (- overlap-start offset)
+                                 (- overlap-end offset)
+                                 local-count)))
+                         (values (if partial-subpath
+                                     (cons partial-subpath reversed-subpaths)
+                                     reversed-subpaths)
+                                 next-offset))])
+           (path-geometry (reverse reversed-subpaths))))]))
+
+; path-subpath-partial-by-curves : path-subpath? real? real?
+;                                  exact-nonnegative-integer?
+;                                  -> (or/c path-subpath? false/c)
+;; Extracts one subpath interval measured in stored curve slots rather than
+;; physical length.  Boundary curves are split at their Bézier parameter.
+(define (path-subpath-partial-by-curves subpath start-index end-index curve-count)
+  (cond
+    [(zero? curve-count)
+     #f]
+    [(and (zero? start-index)
+          (= end-index curve-count))
+     subpath]
+    [else
+     (define pieces
+       (for/fold ([reversed-pieces '()])
+                 ([edge (in-list (path-subpath-edges subpath))]
+                  [index (in-naturals)])
+         (define overlap-start
+           (max start-index index))
+         (define overlap-end
+           (min end-index (add1 index)))
+         (if (< overlap-start overlap-end)
+             (cons
+              (path-edge-partial-piece-by-parameter
+               edge
+               (- overlap-start index)
+               (- overlap-end index))
+              reversed-pieces)
+             reversed-pieces)))
+     (and (pair? pieces)
+          (let ([ordered-pieces (reverse pieces)])
+            (path-subpath
+             (path-piece-start (car ordered-pieces))
+             (for/list ([piece (in-list ordered-pieces)])
+               (path-piece-segment piece))
+             #f)))]))
+
+; path-edge-partial-piece-by-parameter : path-edge? finite-real? finite-real?
+;                                        -> path-piece?
+;; Extracts a curve-parameter interval.  Unlike distance extraction, lines and
+;; cubic curves both occupy exactly one equal-time reveal slot.
+(define (path-edge-partial-piece-by-parameter edge start end)
+  (define segment
+    (path-edge-segment edge))
+  (cond
+    [(and (zero? start) (= end 1))
+     (path-piece (path-edge-start edge) segment)]
+    [(line-path-segment? segment)
+     (define segment-start
+       (path-edge-start edge))
+     (define segment-end
+       (line-path-segment-end segment))
+     (path-piece
+      (vec2-lerp segment-start segment-end start)
+      (line-path-segment (vec2-lerp segment-start segment-end end)))]
+    [(cubic-bezier-path-segment? segment)
+     (define selected
+       (cubic-curve-subcurve
+        (segment->cubic-curve (path-edge-start edge) segment)
+        start
+        end))
+     (path-piece (cubic-curve-start selected)
+                 (cubic-curve->segment selected))]
+    [else
+     (raise-argument-error
+      'path-edge-partial-piece-by-parameter
+      "supported path segment"
+      segment)]))
 
 ; path-geometry-cycle-start : path-geometry? finite-real? -> path-geometry?
 ;;   Moves the stored start of one closed loop to an arc-length fraction.

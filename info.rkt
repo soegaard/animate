@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BQ/BR: concurrent frame output and rendering diagnostics")
+  "SCENE-BU: Manim-style Bézier-curve vector writes for SVGs and tagged TeX")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.67.0")
+(define version "0.70.0")
 
 ; license : symbol?
 ;;   Declares the package license.

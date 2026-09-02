@@ -17,18 +17,21 @@
 ;;;
 
 ;; Imports
-(require "affine-transform.rkt"
+(require racket/list
+         "affine-transform.rkt"
          "color-style.rkt"
          "derived-visual.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
          "frame-space.rkt"
          "geometry.rkt"
+         "group-visual.rkt"
          "interpolation.rkt"
          "path-geometry.rkt"
          "parameter.rkt"
          "scene-state.rkt"
-         "visual-model.rkt")
+         "visual-model.rkt"
+         "write-in-adapter.rkt")
 
 ;; Exports
 (provide value-to
@@ -81,8 +84,13 @@
          create-request?
          uncreate
          uncreate-request?
+         write-in
+         write-in-request?
+         unwrite
+         unwrite-request?
          linear
          animation-request?
+         animation-request-default-duration
          animation-request-target-id
          animation-request-components
          compile-animation-requests
@@ -313,6 +321,21 @@
 ;; uncreate-request represents an uncompiled path removal request.
 ;;  - target-id  symbol?  stable id of the path Visual removed at clip end.
 
+(struct write-in-request (plan)
+  #:transparent)
+
+;; write-in-request represents an uncompiled Manim-like vector write.  Its
+;; plan keeps both the exact endpoint Visual and a path-only proxy used only
+;; during the animation interval.
+
+(struct unwrite-request (target order lag-ratio outline-stroke-width rate-func)
+  #:transparent)
+
+;; unwrite-request represents a Manim-like removal of a writable Visual.  The
+;; current scene Visual supplies the endpoint/proxy plan at compilation time,
+;; so an unwrite follows the actual current style rather than a stale caller
+;; copy.
+
 
 ;;;
 ;;; Compiled Animation Data
@@ -442,6 +465,30 @@
 ;;  - from            finite-real?    visible prefix fraction at clip start.
 ;;  - to              finite-real?    visible prefix fraction at clip end.
 ;;  - remove-at-end?  boolean?        whether completion removes the Visual.
+
+(struct write-in-animation (target-id plan reverse? remove-at-end?)
+  #:transparent)
+
+;; write-in-animation samples a staggered two-phase outline/fill proxy, then
+;; either restores the original endpoint Visual or removes it at the clip
+;; boundary.  Reverse writing reverses leaf order and path traversal.
+
+(struct write-plan (endpoint proxy leaves outline-stroke-width reveal reverse? rate-func)
+  #:transparent)
+
+;; write-plan records immutable write-in compilation data.
+;;  - endpoint              visual?             exact caller-supplied Visual.
+;;  - proxy                 path/group Visual    write-time vector equivalent.
+;;  - leaves                (listof write-leaf?) reveal order and local timing.
+;;  - outline-stroke-width  nonnegative-real?    cosmetic outline width.
+;;  - reveal                (or/c 'bezier 'arc-length) path progress model.
+;;  - reverse?              boolean?             reverse leaf/path traversal.
+;;  - rate-func             (-> real? real?)     local leaf easing.
+
+(struct write-leaf (id visual start duration)
+  #:transparent)
+
+;; write-leaf stores one styled complete path and its normalized local interval.
 
 
 ;;;
@@ -1006,6 +1053,106 @@
      target))
   (uncreate-request (visual-target-id target 'uncreate)))
 
+; write-in : visual?
+;            [#:order (or/c 'document 'left-to-right)]
+;            [#:lag-ratio (or/c false/c nonnegative-finite-real?)]
+;            [#:outline-stroke-width nonnegative-finite-real?]
+;            [#:reveal (or/c 'bezier 'arc-length)]
+;            [#:reverse? boolean?]
+;            [#:rate-func (-> finite-real? finite-real?)]
+;            -> write-in-request?
+;;   Introduces a vector-capable Visual by tracing every path in document order
+;;   (or left-to-right), then fading its final fill and stroke into place.
+;;   `bezier` is the Manim-compatible default: each stored path curve consumes
+;;   equal reveal time.  The name deliberately avoids Racket's built-in `write`
+;;   binding.
+(define (write-in visual
+                  #:order [order 'document]
+                  #:lag-ratio [lag-ratio #f]
+                  #:outline-stroke-width [outline-stroke-width 2]
+                  #:reveal [reveal 'bezier]
+                  #:reverse? [reverse? #f]
+                  #:rate-func [rate-func linear])
+  (unless (visual? visual)
+    (raise-argument-error 'write-in "visual?" visual))
+  (unless (memq order '(document left-to-right))
+    (raise-argument-error 'write-in "(or/c 'document 'left-to-right)" order))
+  (unless (or (not lag-ratio)
+              (and (finite-real? lag-ratio)
+                   (not (negative? lag-ratio))))
+    (raise-argument-error
+     'write-in
+     "false/c or nonnegative finite real?"
+     lag-ratio))
+  (unless (and (finite-real? outline-stroke-width)
+               (not (negative? outline-stroke-width)))
+    (raise-argument-error
+     'write-in
+     "nonnegative finite real?"
+     outline-stroke-width))
+  (unless (memq reveal '(bezier arc-length))
+    (raise-argument-error 'write-in "(or/c 'bezier 'arc-length)" reveal))
+  (unless (boolean? reverse?)
+    (raise-argument-error 'write-in "boolean?" reverse?))
+  (check-write-rate-func 'write-in rate-func)
+  (write-in-request
+   (make-write-plan visual
+                    order
+                    lag-ratio
+                    outline-stroke-width
+                    reveal
+                    reverse?
+                    rate-func)))
+
+; unwrite : (or/c visual? symbol? visual-path?)
+;           [#:order (or/c 'document 'left-to-right)]
+;           [#:lag-ratio (or/c false/c nonnegative-finite-real?)]
+;           [#:outline-stroke-width nonnegative-finite-real?]
+;           [#:rate-func (-> finite-real? finite-real?)]
+;           -> unwrite-request?
+;;   Removes a writable Visual by reversing the Manim-like write progression.
+;;   Leaves and path traversal both run in reverse.  The target must be present
+;;   at the start of the clip.
+(define (unwrite target
+                 #:order [order 'document]
+                 #:lag-ratio [lag-ratio #f]
+                 #:outline-stroke-width [outline-stroke-width 2]
+                 #:rate-func [rate-func linear])
+  (unless (or (visual? target)
+              (symbol? target)
+              (visual-path? target))
+    (raise-argument-error
+     'unwrite
+     "(or/c visual? symbol? visual-path?)"
+     target))
+  (unless (memq order '(document left-to-right))
+    (raise-argument-error 'unwrite "(or/c 'document 'left-to-right)" order))
+  (unless (or (not lag-ratio)
+              (and (finite-real? lag-ratio)
+                   (not (negative? lag-ratio))))
+    (raise-argument-error
+     'unwrite
+     "false/c or nonnegative finite real?"
+     lag-ratio))
+  (unless (and (finite-real? outline-stroke-width)
+               (not (negative? outline-stroke-width)))
+    (raise-argument-error
+     'unwrite
+     "nonnegative finite real?"
+     outline-stroke-width))
+  (check-write-rate-func 'unwrite rate-func)
+  (unwrite-request
+   (visual-target-id target 'unwrite)
+   order
+   lag-ratio
+   outline-stroke-width
+   rate-func))
+
+(define (check-write-rate-func who rate-func)
+  (unless (and (procedure? rate-func)
+               (procedure-arity-includes? rate-func 1))
+    (raise-argument-error who "(procedure-arity-includes/c 1)" rate-func)))
+
 ; linear : finite-real? -> finite-real?
 ;;   Returns progress unchanged.
 (define (linear progress)
@@ -1064,6 +1211,17 @@
        (scene-state-add
         prepared-state
         (replace-visual-opacity 'scene-play visual 0))]
+    [(write-in-request? request)
+     (define plan
+       (write-in-request-plan request))
+       (define endpoint
+         (write-plan-endpoint plan))
+       (define id
+         (visual-id endpoint))
+       (check-absent-introduction-target prepared-state id 'write-in)
+       (scene-state-add
+       prepared-state
+       (write-plan-sample plan 0))]
       [else
        prepared-state])))
 
@@ -1452,6 +1610,24 @@
                             1
                             0
                             #t)]
+    [(write-in-request? request)
+     (write-in-animation target-id
+                         (write-in-request-plan request)
+                         (write-plan-reverse?
+                          (write-in-request-plan request))
+                         #f)]
+    [(unwrite-request? request)
+     ;; Resolve the current scene Visual now so unwrite uses any styles or
+     ;; geometry produced by preceding clips rather than caller-side data.
+     (define plan
+       (make-write-plan visual
+                        (unwrite-request-order request)
+                        (unwrite-request-lag-ratio request)
+                        (unwrite-request-outline-stroke-width request)
+                        'bezier
+                        #t
+                        (unwrite-request-rate-func request)))
+     (write-in-animation target-id plan #t #t)]
     [else
      (raise-argument-error
       'compile-animation-request
@@ -1517,7 +1693,30 @@
       (morph-to-compound-aligned-request? value)
       (transform-formula-parts-request? value)
       (create-request? value)
-      (uncreate-request? value)))
+      (uncreate-request? value)
+      (write-in-request? value)
+      (unwrite-request? value)))
+
+; animation-request-default-duration : animation-request? -> (or/c false/c
+;                                                              positive-real?)
+;; Gives an optional duration preference for a request when the caller omits
+;; scene-play's #:duration.  This deliberately mirrors Manim Write's small
+;; family heuristic without changing the historical one-second default of every
+;; other animation type.
+(define (animation-request-default-duration request)
+  (unless (animation-request? request)
+    (raise-argument-error
+     'animation-request-default-duration
+     "animation-request?"
+     request))
+  (cond
+    [(write-in-request? request)
+     (if (< (length (write-plan-leaves
+                     (write-in-request-plan request)))
+            15)
+         1
+         2)]
+    [else #f]))
 
 ; animation-request-target-id : animation-request? -> symbol?
 ;;   Returns the stable target id of request.
@@ -1575,6 +1774,12 @@
      (visual-id (create-request-visual request))]
     [(uncreate-request? request)
      (uncreate-request-target-id request)]
+    [(write-in-request? request)
+     (visual-id
+      (write-plan-endpoint
+       (write-in-request-plan request)))]
+    [(unwrite-request? request)
+     (unwrite-request-target request)]
     [else
      (raise-argument-error
       'animation-request-target-id
@@ -1622,6 +1827,13 @@
     [(or (create-request? request)
          (uncreate-request? request))
      '(path-geometry presence)]
+    [(or (write-in-request? request)
+         (unwrite-request? request))
+     ;; The proxy replaces the complete target during sampling.  Treat it as a
+     ;; whole-Visual transition so no simultaneous component can be overwritten
+     ;; by request ordering.
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts presence)]
     [else
      (raise-argument-error
       'animation-request-components
@@ -1636,9 +1848,18 @@
 ;                             (listof compiled-animation?)
 ;                             finite-real?
 ;                             (-> finite-real? finite-real?)
+;                             [#:write-progress finite-real?]
+;                             [#:write-scene-rate-func
+;                              (-> finite-real? finite-real?)]
 ;                             -> scene-state?
 ;;   Samples all compiled animations at progress using easing.
-(define (apply-compiled-animations state animations progress easing)
+(define (apply-compiled-animations state
+                                   animations
+                                   progress
+                                   easing
+                                   #:write-progress [write-progress progress]
+                                   #:write-scene-rate-func
+                                   [write-scene-rate-func easing])
   (unless (scene-state? state)
     (raise-argument-error
      'apply-compiled-animations
@@ -1655,19 +1876,38 @@
      'apply-compiled-animations
      "finite real?"
      progress))
+  (unless (finite-real? write-progress)
+    (raise-argument-error
+     'apply-compiled-animations
+     "finite real?"
+     write-progress))
   (unless (and (procedure? easing)
                (procedure-arity-includes? easing 1))
     (raise-argument-error
      'apply-compiled-animations
      "(procedure-arity-includes/c 1)"
      easing))
+  (unless (and (procedure? write-scene-rate-func)
+               (procedure-arity-includes? write-scene-rate-func 1))
+    (raise-argument-error
+     'apply-compiled-animations
+     "(procedure-arity-includes/c 1)"
+     write-scene-rate-func))
   (define eased-progress
     (clamp-unit (easing (clamp-unit progress))))
   (for/fold ([sampled-state state])
             ([animation (in-list animations)])
-    (apply-compiled-animation sampled-state
-                              animation
-                              eased-progress)))
+    ;; Write samples need the raw clip clock.  Their per-leaf rate function is
+    ;; applied only after staggering, which matches Manim's `get_sub_alpha`.
+    ;; All historical animation kinds keep the shared eased progress exactly.
+    (if (write-in-animation? animation)
+        (apply-compiled-animation sampled-state
+                                  animation
+                                  (clamp-unit write-progress)
+                                  write-scene-rate-func)
+        (apply-compiled-animation sampled-state
+                                  animation
+                                  eased-progress))))
 
 ; compiled-animation? : any/c -> boolean?
 ;;   Reports whether value is a supported compiled animation.
@@ -1685,12 +1925,14 @@
       (path-morph-animation? value)
       (normalized-path-morph-animation? value)
       (formula-parts-transform-animation? value)
-      (path-reveal-animation? value)))
+      (path-reveal-animation? value)
+      (write-in-animation? value)))
 
 ; apply-compiled-animation : scene-state? compiled-animation? finite-real?
-;                            -> scene-state?
+;                            [(-> finite-real? finite-real?)] -> scene-state?
 ;;   Applies one compiled animation component at progress.
-(define (apply-compiled-animation state animation progress)
+(define (apply-compiled-animation state animation progress
+                                  [write-scene-rate-func linear])
   (cond
     [(scalar-value-animation? animation)
      (apply-scalar-value-animation state animation progress)]
@@ -1720,6 +1962,11 @@
      (apply-formula-parts-transform-animation state animation progress)]
     [(path-reveal-animation? animation)
      (apply-path-reveal-animation state animation progress)]
+    [(write-in-animation? animation)
+     (apply-write-in-animation state
+                               animation
+                               progress
+                               write-scene-rate-func)]
     [else
      (raise-argument-error
       'apply-compiled-animation
@@ -2046,6 +2293,363 @@
      0
      visible-fraction))))
 
+; apply-write-in-animation : scene-state? write-in-animation? finite-real?
+;                           (-> finite-real? finite-real?) -> scene-state?
+;; Samples the vector-only write proxy without changing the caller's endpoint.
+(define (apply-write-in-animation state animation progress scene-rate-func)
+  (define id
+    (write-in-animation-target-id animation))
+  (define plan
+    (write-in-animation-plan animation))
+  (cond
+    ;; Preserve an unwrite's source object exactly at its first frame.  The
+    ;; next sample uses the writable proxy while its outline begins to erase.
+    [(and (write-in-animation-remove-at-end? animation)
+          (zero? progress))
+     (scene-state-update state id (write-plan-endpoint plan))]
+    [else
+     (scene-state-update
+      state
+      id
+      (write-plan-sample plan
+                         progress
+                         #:scene-rate-func scene-rate-func
+                         #:remove? (write-in-animation-remove-at-end? animation)))]))
+
+
+;;;
+;;; Animated Write Planning and Sampling
+;;;
+
+; make-write-plan : visual? symbol? (or/c false/c nonnegative-real?)
+;                   nonnegative-real? symbol? boolean? procedure? -> write-plan?
+;; Converts the requested endpoint to a path/group-only proxy and assigns each
+;; leaf a normalized overlapping interval.  The default mirrors Manim's useful
+;; small-object heuristic: min(0.2, 4/N).
+(define (make-write-plan endpoint
+                         order
+                         requested-lag-ratio
+                         outline-stroke-width
+                         reveal
+                         reverse?
+                         rate-func)
+  (define proxy
+    (write-proxy-visual endpoint))
+  (unless (eq? (visual-id proxy) (visual-id endpoint))
+    (raise-arguments-error
+     'write-in
+     "a write-path adapter that preserves the Visual identity"
+     "endpoint-id" (visual-id endpoint)
+     "proxy-id" (visual-id proxy)))
+  (define collected
+    (write-collect-path-leaves proxy))
+  (define ordered
+    (case order
+      [(document) collected]
+      [(left-to-right)
+       (sort collected
+             (lambda (left right)
+               (define left-position
+                 (visual-position (write-leaf-visual left)))
+               (define right-position
+                 (visual-position (write-leaf-visual right)))
+               (cond [(< (vec2-x left-position) (vec2-x right-position)) #t]
+                     [(> (vec2-x left-position) (vec2-x right-position)) #f]
+                     [else (> (vec2-y left-position) (vec2-y right-position))])))]))
+  (define count (length ordered))
+  (define lag-ratio
+    (or requested-lag-ratio
+        (if (zero? count)
+            0
+            (min 1/5 (/ 4 count)))))
+  (define span
+    (+ 1 (* (max 0 (sub1 count)) lag-ratio)))
+  (define leaves
+    (for/list ([leaf (in-list ordered)]
+               [index (in-naturals)])
+      (write-leaf
+       (write-leaf-id leaf)
+       (write-leaf-visual leaf)
+       (/ (* index lag-ratio) span)
+       (/ 1 span))))
+  (write-plan endpoint
+              proxy
+              leaves
+              outline-stroke-width
+              reveal
+              reverse?
+              rate-func))
+
+; write-proxy-visual : visual? -> (or/c path-visual? group-visual?)
+;; Rebuilds a supported Visual tree as only groups and path Visuals.
+(define (write-proxy-visual visual)
+  (cond
+    [(path-visual? visual) visual]
+    [(circle-visual? visual) (write-circle-proxy visual)]
+    [(rectangle-visual? visual) (write-rectangle-proxy visual)]
+    [(group-visual? visual)
+     (group-visual-with-children
+      visual
+      (for/list ([child (in-list (group-visual-children visual))])
+        (write-proxy-visual child)))]
+    [(formula-assembly-visual? visual)
+     (write-proxy-visual (formula-assembly-visual-group visual))]
+    [(write-path-source? visual)
+     (write-proxy-visual (write-path-source->visual visual))]
+    [else
+     (raise-arguments-error
+      'write-in
+      "a path Visual, group of write-capable Visuals, supported SVG shape, or tagged formula"
+      "visual-id" (visual-id visual)
+      "visual" visual)]))
+
+; write-collect-path-leaves : (or/c path-visual? group-visual?)
+;;                            -> (listof write-leaf?)
+;; Collects leaves in document order.  Resolved transforms are stored solely
+;; for stable left-to-right ordering; sampling uses the untouched proxy tree.
+(define (write-collect-path-leaves proxy)
+  (define seen (make-hash))
+  (define (collect visual)
+    (cond
+      [(path-visual? visual)
+       (define id (visual-id visual))
+       (when (hash-has-key? seen id)
+         (raise-arguments-error
+          'write-in
+          "a write proxy with unique path identities"
+          "duplicate-path-id" id))
+       (hash-set! seen id #t)
+       (list (write-leaf id visual 0 1))]
+      [(group-visual? visual)
+       (append-map collect (group-visual-resolved-children visual))]
+      [else
+       (raise-arguments-error
+        'write-in
+        "a path/group-only write proxy"
+        "proxy-visual" visual)]))
+  (collect proxy))
+
+; write-plan-sample : write-plan? finite-real?
+;                    [#:scene-rate-func (-> finite-real? finite-real?)]
+;                    [#:remove? boolean?]
+;                    -> visual?
+;; Samples every leaf while retaining the proxy's complete group layout.
+(define (write-plan-sample plan
+                           progress
+                           #:scene-rate-func [scene-rate-func linear]
+                           #:remove? [remove? #f])
+  (check-write-rate-func 'write-plan-sample scene-rate-func)
+  (define chronological-leaves
+    (if (write-plan-reverse? plan)
+        (reverse (write-plan-leaves plan))
+        (write-plan-leaves plan)))
+  ;; The stored interval slots are in chronological order.  Pair them with the
+  ;; traversal order above, so reversing a write starts the last leaf first.
+  (define timing-slots
+    (write-plan-leaves plan))
+  (define progress-by-id
+    (for/hash ([leaf (in-list chronological-leaves)]
+               [slot (in-list timing-slots)])
+      (define scheduled-progress
+        (clamp-unit
+         (/ (- progress (write-leaf-start slot))
+            (write-leaf-duration slot))))
+      ;; Manim applies the rate function after a submobject's stagger offset.
+      ;; Animate's clip easing participates at that same local point, keeping
+      ;; later leaves from being delayed by a globally eased clock.
+      (define eased-progress
+        (clamp-unit
+         ((write-plan-rate-func plan)
+          (clamp-unit (scene-rate-func scheduled-progress)))))
+      (values
+       (write-leaf-id leaf)
+       (if remove?
+           (- 1 eased-progress)
+           eased-progress))))
+  (write-sample-proxy
+   (write-plan-proxy plan)
+   progress-by-id
+   (write-plan-outline-stroke-width plan)
+   (write-plan-reveal plan)
+   (write-plan-reverse? plan)))
+
+(define (write-sample-proxy visual
+                            progress-by-id
+                            outline-stroke-width
+                            reveal
+                            reverse?)
+  (cond
+    [(path-visual? visual)
+     (define local-progress
+       (hash-ref
+        progress-by-id
+        (visual-id visual)
+        (lambda ()
+          (raise-arguments-error
+           'write-in
+           "a write schedule for every proxy path"
+           "path-id" (visual-id visual)))))
+     (write-sample-path visual
+                        local-progress
+                        outline-stroke-width
+                        reveal
+                        reverse?)]
+    [(group-visual? visual)
+     (group-visual-with-children
+      visual
+      (for/list ([child (in-list (group-visual-children visual))])
+        (write-sample-proxy child
+                            progress-by-id
+                            outline-stroke-width
+                            reveal
+                            reverse?)))]
+    [else
+     (raise-argument-error 'write-in "path/group-only write proxy" visual)]))
+
+; write-sample-path : path-visual? finite-real? nonnegative-real? symbol?
+;                     boolean? -> path-visual?
+;; Implements DrawBorderThenFill: phase one traces an outline prefix, phase two
+;; holds the complete outline while it transitions to the target paint.
+(define (write-sample-path target
+                           local-progress
+                           outline-stroke-width
+                           reveal
+                           reverse?)
+  (define u (clamp-unit local-progress))
+  (define outline-color (write-outline-color target))
+  (define target-path
+    (path-visual-path target))
+  ;; Reversing controls the direction in which the outline is traced.  Do not
+  ;; reverse the complete, painted path: a glyph can contain several closed
+  ;; contours (for example, the counter in `a` or `b`), whose winding
+  ;; directions are significant to some renderers.  Keeping the source
+  ;; geometry during the paint phase also makes the proxy match the target
+  ;; exactly as soon as it becomes filled.
+  (define trace-path
+    (if reverse?
+        (path-geometry-reverse target-path)
+        target-path))
+  (cond
+    [(<= u 1/2)
+     (write-path-with-style
+      target
+      (write-partial-path trace-path 0 (* 2 u) reveal)
+      #f
+      outline-color
+      outline-stroke-width)]
+    [else
+     (define paint-progress (* 2 (- u 1/2)))
+     (write-path-with-style
+      target
+      target-path
+      (write-fade-color (path-visual-fill target) paint-progress)
+      (write-transition-stroke target outline-color paint-progress)
+      (real-lerp outline-stroke-width
+                 (if (path-visual-stroke target)
+                     (path-visual-stroke-width target)
+                     0)
+                 paint-progress))]))
+
+(define (write-partial-path geometry start end reveal)
+  (case reveal
+    [(bezier) (path-geometry-partial-by-curves geometry start end)]
+    [(arc-length) (path-geometry-partial geometry start end)]
+    [else
+     (raise-argument-error
+      'write-in
+      "(or/c 'bezier 'arc-length)"
+      reveal)]))
+
+(define (write-path-with-style target geometry fill stroke stroke-width)
+  (make-path-visual
+   geometry
+   #:id (visual-id target)
+   #:center (visual-position target)
+   #:rotation (visual-rotation target)
+   #:scale (visual-scale target)
+   #:opacity (visual-opacity target)
+   #:fill fill
+   #:stroke stroke
+   #:stroke-width stroke-width))
+
+(define (write-outline-color target)
+  (cond [(color-spec? (path-visual-stroke target))
+         (path-visual-stroke target)]
+        [(color-spec? (path-visual-fill target))
+         (path-visual-fill target)]
+        [else "black"]))
+
+(define (write-transition-stroke target outline-color progress)
+  (define destination (path-visual-stroke target))
+  (cond [(color-spec? destination)
+         (write-color-lerp outline-color destination progress)]
+        [(not destination)
+         (write-fade-color outline-color (- 1 progress))]
+        [(= progress 1) destination]
+        [else outline-color]))
+
+(define (write-fade-color color progress)
+  (cond [(not color) #f]
+        [(color-spec? color)
+         (define rgba (color-spec->rgba-color color 'write-in))
+         (rgba-color (rgba-color-red rgba)
+                     (rgba-color-green rgba)
+                     (rgba-color-blue rgba)
+                     (* (rgba-color-alpha rgba) (clamp-unit progress)))]
+        [(= progress 1) color]
+        [else #f]))
+
+(define (write-color-lerp from to progress)
+  (cond [(and (color-spec? from) (color-spec? to))
+         (rgba-color-lerp (color-spec->rgba-color from 'write-in)
+                          (color-spec->rgba-color to 'write-in)
+                          (clamp-unit progress))]
+        [(= progress 1) to]
+        [else from]))
+
+;; Circle and rectangle Visuals occur in the useful semantic SVG subset.  They
+;; are normalised to cubic/line paths for writing but restored exactly at end.
+(define (write-circle-proxy visual)
+  (define radius (circle-visual-radius visual))
+  (define k 0.5522847498307936)
+  (define (point x y) (vec2 (* radius x) (* radius y)))
+  (make-path-visual
+   (path-geometry
+    (list
+     (path-subpath
+      (point 1 0)
+      (list (cubic-bezier-path-segment (point 1 k) (point k 1) (point 0 1))
+            (cubic-bezier-path-segment (point (- k) 1) (point -1 k) (point -1 0))
+            (cubic-bezier-path-segment (point -1 (- k)) (point (- k) -1) (point 0 -1))
+            (cubic-bezier-path-segment (point k -1) (point 1 (- k)) (point 1 0)))
+      #t)))
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill (circle-visual-fill visual)
+   #:stroke (circle-visual-stroke visual)
+   #:stroke-width (circle-visual-stroke-width visual)))
+
+(define (write-rectangle-proxy visual)
+  (define half-width (/ (rectangle-visual-width visual) 2))
+  (define half-height (/ (rectangle-visual-height visual) 2))
+  (make-path-visual
+   (polygon-path
+    (list (vec2 (- half-width) (- half-height))
+          (vec2 half-width (- half-height))
+          (vec2 half-width half-height)
+          (vec2 (- half-width) half-height)))
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill (rectangle-visual-fill visual)
+   #:stroke (rectangle-visual-stroke visual)
+   #:stroke-width (rectangle-visual-stroke-width visual)))
+
 ; complete-compiled-animations : scene-state?
 ;                                (listof compiled-animation?)
 ;                                (-> finite-real? finite-real?)
@@ -2120,6 +2724,14 @@
       (path-visual-with-path
        visual
        (path-reveal-animation-path animation)))]
+    [(write-in-animation? animation)
+     (if (write-in-animation-remove-at-end? animation)
+         (scene-state-remove state (write-in-animation-target-id animation))
+         (scene-state-update
+          state
+          (write-in-animation-target-id animation)
+          (write-plan-endpoint
+           (write-in-animation-plan animation))))]
     [else
      state]))
 

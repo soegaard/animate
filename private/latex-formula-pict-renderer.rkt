@@ -26,7 +26,8 @@
 
 ;; Exports
 (provide (struct-out latex-formula-pict-renderer)
-         default-latex-formula-pict-renderer)
+         default-latex-formula-pict-renderer
+         formula-visual-base-pict->pict)
 
 
 ;;;
@@ -119,23 +120,48 @@
      'formula-visual->pict/using
      "procedure accepting one argument"
      typesetter))
+  ;; Empty formulas intentionally keep one-pixel transparent local geometry.
+  ;; It must bypass semantic font scaling, as it did before this common helper
+  ;; was introduced for specialised nonempty formula renderers.
   (if (string=? (formula-visual-source visual) "")
       (blank 1 1)
-      (let* ([base-pict (typesetter visual)]
-             [checked-pict
-              (check-typesetter-result visual base-pict)]
-             [sized-pict
-              (scale-formula-to-font-size checked-pict visual camera)]
-             [anchored-pict
-              (anchor-pict
-               sized-pict
-               (formula-visual-horizontal-alignment visual)
-               (formula-visual-vertical-alignment visual))]
-             [scaled-pict
-              (scale-pict-if-needed anchored-pict
-                                    (visual-scale visual))])
-        (rotate-pict-if-needed scaled-pict
-                               (visual-rotation visual)))))
+      (formula-visual-base-pict->pict
+       visual
+       camera
+       (check-typesetter-result visual (typesetter visual)))))
+
+; formula-visual-base-pict->pict : formula-visual? camera? pict? -> pict?
+;; Applies the common semantic formula placement operations to a prebuilt local
+;; Pict. Specialised formula renderers use this to retain the same font-size,
+;; scale, rotation, and anchor semantics as latex-pict formulas.
+(define (formula-visual-base-pict->pict visual camera base-pict)
+  (unless (formula-visual? visual)
+    (raise-argument-error
+     'formula-visual-base-pict->pict
+     "formula-visual?"
+     visual))
+  (unless (camera? camera)
+    (raise-argument-error
+     'formula-visual-base-pict->pict
+     "camera?"
+     camera))
+  (unless (pict? base-pict)
+    (raise-argument-error
+     'formula-visual-base-pict->pict
+     "pict?"
+     base-pict))
+  (define sized-pict
+    (scale-formula-to-font-size base-pict visual camera))
+  (define anchored-pict
+    (anchor-pict
+     sized-pict
+     (formula-visual-horizontal-alignment visual)
+     (formula-visual-vertical-alignment visual)))
+  (define scaled-pict
+    (scale-pict-if-needed anchored-pict
+                          (visual-scale visual)))
+  (rotate-pict-if-needed scaled-pict
+                         (visual-rotation visual)))
 
 ; check-typesetter-result : formula-visual? any/c -> pict?
 ;;   Raises an error unless a formula typesetter returns a Pict.

@@ -49,6 +49,7 @@
          "pict-renderer.rkt"
          "renderer-resources.rkt"
          "svg-pict-renderer.rkt"
+         "tagged-formula-pict-renderer.rkt"
          "text-visual.rkt"
          "visual-model.rkt")
 
@@ -166,6 +167,7 @@
         (image-pict-renderer (make-image-raster-cache))
         (svg-pict-renderer (make-svg-pict-cache))
         (text-pict-renderer (make-text-raster-cache))
+        (tagged-formula-pict-renderer (make-tagged-formula-pict-cache))
         default-latex-formula-pict-renderer))
 
 ;; renderer-cache-counters summarize performance-only resources owned by the
@@ -185,6 +187,8 @@
                (image-pict-renderer-raster-cache renderer)]
               [(svg-pict-renderer? renderer)
                (svg-pict-renderer-pict-cache renderer)]
+              [(tagged-formula-pict-renderer? renderer)
+               (tagged-formula-pict-renderer-pict-cache renderer)]
               [(text-pict-renderer? renderer)
                (text-pict-renderer-raster-cache renderer)]
               [(latex-formula-pict-renderer? renderer)

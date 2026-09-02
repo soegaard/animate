@@ -4,8 +4,8 @@ Rendered MP4 files live in the local sibling directory
 [`../rendered-examples/`](../rendered-examples/). They are generated artifacts
 and intentionally excluded from Git.
 
-All 63 visual examples below have been rendered locally. Temporary PNG frames
-were kept in `/tmp` and discarded after encoding. The formula and full-fidelity
+All 65 visual examples below have been rendered locally. Temporary PNG frames
+are kept in the repository-local `tmp/` directory and discarded after encoding. The formula and full-fidelity
 SVG examples were rendered with the local Racket 9.3 runtime; the remaining
 examples use the standard Racket runtime.
 
@@ -106,6 +106,9 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [derived-function-graphs](../rendered-examples/derived-function-graphs.mp4) | **SCENE-BN:** a sine graph is resampled from an animated amplitude parameter. |
 | [renderer-resources](../rendered-examples/renderer-resources.mp4) | **SCENE-BO/BP:** one full-fidelity SVG moves while renderer-resource diagnostics report reuse (222 hits, 3 misses). |
 | [render-diagnostics](../rendered-examples/render-diagnostics.mp4) | **SCENE-BQ/BR:** three dots converge while frames render with four workers and report cache diagnostics (74 hits, 1 miss). |
+| [tagged-formula-transitions](../rendered-examples/tagged-formula-transitions.mp4) | **SCENE-BS:** one TeX layout first shows subtracting \(a^2\) from both sides, then simplifies to \(b^2=c^2-a^2\) with matched SVG fragments. |
+| [solving-linear-equation](../rendered-examples/solving-linear-equation.mp4) | **Tagged formulas:** solve \(2x+1=5\) through subtraction and division while the equals sign remains fixed. |
+| [animated-write](../rendered-examples/animated-write.mp4) | **SCENE-BU:** a semantic SVG rocket and tagged TeX equation write by Bézier-curve order, transition from outline to fill, then the equation unwrites in reverse. |
 
 ## Non-video example
 

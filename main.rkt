@@ -27,6 +27,7 @@
          "private/derived-plot.rkt"
          "private/formula-parts-visual.rkt"
          "private/formula-visual.rkt"
+         "private/tagged-formula.rkt"
          "private/frame-space.rkt"
          "private/function-graph.rkt"
          "private/frame-renderer.rkt"
@@ -285,6 +286,10 @@
  formula-visual-horizontal-alignment
  formula-visual-vertical-alignment
  formula-visual-with-source
+ (struct-out formula-fragment)
+ tagged-formula
+ tagged-formula-fragment-visual?
+ tagged-formula-fragment-visual-svg-source
  (struct-out formula-part)
  latex-formula-part
  formula-assembly
@@ -431,10 +436,15 @@
  morph-to-compound-aligned-request?
  transform-formula-parts
  transform-formula-parts-request?
+ transform-matching-formula
  create
  create-request?
  uncreate
  uncreate-request?
+ write-in
+ write-in-request?
+ unwrite
+ unwrite-request?
  linear
  timed
  timed-animation-request?

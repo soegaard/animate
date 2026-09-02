@@ -18,7 +18,10 @@
          "path-geometry.rkt"
          "visual-model.rkt")
 
-(provide svg->visual)
+(provide svg->visual
+         ;; Internal adapter support: dvisvgm's path data is parsed through the
+         ;; same SVG coordinate conversion as ordinary semantic SVG imports.
+         svg-path-geometry)
 
 (struct svg-style (fill stroke stroke-width opacity)
   #:transparent)
@@ -369,7 +372,7 @@
 ;;;
 
 ; svg-path-geometry : string? -> path-geometry?
-;; Parses M/L/H/V/C/Q/Z commands (absolute and relative) into local geometry.
+;; Parses M/L/H/V/C/S/Q/Z commands (absolute and relative) into local geometry.
 (define (svg-path-geometry source)
   (unless (string? source)
     (raise-argument-error 'svg->visual "string? SVG path data" source))
@@ -383,6 +386,10 @@
   (define command #f)
   (define current origin)
   (define start #f)
+  ;; SVG S/s reflects the previous cubic's second control point.  This state is
+  ;; deliberately tracked in SVG command terms, rather than after quadratic
+  ;; conversion, because a preceding Q/q must not enable a smooth cubic.
+  (define previous-cubic-control #f)
   (define reversed-segments '())
   (define reversed-subpaths '())
   (define (at-end?) (>= index token-count))
@@ -408,13 +415,15 @@
   (define (start-subpath! point)
     (finish-subpath! #f)
     (set! start point)
-    (set! current point))
+    (set! current point)
+    (set! previous-cubic-control #f))
   (define (line-to! point)
     (unless start
       (raise-arguments-error 'svg->visual "a move command before a line command"
                              "path data" source))
     (set! reversed-segments (cons (line-path-segment point) reversed-segments))
-    (set! current point))
+    (set! current point)
+    (set! previous-cubic-control #f))
   (define (cubic-to! control1 control2 endpoint)
     (unless start
       (raise-arguments-error 'svg->visual "a move command before a curve command"
@@ -422,7 +431,8 @@
     (set! reversed-segments
           (cons (cubic-bezier-path-segment control1 control2 endpoint)
                 reversed-segments))
-    (set! current endpoint))
+    (set! current endpoint)
+    (set! previous-cubic-control control2))
   (let loop ()
     (cond
       [(at-end?)
@@ -470,11 +480,27 @@
           (define x1 (next-number)) (define y1 (next-number))
           (define x2 (next-number)) (define y2 (next-number))
           (define x (next-number)) (define y (next-number))
-          (if (eq? command 'C)
+         (if (eq? command 'C)
               (cubic-to! (svg-point x1 y1) (svg-point x2 y2) (svg-point x y))
               (cubic-to! (vec2+ current (svg-displacement x1 y1))
                          (vec2+ current (svg-displacement x2 y2))
                          (vec2+ current (svg-displacement x y))))]
+         [(S s)
+          (define x2 (next-number)) (define y2 (next-number))
+          (define x (next-number)) (define y (next-number))
+          (define control1
+            (if previous-cubic-control
+                (vec2- (vec2-scale 2 current) previous-cubic-control)
+                current))
+          (define control2
+            (if (eq? command 'S)
+                (svg-point x2 y2)
+                (vec2+ current (svg-displacement x2 y2))))
+          (define endpoint
+            (if (eq? command 'S)
+                (svg-point x y)
+                (vec2+ current (svg-displacement x y))))
+          (cubic-to! control1 control2 endpoint)]
          [(Q q)
           (define x1 (next-number)) (define y1 (next-number))
           (define x (next-number)) (define y (next-number))
@@ -489,7 +515,8 @@
           ;; Exact quadratic-to-cubic conversion in the imported coordinate system.
           (cubic-to! (vec2+ current (vec2-scale 2/3 (vec2- control current)))
                      (vec2+ endpoint (vec2-scale 2/3 (vec2- control endpoint)))
-                     endpoint)]
+                     endpoint)
+          (set! previous-cubic-control #f)]
          [(Z z)
           (unless start
             (raise-arguments-error 'svg->visual "a move command before closepath"
@@ -497,11 +524,12 @@
           (define closing-start start)
           (finish-subpath! #t)
           (set! command #f)
-          (set! current closing-start)]
+          (set! current closing-start)
+          (set! previous-cubic-control #f)]
          [else
           (raise-arguments-error
            'svg->visual
-           "SVG path commands M, L, H, V, C, Q, and Z"
+           "SVG path commands M, L, H, V, C, S, Q, and Z"
            "unsupported command" command)])
        (loop)])))
 
