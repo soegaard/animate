@@ -45,14 +45,32 @@
   (check-equal? (formula-sources demo 7) '("x" "+" "x" "=" "2" "+" "x"))
   (check-equal? (equals-position demo 0) (equals-position demo 7))
   ;; Existing terms retain their exact coordinates while copies form the new
-  ;; outside terms. In particular, 2 must not slide as the target formula is
-  ;; installed at the end of the clip.
-  (check-equal? (source-position demo 5 "2")
-                (source-position demo 6 "2"))
-  (check-equal? (source-position demo 5 "2")
-                (source-position demo 7 "2"))
-  (check-equal? (part-position demo 5 'original-x)
-                (part-position demo 7 'added-x-left))
+  ;; outside terms. In particular, 2 must not slide horizontally as the target
+  ;; formula is installed at the end of the clip. (TeX owns the y offsets
+  ;; necessary to put different glyphs on a common mathematical baseline.)
+  (check-equal? (vec2-x (source-position demo 5 "2"))
+                (vec2-x (source-position demo 6 "2")))
+  (check-equal? (vec2-x (source-position demo 5 "2"))
+                (vec2-x (source-position demo 7 "2")))
+  (check-equal? (vec2-x (part-position demo 5 'original-x))
+                (vec2-x (part-position demo 7 'added-x-left)))
+  ;; Tagged fragments from different whole formulas have different cropped SVG
+  ;; resources. Unchanged terms keep their source resource at the endpoint so
+  ;; the final frame cannot swap glyph crops.
+  (check-equal?
+   (tagged-formula-fragment-visual-svg-source
+    (formula-part-formula
+     (formula-assembly-visual-ref (formula-at demo 0) 'two)))
+   (tagged-formula-fragment-visual-svg-source
+    (formula-part-formula
+     (formula-assembly-visual-ref (formula-at demo 7) 'two))))
+  (check-equal?
+   (tagged-formula-fragment-visual-svg-source
+    (formula-part-formula
+     (formula-assembly-visual-ref (formula-at demo 0) 'original-x)))
+   (tagged-formula-fragment-visual-svg-source
+    (formula-part-formula
+     (formula-assembly-visual-ref (formula-at demo 7) 'added-x-right))))
   ;; The operation midpoint contains the ordinary transformed source x and
   ;; two independently travelling copies.
   (check-equal?

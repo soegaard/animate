@@ -244,9 +244,19 @@
     (make-part-paths-by-match correspondence part-paths))
   (define copies-by-destination
     (make-copies-by-destination current-source correspondence copies))
-  ;; Validate that the exact destination parts can occupy the current assembly
-  ;; identity before any timeline is constructed.
-  (formula-assembly-visual-with-parts current-source destination-parts)
+  ;; A tagged TeX fragment has a crop from the complete formula in which it
+  ;; was typeset.  Two fragments with equal TeX can consequently have distinct
+  ;; SVG view boxes.  Retain the source artifact for an unchanged fragment at
+  ;; its destination transform: interior and endpoint frames then use the
+  ;; same glyph geometry instead of swapping crops on the final frame.
+  (define settled-destination-parts
+    (settle-destination-parts
+     destination-parts
+     (make-endpoint-templates-by-destination
+      current-source correspondence copies-by-destination)))
+  ;; Validate that the settled destination parts can occupy the current
+  ;; assembly identity before any timeline is constructed.
+  (formula-assembly-visual-with-parts current-source settled-destination-parts)
   (define-values (mismatch-before-specs mismatch-after-specs)
     (make-mismatch-specs current-source
                          correspondence
@@ -271,7 +281,7 @@
     current-source
     destination
     specs)
-   destination-parts))
+   settled-destination-parts))
 
 ; check-current-source-names : formula-assembly-visual?
 ;                              formula-correspondence?
@@ -428,13 +438,68 @@
        route
        (visual-opacity source-formula)
        0)
-      (formula-transition-spec
+     (formula-transition-spec
        destination-formula
        source-transform
        destination-transform
        route
        0
        (visual-opacity destination-formula)))]))
+
+;; make-endpoint-templates-by-destination : formula-assembly-visual?
+;;                                              formula-correspondence?
+;;                                              hash? -> hash?
+;; Selects the rendering template to retain for every semantically unchanged
+;; matched or copied destination part.  The destination's transform, opacity,
+;; and identity remain authoritative; only its renderer artifact is carried
+;; from the source to make the handoff raster-continuous.
+(define (make-endpoint-templates-by-destination current-source
+                                                 correspondence
+                                                 copies-by-destination)
+  (define destination
+    (formula-correspondence-destination correspondence))
+  (define (add-if-equivalent result source-name destination-name)
+    (define source-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref current-source source-name)))
+    (define destination-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref destination destination-name)))
+    (if (formula-rendering-equivalent? source-formula destination-formula)
+        (hash-set result destination-name source-formula)
+        result))
+  (define matched-templates
+    (for/fold ([result (hash)])
+              ([match (in-list (formula-correspondence-matches correspondence))])
+      (add-if-equivalent result
+                         (formula-part-match-source-name match)
+                         (formula-part-match-destination-name match))))
+  (for/fold ([result matched-templates])
+            ([(destination-name copy) (in-hash copies-by-destination)])
+    (add-if-equivalent result
+                       (formula-part-copy-source-name copy)
+                       destination-name)))
+
+;; settle-destination-parts : (listof formula-part?) hash?
+;;                            -> (listof formula-part?)
+;; Reuses a source renderer artifact while installing the destination's exact
+;; transform, opacity, and local part identity.
+(define (settle-destination-parts destination-parts templates-by-destination)
+  (for/list ([part (in-list destination-parts)])
+    (define destination-name (formula-part-name part))
+    (define destination-formula (formula-part-formula part))
+    (define source-template
+      (hash-ref templates-by-destination destination-name #f))
+    (if source-template
+        (formula-part
+         destination-name
+         (visual-with-opacity
+          (visual-with-transform
+           (formula-visual-with-id source-template
+                                   (visual-id destination-formula))
+           (visual-transform destination-formula))
+          (visual-opacity destination-formula)))
+        part)))
 
 ; make-unmatched-destination-specs : formula-correspondence? (listof symbol?)
 ;                                    -> (listof formula-transition-spec?)
