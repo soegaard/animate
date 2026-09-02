@@ -19,7 +19,8 @@
 ;;;
 
 ;; Imports
-(require "derived-visual.rkt"
+(require "affine-transform.rkt"
+         "derived-visual.rkt"
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
@@ -39,6 +40,7 @@
          scene-state-update
          scene-state-visuals-in-drawing-order
          scene-state-resolved-ref
+         scene-state-resolved-world-ref
          scene-state-resolved-visuals-in-drawing-order
          scene-state-value-has?
          scene-state-value-ref
@@ -260,6 +262,89 @@
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-resolved-ref "scene-state?" state))
   ((make-scene-state-resolver state) target))
+
+; scene-state-resolved-world-ref : scene-state?
+;                                  (or/c visual? symbol? visual-path?) -> visual?
+;;   Resolves a target and composes every enclosing group/formula transform and
+;;   opacity into its returned Visual.  Unlike scene-state-resolved-ref, a
+;;   nested result is ready to be rendered as an independent top-level layer.
+(define (scene-state-resolved-world-ref state target)
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-resolved-world-ref "scene-state?" state))
+  (define path
+    (visual-target-path target 'scene-state-resolved-world-ref))
+  (define resolve-id
+    (make-scene-state-resolver state))
+  (resolved-world-descendant-ref
+   (resolve-id (car path))
+   (cdr path)
+   path))
+
+; resolved-world-descendant-ref : visual? (listof symbol?) visual-path? -> visual?
+;;   Descends through a Visual tree after each parent has resolved the next
+;;   child's inherited transform and opacity.
+(define (resolved-world-descendant-ref visual descendant-ids full-path)
+  (cond
+    [(null? descendant-ids) visual]
+    [(not (composite-visual? visual))
+     (raise-arguments-error
+      'scene-state-resolved-world-ref
+      "an intermediate Visual path entry must name a built-in group or formula assembly"
+      "visual-path" full-path
+      "visual" visual)]
+    [else
+     (define child-id (car descendant-ids))
+     (define child
+       (for/first ([candidate
+                    (in-list
+                     (composite-visual-world-children visual))]
+                   #:when (eq? (visual-id candidate) child-id))
+         candidate))
+     (unless child
+       (raise-arguments-error
+        'scene-state-resolved-world-ref
+        "the Visual path is not present in the scene"
+        "visual-path" full-path
+        "missing-visual-id" child-id))
+     (resolved-world-descendant-ref child (cdr descendant-ids) full-path)]))
+
+; composite-visual-world-children : composite-visual? -> (listof visual?)
+;;   Returns children with the complete enclosing affine transform and opacity
+;;   composed into their local values.  Group rendering intentionally leaves a
+;;   parent translation to Pict composition; an independently rendered copy
+;;   cannot do that, so this helper uses affine-transform-apply-point directly.
+(define (composite-visual-world-children visual)
+  (define parent-transform
+    (visual-transform visual))
+  (for/list ([child (in-list (composite-visual-children visual))])
+    (unless (affine-visual? child)
+      (raise-arguments-error
+       'scene-state-resolved-world-ref
+       "a composite child that supports affine placement"
+       "parent" visual
+       "child" child))
+    (define child-transform
+      (visual-transform child))
+    (define transformed-child
+      (visual-with-transform
+       child
+       (make-affine-transform
+        #:translation
+        (affine-transform-apply-point
+         parent-transform
+         (affine-transform-translation child-transform))
+        #:rotation
+        (+ (affine-transform-rotation parent-transform)
+           (affine-transform-rotation child-transform))
+        #:scale
+        (vec2* (affine-transform-scale parent-transform)
+               (affine-transform-scale child-transform)))))
+    (if (and (opacity-visual? visual)
+             (opacity-visual? transformed-child))
+        (visual-with-opacity
+         transformed-child
+         (* (visual-opacity visual) (visual-opacity transformed-child)))
+        transformed-child)))
 
 ; scene-state-resolved-visuals-in-drawing-order : scene-state? -> (listof visual?)
 ;;   Returns concrete top-level Visuals in significant back-to-front order.

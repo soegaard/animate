@@ -3,7 +3,8 @@
 ;; SCENE-BW: source-preserving copies, temporary attention, and general
 ;; formula-part routes.
 
-(require rackunit
+(require racket/math
+         rackunit
          "../main.rkt")
 
 (define (part name source position)
@@ -57,6 +58,54 @@
   (check-equal? (scene-state-count (scene-sample composite-copy-scene 1)) 2)
   (check-true (scene-state-has? (scene-current-state composite-copy-scene)
                                 'destination-group))
+
+  ;; SCENE-CB extends TransformFromCopy to a nested path.  The copied leaf
+  ;; inherits every enclosing group transform and opacity before it becomes a
+  ;; temporary top-level overlay; the original SVG-like diagram remains intact.
+  (define nested-source
+    (group
+     (list
+      (group
+       (list (circle #:id 'seed #:center (vec2 1 0) #:radius 1/4
+                     #:opacity 3/5 #:fill "white" #:stroke "navy"))
+       #:id 'branch #:center (vec2 1 0) #:rotation (/ pi 2) #:scale 3
+       #:opacity 1/2))
+     #:id 'diagram #:center (vec2 -3 0) #:rotation (/ pi 2) #:scale 2
+     #:opacity 1/2))
+  (define copied-seed
+    (circle #:id 'copied-seed #:center (vec2 3 0) #:radius 1/4
+            #:fill "skyblue" #:stroke "navy"))
+  (define nested-copy-scene
+    (scene-play
+     (scene-add (make-scene) nested-source)
+     (transform-from-copy '(diagram branch seed) copied-seed)
+     #:duration 2))
+  (define nested-middle
+    (scene-sample nested-copy-scene 1))
+  (define nested-overlay-id
+    '__transform-from-copy-copied-seed)
+  (define nested-source-layer
+    (scene-state-ref
+     nested-middle
+     (list nested-overlay-id '__transform-from-copy-copied-seed-source)))
+  (check-true (scene-state-has? nested-middle '(diagram branch seed)))
+  (check-false (scene-state-has? nested-middle 'copied-seed))
+  (check-equal? (scene-state-count nested-middle) 2)
+  ;; The effective source is (-9, 2), at scale 6 and opacity 3/20.  A
+  ;; straight half-way copy therefore lands at (-3, 1), with interpolated
+  ;; scale/rotation and half its inherited source opacity.
+  (check-= (vec2-x (visual-position nested-source-layer)) -3 1e-12)
+  (check-= (vec2-y (visual-position nested-source-layer)) 1 1e-12)
+  (check-= (visual-rotation nested-source-layer) (/ pi 2) 1e-12)
+  (check-= (vec2-x (visual-scale nested-source-layer)) 7/2 1e-12)
+  (check-= (vec2-y (visual-scale nested-source-layer)) 7/2 1e-12)
+  (check-= (visual-opacity nested-source-layer) 3/40 1e-12)
+  (check-true
+   (scene-state-has? (scene-current-state nested-copy-scene)
+                     '(diagram branch seed)))
+  (check-true
+   (scene-state-has? (scene-current-state nested-copy-scene)
+                     'copied-seed))
 
   ;; Attention has no structural endpoint and never mutates the target.
   (define attention-dot

@@ -9462,6 +9462,11 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.76.0 — SCENE-CB.} Extended
+       @racket[transform-from-copy] to accept a nested Visual path through
+       built-in groups/formula assemblies. The selected source is frozen with
+       every enclosing transform and opacity composed into an independent
+       temporary layer; the original child remains in place.}
  @item{@bold{0.75.0 — SCENE-CA.} Extended opt-in
        @racket[#:changed-mode 'morph] to one identically painted dvisvgm glyph
        path composed of compatible closed contours. Destination contours are

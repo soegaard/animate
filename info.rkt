@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-CA: conservative compound dvisvgm glyph outline morphing")
+  "SCENE-CB: TransformFromCopy from nested Visual paths")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.75.0")
+(define version "0.76.0")
 
 ; license : symbol?
 ;;   Declares the package license.

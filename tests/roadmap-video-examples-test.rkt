@@ -24,6 +24,7 @@
                 (cons "glyph-level-formula-matching.rkt" '(title))
                 (cons "glyph-outline-morph.rkt" '(title))
                 (cons "compound-glyph-outline-morph.rkt" '(title))
+                (cons "nested-transform-from-copy.rkt" '(title))
                 (cons "animated-write.rkt" '(title))
                 (cons "svg-subpart-animation.rkt" '(title))
                 (cons "bitmap-image-visual.rkt" '(title))

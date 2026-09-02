@@ -1,9 +1,15 @@
-# animate — SCENE-CA
+# animate — SCENE-CB
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-CB extends `transform-from-copy` to nested Visual paths. A source such as
+`'(rocket-diagram rocket window)` is resolved to its independently drawable
+world transform and inherited opacity when a clip compiles, while the original
+child remains in its group. This lets a copy of an imported SVG subpart travel
+to a new top-level Visual without manually rebuilding the diagram.
 
 SCENE-CA extends SCENE-BZ's opt-in, conservative glyph-outline morphing to a
 single dvisvgm glyph path with compatible closed contours. For example,
@@ -166,11 +172,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-CA v0.75.0 builds on immutable parameters and generic values, dynamically
+SCENE-CB v0.76.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.75.0`. The public module's bindings are covered
+The public package version is `0.76.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -545,12 +551,20 @@ finishes:
             #:duration 1)
 ```
 
-The source must be a present top-level affine opacity Visual and the destination
-must be absent at clip start. During the interior of the clip, the original is
-still rendered in its old position; the temporary copy cross-fades from the
-source's rendered form to the destination's rendered form along the requested
-route. At progress zero and one there is no temporary overlay, and completion
-installs the exact destination value.
+The source may be a present top-level id or an explicit nested path through
+built-in groups/formula assemblies. A nested source is frozen with every
+enclosing transform and opacity composed into it, so the copy is rendered as an
+independent top-level layer while the original child stays in place. It must be
+a non-derived affine opacity Visual; the destination must be a new top-level
+Visual absent at clip start. During the interior of the clip, the temporary
+copy cross-fades from the source's rendered form to the destination's rendered
+form along the requested route. At progress zero and one there is no temporary
+overlay, and completion installs the exact destination value.
+
+```racket
+(transform-from-copy '(rocket-diagram rocket window) enlarged-window
+                     #:path-arc 1/2)
+```
 
 `circumscribe` draws, holds, and erases a rounded outline. `indicate` pulses
 the same kind of outline. Both are temporary and do not change the selected
@@ -2287,7 +2301,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.75.0`. Every completed SCENE
+This is the running design backlog for version `0.76.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2342,9 +2356,11 @@ precisely; do not silently lose the follow-on idea that led to the work.
 - `move-along-path` deliberately requires one positive-length continuous
   subpath; it cannot traverse discontinuous multi-subpath geometry.
 - `transform-from-copy` is a whole-Visual moving cross-fade, not a shape or
-  glyph morph. Its source is a top-level affine opacity Visual frozen at clip
-  compilation; copies do not follow a simultaneously animated source or route,
-  and nested source paths are not yet supported.
+  glyph morph. Its source may be a top-level Visual or a child reached through
+  built-in group/formula paths; its composed transform and opacity are frozen at
+  clip compilation. Copies do not follow a simultaneously animated source or
+  route, cannot start in a derived root, and still introduce only a new
+  top-level destination.
 - Path morphing has no semantic hole/topology inference, direct open-to-closed
   correspondence, appearance-aware matching, arbitrary per-pair scoring
   callbacks, or general global geometric optimisation beyond its current
@@ -2501,6 +2517,25 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
 
+## SCENE-CB: nested TransformFromCopy sources
+
+Version `0.76.0` lets `transform-from-copy` take a nested Visual path through
+built-in groups or formula assemblies. At clip compilation, Animate resolves
+the selected child to its full world transform and inherited opacity, freezes
+that snapshot as the source of the temporary overlay, and leaves the original
+child in its ordinary group. The destination remains a new top-level Visual at
+the exact endpoint.
+
+`examples/nested-transform-from-copy.rkt` imports a rocket SVG and copies its
+`window` subpart through the path `(rocket-diagram rocket window)` to an
+independent enlarged window. This is useful for decomposing a diagram while
+retaining the source object as context.
+
+The source must remain non-derived and support affine placement and opacity.
+Copies remain whole-Visual moving cross-fades frozen at clip start; they do not
+track simultaneous source/route animation, morph a selected path, or install a
+nested destination.
+
 ## SCENE-CA: compound glyph outline morphing
 
 Version `0.75.0` extends `transform-matching-glyphs` with the existing opt-in
@@ -2588,8 +2623,9 @@ matched source fragment to populate several otherwise-unmatched destinations.
 They also accept `formula-relative-path`, a route in unit-chord coordinates,
 alongside the existing `formula-arc`. This makes deliberate curved term motion
 possible while preserving formula correspondence's explicit, whole-fragment
-model. The limitations backlog records the remaining boundaries: no nested or
-live-tracked attention targets, no algebraic inference, and no glyph-outline
+model. SCENE-CB later extends the general copy source to nested Visual paths.
+The limitations backlog records the remaining boundaries: no live-tracked
+attention targets, no algebraic inference, and no general glyph-outline
 morphing.
 
 The complete demonstration is:

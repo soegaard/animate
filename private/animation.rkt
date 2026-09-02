@@ -330,7 +330,7 @@
   #:transparent)
 
 ;; transform-from-copy-request represents a source-preserving introduction.
-;;  - source-id    symbol?          Visual already present at clip start.
+;;  - source-id    (or/c symbol? visual-path?)  Visual already present at clip start.
 ;;  - destination  affine opacity Visual introduced at clip completion.
 ;;  - route        formula-route?  centre trajectory for the temporary copy.
 
@@ -1074,7 +1074,7 @@
    allow-reverse?
    sample-count))
 
-; transform-from-copy : (or/c visual? symbol?)
+; transform-from-copy : (or/c visual? symbol? visual-path?)
 ;                       (and/c visual? affine-visual? opacity-visual?)
 ;                       [#:path-arc finite-real?]
 ;                       [#:route formula-route?]
@@ -1086,10 +1086,11 @@
                              #:path-arc [path-arc 0]
                              #:route [route #f])
   (unless (or (visual? source)
-              (symbol? source))
+              (symbol? source)
+              (visual-path? source))
     (raise-argument-error
      'transform-from-copy
-     "(or/c visual? symbol?)"
+     "(or/c visual? symbol? visual-path?)"
      source))
   (unless (and (visual? destination)
                (affine-visual? destination)
@@ -1866,28 +1867,35 @@
       request)])]))
 
 (define (compile-transform-from-copy-request state request)
-  (define source-id
+  (define source-target
     (transform-from-copy-request-source-id request))
+  (define source-path
+    (visual-target-path source-target 'transform-from-copy))
   (define destination
     (transform-from-copy-request-destination request))
   (define destination-id
     (visual-id destination))
   (check-absent-introduction-target
    state destination-id 'transform-from-copy)
+  ;; A nested source becomes an independent temporary top-level layer, so its
+  ;; enclosing group/formula transforms and opacities must be composed first.
+  (define source-root
+    (scene-state-ref state (car source-path)))
+  (when (derived-visual? source-root)
+    (raise-arguments-error
+     'transform-from-copy
+     "a non-derived source Visual"
+     "source-path" source-path
+     "source" source-root))
   (define source
-    (scene-state-ref state source-id))
+    (scene-state-resolved-world-ref state source-path))
   (unless (and (affine-visual? source)
                (opacity-visual? source))
     (raise-arguments-error
      'transform-from-copy
      "a source Visual that supports affine placement and opacity"
-     "source-id" source-id
+     "source-path" source-path
      "source" source))
-  (when (derived-visual? source)
-    (raise-arguments-error
-     'transform-from-copy
-     "a non-derived source Visual"
-     "source-id" source-id))
   (transform-from-copy-animation
    source
    destination

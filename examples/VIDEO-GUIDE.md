@@ -111,6 +111,7 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [animated-write](../rendered-examples/animated-write.mp4) | **SCENE-BU:** a semantic SVG rocket and tagged TeX equation write by Bézier-curve order, transition from outline to fill, then the equation unwrites in reverse. |
 | [glyph-outline-morph](../rendered-examples/glyph-outline-morph.mp4) | **SCENE-BZ:** subtracting \(2b\) from both sides morphs a compatible \(+\) into \(-\), while newly introduced terms cross-fade. |
 | [compound-glyph-outline-morph](../rendered-examples/compound-glyph-outline-morph.mp4) | **SCENE-CA:** multiplying an inequality by \(-1\) moves terms and morphs the multi-contour \(\leq\) relation into \(\geq\). |
+| [nested-transform-from-copy](../rendered-examples/nested-transform-from-copy.mp4) | **SCENE-CB:** an independently moving copy of the imported rocket's nested window leaves the original window in place. |
 
 ## Non-video example
 
