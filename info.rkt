@@ -37,11 +37,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-BZ: conservative dvisvgm glyph outline morphing")
+  "SCENE-CA: conservative compound dvisvgm glyph outline morphing")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "0.74.0")
+(define version "0.75.0")
 
 ; license : symbol?
 ;;   Declares the package license.

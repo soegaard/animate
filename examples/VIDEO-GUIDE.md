@@ -109,6 +109,8 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [tagged-formula-transitions](../rendered-examples/tagged-formula-transitions.mp4) | **SCENE-BS:** one TeX layout first shows subtracting \(a^2\) from both sides, then simplifies to \(b^2=c^2-a^2\) with matched SVG fragments. |
 | [solving-linear-equation](../rendered-examples/solving-linear-equation.mp4) | **Tagged formulas:** solve \(2x+1=5\) through subtraction and division while the equals sign remains fixed. |
 | [animated-write](../rendered-examples/animated-write.mp4) | **SCENE-BU:** a semantic SVG rocket and tagged TeX equation write by Bézier-curve order, transition from outline to fill, then the equation unwrites in reverse. |
+| [glyph-outline-morph](../rendered-examples/glyph-outline-morph.mp4) | **SCENE-BZ:** subtracting \(2b\) from both sides morphs a compatible \(+\) into \(-\), while newly introduced terms cross-fade. |
+| [compound-glyph-outline-morph](../rendered-examples/compound-glyph-outline-morph.mp4) | **SCENE-CA:** multiplying an inequality by \(-1\) moves terms and morphs the multi-contour \(\leq\) relation into \(\geq\). |
 
 ## Non-video example
 

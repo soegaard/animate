@@ -87,9 +87,9 @@
       (formula-part-formula part))))
   (check-true (pict? (scene->pict outline-morphed 1)))
 
-  ;; The fallback is intentional: an italic a/b pair contains counter paths,
-  ;; so requesting a morph retains the visible moving cross-fade rather than
-  ;; risking a broken fill orientation.
+  ;; SCENE-CA extends the same conservative rule to compound closed glyphs.
+  ;; Italic a and b both contain an outer contour and a counter, so their
+  ;; dvisvgm paths are paired without reversing either contour's traversal.
   (define complex-source
     (glyph-tex #:id 'complex "a"))
   (define complex-destination
@@ -103,10 +103,29 @@
       #:matches (list (formula-part-match (glyph 0) (glyph 0)))
       #:changed-mode 'morph)
      #:duration 1))
-  (check-false
+  (check-true
    (for/or ([part (in-list
                    (formula-assembly-visual-parts
                     (scene-visual-at complex-transition 'complex 1/2)))])
+     (glyph-outline-morph-visual?
+      (formula-part-formula part))))
+  (check-true (pict? (scene->pict complex-transition 1/2)))
+
+  ;; One closed contour cannot safely morph into a glyph with a counter.  The
+  ;; conservative fallback remains essential when contour topology differs.
+  (define incompatible-transition
+    (scene-play
+     (scene-add (make-scene) complex-source)
+     (transform-matching-glyphs
+      complex-source
+      (glyph-tex #:id 'complex "+")
+      #:matches (list (formula-part-match (glyph 0) (glyph 0)))
+      #:changed-mode 'morph)
+     #:duration 1))
+  (check-false
+   (for/or ([part (in-list
+                   (formula-assembly-visual-parts
+                    (scene-visual-at incompatible-transition 'complex 1/2)))])
      (glyph-outline-morph-visual?
       (formula-part-formula part))))
 

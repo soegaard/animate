@@ -1217,11 +1217,12 @@
 
 ;; glyph-outline-morphs : formula-assembly-visual? formula-correspondence?
 ;;                        -> (listof formula-part-outline-morph?)
-;; Selects only safe dvisvgm changed-glyph pairs.  A glyph with a hole or more
-;; than one contour stays on the existing moving cross-fade path: preserving
-;; its fill topology matters more than forcing a morph.  One closed contour is
-;; enough for common operators such as + and -, and retaining traversal order
-;; prevents an intermediate outline from reversing its winding.
+;; Selects only safe dvisvgm changed-glyph pairs.  The glyph must be represented
+;; by one painted SVG path made entirely of positive-length closed contours,
+;; with unchanged paint.  Compound contours are globally paired and aligned,
+;; but never reversed: that preserves the outer/counter traversal established
+;; by dvisvgm.  Open strokes, multiple painted paths, or incompatible contour
+;; topology deliberately retain the established moving cross-fade.
 (define (glyph-outline-morphs source correspondence)
   (define destination
     (formula-correspondence-destination correspondence))
@@ -1248,17 +1249,18 @@
 ;;                                  tagged-formula-fragment-visual?
 ;;                                  tagged-formula-fragment-visual?
 ;;                                  -> (or/c formula-part-outline-morph? #f)
-;; Converts both cropped glyph SVG fragments to local vector paths, keeps only
-;; the one-contour case, and normalizes the destination to the source's phase.
-;; Any unsupported SVG/path difference deliberately returns #f so callers
-;; retain the established cross-fade instead of receiving a fragile animation.
+;; Converts both cropped glyph SVG fragments to local vector paths, accepts a
+;; compatible collection of closed contours, and normalizes the destination to
+;; the source's phase.  Any unsupported SVG/path difference deliberately
+;; returns #f so callers retain the established cross-fade instead of receiving
+;; a fragile animation.
 (define (compatible-glyph-outline-morph source-name destination-name
                                         source-formula destination-formula)
   (with-handlers ([exn:fail? (lambda (_exception) #f)])
     (define source-path-visual
-      (tagged-glyph->single-path-visual source-formula))
+      (tagged-glyph->closed-path-visual source-formula))
     (define destination-path-visual
-      (tagged-glyph->single-path-visual destination-formula))
+      (tagged-glyph->closed-path-visual destination-formula))
     (and source-path-visual
          destination-path-visual
          (equal? (path-visual-fill source-path-visual)
@@ -1270,27 +1272,32 @@
          (let* ([source-path (path-visual-path source-path-visual)]
                 [destination-path (path-visual-path destination-path-visual)]
                 [aligned-destination
-                 (path-geometry-align-for-morph
+                 (path-geometry-align-compound-for-morph
                   source-path destination-path #:allow-reverse? #f)])
-           (define-values (normalized-source normalized-destination)
-             (path-geometry-normalize-for-morph source-path aligned-destination))
-           (and (path-geometry-morph-compatible?
-                 normalized-source normalized-destination)
-                (formula-part-outline-morph
-                 source-name
-                 destination-name
-                 normalized-source
-                 normalized-destination
-                 (path-visual-fill source-path-visual)
-                 (path-visual-stroke source-path-visual)
-                 (path-visual-stroke-width source-path-visual)))))))
+           (and (compound-contour-windings-match?
+                 source-path aligned-destination)
+                (let ()
+                  (define-values (normalized-source normalized-destination)
+                    (path-geometry-normalize-for-morph
+                     source-path aligned-destination))
+                  (and (path-geometry-morph-compatible?
+                        normalized-source normalized-destination)
+                       (formula-part-outline-morph
+                        source-name
+                        destination-name
+                        normalized-source
+                        normalized-destination
+                        (path-visual-fill source-path-visual)
+                        (path-visual-stroke source-path-visual)
+                        (path-visual-stroke-width source-path-visual)))))))))
 
-;; tagged-glyph->single-path-visual : tagged-formula-fragment-visual?
-;;                                    -> (or/c path-visual? #f)
-;; Returns only a simple, filled, closed dvisvgm glyph contour.  This explicit
-;; boundary keeps complex letters (counter shapes, accents, and multi-piece
-;; relations) on the correctness-preserving cross-fade fallback.
-(define (tagged-glyph->single-path-visual visual)
+;; tagged-glyph->closed-path-visual : tagged-formula-fragment-visual?
+;;                                     -> (or/c path-visual? #f)
+;; Returns one filled dvisvgm path with one or more closed contours.  A glyph
+;; may have an outer contour plus a counter, but it must not need independently
+;; painted paths or open-stroke geometry: those cases have no safe compact
+;; correspondence rule and stay on the cross-fade fallback.
+(define (tagged-glyph->closed-path-visual visual)
   (define world-per-pict-unit
     (/ (formula-visual-font-size visual)
        (formula-visual-document-font-points visual)))
@@ -1303,9 +1310,51 @@
        (let* ([path-visual-value (car paths)]
               [subpaths (path-geometry-subpaths
                          (path-visual-path path-visual-value))])
-         (and (= (length subpaths) 1)
-              (path-subpath-closed? (car subpaths))
+         (and (pair? subpaths)
+              (andmap path-subpath-closed? subpaths)
               path-visual-value))))
+
+(define glyph-outline-winding-sample-count 64)
+
+;; compound-contour-windings-match? : path-geometry? path-geometry? -> boolean?
+;; Confirms that every aligned destination contour keeps the source's winding.
+;; Alignment itself deliberately disallows reversal; this additional check
+;; rejects SVG fragments whose authored traversal conventions differ anyway.
+(define (compound-contour-windings-match? source destination)
+  (for/and ([source-subpath
+             (in-list (path-geometry-subpaths source))]
+            [destination-subpath
+             (in-list (path-geometry-subpaths destination))])
+    (define source-winding
+      (closed-subpath-winding source-subpath))
+    (define destination-winding
+      (closed-subpath-winding destination-subpath))
+    (and source-winding
+         destination-winding
+         (= source-winding
+            destination-winding))))
+
+;; closed-subpath-winding : path-subpath? -> (or/c -1 1 #f)
+;; Uses deterministic arc-length samples to classify a non-self-intersecting
+;; closed contour.  Glyph contours with zero signed area are unsuitable for an
+;; interior fill morph and are rejected by the conservative caller.
+(define (closed-subpath-winding subpath)
+  (define loop
+    (path-geometry (list subpath)))
+  (define samples
+    (for/list ([index (in-range glyph-outline-winding-sample-count)])
+      (path-geometry-point-at
+       loop
+       (/ index glyph-outline-winding-sample-count))))
+  (define doubled-area
+    (for/sum ([point (in-list samples)]
+              [next-point
+               (in-list (append (cdr samples) (list (car samples))))])
+      (- (* (vec2-x point) (vec2-y next-point))
+         (* (vec2-y point) (vec2-x next-point)))))
+  (cond [(positive? doubled-area) 1]
+        [(negative? doubled-area) -1]
+        [else #f]))
 
 ; check-glyph-assembly : symbol? any/c -> void?
 ;;   Requires an assembly whose every part was generated by glyph-tex.

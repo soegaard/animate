@@ -3098,13 +3098,15 @@ for @racket[transform-matching-formula].
 This matches and moves whole rendered glyph leaves. @racket['fade] is the
 default: changed matches use the ordinary moving cross-fade. With
 @racket[#:changed-mode 'morph], a changed matched pair instead interpolates its
-outline only when both cropped dvisvgm SVG fragments expand to one closed path
-with the same fill, stroke, and stroke width. Animate phase-aligns the
-destination without reversing its winding, normalizes both paths to compatible
-cubic segments, and uses that path geometry only for interior frames; the
-ordinary tagged SVG fragments remain exact endpoints. A letter with a counter,
-an accent, multiple contours, changed paint, or unsupported geometry safely
-falls back to the moving cross-fade.
+outline only when both cropped dvisvgm SVG fragments expand to one identically
+painted path whose positive-length contours are all closed and compatible in
+count. Animate globally pairs those destination contours with the source,
+phase-aligns them without reversing their traversal, normalizes the resulting
+paths to compatible cubic segments, and uses that path geometry only for
+interior frames; the ordinary tagged SVG fragments remain exact endpoints.
+Glyphs with multiple independently painted paths, open contours, incompatible
+contour topology, changed paint, or unsupported geometry safely fall back to
+the moving cross-fade.
 
 This operation does not derive a mathematical operation, identify TeX
 characters or terms, perform semantic grouping, or infer which changed glyphs
@@ -9460,6 +9462,12 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{0.75.0 — SCENE-CA.} Extended opt-in
+       @racket[#:changed-mode 'morph] to one identically painted dvisvgm glyph
+       path composed of compatible closed contours. Destination contours are
+       globally paired and phase-aligned without reversal, so outer/counter
+       glyphs can morph while incompatible geometry retains the moving
+       cross-fade.}
  @item{@bold{0.74.0 — SCENE-BZ.} Added opt-in
        @racket[#:changed-mode 'morph] to
        @racket[transform-matching-glyphs]. A deliberately conservative

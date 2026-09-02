@@ -1,14 +1,16 @@
-# animate — SCENE-BZ
+# animate — SCENE-CA
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-BZ adds opt-in, conservative glyph-outline morphing to SCENE-BY's
-`glyph-tex` formulas. Compatible one-contour dvisvgm glyphs such as `+` and
-`-` interpolate their outlines through the motion; complex or differently
-painted glyphs retain the established moving cross-fade.
+SCENE-CA extends SCENE-BZ's opt-in, conservative glyph-outline morphing to a
+single dvisvgm glyph path with compatible closed contours. For example,
+multi-contour relation glyphs such as `\leq` and `\geq` can interpolate their
+outlines while preserving contour traversal. Differently painted glyphs,
+multiple painted paths, open geometry, or incompatible contour topology retain
+the established moving cross-fade.
 
 SCENE-BY adds `glyph-tex`: it asks `dvisvgm` to expose the visible glyph leaves
 of one complete TeX expression as `glyph-0`, `glyph-1`, and so on. Matching is
@@ -164,11 +166,11 @@ Nested group children are available by stable paths, including to derived
 resolvers. Direct animation of a derived Visual itself is still rejected;
 animate its value sources or the ordinary Visuals it depends on instead.
 
-SCENE-BZ v0.74.0 builds on immutable parameters and generic values, dynamically
+SCENE-CA v0.75.0 builds on immutable parameters and generic values, dynamically
 derived groups, stable nested addressing, full-layout formula correspondence,
 sampled plots, SVG/image import, and renderer-resource caching.
 
-The public package version is `0.74.0`. The public module's bindings are covered
+The public package version is `0.75.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -700,7 +702,7 @@ unchanged glyphs move automatically between separately compiled formulas:
 ```
 
 By default, the explicit match cross-fades the old `+` into the new `-`; add
-`#:changed-mode 'morph` to interpolate compatible one-contour glyph outlines.
+`#:changed-mode 'morph` to interpolate compatible closed-contour glyph outlines.
 The unchanged `x`, `3`, `=`, and `7` leaves are detected automatically. The generated names
 are intentionally positional. Use `tagged-formula` or `math-tex` when an author
 needs a stable semantic term such as `a-square` or an entire fraction; dvisvgm
@@ -2285,7 +2287,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.74.0`. Every completed SCENE
+This is the running design backlog for version `0.75.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2304,12 +2306,14 @@ precisely; do not silently lose the follow-on idea that led to the work.
 - `formula-correspondence-auto` and `transform-matching-formula` match whole
   rendering-equivalent fragments in order. `glyph-tex` and
   `transform-matching-glyphs` additionally match exact dvisvgm glyph outlines
-  in source order. Its opt-in `#:changed-mode 'morph` interpolates only one
-  closed, identically painted dvisvgm contour while preserving its traversal
-  direction; letters with counters, accents, multi-contour glyphs, changed
-  paint styles, and unsupported SVG geometry keep the moving cross-fade.
-  Neither mode performs algebra or semantic name/token matching. Formula colour
-  remains controlled by explicit LaTeX source and preamble commands.
+  in source order. Its opt-in `#:changed-mode 'morph` interpolates one painted,
+  identically styled dvisvgm glyph path when all of its contours are positive-
+  length, closed, and compatible in count and traversal direction. Contours are
+  globally paired without reversal. Accents or glyphs using multiple painted
+  paths, open geometry, incompatible contour topology, changed paint styles,
+  and unsupported SVG geometry keep the moving cross-fade. Neither mode
+  performs algebra or semantic name/token matching. Formula colour remains
+  controlled by explicit LaTeX source and preamble commands.
 - `formula-part-copy` can copy one whole named fragment to any number of
   explicitly named unmatched destinations, and formula parts can now follow
   circular or normalized custom paths. It still has no semantic algebra,
@@ -2322,9 +2326,9 @@ precisely; do not silently lose the follow-on idea that led to the work.
   sides.
 - Tagged formulas need external `latex` and `dvisvgm` when they are constructed.
   `glyph-tex` exposes dvisvgm glyph leaves with positional names and supports
-  per-glyph motion plus conservative one-contour outline morphs, but it has no
-  TeX/Unicode glyph map, semantic TeX parser, semantic grouping, general
-  multi-contour/counter morphing, or automatic choice of changed glyphs.
+  per-glyph motion plus conservative closed-contour outline morphs, but it has
+  no TeX/Unicode glyph map, semantic TeX parser, semantic grouping, arbitrary
+  topology/counter morphing, or automatic choice of changed glyphs.
 
 ### Geometry and transforms
 
@@ -2497,6 +2501,23 @@ easing does not postpone later leaves. `#:reverse? #t` writes in reverse, and
 path traversal. The outline-to-fill phase and exact endpoint restoration remain
 unchanged.
 
+## SCENE-CA: compound glyph outline morphing
+
+Version `0.75.0` extends `transform-matching-glyphs` with the existing opt-in
+`#:changed-mode 'morph` to one identically painted dvisvgm glyph path composed
+of compatible positive-length closed contours. Its destination contours are
+globally paired with the source contours and phase-aligned without reversal,
+then normalized to compatible cubic segments. This preserves the ordinary
+outer/counter structure through interior frames while exact tagged SVG
+fragments remain the endpoints.
+
+The scope remains intentionally conservative. Multiple independently painted
+paths, open geometry, a different number of contours, changed paint, and
+unsupported SVG geometry retain SCENE-BY's moving cross-fade.
+`examples/compound-glyph-outline-morph.rkt` renders the algebraic step
+`-x \leq 3` to `x \geq -3`: the terms and minus sign move, while the
+multi-contour relation glyph morphs.
+
 ## SCENE-BZ: conservative glyph outline morphing
 
 Version `0.74.0` adds `#:changed-mode 'morph` to
@@ -2525,7 +2546,8 @@ across independently compiled equations.
 This is deliberately a renderer-level facility, not a TeX parser. A superscript
 or accented character can consist of several leaves, repeated outlines match
 greedily, and changed outlines cross-fade by default. The opt-in SCENE-BZ mode
-only morphs the deliberately conservative one-contour subset. Use explicit
+initially supported the deliberately conservative one-contour subset; SCENE-CA
+extends it to compatible compound closed contours. Use explicit
 `formula-fragment` or `math-tex` groups whenever a semantic mathematical term
 needs one stable identity. `examples/glyph-level-formula-matching.rkt` shows
 `x + 3 = 7` changing to `x = 7 - 3` with `=` anchored and only `+` → `-`
