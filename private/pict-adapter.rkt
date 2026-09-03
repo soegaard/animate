@@ -23,6 +23,7 @@
                   blank
                   cellophane
                   cc-superimpose
+                  clip
                   dc
                   frame
                   filled-rectangle
@@ -722,11 +723,15 @@
                       (camera-height inset-camera)
                       #:draw-border? #f
                       #:color (camera-background inset-camera)))
+  ;; `pin-over` preserves the background extent but does not itself establish
+  ;; a drawing clip.  A view is a viewport, so discard the portions of a large
+  ;; target that lie outside the inset camera canvas before scaling it.
   (define inset-pict
-    (place-world-visual-on-pict inset-background
-                                target
-                                inset-camera
-                                renderers))
+    (clip
+     (place-world-visual-on-pict inset-background
+                                 target
+                                 inset-camera
+                                 renderers)))
   (define desired-width
     (camera-length->pixels
      outer-camera

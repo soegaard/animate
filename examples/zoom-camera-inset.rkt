@@ -23,7 +23,7 @@
   (define detail-camera
     (make-camera #:width 480
                  #:height 270
-                 #:world-width 3
+                 #:world-width 2
                  #:center origin
                  #:background "ivory"))
   (define horizontal-axis
@@ -48,15 +48,29 @@
           #:id 'diameter
           #:stroke "cornflowerblue"
           #:stroke-width 3))
+  ;; The intentionally asymmetric silhouette makes the magnified view visibly
+  ;; distinct from a second rendering of only circles and straight axes.
+  (define irregular-shape
+    (polygon (list (vec2 -24/25 -6/25)
+                   (vec2 -1/5 -48/125)
+                   (vec2 18/25 -24/125)
+                   (vec2 24/25 3/25)
+                   (vec2 1/5 66/125)
+                   (vec2 -2/5 36/125)
+                   (vec2 -4/5 48/125))
+             #:id 'irregular-shape
+             #:fill "lightgoldenrodyellow"
+             #:stroke "darkgoldenrod"
+             #:stroke-width 3))
   (define marker
     (circle #:id 'marker
-            #:center (vec2 -2 0)
+            #:center (vec2 -4/5 0)
             #:radius 1/5
             #:fill "tomato"
             #:stroke "firebrick"
             #:stroke-width 2))
   (define diagram
-    (group (list horizontal-axis vertical-axis orbit diameter marker)
+    (group (list horizontal-axis vertical-axis orbit diameter irregular-shape marker)
            #:id 'diagram
            #:center origin))
   (define title
@@ -86,14 +100,14 @@
      #:font-family 'swiss
      #:color "dimgray")
      #:camera outer-camera
-     #:at (vec2 43/10 3/10)))
+     #:at (vec2 43/10 -1/10)))
   (define inset
     (camera-view 'diagram
                  #:id 'zoom
                  #:camera detail-camera
                  #:frame-camera outer-camera
-                 #:at (vec2 43/10 3/2)
-                 #:width 3
+                 #:at (vec2 43/10 6/5)
+                 #:width 4
                  #:opacity 19/20))
   (define initial
     (scene-add (make-scene #:camera outer-camera)
@@ -104,7 +118,7 @@
     (scene-play
      introduced
      (animation-group
-      (move-to '(diagram marker) (vec2 2 0))
+      (move-to '(diagram marker) (vec2 4/5 0))
       (camera-pan-by (vec2 1 0)))
      #:duration 4))
   (scene-wait animated 1))
