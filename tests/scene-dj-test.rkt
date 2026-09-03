@@ -54,9 +54,32 @@
     (rounded-rectangle #:id 'rounded #:center (vec2 -3 -2)
                        #:width 3 #:height 2 #:corner-radius 1/3))
   (check-true (path-visual? rounded))
-  (check-equal? (length (path-subpath-segments
-                         (car (path-geometry-subpaths (path-visual-path rounded)))))
-                7)
+  (define rounded-subpath
+    (car (path-geometry-subpaths (path-visual-path rounded))))
+  (define rounded-segments (path-subpath-segments rounded-subpath))
+  ;; Four straight sides alternate with four quarter-circle Bézier corners.
+  ;; In particular, preserving the top edge ensures the first corner starts
+  ;; at the top-right rather than skewing across the whole width.
+  (check-equal? (length rounded-segments) 8)
+  (for ([index '(0 2 4 6)])
+    (check-true (line-path-segment? (list-ref rounded-segments index))))
+  (for ([index '(1 3 5 7)])
+    (check-true (cubic-bezier-path-segment? (list-ref rounded-segments index))))
+  (check-true
+   (approximately-point=? (path-subpath-start rounded-subpath)
+                          (vec2 -7/6 1)))
+  (check-true
+   (approximately-point=?
+    (line-path-segment-end (car rounded-segments))
+    (vec2 7/6 1)))
+  (check-true
+   (approximately-point=?
+    (line-path-segment-end (list-ref rounded-segments 2))
+    (vec2 3/2 -2/3)))
+  (check-true
+   (approximately-point=?
+    (line-path-segment-end (list-ref rounded-segments 6))
+    (vec2 -3/2 2/3)))
 
   (define arc
     (arc-between-points (vec2 -1 -2) (vec2 1 -2)

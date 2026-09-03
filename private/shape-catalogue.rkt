@@ -411,14 +411,18 @@
   (path-geometry
    (list
     (path-subpath
-     (vec2 (- half-width radius) half-height)
+     (vec2 (+ (- half-width) radius) half-height)
      (append
+      ;; Walk the straight top edge before entering the top-right quarter arc.
+      ;; Omitting this segment would make that corner's cubic start at the
+      ;; top-left, visibly skewing the upper edge.
+      (list (line-path-segment (vec2 (- half-width radius) half-height)))
       (translated-arc-segments top-right radius (/ pi 2) (- (/ pi 2)))
-      (list (line-path-segment (vec2 half-width (- half-height radius))))
+      (list (line-path-segment (vec2 half-width (+ (- half-height) radius))))
       (translated-arc-segments bottom-right radius 0 (- (/ pi 2)))
       (list (line-path-segment (vec2 (+ (- half-width) radius) (- half-height))))
       (translated-arc-segments bottom-left radius (- (/ pi 2)) (- (/ pi 2)))
-      (list (line-path-segment (vec2 (- half-width) (+ (- half-height) radius))))
+      (list (line-path-segment (vec2 (- half-width) (- half-height radius))))
       (translated-arc-segments top-left radius pi (- (/ pi 2))))
      #t))))
 
