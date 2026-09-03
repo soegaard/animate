@@ -11,9 +11,25 @@
 (require rackunit
          racket/file
          racket/path
+         racket/runtime-path
          "../main.rkt")
 
+(define-runtime-path authoring-sections-example
+  "../examples/authoring-sections.rkt")
+
 (module+ test
+  ;; The timeline example's playhead encodes global time as horizontal position;
+  ;; its line midpoint must not drift vertically as it reaches the conclusion.
+  (define make-demo-scene
+    (dynamic-require authoring-sections-example 'make-demo-scene))
+  (define demo-scene (make-demo-scene))
+  (check-equal?
+   (vec2-y (visual-position (scene-visual-at demo-scene 'playhead 0)))
+   1/4)
+  (check-equal?
+   (vec2-y (visual-position (scene-visual-at demo-scene 'playhead 7)))
+   1/4)
+
   (define scene
     (scene-wait (make-scene) 6))
 

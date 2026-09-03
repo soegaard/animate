@@ -83,7 +83,9 @@
                 cue-one cue-two cue-label playhead playhead-label note)
      1))
   (scene-wait
-   (scene-play initial (move-to 'playhead (vec2 4 0)) #:duration 6)
+   ;; `move-to` targets the line's midpoint, which starts at y = 1/4. Preserve
+   ;; that ordinate so the playhead represents time with horizontal motion only.
+   (scene-play initial (move-to 'playhead (vec2 4 1/4)) #:duration 6)
    1))
 
 (define (make-demo-timeline)
