@@ -29,6 +29,35 @@
   (check-true
    (group-visual?
     (scene-visual-at routed-scene '(routed edges first line) 0)))
+  ;; A curved route has radial start/end handles, so it leaves and enters a
+  ;; circular vertex rather than skimming its boundary. Its two cubic halves
+  ;; also have matching midpoint tangents.
+  (define first-curved-shaft
+    (scene-visual-at routed-scene '(routed edges first line shaft) 0))
+  (define first-curved-subpath
+    (car (path-geometry-subpaths (path-visual-path first-curved-shaft))))
+  (define first-curved-segments (path-subpath-segments first-curved-subpath))
+  (define first-curved-half (car first-curved-segments))
+  (define second-curved-half (cadr first-curved-segments))
+  (define curved-start (path-subpath-start first-curved-subpath))
+  (define curved-midpoint (cubic-bezier-path-segment-end first-curved-half))
+  (define curved-end (cubic-bezier-path-segment-end second-curved-half))
+  (define route-chord (vec2- curved-end curved-start))
+  (define initial-handle
+    (vec2- (cubic-bezier-path-segment-control1 first-curved-half)
+           curved-start))
+  (define final-handle
+    (vec2- curved-end
+           (cubic-bezier-path-segment-control2 second-curved-half)))
+  (check-equal? (* (vec2-x initial-handle) (vec2-y route-chord))
+                (* (vec2-y initial-handle) (vec2-x route-chord)))
+  (check-equal? (* (vec2-x final-handle) (vec2-y route-chord))
+                (* (vec2-y final-handle) (vec2-x route-chord)))
+  (check-equal?
+   (vec2- curved-midpoint
+          (cubic-bezier-path-segment-control2 first-curved-half))
+   (vec2- (cubic-bezier-path-segment-control1 second-curved-half)
+          curved-midpoint))
   (check-not-equal?
    (visual-position (scene-visual-at routed-scene '(routed edges first label) 0))
    (visual-position (scene-visual-at routed-scene '(routed edges second label) 0)))
@@ -48,6 +77,20 @@
   (check-true
    (group-visual?
     (scene-visual-at loop-scene '(loops edges loop line) 0)))
+  ;; The two cubic segments meet at the loop apex.  Their endpoint handles
+  ;; must define the same tangent, rather than the mirrored diagonal handles
+  ;; that formerly made this join visibly kinked.
+  (define loop-shaft
+    (scene-visual-at loop-scene '(loops edges loop line shaft) 0))
+  (define loop-segments
+    (path-subpath-segments
+     (car (path-geometry-subpaths (path-visual-path loop-shaft)))))
+  (define first-loop-curve (car loop-segments))
+  (define second-loop-curve (cadr loop-segments))
+  (define apex (cubic-bezier-path-segment-end first-loop-curve))
+  (check-equal?
+   (vec2- apex (cubic-bezier-path-segment-control2 first-loop-curve))
+   (vec2- (cubic-bezier-path-segment-control1 second-loop-curve) apex))
   (check-true (is-a? (scene-frame->bitmap loop-scene 0 #:fps 1) bitmap%))
   (define loop-moving
     (scene-play loop-scene

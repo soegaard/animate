@@ -966,28 +966,46 @@
      (group (list shaft tip) #:id id)]))
 
 (define (curved-edge-geometry start end curvature)
-  (define chord (vec2- end start))
-  (define distance (vector-length chord))
-  (define normal
-    (vec2 (/ (- (vec2-y chord)) distance)
-          (/ (vec2-x chord) distance)))
-  (define offset (vec2-scale (* curvature distance) normal))
+  (define-values (direction distance midpoint)
+    (curved-edge-frame start end curvature))
+  (define handle (vec2-scale (/ distance 4) direction))
   (path-geometry
    (list
     (path-subpath
      start
-     (list (cubic-bezier-path-segment (vec2+ start offset)
-                                      (vec2+ end offset)
+     ;; A single cubic with both controls offset from the chord leaves and
+     ;; arrives tangent to circular vertices. Split the route at its bent
+     ;; midpoint instead: outer handles are radial, while the middle handles
+     ;; agree, yielding a smooth curve that visibly enters each node.
+     (list (cubic-bezier-path-segment (vec2+ start handle)
+                                      (vec2- midpoint handle)
+                                      midpoint)
+           (cubic-bezier-path-segment (vec2+ midpoint handle)
+                                      (vec2- end handle)
                                       end))
      #f))))
 
 (define (curved-edge-end-tangent start end curvature)
+  (define-values (direction distance _midpoint)
+    (curved-edge-frame start end curvature))
+  ;; This is `end - control2`, which arrowhead-subpath uses to recover the
+  ;; preceding point on the curve. It is radial toward the target node.
+  (vec2-scale (/ distance 4) direction))
+
+;; curved-edge-frame : vec2? vec2? finite-real? -> vec2? positive-real? vec2?
+;; Keeps the route's visible midpoint at the location used by the original
+;; one-cubic construction: at t=1/2 that curve reaches three quarters of its
+;; normal control offset.
+(define (curved-edge-frame start end curvature)
   (define chord (vec2- end start))
   (define distance (vector-length chord))
+  (define direction (vec2-scale (/ 1 distance) chord))
   (define normal
-    (vec2 (/ (- (vec2-y chord)) distance)
-          (/ (vec2-x chord) distance)))
-  (vec2- end (vec2+ end (vec2-scale (* curvature distance) normal))))
+    (vec2 (- (vec2-y direction)) (vec2-x direction)))
+  (define midpoint
+    (vec2+ (vec2-scale 1/2 (vec2+ start end))
+           (vec2-scale (* 3/4 curvature distance) normal)))
+  (values direction distance midpoint))
 
 (define (loop-edge-geometry center vertex-size route)
   (define-values (start top end _control2)
@@ -999,12 +1017,15 @@
      start
      (list
       (cubic-bezier-path-segment
-       (vec2+ start (vec2 (- radius) (/ radius 2)))
-       (vec2+ top (vec2 (- radius) (- (/ radius 2))))
+       (vec2+ start (vec2 (- radius) radius))
+       ;; The previous diagonal handles met their mirror image at `top`,
+       ;; producing a visible corner.  These two handles lie on one horizontal
+       ;; tangent through the apex, so the cubic pair joins smoothly.
+       (vec2+ top (vec2 (- radius) 0))
        top)
       (cubic-bezier-path-segment
-       (vec2+ top (vec2 radius (- (/ radius 2))))
-       (vec2+ end (vec2 radius (/ radius 2)))
+       (vec2+ top (vec2 radius 0))
+       (vec2+ end (vec2 radius radius))
        end))
      #f))))
 
@@ -1020,7 +1041,8 @@
   (define start (vec2+ loop-center (vec2 (- half-width) base-height)))
   (define top (vec2+ loop-center (vec2 0 (+ base-height (* 2 radius)))))
   (define end (vec2+ loop-center (vec2 half-width base-height)))
-  (values start top end (vec2+ end (vec2 radius (/ radius 2)))))
+  ;; The final control point is also used for the tangent-aligned arrowhead.
+  (values start top end (vec2+ end (vec2 radius radius))))
 
 (define (loop-route-radius route)
   (* (edge-route-loop-radius route)
@@ -1045,16 +1067,9 @@
     [(zero? (edge-route-curvature route))
      (vec2-scale 1/2 (vec2+ start end))]
     [else
-     ;; The midpoint of a cubic with symmetric normal controls is its chord
-     ;; midpoint plus three quarters of the control offset.
-     (define chord (vec2- end start))
-     (define distance (vector-length chord))
-     (define normal
-       (vec2 (/ (- (vec2-y chord)) distance)
-             (/ (vec2-x chord) distance)))
-     (vec2+ (vec2-scale 1/2 (vec2+ start end))
-            (vec2-scale (* 3/4 (edge-route-curvature route) distance)
-                        normal))]))
+     (define-values (_direction _distance midpoint)
+       (curved-edge-frame start end (edge-route-curvature route)))
+     midpoint]))
 
 
 ;;;
