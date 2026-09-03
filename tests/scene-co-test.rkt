@@ -6,6 +6,7 @@
 
 (require rackunit
          racket/class
+         racket/list
          racket/runtime-path
          (only-in pict pict->bitmap)
          (only-in racket/math pi)
@@ -68,23 +69,40 @@
      (car (path-geometry-subpaths (path-visual-path right-mark)))))
    2)
 
-  ;; A TeX-style brace is one closed filled path with outer curls and a smooth
-  ;; central point; brace-label groups it with a separately addressable text
-  ;; child using stable, derived child identities.
+  ;; A Manim-style brace is one open stroked path with outer curls and a narrow,
+  ;; unfilled central cusp; brace-label groups it with a separately addressable
+  ;; text child using stable, derived child identities.
   (define curly
     (brace-between (vec2 -2 0) (vec2 2 0) #:id 'curly #:offset 1/2))
   (check-equal?
    (length
     (path-geometry-subpaths (path-visual-path curly)))
    1)
-  (check-true
-   (andmap path-subpath-closed?
-           (path-geometry-subpaths (path-visual-path curly))))
+  (check-false
+   (path-subpath-closed?
+    (car (path-geometry-subpaths (path-visual-path curly)))))
   (check-equal? (length (path-subpath-segments
                          (car (path-geometry-subpaths
                                (path-visual-path curly)))))
-                9)
-  (check-equal? (path-visual-fill curly) "black")
+                6)
+  (check-false (path-visual-fill curly))
+  ;; The two outer curls are exact horizontal mirrors, including both Bézier
+  ;; handles. This prevents a visually subtle left/right mismatch at the tips.
+  (define curly-segments
+    (path-subpath-segments
+     (car (path-geometry-subpaths (path-visual-path curly)))))
+  (define left-curl (car curly-segments))
+  (define right-curl (last curly-segments))
+  (define (mirror-about-brace-midpoint point)
+    (vec2 (- (vec2-x point)) (vec2-y point)))
+  (check-equal?
+   (cubic-bezier-path-segment-control1 right-curl)
+   (mirror-about-brace-midpoint
+    (cubic-bezier-path-segment-control2 left-curl)))
+  (check-equal?
+   (cubic-bezier-path-segment-control2 right-curl)
+   (mirror-about-brace-midpoint
+    (cubic-bezier-path-segment-control1 left-curl)))
   ;; Curl tips are exactly aligned with the annotated endpoints, rather than
   ;; extending beyond them. This is important for braces in geometric figures.
   (define-values (brace-minimum-x _brace-minimum-y brace-maximum-x _brace-maximum-y)

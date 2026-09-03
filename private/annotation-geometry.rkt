@@ -220,11 +220,10 @@
 ;                 [#:offset finite-real?]
 ;                 ... ordinary path style keywords ...
 ;                 -> path-visual?
-;; Creates a symmetric filled curly brace from start to end. Positive offset is
+;; Creates a symmetric, open curly brace from start to end. Positive offset is
 ;; to the left of start-to-end travel; a negative offset selects the other side.
-;; The colour is taken from `stroke`, for compatibility with the other path
-;; annotations.  Its silhouette follows TeX's `\underbrace` construction: a
-;; broad horizontal rule narrows smoothly to the central point.
+;; Its stroke follows the Manim/TeX brace convention: shallow end curls lead
+;; into a rule with one narrow, unfilled central cusp.
 (define (brace-between start end
                        #:id id
                        #:offset [offset 1/3]
@@ -244,57 +243,51 @@
     (vec2+ start
            (vec2+ (vec2-scale (* along length) direction)
                   (vec2-scale perpendicular normal))))
-  ;; TeX renders an underbrace as a filled outline rather than a stroked wavy
-  ;; centreline.  This normalised version includes its two end curls, followed
-  ;; by the horizontal rule nearest the annotated segment. Its lower edge
-  ;; remains thin until it smoothly tapers to the central outward point. It is
-  ;; a single closed path, so the Pict and SVG renderers receive the same
-  ;; unambiguous fill geometry.
-  (define band-thickness (/ offset 7))
-  (define end-curl-offset (* -5/7 offset))
-  (define middle (at 1/2 offset))
+  ;; This is one open centreline rather than a closed filled silhouette. Keeping
+  ;; every point on the selected side of the annotated segment makes the brace
+  ;; safe for closely spaced geometry labels, while the open centre cusp remains
+  ;; visibly hollow at any stroke width.
+  ;; The curl tips return about a quarter of the way toward the annotated
+  ;; segment, while the central cusp reaches twice the rule offset. This gives
+  ;; the compact but legible profile of Manim's brace at ordinary diagram size.
+  (define curl-offset (* 1/4 offset))
+  (define cusp-offset (* 2 offset))
   ;; The outer tips align directly with `start` and `end`. The little horizontal
   ;; span of each curl is four percent of the annotated segment, matching the
-  ;; TeX proportions while preserving the endpoint alignment expected in a
-  ;; geometry diagram.
+  ;; compact proportions of Manim's brace while preserving the endpoint
+  ;; alignment expected in a geometry diagram.
   (define end-curl-width 1/25)
-  ;; In TeX, the two central brace glyphs together occupy roughly eight percent
-  ;; of the rule. Keeping that narrow prevents the point from reading as a
-  ;; broad filled wedge in a large diagram.
+  ;; The two central curves occupy roughly eight percent of the rule. This keeps
+  ;; the cusp narrow without turning it into a filled-looking triangle.
   (define central-half-width 1/25)
   (define central-right (+ 1/2 central-half-width))
   (define central-left (- 1/2 central-half-width))
-  (define central-right-control (+ 1/2 (/ central-half-width 2)))
-  (define central-left-control (- 1/2 (/ central-half-width 2)))
   (define geometry
     (path-subpath
-     (at 0 end-curl-offset)
+     (at 0 curl-offset)
      (list
-      ;; Left outer curl, then the upper edge of TeX's horizontal rule.
-      (cubic-bezier-path-segment (at 0 end-curl-offset)
-                                 (at (/ end-curl-width 2) 0)
-                                 (at end-curl-width 0))
-      (line-path-segment (at (- 1 end-curl-width) 0))
-      ;; This is the exact mirror of the left curl about the brace midpoint.
-      (cubic-bezier-path-segment (at (- 1 (/ end-curl-width 2)) 0)
-                                 (at 1 end-curl-offset)
-                                 (at 1 end-curl-offset))
-      (cubic-bezier-path-segment (at 1 end-curl-offset)
-                                 (at (- 1 (/ end-curl-width 2)) band-thickness)
-                                 (at (- 1 end-curl-width) band-thickness))
-      (line-path-segment (at central-right band-thickness))
-      (cubic-bezier-path-segment (at central-right-control band-thickness)
-                                 (at 1/2 (* 7/8 offset))
-                                 middle)
-      (cubic-bezier-path-segment (at 1/2 (* 7/8 offset))
-                                 (at central-left-control band-thickness)
-                                 (at central-left band-thickness))
-      (line-path-segment (at end-curl-width band-thickness))
-      (cubic-bezier-path-segment (at (/ end-curl-width 2) band-thickness)
-                                 (at 0 end-curl-offset)
-                                 (at 0 end-curl-offset)))
-     #t))
-  (centered-filled-path-visual
+      ;; Left outer curl and the long rule nearest the annotated segment.
+      (cubic-bezier-path-segment (at 0 offset)
+                                 (at (/ end-curl-width 2) offset)
+                                 (at end-curl-width offset))
+      (line-path-segment (at central-left offset))
+      ;; The two cubic pieces meet at a narrow outward cusp. Because this path
+      ;; is open and unfilled, the region surrounding that cusp stays hollow.
+      (cubic-bezier-path-segment
+       (at (+ central-left (/ central-half-width 2)) offset)
+       (at 1/2 (* 3/2 offset))
+       (at 1/2 cusp-offset))
+      (cubic-bezier-path-segment
+       (at 1/2 (* 3/2 offset))
+       (at (- central-right (/ central-half-width 2)) offset)
+       (at central-right offset))
+      (line-path-segment (at (- 1 end-curl-width) offset))
+      ;; Exact mirror of the left curl about the brace midpoint.
+      (cubic-bezier-path-segment (at (- 1 (/ end-curl-width 2)) offset)
+                                 (at 1 offset)
+                                 (at 1 curl-offset)))
+     #f))
+  (centered-path-visual
    'brace-between (path-geometry (list geometry)) id opacity stroke stroke-width))
 
 ; brace-label : vec2? vec2? string?
@@ -321,10 +314,14 @@
   (check-nonnegative 'brace-label "gap" gap)
   (define direction (unit-vector 'brace-label start end))
   (define normal (vec2 (- (vec2-y direction)) (vec2-x direction)))
+  ;; Place the label beyond the brace's outward cusp, rather than merely beyond
+  ;; its horizontal rule. This preserves the advertised `gap` when a brace has
+  ;; a pronounced Manim-style centre notch.
+  (define cusp-offset (* 2 offset))
   (define label-position
     (vec2+
      (point-midpoint start end)
-     (vec2-scale (+ offset (if (negative? offset) (- gap) gap)) normal)))
+     (vec2-scale (+ cusp-offset (if (negative? offset) (- gap) gap)) normal)))
   (group
    (list
     (brace-between start end #:id (derived-id id "brace") #:offset offset

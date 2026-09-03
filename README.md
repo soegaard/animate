@@ -3266,8 +3266,10 @@ Version `0.89.0` adds common explanatory marks as ordinary semantic paths:
 ```
 
 `arc` uses cubic Bézier segments with exact cardinal endpoints; `dashed-path`
-selects arc-length pieces without flattening curves. `angle`, `right-angle`,
-`brace`, `brace-between`, and `brace-label` are ordinary path/group Visuals.
+selects arc-length pieces without flattening curves. `brace` is an open stroked
+curve with a narrow unfilled centre cusp, matching Manim's visual convention.
+`angle`, `right-angle`, `brace-between`, and `brace-label` are ordinary
+path/group Visuals.
 `surrounding-rectangle` alone needs renderer measurement, so it tracks a
 top-level or nested target's current rendered bounding box with world-space
 padding. It remains a top-level render-time definition to avoid layout cycles.
