@@ -33,6 +33,7 @@
                   make-pen)
          "affine-map-visual.rkt"
          "affine-pict.rkt"
+         "affine-transform.rkt"
          "anchored-pict.rkt"
          "annotation-geometry.rkt"
          "camera.rkt"
@@ -181,13 +182,90 @@
      'visual->pict
      "a world-space Visual inside affine-map"
      "visual-id" (visual-id content)))
+  (define map
+    (affine-map-visual-map visual))
   (define mapped-pict
-    (affine2-pict-transform
-     (visual->pict content camera #:renderers renderers)
-     (affine-map-visual-map visual)))
+    (cond
+      ;; An affine-mapped group normally retains its established Pict extent.
+      ;; Near a reflection's singular midpoint, however, pass the map to the
+      ;; affected child instead.  That prevents padded child Picts from
+      ;; displacing a very thin mapped path.
+      [(and (group-visual? content)
+            (group-has-near-singular-affine-child? content map))
+       (visual->pict
+        (group-visual-with-children
+         content
+         (for/list ([child (in-list (group-visual-children content))])
+           (affine-map child map)))
+        camera
+        #:renderers renderers)]
+      ;; Map paths as geometry only through that same near-singular interval.
+      ;; This keeps the thin quadrilaterals' endpoints exact without changing
+      ;; the appearance of ordinary affine transformations.
+      [(and (path-visual? content)
+            (near-singular-affine? map))
+       (affine-path->pict content map camera renderers)]
+      [else
+       (affine2-pict-transform
+        (visual->pict content camera #:renderers renderers)
+        map)]))
   (define transformed-pict
     (scale-pict-if-needed mapped-pict (visual-scale visual)))
   (rotate-pict-if-needed transformed-pict (visual-rotation visual)))
+
+;; Near a reflection midpoint, a closed path's narrow acute corners make a
+;; Pict-space miter visibly overshoot the geometric endpoints.  A third covers
+;; only the visually thin portion of the identity-to-reflection interpolation.
+(define near-singular-determinant 1/3)
+
+;; near-singular-affine? : affine2? -> boolean?
+(define (near-singular-affine? map)
+  (<= (abs (linear2-determinant (affine2-linear map)))
+      near-singular-determinant))
+
+;; group-has-near-singular-affine-child? : group-visual? affine2? -> boolean?
+;; Returns whether passing `map` down to one direct child reaches the thin part
+;; of a reflection.  Ordinary affine-mapped groups take the established Pict
+;; path above without any representation change.
+(define (group-has-near-singular-affine-child? content map)
+  (for/or ([child (in-list (group-visual-children content))])
+    (and (affine-map-visual? child)
+         (near-singular-affine?
+          (affine2-compose map (affine-map-visual-map child))))))
+
+;; affine-path->pict : path-visual? affine2? camera?
+;;                     (listof pict-renderer?) -> pict?
+;; Renders a path through its mapped world geometry.  At rank one a closed
+;; filled contour has no area, so it becomes its open boundary stroke; for all
+;; other maps, fill and closed-path semantics are preserved unchanged.
+(define (affine-path->pict content map camera renderers)
+  (define mapped-path
+    (path-geometry-map-points
+     (path-visual-path content)
+     (lambda (point)
+       (affine2-apply-vector map point))))
+  (define singular?
+    (zero? (linear2-determinant (affine2-linear map))))
+  (define rendered-path
+    (if singular?
+        (path-geometry
+         (for/list ([subpath (in-list (path-geometry-subpaths mapped-path))])
+           (path-subpath (path-subpath-start subpath)
+                         (path-subpath-segments subpath)
+                         #f)))
+        mapped-path))
+  (define transformed-content
+    (make-path-visual
+     rendered-path
+     #:id (visual-id content)
+     #:center (visual-position content)
+     #:rotation (visual-rotation content)
+     #:scale (visual-scale content)
+     #:opacity (visual-opacity content)
+     #:fill (and (not singular?) (path-visual-fill content))
+     #:stroke (path-visual-stroke content)
+     #:stroke-width (path-visual-stroke-width content)))
+  (visual->pict transformed-content camera #:renderers renderers))
 
 ; frame-space-content->pict : frame-space-visual? visual? camera?
 ;                             (listof pict-renderer?) -> pict?

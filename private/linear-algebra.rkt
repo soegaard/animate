@@ -229,8 +229,12 @@
              #:id 'unit-square
              #:fill "gold" #:stroke "goldenrod" #:stroke-width 2))
   (group
-   (append (list plane basis arbitrary-vector)
-           (if unit-square? (list square) '()))
+   ;; The unit square is diagram background geometry.  Keep the basis and
+   ;; arbitrary vector above it, so their shafts and tips remain visible when
+   ;; the square is filled or passes through a thin reflection midpoint.
+   (append (list plane)
+           (if unit-square? (list square) '())
+           (list basis arbitrary-vector))
    #:id id))
 
 
