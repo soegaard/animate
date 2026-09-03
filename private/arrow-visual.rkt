@@ -35,6 +35,7 @@
          arrow-visual-end
          arrow-visual-point-at
          arrow-visual-path-geometry
+         arrow-visual-render-path-geometry
          arrowhead-subpath)
 
 
@@ -274,6 +275,53 @@
                (arrow-visual-tip-length arrow)
                (arrow-visual-tip-width arrow)))
         '()))))
+
+; arrow-visual-render-path-geometry : arrow-visual? -> path-geometry?
+;;   Returns the presentation geometry used by renderers.  The shaft stops at
+;; the base of each triangular tip, so a round shaft cap never protrudes into
+;; the tip or beyond its semantic endpoint.  It remains vector geometry, which
+;; lets affine renderers transform it directly.
+(define (arrow-visual-render-path-geometry arrow)
+  (check-arrow-visual 'arrow-visual-render-path-geometry arrow)
+  (define original-geometry
+    (arrow-visual-path-geometry arrow))
+  (define original-shaft
+    (for/first ([subpath (in-list (path-geometry-subpaths original-geometry))]
+                #:unless (path-subpath-closed? subpath))
+      subpath))
+  (define local-start
+    (path-subpath-start original-shaft))
+  (define local-end
+    (line-path-segment-end
+     (car (path-subpath-segments original-shaft))))
+  (define direction
+    (vec2- local-end local-start))
+  (define length
+    (point-distance local-start local-end))
+  (define start-inset
+    (if (arrow-visual-start-tip? arrow)
+        (arrow-visual-tip-length arrow)
+        0))
+  (define end-inset
+    (if (arrow-visual-end-tip? arrow)
+        (arrow-visual-tip-length arrow)
+        0))
+  (define shaft-subpaths
+    (if (> length (+ start-inset end-inset))
+        (let* ([unit-direction (vec2-scale (/ 1 length) direction)]
+               [shaft-start
+                (vec2+ local-start
+                       (vec2-scale start-inset unit-direction))]
+               [shaft-end
+                (vec2- local-end
+                       (vec2-scale end-inset unit-direction))])
+          (list (open-line-subpath shaft-start shaft-end)))
+        '()))
+  (define tip-subpaths
+    (filter path-subpath-closed?
+            (path-geometry-subpaths original-geometry)))
+  (path-geometry
+   (append shaft-subpaths tip-subpaths)))
 
 ; arrowhead-subpath : vec2? vec2? positive-real? positive-real?
 ;                     -> path-subpath?

@@ -22,6 +22,7 @@
          (only-in pict
                   blank
                   cellophane
+                  cc-superimpose
                   dc
                   frame
                   filled-rectangle
@@ -36,6 +37,8 @@
          "affine-transform.rkt"
          "anchored-pict.rkt"
          "annotation-geometry.rkt"
+         "arrow-visual.rkt"
+         "axes-visual.rkt"
          "camera.rkt"
          "derived-visual.rkt"
          "dynamic-endpoint-geometry.rkt"
@@ -199,15 +202,30 @@
            (affine-map child map)))
         camera
         #:renderers renderers)]
-      ;; Map paths as geometry only through that same near-singular interval.
-      ;; This keeps the thin quadrilaterals' endpoints exact without changing
+      ;; Map semantic vector geometry directly through that same
+      ;; near-singular interval.  Rendering a circle, rectangle, arrow, or
+      ;; axes to a padded Pict and then squashing that Pict loses the thin
+      ;; shape entirely at rank one.  Normalising these primitives to paths
+      ;; keeps their geometry and their vertical extent exact without changing
       ;; the appearance of ordinary affine transformations.
-      [(and (path-visual? content)
+      ;; Arrows and axes are directed semantic objects.  Their shafts follow
+      ;; the affine map, but their cosmetic arrowheads are redrawn from those
+      ;; mapped directions for the entire animation.  Restricting this to the
+      ;; singular interval creates a visible head-size jump at its boundary.
+      [(arrow-visual? content)
+       (affine-arrow->pict content map camera renderers)]
+      [(axes-visual? content)
+       (affine-axes->pict content map camera renderers)]
+      [(and (geometry-backed-visual? content)
             (near-singular-affine? map))
-       (affine-path->pict content map camera renderers)]
+       (affine-path->pict
+        (geometry-backed-visual->path-visual content)
+        map camera renderers)]
       [else
-       (affine2-pict-transform
-        (visual->pict content camera #:renderers renderers)
+       (fade-pict-through-singularity
+        (affine2-pict-transform
+         (visual->pict content camera #:renderers renderers)
+         map)
         map)]))
   (define transformed-pict
     (scale-pict-if-needed mapped-pict (visual-scale visual)))
@@ -223,6 +241,23 @@
   (<= (abs (linear2-determinant (affine2-linear map)))
       near-singular-determinant))
 
+;; fade-pict-through-singularity : pict? affine2? -> pict?
+;; Imported/raster Picts have no geometric representation to preserve at a
+;; rank-one affine map.  Instead of leaving a malformed one-pixel remnant,
+;; fade them continuously over the same narrow interval used for vector
+;; geometry.  At rank one they are deliberately absent.
+(define (fade-pict-through-singularity rendered-pict map)
+  (cond
+    [(not (near-singular-affine? map)) rendered-pict]
+    [else
+     (define determinant
+       (abs (linear2-determinant (affine2-linear map))))
+     (define opacity
+       (/ determinant near-singular-determinant))
+     (if (zero? opacity)
+         (blank 1 1)
+         (cellophane rendered-pict opacity))]))
+
 ;; group-has-near-singular-affine-child? : group-visual? affine2? -> boolean?
 ;; Returns whether passing `map` down to one direct child reaches the thin part
 ;; of a reflection.  Ordinary affine-mapped groups take the established Pict
@@ -233,6 +268,227 @@
          (near-singular-affine?
           (affine2-compose map (affine-map-visual-map child))))))
 
+;; geometry-backed-visual? : visual? -> boolean?
+;; These Visuals have canonical vector geometry which can be passed to the
+;; path renderer when an enclosing affine map approaches rank one.
+(define (geometry-backed-visual? visual)
+  (or (path-visual? visual)
+      (circle-visual? visual)
+      (rectangle-visual? visual)
+      (arrow-visual? visual)
+      (axes-visual? visual)))
+
+;; geometry-backed-visual->path-visual : visual? -> path-visual?
+;; Converts only the rendering representation; the source Visual remains the
+;; authoritative semantic value in the scene state.
+(define (geometry-backed-visual->path-visual visual)
+  (cond
+    [(path-visual? visual) visual]
+    [(circle-visual? visual) (circle->path-visual visual)]
+    [(rectangle-visual? visual) (rectangle->path-visual visual)]
+    [(arrow-visual? visual) (arrow->path-visual visual)]
+    [(axes-visual? visual) (axes->path-visual visual)]
+    [else
+     (raise-argument-error
+      'geometry-backed-visual->path-visual
+      "geometry-backed-visual?"
+      visual)]))
+
+;; circle->path-visual : circle-visual? -> path-visual?
+;; A cubic circle is sufficient here because it is only used in the thin
+;; affine interval; the ordinary renderer remains the exact ellipse renderer.
+(define (circle->path-visual visual)
+  (define radius (circle-visual-radius visual))
+  (define k 0.5522847498307936)
+  (define (point x y) (vec2 (* radius x) (* radius y)))
+  (make-path-visual
+   (path-geometry
+    (list
+     (path-subpath
+      (point 1 0)
+      (list (cubic-bezier-path-segment (point 1 k) (point k 1) (point 0 1))
+            (cubic-bezier-path-segment (point (- k) 1) (point -1 k) (point -1 0))
+            (cubic-bezier-path-segment (point -1 (- k)) (point (- k) -1) (point 0 -1))
+            (cubic-bezier-path-segment (point k -1) (point 1 (- k)) (point 1 0)))
+      #t)))
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill (circle-visual-fill visual)
+   #:stroke (circle-visual-stroke visual)
+   #:stroke-width (circle-visual-stroke-width visual)))
+
+;; rectangle->path-visual : rectangle-visual? -> path-visual?
+(define (rectangle->path-visual visual)
+  (define half-width (/ (rectangle-visual-width visual) 2))
+  (define half-height (/ (rectangle-visual-height visual) 2))
+  (make-path-visual
+   (polygon-path
+    (list (vec2 (- half-width) (- half-height))
+          (vec2 half-width (- half-height))
+          (vec2 half-width half-height)
+          (vec2 (- half-width) half-height)))
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill (rectangle-visual-fill visual)
+   #:stroke (rectangle-visual-stroke visual)
+   #:stroke-width (rectangle-visual-stroke-width visual)))
+
+;; arrow->path-visual : arrow-visual? -> path-visual?
+(define (arrow->path-visual visual)
+  (make-path-visual
+   ;; Retain the full semantic shaft here.  affine-tipped-path->pict paints
+   ;; the filled tip above it while it exists, then exposes the shaft all the
+   ;; way to the semantic endpoint as that tip fades at rank one.
+   (arrow-visual-path-geometry visual)
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill (arrow-visual-stroke visual)
+   #:stroke (arrow-visual-stroke visual)
+   #:stroke-width (arrow-visual-stroke-width visual)))
+
+;; axes->path-visual : axes-visual? -> path-visual?
+(define (axes->path-visual visual)
+  (make-path-visual
+   (axes-visual-path-geometry visual)
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:opacity (visual-opacity visual)
+   #:fill (axes-visual-stroke visual)
+   #:stroke (axes-visual-stroke visual)
+   #:stroke-width (axes-visual-stroke-width visual)))
+
+;; affine-arrow->pict : arrow-visual? affine2? camera?
+;;                       (listof pict-renderer?) -> pict?
+;; An arrow is a semantic directed segment, not a generic filled triangle.
+;; Map its endpoints and redraw its cosmetic head in the new direction.  This
+;; retains an intelligible arrow at the rank-one instant instead of shearing
+;; its head into an unrelated spur.
+(define (affine-arrow->pict content map camera renderers)
+  (define start
+    (affine2-apply-vector map (arrow-visual-start content)))
+  (define end
+    (affine2-apply-vector map (arrow-visual-end content)))
+  (if (zero? (vec2-distance start end))
+      ;; A collapsed directed segment has no direction for an arrowhead.  The
+      ;; ordinary path fallback preserves any remaining shaft geometry.
+      (affine-path->pict (arrow->path-visual content) map camera renderers)
+      (visual->pict
+       (arrow start end
+              #:id (visual-id content)
+              #:opacity (visual-opacity content)
+              #:stroke (arrow-visual-stroke content)
+              #:stroke-width (arrow-visual-stroke-width content)
+              #:tip-length (arrow-visual-tip-length content)
+              #:tip-width (arrow-visual-tip-width content)
+              #:start-tip? (arrow-visual-start-tip? content)
+              #:end-tip? (arrow-visual-end-tip? content))
+       camera #:renderers renderers)))
+
+;; affine-axes->pict : axes-visual? affine2? camera?
+;;                      (listof pict-renderer?) -> pict?
+;; Maps the axes, tick, and shaft geometry directly, then redraws each visible
+;; directional tip from its transformed axis segment.  A tip fades only when
+;; its own axis collapses, while a perpendicular axis keeps its normal head.
+(define (affine-axes->pict content map camera renderers)
+  (define original-path
+    (axes-visual-path-geometry content))
+  (define mapped-path
+    (map-path-geometry-through-affine original-path map))
+  (define open-path
+    (path-geometry
+     (filter (lambda (subpath) (not (path-subpath-closed? subpath)))
+             (path-geometry-subpaths mapped-path))))
+  (define shaft-pict
+    (visual->pict
+     (path-visual-with-geometry (axes->path-visual content) open-path #:fill #f)
+     camera #:renderers renderers))
+  (define original-subpaths
+    (path-geometry-subpaths original-path))
+  (define x-shaft (car original-subpaths))
+  (define y-shaft (cadr original-subpaths))
+  (define tip-picts
+    (filter values
+            (list (axes-tip->pict content map x-shaft
+                                   (axes-visual-x-tip? content)
+                                   camera renderers)
+                  (axes-tip->pict content map y-shaft
+                                   (axes-visual-y-tip? content)
+                                   camera renderers))))
+  (apply cc-superimpose shaft-pict tip-picts))
+
+;; axes-tip->pict : axes-visual? affine2? path-subpath? boolean? camera?
+;;                   (listof pict-renderer?) -> (or/c pict? #f)
+(define (axes-tip->pict content map shaft enabled? camera renderers)
+  (cond
+    [(not enabled?) #f]
+    [else
+     (define original-start (path-subpath-start shaft))
+     (define original-end
+       (line-path-segment-end (car (path-subpath-segments shaft))))
+     (define mapped-start
+       (affine2-apply-vector map original-start))
+     (define mapped-end
+       (affine2-apply-vector map original-end))
+     (define original-length (vec2-distance original-start original-end))
+     (define mapped-length (vec2-distance mapped-start mapped-end))
+     (cond
+       [(zero? mapped-length) #f]
+       [else
+        (define tip-opacity
+          (min 1 (/ mapped-length original-length)))
+        (visual->pict
+         (path-visual-with-geometry
+          (axes->path-visual content)
+          (path-geometry
+           (list
+            (arrowhead-subpath mapped-end mapped-start
+                               (axes-visual-tip-length content)
+                               (axes-visual-tip-width content))))
+          #:opacity (* (visual-opacity content) tip-opacity))
+         camera #:renderers renderers)])]))
+
+;; vec2-distance : vec2? vec2? -> nonnegative-real?
+(define (vec2-distance start end)
+  (define delta-x (- (vec2-x end) (vec2-x start)))
+  (define delta-y (- (vec2-y end) (vec2-y start)))
+  (sqrt (+ (* delta-x delta-x)
+           (* delta-y delta-y))))
+
+;; map-path-geometry-through-affine : path-geometry? affine2? -> path-geometry?
+(define (map-path-geometry-through-affine path map)
+  (path-geometry-map-points
+   path
+   (lambda (point)
+     (affine2-apply-vector map point))))
+
+;; path-visual-with-geometry : path-visual? path-geometry?
+;;                              [#:fill any/c] [#:opacity opacity?]
+;;                              -> path-visual?
+(define (path-visual-with-geometry content geometry
+                                   #:fill [fill (path-visual-fill content)]
+                                   #:opacity [opacity (visual-opacity content)])
+  (make-path-visual
+   geometry
+   #:id (visual-id content)
+   #:center (visual-position content)
+   #:rotation (visual-rotation content)
+   #:scale (visual-scale content)
+   #:opacity opacity
+   #:fill fill
+   #:stroke (path-visual-stroke content)
+   #:stroke-width (path-visual-stroke-width content)))
+
 ;; affine-path->pict : path-visual? affine2? camera?
 ;;                     (listof pict-renderer?) -> pict?
 ;; Renders a path through its mapped world geometry.  At rank one a closed
@@ -240,10 +496,7 @@
 ;; other maps, fill and closed-path semantics are preserved unchanged.
 (define (affine-path->pict content map camera renderers)
   (define mapped-path
-    (path-geometry-map-points
-     (path-visual-path content)
-     (lambda (point)
-       (affine2-apply-vector map point))))
+    (map-path-geometry-through-affine (path-visual-path content) map))
   (define singular?
     (zero? (linear2-determinant (affine2-linear map))))
   (define rendered-path
@@ -255,16 +508,9 @@
                          #f)))
         mapped-path))
   (define transformed-content
-    (make-path-visual
-     rendered-path
-     #:id (visual-id content)
-     #:center (visual-position content)
-     #:rotation (visual-rotation content)
-     #:scale (visual-scale content)
-     #:opacity (visual-opacity content)
-     #:fill (and (not singular?) (path-visual-fill content))
-     #:stroke (path-visual-stroke content)
-     #:stroke-width (path-visual-stroke-width content)))
+    (path-visual-with-geometry
+     content rendered-path
+     #:fill (and (not singular?) (path-visual-fill content))))
   (visual->pict transformed-content camera #:renderers renderers))
 
 ; frame-space-content->pict : frame-space-visual? visual? camera?

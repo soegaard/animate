@@ -302,7 +302,7 @@
 (define (arrow-visual->pict visual camera)
   (arrow-path-visual->pict
    (make-path-visual
-    (arrow-render-path-geometry visual)
+    (arrow-visual-render-path-geometry visual)
     #:id (visual-id visual)
     #:center (visual-position visual)
     #:rotation (visual-rotation visual)
@@ -311,58 +311,6 @@
     #:stroke (arrow-visual-stroke visual)
     #:stroke-width (arrow-visual-stroke-width visual))
    camera))
-
-; arrow-render-path-geometry : arrow-visual? -> path-geometry?
-;;   Gives the rendering geometry for an arrow.  The semantic endpoint is the
-;; apex of each tip, while the stroked shaft stops at the base of that tip.
-;; This avoids a round shaft cap protruding through a filled arrowhead.
-(define (arrow-render-path-geometry visual)
-  (define original-geometry
-    (arrow-visual-path-geometry visual))
-  (define original-shaft
-    (for/first ([subpath
-                 (in-list
-                  (path-geometry-subpaths original-geometry))]
-                #:unless (path-subpath-closed? subpath))
-      subpath))
-  (define local-start
-    (path-subpath-start original-shaft))
-  (define local-end
-    (line-path-segment-end
-     (car (path-subpath-segments original-shaft))))
-  (define direction
-    (vec2- local-end local-start))
-  (define length
-    (sqrt (+ (* (vec2-x direction) (vec2-x direction))
-             (* (vec2-y direction) (vec2-y direction)))))
-  (define start-inset
-    (if (arrow-visual-start-tip? visual)
-        (arrow-visual-tip-length visual)
-        0))
-  (define end-inset
-    (if (arrow-visual-end-tip? visual)
-        (arrow-visual-tip-length visual)
-        0))
-  (define shaft-subpaths
-    (if (> length (+ start-inset end-inset))
-        (let* ([unit-direction
-                (vec2-scale (/ 1 length) direction)]
-               [shaft-start
-                (vec2+ local-start
-                       (vec2-scale start-inset unit-direction))]
-               [shaft-end
-                (vec2- local-end
-                       (vec2-scale end-inset unit-direction))])
-          (list (path-subpath shaft-start
-                              (list (line-path-segment shaft-end))
-                              #f)))
-        '()))
-  (define tip-subpaths
-    (filter path-subpath-closed?
-            (path-geometry-subpaths
-             original-geometry)))
-  (path-geometry
-   (append shaft-subpaths tip-subpaths)))
 
 ; axes-visual->pict : axes-visual? camera? -> pict?
 ;;   Converts semantic axes through the shared path renderer.
