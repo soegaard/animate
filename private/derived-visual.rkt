@@ -32,6 +32,7 @@
          derived-context-visual-has?
          derived-context-visual-ref
          make-derived-context
+         derived-visual-metadata
          resolve-derived-visual)
 
 
@@ -191,7 +192,7 @@
 (define template-visual-opacity visual-opacity)
 (define template-visual-with-opacity visual-with-opacity)
 
-(struct derived-visual-value (template resolver)
+(struct derived-visual-value (template resolver metadata)
   #:transparent
   #:methods gen:visual
   [(define (visual-id definition)
@@ -263,10 +264,11 @@
 
 ; derived-visual : visual?
 ;                  (-> derived-context? visual? visual?)
+;                  [#:metadata any/c]
 ;                  -> derived-visual?
 ;;   Creates one pure Visual definition driven by sampled scene dependencies.
 ;;   Resolver receives both the read-only context and the immutable template.
-(define (derived-visual template resolver)
+(define (derived-visual template resolver #:metadata [metadata #f])
   (unless (visual? template)
     (raise-argument-error 'derived-visual "visual?" template))
   (when (derived-visual? template)
@@ -295,7 +297,17 @@
      'derived-visual
      "procedure accepting derived-context? and template visual? arguments"
      resolver))
-  (derived-visual-value template resolver))
+  (derived-visual-value template resolver metadata))
+
+; derived-visual-metadata : derived-visual? -> any/c
+;; Returns private immutable metadata attached to a definition. Ordinary Visual
+;; operations ignore it; selected renderer optimizations can use it to prepare
+;; pure derived results before parallel frame work begins.
+(define (derived-visual-metadata definition)
+  (unless (derived-visual? definition)
+    (raise-argument-error
+     'derived-visual-metadata "derived-visual?" definition))
+  (derived-visual-value-metadata definition))
 
 ; resolve-derived-visual : derived-visual? derived-context? -> visual?
 ;;   Evaluates one resolver and validates its concrete top-level Visual result.

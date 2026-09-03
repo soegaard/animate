@@ -450,6 +450,12 @@
 
  ;; SCENE-DC deterministic ODE flow
  ode-flow-position
+ ode-trajectory?
+ ode-trajectory-time-range
+ ode-trajectory-step-size
+ ode-trajectory-checkpoint-every
+ prepare-ode-trajectory
+ ode-trajectory-position
  streamline-points
  streamline
  streamlines

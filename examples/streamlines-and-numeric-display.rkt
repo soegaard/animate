@@ -32,9 +32,14 @@
                  #:step-size 1/40 #:steps 126
                  #:stroke "steelblue" #:stroke-width 2 #:opacity 3/5))
   (define phase (parameter 'time 0.0))
+  (define particle-trajectory
+    (prepare-ode-trajectory
+     rotation-field (vec2 2 0)
+     #:time-range (cons 0 (* 2 pi))
+     #:step-size 1/10))
   (define particle
-    (flow-particle coordinate-axes rotation-field (vec2 2 0) phase
-                   #:id 'particle #:step-size 1/10
+    (flow-particle coordinate-axes particle-trajectory phase
+                   #:id 'particle
                    #:size 1/4 #:fill "crimson" #:stroke "firebrick"))
   (define title
     (plain-text "SCENE-DC/DD: deterministic flow"
@@ -42,7 +47,7 @@
                 #:font-size 1/3 #:font-family 'swiss #:font-weight 'bold
                 #:color "navy"))
   (define explanation
-    (plain-text "RK4 recomputes the particle from its seed; the decimal point stays fixed."
+    (plain-text "Prepared RK4 checkpoints drive the particle; the decimal point stays fixed."
                 #:id 'explanation #:center (vec2 0 31/10)
                 #:font-size 1/5 #:font-family 'swiss #:color "darkslategray"))
   (define time-label

@@ -5958,9 +5958,11 @@ construction time; the group retains no procedure or renderer state.
 SCENE-DC turns a two-dimensional autonomous vector field into reproducible
 integral-curve geometry. It uses fixed-step fourth-order Runge--Kutta (RK4),
 with the caller selecting the step size and number of streamline steps. Neither
-the numerical solver nor @racket[flow-particle] retains a prior rendered frame:
-an arbitrary scene sample recomputes from the original seed and requested ODE
-time.
+the direct numerical solver nor a prepared trajectory depends on a prior
+rendered frame. @racket[prepare-ode-trajectory] stores immutable canonical RK4
+checkpoints, so an animated particle does not recompute the complete
+seed-to-time prefix for every frame. The renderer batches selected frame times
+by checkpoint interval, sharing each interval's full RK4 suffix steps.
 
 @defproc[(ode-flow-position
           [field (procedure-arity-includes/c 2)]
@@ -5977,6 +5979,62 @@ A positive time advances the field; a negative time integrates it backwards.
 The final partial step is included, so the requested time is reached exactly
 in ordinary arithmetic rather than rounded to a step-grid endpoint. This is a
 fixed-step solver, not an adaptive tolerance-controlled integrator.
+}
+
+@defproc[(ode-trajectory? [value any/c]) boolean?]{
+
+Returns @racket[#t] for an immutable prepared fixed-RK4 trajectory.
+}
+
+@defproc[(prepare-ode-trajectory
+          [field (procedure-arity-includes/c 2)]
+          [seed vec2?]
+          [#:time-range time-range (cons/c finite-real? finite-real?)]
+          [#:step-size step-size (and/c finite-real? positive?) 1/20]
+          [#:checkpoint-every checkpoint-every exact-positive-integer? 16])
+         ode-trajectory?]{
+
+Prepares a closed time range expressed as @racket[(cons start-time end-time)],
+where @racket[start-time] is at most @racket[end-time]. The trajectory stores
+immutable states at canonical multiples of @racket[step-size], spaced by
+@racket[checkpoint-every] full steps in both the positive and negative
+directions from the seed at time zero.
+
+For a lookup, the trajectory begins at the preceding checkpoint between zero
+and the requested time, takes fewer than @racket[checkpoint-every] full steps,
+and then takes the usual final remainder step. It therefore preserves the
+fixed-RK4 numerical meaning of @racket[ode-flow-position] without repeating a
+long prefix for each frame.
+
+The field must be pure and stable for the lifetime of the prepared value. The
+library cannot determine whether an arbitrary Racket procedure's captured state
+has changed.
+}
+
+@defproc[(ode-trajectory-time-range [trajectory ode-trajectory?])
+         (cons/c finite-real? finite-real?)]{
+
+Returns the declared closed time range.
+}
+
+@defproc[(ode-trajectory-step-size [trajectory ode-trajectory?])
+         (and/c finite-real? positive?)]{
+
+Returns the fixed RK4 step size.
+}
+
+@defproc[(ode-trajectory-checkpoint-every [trajectory ode-trajectory?])
+         exact-positive-integer?]{
+
+Returns the number of full RK4 steps between stored canonical checkpoints.
+}
+
+@defproc[(ode-trajectory-position [trajectory ode-trajectory?]
+                                   [time finite-real?])
+         vec2?]{
+
+Returns the fixed-RK4 position at @racket[time]. The time must lie inside
+@racket[trajectory]'s declared range.
 }
 
 @defproc[(streamline-points
@@ -6032,11 +6090,9 @@ the direct child named by @tt{id-n}; for example, the first child of
 
 @defproc[(flow-particle
           [axes axes-visual?]
-          [field (procedure-arity-includes/c 2)]
-          [seed vec2?]
+          [trajectory ode-trajectory?]
           [phase (or/c symbol? scene-parameter?)]
           [#:id id symbol?]
-          [#:step-size step-size (and/c finite-real? positive?) 1/20]
           [#:shape shape point-marker-shape? 'circle]
           [#:size size (and/c finite-real? positive?) 1/5]
           [#:fill fill any/c "crimson"]
@@ -6046,10 +6102,17 @@ the direct child named by @tt{id-n}; for example, the first child of
          derived-visual?]{
 
 Creates a parameter-driven point marker. At every scene sample,
-@racket[phase]'s finite real value is used as the ODE time in
-@racket[ode-flow-position], and the result is converted through @racket[axes].
-The caller can therefore animate @racket[phase] using @racket[value-to] while
-random-access and sequential frame rendering give the same particle position.
+@racket[phase]'s finite real value selects a position from @racket[trajectory],
+which is then converted through @racket[axes]. The phase must remain within the
+trajectory's declared range.
+
+Before @racket[render-frames!] creates frame workers, it samples all requested
+phase values and freezes the corresponding particle coordinates in an immutable
+table. The preparation pass walks each used checkpoint interval once, sharing
+full RK4 suffix steps among its selected times. Workers only read those
+coordinates; they never call the author field. Direct arbitrary-time scene
+sampling remains deterministic through
+@racket[ode-trajectory-position].
 }
 
 @defproc[(sample-function-path

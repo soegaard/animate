@@ -7,6 +7,7 @@
 (require rackunit
          racket/class
          racket/draw
+         racket/file
          racket/math
          "../main.rkt")
 
@@ -23,6 +24,23 @@
    (ode-flow-position constant-flow (vec2 1 3) -2 #:step-size 1/4)
    (vec2 -3 5))
 
+  ;; Prepared trajectories preserve the direct fixed-RK4 result while bounding
+  ;; arbitrary lookups by their checkpoint stride in either time direction.
+  (define constant-trajectory
+    (prepare-ode-trajectory
+     constant-flow (vec2 1 3)
+     #:time-range (cons -2 5)
+     #:step-size 1/4 #:checkpoint-every 3))
+  (check-equal? (ode-trajectory-time-range constant-trajectory) (cons -2 5))
+  (check-equal? (ode-trajectory-step-size constant-trajectory) 1/4)
+  (check-equal? (ode-trajectory-checkpoint-every constant-trajectory) 3)
+  (for ([time (in-list (list -2 -3/4 0 9/8 5))])
+    (check-vec2-close
+     (ode-trajectory-position constant-trajectory time)
+     (ode-flow-position constant-flow (vec2 1 3) time #:step-size 1/4)))
+  (check-exn exn:fail:contract?
+             (lambda () (ode-trajectory-position constant-trajectory 6)))
+
   ;; A unit rotational field has the exact solution (cos t, sin t). Fixed-step
   ;; RK4 is accurate and direct arbitrary-time samples need no frame history.
   (define rotational-flow (lambda (x y) (vec2 (- y) x)))
@@ -30,6 +48,17 @@
    (ode-flow-position rotational-flow (vec2 1 0) (/ pi 2) #:step-size 1/100)
    (vec2 0 1)
    1e-7)
+  ;; A prepared lookup follows exactly the same canonical full-step/remainder
+  ;; path as the direct solver, including negative time and an inexact query.
+  (define rotational-trajectory
+    (prepare-ode-trajectory
+     rotational-flow (vec2 1 0)
+     #:time-range (cons -2 2)
+     #:step-size 1/10 #:checkpoint-every 4))
+  (for ([time (in-list (list -7/10 0 13/10 (/ pi 2)))])
+    (check-equal?
+     (ode-trajectory-position rotational-trajectory time)
+     (ode-flow-position rotational-flow (vec2 1 0) time #:step-size 1/10)))
   (define orbit
     (streamline-points rotational-flow (vec2 1 0)
                        #:direction 'both #:step-size 1/10 #:steps 3))
@@ -56,9 +85,19 @@
   (check-true (is-a? (scene-frame->bitmap flow-scene 0) bitmap%))
 
   (define phase (parameter 'phase 0))
+  (define particle-trajectory
+    (prepare-ode-trajectory
+     constant-flow (vec2 0 0)
+     #:time-range (cons 0 2)
+     #:step-size 1/10))
   (define particle
-    (flow-particle coordinate-axes constant-flow (vec2 0 0) phase
-                   #:id 'particle #:step-size 1/10))
+    (flow-particle coordinate-axes particle-trajectory phase
+                   #:id 'particle))
+  ;; Flow particles deliberately have no legacy raw-field form: they require a
+  ;; bounded prepared trajectory so their renderer behaviour is explicit.
+  (check-exn exn:fail:contract?
+             (lambda ()
+               (flow-particle coordinate-axes constant-flow phase #:id 'raw)))
   (define animated-flow
     (scene-play
      (scene-add (scene-set-value (make-scene) phase)
@@ -68,6 +107,71 @@
   (check-vec2-close
    (visual-position (scene-visual-at animated-flow 'particle 1))
    (axes-coordinates->point coordinate-axes 4 -2))
+
+  ;; render-frames! prepares requested positions once. The ODE field runs for
+  ;; the half-step during preparation, then no renderer worker calls it again.
+  (define field-call-count (box 0))
+  (define (counted-flow x y)
+    (set-box! field-call-count (add1 (unbox field-call-count)))
+    (vec2 y (- x)))
+  (define counted-trajectory
+    (prepare-ode-trajectory
+     counted-flow (vec2 1 0)
+     #:time-range (cons 0 1)
+     #:step-size 1 #:checkpoint-every 1))
+  (set-box! field-call-count 0)
+  (define counted-phase (parameter 'counted-phase 0))
+  (define counted-particle
+    (flow-particle coordinate-axes counted-trajectory counted-phase
+                   #:id 'counted-particle))
+  (define counted-scene
+    (scene-play
+     (scene-add (scene-set-value (make-scene) counted-phase)
+                coordinate-axes counted-particle)
+     (value-to counted-phase 1)
+     #:duration 1))
+  (define output-directory
+    (make-temporary-file "animate-ode-frame-samples~a" 'directory))
+  (dynamic-wind
+   void
+   (lambda ()
+     (render-frames! counted-scene output-directory #:fps 2)
+     ;; Frame times are 0 and 1/2. The prepass needs one RK4 remainder only.
+     (check-equal? (unbox field-call-count) 4))
+   (lambda () (delete-directory/files output-directory)))
+
+  ;; A batch shares the canonical suffix inside each checkpoint interval. The
+  ;; four selected times below are 0, 3/4, 3/2, and 9/4. With a stride of four,
+  ;; their full-step prefixes advance only from 0 to 2 (8 field calls), then
+  ;; the three nonzero remainders use 12 more calls. Independent lookup would
+  ;; repeat one prefix and need 24 calls instead.
+  (define batched-call-count (box 0))
+  (define (batched-flow x y)
+    (set-box! batched-call-count (add1 (unbox batched-call-count)))
+    (vec2 y (- x)))
+  (define batched-trajectory
+    (prepare-ode-trajectory
+     batched-flow (vec2 1 0)
+     #:time-range (cons 0 4)
+     #:step-size 1 #:checkpoint-every 4))
+  (set-box! batched-call-count 0)
+  (define batched-phase (parameter 'batched-phase 0))
+  (define batched-scene
+    (scene-play
+     (scene-add (scene-set-value (make-scene) batched-phase)
+                coordinate-axes
+                (flow-particle coordinate-axes batched-trajectory batched-phase
+                               #:id 'batched-particle))
+     (value-to batched-phase 3)
+     #:duration 2))
+  (define batched-output-directory
+    (make-temporary-file "animate-ode-batched-samples~a" 'directory))
+  (dynamic-wind
+   void
+   (lambda ()
+     (render-frames! batched-scene batched-output-directory #:fps 2)
+     (check-equal? (unbox batched-call-count) 20))
+   (lambda () (delete-directory/files batched-output-directory)))
 
   ;; Formatting has intentional trailing zeroes, grouping, and sign behavior.
   (check-equal? (format-integer -1234567 #:grouping? #t) "-1,234,567")

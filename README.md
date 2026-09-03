@@ -19,10 +19,11 @@ special Scene subclass. Apply a matrix to the diagram group and keep matrix
 notation or explanatory text as separate top-level Visuals.
 
 SCENE-DC adds deterministic two-dimensional ODE flow. Fixed-step RK4 computes
-streamlines and a parameter-driven `flow-particle` directly from their seed and
-requested ODE time—no frame-history mutation is involved. SCENE-DD adds static
-integer/decimal labels and a `parameter-display` derived Visual with fixed
-left, right, sign, or decimal anchors.
+streamlines directly and supplies immutable prepared trajectories for animated
+particles. Canonical checkpoints plus a batched renderer preparation pass avoid
+repeated seed-to-time integration while retaining random-access frame results.
+SCENE-DD adds static integer/decimal labels and a `parameter-display` derived
+Visual with fixed left, right, sign, or decimal anchors.
 
 SCENE-DE makes renderer-measured attachments composable through an acyclic
 dependency chain: `follow-anchor`, `keep-above`, `keep-below`, `keep-left-of`,
@@ -2778,13 +2779,18 @@ precisely; do not silently lose the follow-on idea that led to the work.
 ### Streamlines and ODE flow
 
 - SCENE-DC integrates autonomous two-dimensional fields with fixed-step RK4.
-  It has explicit step size and step count, but no adaptive error tolerance,
-  event detection, domain/boundary stopping, stiff solver, non-autonomous
-  field, higher-dimensional state, or numerical-analysis diagnostics. A field
-  error is reported rather than silently making a gap.
+  `prepare-ode-trajectory` has explicit time range, step size, and checkpoint
+  stride. The supplied field must be pure and stable for that trajectory's
+  lifetime; a prepared particle's phase must remain inside its declared range.
+  There is no adaptive error tolerance, event detection, domain/boundary
+  stopping, stiff solver, non-autonomous field, higher-dimensional state, or
+  numerical-analysis diagnostics. A field error is reported rather than
+  silently making a gap.
 - `streamline` and `streamlines` are static sampled geometry. `flow-particle`
-  is a pure parameter-derived marker, recomputed from the original seed at
-  each scene sample. There are no automatically advected tracer clouds,
+  consumes an immutable prepared trajectory. During `render-frames!`, the
+  required positions are batched by checkpoint interval and frozen before worker
+  frames begin, so workers do not call the author field. There are no
+  automatically advected tracer clouds,
   animated streamline drawing, arrowheads/tangent orientation, collision
   handling, field-aware seeding, or flow-map/Jacobian analysis yet.
 
@@ -3272,17 +3278,23 @@ a three-petal `r = 2 cos(3theta)` curve.
 ## SCENE-DC: deterministic streamlines
 
 Version `1.1.0` adds fixed-step fourth-order Runge–Kutta integration for
-autonomous two-dimensional fields. `ode-flow-position` computes the solution
-at one signed time from the original seed. `streamline-points`, `streamline`,
-and `streamlines` build immutable static geometry; `flow-particle` reads an
-ordinary scene parameter and reconstructs its marker at every sampled frame.
-Consequently random-access frame rendering and sequential rendering agree.
+autonomous two-dimensional fields. `ode-flow-position` computes one signed time
+from the original seed. `prepare-ode-trajectory` stores immutable canonical
+checkpoints over a declared time range, and `flow-particle` consumes that
+trajectory. `render-frames!` freezes the actual frame positions before workers
+begin, sharing full RK4 suffix steps inside each checkpoint interval. Rendering
+order and worker count therefore do not change the numerical result.
 
 ```racket
 (define rotation-field (lambda (x y) (vec2 (- y) x)))
 (define phase (parameter 'time 0.0))
+(define trajectory
+  (prepare-ode-trajectory
+   rotation-field (vec2 2 0)
+   #:time-range (cons 0 (* 2 pi))
+   #:step-size 1/10))
 
-(flow-particle coordinate-axes rotation-field (vec2 2 0) phase
+(flow-particle coordinate-axes trajectory phase
                #:id 'particle)
 ```
 

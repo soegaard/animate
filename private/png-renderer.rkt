@@ -20,8 +20,10 @@
          racket/path
          "camera.rkt"
          "frame-renderer.rkt"
+         "ode-flow.rkt"
          "pict-adapter.rkt"
          "pict-renderer.rkt"
+         "scene.rkt"
          "shape-pict-renderers.rkt")
 
 ;; Exports
@@ -208,6 +210,14 @@
   (define before-counters
     (default-pict-renderer-cache-counters renderers))
   (define started-at (current-inexact-milliseconds))
+  ;; Prepare positions for every selected frame before any renderer workers are
+  ;; created. Prepared flow particles then read immutable coordinates instead of
+  ;; calling an arbitrary author ODE procedure concurrently from worker threads.
+  (define ode-frame-samples
+    (prepare-ode-frame-samples
+     (for/list ([frame-index (in-list frame-indices)])
+       (scene-sample scene
+                     (frame-index->time frame-index #:fps fps)))))
   (define-values (paths frame-milliseconds active-workers)
     (render-frame-index-jobs! scene
                               frame-indices
@@ -215,7 +225,8 @@
                               fps
                               camera
                               renderers
-                              workers))
+                              workers
+                              ode-frame-samples))
   (define after-counters
     (default-pict-renderer-cache-counters renderers))
   (render-diagnostics
@@ -244,7 +255,8 @@
 ;; because racket/draw's PNG/JPEG encoders use C callbacks that cannot run in a
 ;; parallel thread. Each job owns a unique local output filename, while returned
 ;; lists are rebuilt in the requested global-frame order after all work ends.
-(define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers)
+(define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers
+                                  ode-frame-samples)
   (define frame-count
     (length frame-indices))
   (define active-workers
@@ -278,11 +290,14 @@
     (define path (frame-index->path output-directory local-index))
     (define started-at (current-inexact-milliseconds))
     (define bitmap
-      (scene-frame->bitmap scene
-                           source-index
-                           #:fps fps
-                           #:camera camera
-                           #:renderers renderers))
+      (call-with-ode-frame-samples
+       ode-frame-samples
+       (lambda ()
+         (scene-frame->bitmap scene
+                              source-index
+                              #:fps fps
+                              #:camera camera
+                              #:renderers renderers))))
     (pending-frame local-index path bitmap started-at))
   (define (save-pending-frame! pending)
     (define path (pending-frame-path pending))
