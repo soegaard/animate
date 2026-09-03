@@ -17,6 +17,7 @@
          racket/format
          racket/list
          racket/path
+         file/sha1
          "camera.rkt"
          "frame-renderer.rkt"
          "geometry.rkt"
@@ -40,18 +41,29 @@
          audio-cue-start
          audio-cue-source-start
          audio-cue-duration
+         audio-cue-gain
+         audio-cue-fade-in
+         audio-cue-fade-out
+         subtitle
+         subtitle?
+         subtitle-start
+         subtitle-end
+         subtitle-text
          make-authored-timeline
          authored-timeline?
          authored-timeline-scene
          authored-timeline-sections
          authored-timeline-cues
          authored-timeline-audio-cues
+         authored-timeline-subtitles
          timeline-section
          timeline-section-names
          timeline-section-frame-indices
          timeline-section-frame-count
          timeline-section-cues
          authored-timeline-metadata
+         write-subtitles!
+         automatic-section-cache-key
          render-timeline-section!
          render-timeline-section/report!
          (struct-out section-render-report))
@@ -76,7 +88,7 @@
 ;;  - name  symbol?                 stable cue name.
 ;;  - time  nonnegative finite?     scene time in seconds.
 
-(struct audio-placement (source start source-start duration)
+(struct audio-placement (source start source-start duration gain fade-in fade-out)
   #:transparent)
 
 ;; audio-cue records placement metadata without making audio decoding part of
@@ -85,8 +97,18 @@
 ;;  - start         nonnegative finite real?          timeline placement.
 ;;  - source-start  nonnegative finite real?          offset in source audio.
 ;;  - duration      (or/c false/c positive finite?)   optional requested span.
+;;  - gain          nonnegative finite real?           linear volume multiplier.
+;;  - fade-in       nonnegative finite real?           source-clip fade length.
+;;  - fade-out      nonnegative finite real?           final-clip fade length.
 
-(struct authored-timeline (scene sections cues audio-cues)
+(struct subtitle-placement (start end text)
+  #:transparent)
+
+;; subtitle-placement records one textual half-open interval. It intentionally
+;; stays separate from cue markers: a cue names an editorial event, whereas a
+;; subtitle has literal audience-facing text and an end time.
+
+(struct authored-timeline (scene sections cues audio-cues subtitles)
   #:transparent)
 
 ;; authored-timeline decorates an ordinary immutable scene with authoring
@@ -111,6 +133,14 @@
 (define audio-cue-start audio-placement-start)
 (define audio-cue-source-start audio-placement-source-start)
 (define audio-cue-duration audio-placement-duration)
+(define audio-cue-gain audio-placement-gain)
+(define audio-cue-fade-in audio-placement-fade-in)
+(define audio-cue-fade-out audio-placement-fade-out)
+
+(define subtitle? subtitle-placement?)
+(define subtitle-start subtitle-placement-start)
+(define subtitle-end subtitle-placement-end)
+(define subtitle-text subtitle-placement-text)
 
 
 ;;;
@@ -141,25 +171,60 @@
 
 ; audio-cue : path-string? [#:start nonnegative-real?]
 ;             [#:source-start nonnegative-real?]
-;             [#:duration (or/c false/c positive-real?)] -> audio-cue?
-;; Records an audio placement. The source is intentionally not opened here, so
-;; timeline construction stays deterministic and independent of codecs/files.
+;             [#:duration (or/c false/c positive-real?)]
+;             [#:gain nonnegative-real?]
+;             [#:fade-in nonnegative-real?]
+;             [#:fade-out nonnegative-real?] -> audio-cue?
+;; Records an audio placement for later FFmpeg assembly. The source remains
+;; unopened here, so timeline construction stays deterministic and independent
+;; of codecs/files; its existence and decodability are checked at assembly.
 (define (audio-cue source
                    #:start [start 0]
                    #:source-start [source-start 0]
-                   #:duration [duration #f])
+                   #:duration [duration #f]
+                   #:gain [gain 1]
+                   #:fade-in [fade-in 0]
+                   #:fade-out [fade-out 0])
   (unless (path-string? source)
     (raise-argument-error 'audio-cue "path-string?" source))
   (check-nonnegative-time 'audio-cue start)
   (check-nonnegative-time 'audio-cue source-start)
   (when duration
     (check-positive-time 'audio-cue duration))
-  (audio-placement source start source-start duration))
+  (check-nonnegative-finite 'audio-cue "gain" gain)
+  (check-nonnegative-finite 'audio-cue "fade-in" fade-in)
+  (check-nonnegative-finite 'audio-cue "fade-out" fade-out)
+  (when (and (positive? fade-out) (not duration))
+    (raise-arguments-error
+     'audio-cue "fade-out requires an explicit duration"
+     "fade-out" fade-out))
+  (when (and duration (> fade-in duration))
+    (raise-arguments-error
+     'audio-cue "fade-in must not exceed duration"
+     "fade-in" fade-in "duration" duration))
+  (when (and duration (> fade-out duration))
+    (raise-arguments-error
+     'audio-cue "fade-out must not exceed duration"
+     "fade-out" fade-out "duration" duration))
+  (audio-placement source start source-start duration gain fade-in fade-out))
+
+; subtitle : nonnegative-real? positive-real? string? -> subtitle?
+;; Creates one textual half-open interval for SRT/WebVTT emission.
+(define (subtitle start end text)
+  (check-nonnegative-time 'subtitle start)
+  (check-positive-time 'subtitle end)
+  (unless (< start end)
+    (raise-arguments-error
+     'subtitle "end must be greater than start" "start" start "end" end))
+  (unless (string? text)
+    (raise-argument-error 'subtitle "string?" text))
+  (subtitle-placement start end text))
 
 ; make-authored-timeline : scene?
 ;                          [#:sections (listof authoring-section?)]
 ;                          [#:cues (listof cue?)]
 ;                          [#:audio-cues (listof audio-cue?)]
+;                          [#:subtitles (listof subtitle?)]
 ;                          -> authored-timeline?
 ;; Decorates scene with validated authoring metadata. Sections must be named,
 ;; non-overlapping, and wholly inside the closed timeline; cue positions may be
@@ -167,7 +232,8 @@
 (define (make-authored-timeline scn
                                 #:sections [sections '()]
                                 #:cues [cues '()]
-                                #:audio-cues [audio-cues '()])
+                                #:audio-cues [audio-cues '()]
+                                #:subtitles [subtitles '()])
   (unless (scene? scn)
     (raise-argument-error 'make-authored-timeline "scene?" scn))
   (unless (and (list? sections)
@@ -185,6 +251,12 @@
      'make-authored-timeline
      "list of audio cues"
      audio-cues))
+  (unless (and (list? subtitles)
+               (andmap subtitle? subtitles))
+    (raise-argument-error
+     'make-authored-timeline
+     "list of subtitle values"
+     subtitles))
   (check-unique-symbols
    'make-authored-timeline
    (map authoring-section-name sections)
@@ -218,10 +290,20 @@
        "audio cue must start inside scene duration"
        "audio-start" (audio-cue-start entry)
        "scene-duration" duration)))
+  (for ([entry (in-list subtitles)])
+    (unless (<= (subtitle-end entry) duration)
+      (raise-arguments-error
+       'make-authored-timeline
+       "subtitle must end inside scene duration"
+       "subtitle" (subtitle-text entry)
+       "subtitle-end" (subtitle-end entry)
+       "scene-duration" duration)))
   (define ordered-sections
     (sort sections < #:key authoring-section-start))
   (for ([left (in-list ordered-sections)]
-        [right (in-list (cdr ordered-sections))])
+        [right (in-list (if (null? ordered-sections)
+                             '()
+                             (cdr ordered-sections)))])
     (when (> (authoring-section-end left)
              (authoring-section-start right))
       (raise-arguments-error
@@ -231,7 +313,7 @@
        "second-section" (authoring-section-name right))))
   ;; Preserve declared list order for metadata/readability; chronological lookup
   ;; always uses the stored interval values rather than the list position.
-  (authored-timeline scn sections cues audio-cues))
+  (authored-timeline scn sections cues audio-cues subtitles))
 
 
 ;;;
@@ -348,11 +430,71 @@
      (hasheq 'source (audio-source->string (audio-cue-source entry))
              'start (audio-cue-start entry)
              'source-start (audio-cue-source-start entry)
-             'duration (audio-cue-duration entry)))))
+             'duration (audio-cue-duration entry)
+             'gain (audio-cue-gain entry)
+             'fade-in (audio-cue-fade-in entry)
+             'fade-out (audio-cue-fade-out entry)))
+   'subtitles
+   (for/list ([entry (in-list (authored-timeline-subtitles timeline))])
+     (hasheq 'start (subtitle-start entry)
+             'end (subtitle-end entry)
+             'text (subtitle-text entry)))))
 
 
 ;;;
-;;; Selected Rendering and Explicit Cache Keys
+;;; Subtitle Output
+
+;; write-subtitles! : authored-timeline? path-string?
+;;                    [#:format (or/c 'srt 'webvtt)] -> path-string?
+;; Writes portable subtitles for a later FFmpeg mux step. Text is stored
+;; verbatim except that CRLF is normalized to LF, preserving intended line
+;; breaks in both SRT and WebVTT.
+(define (write-subtitles! timeline output-file #:format [format 'srt])
+  (unless (authored-timeline? timeline)
+    (raise-argument-error 'write-subtitles! "authored-timeline?" timeline))
+  (unless (path-string? output-file)
+    (raise-argument-error 'write-subtitles! "path-string?" output-file))
+  (unless (memq format '(srt webvtt))
+    (raise-argument-error 'write-subtitles! "'srt or 'webvtt" format))
+  (call-with-output-file
+   output-file
+   (lambda (output)
+     (when (eq? format 'webvtt)
+       (display "WEBVTT\n\n" output))
+     (for ([entry (in-list (authored-timeline-subtitles timeline))]
+           [index (in-naturals 1)])
+       (when (eq? format 'srt)
+         (fprintf output "~a\n" index))
+       (fprintf output "~a --> ~a\n"
+                (subtitle-timestamp (subtitle-start entry) format)
+                (subtitle-timestamp (subtitle-end entry) format))
+       (display (normalize-subtitle-text (subtitle-text entry)) output)
+       (display "\n\n" output)))
+   #:exists 'truncate/replace)
+  output-file)
+
+(define (subtitle-timestamp seconds subtitle-format)
+  (define milliseconds
+    (inexact->exact (round (* 1000 seconds))))
+  (define-values (whole-milliseconds ms)
+    (quotient/remainder milliseconds 1000))
+  (define-values (whole-seconds second)
+    (quotient/remainder whole-milliseconds 60))
+  (define-values (hour minute)
+    (quotient/remainder whole-seconds 60))
+  (format "~a:~a:~a~a~a"
+          (~r hour #:min-width 2 #:pad-string "0")
+          (~r minute #:min-width 2 #:pad-string "0")
+          (~r second #:min-width 2 #:pad-string "0")
+          (if (eq? subtitle-format 'srt) "," ".")
+          (~r ms #:min-width 3 #:pad-string "0")))
+
+(define (normalize-subtitle-text text)
+  (regexp-replace* #px"\r\n?" text "\n"))
+
+
+;;;
+;;; Selected Rendering and Semantic Cache Keys
 ;;;
 
 (define cache-file-name ".animate-section-cache.rktd")
@@ -364,18 +506,22 @@
 ;                            [#:renderers (listof pict-renderer?)]
 ;                            [#:clean? boolean?]
 ;                            [#:workers exact-positive-integer?]
-;                            [#:cache-key (or/c false/c symbol? string?)]
+;                            [#:cache-key (or/c false/c 'auto symbol? string?)]
+;                            [#:asset-files (listof path-string?)]
 ;                            -> (listof path?)
-;; Renders one named section to locally numbered PNGs. A cache is reused only
-;; when the author supplies an explicit cache key and its manifest plus every
-;; expected PNG still match exactly.
+;; Renders one named section to locally numbered PNGs. The default 'auto key
+;; fingerprints a serializable scene representation, camera/renderers, runtime,
+;; and declared asset files. The library's named `linear` easing is canonical;
+;; every other procedure conservatively disables that cache. Callers can still
+;; choose a deliberate explicit key or #f.
 (define (render-timeline-section! timeline section-or-name output-directory
                                   #:fps [fps 30]
                                   #:camera [camera #f]
                                   #:renderers [renderers default-pict-renderers]
                                   #:clean? [clean? #t]
                                   #:workers [workers 1]
-                                  #:cache-key [cache-key #f])
+                                  #:cache-key [cache-key 'auto]
+                                  #:asset-files [asset-files '()])
   (section-render-report-paths
    (render-timeline-section/report!
     timeline section-or-name output-directory
@@ -384,7 +530,8 @@
     #:renderers renderers
     #:clean? clean?
     #:workers workers
-    #:cache-key cache-key)))
+    #:cache-key cache-key
+    #:asset-files asset-files)))
 
 ; render-timeline-section/report! : authored-timeline?
 ;                                   (or/c symbol? authoring-section?) path-string?
@@ -398,29 +545,38 @@
                                          #:renderers [renderers default-pict-renderers]
                                          #:clean? [clean? #t]
                                          #:workers [workers 1]
-                                         #:cache-key [cache-key #f])
+                                         #:cache-key [cache-key 'auto]
+                                         #:asset-files [asset-files '()])
   (unless (path-string? output-directory)
     (raise-argument-error
      'render-timeline-section/report!
      "path-string?"
      output-directory))
-  (check-optional-cache-key 'render-timeline-section/report! cache-key)
+  (check-cache-key 'render-timeline-section/report! cache-key)
+  (check-asset-files 'render-timeline-section/report! asset-files)
   (define entry
     (timeline-section timeline section-or-name))
   (define source-indices
     (timeline-section-frame-indices timeline entry #:fps fps))
+  (define effective-cache-key
+    (if (eq? cache-key 'auto)
+        (automatic-section-cache-key timeline entry
+                                     #:fps fps #:camera camera
+                                     #:renderers renderers
+                                     #:asset-files asset-files)
+        cache-key))
   (define expected-cache
-    (section-cache-datum entry fps source-indices cache-key))
+    (section-cache-datum entry fps source-indices effective-cache-key))
   (define expected-paths
     (local-frame-paths output-directory (length source-indices)))
   (define cache-path
     (build-path output-directory cache-file-name))
   (cond
-    [(and cache-key
+    [(and effective-cache-key
           (section-cache-valid? cache-path expected-cache expected-paths))
      (section-render-report expected-paths source-indices #t #f)]
     [else
-     (when (and (not cache-key)
+     (when (and (not effective-cache-key)
                 (file-exists? cache-path))
        (delete-file cache-path))
      (define diagnostics
@@ -433,7 +589,7 @@
         #:renderers renderers
         #:clean? clean?
         #:workers workers))
-     (when cache-key
+     (when effective-cache-key
        (write-section-cache! cache-path expected-cache))
      (section-render-report
       (render-diagnostics-paths diagnostics)
@@ -442,12 +598,11 @@
       diagnostics)]))
 
 ; section-cache-datum : authoring-section? exact-positive-integer? list?
-;                       (or/c false/c symbol? string?) -> datum?
-;; Returns only explicit, portable fields. Scene values are intentionally not
-;; hashed: arbitrary procedures and external renderer resources do not have a
-;; reliable structural hash, so authors must intentionally invalidate cache.
+;                       (or/c false/c string? symbol?) -> datum?
+;; Stores the resolved cache fingerprint. Automatic and explicit keys share one
+;; manifest form, so changing modes cannot accidentally reuse stale PNGs.
 (define (section-cache-datum entry fps source-indices cache-key)
-  (list 'animate-section-cache-v1
+  (list 'animate-section-cache-v2
         cache-key
         fps
         (authoring-section-name entry)
@@ -489,6 +644,67 @@
 
 
 ;;;
+;;; Automatic Semantic Fingerprints
+
+;; automatic-section-cache-key : authored-timeline? authoring-section?
+;;                               ... -> (or/c false/c string?)
+;; Returns a stable content fingerprint when the compiled scene has no opaque
+;; noncanonical procedure. The scene's transparent immutable representation covers
+;; clips, sampled Visual data, and camera state; the renderer representation,
+;; runtime version, and declared asset bytes make environmental inputs explicit.
+;; A #f result is deliberate: caching a closure whose source cannot be inspected
+;; would be worse than a predictable fresh render.
+(define (automatic-section-cache-key timeline entry
+                                     #:fps fps
+                                     #:camera camera
+                                     #:renderers renderers
+                                     #:asset-files asset-files)
+  (define scene-representation
+    (format "~s" (authored-timeline-scene timeline)))
+  (if (scene-representation-has-opaque-procedure? scene-representation)
+      #f
+      (let* ([asset-representation
+              (for/list ([asset (in-list asset-files)])
+                (list (path-string->portable-string asset)
+                      (file-fingerprint asset)))]
+             [payload
+              (list 'animate-semantic-cache-v1
+                    scene-representation
+                    (authoring-section-name entry)
+                    (authoring-section-start entry)
+                    (authoring-section-end entry)
+                    fps
+                    (format "~s" camera)
+                    (format "~s" renderers)
+                    (version)
+                    asset-representation)])
+        (string-append
+         "auto:"
+         (sha1 (open-input-string (format "~s" payload)))))))
+
+;; `linear` is the package's default pure easing and is stable as part of the
+;; API. A printed name alone cannot prove the implementation of any caller
+;; procedure (or a future library procedure), so those values invalidate rather
+;; than creating a cache key that could survive a source edit incorrectly.
+(define (scene-representation-has-opaque-procedure? representation)
+  (for/or ([printed-procedure
+            (in-list
+             (regexp-match* #px"#<procedure(?::[^>]*)?>" representation))])
+    (not (string=? printed-procedure "#<procedure:linear>"))))
+
+(define (file-fingerprint path-string)
+  (if (file-exists? path-string)
+      (call-with-input-file path-string sha1)
+      'missing))
+
+(define (path-string->portable-string value)
+  (cond
+    [(path? value) (path->string value)]
+    [(string? value) value]
+    [else (bytes->string/utf-8 value)]))
+
+
+;;;
 ;;; Validation Helpers
 ;;;
 
@@ -505,6 +721,12 @@
   (unless (and (finite-real? value)
                (positive? value))
     (raise-argument-error who "positive finite real?" value)))
+
+(define (check-nonnegative-finite who field value)
+  (unless (and (finite-real? value)
+               (not (negative? value)))
+    (raise-arguments-error who "nonnegative finite real?"
+                           field value)))
 
 (define (check-unique-symbols who values label)
   (define duplicate
@@ -527,11 +749,18 @@
        (loop (cdr remaining)
              (hash-set seen (car remaining) #t))])))
 
-(define (check-optional-cache-key who cache-key)
+(define (check-cache-key who cache-key)
   (unless (or (not cache-key)
+              (eq? cache-key 'auto)
               (symbol? cache-key)
               (string? cache-key))
-    (raise-argument-error who "(or/c false/c symbol? string?)" cache-key)))
+    (raise-argument-error
+     who "(or/c false/c 'auto symbol? string?)" cache-key)))
+
+(define (check-asset-files who asset-files)
+  (unless (and (list? asset-files)
+               (andmap path-string? asset-files))
+    (raise-argument-error who "list of path-string?" asset-files)))
 
 (define (audio-source->string source)
   (cond

@@ -14,7 +14,8 @@
 ;;;
 
 ;; Imports
-(require "private/affine-transform.rkt"
+(require "private/affine-map-visual.rkt"
+         "private/affine-transform.rkt"
          "private/attachment.rkt"
          "private/annotation-geometry.rkt"
          "private/authoring-timeline.rkt"
@@ -27,6 +28,7 @@
          "private/camera.rkt"
          "private/calculus-helpers.rkt"
          "private/color-style.rkt"
+         "private/complex-plane.rkt"
          "private/coordinate-series.rkt"
          "private/derived-visual.rkt"
          "private/derived-plot.rkt"
@@ -45,20 +47,27 @@
          "private/image-visual.rkt"
          "private/implicit-curve.rkt"
          "private/interpolation.rkt"
+         "private/linear-algebra.rkt"
+         "private/live-layout.rkt"
          "private/matrix-table.rkt"
+         "private/numeric-display.rkt"
+         "private/ode-flow.rkt"
          "private/path-geometry.rkt"
          "private/parameter.rkt"
          "private/parametric-data-plot.rkt"
+         "private/polar-plane.rkt"
          "private/pict-adapter.rkt"
          "private/pict-renderer.rkt"
          "private/png-renderer.rkt"
          "private/relative-layout.rkt"
          "private/scene-state.rkt"
          "private/scene.rkt"
+         "private/shape-catalogue.rkt"
          "private/svg-import.rkt"
          "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
          "private/traced-path.rkt"
+         "private/video-assembly.rkt"
          "private/video-encoder.rkt"
          "private/vector-field.rkt"
          "private/visual-model.rkt")
@@ -144,6 +153,60 @@
  affine-transform-lerp
  affine-transform-apply-vector
  affine-transform-apply-point
+ linear2?
+ linear2-a
+ linear2-b
+ linear2-c
+ linear2-d
+ make-linear2
+ identity-linear2
+ linear2-determinant
+ linear2-compose
+ linear2-apply-vector
+ affine2?
+ affine2-linear
+ affine2-translation
+ make-affine2
+ identity-affine2
+ affine2-with-linear
+ affine2-with-translation
+ affine2-compose
+ affine2-lerp
+ affine2-apply-vector
+ affine2-apply-point
+ affine-transform->affine2
+
+ ;; SCENE-CY-A whole-Visual affine maps
+ affine-map
+ affine-map-visual?
+ affine-map-visual-content
+ affine-map-visual-map
+
+ ;; SCENE-CZ linear-algebra diagrams
+ number-plane
+ number-plane-grid-path
+ number-plane-axes-path
+ number-plane-labels-path
+ vector-arrow
+ vector-coordinates
+ vector-label
+ basis-vectors
+ linear-transformation-diagram
+
+ ;; SCENE-DA complex planes and maps
+ complex->point
+ point->complex
+ complex-plane
+ apply-complex-function
+
+ ;; SCENE-DB polar coordinates and graphs
+ polar-coordinate?
+ polar-coordinate-radius
+ polar-coordinate-angle
+ polar->point
+ point->polar
+ polar-plane
+ polar-graph
 
  ;; Camera
  camera?
@@ -377,6 +440,29 @@
  ;; SCENE-CU deterministic traced paths
  traced-path
 
+ ;; SCENE-DC deterministic ODE flow
+ ode-flow-position
+ streamline-points
+ streamline
+ streamlines
+ flow-particle
+
+ ;; SCENE-DD numeric displays
+ numeric-display-anchor?
+ format-integer
+ format-decimal
+ integer
+ decimal-number
+ numeric-label
+ parameter-display
+
+ ;; SCENE-DE acyclic live layout
+ follow-anchor
+ keep-above
+ keep-below
+ keep-left-of
+ keep-right-of
+
  (struct-out formula-part-match)
  (struct-out formula-correspondence)
  formula-correspondence-auto
@@ -533,6 +619,11 @@
  scale-to-request?
  scale-by
  scale-by-request?
+ apply-affine
+ apply-affine-request?
+ apply-matrix
+ apply-pointwise
+ apply-pointwise-request?
  stroke-width-to
  stroke-width-to-request?
  fill-color-to
@@ -644,7 +735,11 @@
  render-diagnostics-cache-hits
  render-diagnostics-cache-misses
  render-diagnostics-cache-evictions
- encode-mp4!)
+ encode-mp4!
+ assemble-authored-mp4!
+ mux-authored-video!
+ concatenate-mp4!
+ render-authored-mp4!)
 
 
 ;; SCENE-T number lines and coordinate decorations
@@ -671,6 +766,10 @@
 
 ;; SCENE-CW authored timelines, selected rendering, and cue metadata
 (provide (all-from-out "private/authoring-timeline.rkt"))
+
+
+;; SCENE-DJ path-backed mathematical shape catalogue
+(provide (all-from-out "private/shape-catalogue.rkt"))
 
 
 ;; SCENE-CX immutable graph and digraph group trees

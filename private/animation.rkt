@@ -20,6 +20,7 @@
 (require racket/list
          (only-in racket/math pi)
          racket/runtime-path
+         "affine-map-visual.rkt"
          "affine-transform.rkt"
          "color-style.rkt"
          "derived-visual.rkt"
@@ -31,6 +32,7 @@
          "interpolation.rkt"
          "path-geometry.rkt"
          "parameter.rkt"
+         "pointwise-map.rkt"
          "scene-state.rkt"
          "visual-model.rkt"
          "write-in-adapter.rkt")
@@ -52,6 +54,11 @@
          scale-to-request?
          scale-by
          scale-by-request?
+         apply-affine
+         apply-affine-request?
+         apply-matrix
+         apply-pointwise
+         apply-pointwise-request?
          stroke-width-to
          stroke-width-to-request?
          fill-color-to
@@ -176,6 +183,21 @@
 ;; scale-by-request represents an uncompiled relative scale request.
 ;;  - target-id  symbol?  stable id of the affine Visual to scale.
 ;;  - factor     vec2?    positive factors multiplied at clip start.
+
+(struct apply-affine-request (target-id map)
+  #:transparent)
+
+;; apply-affine-request represents a whole top-level world-Visual mapping.
+;;  - target-id  (or/c symbol? visual-path?)  target Visual address.
+;;  - map        affine2?                     map applied after its current map.
+
+(struct apply-pointwise-request (target-id map-point samples)
+  #:transparent)
+
+;; apply-pointwise-request represents a whole top-level world-space point map.
+;;  - target-id  (or/c symbol? visual-path?)  target Visual address.
+;;  - map-point  (-> vec2? vec2?)              destination world point map.
+;;  - samples    positive exact integer?       samples per original segment.
 
 (struct stroke-width-to-request (target-id stroke-width)
   #:transparent)
@@ -447,6 +469,19 @@
 ;;  - from       vec2?    positive scale at clip start.
 ;;  - to         vec2?    positive scale at clip end.
 
+(struct affine-map-animation (target-id content from-map map)
+  #:transparent)
+
+;; affine-map-animation represents a world-coordinate affine map applied to a
+;; complete top-level Visual. `content` is the unwrapped semantic Visual,
+;; `from-map` is its existing outer affine2 map, and `map` is applied after it.
+
+(struct pointwise-map-animation (target-id source map-point samples)
+  #:transparent)
+
+;; pointwise-map-animation samples a whole top-level source Visual by mapping
+;; its world-space geometric points at each clip progress.
+
 (struct stroke-width-animation (target-id from to)
   #:transparent)
 
@@ -671,6 +706,48 @@
   (check-animation-scale 'scale-by factor)
   (scale-by-request (visual-target-id target 'scale-by)
                     (scale-factor->vec2 factor)))
+
+; apply-affine : (or/c visual? symbol? visual-path?) affine2?
+;                -> apply-affine-request?
+;; Applies a complete world-coordinate affine map after target's current map.
+;; SCENE-CY-A intentionally accepts only top-level world Visuals at scene-play
+;; compilation time; nested path replacement would hide addressable descendants
+;; behind the resulting renderer wrapper.
+(define (apply-affine target map)
+  (unless (affine2? map)
+    (raise-argument-error 'apply-affine "affine2?" map))
+  (apply-affine-request
+   (visual-target-id target 'apply-affine)
+   map))
+
+; apply-matrix : (or/c visual? symbol? visual-path?) linear2?
+;                -> apply-affine-request?
+;; Applies a linear matrix about the world origin. Use apply-affine when a
+;; translation belongs to the same map.
+(define (apply-matrix target matrix)
+  (unless (linear2? matrix)
+    (raise-argument-error 'apply-matrix "linear2?" matrix))
+  (apply-affine target
+                (make-affine2 #:linear matrix)))
+
+; apply-pointwise : (or/c visual? symbol? visual-path?) (-> vec2? vec2?)
+;                   [#:samples positive-exact-integer?]
+;                   -> apply-pointwise-request?
+;; Applies a nonlinear world-coordinate point map to a complete top-level
+;; Visual. Path, circle, and rectangle outlines are sampled before mapping;
+;; non-geometric leaves such as text remain at their world placement.
+(define (apply-pointwise target map-point #:samples [samples 24])
+  (unless (and (procedure? map-point)
+               (procedure-arity-includes? map-point 1))
+    (raise-argument-error
+     'apply-pointwise "(procedure-arity-includes/c 1)" map-point))
+  (unless (and (exact-integer? samples)
+               (positive? samples))
+    (raise-argument-error 'apply-pointwise "positive exact integer" samples))
+  (apply-pointwise-request
+   (visual-target-id target 'apply-pointwise)
+   map-point
+   samples))
 
 ; stroke-width-to : (or/c symbol? (and/c visual? stroke-width-visual?))
 ;                   stroke-width?
@@ -1546,6 +1623,64 @@
 ; compile-animation-request : scene-state? animation-request?
 ;                             -> compiled-animation?
 ;;   Compiles one request against state.
+(define (compile-apply-affine-request state request)
+  (define target-id
+    (apply-affine-request-target-id request))
+  (define path
+    (visual-target-path target-id 'apply-affine))
+  (unless (null? (cdr path))
+    (raise-arguments-error
+     'scene-play
+     "apply-affine currently maps a complete top-level Visual"
+     "visual-path" path))
+  (define visual
+    (scene-state-ref state target-id))
+  (when (derived-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "a derived Visual cannot be mapped directly; map its ordinary inputs or output"
+     "visual-id" (visual-id visual)))
+  (when (frame-space-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "apply-affine maps world-space Visuals, not frame-space overlays"
+     "visual-id" (visual-id visual)))
+  (define-values (content from-map)
+    (affine-map-visual-content+map visual))
+  (affine-map-animation
+   target-id
+   content
+   from-map
+   (apply-affine-request-map request)))
+
+(define (compile-apply-pointwise-request state request)
+  (define target-id
+    (apply-pointwise-request-target-id request))
+  (define path
+    (visual-target-path target-id 'apply-pointwise))
+  (unless (null? (cdr path))
+    (raise-arguments-error
+     'scene-play
+     "apply-pointwise currently maps a complete top-level Visual"
+     "visual-path" path))
+  (define visual
+    (scene-state-ref state target-id))
+  (when (derived-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "a derived Visual cannot be mapped directly; map its ordinary inputs or output"
+     "visual-id" (visual-id visual)))
+  (when (frame-space-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "apply-pointwise maps world-space Visuals, not frame-space overlays"
+     "visual-id" (visual-id visual)))
+  (pointwise-map-animation
+   target-id
+   visual
+   (apply-pointwise-request-map-point request)
+   (apply-pointwise-request-samples request)))
+
 (define (compile-animation-request state request)
   (define target-id
     (animation-request-target-id request))
@@ -1556,6 +1691,10 @@
      (compile-transform-from-copy-request state request)]
     [(attention-request? request)
      (compile-attention-request state request)]
+    [(apply-affine-request? request)
+     (compile-apply-affine-request state request)]
+    [(apply-pointwise-request? request)
+     (compile-apply-pointwise-request state request)]
     [(value-to-request? request)
      (define from
        (scene-state-value-ref state target-id))
@@ -1573,7 +1712,7 @@
      (define visual
        (scene-state-ref state target-id))
      (when (derived-visual? visual)
-       (raise-arguments-error
+     (raise-arguments-error
         'scene-play
         "derived Visuals are controlled by named scalar values and cannot be animated directly"
         "visual-id" target-id
@@ -2404,6 +2543,8 @@
       (rotate-by-request? value)
       (scale-to-request? value)
       (scale-by-request? value)
+      (apply-affine-request? value)
+      (apply-pointwise-request? value)
       (stroke-width-to-request? value)
       (fill-color-to-request? value)
       (stroke-color-to-request? value)
@@ -2468,6 +2609,10 @@
      (scale-to-request-target-id request)]
     [(scale-by-request? request)
      (scale-by-request-target-id request)]
+    [(apply-affine-request? request)
+     (apply-affine-request-target-id request)]
+    [(apply-pointwise-request? request)
+     (apply-pointwise-request-target-id request)]
     [(stroke-width-to-request? request)
      (stroke-width-to-request-target-id request)]
     [(fill-color-to-request? request)
@@ -2538,6 +2683,15 @@
     [(or (scale-to-request? request)
          (scale-by-request? request))
      '(scale)]
+    [(apply-affine-request? request)
+     ;; The map can change every spatial component at once. Rejecting a
+     ;; concurrent move/rotation/scale keeps CY-A endpoint semantics explicit.
+     '(translation rotation scale affine-map)]
+    [(apply-pointwise-request? request)
+     ;; Sampling replaces the whole ordinary Visual tree at each frame, so it
+     ;; cannot be meaningfully combined with any concurrent visual component.
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts pointwise-map)]
     [(stroke-width-to-request? request)
      '(stroke-width)]
     [(fill-color-to-request? request)
@@ -2669,6 +2823,8 @@
       (path-orientation-animation? value)
       (rotation-animation? value)
       (scaling-animation? value)
+      (affine-map-animation? value)
+      (pointwise-map-animation? value)
       (stroke-width-animation? value)
       (fill-color-animation? value)
       (stroke-color-animation? value)
@@ -2700,6 +2856,10 @@
      (apply-rotation-animation state animation progress)]
     [(scaling-animation? animation)
      (apply-scaling-animation state animation progress)]
+    [(affine-map-animation? animation)
+     (apply-affine-map-animation state animation progress)]
+    [(pointwise-map-animation? animation)
+     (apply-pointwise-map-animation state animation progress)]
     [(stroke-width-animation? animation)
      (apply-stroke-width-animation state animation progress)]
     [(fill-color-animation? animation)
@@ -2876,6 +3036,46 @@
     (vec2-lerp (scaling-animation-from animation)
                (scaling-animation-to animation)
                progress))))
+
+; apply-affine-map-animation : scene-state? affine-map-animation?
+;                              finite-real? -> scene-state?
+;; Applies the identity-to-requested map at progress after the target's prior
+;; outer map. The exact clip-start representation is retained at zero; the
+;; mapped endpoint remains an affine-map wrapper so a later apply-affine can
+;; compose without rasterizing or reinterpreting the source Visual.
+(define (apply-affine-map-animation state animation progress)
+  (if (zero? progress)
+      state
+      (let* ([id (affine-map-animation-target-id animation)]
+             [progress-map
+              (affine2-lerp identity-affine2
+                            (affine-map-animation-map animation)
+                            progress)]
+             [combined-map
+              (affine2-compose progress-map
+                               (affine-map-animation-from-map animation))])
+        (scene-state-update
+         state
+         id
+         (affine-map (affine-map-animation-content animation)
+                     combined-map)))))
+
+; apply-pointwise-map-animation : scene-state? pointwise-map-animation?
+;                                 finite-real? -> scene-state?
+;; Preserves the caller's exact source Visual at the clip start. Subsequent
+;; samples are ordinary world-coordinate path trees, so the nonlinear endpoint
+;; remains inspectable rather than becoming a bitmap snapshot.
+(define (apply-pointwise-map-animation state animation progress)
+  (if (zero? progress)
+      state
+      (scene-state-update
+       state
+       (pointwise-map-animation-target-id animation)
+       (pointwise-map-visual
+        (pointwise-map-animation-source animation)
+        (pointwise-map-animation-map-point animation)
+        progress
+        #:samples (pointwise-map-animation-samples animation)))))
 
 ; apply-stroke-width-animation : scene-state? stroke-width-animation?
 ;                                finite-real? -> scene-state?

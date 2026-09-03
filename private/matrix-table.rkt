@@ -14,10 +14,12 @@
 ;;; Imports and Exports
 ;;;
 
-(require "affine-transform.rkt"
+(require racket/list
+         "affine-transform.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "path-geometry.rkt"
+         "relative-layout.rkt"
          "visual-model.rkt")
 
 (provide matrix
@@ -105,6 +107,7 @@
                 #:opacity [opacity 1]
                 #:entry-width [entry-width 1]
                 #:entry-height [entry-height 1]
+                #:entry-padding [entry-padding 1/5]
                 #:column-gap [column-gap 1/4]
                 #:row-gap [row-gap 1/4]
                 #:brackets? [brackets? #t]
@@ -115,9 +118,9 @@
   (define dimensions
     (check-grid 'matrix rows))
   (check-root-id 'matrix id)
-  (check-grid-placement 'matrix
-                        center rotation scale opacity
-                        entry-width entry-height column-gap row-gap)
+  (check-grid-placement 'matrix center rotation scale opacity
+                        column-gap row-gap)
+  (check-nonnegative-length 'matrix "entry-padding" entry-padding)
   (unless (boolean? brackets?)
     (raise-argument-error 'matrix "boolean?" brackets?))
   (check-positive-length 'matrix "bracket-width" bracket-width)
@@ -125,9 +128,10 @@
   (check-nonnegative-length 'matrix "stroke-width" stroke-width)
   (define row-count (car dimensions))
   (define column-count (cdr dimensions))
+  (define-values (column-widths row-heights)
+    (resolve-grid-sizes 'matrix rows entry-width entry-height entry-padding))
   (define-values (grid-width grid-height)
-    (grid-extents row-count column-count
-                  entry-width entry-height column-gap row-gap))
+    (grid-extents column-widths row-heights column-gap row-gap))
   (define brackets
     (if brackets?
         (list (matrix-bracket 'left grid-width grid-height
@@ -140,7 +144,7 @@
    ;; a renderer gives a glyph a slightly wider ink box than its nominal cell.
    (append (grid-rows rows
                       matrix-row-id matrix-column-id
-                      entry-width entry-height column-gap row-gap)
+                      column-widths row-heights column-gap row-gap)
            brackets)
    #:id id
    #:center center
@@ -175,6 +179,7 @@
                #:opacity [opacity 1]
                #:cell-width [cell-width 1]
                #:cell-height [cell-height 3/4]
+               #:cell-padding [cell-padding 1/5]
                #:column-gap [column-gap 0]
                #:row-gap [row-gap 0]
                #:stroke [stroke "black"]
@@ -182,22 +187,23 @@
   (define dimensions
     (check-grid 'table rows))
   (check-root-id 'table id)
-  (check-grid-placement 'table
-                        center rotation scale opacity
-                        cell-width cell-height column-gap row-gap)
+  (check-grid-placement 'table center rotation scale opacity
+                        column-gap row-gap)
+  (check-nonnegative-length 'table "cell-padding" cell-padding)
   (check-nonnegative-length 'table "stroke-width" stroke-width)
   (define row-count (car dimensions))
   (define column-count (cdr dimensions))
+  (define-values (column-widths row-heights)
+    (resolve-grid-sizes 'table rows cell-width cell-height cell-padding))
   (define-values (grid-width grid-height)
-    (grid-extents row-count column-count
-                  cell-width cell-height column-gap row-gap))
+    (grid-extents column-widths row-heights column-gap row-gap))
   (group
    (append (table-grid-lines row-count column-count grid-width grid-height
-                             cell-width cell-height column-gap row-gap
+                             column-widths row-heights column-gap row-gap
                              stroke stroke-width)
            (grid-rows rows
                       table-row-id table-column-id
-                      cell-width cell-height column-gap row-gap))
+                      column-widths row-heights column-gap row-gap))
    #:id id
    #:center center
    #:rotation rotation
@@ -209,16 +215,14 @@
 ;;; Grid Assembly
 ;;;
 
-; grid-rows : list? procedure? procedure? positive-real? positive-real?
-;             nonnegative-real? nonnegative-real? -> (listof group-visual?)
+; grid-rows : list? procedure? procedure? (listof positive-real?)
+;             (listof positive-real?) nonnegative-real? nonnegative-real?
+;             -> (listof group-visual?)
 ;;   Creates row/cell groups with content re-based at each cell's local origin.
 (define (grid-rows rows row-id column-id
-                   cell-width cell-height column-gap row-gap)
-  (define row-count (length rows))
-  (define column-count (length (car rows)))
+                   column-widths row-heights column-gap row-gap)
   (define-values (grid-width grid-height)
-    (grid-extents row-count column-count
-                  cell-width cell-height column-gap row-gap))
+    (grid-extents column-widths row-heights column-gap row-gap))
   (for/list ([row (in-list rows)]
              [row-index (in-naturals 1)])
     (group
@@ -230,7 +234,7 @@
         #:center
         (grid-cell-center row-index column-index
                           grid-width grid-height
-                          cell-width cell-height column-gap row-gap)))
+                          column-widths row-heights column-gap row-gap)))
      #:id (row-id row-index))))
 
 ; matrix-bracket : symbol? positive-real? positive-real? positive-real?
@@ -260,13 +264,13 @@
 ;;   Draws each grid boundary exactly once.  This avoids the darker doubled
 ;; strokes that would result from rendering a rectangle around every cell.
 (define (table-grid-lines row-count column-count grid-width grid-height
-                          cell-width cell-height column-gap row-gap
+                          column-widths row-heights column-gap row-gap
                           stroke stroke-width)
   (append
    (for/list ([column-boundary (in-range (add1 column-count))])
      (define x
-       (grid-boundary-position column-boundary column-count
-                               grid-width cell-width column-gap))
+       (grid-boundary-position column-boundary column-widths
+                               grid-width column-gap))
      (centered-open-path-visual
       (list (vec2 x (/ grid-height 2))
             (vec2 x (- (/ grid-height 2))))
@@ -274,8 +278,8 @@
       stroke stroke-width))
    (for/list ([row-boundary (in-range (add1 row-count))])
      (define y
-       (grid-boundary-position row-boundary row-count
-                               grid-height cell-height row-gap))
+       (grid-boundary-position row-boundary row-heights
+                               grid-height row-gap))
      (centered-open-path-visual
       (list (vec2 (- (/ grid-width 2)) y)
             (vec2 (/ grid-width 2) y))
@@ -294,37 +298,89 @@
    (path-geometry-translate geometry (vec2-scale -1 center))
    #:id id #:center center #:stroke stroke #:stroke-width stroke-width))
 
-; grid-boundary-position : exact-nonnegative-integer? exact-positive-integer?
-;                          positive-real? positive-real? nonnegative-real?
+; grid-boundary-position : exact-nonnegative-integer? (listof positive-real?)
+;                          positive-real? nonnegative-real?
 ;                          -> finite-real?
 ;;   Maps an index from top/left to a table boundary coordinate.
-(define (grid-boundary-position index count total cell-size gap)
+(define (grid-boundary-position index sizes total gap)
   (+ (- (/ total 2))
-     (* index cell-size)
+     (for/sum ([size (in-list (take sizes index))]) size)
      (* (max 0 (sub1 index)) gap)))
 
 ; grid-cell-center : exact-positive-integer? exact-positive-integer?
-;                    positive-real? positive-real? positive-real? positive-real?
-;                    nonnegative-real? nonnegative-real? -> vec2?
+;                    positive-real? positive-real? (listof positive-real?)
+;                    (listof positive-real?) nonnegative-real? nonnegative-real?
+;                    -> vec2?
 ;;   Returns the local center of one row-major grid cell.
 (define (grid-cell-center row column grid-width grid-height
-                          cell-width cell-height column-gap row-gap)
+                          column-widths row-heights column-gap row-gap)
+  (define cell-width (list-ref column-widths (sub1 column)))
+  (define cell-height (list-ref row-heights (sub1 row)))
   (vec2 (+ (- (/ grid-width 2))
-           (/ cell-width 2)
-           (* (sub1 column) (+ cell-width column-gap)))
+           (for/sum ([width (in-list (take column-widths (sub1 column)))])
+             width)
+           (* (sub1 column) column-gap)
+           (/ cell-width 2))
         (- (/ grid-height 2)
-           (/ cell-height 2)
-           (* (sub1 row) (+ cell-height row-gap)))))
+           (for/sum ([height (in-list (take row-heights (sub1 row)))])
+             height)
+           (* (sub1 row) row-gap)
+           (/ cell-height 2))))
 
-; grid-extents : exact-positive-integer? exact-positive-integer? positive-real?
-;                positive-real? nonnegative-real? nonnegative-real?
+; grid-extents : (listof positive-real?) (listof positive-real?)
+;                nonnegative-real? nonnegative-real?
 ;                -> (values positive-real? positive-real?)
-(define (grid-extents row-count column-count
-                      cell-width cell-height column-gap row-gap)
-  (values (+ (* column-count cell-width)
-             (* (sub1 column-count) column-gap))
-          (+ (* row-count cell-height)
-             (* (sub1 row-count) row-gap))))
+(define (grid-extents column-widths row-heights column-gap row-gap)
+  (values (+ (apply + column-widths)
+             (* (sub1 (length column-widths)) column-gap))
+          (+ (apply + row-heights)
+             (* (sub1 (length row-heights)) row-gap))))
+
+;; resolve-grid-sizes accepts one fixed size, an explicit axis-size list, or
+;; `auto`. Auto sizing measures every existing entry once at construction time,
+;; then chooses the maximum measured extent in each column and row plus the
+;; caller's padding. The resulting ordinary group has no renderer dependency.
+(define (resolve-grid-sizes who rows width-spec height-spec padding)
+  (values
+   (resolve-grid-axis-sizes who rows width-spec padding 'column)
+   (resolve-grid-axis-sizes who rows height-spec padding 'row)))
+
+(define (resolve-grid-axis-sizes who rows specification padding axis)
+  (define count
+    (if (eq? axis 'column)
+        (length (car rows))
+        (length rows)))
+  (cond
+    [(and (finite-real? specification) (positive? specification))
+     (make-list count specification)]
+    [(eq? specification 'auto)
+     (for/list ([index (in-range count)])
+       (define entries
+         (if (eq? axis 'column)
+             (for/list ([row (in-list rows)])
+               (list-ref row index))
+             (list-ref rows index)))
+       (+ (* 2 padding)
+          (for/fold ([largest 0]) ([entry (in-list entries)])
+            (define box (visual-layout-box entry))
+            (max largest
+                 (if (eq? axis 'column)
+                     (layout-box-width box)
+                     (layout-box-height box))))))]
+    [(and (list? specification) (= (length specification) count))
+     (for/list ([value (in-list specification)])
+       (check-positive-length who
+                              (if (eq? axis 'column)
+                                  "column width"
+                                  "row height")
+                              value)
+       value)]
+    [else
+     (raise-arguments-error
+      who
+      "a positive finite size, a matching list of positive finite sizes, or 'auto"
+      (if (eq? axis 'column) "width specification" "height specification")
+      specification)]))
 
 
 ;;;
@@ -370,7 +426,7 @@
   (cons (length rows) column-count))
 
 (define (check-grid-placement who center rotation scale opacity
-                              cell-width cell-height column-gap row-gap)
+                              column-gap row-gap)
   (unless (vec2? center)
     (raise-argument-error who "vec2?" center))
   (unless (finite-real? rotation)
@@ -384,8 +440,6 @@
                            "scale" scale))
   (unless (opacity? opacity)
     (raise-argument-error who "finite real in [0, 1]" opacity))
-  (check-positive-length who "entry/cell-width" cell-width)
-  (check-positive-length who "entry/cell-height" cell-height)
   (check-nonnegative-length who "column-gap" column-gap)
   (check-nonnegative-length who "row-gap" row-gap))
 

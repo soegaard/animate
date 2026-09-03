@@ -41,6 +41,19 @@
 (define frame-name-pattern
   #px"^frame-[0-9]{6,}\\.png$")
 
+;; Racket 8.18 added parallel thread pools. Looking up the bindings at run
+;; time keeps this package loadable with its Racket 8.12 baseline, where frame
+;; workers keep their existing coroutine-thread implementation.
+(define make-parallel-thread-pool/proc
+  (dynamic-require 'racket/base
+                   'make-parallel-thread-pool
+                   (lambda () #f)))
+
+(define parallel-thread-pool-close/proc
+  (dynamic-require 'racket/base
+                   'parallel-thread-pool-close
+                   (lambda () #f)))
+
 
 ;;;
 ;;; Frame Output
@@ -76,6 +89,12 @@
 (struct render-diagnostics
   (paths frame-count workers elapsed-milliseconds frame-milliseconds
          cache-hits cache-misses cache-evictions)
+  #:transparent)
+
+;; pending-frame transfers one finished bitmap from a render worker to the
+;; ordinary PNG writer thread. The original start time lets diagnostics retain
+;; one complete duration for each frame, including output queuing and writing.
+(struct pending-frame (local-index path bitmap started-at)
   #:transparent)
 
 ; render-frames/report! : scene? path-string?
@@ -219,9 +238,12 @@
 ;                            -> (values (listof path?)
 ;                                       (listof nonnegative-real?)
 ;                                       exact-nonnegative-integer?)
-;; Runs independent frame render/write jobs through a bounded thread pool. Each
-;; job owns a unique local output filename, while the returned lists are rebuilt
-;; in the requested global-frame order after all workers complete.
+;; Runs independent frame render/write jobs through a bounded worker pool. On
+;; Racket versions with parallel thread pools, workers build bitmaps in parallel
+;; and hand them to one ordinary thread for PNG encoding. The latter is needed
+;; because racket/draw's PNG/JPEG encoders use C callbacks that cannot run in a
+;; parallel thread. Each job owns a unique local output filename, while returned
+;; lists are rebuilt in the requested global-frame order after all work ends.
 (define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers)
   (define frame-count
     (length frame-indices))
@@ -250,7 +272,7 @@
      (lambda ()
        (unless first-failure
          (set! first-failure exception)))))
-  (define (render-one! local-index)
+  (define (render-one->pending-frame local-index)
     (define source-index
       (list-ref frame-indices local-index))
     (define path (frame-index->path output-directory local-index))
@@ -261,31 +283,90 @@
                            #:fps fps
                            #:camera camera
                            #:renderers renderers))
+    (pending-frame local-index path bitmap started-at))
+  (define (save-pending-frame! pending)
+    (define path (pending-frame-path pending))
+    (define bitmap (pending-frame-bitmap pending))
     (unless (send bitmap save-file path 'png)
       (raise-arguments-error
        'render-frames!
        "could not save a PNG frame"
        "path" path))
+    (define local-index (pending-frame-local-index pending))
     (vector-set! paths local-index path)
-    (vector-set! durations local-index
-                 (- (current-inexact-milliseconds) started-at)))
-  (define (worker)
+    (vector-set! durations
+                 local-index
+                 (- (current-inexact-milliseconds)
+                    (pending-frame-started-at pending))))
+  (define (render-one! local-index)
+    (save-pending-frame!
+     (render-one->pending-frame local-index)))
+  (define (regular-worker)
     (let loop ()
       (define local-index (take-frame-index!))
       (when local-index
         (with-handlers ([exn:fail? record-failure!])
           (render-one! local-index))
         (loop))))
-  (define worker-threads
-    (for/list ([_ (in-range active-workers)])
-      (thread worker)))
-  (for ([worker-thread (in-list worker-threads)])
-    (thread-wait worker-thread))
+  (cond
+    [(parallel-frame-rendering-available? active-workers)
+     (define output-channel (make-channel))
+     ;; Keep all image-codec calls on an ordinary thread. A save failure is
+     ;; recorded, but the writer continues draining the channel so that render
+     ;; workers cannot be stranded in channel-put.
+     (define saver-thread
+       (thread
+        (lambda ()
+          (let loop ()
+            (define pending (channel-get output-channel))
+            (unless (eq? pending 'done)
+              (with-handlers ([exn:fail? record-failure!])
+                (save-pending-frame! pending))
+              (loop))))))
+     (define (parallel-worker)
+       (let loop ()
+         (define local-index (take-frame-index!))
+         (when local-index
+           (with-handlers ([exn:fail? record-failure!])
+             (channel-put
+              output-channel
+              (render-one->pending-frame local-index)))
+           (loop))))
+     (define pool
+       (make-parallel-thread-pool/proc active-workers))
+     (define worker-threads
+       (for/list ([_ (in-range active-workers)])
+         (keyword-apply thread
+                        '(#:pool)
+                        (list pool)
+                        (list parallel-worker))))
+     ;; No further workers belong to this fixed pool. Closing it now preserves
+     ;; the pool's workers until they finish, then lets its resources go away.
+     (parallel-thread-pool-close/proc pool)
+     (for ([worker-thread (in-list worker-threads)])
+       (thread-wait worker-thread))
+     (channel-put output-channel 'done)
+     (thread-wait saver-thread)]
+    [else
+     (define worker-threads
+       (for/list ([_ (in-range active-workers)])
+         (thread regular-worker)))
+     (for ([worker-thread (in-list worker-threads)])
+       (thread-wait worker-thread))])
   (when first-failure
     (raise first-failure))
   (values (vector->list paths)
           (vector->list durations)
           active-workers))
+
+;; parallel-frame-rendering-available? : exact-nonnegative-integer? -> boolean?
+;; Creating a pool only helps when more than one frame worker exists. Racket
+;; 8.12 does not provide the two dynamically loaded procedures, so it follows
+;; the regular-worker branch above unchanged.
+(define (parallel-frame-rendering-available? active-workers)
+  (and (> active-workers 1)
+       make-parallel-thread-pool/proc
+       parallel-thread-pool-close/proc))
 
 ; frame-index->path : path-string? exact-nonnegative-integer? -> path?
 ;;   Converts frame-index to its zero-padded PNG output path.

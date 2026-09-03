@@ -5,7 +5,7 @@
 ;;;
 
 ;; Defines immutable translation, rotation, and scale data for two-dimensional
-;; Visuals.
+;; Visuals, plus general two-dimensional linear and affine maps.
 ;;
 ;; Transform components are applied in the fixed order scale, rotate, then
 ;; translate. This module contains only pure mathematical operations.
@@ -32,7 +32,29 @@
          affine-transform-with-scale
          affine-transform-lerp
          affine-transform-apply-vector
-         affine-transform-apply-point)
+         affine-transform-apply-point
+         linear2?
+         linear2-a
+         linear2-b
+         linear2-c
+         linear2-d
+         make-linear2
+         identity-linear2
+         linear2-determinant
+         linear2-compose
+         linear2-apply-vector
+         affine2?
+         affine2-linear
+         affine2-translation
+         make-affine2
+         identity-affine2
+         affine2-with-linear
+         affine2-with-translation
+         affine2-compose
+         affine2-lerp
+         affine2-apply-vector
+         affine2-apply-point
+         affine-transform->affine2)
 
 
 ;;;
@@ -217,6 +239,174 @@
 
 
 ;;;
+;;; General Linear and Affine Maps
+
+;; linear2 represents the matrix
+;;
+;;     [ a c ]
+;;     [ b d ]
+;;
+;; acting on column vectors.  All entries are finite, but the matrix may be
+;; singular: a continuous animation to a reflection necessarily passes through
+;; such a map under entry-wise interpolation.
+(struct linear2 (a b c d)
+  #:transparent
+  #:guard
+  (lambda (a b c d who)
+    (for ([entry (in-list (list a b c d))])
+      (unless (finite-real? entry)
+        (raise-argument-error who "four finite real matrix entries" entry)))
+    (values a b c d)))
+
+;; make-linear2 : finite-real? finite-real? finite-real? finite-real? -> linear2?
+;; Creates the linear map whose matrix is [a c; b d].
+(define (make-linear2 a b c d)
+  (linear2 a b c d))
+
+;; identity-linear2 : linear2?
+(define identity-linear2
+  (make-linear2 1 0 0 1))
+
+;; linear2-determinant : linear2? -> finite-real?
+(define (linear2-determinant map)
+  (check-linear2 'linear2-determinant map)
+  (- (* (linear2-a map) (linear2-d map))
+     (* (linear2-b map) (linear2-c map))))
+
+;; linear2-compose : linear2? linear2? -> linear2?
+;; Returns outer ∘ inner, so the inner map acts first.
+(define (linear2-compose outer inner)
+  (check-linear2 'linear2-compose outer)
+  (check-linear2 'linear2-compose inner)
+  (make-linear2
+   (+ (* (linear2-a outer) (linear2-a inner))
+      (* (linear2-c outer) (linear2-b inner)))
+   (+ (* (linear2-b outer) (linear2-a inner))
+      (* (linear2-d outer) (linear2-b inner)))
+   (+ (* (linear2-a outer) (linear2-c inner))
+      (* (linear2-c outer) (linear2-d inner)))
+   (+ (* (linear2-b outer) (linear2-c inner))
+      (* (linear2-d outer) (linear2-d inner)))))
+
+;; linear2-apply-vector : linear2? vec2? -> vec2?
+(define (linear2-apply-vector map vector)
+  (check-linear2 'linear2-apply-vector map)
+  (unless (vec2? vector)
+    (raise-argument-error 'linear2-apply-vector "vec2?" vector))
+  (vec2 (+ (* (linear2-a map) (vec2-x vector))
+           (* (linear2-c map) (vec2-y vector)))
+        (+ (* (linear2-b map) (vec2-x vector))
+           (* (linear2-d map) (vec2-y vector)))))
+
+;; affine2 represents a general linear map followed by translation.  It is
+;; intentionally separate from affine-transform: the latter remains the stable
+;; decomposed translation/rotation/positive-scale public protocol.
+(struct affine2 (linear translation)
+  #:transparent
+  #:guard
+  (lambda (linear translation who)
+    (unless (linear2? linear)
+      (raise-argument-error who "linear2?" linear))
+    (unless (vec2? translation)
+      (raise-argument-error who "vec2?" translation))
+    (values linear translation)))
+
+;; make-affine2 : [#:linear linear2?] [#:translation vec2?] -> affine2?
+(define (make-affine2 #:linear [linear identity-linear2]
+                      #:translation [translation origin])
+  (affine2 linear translation))
+
+;; identity-affine2 : affine2?
+(define identity-affine2
+  (make-affine2))
+
+;; affine2-with-linear : affine2? linear2? -> affine2?
+(define (affine2-with-linear map linear)
+  (check-affine2 'affine2-with-linear map)
+  (unless (linear2? linear)
+    (raise-argument-error 'affine2-with-linear "linear2?" linear))
+  (struct-copy affine2 map [linear linear]))
+
+;; affine2-with-translation : affine2? vec2? -> affine2?
+(define (affine2-with-translation map translation)
+  (check-affine2 'affine2-with-translation map)
+  (unless (vec2? translation)
+    (raise-argument-error 'affine2-with-translation "vec2?" translation))
+  (struct-copy affine2 map [translation translation]))
+
+;; affine2-compose : affine2? affine2? -> affine2?
+;; Returns outer ∘ inner, so the inner map acts first.
+(define (affine2-compose outer inner)
+  (check-affine2 'affine2-compose outer)
+  (check-affine2 'affine2-compose inner)
+  (make-affine2
+   #:linear
+   (linear2-compose (affine2-linear outer)
+                    (affine2-linear inner))
+   #:translation
+   (vec2+
+    (linear2-apply-vector (affine2-linear outer)
+                          (affine2-translation inner))
+    (affine2-translation outer))))
+
+;; affine2-lerp : affine2? affine2? unit-real? -> affine2?
+;; Interpolates matrix entries and translations. Singular interior maps are
+;; valid and render deterministically; callers needing invertibility must
+;; choose endpoints/interpolation accordingly.
+(define (affine2-lerp from to progress)
+  (check-affine2 'affine2-lerp from)
+  (check-affine2 'affine2-lerp to)
+  (unless (and (finite-real? progress)
+               (<= 0 progress 1))
+    (raise-argument-error 'affine2-lerp
+                          "finite real in the closed unit interval"
+                          progress))
+  (define from-linear (affine2-linear from))
+  (define to-linear (affine2-linear to))
+  (make-affine2
+   #:linear
+   (make-linear2
+    (real-lerp (linear2-a from-linear) (linear2-a to-linear) progress)
+    (real-lerp (linear2-b from-linear) (linear2-b to-linear) progress)
+    (real-lerp (linear2-c from-linear) (linear2-c to-linear) progress)
+    (real-lerp (linear2-d from-linear) (linear2-d to-linear) progress))
+   #:translation
+   (vec2-lerp (affine2-translation from)
+              (affine2-translation to)
+              progress)))
+
+;; affine2-apply-vector : affine2? vec2? -> vec2?
+(define (affine2-apply-vector map vector)
+  (check-affine2 'affine2-apply-vector map)
+  (linear2-apply-vector (affine2-linear map) vector))
+
+;; affine2-apply-point : affine2? vec2? -> vec2?
+(define (affine2-apply-point map point)
+  (check-affine2 'affine2-apply-point map)
+  (unless (vec2? point)
+    (raise-argument-error 'affine2-apply-point "vec2?" point))
+  (vec2+ (affine2-translation map)
+         (affine2-apply-vector map point)))
+
+;; affine-transform->affine2 : affine-transform? -> affine2?
+;; Converts the established scale-then-rotate-then-translate representation to
+;; its exact matrix form.
+(define (affine-transform->affine2 transform)
+  (check-affine-transform 'affine-transform->affine2 transform)
+  (define scale (affine-transform-scale transform))
+  (define angle (affine-transform-rotation transform))
+  (define cosine (cos angle))
+  (define sine (sin angle))
+  (make-affine2
+   #:linear
+   (make-linear2 (* cosine (vec2-x scale))
+                 (* sine (vec2-x scale))
+                 (* (- sine) (vec2-y scale))
+                 (* cosine (vec2-y scale)))
+   #:translation (affine-transform-translation transform)))
+
+
+;;;
 ;;; Validation
 ;;;
 
@@ -225,3 +415,11 @@
 (define (check-affine-transform who value)
   (unless (affine-transform? value)
     (raise-argument-error who "affine-transform?" value)))
+
+(define (check-linear2 who value)
+  (unless (linear2? value)
+    (raise-argument-error who "linear2?" value)))
+
+(define (check-affine2 who value)
+  (unless (affine2? value)
+    (raise-argument-error who "affine2?" value)))

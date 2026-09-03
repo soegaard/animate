@@ -29,6 +29,8 @@
                   pin-over)
          (only-in racket/draw
                   make-pen)
+         "affine-map-visual.rkt"
+         "affine-pict.rkt"
          "anchored-pict.rkt"
          "annotation-geometry.rkt"
          "camera.rkt"
@@ -99,6 +101,8 @@
       (transient-visual-underlying visual)
       camera
       renderers)]
+    [(affine-map-visual? visual)
+     (affine-map-content->pict visual camera renderers)]
     [(layout-attached-visual? visual)
      (raise-arguments-error
       'visual->pict
@@ -153,7 +157,25 @@
      (raise-arguments-error
       'visual->pict
       "no Pict renderer supports the Visual"
-      "visual" visual)])]))
+     "visual" visual)])]))
+
+;; affine-map-content->pict : affine-map-visual? camera?
+;;                            (listof pict-renderer?) -> pict?
+;; Renders the wrapped world Visual through the normal dispatcher, then applies
+;; only the affine map's linear part around the semantic Pict centre. The scene
+;; compositor separately places the result at affine-map-visual's transformed
+;; world reference point.
+(define (affine-map-content->pict visual camera renderers)
+  (define content
+    (affine-map-visual-content visual))
+  (when (frame-space-visual? content)
+    (raise-arguments-error
+     'visual->pict
+     "a world-space Visual inside affine-map"
+     "visual-id" (visual-id content)))
+  (affine2-pict-transform
+   (visual->pict content camera #:renderers renderers)
+   (affine-map-visual-map visual)))
 
 ; frame-space-content->pict : frame-space-visual? visual? camera?
 ;                             (listof pict-renderer?) -> pict?
@@ -374,7 +396,7 @@
     (surrounding-rectangle-visual-target enclosure))
   (define target-visual
     (checked-layout-target
-     state target 'scene-state->pict (visual-id enclosure)))
+     state target 'scene-state->pict (visual-id enclosure) '() camera renderers))
   (define target-pict
     (visual->pict target-visual camera #:renderers renderers))
   (define scale (camera-scale camera))
@@ -424,34 +446,13 @@
 ;; rather than being smuggled into the renderer-independent derived-Visual
 ;; resolver.
 (define (place-layout-attached-visual-on-pict frame state attachment camera renderers)
-  (define content
-    (layout-attached-visual-content attachment))
-  (when (frame-space-visual? content)
-    (raise-arguments-error
-     'scene-state->pict
-     "layout-attached content in world space, not frame space"
-     "attachment-id" (visual-id attachment)
-     "content" content))
-  (define target-point
-    (target-layout-world-point
-     state
-     (layout-attached-visual-target attachment)
-     (layout-attached-visual-target-anchor attachment)
-     camera
-     renderers
-     'scene-state->pict
-     (visual-id attachment)))
+  (define concrete
+    (resolve-layout-attached-content
+     state attachment camera renderers 'scene-state->pict (visual-id attachment) '()))
   (define content-pict
-    (visual->pict content camera #:renderers renderers))
-  (define content-center
-    (layout-anchor-content-center
-     target-point
-     (layout-attached-visual-self-anchor attachment)
-     (layout-attached-visual-offset attachment)
-     content-pict
-     camera))
+    (visual->pict concrete camera #:renderers renderers))
   (define-values (center-x center-y)
-    (camera-world->pixel camera content-center))
+    (camera-world->pixel camera (visual-position concrete)))
   (pin-centered-pict frame center-x center-y content-pict))
 
 ; layout-anchor-content-center : vec2? symbol? vec2? pict? camera? -> vec2?
@@ -561,7 +562,8 @@
 ;; Resolves a literal world point or a live rendered-box anchor of a world-space
 ;; Visual.  Both callout leaders and SCENE-CM layout attachments use exactly this
 ;; operation so their anchor vocabulary and camera scaling cannot drift apart.
-(define (target-layout-world-point state target anchor camera renderers who owner-id)
+(define (target-layout-world-point state target anchor camera renderers who owner-id
+                                   [active-layout-ids '()])
   (cond
     [(vec2? target)
      (unless (eq? anchor 'center)
@@ -574,15 +576,18 @@
      target]
     [else
      (define target-visual
-       (checked-layout-target state target who owner-id))
+       (checked-layout-target state target who owner-id active-layout-ids
+                              camera renderers))
      (callout-target-layout-anchor target-visual anchor camera renderers)]))
 
-; checked-layout-target : scene-state? visual-path? symbol? symbol? -> visual?
+; checked-layout-target : scene-state? visual-path? symbol? symbol?
+;                         (listof symbol?) camera? (listof pict-renderer?)
+;                         -> visual?
 ;; Resolves one independently drawable world-space target used by live layout
-;; relationships. Renderer-aware wrapper definitions deliberately cannot become
-;; targets: treating their template position as measured geometry would create
-;; a silent feedback/error cycle.
-(define (checked-layout-target state target who owner-id)
+;; relationships. Layout attachments may be targets when their dependency graph
+;; is acyclic; other renderer-aware definitions remain invalid targets.
+(define (checked-layout-target state target who owner-id active-layout-ids
+                               camera renderers)
   (define target-visual
     ;; Resolve directly instead of checking raw scene-state membership first:
     ;; a top-level derived group may expose its child paths only after sampled
@@ -597,7 +602,6 @@
              "target-path" target))])
       (scene-state-resolved-world-ref state target)))
   (when (or (dynamic-endpoint-visual? target-visual)
-            (layout-attached-visual? target-visual)
             (surrounding-rectangle-visual? target-visual))
     (raise-arguments-error
      who
@@ -619,7 +623,44 @@
      "owner-id" owner-id
      "target-path" target
      "visual-position" position))
-  target-visual)
+  (if (layout-attached-visual? target-visual)
+      (resolve-layout-attached-content
+       state target-visual camera renderers who owner-id active-layout-ids)
+      target-visual))
+
+;; Resolves one attachment to a concrete world-space Visual. Its own target can
+;; be another attachment; `active-layout-ids` supplies explicit acyclic layout
+;; dependency checking instead of relying on accidental renderer recursion.
+(define (resolve-layout-attached-content state attachment camera renderers
+                                         who owner-id active-layout-ids)
+  (define attachment-id (visual-id attachment))
+  (when (memq attachment-id active-layout-ids)
+    (raise-arguments-error
+     who
+     "an acyclic renderer-layout dependency graph"
+     "owner-id" owner-id
+     "cycle" (reverse (cons attachment-id active-layout-ids))))
+  (define content (layout-attached-visual-content attachment))
+  (when (frame-space-visual? content)
+    (raise-arguments-error
+     who
+     "layout-attached content in world space, not frame space"
+     "attachment-id" attachment-id
+     "content" content))
+  (define target-point
+    (target-layout-world-point
+     state
+     (layout-attached-visual-target attachment)
+     (layout-attached-visual-target-anchor attachment)
+     camera renderers who owner-id (cons attachment-id active-layout-ids)))
+  (define content-pict (visual->pict content camera #:renderers renderers))
+  (visual-with-position
+   content
+   (layout-anchor-content-center
+    target-point
+    (layout-attached-visual-self-anchor attachment)
+    (layout-attached-visual-offset attachment)
+    content-pict camera)))
 
 ; callout-target-layout-anchor : visual? symbol? camera?
 ;                                (listof pict-renderer?) -> vec2?

@@ -16,7 +16,7 @@
 Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
 semantic scene data separate from Pict rendering and file output.
 
- The public API in this manual is version @tt{0.98.0}. This is still a
+ The public API in this manual is version @tt{1.5.0}. This is still a
 prototype, so later versions may change names or behavior.
 
 @table-of-contents[]
@@ -339,18 +339,25 @@ any earlier frame.
 
 @subsection{Transforms}
 
-An affine transform stores translation, rotation, and scale. Components are
+The established @racket[affine-transform] value stores translation, rotation,
+and scale. Components are
 applied in this fixed order:
 
 @centered{@bold{scale, then rotate, then translate}}
 
-Scale is stored as positive x and y factors. Shear, reflection, and arbitrary
-affine matrices are not supported by this version.
+Scale is stored as positive x and y factors. SCENE-CY-A adds separate
+@racket[linear2] and @racket[affine2] values for a full matrix and translation.
+@racket[apply-affine] and @racket[apply-matrix] map a complete top-level world
+Visual through those values. The existing decomposed affine-Visual protocol
+remains unchanged, so a general map does not yet target a nested child or become
+an inherited per-Visual transform.
 
-A group may be translated and rotated normally, but its own scale must be
+A group may be translated and rotated normally, but its own legacy scale must be
 uniform. A uniform parent scale and rotation compose exactly with each child's
 existing decomposed transform. Allowing a non-uniform parent scale followed by
-a rotated child can create shear, which this transform model cannot represent.
+a rotated child can create shear, which the legacy transform model cannot
+represent. Use @racket[apply-affine] on the complete top-level group when that
+is the intended mathematical operation.
 
 @subsection{Groups}
 
@@ -1585,6 +1592,126 @@ because a displacement has no fixed position.
 Applies scale, rotation, and translation to a point, in that order.
 }
 
+@subsection{General Affine Maps}
+
+SCENE-CY-A keeps @racket[affine-transform] as the established decomposed
+placement protocol and adds @racket[linear2] and @racket[affine2] for general
+mathematical maps. A @racket[linear2] value represents the matrix
+
+@centered{@tt{| a  c |   | b  d |}}
+
+acting on column vectors. Matrix entries may be negative or form a singular
+matrix. In particular, entry-wise interpolation toward a reflection normally
+passes through a singular map.
+
+@defproc[(linear2? [value any/c]) boolean?]{
+
+Returns @racket[#t] for a general two-dimensional linear map.
+}
+
+@defproc[(make-linear2 [a finite-real?]
+                        [b finite-real?]
+                        [c finite-real?]
+                        [d finite-real?])
+         linear2?]{
+
+Constructs the matrix @tt{| a  c |   | b  d |}.
+}
+
+@defthing[identity-linear2 linear2?]{
+
+The identity matrix.
+}
+
+@defproc[(linear2-a [map linear2?]) finite-real?]{Returns the @racket[a] entry.}
+@defproc[(linear2-b [map linear2?]) finite-real?]{Returns the @racket[b] entry.}
+@defproc[(linear2-c [map linear2?]) finite-real?]{Returns the @racket[c] entry.}
+@defproc[(linear2-d [map linear2?]) finite-real?]{Returns the @racket[d] entry.}
+
+@defproc[(linear2-determinant [map linear2?]) finite-real?]{
+
+Returns @racket[(- (* a d) (* b c))] for @racket[map].
+}
+
+@defproc[(linear2-compose [outer linear2?] [inner linear2?]) linear2?]{
+
+Returns @racket[outer] composed after @racket[inner].
+}
+
+@defproc[(linear2-apply-vector [map linear2?] [vector vec2?]) vec2?]{
+
+Applies @racket[map] to one displacement vector.
+}
+
+@defproc[(affine2? [value any/c]) boolean?]{
+
+Returns @racket[#t] for a general linear map followed by translation.
+}
+
+@defproc[(make-affine2
+          [#:linear linear linear2? identity-linear2]
+          [#:translation translation vec2? origin])
+         affine2?]{
+
+Constructs a general affine map. The linear map acts first and translation is
+added afterward.
+}
+
+@defthing[identity-affine2 affine2?]{
+
+The identity general affine map.
+}
+
+@defproc[(affine2-linear [map affine2?]) linear2?]{
+
+Returns @racket[map]'s linear component.
+}
+
+@defproc[(affine2-translation [map affine2?]) vec2?]{
+
+Returns @racket[map]'s translation component.
+}
+
+@defproc[(affine2-with-linear [map affine2?] [linear linear2?]) affine2?]{
+
+Returns @racket[map] with a replacement linear component.
+}
+
+@defproc[(affine2-with-translation [map affine2?] [translation vec2?]) affine2?]{
+
+Returns @racket[map] with a replacement translation.
+}
+
+@defproc[(affine2-compose [outer affine2?] [inner affine2?]) affine2?]{
+
+Returns @racket[outer] composed after @racket[inner].
+}
+
+@defproc[(affine2-lerp [from affine2?]
+                        [to affine2?]
+                        [progress (and/c finite-real? (>=/c 0) (<=/c 1))])
+         affine2?]{
+
+Interpolates the four matrix entries and translation componentwise. It does
+not preserve invertibility.
+}
+
+@defproc[(affine2-apply-vector [map affine2?] [vector vec2?]) vec2?]{
+
+Applies only @racket[map]'s linear component to @racket[vector].
+}
+
+@defproc[(affine2-apply-point [map affine2?] [point vec2?]) vec2?]{
+
+Applies both the linear component and translation to @racket[point].
+}
+
+@defproc[(affine-transform->affine2 [transform affine-transform?]) affine2?]{
+
+Converts the established scale-then-rotate-then-translate representation to an
+exact general affine map.
+}
+
 @section[#:tag "cameras"]{Cameras}
 
 A camera is an immutable orthographic view. Its pixel dimensions, visible
@@ -2218,6 +2345,37 @@ A minimal position-only Visual can be defined as follows:
 
 Such a Visual can use @racket[move-to], but it cannot use rotation or scale
 animations.
+
+@subsection{Whole-Visual Affine Maps}
+
+@defproc[(affine-map [content visual?] [map affine2?]) affine-map-visual?]{
+
+Wraps one complete world-space Visual in a general affine map while preserving
+its stable identity. The Pict adapter first renders @racket[content] normally,
+then applies @racket[map]'s linear component around its semantic centre; normal
+scene placement uses the mapped reference position. This makes a whole group
+shear or reflect as one coherent diagram.
+
+The wrapper is intentionally not an @racket[affine-visual?]. It preserves the
+older decomposed transform protocol for existing Visual implementations. Use it
+only as a complete top-level world Visual; it does not expose the wrapped
+group's descendants as independently addressable mapped targets.
+}
+
+@defproc[(affine-map-visual? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a whole-Visual affine-map wrapper.
+}
+
+@defproc[(affine-map-visual-content [visual affine-map-visual?]) visual?]{
+
+Returns the unchanged semantic content of @racket[visual].
+}
+
+@defproc[(affine-map-visual-map [visual affine-map-visual?]) affine2?]{
+
+Returns the current outer general affine map.
+}
 
 @subsection{The Affine-Visual Protocol}
 
@@ -2969,6 +3127,148 @@ defaults and all layout/anchor settings are preserved. The content accessor of
 the result is the immutable concatenation of the supplied spans.
 }
 
+@subsection[#:tag "numeric-displays"]{Numeric Displays}
+
+SCENE-DD provides number-shaped text without introducing a mutable value
+tracker. Static constructors return ordinary @racket[text-visual?] values.
+@racket[parameter-display] is a @racket[derived-visual?] that formats the
+current value of a scalar scene parameter independently at each sampled frame.
+
+@defproc[(numeric-display-anchor? [value any/c]) boolean?]{
+
+Recognizes @racket['left], @racket['center], @racket['right],
+@racket['decimal], and @racket['sign].
+}
+
+@defproc[(format-integer [value exact-integer?]
+                         [#:grouping? grouping? boolean? #f]
+                         [#:show-sign? show-sign? boolean? #f]
+                         [#:unit unit string? ""])
+         string?]{
+
+Formats an exact integer with an optional leading plus sign, comma grouping,
+and trailing literal unit. For example,
+@racket[(format-integer -1234567 #:grouping? #t)] returns
+@racket["-1,234,567"].
+}
+
+@defproc[(format-decimal [value finite-real?]
+                         [#:decimal-places decimal-places
+                                           exact-nonnegative-integer?
+                                           2]
+                         [#:grouping? grouping? boolean? #f]
+                         [#:show-sign? show-sign? boolean? #f]
+                         [#:unit unit string? ""])
+         string?]{
+
+Formats a finite real with exactly @racket[decimal-places] fractional digits,
+rounding once before the integral and fractional fields are separated. It keeps
+trailing zeroes. The procedure raises an exception if multiplying the magnitude
+by its requested decimal factor would overflow.
+}
+
+@defproc[(integer [value exact-integer?]
+                  [#:id id symbol?]
+                  [#:center center vec2? origin]
+                  [#:font-size font-size (and/c finite-real? positive?) 1/2]
+                  [#:font-family font-family text-font-family? 'default]
+                  [#:font-style font-style text-font-style? 'normal]
+                  [#:font-weight font-weight text-font-weight? 'normal]
+                  [#:color color any/c "black"]
+                  [#:horizontal-alignment horizontal-alignment
+                                           text-horizontal-alignment? 'center]
+                  [#:vertical-alignment vertical-alignment
+                                         text-vertical-alignment? 'center]
+                  [#:grouping? grouping? boolean? #f]
+                  [#:show-sign? show-sign? boolean? #f]
+                  [#:unit unit string? ""])
+         text-visual?]{
+
+Creates an ordinary one-line integer display. Its placement and text styling
+have the same meaning as for @racket[plain-text].
+}
+
+@defproc[(decimal-number [value finite-real?]
+                         [#:id id symbol?]
+                         [#:center center vec2? origin]
+                         [#:font-size font-size (and/c finite-real? positive?) 1/2]
+                         [#:font-family font-family text-font-family? 'default]
+                         [#:font-style font-style text-font-style? 'normal]
+                         [#:font-weight font-weight text-font-weight? 'normal]
+                         [#:color color any/c "black"]
+                         [#:horizontal-alignment horizontal-alignment
+                                                  text-horizontal-alignment? 'center]
+                         [#:vertical-alignment vertical-alignment
+                                                text-vertical-alignment? 'center]
+                         [#:decimal-places decimal-places
+                                           exact-nonnegative-integer? 2]
+                         [#:grouping? grouping? boolean? #f]
+                         [#:show-sign? show-sign? boolean? #f]
+                         [#:unit unit string? ""])
+         text-visual?]{
+
+Creates a fixed-place decimal display. In contrast to the generic
+@racket[numeric-label], an exact integer still receives the requested decimal
+point and trailing zeroes here.
+}
+
+@defproc[(numeric-label [value finite-real?]
+                        [#:id id symbol?]
+                        [#:center center vec2? origin]
+                        [#:decimal-places decimal-places
+                                          exact-nonnegative-integer? 2]
+                        [#:grouping? grouping? boolean? #f]
+                        [#:show-sign? show-sign? boolean? #f]
+                        [#:unit unit string? ""]
+                        [#:font-size font-size (and/c finite-real? positive?) 1/2]
+                        [#:font-family font-family text-font-family? 'default]
+                        [#:font-style font-style text-font-style? 'normal]
+                        [#:font-weight font-weight text-font-weight? 'normal]
+                        [#:color color any/c "black"]
+                        [#:horizontal-alignment horizontal-alignment
+                                                 text-horizontal-alignment? 'center]
+                        [#:vertical-alignment vertical-alignment
+                                               text-vertical-alignment? 'center])
+         text-visual?]{
+
+Creates @racket[integer] output for an exact integer input and otherwise
+creates @racket[decimal-number] output. It is useful for a static label where
+the type of the supplied constant should choose the presentation.
+}
+
+@defproc[(parameter-display
+          [source (or/c symbol? scene-parameter?)]
+          [#:id id symbol?]
+          [#:center center vec2? origin]
+          [#:kind kind (or/c 'integer 'decimal) 'decimal]
+          [#:decimal-places decimal-places exact-nonnegative-integer? 2]
+          [#:grouping? grouping? boolean? #f]
+          [#:show-sign? show-sign? boolean? #f]
+          [#:unit unit string? ""]
+          [#:anchor anchor numeric-display-anchor? 'right]
+          [#:font-size font-size (and/c finite-real? positive?) 1/2]
+          [#:font-family font-family text-font-family? 'default]
+          [#:font-style font-style text-font-style? 'normal]
+          [#:font-weight font-weight text-font-weight? 'normal]
+          [#:color color any/c "black"]
+          [#:vertical-alignment vertical-alignment
+                                text-vertical-alignment? 'center])
+         derived-visual?]{
+
+Reads @racket[source] from each sampled scene state and formats its finite real
+value. A @racket['decimal] display has exactly its requested decimal places;
+an @racket['integer] display rounds to the nearest integer. The source must be
+installed with @racket[scene-set-value] before the derived display is resolved.
+
+The @racket[#:anchor] choice fixes one stable reference as the text width
+changes. @racket['left], @racket['center], and @racket['right] are the normal
+text anchors. @racket['sign] forces a visible sign and anchors its left edge.
+@racket['decimal] creates a small resolved group containing local
+@racket['whole] and @racket['fraction] children on opposite sides of the fixed
+decimal point. They are separate text runs, so this first release does not
+attempt kerning across that join.
+}
+
 @subsection{Matrices and Tables}
 
 @racket[matrix] and @racket[table] return ordinary immutable
@@ -2981,9 +3281,10 @@ matrix/table variants.
 Both constructors take a nonempty rectangular list of nonempty rows. Each entry
 must be an affine Visual. The constructor re-bases every entry at its cell
 centre, preserving identity, rotation, scale, opacity, style, and children but
-intentionally replacing its supplied reference position. Cell dimensions and
-gaps are explicit local world-space measures; this stage does not measure entry
-ink to choose sizes automatically.
+intentionally replacing its supplied reference position. Width and height can
+be one shared measure, one explicit per-axis list, or an @racket['auto]
+construction-time measurement. The result is still an ordinary immutable group
+with no renderer dependency after construction.
 
 @defproc[(matrix
           [rows (listof (listof (and/c visual? affine-visual?)))]
@@ -2992,8 +3293,13 @@ ink to choose sizes automatically.
           [#:rotation rotation finite-real? 0]
           [#:scale scale scale-factor? 1]
           [#:opacity opacity opacity? 1]
-          [#:entry-width entry-width (and/c finite-real? positive?) 1]
-          [#:entry-height entry-height (and/c finite-real? positive?) 1]
+          [#:entry-width entry-width
+                          (or/c 'auto (and/c finite-real? positive?)
+                                (listof (and/c finite-real? positive?))) 1]
+          [#:entry-height entry-height
+                           (or/c 'auto (and/c finite-real? positive?)
+                                 (listof (and/c finite-real? positive?))) 1]
+          [#:entry-padding entry-padding (and/c finite-real? (>=/c 0)) 1/5]
           [#:column-gap column-gap (and/c finite-real? (>=/c 0)) 1/4]
           [#:row-gap row-gap (and/c finite-real? (>=/c 0)) 1/4]
           [#:brackets? brackets? boolean? #t]
@@ -3012,6 +3318,13 @@ names in different rows are permitted because their complete paths differ.
 When @racket[brackets?] is true, the matrix has ordinary open path children
 named @racket['left-bracket] and @racket['right-bracket]. They use square
 brackets, @racket[stroke], and @racket[stroke-width].
+
+For either entry dimension, a positive scalar supplies one shared cell extent;
+a list supplies one extent per column or row; and @racket['auto] measures each
+entry with the active default Pict renderer and selects the largest visible-box
+extent in that column or row. @racket[entry-padding] is added on both sides of
+each auto-sized extent. This is a snapshot: later text/formula changes do not
+reflow a constructed matrix.
 }
 
 @defproc[(matrix-row-id [row exact-positive-integer?]) symbol?]{
@@ -3054,8 +3367,13 @@ Returns the path for the selected square-bracket child.
           [#:rotation rotation finite-real? 0]
           [#:scale scale scale-factor? 1]
           [#:opacity opacity opacity? 1]
-          [#:cell-width cell-width (and/c finite-real? positive?) 1]
-          [#:cell-height cell-height (and/c finite-real? positive?) 3/4]
+          [#:cell-width cell-width
+                         (or/c 'auto (and/c finite-real? positive?)
+                               (listof (and/c finite-real? positive?))) 1]
+          [#:cell-height cell-height
+                          (or/c 'auto (and/c finite-real? positive?)
+                                (listof (and/c finite-real? positive?))) 3/4]
+          [#:cell-padding cell-padding (and/c finite-real? (>=/c 0)) 1/5]
           [#:column-gap column-gap (and/c finite-real? (>=/c 0)) 0]
           [#:row-gap row-gap (and/c finite-real? (>=/c 0)) 0]
           [#:stroke stroke any/c "black"]
@@ -3068,6 +3386,10 @@ boundaries are ordinary child paths named @racket['grid-column-0],
 @racket['grid-column-1], and so on, followed by @racket['grid-row-0],
 @racket['grid-row-1], and so on. Each boundary is drawn once, avoiding doubled
 cell-border strokes.
+
+The cell-size arguments follow the same scalar/list/@racket['auto] policy as
+@racket[matrix]. Auto measurement adds @racket[cell-padding] on all sides and
+does not remeasure after construction.
 }
 
 @defproc[(table-row-id [row exact-positive-integer?]) symbol?]{
@@ -4576,6 +4898,185 @@ Returns the live top-level identity or nested target path.
 Returns the enclosure's nonnegative world-space padding scalar.
 }
 
+@subsubsection{Mathematical Shape Catalogue}
+
+SCENE-DJ adds a compact family of path-backed shapes. Except for the two
+convenience groups, each constructor returns an ordinary @racket[path-visual?]
+with the usual affine placement, opacity, fill, and stroke protocols. They do
+not introduce renderer-specific leaf classes; the existing path renderer draws
+their line and cubic geometry, including odd-even holes in @racket[annulus].
+
+@defproc[(ellipse [#:id id symbol?]
+                  [#:center center vec2? origin]
+                  [#:width width (and/c finite-real? positive?) 2]
+                  [#:height height (and/c finite-real? positive?) 1]
+                  [#:rotation rotation finite-real? 0]
+                  [#:scale scale scale-factor? 1]
+                  [#:opacity opacity opacity? 1]
+                  [#:fill fill any/c "cornflowerblue"]
+                  [#:stroke stroke any/c "black"]
+                  [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates a cubic Bézier ellipse centered at @racket[center]. Width and height
+are unscaled world dimensions. Rotation and scale are applied around the centre.
+}
+
+@defproc[(annulus [#:id id symbol?]
+                  [#:center center vec2? origin]
+                  [#:inner-radius inner-radius (and/c finite-real? positive?) 1/2]
+                  [#:outer-radius outer-radius (and/c finite-real? positive?) 1]
+                  [#:rotation rotation finite-real? 0]
+                  [#:scale scale scale-factor? 1]
+                  [#:opacity opacity opacity? 1]
+                  [#:fill fill any/c "cornflowerblue"]
+                  [#:stroke stroke any/c "black"]
+                  [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates a closed ring with an odd-even transparent hole. The inner radius must
+be strictly smaller than the outer radius. A nonuniform semantic scale can turn
+the ring into an elliptical annulus.
+}
+
+@defproc[(sector [#:id id symbol?]
+                 [#:center center vec2? origin]
+                 [#:radius radius (and/c finite-real? positive?) 1]
+                 [#:start-angle start-angle finite-real? 0]
+                 [#:angle angle finite-real? (/ pi 2)]
+                 [#:rotation rotation finite-real? 0]
+                 [#:scale scale scale-factor? 1]
+                 [#:opacity opacity opacity? 1]
+                 [#:fill fill any/c "cornflowerblue"]
+                 [#:stroke stroke any/c "black"]
+                 [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates the closed radial wedge from @racket[start-angle] through the signed
+central @racket[angle]. The sweep must be nonzero and no longer than a complete
+turn. A positive sweep is counter-clockwise.
+}
+
+@defproc[(regular-polygon [#:id id symbol?]
+                          [#:center center vec2? origin]
+                          [#:sides sides exact-integer? 5]
+                          [#:radius radius (and/c finite-real? positive?) 1]
+                          [#:start-angle start-angle finite-real? (/ pi 2)]
+                          [#:rotation rotation finite-real? 0]
+                          [#:scale scale scale-factor? 1]
+                          [#:opacity opacity opacity? 1]
+                          [#:fill fill any/c "cornflowerblue"]
+                          [#:stroke stroke any/c "black"]
+                          [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates an equal-radius polygon with one vertex initially at
+@racket[start-angle]. @racket[sides] must be an exact integer at least three.
+}
+
+@defproc[(star [#:id id symbol?]
+               [#:center center vec2? origin]
+               [#:points points exact-integer? 5]
+               [#:outer-radius outer-radius (and/c finite-real? positive?) 1]
+               [#:inner-radius inner-radius (and/c finite-real? positive?) 1/2]
+               [#:start-angle start-angle finite-real? (/ pi 2)]
+               [#:rotation rotation finite-real? 0]
+               [#:scale scale scale-factor? 1]
+               [#:opacity opacity opacity? 1]
+               [#:fill fill any/c "gold"]
+               [#:stroke stroke any/c "black"]
+               [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates an alternating outer/inner regular star boundary. @racket[points] must
+be at least two, and the inner radius must be strictly smaller than the outer
+radius.
+}
+
+@defproc[(rounded-rectangle [#:id id symbol?]
+                            [#:center center vec2? origin]
+                            [#:width width (and/c finite-real? positive?) 2]
+                            [#:height height (and/c finite-real? positive?) 1]
+                            [#:corner-radius corner-radius stroke-width? 1/5]
+                            [#:rotation rotation finite-real? 0]
+                            [#:scale scale scale-factor? 1]
+                            [#:opacity opacity opacity? 1]
+                            [#:fill fill any/c "cornflowerblue"]
+                            [#:stroke stroke any/c "black"]
+                            [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates a rectangle with four cubic quarter-circle corners. Corner radius is
+nonnegative and may not exceed either half-extent. A zero radius creates the
+same outline topology as a sharp rectangle.
+}
+
+@defproc[(arc-between-points [start vec2?]
+                             [end vec2?]
+                             [#:id id symbol?]
+                             [#:angle angle finite-real? (/ pi 2)]
+                             [#:opacity opacity opacity? 1]
+                             [#:stroke stroke any/c "black"]
+                             [#:stroke-width stroke-width stroke-width? 2])
+         path-visual?]{
+
+Creates the circular arc joining two distinct points with the specified signed
+central sweep. Its magnitude must be nonzero and strictly less than one full
+turn. Sign selects the side of the chord and traversal direction.
+}
+
+@defproc[(curved-arrow [start vec2?]
+                       [end vec2?]
+                       [#:id id symbol?]
+                       [#:angle angle finite-real? (/ pi 2)]
+                       [#:opacity opacity opacity? 1]
+                       [#:stroke stroke any/c "black"]
+                       [#:stroke-width stroke-width stroke-width? 2]
+                       [#:tip-length tip-length (and/c finite-real? positive?) 3/10]
+                       [#:tip-width tip-width (and/c finite-real? positive?) 1/4])
+         group-visual?]{
+
+Creates a circular @racket[arc-between-points] with a triangular tip aligned to
+its final tangent. The returned group has child identities formed from
+@racket[id] plus @tt{-shaft} and @tt{-tip}.
+}
+
+@defproc[(double-arrow [start vec2?]
+                        [end vec2?]
+                        [#:id id symbol?]
+                        [#:rotation rotation finite-real? 0]
+                        [#:scale scale scale-factor? 1]
+                        [#:opacity opacity opacity? 1]
+                        [#:stroke stroke any/c "black"]
+                        [#:stroke-width stroke-width stroke-width? 2]
+                        [#:tip-length tip-length (and/c finite-real? positive?) 3/10]
+                        [#:tip-width tip-width (and/c finite-real? positive?) 1/4])
+         arrow-visual?]{
+
+Creates the ordinary semantic @racket[arrow] from @racket[start] to
+@racket[end] with both @racket[start-tip?] and @racket[end-tip?] enabled.
+}
+
+@defproc[(labeled-point [label string?]
+                         [#:id id symbol?]
+                         [#:center center vec2? origin]
+                         [#:radius radius (and/c finite-real? positive?) 1/10]
+                         [#:label-offset label-offset vec2? (vec2 1/4 1/4)]
+                         [#:font-size font-size (and/c finite-real? positive?) 1/4]
+                         [#:font-family font-family any/c 'roman]
+                         [#:fill fill any/c "crimson"]
+                         [#:stroke stroke any/c "firebrick"]
+                         [#:stroke-width stroke-width stroke-width? 2]
+                         [#:color color any/c stroke]
+                         [#:opacity opacity opacity? 1])
+         group-visual?]{
+
+Creates a dot and a plain-text label as one group. Its stable child identities
+are @racket[id] plus @tt{-dot} and @tt{-label}; moving or fading the outer group
+therefore carries both together. Label placement is the explicit local
+@racket[label-offset], not a collision-aware layout operation.
+}
+
 @subsubsection{Axis Ranges}
 
 @defstruct*[axis-range ([minimum finite-real?]
@@ -4859,6 +5360,268 @@ ordinary numeric precision. A nonzero rotation normally introduces inexact
 trigonometric results.
 }
 
+@subsection[#:tag "linear-algebra-diagrams"]{Linear-Algebra Diagrams}
+
+SCENE-CZ adds small, conventional linear-algebra diagrams without adding a
+mutable diagram class. Each constructor below returns an ordinary immutable
+Visual or @racket[group-visual?]. Its children retain their normal nested paths,
+so existing scene operations work directly. In particular,
+@racket[apply-matrix] can map one complete top-level diagram coherently.
+
+@defproc[(number-plane
+          [#:id id symbol?]
+          [#:x-range x-range axis-range? (axis-range -4 4 1)]
+          [#:y-range y-range axis-range? (axis-range -3 3 1)]
+          [#:x-length x-length (and/c finite-real? positive?) 8]
+          [#:y-length y-length (and/c finite-real? positive?) 6]
+          [#:center center vec2? origin]
+          [#:rotation rotation finite-real? 0]
+          [#:scale scale scale-factor? 1]
+          [#:grid? grid? boolean? #t]
+          [#:labels? labels? boolean? #f]
+          [#:grid-stroke grid-stroke any/c "lightsteelblue"]
+          [#:grid-stroke-width grid-stroke-width
+                               (and/c finite-real? (>=/c 0)) 1]
+          [#:axes-stroke axes-stroke any/c "navy"]
+          [#:axes-stroke-width axes-stroke-width
+                               (and/c finite-real? (>=/c 0)) 2]
+          [#:label-font-size label-font-size
+                              (and/c finite-real? positive?) 1/4]
+          [#:label-color label-color any/c "navy"])
+         group-visual?]{
+
+Creates a conventional Cartesian number plane. The returned group has an
+@racket['axes] child and, when requested, @racket['grid] and @racket['labels]
+children. The grid uses the plane's ranges and display lengths; its geometry is
+therefore in the same coordinate system as the axes. Numeric labels are absent
+by default, because dense labels are often inappropriate in an animation.
+
+The stable direct-child paths are produced by
+@racket[number-plane-grid-path], @racket[number-plane-axes-path], and
+@racket[number-plane-labels-path]. When @racket[#:grid?] or @racket[#:labels?]
+is false, its corresponding path intentionally does not resolve.
+}
+
+@defproc[(number-plane-grid-path [plane-id symbol?]) visual-path?]{
+Returns @racket[(list plane-id 'grid)].
+}
+
+@defproc[(number-plane-axes-path [plane-id symbol?]) visual-path?]{
+Returns @racket[(list plane-id 'axes)].
+}
+
+@defproc[(number-plane-labels-path [plane-id symbol?]) visual-path?]{
+Returns @racket[(list plane-id 'labels)].
+}
+
+@defproc[(vector-arrow [endpoint vec2?]
+                       [#:start start vec2? origin]
+                       [#:id id symbol?]
+                       [#:stroke stroke any/c "darkorchid"]
+                       [#:stroke-width stroke-width
+                                        (and/c finite-real? (>=/c 0)) 3]
+                       [#:tip-length tip-length
+                                      (and/c finite-real? positive?) 3/10]
+                       [#:tip-width tip-width
+                                     (and/c finite-real? positive?) 1/4])
+         arrow-visual?]{
+
+Creates an ordinary arrow from @racket[start] to @racket[endpoint]. The name is
+deliberately @racket[vector-arrow], not @racket[vector], so requiring
+@racketmodname[animate] does not shadow Racket's built-in vector constructor.
+}
+
+@defproc[(vector-coordinates [arrow arrow-visual?]) vec2?]{
+Returns the arrow's endpoint minus its start point, in the arrow's containing
+coordinate system.
+}
+
+@defproc[(vector-label [arrow arrow-visual?]
+                       [#:id id symbol?]
+                       [#:text text (or/c false/c string?) #f]
+                       [#:offset offset vec2? (vec2 1/5 1/5)]
+                       [#:font-size font-size
+                                     (and/c finite-real? positive?) 1/4]
+                       [#:color color any/c "darkorchid"])
+         text-visual?]{
+
+Creates a static text label beside @racket[arrow]'s endpoint. Without
+@racket[#:text], its content is the vector's coordinate pair. This is a
+construction-time snapshot: if the arrow itself is separately animated, rebuild
+the label through @racket[derived-visual] until SCENE-DE supplies general live
+layout relationships.
+}
+
+@defproc[(basis-vectors
+          [#:id id symbol?]
+          [#:origin origin vec2? origin]
+          [#:e1 e1 vec2? (vec2 1 0)]
+          [#:e2 e2 vec2? (vec2 0 1)]
+          [#:e1-color e1-color any/c "crimson"]
+          [#:e2-color e2-color any/c "forestgreen"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 3])
+         group-visual?]{
+
+Creates a group with conventional @racket['e1] and @racket['e2] arrow children.
+The @racket[e1] and @racket[e2] arguments are endpoints, not displacement
+vectors: their common start is @racket[origin].
+}
+
+@defproc[(linear-transformation-diagram
+          [#:id id symbol?]
+          [#:x-range x-range axis-range? (axis-range -4 4 1)]
+          [#:y-range y-range axis-range? (axis-range -3 3 1)]
+          [#:vector-end vector-end vec2? (vec2 3 2)]
+          [#:unit-square? unit-square? boolean? #t]
+          [#:grid? grid? boolean? #t])
+         group-visual?]{
+
+Creates the standard matrix-action diagram. Its stable children are
+@racket['plane], @racket['basis], @racket['vector], and, unless disabled,
+@racket['unit-square]. The first two have their own paths such as
+@racket['(diagram plane grid)] and @racket['(diagram basis e1)].
+
+For example, this keeps all geometric parts together while a title remains
+fixed outside the mapped group:
+
+@racketblock[
+(define diagram
+  (linear-transformation-diagram #:id 'diagram
+                                 #:vector-end (vec2 3 2)))
+
+(scene-play
+ (scene-add (make-scene) diagram)
+ (apply-matrix 'diagram (make-linear2 1 0 1 1))
+ #:duration 3)
+]
+}
+
+@subsection[#:tag "complex-and-polar"]{Complex and Polar Coordinates}
+
+SCENE-DA uses ordinary Racket complex numbers and converts only at the drawing
+boundary. SCENE-DB follows the same approach for polar coordinate values and
+paths. Both planes are normal immutable group trees, not special scene types.
+
+@defproc[(complex->point [value complex?]) vec2?]{
+Returns @racket[(vec2 (real-part value) (imag-part value))]. Both components
+must be finite reals.
+}
+
+@defproc[(point->complex [point vec2?]) complex?]{
+Returns the ordinary Racket complex number whose real and imaginary parts are
+the x and y components of @racket[point].
+}
+
+@defproc[(complex-plane
+          [#:id id symbol?]
+          [#:x-range x-range axis-range? (axis-range -4 4 1)]
+          [#:y-range y-range axis-range? (axis-range -3 3 1)]
+          [#:x-length x-length (and/c finite-real? positive?) 8]
+          [#:y-length y-length (and/c finite-real? positive?) 6]
+          [#:center center vec2? origin]
+          [#:rotation rotation finite-real? 0]
+          [#:scale scale scale-factor? 1]
+          [#:grid? grid? boolean? #t]
+          [#:labels? labels? boolean? #t]
+          [#:grid-stroke grid-stroke any/c "lightsteelblue"]
+          [#:grid-stroke-width grid-stroke-width
+                               (and/c finite-real? (>=/c 0)) 1]
+          [#:axes-stroke axes-stroke any/c "navy"]
+          [#:axes-stroke-width axes-stroke-width
+                               (and/c finite-real? (>=/c 0)) 2]
+          [#:label-font-size label-font-size
+                              (and/c finite-real? positive?) 1/4]
+          [#:label-color label-color any/c "navy"])
+         group-visual?]{
+
+Builds a Cartesian complex plane. Its direct @racket['coordinates] child is a
+@racket[number-plane] tree; when @racket[#:labels?] is true, direct
+@racket['real-axis] and @racket['imaginary-axis] text leaves label Re and Im.
+The numeric labels are static construction-time labels.
+}
+
+@defproc[(apply-complex-function
+          [target (or/c visual? symbol? visual-path?)]
+          [function (procedure-arity-includes/c 1)]
+          [#:samples samples exact-positive-integer? 24])
+         apply-pointwise-request?]{
+
+Creates @racket[apply-pointwise] with each sampled world point converted by
+@racket[point->complex], passed to @racket[function], then converted back with
+@racket[complex->point]. The function must return a complex number with finite
+real and imaginary parts at every sampled point. This API does not infer
+branch cuts, clip poles, or normalize by an axes' numeric coordinate scale.
+}
+
+@defproc[(polar-coordinate? [value any/c]) boolean?]{
+Recognizes an immutable reading returned by @racket[point->polar].
+}
+
+@defproc[(polar-coordinate-radius [value polar-coordinate?])
+         (and/c finite-real? (>=/c 0))]{
+Returns the nonnegative radius of a polar reading.
+}
+
+@defproc[(polar-coordinate-angle [value polar-coordinate?]) finite-real?]{
+Returns the angle of a polar reading in radians.
+}
+
+@defproc[(polar->point [radius finite-real?] [angle finite-real?]) vec2?]{
+Returns @racket[(vec2 (* radius (cos angle)) (* radius (sin angle)))]. A
+signed radius is accepted, which lets @racket[polar-graph] express conventional
+rose curves.
+}
+
+@defproc[(point->polar [point vec2?]) polar-coordinate?]{
+Returns a nonnegative-radius reading. The angle uses @racket[atan]'s interval
+@tt{[-pi, pi]}; the origin is assigned angle zero.
+}
+
+@defproc[(polar-plane
+          [#:id id symbol?]
+          [#:radii radii (listof (and/c finite-real? positive?)) '(1 2 3)]
+          [#:angles angles (listof finite-real?) (list 0 (/ pi 4) (/ pi 2))]
+          [#:center center vec2? origin]
+          [#:rotation rotation finite-real? 0]
+          [#:scale scale (and/c finite-real? positive?) 1]
+          [#:labels? labels? boolean? #t]
+          [#:stroke stroke any/c "steelblue"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2]
+          [#:grid-stroke grid-stroke any/c "lightsteelblue"]
+          [#:grid-stroke-width grid-stroke-width
+                               (and/c finite-real? (>=/c 0)) 1]
+          [#:label-font-size label-font-size
+                              (and/c finite-real? positive?) 1/4]
+          [#:label-color label-color any/c "navy"])
+         group-visual?]{
+
+Builds a static polar grid. Its direct children are named @racket['rings] and
+@racket['rays], plus @racket['labels] when requested. Ring children use
+@tt{ring-0}, @tt{ring-1}, and so on; ray children use @tt{ray-0}, @tt{ray-1},
+and so on. Labels are deliberately static and may overlap for dense choices.
+}
+
+@defproc[(polar-graph
+          [radius-function (procedure-arity-includes/c 1)]
+          [#:id id symbol?]
+          [#:start start finite-real? 0]
+          [#:end end finite-real? (* 2 pi)]
+          [#:samples samples (and/c exact-integer? (>=/c 2)) 240]
+          [#:center center vec2? origin]
+          [#:rotation rotation finite-real? 0]
+          [#:scale scale scale-factor? 1]
+          [#:opacity opacity opacity? 1]
+          [#:stroke stroke any/c "crimson"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 3]
+          [#:fill fill any/c #f])
+         path-visual?]{
+
+Evenly samples @racket[(radius-function theta)] from @racket[start] through
+@racket[end] and returns an ordinary open path. Each result must be a finite
+real, but it may be negative. Sampling is uniform in angle, not adaptive or
+arc-length parameterized.
+}
+
 @subsection[#:tag "coordinate-calculus-helpers"]{Coordinate and Calculus Helpers}
 
 SCENE-CP provides static, axes-aware construction helpers for common teaching
@@ -5136,6 +5899,105 @@ Each nonzero result becomes an arrow; zero vectors are omitted. The returned
 immutable group has stable child identities and can therefore use nested paths
 for lookup and animation. Sampling and axes transforms are captured at
 construction time; the group retains no procedure or renderer state.
+}
+
+@subsection[#:tag "ode-flow"]{Deterministic ODE Flow and Streamlines}
+
+SCENE-DC turns a two-dimensional autonomous vector field into reproducible
+integral-curve geometry. It uses fixed-step fourth-order Runge--Kutta (RK4),
+with the caller selecting the step size and number of streamline steps. Neither
+the numerical solver nor @racket[flow-particle] retains a prior rendered frame:
+an arbitrary scene sample recomputes from the original seed and requested ODE
+time.
+
+@defproc[(ode-flow-position
+          [field (procedure-arity-includes/c 2)]
+          [seed vec2?]
+          [time finite-real?]
+          [#:step-size step-size (and/c finite-real? positive?) 1/20])
+         vec2?]{
+
+Returns the RK4 solution beginning at coordinate-space @racket[seed] at time
+zero and integrated through signed @racket[time]. The field receives numeric
+coordinate x and y values and must return one finite @racket[vec2] derivative.
+A positive time advances the field; a negative time integrates it backwards.
+
+The final partial step is included, so the requested time is reached exactly
+in ordinary arithmetic rather than rounded to a step-grid endpoint. This is a
+fixed-step solver, not an adaptive tolerance-controlled integrator.
+}
+
+@defproc[(streamline-points
+          [field (procedure-arity-includes/c 2)]
+          [seed vec2?]
+          [#:direction direction (or/c 'forward 'backward 'both) 'both]
+          [#:step-size step-size (and/c finite-real? positive?) 1/20]
+          [#:steps steps exact-positive-integer? 120])
+         (listof vec2?)]{
+
+Returns the coordinate-space RK4 samples for one streamline. @racket['forward]
+goes from time zero through positive time; @racket['backward] returns points in
+increasing geometric order from negative time to the seed; @racket['both]
+combines both directions without duplicating the seed.
+}
+
+@defproc[(streamline
+          [axes axes-visual?]
+          [field (procedure-arity-includes/c 2)]
+          [seed vec2?]
+          [#:id id symbol?]
+          [#:direction direction (or/c 'forward 'backward 'both) 'both]
+          [#:step-size step-size (and/c finite-real? positive?) 1/20]
+          [#:steps steps exact-positive-integer? 120]
+          [#:opacity opacity opacity? 1]
+          [#:stroke stroke any/c "royalblue"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2])
+         path-visual?]{
+
+Converts @racket[streamline-points] through @racket[axes] into one ordinary
+world-space path Visual. The axes conversion is captured when the streamline is
+constructed. It does not clip, stop at axes bounds, or retain the field
+procedure after construction.
+}
+
+@defproc[(streamlines
+          [axes axes-visual?]
+          [field (procedure-arity-includes/c 2)]
+          [seeds (listof vec2?)]
+          [#:id id symbol?]
+          [#:direction direction (or/c 'forward 'backward 'both) 'both]
+          [#:step-size step-size (and/c finite-real? positive?) 1/20]
+          [#:steps steps exact-positive-integer? 120]
+          [#:opacity opacity opacity? 1]
+          [#:stroke stroke any/c "royalblue"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2])
+         group-visual?]{
+
+Builds an ordinary group of streamline paths. Seed number @italic{n} becomes
+the direct child named by @tt{id-n}; for example, the first child of
+@racket['flow] is reachable at @racket['(flow flow-0)].
+}
+
+@defproc[(flow-particle
+          [axes axes-visual?]
+          [field (procedure-arity-includes/c 2)]
+          [seed vec2?]
+          [phase (or/c symbol? scene-parameter?)]
+          [#:id id symbol?]
+          [#:step-size step-size (and/c finite-real? positive?) 1/20]
+          [#:shape shape point-marker-shape? 'circle]
+          [#:size size (and/c finite-real? positive?) 1/5]
+          [#:fill fill any/c "crimson"]
+          [#:stroke stroke any/c "black"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 1]
+          [#:opacity opacity opacity? 1])
+         derived-visual?]{
+
+Creates a parameter-driven point marker. At every scene sample,
+@racket[phase]'s finite real value is used as the ODE time in
+@racket[ode-flow-position], and the result is converted through @racket[axes].
+The caller can therefore animate @racket[phase] using @racket[value-to] while
+random-access and sequential frame rendering give the same particle position.
 }
 
 @defproc[(sample-function-path
@@ -5740,9 +6602,10 @@ renderer-visible layout changes without frame-mutating callbacks.
 
 The content must be a concrete, non-frame-space Visual, and content and target
 must have distinct identities. Renderer-aware attachments are top-level
-render-time decorations: they cannot be nested in a group, targeted by another
-attachment, animated directly, chained, or used to avoid collisions. They do
-not inherit target rotation.
+render-time decorations: they cannot be nested in a group, animated directly,
+or used to avoid collisions. They do not inherit target rotation. SCENE-DE does
+allow one attachment to target another when the resulting dependency graph is
+acyclic.
 }
 
 @defproc[(layout-attached-visual? [value any/c]) boolean?]{
@@ -5780,6 +6643,57 @@ Returns the selected content rendered-box anchor.
          vec2?]{
 
 Returns the world-space offset from target anchor to content anchor.
+}
+
+@subsection[#:tag "live-layout"]{Acyclic Live Layout}
+
+SCENE-DE gives the renderer-aware attachment model concise relationship names.
+Their dependency graph is resolved from an attachment's concrete target outward
+at each render. A direct or indirect cycle raises an exception; no prior frame
+is consulted.
+
+@defproc[(follow-anchor
+          [content visual?]
+          [target (or/c visual? symbol? visual-path?)]
+          [#:offset offset vec2? origin]
+          [#:target-anchor target-anchor layout-box-anchor? 'center]
+          [#:self-anchor self-anchor layout-box-anchor? 'center])
+         (or/c derived-visual? layout-attached-visual?)]{
+
+The explicit SCENE-DE name for @racket[attach-to], with the same behavior and
+anchor vocabulary.
+}
+
+@defproc[(keep-above [content visual?]
+                     [target (or/c visual? symbol? visual-path?)]
+                     [#:gap gap (and/c finite-real? (>=/c 0)) 0])
+         layout-attached-visual?]{
+
+Places the content's bottom anchor at the target's top anchor plus @racket[gap].
+}
+
+@defproc[(keep-below [content visual?]
+                     [target (or/c visual? symbol? visual-path?)]
+                     [#:gap gap (and/c finite-real? (>=/c 0)) 0])
+         layout-attached-visual?]{
+
+Places the content's top anchor at the target's bottom anchor minus @racket[gap].
+}
+
+@defproc[(keep-left-of [content visual?]
+                        [target (or/c visual? symbol? visual-path?)]
+                        [#:gap gap (and/c finite-real? (>=/c 0)) 0])
+         layout-attached-visual?]{
+
+Places the content's right anchor at the target's left anchor minus @racket[gap].
+}
+
+@defproc[(keep-right-of [content visual?]
+                         [target (or/c visual? symbol? visual-path?)]
+                         [#:gap gap (and/c finite-real? (>=/c 0)) 0])
+         layout-attached-visual?]{
+
+Places the content's left anchor at the target's right anchor plus @racket[gap].
 }
 
 @section[#:tag "scene-state"]{Scene States}
@@ -6090,6 +7004,74 @@ through the same @racket[visual-with-scale] protocol rules as
 
 Returns @racket[#t] when @racket[value] is a request created by
 @racket[scale-by].
+}
+
+@defproc[(apply-affine [target (or/c visual? symbol? visual-path?)]
+                       [map affine2?])
+         apply-affine-request?]{
+
+Creates a SCENE-CY-A whole-Visual general affine-map request. At each sampled
+interior time, the identity-to-@racket[map] entry-wise interpolation is applied
+after @racket[target]'s current outer affine map. The map therefore acts in
+world coordinates; it can express shears, reflections, arbitrary linear maps,
+and translation in one request.
+
+The target must be a complete top-level world Visual. A nested
+@racket[visual-path?], a derived Visual, and a frame-space overlay are rejected
+during scene compilation. The resulting endpoint is an
+@racket[affine-map-visual?], so a later @racket[apply-affine] composes maps
+without rasterizing the prior result. Existing movement, rotation, and scale
+requests conflict with @racket[apply-affine] for the same target during an
+overlapping interval.
+}
+
+@defproc[(apply-affine-request? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a request made by
+@racket[apply-affine].
+}
+
+@defproc[(apply-matrix [target (or/c visual? symbol? visual-path?)]
+                       [matrix linear2?])
+         apply-affine-request?]{
+
+Convenience form of @racket[apply-affine] for a translation-free linear map
+about the world origin.
+}
+
+@subsection[#:tag "pointwise-maps"]{Sampled Pointwise Maps}
+
+SCENE-CY-C adds a nonlinear companion to the whole-Visual affine-map layer.
+It acts on world-space points and samples a path before mapping it, so a line
+under a nonlinear map becomes a visible curve rather than a chord joining two
+transformed endpoints. The exact caller Visual is retained at clip time zero.
+
+@defproc[(apply-pointwise
+          [target (or/c visual? symbol? visual-path?)]
+          [map-point (procedure-arity-includes/c 1)]
+          [#:samples samples exact-positive-integer? 24])
+         apply-pointwise-request?]{
+
+Creates a SCENE-CY-C top-level world-space point-map request. At each positive
+clip progress, every supported geometric sample @racket[p] moves to
+@racket[(map-point p)] by ordinary linear interpolation. @racket[map-point]
+must return a @racket[vec2?] for every sampled point.
+
+Path Visuals, circles, rectangles, axes, and arrows are converted to sampled path
+geometry. Groups retain their ordinary hierarchy and names. Text, images, and
+other affine leaves without an exposed path remain at their original resolved
+world placement so they stay legible; they are not secretly raster-warped.
+The request rejects nested targets, derived Visuals, and frame-space overlays.
+It conflicts with simultaneous same-target spatial, style, opacity, formula,
+or path changes, because it replaces the complete sampled Visual tree.
+
+@racket[#:samples] is the positive number of straight pieces per original line
+or cubic segment. It is a uniform deterministic sampling count, not an
+adaptive error tolerance or singularity detector.
+}
+
+@defproc[(apply-pointwise-request? [value any/c]) boolean?]{
+Returns @racket[#t] for a request created by @racket[apply-pointwise].
 }
 
 @defproc[(stroke-width-to
@@ -8455,12 +9437,16 @@ directory whose names match @tt{frame-} followed by at least six digits and
 @tt{.png}. Other files are preserved. When @racket[clean?] is false, no cleanup
 is performed.
 
-@racket[workers] is a bounded thread-pool size. Its default, one, retains
-sequential output. With more workers, independent frames render and write
-concurrently, but the returned paths remain in frame-index order and each frame
-keeps its deterministic filename. The built-in renderers synchronize their
-shared resources. A custom renderer used with more than one worker must itself
-be safe for concurrent calls.
+@racket[workers] is a bounded worker-pool size. Its default, one, retains
+sequential output. On Racket 8.18 or later with parallelism enabled, more than
+one worker builds independent frame bitmaps through a parallel thread pool;
+one ordinary thread then encodes their PNG files, because Racket's PNG encoder
+uses callbacks that cannot run in a parallel thread. On the package's Racket
+8.12 baseline, the same argument uses the compatible coroutine-thread
+implementation. In every case, returned paths remain in frame-index order and
+each frame keeps its deterministic filename. The built-in renderers synchronize
+their shared resources. A custom renderer used with more than one worker must
+itself be safe for concurrent calls.
 }
 
 @defproc[(render-frames/report!
@@ -8523,28 +9509,46 @@ checks that it lies in the scene timeline.
 @defproc[(audio-cue [source path-string?]
                     [#:start start finite-real? 0]
                     [#:source-start source-start finite-real? 0]
-                    [#:duration duration (or/c false/c finite-real?) #f])
+                    [#:duration duration (or/c false/c finite-real?) #f]
+                    [#:gain gain finite-real? 1]
+                    [#:fade-in fade-in finite-real? 0]
+                    [#:fade-out fade-out finite-real? 0])
          audio-cue?]{
 
 Constructs immutable audio-placement metadata. @racket[source] is deliberately
 not opened or decoded, so construction and scene rendering remain independent
 of external codecs and files. @racket[start] and @racket[source-start] are
-nonnegative; when supplied, @racket[duration] is positive. This release records
-placement only: it does not mix, trim, fade, or mux audio into an MP4.
+nonnegative; when supplied, @racket[duration] is positive. @racket[gain] is a
+nonnegative linear multiplier. Fade lengths are nonnegative; a fade-out needs
+an explicit duration and neither fade may exceed it. During
+@racket[assemble-authored-mp4!] or @racket[mux-authored-video!], FFmpeg trims
+the source, applies gain/fades, delays it to @racket[start], mixes all cues,
+and encodes AAC.
+}
+
+@defproc[(subtitle [start finite-real?] [end finite-real?] [text string?])
+         subtitle?]{
+
+Constructs one audience-facing half-open caption interval. Both bounds must be
+inside the owning scene and @racket[end] must be greater than @racket[start].
+The text is kept verbatim apart from CR/LF normalization when it is written to
+SRT or WebVTT.
 }
 
 @defproc[(make-authored-timeline
           [scene scene?]
           [#:sections sections (listof authoring-section?) null]
           [#:cues cues (listof cue?) null]
-          [#:audio-cues audio-cues (listof audio-cue?) null])
+          [#:audio-cues audio-cues (listof audio-cue?) null]
+          [#:subtitles subtitles (listof subtitle?) null])
          authored-timeline?]{
 
 Associates immutable authoring metadata with an ordinary scene. Section names
 and cue names must be unique. Sections must lie wholly within the scene,
 non-overlap, and retain their declared order in returned metadata. Cues and
-audio placements must start no later than the scene endpoint. The wrapped scene
-itself is unchanged and is available through @racket[authored-timeline-scene].
+audio placements must start no later than the scene endpoint; subtitle ends
+must also lie inside it. The wrapped scene itself is unchanged and is available
+through @racket[authored-timeline-scene].
 }
 
 @defproc[(timeline-section [timeline authored-timeline?]
@@ -8598,8 +9602,19 @@ interval, in their declared order.
          immutable?]{
 
 Returns a renderer-independent immutable hash containing the scene duration and
-portable section, cue, and audio-cue data. The hash intentionally excludes the
-scene structure, procedures, renderer caches, and decoded audio.
+portable section, cue, audio-cue, and subtitle data. The hash intentionally
+excludes the scene structure, procedures, renderer caches, and decoded audio.
+}
+
+@defproc[(write-subtitles! [timeline authored-timeline?]
+                           [output-file path-string?]
+                           [#:format format (or/c 'srt 'webvtt) 'srt])
+         path-string?]{
+
+Writes the timeline's subtitles as SRT or WebVTT. It preserves internal caption
+line breaks and returns @racket[output-file]. The resulting file can be passed
+to either MP4 assembly procedure; FFmpeg muxes it as an MP4 @tt{mov_text}
+subtitle stream rather than drawing it into the video pixels.
 }
 
 @defproc[(render-frame-indices!
@@ -8644,16 +9659,21 @@ The report's paths and per-frame times are ordered by the local output number.
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
-          [#:cache-key cache-key (or/c false/c symbol? string?) #f])
+          [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
+          [#:asset-files asset-files (listof path-string?) null])
          (listof path?)]{
 
 Renders one named section using its global indices and local output filenames.
-With an explicit @racket[cache-key], it reuses a matching
+The default @racket['auto] key fingerprints the serializable scene value,
+section identity/bounds, FPS, camera/renderers, Racket version, and bytes of
+the declared @racket[asset-files]. It reuses a matching
 @filepath{.animate-section-cache.rktd} manifest only if every expected PNG is
-still present. The manifest includes the key, section identity/bounds, FPS, and
-selected source indices. Scenes and external resources are not automatically
-hashed; change the key whenever those inputs change. With no key, no cache is
-used and any existing section-cache manifest is removed.
+still present. If a procedure other than the built-in @racket[linear] easing is
+present in the scene representation, automatic caching is disabled
+conservatively. An explicit symbol/string remains
+available for an author-managed key; @racket[#f] disables caching and removes
+any existing section cache manifest. External dependencies are not discovered:
+declare them in @racket[asset-files] or use a deliberate explicit key.
 }
 
 @defproc[(render-timeline-section/report!
@@ -8665,7 +9685,8 @@ used and any existing section-cache manifest is removed.
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
-          [#:cache-key cache-key (or/c false/c symbol? string?) #f])
+          [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
+          [#:asset-files asset-files (listof path-string?) null])
          section-render-report?]{
 
 Like @racket[render-timeline-section!], returning a
@@ -8682,6 +9703,23 @@ Like @racket[render-timeline-section!], returning a
 The report for one selected section. @racket[paths] are locally numbered output
 paths; @racket[source-frame-indices] records their corresponding global scene
 frames. The two lists have the same order and length.
+}
+
+@defproc[(automatic-section-cache-key
+          [timeline authored-timeline?]
+          [section authoring-section?]
+          [#:fps fps exact-positive-integer?]
+          [#:camera camera (or/c camera? false/c)]
+          [#:renderers renderers pict-renderer-list?]
+          [#:asset-files asset-files (listof path-string?)])
+         (or/c false/c string?)]{
+
+Computes the conservative automatic key used by selected rendering. It returns
+@racket[#f] when the scene contains a procedure other than the built-in
+@racket[linear] easing, because its identity and source cannot be made a
+reliable content hash. The public rendering procedures
+normally call it themselves; it is exposed for diagnostics or a custom partial
+movie workflow.
 }
 
 @subsection{Mathematical graphs and networks}
@@ -8831,6 +9869,80 @@ contiguous. @racket[render-frames!] produces the expected sequence.
 
 The procedure returns @racket[output-file] after FFmpeg succeeds. It raises an
 exception when FFmpeg is not found or the process fails.
+}
+
+@defproc[(assemble-authored-mp4! [timeline authored-timeline?]
+                                 [frames-directory path-string?]
+                                 [output-file path-string?]
+                                 [#:fps fps exact-positive-integer? 30]
+                                 [#:subtitle-file subtitle-file
+                                                   (or/c false/c path-string?)
+                                                   #f])
+         path-string?]{
+
+Encodes one locally numbered PNG sequence and applies the authored timeline's
+audio cues in the same FFmpeg invocation. Each cue can select a source offset
+and duration, apply gain/fades, and delay itself on the output timeline.
+When a supplied SRT/WebVTT subtitle file is supplied, it becomes an MP4
+@tt{mov_text} stream. The visual sequence must begin at
+@filepath{frame-000000.png}; source audio and subtitle files are checked when
+this external operation runs.
+}
+
+@defproc[(mux-authored-video! [timeline authored-timeline?]
+                              [input-video path-string?]
+                              [output-file path-string?]
+                              [#:subtitle-file subtitle-file
+                                                (or/c false/c path-string?)
+                                                #f])
+         path-string?]{
+
+Applies the same authored audio and captions to an existing visual MP4 without
+re-encoding its video stream. It maps the input's visual stream only: any
+pre-existing audio in @racket[input-video] is intentionally replaced by the
+timeline's mixed audio (or omitted when the timeline has no audio cues).
+}
+
+@defproc[(concatenate-mp4! [partial-movies (non-empty-listof path-string?)]
+                            [output-file path-string?])
+         path-string?]{
+
+Uses FFmpeg's concat demuxer to stream-copy compatible partial MP4 files into
+one visual movie. Partials must have matching codecs and stream layout; the
+visual-only files made by @racket[encode-mp4!] meet that requirement.
+}
+
+@defproc[(render-authored-mp4!
+          [timeline authored-timeline?]
+          [work-directory path-string?]
+          [output-file path-string?]
+          [#:fps fps exact-positive-integer? 30]
+          [#:camera camera (or/c camera? false/c) #f]
+          [#:renderers renderers pict-renderer-list? default-pict-renderers]
+          [#:workers workers exact-positive-integer? 1]
+          [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
+          [#:asset-files asset-files (listof path-string?) null]
+          [#:subtitle-file subtitle-file
+                            (or/c false/c 'auto path-string?) 'auto]
+          [#:subtitle-format subtitle-format (or/c 'srt 'webvtt) 'srt])
+         path-string?]{
+
+Renders a complete authored production incrementally. The timeline must have
+at least one named section; sorted sections must begin at zero, be contiguous,
+and end at the scene duration. Each section is rendered into a stable local
+subdirectory of @racket[work-directory]. A valid PNG cache plus matching
+partial-MP4 manifest reuses that section's visual movie; an invalidated section
+alone is rendered and encoded again. The visual partials are concatenated, then
+the final movie receives all authored audio. With the default
+@racket['auto] subtitle-file, nonempty timeline subtitles are written below the
+work directory in the requested format and muxed automatically. Pass
+@racket[#f] to omit captions or a path to use a prewritten file.
+
+Automatic reuse deliberately shares the selected-section cache's conservative
+boundary: it fingerprints declared assets but cannot discover arbitrary files,
+font/TeX inputs, or an FFmpeg build, and cannot safely hash procedures. Use
+@racket[#:asset-files], a versioned explicit key, or @racket[#f] according to
+the production's dependency model.
 }
 
 
@@ -11160,6 +12272,40 @@ open markers-scatter-areas.mp4
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{1.5.0 — SCENE-DJ.} Added path-backed ellipses, annuli, sectors,
+       regular polygons, stars, and rounded rectangles, plus circular arcs
+       between endpoints, tangent-aligned curved arrows, double arrows, and
+       ordinary dot/text labeled-point groups.}
+ @item{@bold{1.4.0 — SCENE-DG/DH.} Added FFmpeg-backed authored audio
+       assembly with trims, gain, fades, SRT/WebVTT caption output and MP4
+       subtitle muxing. Selected-section rendering now defaults to a
+       conservative automatic semantic cache key; complete contiguous timelines
+       can render invalidated visual partial MP4s and concatenate them before
+       the final audio/caption mux.}
+ @item{@bold{1.3.0 — SCENE-CY-C/DA/DB.} Added sampled whole-Visual
+       pointwise deformation, the complex-number/point bridge and complex
+       plane/function convenience API, plus polar readings, polar grids, and
+       uniformly sampled polar graphs.}
+ @item{@bold{1.2.0 — SCENE-DE/DF.} Made renderer-measured layout attachments
+       composable through acyclic dependency chains and added named directional
+       layout conveniences. Matrices and tables now also accept scalar,
+       per-axis, or construction-time auto-measured cell dimensions while
+       retaining their existing nested paths.}
+ @item{@bold{1.1.0 — SCENE-DC/DD.} Added deterministic fixed-step RK4
+       streamline geometry and parameter-derived flow particles, plus immutable
+       integer/decimal formatting and parameter displays with stable text,
+       sign, and decimal anchors.}
+ @item{@bold{1.0.0 — SCENE-CZ.} Added ordinary immutable linear-algebra
+       diagram groups: @racket[number-plane], @racket[vector-arrow],
+       @racket[basis-vectors], and @racket[linear-transformation-diagram].
+       Their children use ordinary stable paths and work as a coherent
+       whole-Visual target for SCENE-CY-A matrix maps.}
+ @item{@bold{0.99.0 — SCENE-CY-A.} Added immutable @racket[linear2] and
+       @racket[affine2] matrix values plus @racket[apply-affine] and
+       @racket[apply-matrix] whole-Visual scene requests. The Pict adapter
+       transforms a complete top-level world Visual coherently, including a
+       group tree, while preserving the older decomposed affine-Visual protocol
+       for existing Visual types.}
  @item{@bold{0.98.0 — SCENE-CX.} Added immutable @racket[graph] and
        @racket[digraph] group trees with named vertex/edge paths, manual,
        circle, and rooted-tree layouts, optional labels, and sampled

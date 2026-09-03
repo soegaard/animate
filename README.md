@@ -1,9 +1,59 @@
-# animate — SCENE-CX
+# animate — SCENE-DJ
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-CY adds general affine maps for whole world-space Visuals. `linear2`
+represents a full 2×2 matrix, `affine2` adds translation, and `apply-affine` /
+`apply-matrix` interpolate the map from identity through a scene play. A mapped
+top-level group keeps its grid, paths, arrows, and other rendered children
+coherent under shears and reflections while unrelated explanatory Visuals stay
+fixed.
+
+SCENE-CZ builds ordinary linear-algebra diagrams on that map layer.
+`number-plane`, `basis-vectors`, `vector-arrow`, and
+`linear-transformation-diagram` return addressable immutable groups, not a
+special Scene subclass. Apply a matrix to the diagram group and keep matrix
+notation or explanatory text as separate top-level Visuals.
+
+SCENE-DC adds deterministic two-dimensional ODE flow. Fixed-step RK4 computes
+streamlines and a parameter-driven `flow-particle` directly from their seed and
+requested ODE time—no frame-history mutation is involved. SCENE-DD adds static
+integer/decimal labels and a `parameter-display` derived Visual with fixed
+left, right, sign, or decimal anchors.
+
+SCENE-DE makes renderer-measured attachments composable through an acyclic
+dependency chain: `follow-anchor`, `keep-above`, `keep-below`, `keep-left-of`,
+and `keep-right-of` remain live after ordinary scene sampling. SCENE-DF extends
+the existing matrix/table group tree with per-axis sizes or an `'auto` measured
+snapshot, so named cells keep their paths while columns and rows fit contents.
+
+SCENE-CY-C adds `apply-pointwise`: a whole top-level Visual can be deformed by
+a world-space point function. Path geometry is sampled before the map is
+applied, so a complex square map visibly bends grid lines instead of merely
+moving their Bézier control points. SCENE-DA adds `complex->point`,
+`point->complex`, `complex-plane`, and `apply-complex-function`; SCENE-DB adds
+the corresponding `polar->point` / `point->polar`, `polar-plane`, and
+`polar-graph` builders. The combined example is
+`examples/pointwise-complex-and-polar.rkt`.
+
+SCENE-DG turns the authored-timeline audio and caption records into a real
+FFmpeg assembly step. `audio-cue` can trim, delay, scale, and fade a source;
+`subtitle` values write SRT or WebVTT; and `assemble-authored-mp4!` or
+`mux-authored-video!` produce a video with AAC audio and MP4 captions.
+SCENE-DH adds conservative automatic fingerprints for section frame caches,
+plus `render-authored-mp4!`: it renders invalidated complete sections as
+visual-only partial movies, stream-copies their concatenation, then muxes the
+authored media once at the end.
+
+SCENE-DJ fills out the everyday mathematical drawing vocabulary with
+path-backed `ellipse`, `annulus`, `sector`, `regular-polygon`, `star`, and
+`rounded-rectangle`, plus `arc-between-points`, `curved-arrow`,
+`double-arrow`, and grouped `labeled-point`. They use the existing Visual and
+path protocols, so they are not renderer-only conveniences. See
+`examples/shape-catalogue.rkt`.
 
 SCENE-CX adds immutable mathematical graph and directed-network diagrams.
 `graph` and `digraph` return ordinary nested group trees: vertices live at
@@ -17,10 +67,10 @@ SCENE-CW adds an immutable authoring layer around ordinary scenes.
 `make-authored-timeline` stores named half-open sections, cue markers, and
 audio-placement metadata without altering scene sampling. A selected section
 uses the full scene's original output-frame grid, but writes its PNGs locally
-from `frame-000000.png`, ready for direct MP4 encoding. An optional explicit
-cache key reuses a validated section manifest; it deliberately does not infer a
-hash of scene procedures, renderer state, or external files. Audio records are
-metadata for a later muxer, not audio mixed into video yet.
+from `frame-000000.png`, ready for direct MP4 encoding. SCENE-DH subsequently
+made the section cache automatic for serializable scenes and caller-declared
+assets, while SCENE-DG turns its recorded audio/caption data into a final FFmpeg
+mux step.
 
 SCENE-CV makes camera animation composable. `camera-pan-to`, `camera-pan-by`,
 `camera-zoom-to`, `camera-zoom-by`, `camera-follow`, and camera-fit requests
@@ -313,7 +363,7 @@ styling, renderer-measured multiline rich text, addressable matrices/tables,
 deterministic traced loci, composable camera timing, reproducible
 section-oriented rendering metadata, and live endpoint-derived network edges.
 
-The public package version is `0.98.0`. The public module's bindings are covered
+The public package version is `1.5.0`. The public module's bindings are covered
 by the Scribble reference source.
 
 ## Documentation source
@@ -2584,7 +2634,7 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `0.98.0`. Every completed SCENE
+This is the running design backlog for version `1.5.0`. Every completed SCENE
 stage must update it with the limitations, edge cases, and useful next ideas
 revealed by that stage. When a later stage delivers an item, retain its history
 in that stage's notes and revise this list to state the remaining boundary
@@ -2601,7 +2651,13 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Matrices and tables
 
-- SCENE-CT gives matrices and tables a regular, immutable nested-group shape:
+- SCENE-DF gives matrices and tables a regular, immutable nested-group shape
+  plus fixed scalar dimensions, explicit per-column/per-row size lists, or an
+  `'auto` construction-time measurement. Auto sizing uses the active default
+  Pict renderer once, then produces an ordinary renderer-independent group.
+  It does not dynamically remeasure after a text/formula changes or choose a
+  size from future animation frames.
+- Matrices and tables retain SCENE-CT's stable paths:
   rows are `row-N`, cells are `col-N`, and matrix brackets/table grid lines are
   ordinary addressable path Visuals. Cell dimensions and inter-cell gaps are
   explicit world-space values; the constructors do not yet measure entries to
@@ -2636,26 +2692,126 @@ precisely; do not silently lose the follow-on idea that led to the work.
   parallel. Follow expects a world-space target to remain available for its
   active interval; it is not a general relation that survives a removal.
 
-### Video authoring workflow
+### Video authoring, assembly, and caching
 
-- SCENE-CW stores named half-open sections, cue markers, and audio-placement
-  metadata around an immutable scene. It has no timeline editor, section-aware
-  preview player, automatic section discovery, subtitle generation, waveform
-  display, or user-interface for arranging clips.
-- A selected section samples the existing full-scene output grid and writes a
-  locally numbered PNG sequence. Consequently its first frame may begin after
-  the literal section start when that time falls between output samples. It is
-  not an independently resampled mini-scene, and the initial release has no
-  partial MP4 cache or automatic concatenation of selected sections.
-- Cache reuse is deliberately opt-in through a caller-supplied symbol or string
-  key. The manifest checks that key, bounds, FPS, global source indices, and
-  expected PNGs, but does not hash scene procedures, renderer choices, fonts,
-  SVG/image files, or camera resources. Authors must change the key when any of
-  those inputs change.
-- `audio-cue` does not open audio files. It records intended placement only;
-  this release does not trim, mix, fade, inspect duration, generate subtitles,
-  or invoke FFmpeg to mux audio. A later audio layer should consume the same
-  immutable metadata rather than changing scene sampling.
+- SCENE-DG has no timeline editor, section-aware preview player, waveform
+  display, audio-duration inspection, ducking/side-chain mixing, multi-track
+  buses, audio/video rate conversion controls, or an interactive clip-arranging
+  UI. `audio-cue` validates placement, trim, gain, and fades, but opens the
+  source only during FFmpeg assembly; codec failures and source durations are
+  therefore reported there. MP4 output carries `mov_text` captions from SRT or
+  WebVTT, but does not burn styled captions into pixels.
+- `assemble-authored-mp4!` works from one numbered PNG sequence;
+  `mux-authored-video!` deliberately replaces rather than preserves any audio
+  already present in its visual input. `render-authored-mp4!` requires one or
+  more contiguous named sections that cover the entire scene, so its joined
+  partials preserve the original global frame grid. A deliberately partial
+  export can still use `render-timeline-section!`, `encode-mp4!`, and
+  `concatenate-mp4!` explicitly.
+- SCENE-DH uses `'auto` by default for selected-section cache keys. The
+  fingerprint includes the serializable scene value, selected bounds and source
+  frames, FPS, camera and renderer representations, Racket version, and bytes
+  of caller-declared `#:asset-files`. It intentionally disables automatic reuse
+  when any procedure other than the built-in `linear` easing appears in the
+  scene representation, because procedure source cannot be hashed safely. It
+  also cannot discover external SVG/image, font, TeX-toolchain, FFmpeg-build,
+  or transitive asset dependencies: list such files in
+  `#:asset-files`, use an explicit versioned `#:cache-key`, or pass `#f` to
+  force a fresh render. Partial-MP4 manifests reuse only compatible locally
+  encoded visual clips; FFmpeg itself is still required for encoding, joining,
+  and muxing.
+
+### Mathematical shape catalogue
+
+- SCENE-DJ's ellipse, annulus, sector, regular polygon, star, and rounded
+  rectangle are cubic/path geometry, not new semantic leaf types. This keeps
+  them portable through existing path operations, but does not retain a
+  separately editable radius, corner, side, or star-point parameter after
+  construction. The default renderer uses odd-even fill for annulus holes;
+  there are no gradients, patterns, clipping, boolean path operations, or
+  automatic self-intersection repair.
+- `arc-between-points` and `curved-arrow` are circular and require a nonzero
+  sweep strictly smaller than a full turn. They do not select a route around
+  obstacles, dynamically follow moving endpoints, or support elliptical/
+  Bézier route geometry. A `derived-visual` can rebuild one from sampled points.
+  `labeled-point` is a static dot/text group; it has no automatic label
+  collision avoidance, box-anchor placement, or mathematical typesetting.
+
+### Linear algebra diagrams
+
+- SCENE-CZ supplies `number-plane`, `vector-arrow`, `basis-vectors`, and a
+  canonical `linear-transformation-diagram` as ordinary nested groups. The
+  name `vector-arrow` deliberately avoids shadowing Racket's base `vector`
+  constructor. Numeric tick labels and `vector-label` are static snapshots;
+  they do not follow separately animated targets yet. There are no ghost
+  vectors, basis-coordinate formulas, matrix multiplication helpers, or a
+  persistent linear-transformation scene abstraction—use `apply-matrix` on the
+  returned diagram group.
+
+### Pointwise, complex, and polar maps
+
+- SCENE-CY-C maps only a complete top-level world Visual. At interior frames,
+  path, circle, rectangle, axes, and arrow geometry is converted to sampled ordinary
+  paths and each sample moves linearly from its source position to its mapped
+  position. This is deterministic and makes nonlinear curves visible, but it
+  is neither adaptive subdivision nor an exact symbolic transformation of a
+  Bézier curve. It has no discontinuity/singularity clipping, conformal-grid
+  colouring, Jacobian display, inverse map, or nested-target operation.
+- Text, images, and custom affine leaves have no exposed path outline. They
+  remain legible at their original world placement while sibling geometric
+  leaves deform; an application needing warped glyphs or pixels must provide
+  an explicit vector/raster conversion. The exact original Visual is retained
+  at the first frame, but mapped circles and rectangles deliberately become
+  sampled paths thereafter.
+- SCENE-DA treats Racket complex values as world points. `complex-plane` is a
+  conventional static Cartesian grid with Re/Im labels, and
+  `apply-complex-function` has no automatic domain colouring, branch-cut or
+  pole handling, analytic validation, coordinate-normalization layer, or
+  special treatment of labels. The supplied function must return finite real
+  and imaginary components at every sampled point.
+- SCENE-DB provides static radial rings/rays and evenly sampled polar curves.
+  `point->polar` uses `atan`'s interval `[-pi, pi]` and reports angle zero at
+  the origin. `polar-graph` accepts signed radii for conventional rose curves,
+  but does not adapt around discontinuities, detect self intersections, avoid
+  label collisions, animate polar labels, or provide arc-length parameterizing.
+
+### Streamlines and ODE flow
+
+- SCENE-DC integrates autonomous two-dimensional fields with fixed-step RK4.
+  It has explicit step size and step count, but no adaptive error tolerance,
+  event detection, domain/boundary stopping, stiff solver, non-autonomous
+  field, higher-dimensional state, or numerical-analysis diagnostics. A field
+  error is reported rather than silently making a gap.
+- `streamline` and `streamlines` are static sampled geometry. `flow-particle`
+  is a pure parameter-derived marker, recomputed from the original seed at
+  each scene sample. There are no automatically advected tracer clouds,
+  animated streamline drawing, arrowheads/tangent orientation, collision
+  handling, field-aware seeding, or flow-map/Jacobian analysis yet.
+
+### Numeric displays
+
+- SCENE-DD formats finite real scalar values only. It supplies fixed decimal
+  places, grouping, signs, and string units, but not complex/scientific/
+  rational notation, locale-aware formatting, automatic significant figures,
+  typeset mathematical units, or renderer-measured digit-width alignment.
+- `parameter-display` reads a scalar scene parameter through a derived Visual.
+  Its left/right/center/sign anchors use ordinary text anchors; `decimal`
+  anchors two separately rendered text pieces at the decimal point. It has no
+  general live label relationship, animated rolling digits, baseline alignment
+  with arbitrary formulas, or automatic collision avoidance. Integer parameter
+  displays round a finite sampled value to the nearest integer.
+
+### Live layout relationships
+
+- SCENE-DE composes renderer-measured top-level attachment relationships only
+  when their visual-ID dependency graph is acyclic. The public conveniences
+  follow a centre/edge/corner anchor and can keep content above, below, left,
+  or right of a target; chain cycles raise a deterministic error at rendering.
+- It is not a general constraint solver: there is no collision avoidance,
+  baseline alignment, inside-frame fitting, rotation inheritance, automatic
+  reflow, nested layout attachments, or relative placement that survives as a
+  separately targetable semantic child. A renderer-aware attachment still
+  cannot be animated directly.
 
 ### Mathematical graphs and networks
 
@@ -2722,8 +2878,14 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Geometry and transforms
 
-- Group transforms are uniform-scale affine transforms; non-uniform group scale,
-  shear, reflection, and arbitrary affine matrices are not available.
+- SCENE-CY-A adds `linear2`, `affine2`, `apply-affine`, and `apply-matrix` for
+  complete top-level world Visuals. It preserves the established decomposed
+  `affine-transform` protocol, so nested child targets cannot yet receive a
+  general map directly, and a mapped group no longer exposes its descendants as
+  independently transformable scene targets. General maps conflict with the
+  existing same-target move/rotation/scale requests. The Pict adapter transforms
+  the complete rendered result, so per-Visual semantic decomposition, inherited
+  affine maps and renderer-independent transformed bounds remain later CY work.
 - Core path geometry has line and cubic Bézier segments, but no quadratic Bézier
   or arc segment type. SVG quadratic commands are converted to cubics on import.
 - A motion route is a clip-start snapshot. It does not deform with an animated
@@ -3010,6 +3172,150 @@ formula transition begins.
 The feature sequences explicit mathematics; it does not parse TeX, prove that a
 rewrite is valid, select a pedagogical route, or infer explanations.
 
+## SCENE-CY: general affine maps
+
+Version `0.99.0` adds a full affine-map layer without changing the historical
+`affine-transform` API. `linear2` stores the matrix
+
+\[
+\begin{pmatrix}a & c\\ b & d\end{pmatrix},
+\]
+
+and `affine2` combines that map with a translation. `apply-affine` applies an
+`affine2` after the target's existing map; `apply-matrix` is the translation-free
+convenience form. Matrix entries and translation interpolate directly from the
+identity map, which makes a shear continuous and also gives a defined (possibly
+singular) intermediate path for a reflection.
+
+```racket
+(define shear (make-linear2 1 0 1 1))
+
+(scene-play
+ (scene-add (make-scene) diagram)
+ (apply-matrix 'diagram shear)
+ #:duration 3)
+```
+
+The initial release deliberately maps one complete top-level world Visual. A
+group therefore keeps its grid, unit square, arrows, and labels together under
+one map, while title and matrix notation can remain separate. It does not yet
+map nested child paths directly or replace the decomposed `affine-transform`
+protocol used by existing Visual implementations. See
+`examples/affine-linear-transformations.rkt`.
+
+## SCENE-CZ: linear-algebra diagrams
+
+Version `1.0.0` adds reusable ordinary group trees for the standard
+linear-transformation picture. `number-plane` supplies named `grid`, `axes`,
+and optional `labels` children. `basis-vectors` supplies `e1` and `e2` arrow
+children, while `linear-transformation-diagram` combines a number plane, basis,
+unit square, and arbitrary vector under stable paths such as
+`'(diagram plane grid)` and `'(diagram basis e1)`.
+
+```racket
+(define diagram
+  (linear-transformation-diagram #:id 'diagram
+                                 #:vector-end (vec2 3 2)))
+
+(scene-play
+ (scene-add (make-scene) diagram)
+ (apply-matrix 'diagram (make-linear2 1 0 1 1))
+ #:duration 3)
+```
+
+`vector-arrow` is intentionally named to avoid shadowing Racket's base
+`vector` constructor. `vector-coordinates` returns its endpoint minus start,
+and `vector-label` creates a static endpoint label. See
+`examples/affine-linear-transformations.rkt`.
+
+## SCENE-CY-C: sampled pointwise maps
+
+Version `1.3.0` adds `apply-pointwise`, a top-level world-space deformation
+request. Each supported geometric leaf is sampled into a path and its samples
+blend from their source positions to a caller-provided point-map result.
+Sampling happens before mapping, so the square complex map bends a line into a
+parabola rather than leaving it as a chord. The source Visual is exact at the
+start of the clip; at later samples, semantic circles and rectangles have
+become ordinary path geometry.
+
+```racket
+(scene-play
+ (scene-add (make-scene) curve)
+ (apply-pointwise 'curve
+                  (lambda (p) (vec2 (vec2-x p) (* (vec2-y p) (vec2-y p)))))
+ #:duration 2)
+```
+
+## SCENE-DA: complex planes and functions
+
+`complex->point` and `point->complex` bridge ordinary Racket complex numbers
+and world-space `vec2` values. `complex-plane` builds a labelled Cartesian
+plane; `apply-complex-function` specializes `apply-pointwise` by presenting
+each geometric sample as a complex value. For example,
+`(apply-complex-function 'domain (lambda (z) (* z z)))` illustrates the
+square map. The function result must have finite real and imaginary parts.
+
+## SCENE-DB: polar coordinates and graphs
+
+`polar->point` converts a radius and angle to a `vec2`; `point->polar` returns
+a radius/angle reading. `polar-plane` builds ordinary named rings, rays, and
+optional labels, while `polar-graph` samples `r(theta)` into a path. Signed
+radii are accepted for graphing familiar roses. See
+`examples/pointwise-complex-and-polar.rkt` for both a complex deformation and
+a three-petal `r = 2 cos(3theta)` curve.
+
+## SCENE-DC: deterministic streamlines
+
+Version `1.1.0` adds fixed-step fourth-order Runge–Kutta integration for
+autonomous two-dimensional fields. `ode-flow-position` computes the solution
+at one signed time from the original seed. `streamline-points`, `streamline`,
+and `streamlines` build immutable static geometry; `flow-particle` reads an
+ordinary scene parameter and reconstructs its marker at every sampled frame.
+Consequently random-access frame rendering and sequential rendering agree.
+
+```racket
+(define rotation-field (lambda (x y) (vec2 (- y) x)))
+(define phase (parameter 'time 0.0))
+
+(flow-particle coordinate-axes rotation-field (vec2 2 0) phase
+               #:id 'particle)
+```
+
+## SCENE-DD: numeric displays
+
+Version `1.1.0` adds `integer`, `decimal-number`, `numeric-label`, and
+`parameter-display`. Formatting has fixed decimal places, optional grouping,
+explicit signs, and a trailing string unit. A dynamic display remains a pure
+derived Visual: it samples a scalar scene parameter rather than maintaining a
+mutable tracker. Its `#:anchor 'decimal` form holds the decimal point in place
+as the whole part changes width; `'left`, `'right`, `'center`, and `'sign` are
+also available.
+
+`examples/streamlines-and-numeric-display.rkt` combines the DC and DD features:
+the same phase controls an RK4 particle moving through a rotational field and a
+fixed-decimal time display.
+
+## SCENE-DE: acyclic live layout
+
+Version `1.2.0` makes renderer-measured attachments composable. Use
+`follow-anchor` for explicit anchor relationships or `keep-above`,
+`keep-below`, `keep-left-of`, and `keep-right-of` for common gaps. A target may
+itself be a live attachment; the renderer resolves the finite dependency chain
+from its concrete target outward and reports a cycle instead of using stale
+frame state.
+
+## SCENE-DF: measured matrices and tables
+
+Version `1.2.0` retains CT’s addressable rows and cells while allowing
+`#:entry-width`/`#:entry-height` and `#:cell-width`/`#:cell-height` to be a
+scalar, an explicit axis-size list, or `'auto`. The auto form measures the
+existing entries once and allocates each column/row its maximum ink-box extent
+plus `#:entry-padding` or `#:cell-padding`.
+
+`examples/live-layout-and-smart-tables.rkt` demonstrates both stages: two
+labels follow a scaled/moving card through a live chain, and a table snapshots
+unequal text-driven column widths.
+
 ## SCENE-CX: mathematical graphs and networks
 
 Version `0.98.0` adds graph diagrams without introducing mutable updater
@@ -3068,12 +3374,80 @@ those samples with fresh local names, so the result starts at
 (encode-mp4! "tmp/derivation-frames" "derivation.mp4" #:fps 30)
 ```
 
-The cache key is explicit by design. The saved manifest verifies its key,
-section bounds, FPS, selected global source frames, and expected PNGs, but does
-not pretend to hash arbitrary Racket procedures or external renderer assets.
-`authored-timeline-metadata` exposes portable section/cue/audio records to a
-future audio muxer or authoring UI. This first release does not decode, mix, or
-embed audio. See `examples/authoring-sections.rkt`.
+`authored-timeline-metadata` exposes portable section/cue/audio records. See
+`examples/authoring-sections.rkt`.
+
+## SCENE-DG/DH: media assembly and incremental movie output
+
+Version `1.4.0` finishes the first production path on top of the immutable
+timeline. Audio remains declarative until the final FFmpeg step, but it now has
+actual semantics: source trimming, timeline delay, linear gain, and optional
+fade-in/fade-out. Captions are ordinary timed strings and can be written as SRT
+or WebVTT.
+
+```racket
+(define production
+  (make-authored-timeline
+   scene
+   #:sections (list (section 'opening 0 2)
+                    (section 'proof 2 6))
+   #:audio-cues
+   (list (audio-cue "narration.wav" #:start 0 #:source-start 1
+                    #:duration 6 #:gain 3/4
+                    #:fade-in 1/5 #:fade-out 1/2))
+   #:subtitles
+   (list (subtitle 0 2 "We begin with the construction.")
+         (subtitle 2 6 "Now follow the proof."))))
+
+;; Renders only invalidated sections below tmp/production, encodes each local
+;; frame sequence, joins the visual streams, then adds AAC narration and SRT.
+(render-authored-mp4! production "tmp/production" "production.mp4"
+                       #:fps 30 #:workers 4
+                       #:asset-files (list "diagram.svg"))
+```
+
+The default `'auto` section key fingerprints the serializable scene data,
+section bounds, output settings, runtime, and declared asset bytes. If the
+scene contains any procedure other than the built-in `linear` easing, automatic
+reuse is disabled rather than risking a stale render. `render-authored-mp4!` therefore requires contiguous named
+sections covering the whole scene; it produces visual-only partial MP4s, uses
+FFmpeg's concat demuxer to join them, and applies audio/captions only once to
+the final stream. Lower-level `assemble-authored-mp4!`,
+`mux-authored-video!`, `write-subtitles!`, and `concatenate-mp4!` remain
+available when a production needs a different layout. See
+`examples/authored-media-assembly.rkt` for a visual explanation of the partial
+movie workflow, and `examples/authoring-sections.rkt` for the underlying
+timeline model.
+
+## SCENE-DJ: expanded mathematical shapes
+
+Version `1.5.0` adds a practical family of path-backed diagram primitives. The
+closed shapes all carry their ordinary path identity, transform, opacity, fill,
+and stroke, so they can be styled, created, or morphed by the existing API.
+`annulus` uses the Pict path renderer’s odd-even fill rule, preserving its open
+centre; `rounded-rectangle` is four straight sides joined by cubic quarter
+arcs; and `arc-between-points` is a directed circular sweep selected by a
+signed angle.
+
+```racket
+(define domain
+  (annulus #:id 'domain #:center (vec2 -2 0)
+           #:inner-radius 1/2 #:outer-radius 3/2
+           #:fill "palegreen" #:stroke "forestgreen"))
+(define image
+  (star #:id 'image #:center (vec2 2 0)
+        #:points 5 #:outer-radius 3/2 #:inner-radius 3/5
+        #:fill "gold" #:stroke "saddlebrown"))
+(define map-arrow
+  (curved-arrow (vec2 -1/2 0) (vec2 1/2 0)
+                #:id 'map #:angle (- (/ pi 2)) #:stroke "navy"))
+```
+
+`curved-arrow` returns a normal group with `shaft` and `tip` children;
+`labeled-point` similarly has `dot` and `label` children. `double-arrow` is
+the ordinary arrow primitive with both endpoint tips enabled. Every constructor
+is exact scene data rather than a renderer-specific Pict. See
+`examples/shape-catalogue.rkt`.
 
 ## SCENE-CV: composable camera motion
 
@@ -3527,9 +3901,12 @@ racket examples/copying-and-emphasizing-formula-parts.rkt \
 
 ## SCENE-BQ/BR: concurrent output and diagnostics
 
-Version `0.67.0` adds a bounded `#:workers` thread pool to `render-frames!`.
-Each worker owns distinct frame filenames; returned paths and per-frame metrics
-remain in frame-index order. `render-frames/report!` returns a
+Version `0.67.0` adds a bounded `#:workers` pool to `render-frames!`. On Racket
+8.18 or later, workers build independent bitmaps in a parallel thread pool,
+while one ordinary thread performs PNG encoding. Racket 8.12 keeps the
+compatible coroutine-thread implementation. Each worker owns distinct frame
+filenames; returned paths and per-frame metrics remain in frame-index order.
+`render-frames/report!` returns a
 `render-diagnostics` value with elapsed time, worker count, per-frame durations,
 and built-in cache hit/miss/eviction deltas. The default is one worker. Custom
 renderers used with more than one worker must be safe for concurrent calls.

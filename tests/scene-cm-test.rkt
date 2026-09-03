@@ -120,17 +120,42 @@
          (fixed-in-frame (plain-text "fixed" #:id 'overlay) #:camera camera)
          #:target-anchor 'top)))
       #:camera camera)))
+  ;; SCENE-DE resolves a finite attachment chain in dependency order. The
+  ;; first marker is centred at 13/10, so its right edge is 3/2 and the second
+  ;; marker's left edge begins there, putting its centre at 17/10.
+  (define chained-marker
+    (keep-right-of
+     (circle #:id 'chained-marker #:radius 1/5
+             #:fill "forestgreen" #:stroke #f #:stroke-width 0)
+     'marker))
+  (define chained-scene
+    (scene-wait
+     (scene-add (make-scene #:camera camera)
+                target attached-marker chained-marker)
+     1))
+  (define explicit-chain
+    (scene-wait
+     (scene-add
+      (make-scene #:camera camera)
+      target
+      (circle #:id 'marker #:center (vec2 13/10 0) #:radius 1/5
+              #:fill "crimson" #:stroke #f #:stroke-width 0)
+      (circle #:id 'chained-marker #:center (vec2 17/10 0) #:radius 1/5
+              #:fill "forestgreen" #:stroke #f #:stroke-width 0))
+     1))
+  (check-true (bytes=? (scene-bytes chained-scene 0)
+                       (scene-bytes explicit-chain 0)))
+  ;; Cycles are a deterministic authoring error rather than recursive renderer
+  ;; placement or a stale previous-frame result.
+  (define cycle-a
+    (keep-right-of (circle #:id 'a #:radius 1/5) 'b))
+  (define cycle-b
+    (keep-right-of (circle #:id 'b #:radius 1/5) 'a))
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (scene-state->pict
-      (scene-current-state
-       (scene-add
-        (make-scene #:camera camera)
-        target
-        attached-marker
-        (attach-to
-         (circle #:id 'chained-marker #:radius 1/5)
-         'marker
-         #:target-anchor 'right)))
-      #:camera camera))))
+     (scene->pict
+      (scene-wait
+       (scene-add (make-scene #:camera camera) cycle-a cycle-b)
+       1)
+      0))))

@@ -101,6 +101,43 @@
   ;; through the standard group composition path.
   (check-true (pict? (scene->pict initial 0)))
 
+  ;; SCENE-DF keeps those same paths while allowing per-axis size vectors or
+  ;; one renderer-measured `auto` snapshot. The longer second entry gives its
+  ;; column more room without widening the first column to the same size.
+  (define measured-matrix
+    (matrix
+     (list (list (entry "1") (entry "a much wider entry"))
+           (list (entry "22") (entry "3")))
+     #:id 'measured #:entry-width 'auto #:entry-height 'auto
+     #:entry-padding 1/10 #:column-gap 1/5 #:row-gap 1/10))
+  (define measured-scene (scene-add (make-scene) measured-matrix))
+  (define measured-left
+    (scene-state-ref (scene-current-state measured-scene)
+                     '(measured row-1 col-1)))
+  (define measured-right
+    (scene-state-ref (scene-current-state measured-scene)
+                     '(measured row-1 col-2)))
+  (check-true (> (- (vec2-x (visual-position measured-right))
+                    (vec2-x (visual-position measured-left)))
+                 1))
+  (check-true
+   (pict? (scene->pict (scene-add (make-scene) measured-matrix) 0)))
+
+  (define explicit-table
+    (table (list (list (entry "a") (entry "b"))
+                 (list (entry "c") (entry "d")))
+           #:id 'explicit #:cell-width (list 1 2)
+           #:cell-height (list 1 3) #:column-gap 1/2 #:row-gap 1/2))
+  (define explicit-scene (scene-add (make-scene) explicit-table))
+  (check-equal?
+   (- (vec2-x (visual-position
+               (scene-state-ref (scene-current-state explicit-scene)
+                                '(explicit row-1 col-2))))
+      (vec2-x (visual-position
+               (scene-state-ref (scene-current-state explicit-scene)
+                                '(explicit row-1 col-1)))))
+   2)
+
   ;; Construction rejects malformed grids and invalid dimensions early.
   (check-exn exn:fail:contract?
              (lambda () (matrix '() #:id 'empty)))
@@ -119,5 +156,8 @@
                        #:id 'stretched #:scale (vec2 1 2))))
   (check-exn exn:fail:contract?
              (lambda () (matrix-row-id 0)))
+  (check-exn exn:fail:contract?
+             (lambda () (matrix (list (list (entry "1") (entry "2")))
+                                #:id 'wrong-widths #:entry-width (list 1))))
   (check-exn exn:fail:contract?
              (lambda () (matrix-bracket-path 'A 'top))))
