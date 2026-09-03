@@ -46,8 +46,8 @@
                 (caption 'frequency-label "bar chart" (vec2 -23/10 12/5))
                 (caption 'stacked-label "stacked bars" (vec2 23/10 12/5))
                 (caption 'outcomes-label "sample space" (vec2 -23/10 -19/10))
-                (caption 'tree-label "probability tree" (vec2 0 -19/10))
-                (caption 'spread-label "box plot + error bars" (vec2 12/5 -13/10)))
+                (caption 'tree-label "probability tree" (vec2 0 -13/5))
+                (caption 'spread-label "box plot + error bars" (vec2 12/5 -13/5)))
      1))
   (define highlighted
     (scene-play initial
