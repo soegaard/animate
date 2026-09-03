@@ -17,18 +17,16 @@
   (define range (ode-trajectory-time-range trajectory))
   (define start (car range))
   (define end (cdr range))
-  (define points
+  ;; Dense output supplies arbitrary-time samples.  data-plot turns these
+  ;; numeric coordinates into one tangent-continuous cubic path, which avoids
+  ;; visible polyline joints at the projectile's turning point.
+  (define coordinates
     (for/list ([index (in-range 241)])
       (define time (+ start (* (/ index 240) (- end start))))
-      (define coordinate (ode-trajectory-position trajectory time))
-      (axes-coordinates->point axes-value
-                                (vec2-x coordinate) (vec2-y coordinate))))
-  (define geometry (polyline-path points))
-  (define center (path-geometry-center geometry))
-  (make-path-visual
-   (path-geometry-translate geometry (vec2-scale -1 center))
-   #:id 'trajectory #:center center #:fill #f
-   #:stroke "steelblue" #:stroke-width 3))
+      (ode-trajectory-position trajectory time)))
+  (data-plot axes-value coordinates
+             #:id 'trajectory #:clip? #f #:interpolation 'smooth
+             #:stroke "steelblue" #:stroke-width 3))
 
 (define (make-demo-scene)
   (define coordinate-axes
@@ -69,9 +67,15 @@
                 #:id 'status #:center (vec2 0 -17/5)
                 #:font-size 1/4 #:font-family 'modern #:color "darkred"))
   (define ground
-    (line (axes-coordinates->point coordinate-axes -1 0)
-          (axes-coordinates->point coordinate-axes 5 0)
-          #:id 'ground #:stroke "sienna" #:stroke-width 2))
+    ;; Stop at the base of the x-axis arrowhead.  The ground is deliberately
+    ;; drawn above the axes, but must not continue through the blue tip.
+    (let ([x-tip-base
+           (- (axis-range-maximum (axes-visual-x-range coordinate-axes))
+              (/ (axes-visual-tip-length coordinate-axes)
+                 (axes-x-unit-length coordinate-axes)))])
+      (line (axes-coordinates->point coordinate-axes -1 0)
+            (axes-coordinates->point coordinate-axes x-tip-base 0)
+            #:id 'ground #:stroke "sienna" #:stroke-width 2)))
   (define particle
     (flow-particle coordinate-axes trajectory phase
                    #:id 'particle #:shape 'circle #:size 1/4

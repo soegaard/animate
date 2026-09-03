@@ -453,7 +453,9 @@
 ;;;
 
 ; axes-visual-path-geometry : axes-visual? -> path-geometry?
-;;   Returns local shafts, ticks, and maximum-end tips in drawing order.
+;;   Returns local shafts, ticks, and maximum-end tips in drawing order. A
+;;   tipped maximum endpoint does not also receive a tick, since that tick
+;;   would be painted through the arrowhead apex.
 (define (axes-visual-path-geometry axes)
   (check-axes-visual 'axes-visual-path-geometry axes)
   (define x-start
@@ -528,7 +530,11 @@
       '()
       (for/list ([value
                   (in-list
-                   (axes-x-tick-values axes))])
+                   (axes-x-tick-values axes))]
+                 #:unless
+                 (and (axes-visual-x-tip? axes)
+                      (axis-maximum-tick? value
+                                          (axes-visual-x-range axes))))
         (define center
           (axes-local-point axes value
                             (axis-reference-coordinate
@@ -547,7 +553,11 @@
       '()
       (for/list ([value
                   (in-list
-                   (axes-y-tick-values axes))])
+                   (axes-y-tick-values axes))]
+                 #:unless
+                 (and (axes-visual-y-tip? axes)
+                      (axis-maximum-tick? value
+                                          (axes-visual-y-range axes))))
         (define center
           (axes-local-point axes
                             (axis-reference-coordinate
@@ -564,6 +574,19 @@
   (path-subpath start
                 (list (line-path-segment end))
                 #f))
+
+; axis-maximum-tick? : finite-real? axis-range? -> boolean?
+;;   Recognizes a tick that represents the maximum endpoint. Inexact decimal
+;;   tick arithmetic can differ from the endpoint by a few ulps, so use the
+;;   same small relative tolerance as range tick generation.
+(define (axis-maximum-tick? value range)
+  (define maximum
+    (axis-range-maximum range))
+  (or (= value maximum)
+      (and (or (inexact? value) (inexact? maximum))
+           (<= (abs (- value maximum))
+               (* tick-index-relative-tolerance
+                  (max 1.0 (abs value) (abs maximum)))))))
 
 
 ;;;

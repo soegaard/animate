@@ -14,6 +14,8 @@
 
 (require (only-in racket/math pi)
          rackunit
+         (only-in "../private/axes-visual.rkt"
+                  axes-visual-path-geometry)
          "../main.rkt")
 
 
@@ -235,6 +237,30 @@
   (check-equal? (axes-point->coordinates coordinate-axes
                                           (vec2 12 -3))
                 (vec2 2 1))
+
+  ;; A tick at a tipped maximum endpoint would cross the arrowhead apex. The
+  ;; maximum ticks are therefore omitted, including when decimal arithmetic
+  ;; represents the endpoint with a tiny rounding difference.
+  (define tipped-unit-axes
+    (axes #:id 'tipped-unit-axes
+          #:x-range (axis-range -1 1 1)
+          #:y-range (axis-range -1 1 1)
+          #:x-length 2 #:y-length 2
+          #:x-tip? #t #:y-tip? #t))
+  (define tipped-subpaths
+    (path-geometry-subpaths (axes-visual-path-geometry tipped-unit-axes)))
+  (check-equal? (length tipped-subpaths) 6)
+  (define decimal-tipped-axes
+    (axes #:id 'decimal-tipped-axes
+          #:x-range (axis-range -0.3 0.3 0.1)
+          #:y-range (axis-range -1 1 1)
+          #:x-length 6 #:y-length 2
+          #:x-tip? #t #:y-tip? #f))
+  (define decimal-open-subpaths
+    (filter (lambda (subpath) (not (path-subpath-closed? subpath)))
+            (path-geometry-subpaths
+             (axes-visual-path-geometry decimal-tipped-axes))))
+  (check-equal? (length decimal-open-subpaths) 9)
 
   ; transformed-axes : axes-visual?
   ;;   Gives coordinate-axes with rotation and non-uniform scale.

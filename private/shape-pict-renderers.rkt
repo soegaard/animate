@@ -313,13 +313,21 @@
    camera))
 
 ; axes-visual->pict : axes-visual? camera? -> pict?
-;;   Converts semantic axes through the shared path renderer.
+;;   Converts semantic axes through the tipped-path renderer.  Shaft and ticks
+;;   draw first; the filled, unoutlined arrowheads draw over them, leaving each
+;;   semantic apex precise rather than outlined or crossed by a tick.
 (define (axes-visual->pict visual camera)
-  (diagram-path->pict visual
-                      (axes-visual-path-geometry visual)
-                      (axes-visual-stroke visual)
-                      (axes-visual-stroke-width visual)
-                      camera))
+  (arrow-path-visual->pict
+   (make-path-visual
+    (axes-visual-path-geometry visual)
+    #:id (visual-id visual)
+    #:center (visual-position visual)
+    #:rotation (visual-rotation visual)
+    #:scale (visual-scale visual)
+    #:fill (axes-visual-stroke visual)
+    #:stroke (axes-visual-stroke visual)
+    #:stroke-width (axes-visual-stroke-width visual))
+   camera))
 
 ; diagram-path->pict : affine-visual? path-geometry? any/c
 ;                      nonnegative-real? camera? -> pict?

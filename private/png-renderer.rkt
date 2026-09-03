@@ -67,6 +67,7 @@
 ;                  [#:renderers (listof pict-renderer?)]
 ;                  [#:clean? boolean?]
 ;                  [#:workers exact-positive-integer?]
+;                  [#:supersample exact-positive-integer?]
 ;                  -> (listof path?)
 ;; Writes every sampled scene frame as a numbered PNG file. Paths stay in
 ;; frame-index order even when workers render files concurrently.
@@ -75,7 +76,8 @@
                         #:camera [camera #f]
                         #:renderers [renderers default-pict-renderers]
                         #:clean? [clean? #t]
-                        #:workers [workers 1])
+                        #:workers [workers 1]
+                        #:supersample [supersample 1])
   (render-diagnostics-paths
    (render-frames/report! scene
                           output-directory
@@ -83,7 +85,8 @@
                           #:camera camera
                           #:renderers renderers
                           #:clean? clean?
-                          #:workers workers)))
+                          #:workers workers
+                          #:supersample supersample)))
 
 ;; render-diagnostics contains the deterministic output paths, actual worker
 ;; count, wall time, per-frame render/write durations in frame-index order, and
@@ -105,6 +108,7 @@
 ;                         [#:renderers (listof pict-renderer?)]
 ;                         [#:clean? boolean?]
 ;                         [#:workers exact-positive-integer?]
+;                         [#:supersample exact-positive-integer?]
 ;                         -> render-diagnostics?
 ;; Writes frames just as render-frames! does, returning output and performance
 ;; diagnostics instead of only paths.
@@ -113,7 +117,8 @@
                                #:camera [camera #f]
                                #:renderers [renderers default-pict-renderers]
                                #:clean? [clean? #t]
-                               #:workers [workers 1])
+                               #:workers [workers 1]
+                               #:supersample [supersample 1])
   (define frame-count
     (scene-frame-count scene #:fps fps))
   (unless (path-string? output-directory)
@@ -140,7 +145,8 @@
    #:camera camera
    #:renderers renderers
    #:clean? clean?
-   #:workers workers))
+   #:workers workers
+   #:supersample supersample))
 
 ; render-frame-indices! : scene? (listof exact-nonnegative-integer?) path-string?
 ;                         [#:fps exact-positive-integer?]
@@ -148,6 +154,7 @@
 ;                         [#:renderers (listof pict-renderer?)]
 ;                         [#:clean? boolean?]
 ;                         [#:workers exact-positive-integer?]
+;                         [#:supersample exact-positive-integer?]
 ;                         -> (listof path?)
 ;; Renders selected scene-frame indices in the supplied order, naming the
 ;; output locally from frame-000000.png. This keeps a rendered timeline section
@@ -157,7 +164,8 @@
                                #:camera [camera #f]
                                #:renderers [renderers default-pict-renderers]
                                #:clean? [clean? #t]
-                               #:workers [workers 1])
+                               #:workers [workers 1]
+                               #:supersample [supersample 1])
   (render-diagnostics-paths
    (render-frame-indices/report!
     scene frame-indices output-directory
@@ -165,7 +173,8 @@
     #:camera camera
     #:renderers renderers
     #:clean? clean?
-    #:workers workers)))
+    #:workers workers
+    #:supersample supersample)))
 
 ; render-frame-indices/report! : scene? (listof exact-nonnegative-integer?)
 ;                                path-string? ... -> render-diagnostics?
@@ -176,7 +185,8 @@
                                       #:camera [camera #f]
                                       #:renderers [renderers default-pict-renderers]
                                       #:clean? [clean? #t]
-                                      #:workers [workers 1])
+                                      #:workers [workers 1]
+                                      #:supersample [supersample 1])
   (define available-frame-count
     (scene-frame-count scene #:fps fps))
   (unless (and (list? frame-indices)
@@ -204,6 +214,8 @@
     (raise-argument-error 'render-frame-indices! "boolean?" clean?))
   (unless (exact-positive-integer? workers)
     (raise-argument-error 'render-frame-indices! "exact-positive-integer?" workers))
+  (unless (exact-positive-integer? supersample)
+    (raise-argument-error 'render-frame-indices! "exact-positive-integer?" supersample))
   (make-directory* output-directory)
   (when clean?
     (delete-old-frames! output-directory))
@@ -226,6 +238,7 @@
                               camera
                               renderers
                               workers
+                              supersample
                               ode-frame-samples))
   (define after-counters
     (default-pict-renderer-cache-counters renderers))
@@ -256,7 +269,7 @@
 ;; parallel thread. Each job owns a unique local output filename, while returned
 ;; lists are rebuilt in the requested global-frame order after all work ends.
 (define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers
-                                  ode-frame-samples)
+                                  supersample ode-frame-samples)
   (define frame-count
     (length frame-indices))
   (define active-workers
@@ -297,7 +310,8 @@
                               source-index
                               #:fps fps
                               #:camera camera
-                              #:renderers renderers))))
+                              #:renderers renderers
+                              #:supersample supersample))))
     (pending-frame local-index path bitmap started-at))
   (define (save-pending-frame! pending)
     (define path (pending-frame-path pending))

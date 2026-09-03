@@ -108,5 +108,18 @@
    (lambda ()
      (check-true (is-a? (scene-frame->bitmap scene 1 #:fps 2) bitmap%))
      (render-frames! scene frames #:fps 2)
+     ;; Supersampling preserves the world view while multiplying just the
+     ;; raster dimensions. This is used by the SCENE-DN movie before Lanczos
+     ;; downsampling, so a curved trajectory has clean antialiased edges.
+     (define supersampled
+       (scene-frame->bitmap scene 1 #:fps 2 #:supersample 2))
+     (check-equal? (send supersampled get-width) 2560)
+     (check-equal? (send supersampled get-height) 1440)
+     (define supersampled-paths
+       (render-frames! scene frames #:fps 2 #:supersample 2))
+     (define saved-supersampled
+       (read-bitmap (car supersampled-paths)))
+     (check-equal? (send saved-supersampled get-width) 2560)
+     (check-equal? (send saved-supersampled get-height) 1440)
      (check-equal? (unbox render-calls) 0))
    (lambda () (delete-directory/files frames))))
