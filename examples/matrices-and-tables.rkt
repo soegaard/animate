@@ -43,10 +43,12 @@
      #:entry-width 7/10 #:entry-height 7/10 #:row-gap 1/5
      #:stroke "forestgreen"))
   (define multiplication-sign
-    (glyph-tex #:id 'times #:center (vec2 -3/2 1/4)
+    ;; Centre each operator in the gap between the rendered matrix brackets,
+    ;; rather than between the nominal centres of its neighbouring groups.
+    (glyph-tex #:id 'times #:center (vec2 -51/40 1/4)
                #:font-size 2/5 "\\times"))
   (define equals-sign
-    (glyph-tex #:id 'equals #:center (vec2 3/2 1/4)
+    (glyph-tex #:id 'equals #:center (vec2 1 1/4)
                #:font-size 2/5 "="))
   (define calculation-table
     (table
