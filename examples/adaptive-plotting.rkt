@@ -32,7 +32,10 @@
     (adaptive-function-graph
      oscillation-axes (lambda (x) (sin (* 30 x))) #:id 'oscillation
      #:x-min -1 #:x-max 1 #:initial-sample-count 17
-     #:max-deviation 1/100 #:max-depth 10
+     ;; This high-frequency stress case needs a finer display-space tolerance
+     ;; than the reciprocal: it adds samples around every crest and trough
+     ;; rather than leaving them as visibly pointed line joins.
+     #:max-deviation 1/1000 #:max-depth 10
      #:stroke "royalblue" #:stroke-width 3))
   (define pole-guide
     (dashed-line (axes-coordinates->point reciprocal-axes 0 -3)

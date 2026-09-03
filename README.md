@@ -59,9 +59,9 @@ existing TeX layout, semantic identity, matching, and motion all remain intact.
 
 SCENE-CQ adds adaptive function plotting. `sample-adaptive-function-path` and
 `adaptive-function-graph` begin from a deterministic display-space grid, then
-subdivide intervals whose midpoint departs from its chord. They preserve gaps at
-explicit exclusions and detected vertical asymptotes rather than clipping a
-false connecting line through a pole.
+compare quarter, midpoint, and three-quarter probes with their chord before
+subdividing. They preserve gaps at explicit exclusions and detected vertical
+asymptotes rather than clipping a false connecting line through a pole.
 
 SCENE-CP adds axes-aware helpers for coordinate-system and calculus diagrams:
 graph points and labels, projections, secants, numeric tangents, filled areas,
@@ -523,7 +523,8 @@ near a clipping boundary.
 
 `sample-adaptive-function-path` and `adaptive-function-graph` use the same
 immutable axes-local result as the fixed sampler, but begin with a small,
-display-uniform exploration grid and recursively sample interval midpoints:
+display-uniform exploration grid and recursively test quarter, midpoint, and
+three-quarter samples of each interval:
 
 ```racket
 (adaptive-function-graph coordinate-axes
@@ -534,11 +535,12 @@ display-uniform exploration grid and recursively sample interval midpoints:
                          #:max-depth 12)
 ```
 
-An interval is subdivided when its sampled midpoint differs from the chord
-midpoint by more than `#:max-deviation`, measured in the untransformed local
-geometry of the axes. `#:max-depth` bounds this work per initial interval. On a
-log x axis, both the initial grid and every refinement midpoint are uniform in
-log display space.
+An interval is subdivided when any of those probes differs from its matching
+chord position by more than `#:max-deviation`, measured in the untransformed
+local geometry of the axes. The quarter probes avoid accepting a crest or
+trough merely because the midpoint happens to be chord-collinear.
+`#:max-depth` bounds this work per initial interval. On a log x axis, both the
+initial grid and every refinement probe are uniform in log display space.
 
 The adaptive sampler treats an exact division-by-zero evaluation as a gap and,
 by default, refines then breaks sample pairs that lie beyond opposite visible y
@@ -2782,12 +2784,13 @@ precisely; do not silently lose the follow-on idea that led to the work.
   rectangles have no adaptive error estimate or signed-area bookkeeping. The
   helpers do not infer pedagogical labels, choose an approximation method, or
   become live by themselves.
-- SCENE-CQ adaptively subdivides by one midpoint/chord-deviation test and breaks
-  visible opposite-side asymptotes or caller-excluded intervals. It does not
-  prove continuity, locate a pole exactly, solve roots, use a pixel-space error
-  tolerance, preserve an error bound after smooth interpolation, or detect a
-  curve that aliases every initial sample. There are still no per-point style
-  tables, error bars, or pixel-fixed marker sizes.
+- SCENE-CQ adaptively subdivides using quarter, midpoint, and three-quarter
+  chord-deviation tests and breaks visible opposite-side asymptotes or
+  caller-excluded intervals. It does not prove continuity, locate a pole
+  exactly, solve roots, use a pixel-space error tolerance, preserve an error
+  bound after smooth interpolation, or detect a curve that aliases every probe
+  in an initial interval. There are still no per-point style tables, error
+  bars, or pixel-fixed marker sizes.
 - `svg->visual` is intentionally structural and supports groups plus common
   geometric leaves with unitless translation transforms. Complex SVG transforms
   and renderer features should use `svg-image`, which preserves their appearance
@@ -3217,9 +3220,10 @@ their colours while the equals sign stays fixed.
 
 Version `0.91.0` adds `sample-adaptive-function-path` and
 `adaptive-function-graph`. They begin with a deterministic initial grid and
-recursively split intervals whose actual midpoint differs from the midpoint of
-the chord. The path is still ordinary axes-local geometry, so clipping, smooth
-interpolation, styling, and every usual path animation continue to work.
+recursively split intervals whose quarter, midpoint, or three-quarter sample
+differs from the matching position of the chord. The path is still ordinary
+axes-local geometry, so clipping, smooth interpolation, styling, and every
+usual path animation continue to work.
 
 ```racket
 (adaptive-function-graph axes-value tan

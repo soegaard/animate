@@ -166,8 +166,9 @@
 ;                                 [#:excluded-intervals (listof numeric-interval-spec?)]
 ;                                 [#:interpolation curve-interpolation?]
 ;                                 -> path-geometry?
-;; Samples a function with deterministic midpoint subdivision in axes-local
-;; geometry.  Explicit exclusions and detected poles become path breaks.
+;; Samples a function with deterministic quarter/midpoint/three-quarter probes
+;; in axes-local geometry. Explicit exclusions and detected poles become path
+;; breaks.
 (define (sample-adaptive-function-path axes function
                                        #:x-min [requested-x-min #f]
                                        #:x-max [requested-x-max #f]
@@ -383,42 +384,57 @@
              (coordinate-y-distance-exceeds? start end max-jump))
         (and detect-discontinuities?
              (coordinate-pair-crosses-hidden-asymptote? axes start end))))
-  (define (chord-deviation start middle end)
-    ;; x is sampled at the display-space midpoint, so comparing the sampled
-    ;; local point to the chord midpoint is the standard midpoint flatness
-    ;; test. It deliberately measures rendered axes-local geometry.
+  (define (chord-deviation start probe end progress)
+    ;; Every probe lies at a display-space fraction of its chord. Comparing its
+    ;; local point to the matching fraction of the chord measures the rendered
+    ;; axes-local flatness directly. Quarter probes catch a crest or trough
+    ;; which happens to leave the interval midpoint nearly chord-collinear.
     (define start-local
       (axes-coordinates->local-point axes (vec2-x start) (vec2-y start)))
-    (define middle-local
-      (axes-coordinates->local-point axes (vec2-x middle) (vec2-y middle)))
+    (define probe-local
+      (axes-coordinates->local-point axes (vec2-x probe) (vec2-y probe)))
     (define end-local
       (axes-coordinates->local-point axes (vec2-x end) (vec2-y end)))
-    (vec2-distance middle-local
-                   (vec2-scale 1/2 (vec2+ start-local end-local))))
-  (define (must-refine? start middle end)
+    (vec2-distance probe-local
+                   (vec2-lerp start-local end-local progress)))
+  (define (breaks-among? samples)
+    (for/or ([start (in-list samples)]
+             [end (in-list (cdr samples))])
+      (break-between? start end)))
+  (define (must-refine? start quarter middle three-quarters end)
+    (define samples (list start quarter middle three-quarters end))
     (or (not start)
+        (not quarter)
         (not middle)
+        (not three-quarters)
         (not end)
-        (break-between? start middle)
-        (break-between? middle end)
-        (> (chord-deviation start middle end) max-deviation)))
+        (breaks-among? samples)
+        (> (max (chord-deviation start quarter end 1/4)
+                (chord-deviation start middle end 1/2)
+                (chord-deviation start three-quarters end 3/4))
+           max-deviation)))
   (define (sample-interval x-start start x-end end depth)
+    (define x-quarter
+      (sampling-domain-value axes x-start x-end 1/4))
     (define x-middle
       (sampling-domain-value axes x-start x-end 1/2))
+    (define x-three-quarters
+      (sampling-domain-value axes x-start x-end 3/4))
+    (define quarter (sample-at x-quarter))
     (define middle (sample-at x-middle))
+    (define three-quarters (sample-at x-three-quarters))
     (define needs-refinement?
-      (must-refine? start middle end))
+      (must-refine? start quarter middle three-quarters end))
     (cond
       [(and needs-refinement? (< depth max-depth))
        (append (sample-interval x-start start x-middle middle (add1 depth))
                (sample-interval x-middle middle x-end end (add1 depth)))]
       [(or (not start)
+           (not quarter)
            (not middle)
+           (not three-quarters)
            (not end)
-           (break-between? start end)
-           (and detect-discontinuities?
-                (or (break-between? start middle)
-                    (break-between? middle end))))
+           (breaks-among? (list start quarter middle three-quarters end)))
        (list #f)]
       [else
        (list (adaptive-segment start end))]))

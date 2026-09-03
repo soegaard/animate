@@ -54,6 +54,26 @@
      #:x-min -1 #:x-max 1
      #:initial-sample-count 17 #:max-depth 10 #:max-deviation 1/100))
   (check-true (> (point-count oscillating) 100))
+
+  ;; Midpoint-only testing would accept this polynomial as a perfectly flat
+  ;; chord: its endpoints and midpoint are all zero. Quarter probes expose its
+  ;; two bends and force a subdivision.
+  (define midpoint-alias
+    (sample-adaptive-function-path
+     plot-axes
+     (lambda (x) (* x (- x 1/2) (- x 1)))
+     #:x-min 0 #:x-max 1 #:initial-sample-count 2
+     #:max-depth 5 #:max-deviation 1/100))
+  (check-true (> (point-count midpoint-alias) 2))
+
+  ;; A tighter display-space tolerance deliberately adds dense samples around
+  ;; the peaks and troughs of the high-frequency stress curve.
+  (define finely-oscillating
+    (sample-adaptive-function-path
+     plot-axes (lambda (x) (sin (* 30 x)))
+     #:x-min -1 #:x-max 1
+     #:initial-sample-count 17 #:max-depth 10 #:max-deviation 1/1000))
+  (check-true (> (point-count finely-oscillating) 800))
   (define sharp-rational
     (sample-adaptive-function-path
      plot-axes (lambda (x) (/ 1 (+ 1 (* 100 x x))))
