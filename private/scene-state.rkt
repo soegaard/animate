@@ -19,7 +19,8 @@
 ;;;
 
 ;; Imports
-(require "affine-transform.rkt"
+(require "affine-map-visual.rkt"
+         "affine-transform.rkt"
          "derived-visual.rkt"
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
@@ -41,6 +42,7 @@
          scene-state-visuals-in-drawing-order
          scene-state-resolved-ref
          scene-state-resolved-world-ref
+         scene-state-parent-affine-map
          scene-state-resolved-visuals-in-drawing-order
          scene-state-value-has?
          scene-state-value-ref
@@ -111,6 +113,69 @@
         "visual-path" path))))
   (visual-descendant-ref root (cdr path) path 'scene-state-ref))
 
+;; scene-state-parent-affine-map : scene-state? visual-path? -> affine2?
+;; Returns the complete affine map from a target's containing coordinate system
+;; to world coordinates. A root target has the identity parent map. Nested
+;; world-coordinate requests use this to rebase a requested map into the local
+;; coordinate system without losing enclosing semantic affine wrappers.
+(define (scene-state-parent-affine-map state target)
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-parent-affine-map "scene-state?" state))
+  (define path
+    (visual-target-path target 'scene-state-parent-affine-map))
+  (define root
+    (hash-ref
+     (scene-state-visuals-by-id state)
+     (car path)
+     (lambda ()
+       (raise-arguments-error
+        'scene-state-parent-affine-map
+        "the Visual path is present in the scene"
+        "visual-path" path))))
+  (let loop ([visual root]
+             [descendant-ids (cdr path)]
+             [parent-map identity-affine2])
+    (cond
+      [(null? descendant-ids)
+       parent-map]
+      [(not (composite-visual? visual))
+       (raise-arguments-error
+        'scene-state-parent-affine-map
+        "an intermediate Visual path entry naming a built-in composite"
+        "visual-path" path
+        "visual" visual)]
+      [else
+       (define child-id (car descendant-ids))
+       (define child
+         (for/first ([candidate (in-list (composite-visual-children visual))]
+                     #:when (eq? (visual-id candidate) child-id))
+           candidate))
+       (unless child
+         (raise-arguments-error
+          'scene-state-parent-affine-map
+          "the Visual path is present in the scene"
+          "visual-path" path
+          "missing-visual-id" child-id))
+       (loop child
+             (cdr descendant-ids)
+             (affine2-compose parent-map
+                              (visual-local-affine-map visual)))])))
+
+;; visual-local-affine-map : affine-visual? -> affine2?
+;; Gives one node's semantic map from its own local coordinates to the
+;; coordinates of its containing composite.
+(define (visual-local-affine-map visual)
+  (cond
+    [(affine-map-visual? visual)
+     (affine-map-visual-map visual)]
+    [(affine-visual? visual)
+     (affine-transform->affine2 (visual-transform visual))]
+    [else
+     (raise-arguments-error
+      'scene-state-parent-affine-map
+      "an affine Visual in every enclosing path position"
+      "visual" visual)]))
+
 ; visual-descendant-ref : visual? (listof symbol?) visual-path? symbol? -> visual?
 ;; Resolves descendant IDs through built-in semantic groups and formula assemblies.
 (define (visual-descendant-ref visual descendant-ids full-path who)
@@ -141,7 +206,9 @@
 ;; Reports whether visual exposes built-in stable child identities.
 (define (composite-visual? visual)
   (or (group-visual? visual)
-      (formula-assembly-visual? visual)))
+      (formula-assembly-visual? visual)
+      (and (affine-map-visual? visual)
+           (composite-visual? (affine-map-visual-content visual)))))
 
 ; composite-visual-children : composite-visual? -> (listof visual?)
 ;; Returns one composite's significant local children in drawing order.
@@ -152,6 +219,8 @@
     [(formula-assembly-visual? visual)
      (group-visual-children
       (formula-assembly-visual-group visual))]
+    [(affine-map-visual? visual)
+     (composite-visual-children (affine-map-visual-content visual))]
     [else
      (raise-argument-error
       'composite-visual-children
@@ -177,6 +246,13 @@
             "child" child))
          (formula-part (visual-id child) child)))
      (formula-assembly-visual-with-parts visual parts)]
+    [(affine-map-visual? visual)
+     (affine-map-visual-with-content
+      visual
+      (composite-visual-with-children
+       (affine-map-visual-content visual)
+       children
+       who))]
     [else
      (raise-argument-error
       who
@@ -261,6 +337,10 @@
         visual
         (for/list ([child (in-list (group-visual-children visual))])
           (resolve-visual-tree child)))]
+      [(affine-map-visual? visual)
+       (affine-map-visual-with-content
+        visual
+        (resolve-visual-tree (affine-map-visual-content visual)))]
       [else
        visual]))
 
@@ -362,37 +442,58 @@
 ;;   parent translation to Pict composition; an independently rendered copy
 ;;   cannot do that, so this helper uses affine-transform-apply-point directly.
 (define (composite-visual-world-children visual)
-  (define parent-transform
-    (visual-transform visual))
-  (for/list ([child (in-list (composite-visual-children visual))])
-    (unless (affine-visual? child)
-      (raise-arguments-error
-       'scene-state-resolved-world-ref
-       "a composite child that supports affine placement"
-       "parent" visual
-       "child" child))
-    (define child-transform
-      (visual-transform child))
-    (define transformed-child
-      (visual-with-transform
-       child
-       (make-affine-transform
-        #:translation
-        (affine-transform-apply-point
-         parent-transform
-         (affine-transform-translation child-transform))
-        #:rotation
-        (+ (affine-transform-rotation parent-transform)
-           (affine-transform-rotation child-transform))
-        #:scale
-        (vec2* (affine-transform-scale parent-transform)
-               (affine-transform-scale child-transform)))))
-    (if (and (opacity-visual? visual)
-             (opacity-visual? transformed-child))
-        (visual-with-opacity
-         transformed-child
-         (* (visual-opacity visual) (visual-opacity transformed-child)))
-        transformed-child)))
+  (cond
+    [(affine-map-visual? visual)
+     ;; The wrapper's map already includes every normal ancestor composed by
+     ;; `visual-with-transform`. Rewrapping each direct child therefore gives
+     ;; an independently drawable world-space target without discarding the
+     ;; enclosing shear/reflection.
+     (define content (affine-map-visual-content visual))
+     (define inherited-opacity
+       (* (visual-opacity visual)
+          (if (opacity-visual? content)
+              (visual-opacity content)
+              1)))
+     (for/list ([child (in-list (composite-visual-children content))])
+       (define transformed-child
+         (affine-map child (affine-map-visual-map visual)))
+       (if (opacity-visual? transformed-child)
+           (visual-with-opacity
+            transformed-child
+            (* inherited-opacity (visual-opacity transformed-child)))
+           transformed-child))]
+    [else
+     (define parent-transform
+       (visual-transform visual))
+     (for/list ([child (in-list (composite-visual-children visual))])
+       (unless (affine-visual? child)
+         (raise-arguments-error
+          'scene-state-resolved-world-ref
+          "a composite child that supports affine placement"
+          "parent" visual
+          "child" child))
+       (define child-transform
+         (visual-transform child))
+       (define transformed-child
+         (visual-with-transform
+          child
+          (make-affine-transform
+           #:translation
+           (affine-transform-apply-point
+            parent-transform
+            (affine-transform-translation child-transform))
+           #:rotation
+           (+ (affine-transform-rotation parent-transform)
+              (affine-transform-rotation child-transform))
+           #:scale
+           (vec2* (affine-transform-scale parent-transform)
+                  (affine-transform-scale child-transform)))))
+       (if (and (opacity-visual? visual)
+                (opacity-visual? transformed-child))
+           (visual-with-opacity
+            transformed-child
+            (* (visual-opacity visual) (visual-opacity transformed-child)))
+           transformed-child))]))
 
 ; scene-state-resolved-visuals-in-drawing-order : scene-state? -> (listof visual?)
 ;;   Returns concrete top-level Visuals in significant back-to-front order.

@@ -1,16 +1,73 @@
-# animate — SCENE-DJ
+# animate — SCENE-DV
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-CY adds general affine maps for whole world-space Visuals. `linear2`
-represents a full 2×2 matrix, `affine2` adds translation, and `apply-affine` /
-`apply-matrix` interpolate the map from identity through a scene play. A mapped
-top-level group keeps its grid, paths, arrows, and other rendered children
-coherent under shears and reflections while unrelated explanatory Visuals stay
-fixed.
+SCENE-DK extends the SCENE-CY affine-map layer through ordinary nested Visual
+trees. `linear2` represents a full 2×2 matrix, `affine2` adds translation, and
+`apply-affine` / `apply-matrix` interpolate a world-space map from identity
+through a scene play. A named child can now be mapped inside an already-mapped
+group without flattening it to pixels; its siblings and unrelated explanatory
+Visuals stay independent.
+
+SCENE-DL adds serializable named rate functions. `linear`, `(smooth)`,
+`(smoothstep)`, `(rush-into)`, `(rush-from)`, `(there-and-back)`, and
+`(there-and-back-with-pause)` are callable anywhere the existing easing API
+accepts a procedure. Unlike an arbitrary Racket closure, they are transparent
+semantic values, so automatic section-cache keys can safely include them.
+
+SCENE-DM adds pure Boolean operations for the practical first case: one simple
+convex closed path per operand. `path-union`, `path-intersection`,
+`path-difference`, `path-xor`, and `cutout` return ordinary immutable path
+geometry. Cubic boundaries are sampled with an explicit `#:curve-samples`
+quality setting, so the results can be filled, styled, placed in a
+`path-visual`, or fed back into existing path animation tools.
+
+SCENE-DN extends prepared ODE trajectories with optional adaptive
+Dormand–Prince RK45 integration, cubic dense lookup, time-dependent fields,
+terminal scalar events, and immutable solver diagnostics. The existing
+fixed-step RK4 checkpoint backend remains available. In either mode, a
+`flow-particle` reads a prepared trajectory and renderer workers never call the
+author field.
+
+SCENE-DO adds `camera-view`, a frame-fixed inset that draws a named live
+world-space target through a second immutable orthographic camera. The target
+is resolved from the same sampled Scene as the main view, so ordinary motion,
+nested transforms, and opacity remain synchronized without a copied secondary
+Scene or mutable observer state.
+
+SCENE-DP upgrades graph construction with deterministic spring, layered,
+partite, and small outerplanar layouts. Parallel links route onto distinct live
+cubic arcs, directed self-loops have matching tangent arrowheads, and edge
+labels follow their routes as vertices move. Immutable BFS, DFS, and unweighted
+shortest-path helpers return declaration-order vertex sequences for authored
+highlight animations.
+
+SCENE-DQ makes nonlinear deformation practical for mathematical diagrams.
+`apply-pointwise` adaptively subdivides mapped geometry, breaks paths rather
+than drawing false chords across failed samples, and can now address a nested
+ordinary Visual through its enclosing affine maps. Jacobian/orientation queries,
+an optional inverse-map mesh, and a semantic cell-sampled complex-domain colour
+field make the result inspectable without a renderer-specific transform layer.
+
+SCENE-DS adds a compact mathematical-effects vocabulary. `flash`, `focus-on`,
+and `show-passing-flash` are temporary live overlays, so they track their
+target after ordinary sampling. `wiggle` is a normal reversible rotation
+composition. `grow-from-center`, `grow-arrow`, and `draw-border-then-fill`
+introduce exact endpoint Visuals rather than leaving renderer-only snapshots.
+
+SCENE-DT adds addressable probability and statistics diagrams: bar and stacked
+bar charts, histograms, finite sample spaces, probability trees, box plots,
+and error bars. They are ordinary immutable group trees, so an author can
+target one bar, cell, branch, quartile box, or error-bar stem with the existing
+scene operations.
+
+SCENE-DV finishes a composition from measured render boxes. `align-baselines`,
+`keep-inside-frame`, `avoid-overlap`, and `distribute-within` return ordinary
+immutable Visuals with deterministic position corrections; they do not add a
+second, live layout solver to the timeline.
 
 SCENE-CZ builds ordinary linear-algebra diagrams on that map layer.
 `number-plane`, `basis-vectors`, `vector-arrow`, and
@@ -61,8 +118,10 @@ SCENE-CX adds immutable mathematical graph and directed-network diagrams.
 paths such as `'(network vertices A)` and derived edges at
 `'(network edges A->B)`. Moving a vertex with the usual scene API regenerates
 its incident line or arrow from the sampled endpoint positions; labels follow
-the same immutable dependency relationship. Manual, circle, and rooted-tree
-layouts provide deterministic initial placement.
+the same immutable dependency relationship. SCENE-DP extends the initial
+positioning vocabulary with deterministic spring, layered, partite, and
+outerplanar layouts; parallel curves and self-loops use the same live derived
+edge relationship.
 
 SCENE-CW adds an immutable authoring layer around ordinary scenes.
 `make-authored-timeline` stores named half-open sections, cue markers, and
@@ -775,6 +834,15 @@ corner at a panel's upper-right corner:
 As with every layout operation, the result is an immutable snapshot. It uses the
 same camera and renderer list as final rendering, but does not create a live
 constraint that tracks later animation.
+
+`align-baselines` puts a list of Visual reference y coordinates on one shared
+baseline; for text made with `#:vertical-alignment 'baseline`, that is its
+typographic baseline. `keep-inside-frame` moves one measured render box just
+far enough into the camera viewport, including a chosen margin. `avoid-overlap`
+applies an order-preserving greedy pass along the horizontal or vertical axis,
+and `distribute-within` puts reference positions at equal intervals between two
+explicit endpoints. Each is a construction-time snapshot, so run it again when
+the constituent Visuals or the camera changes.
 
 The independent alignment functions preserve the unselected coordinate:
 
@@ -2649,6 +2717,12 @@ precisely; do not silently lose the follow-on idea that led to the work.
   flow text around Visuals, embed formula/Visual spans, or provide a general
   markup/CSS language. Adjacent spans are independent Pict runs, so the font
   backend cannot kern or ligate across a span boundary.
+- SCENE-DV's finishing helpers measure complete renderer boxes and return static
+  position snapshots. They do not solve general two-dimensional packing,
+  account for rotation or future motion, create live constraints, reserve
+  semantic safe areas, or infer a true baseline for arbitrary non-text Visuals.
+  `avoid-overlap` is deliberately a deterministic one-axis greedy pass, not a
+  global optimal layout algorithm.
 
 ### Matrices and tables
 
@@ -2692,6 +2766,13 @@ precisely; do not silently lose the follow-on idea that led to the work.
   (zoom, fit) conflict with one another. A pan/follow and a zoom may run in
   parallel. Follow expects a world-space target to remain available for its
   active interval; it is not a general relation that survives a removal.
+- SCENE-DO's `camera-view` renders one resolved world-space Visual through one
+  fixed orthographic inset camera. It does not yet render an arbitrary selected
+  set of scene layers, follow a target automatically, fit/zoom its inset camera
+  during a clip, crop through a semantic clip path, support labels or controls
+  inside the viewport, or coordinate overlap/collision with other frame-space
+  overlays. The simple one-pixel inset border is renderer-side presentation,
+  not a separately styleable Visual. A target cannot itself be frame-space.
 
 ### Video authoring, assembly, and caching
 
@@ -2709,14 +2790,21 @@ precisely; do not silently lose the follow-on idea that led to the work.
   partials preserve the original global frame grid. A deliberately partial
   export can still use `render-timeline-section!`, `encode-mp4!`, and
   `concatenate-mp4!` explicitly.
+- SCENE-DL makes the built-in `linear`, `smooth`, `smoothstep`, `rush-into`,
+  `rush-from`, `there-and-back`, and `there-and-back-with-pause` rate functions
+  callable serializable values. They can be cached safely, but custom procedures
+  still deliberately disable automatic reuse because their implementation cannot
+  be hashed. The initial vocabulary has no cubic-Bézier authoring form, spring or
+  physics easing, inverse/time-reparameterization operation, externally named
+  user-defined rate-function registry, or interpolation-specific overshoot.
 - SCENE-DH uses `'auto` by default for selected-section cache keys. The
   fingerprint includes the serializable scene value, selected bounds and source
   frames, FPS, camera and renderer representations, Racket version, and bytes
   of caller-declared `#:asset-files`. It intentionally disables automatic reuse
-  when any procedure other than the built-in `linear` easing appears in the
-  scene representation, because procedure source cannot be hashed safely. It
-  also cannot discover external SVG/image, font, TeX-toolchain, FFmpeg-build,
-  or transitive asset dependencies: list such files in
+  when an arbitrary procedure appears in the scene representation, because
+  procedure source cannot be hashed safely. It also cannot discover external
+  SVG/image, font, TeX-toolchain, FFmpeg-build, or transitive asset dependencies:
+  list such files in
   `#:asset-files`, use an explicit versioned `#:cache-key`, or pass `#f` to
   force a fresh render. Partial-MP4 manifests reuse only compatible locally
   encoded visual clips; FFmpeg itself is still required for encoding, joining,
@@ -2729,14 +2817,39 @@ precisely; do not silently lose the follow-on idea that led to the work.
   them portable through existing path operations, but does not retain a
   separately editable radius, corner, side, or star-point parameter after
   construction. The default renderer uses odd-even fill for annulus holes;
-  there are no gradients, patterns, clipping, boolean path operations, or
-  automatic self-intersection repair.
+  there are no gradients, patterns, clipping, or automatic self-intersection
+  repair.
+- SCENE-DM supports Boolean fill geometry only for one simple convex closed
+  contour in each operand. Cubic segments are uniformly sampled at
+  `#:curve-samples` pieces per cubic, so the result is polygonal rather than an
+  exact Bézier Boolean. Union, difference, and XOR are returned as disjoint
+  fill partitions; use `#:stroke #f` on a result when interior partition edges
+  should not be drawn. General concave/compound contours, exact curve
+  intersections, reconstructed exterior outlines, fill-rule selection,
+  clipping paths, and self-intersection repair remain follow-on work.
 - `arc-between-points` and `curved-arrow` are circular and require a nonzero
   sweep strictly smaller than a full turn. They do not select a route around
   obstacles, dynamically follow moving endpoints, or support elliptical/
   Bézier route geometry. A `derived-visual` can rebuild one from sampled points.
   `labeled-point` is a static dot/text group; it has no automatic label
   collision avoidance, box-anchor placement, or mathematical typesetting.
+- SCENE-DS effects are intentionally a focused subset. `wiggle` is rotational
+  (not a per-glyph or per-control-point deformation); `flash` and `focus-on`
+  use a rendered target box; `show-passing-flash` currently requires a path
+  Visual; and growth is an introduction effect for a supplied new Visual.
+  There is no generic wave/blink engine, effect composition preset, or
+  renderer-specific shader effect.
+
+### Probability and statistics
+
+- SCENE-DT supplies compact, addressable diagram constructors rather than a
+  statistical-analysis system. Bar-chart axes, legends, categories, automatic
+  tick selection, data-derived labels, pie/density/violin plots, and confidence
+  interval calculations remain author responsibilities. Histograms use equal
+  width bins; sample-space cells deliberately have equal geometry even when
+  their labels carry unequal weights. Probability trees are explicit finite
+  branch trees and do not verify conditional-probability totals. Box plots use
+  interpolated quartiles and show no outlier convention.
 
 ### Linear algebra diagrams
 
@@ -2751,25 +2864,36 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Pointwise, complex, and polar maps
 
-- SCENE-CY-C maps only a complete top-level world Visual. At interior frames,
-  path, circle, rectangle, axes, and arrow geometry is converted to sampled ordinary
-  paths and each sample moves linearly from its source position to its mapped
-  position. This is deterministic and makes nonlinear curves visible, but it
-  is neither adaptive subdivision nor an exact symbolic transformation of a
-  Bézier curve. It has no discontinuity/singularity clipping, conformal-grid
-  colouring, Jacobian display, inverse map, or nested-target operation.
+- SCENE-DQ adaptively subdivides each mapped segment until its midpoint has a
+  mapped chord error no larger than `#:tolerance` (or `#:max-depth` is met).
+  `#:discontinuities 'split` treats a raised error, non-`vec2` result, or
+  nonfinite complex result as a path break; `#:discontinuities 'error` is the
+  strict alternative. The map procedure should therefore be pure: adaptive
+  refinement may call it repeatedly at the same source point. This is still a
+  sampled approximation, not an exact symbolic transformation of a Bézier
+  curve, and it has no automatic branch-cut analysis or asymptote clipping.
+- A nested ordinary target is resolved in world coordinates and rebased through
+  its invertible enclosing affine map, leaving its siblings addressable. A
+  nested request through a singular enclosing map, a derived Visual, or a
+  frame-space overlay is rejected. Text, images, and custom affine leaves
+  remain legible at their original affine placement; they are not warped.
 - Text, images, and custom affine leaves have no exposed path outline. They
   remain legible at their original world placement while sibling geometric
   leaves deform; an application needing warped glyphs or pixels must provide
   an explicit vector/raster conversion. The exact original Visual is retained
   at the first frame, but mapped circles and rectangles deliberately become
   sampled paths thereafter.
+- SCENE-DQ's `pointwise-jacobian`, determinant, and orientation helpers use a
+  centred finite difference; they are local numerical diagnostics, not
+  symbolic differentiation. `inverse-map-mesh` only samples an explicitly
+  supplied inverse. `complex-domain-coloring` is a semantic rectangular cell
+  field rather than a continuous raster shader.
 - SCENE-DA treats Racket complex values as world points. `complex-plane` is a
-  conventional static Cartesian grid with Re/Im labels, and
-  `apply-complex-function` has no automatic domain colouring, branch-cut or
-  pole handling, analytic validation, coordinate-normalization layer, or
-  special treatment of labels. The supplied function must return finite real
-  and imaginary components at every sampled point.
+  conventional static Cartesian grid with Re/Im labels; `complex-domain-color`
+  and `complex-domain-coloring` use argument for hue and optional modulus for
+  brightness. `apply-complex-function` defaults to strict failures so an
+  accidental non-complex result remains visible; select `#:discontinuities
+  'split` to make an intentional pole/domain boundary split its paths.
 - SCENE-DB provides static radial rings/rays and evenly sampled polar curves.
   `point->polar` uses `atan`'s interval `[-pi, pi]` and reports angle zero at
   the origin. `polar-graph` accepts signed radii for conventional rose curves,
@@ -2782,10 +2906,19 @@ precisely; do not silently lose the follow-on idea that led to the work.
   `prepare-ode-trajectory` has explicit time range, step size, and checkpoint
   stride. The supplied field must be pure and stable for that trajectory's
   lifetime; a prepared particle's phase must remain inside its declared range.
-  There is no adaptive error tolerance, event detection, domain/boundary
-  stopping, stiff solver, non-autonomous field, higher-dimensional state, or
-  numerical-analysis diagnostics. A field error is reported rather than
+  Its fixed-RK4 mode deliberately has no adaptive error tolerance, event
+  detection, domain/boundary stopping, stiff solver, higher-dimensional state,
+  or numerical-analysis diagnostics. A field error is reported rather than
   silently making a gap.
+- SCENE-DN additionally accepts a three-argument time-dependent field and an
+  `adaptive-rk45` solver with scalar terminal events. Its stored cubic dense
+  output is deterministic after preparation, but it is not a stiff solver, has
+  no higher-order dense-output polynomial, event priority/composition, event
+  action/reset, simultaneous-root handling, automatic domain boundaries,
+  adaptive streamline construction, tangent-arrow orientation, pulse effects,
+  or tracer-cloud API yet. The reported embedded error is a solver diagnostic,
+  not a formal global error bound. Fixed RK4 keeps the established exact
+  checkpoint/remainder semantics; it deliberately does not accept events.
 - `streamline` and `streamlines` are static sampled geometry. `flow-particle`
   consumes an immutable prepared trajectory. During `render-frames!`, the
   required positions are batched by checkpoint interval and frozen before worker
@@ -2821,16 +2954,26 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Mathematical graphs and networks
 
-- SCENE-CX supplies deterministic manual, circle, and rooted-tree layouts,
-  addressable vertex/edge group paths, labels, and center-to-center live line
-  or arrow edges. It does not provide force-directed, planar, layered DAG,
-  automatic collision-avoiding, or incremental layout algorithms; it does not
-  infer a preferred mathematical graph drawing.
-- Edges join distinct vertex centres and are shortened by the shared marker
-  size so arrowheads remain visible. Parallel edges overlap, self-loops are
-  rejected, edge labels sit at geometric midpoints, and there are no curved
-  edges, loop arcs, weighted styling scales, incidence matrices, or graph
-  algorithms such as traversal/shortest path.
+- SCENE-DP adds deterministic spring, layered-DAG, partite, and planar
+  outer-embedding layouts to the existing manual/circle/tree vocabulary. The
+  spring algorithm is a fixed construction-time force iteration, not an
+  interactive simulation; it has no pinned nodes, overlap removal, incremental
+  relaxation, or graph-size-dependent adaptive budget. Layered layout requires
+  an acyclic directed graph. Partite layout requires named vertex partitions.
+  The current `planar` mode searches only a crossing-free circular outerplanar
+  embedding (with an exhaustive search through eight vertices), so it rejects
+  many planar non-outerplanar graphs rather than claiming an incorrect drawing.
+- Parallel edges use cubic route lanes and self-loops use a fixed upward loop.
+  Their labels follow analytic route midpoints and directed tips follow the
+  final tangent, but they do not avoid vertices/labels, route around obstacles,
+  choose side/loop orientation semantically, preserve a hand-authored curve
+  through a topology change, or support general spline/orthogonal routing.
+  A declared `#:weight` scales only the default cosmetic stroke; it is not a
+  weighted shortest-path calculation or statistical visual encoding.
+- `graph-bfs`, `graph-dfs`, and unweighted `graph-shortest-path` return stable
+  vertex-name lists from author edge declarations. They create no animation,
+  have no priority queue/weighted path support, and do not provide graph
+  mutation, connectivity, flow, centrality, or automatic pedagogical timings.
 - A graph is currently intended as a top-level semantic group. Its own affine
   motion, rotation, and scale are supported, but embedding a graph inside an
   arbitrary separate group cannot yet rewrite the internally stored endpoint
@@ -2884,14 +3027,14 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Geometry and transforms
 
-- SCENE-CY-A adds `linear2`, `affine2`, `apply-affine`, and `apply-matrix` for
-  complete top-level world Visuals. It preserves the established decomposed
-  `affine-transform` protocol, so nested child targets cannot yet receive a
-  general map directly, and a mapped group no longer exposes its descendants as
-  independently transformable scene targets. General maps conflict with the
-  existing same-target move/rotation/scale requests. The Pict adapter transforms
-  the complete rendered result, so per-Visual semantic decomposition, inherited
-  affine maps and renderer-independent transformed bounds remain later CY work.
+- SCENE-DK makes `apply-affine` and `apply-matrix` work for ordinary nested
+  paths, including a child inside an already mapped group. The child remains a
+  semantic Visual, so subsequent nested style and affine requests do not modify
+  flattened pixels. A nested request is rebased through each enclosing affine
+  map and therefore retains world-coordinate meaning. It cannot be applied
+  through a singular enclosing affine map; general maps still conflict with
+  ordinary move/rotation/scale requests for the same target in one overlapping
+  clip.
 - Core path geometry has line and cubic Bézier segments, but no quadratic Bézier
   or arc segment type. SVG quadratic commands are converted to cubics on import.
 - A motion route is a clip-start snapshot. It does not deform with an animated
@@ -3205,12 +3348,275 @@ defined (possibly singular) intermediate path for a reflection.
  #:duration 3)
 ```
 
-The initial release deliberately maps one complete top-level world Visual. A
-group therefore keeps its grid, unit square, arrows, and labels together under
-one map, while title and matrix notation can remain separate. It does not yet
-map nested child paths directly or replace the decomposed `affine-transform`
-protocol used by existing Visual implementations. See
-`examples/affine-linear-transformations.rkt`.
+The initial CY release mapped one complete top-level world Visual. SCENE-DK
+extends that model to ordinary nested paths: map a diagram as a whole, then map
+`'(diagram unit-square)` without flattening the diagram. The request is still
+specified in world coordinates; internally it is rebased through the enclosing
+maps before it is stored on the child. A singular enclosing affine map cannot
+be rebased, and the decomposed `affine-transform` protocol remains available
+for existing Visual implementations. See
+`examples/semantic-nested-affine-transforms.rkt`.
+
+For example, this maps the complete diagram first and subsequently reflects its
+named square:
+
+```racket
+(define sheared
+  (scene-play
+   (scene-add (make-scene) diagram)
+   (apply-matrix 'diagram (linear2 1 3/5
+                                  0 1))
+   #:duration 2))
+
+(scene-play
+ sheared
+ (apply-matrix '(diagram unit-square) (linear2 -1 0
+                                              0 1))
+ #:duration 2)
+```
+
+## SCENE-DL: serializable rate functions
+
+Named rate functions retain the ordinary callable easing interface while also
+carrying transparent data. Use them wherever `#:easing` or `#:rate-func` takes a
+one-argument procedure:
+
+```racket
+(scene-play
+ scene
+ (timed (move-to 'dot (vec2 4 0))
+        #:duration 2
+        #:easing (smooth #:inflection 10))
+ #:duration 2)
+```
+
+`linear` remains the default callable value. The other initial constructors are
+`smoothstep`, `rush-into`, `rush-from`, `there-and-back`, and
+`there-and-back-with-pause`. Built-in values appear as semantic data in a scene,
+so `render-timeline-section!` can derive an automatic cache key; an arbitrary
+lambda remains legal but deliberately bypasses automatic cache reuse. See
+`examples/serializable-rate-functions.rkt`.
+
+## SCENE-DM: Boolean path geometry
+
+Boolean operations work on immutable local `path-geometry` values, then the
+result becomes a normal `path-visual` when it is time to render it. The first
+implementation intentionally accepts one simple convex closed contour per
+operand. It clips straight polygons directly and approximates each cubic
+segment by `#:curve-samples` straight pieces (16 by default).
+
+```racket
+(define left
+  (polygon-path
+   (list (vec2 0 0) (vec2 4 0) (vec2 4 4) (vec2 0 4))))
+
+(define right
+  (polygon-path
+   (list (vec2 2 0) (vec2 6 0) (vec2 6 4) (vec2 2 4))))
+
+(define overlap (path-intersection left right))
+(define left-only (cutout left right))
+
+(make-path-visual overlap #:id 'overlap
+                  #:fill "mediumpurple" #:stroke #f)
+```
+
+`path-union`, `path-difference`, and `path-xor` complete the set. In this
+first release, operations that can split a result return non-overlapping
+polygon partitions with correct filled area; suppress the cosmetic stroke when
+the partitions should read as one filled set. See
+`examples/boolean-path-geometry.rkt`.
+
+## SCENE-DN: adaptive and time-dependent ODE flow
+
+The existing two-argument field form remains an autonomous field. A field that
+accepts three arguments receives `(time x y)`, allowing non-autonomous systems.
+Pass an `adaptive-rk45` solver to `prepare-ode-trajectory` to store accepted
+Dormand–Prince endpoints and cubic dense-output data rather than fixed RK4
+checkpoints. An `ode-event` is a scalar whose selected sign crossing terminates
+the prepared range.
+
+```racket
+(define projectile-field
+  (lambda (time x y)
+    (vec2 1 (- 2 time))))
+
+(define trajectory
+  (prepare-ode-trajectory
+   projectile-field origin
+   #:time-range (cons 0 5)
+   #:solver (adaptive-rk45 #:relative-tolerance 1e-8)
+   #:event (ode-event (lambda (_time _x y) y)
+                      #:direction 'decreasing
+                      #:name 'ground-contact)))
+```
+
+The actual trajectory range ends at the dense event root. Its
+`ode-trajectory-diagnostics` reports accepted/rejected steps, termination, and
+the largest scaled embedded error. `flow-particle` accepts either prepared
+trajectory kind and freezes its requested positions before render workers
+start. See `examples/adaptive-ode-trajectory.rkt`.
+
+## SCENE-DO: zoom and multi-view cameras
+
+`camera-view` places a world-space target in a second, orthographic camera
+canvas that is pinned in the output frame. It is useful for a close-up, a
+simultaneous overview, or a stable explanatory inset while the main camera
+pans and zooms.
+
+```racket
+(define inset
+  (camera-view 'diagram
+               #:id 'zoom
+               #:camera (make-camera #:width 480
+                                     #:height 270
+                                     #:world-width 3
+                                     #:center origin)
+               #:frame-camera main-camera
+               #:at (vec2 4 3/2)
+               #:width 3))
+
+(scene-add (make-scene #:camera main-camera) diagram inset)
+```
+
+The inset target is looked up after ordinary Scene sampling, then rendered
+through its own camera. Thus, a marker moved with `(move-to '(diagram marker)
+...)` appears in both views on the same frame. The inset itself is a normal
+frame-space Visual: it may be moved, rotated, scaled, faded, or removed.
+Direct `visual->pict` rendering deliberately rejects it because resolving its
+live target requires a sampled Scene. See `examples/zoom-camera-inset.rkt`.
+
+## SCENE-DP: graph layouts and live curved edges
+
+Graph construction gains four deterministic layout snapshots: `spring`,
+`layered`, `partite`, and `planar`. A spring layout uses a fixed Jacobi force
+iteration, layered layout requires an acyclic `digraph`, partite layout reads
+each vertex's `#:partition`, and the initial planar layout searches for a
+crossing-free outerplanar circular embedding. The returned graph remains the
+same named group tree, so any named vertex can still be animated normally.
+
+```racket
+(define network
+  (digraph
+   (list (graph-vertex 'start)
+         (graph-vertex 'state)
+         (graph-vertex 'finish))
+   (list (graph-edge 'start 'state #:id 'accept #:label "accept" #:weight 3/2)
+         (graph-edge 'start 'state #:id 'reject #:label "reject")
+         (graph-edge 'state 'state #:id 'retry)
+         (graph-edge 'state 'finish #:id 'done))
+   #:id 'network
+   #:layout 'layered
+   #:parallel-edge-separation 1/2))
+
+(scene-play
+ (scene-add (make-scene) network)
+ (move-to (graph-vertex-path 'network 'state) (vec2 3/2 0))
+ #:duration 2)
+```
+
+Multiple edges are automatically assigned distinct cubic lanes. A directed
+loop has a tangent-aligned arrowhead, and edge labels sample the same curve as
+their shaft. `#:weight` multiplies the default edge stroke width; an individual
+edge can override its stroke, stroke width, or route curvature. The pure
+`graph-bfs`, `graph-dfs`, and `graph-shortest-path` helpers return stable symbol
+lists that an author can turn into explicit highlight timings. See
+`examples/graph-layouts-and-curved-edges.rkt`.
+
+## SCENE-DQ: robust pointwise maps
+
+`apply-pointwise` now samples adaptively and can turn a failed point-map sample
+into a visible path break. This is useful for curved complex maps and for
+reciprocal functions with a pole. The requested map always has world-coordinate
+meaning, even when its target is a named descendant of an ordinary transformed
+group.
+
+```racket
+(scene-play
+ (scene-add (make-scene) reciprocal)
+ (apply-pointwise 'reciprocal
+                  (lambda (p)
+                    (define x (vec2-x p))
+                    (if (zero? x)
+                        (error 'reciprocal "pole")
+                        (vec2 (/ 1 x) (vec2-y p))))
+                  #:samples 1
+                  #:tolerance 1/32
+                  #:discontinuities 'split)
+ #:duration 2)
+```
+
+`pointwise-jacobian`, `pointwise-jacobian-determinant`, and
+`pointwise-orientation` inspect a map near one point. `inverse-map-mesh`
+builds a mapped grid from an explicit inverse function. For complex diagrams,
+`complex-domain-color` returns one semantic RGBA colour and
+`complex-domain-coloring` creates an addressable cell field. See
+`examples/robust-pointwise-maps.rkt`.
+
+## SCENE-DS: mathematical animation effects
+
+`flash` emits radial rays and `focus-on` expands a ring around a live rendered
+target. `show-passing-flash` shows a moving arc-length interval of a path;
+each of these effects removes its overlay at the clip endpoints. `wiggle` is a
+reversible ordinary rotation succession. The three introduction forms below
+preserve exact semantic endpoint Visuals:
+
+```racket
+(scene-play
+ (make-scene)
+ (grow-from-center dot)
+ (grow-arrow velocity)
+ (draw-border-then-fill region)
+ #:duration 2)
+```
+
+See `examples/mathematical-effects.rkt`.
+
+## SCENE-DT: probability and statistical diagrams
+
+The statistical constructors return normal named groups. The path helpers make
+their nested parts convenient animation targets:
+
+```racket
+(define scores
+  (bar-chart '(3 7 5 4)
+             #:id 'scores
+             #:labels '("A" "B" "C" "D")))
+
+(scene-play
+ (scene-add (make-scene) scores)
+ (flash (bar-chart-bar-path 'scores 2))
+ #:duration 1)
+```
+
+`stacked-bar-chart`, `sample-space`, `probability-tree`, `box-plot`, and
+`error-bars` use the same ordinary group model. `probability-branch` describes
+the finite immutable input tree and `error-bar-point` describes a value with a
+nonnegative symmetric error. See `examples/probability-and-statistics.rkt`.
+
+## SCENE-DV: deterministic layout finishing
+
+The new layout helpers use exactly the same renderer-aware measurements as the
+existing placement functions, but solve common finishing operations directly:
+
+```racket
+(define cards
+  (avoid-overlap
+   (list card-a card-b card-c)
+   #:direction 'right
+   #:gap 1/4))
+
+(define labels
+  (align-baselines (list x-label plus-label y-label)))
+
+(define in-frame
+  (keep-inside-frame caption #:margin 1/4))
+```
+
+`distribute-within` gives an ordered list equally spaced reference positions on
+one axis. All four helpers return new immutable Visual values; they never alter
+the original Visuals or maintain constraints after construction. See
+`examples/layout-finishing.rkt`.
 
 ## SCENE-CZ: linear-algebra diagrams
 
@@ -3361,7 +3767,10 @@ local geometry for the graph group to render. This preserves arbitrary-time
 sampling: no edge remembers any prior frame. `graph` creates plain lines;
 `digraph` uses arrowheads in the declared source-to-target order. Circle and
 rooted-tree layouts calculate initial positions deterministically from declared
-vertex/edge order. See `examples/graphs-and-networks.rkt`.
+vertex/edge order. SCENE-DP adds spring, layered, partite, and outerplanar
+layout snapshots, together with live curved parallel edges and loops. See
+`examples/graphs-and-networks.rkt` and
+`examples/graph-layouts-and-curved-edges.rkt`.
 
 ## SCENE-CW: video-authoring workflow
 

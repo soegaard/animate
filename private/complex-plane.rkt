@@ -8,7 +8,9 @@
 ;; vec2 at the drawing boundary. Complex animations are a thin specialization
 ;; of apply-pointwise rather than a second scene representation.
 
-(require "axes-visual.rkt"
+(require racket/math
+         "axes-visual.rkt"
+         "color-style.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "linear-algebra.rkt"
@@ -18,6 +20,8 @@
 
 (provide complex->point
          point->complex
+         complex-domain-color
+         complex-domain-coloring
          complex-plane
          apply-complex-function)
 
@@ -41,6 +45,118 @@
   (unless (vec2? point)
     (raise-argument-error 'point->complex "vec2?" point))
   (make-rectangular (vec2-x point) (vec2-y point)))
+
+;; complex-domain-color : complex? ... -> rgba-color?
+;; Maps argument to hue and (optionally) modulus to value. It is a pure color
+;; helper for author-built domain-color meshes; it deliberately does not impose
+;; a raster field renderer on the ordinary semantic path system.
+(define (complex-domain-color value
+                              #:saturation [saturation 3/4]
+                              #:brightness [brightness 4/5]
+                              #:radial? [radial? #t])
+  (define point (complex->point value))
+  (unless (and (finite-real? saturation) (<= 0 saturation 1))
+    (raise-argument-error 'complex-domain-color "finite real in [0, 1]" saturation))
+  (unless (and (finite-real? brightness) (<= 0 brightness 1))
+    (raise-argument-error 'complex-domain-color "finite real in [0, 1]" brightness))
+  (unless (boolean? radial?)
+    (raise-argument-error 'complex-domain-color "boolean?" radial?))
+  (define magnitude
+    (sqrt (+ (sqr (vec2-x point)) (sqr (vec2-y point)))))
+  (define value-channel
+    (if radial?
+        (* brightness (+ 1/3 (* 2/3 (/ magnitude (+ 1 magnitude)))))
+        brightness))
+  (define hue
+    (/ (+ (atan (vec2-y point) (vec2-x point)) pi) (* 2 pi)))
+  (hsv->rgba hue saturation value-channel))
+
+(define (hsv->rgba hue saturation value)
+  (define wrapped (- hue (floor hue)))
+  (define sector (* 6 wrapped))
+  (define chroma (* value saturation))
+  ;; `sector` is inexact, so use its period-two position explicitly instead
+  ;; of integer `modulo`.
+  (define sector-position
+    (- sector (* 2 (floor (/ sector 2)))))
+  (define auxiliary (* chroma (- 1 (abs (- sector-position 1)))))
+  (define-values (red green blue)
+    (cond
+      [(< sector 1) (values chroma auxiliary 0)]
+      [(< sector 2) (values auxiliary chroma 0)]
+      [(< sector 3) (values 0 chroma auxiliary)]
+      [(< sector 4) (values 0 auxiliary chroma)]
+      [(< sector 5) (values auxiliary 0 chroma)]
+      [else (values chroma 0 auxiliary)]))
+  (define adjustment (- value chroma))
+  (rgb-color (* 255 (+ red adjustment))
+             (* 255 (+ green adjustment))
+             (* 255 (+ blue adjustment))))
+
+;; complex-domain-coloring : (-> complex? complex?) #:id symbol? ...
+;;                              -> group-visual?
+;; Produces a semantic, cell-sampled domain-colour field. The output remains a
+;; normal group of addressable rectangles: it can be placed, transformed, and
+;; animated with the rest of a scene without a renderer-specific raster layer.
+(define (complex-domain-coloring function
+                                 #:id id
+                                 #:x-min [x-min -3]
+                                 #:x-max [x-max 3]
+                                 #:y-min [y-min -2]
+                                 #:y-max [y-max 2]
+                                 #:columns [columns 24]
+                                 #:rows [rows 16]
+                                 #:saturation [saturation 3/4]
+                                 #:brightness [brightness 4/5]
+                                 #:radial? [radial? #t]
+                                 #:opacity [opacity 1])
+  (unless (and (procedure? function)
+               (procedure-arity-includes? function 1))
+    (raise-argument-error
+     'complex-domain-coloring "(procedure-arity-includes/c 1)" function))
+  (unless (symbol? id)
+    (raise-argument-error 'complex-domain-coloring "symbol?" id))
+  (for ([value (in-list (list x-min x-max y-min y-max))])
+    (unless (finite-real? value)
+      (raise-argument-error 'complex-domain-coloring "finite real bound" value)))
+  (unless (< x-min x-max)
+    (raise-arguments-error 'complex-domain-coloring "x-min smaller than x-max"
+                           "x-min" x-min "x-max" x-max))
+  (unless (< y-min y-max)
+    (raise-arguments-error 'complex-domain-coloring "y-min smaller than y-max"
+                           "y-min" y-min "y-max" y-max))
+  (for ([count (in-list (list columns rows))])
+    (unless (and (exact-integer? count) (positive? count))
+      (raise-argument-error
+       'complex-domain-coloring "positive exact integer" count)))
+  (unless (and (finite-real? opacity) (<= 0 opacity 1))
+    (raise-argument-error 'complex-domain-coloring "finite real in [0, 1]" opacity))
+  (define cell-width (/ (- x-max x-min) columns))
+  (define cell-height (/ (- y-max y-min) rows))
+  (define (cell-center column row)
+    (vec2 (+ x-min (* (+ column 1/2) cell-width))
+          (+ y-min (* (+ row 1/2) cell-height))))
+  (define (cell-id column row)
+    (string->symbol
+     (format "~a-cell-~a-~a" id column row)))
+  (group
+   (for*/list ([row (in-range rows)] [column (in-range columns)])
+     (define point (cell-center column row))
+     (define result (function (point->complex point)))
+     (unless (complex? result)
+       (raise-arguments-error
+        'complex-domain-coloring
+        "the complex function must return a complex number"
+        "point" point "result" result))
+     ;; `complex-domain-color` additionally rejects infinities and NaNs.
+     (rectangle #:id (cell-id column row) #:center point
+                #:width cell-width #:height cell-height
+                #:fill (complex-domain-color result
+                                             #:saturation saturation
+                                             #:brightness brightness
+                                             #:radial? radial?)
+                #:stroke #f))
+   #:id id #:opacity opacity))
 
 ;; complex-plane : #:id symbol? ... -> group-visual?
 ;; Builds a Cartesian grid with conventional Re/Im labels. Numeric tick labels
@@ -100,7 +216,12 @@
 
 ;; apply-complex-function : target (-> complex? complex?) ...
 ;; Applies f to every sampled world point interpreted as a complex number.
-(define (apply-complex-function target function #:samples [samples 24])
+(define (apply-complex-function target function
+                                #:samples [samples 24]
+                                #:adaptive? [adaptive? #t]
+                                #:tolerance [tolerance 1/32]
+                                #:max-depth [max-depth 8]
+                                #:discontinuities [discontinuity-mode 'error])
   (unless (and (procedure? function)
                (procedure-arity-includes? function 1))
     (raise-argument-error
@@ -116,4 +237,8 @@
         "point" point
         "result" result))
      (complex->point result))
-   #:samples samples))
+   #:samples samples
+   #:adaptive? adaptive?
+   #:tolerance tolerance
+   #:max-depth max-depth
+   #:discontinuities discontinuity-mode))

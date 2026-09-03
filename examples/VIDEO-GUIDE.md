@@ -4,7 +4,7 @@ Rendered MP4 files live in the local sibling directory
 [`../rendered-examples/`](../rendered-examples/). They are generated artifacts
 and intentionally excluded from Git.
 
-All 70 visual examples below have been rendered locally. Temporary PNG frames
+All 100 visual examples below have been rendered locally. Temporary PNG frames
 are kept in the repository-local `tmp/` directory and discarded after encoding. The formula and full-fidelity
 SVG examples were rendered with the local Racket 9.3 runtime; the remaining
 examples use the standard Racket runtime.
@@ -133,6 +133,16 @@ SCENE-BD, SCENE-BE, and SCENE-BK.
 | [composable-camera-movements](../rendered-examples/composable-camera-movements.mp4) | **SCENE-CV:** a camera pan succeeds into a parallel moving-point follow and zoom, using the same composition tree as Visual animation. |
 | [authoring-sections](../rendered-examples/authoring-sections.mp4) | **SCENE-CW:** named opening, derivation, and conclusion sections share one global frame grid while a playhead and cue markers show their production metadata. |
 | [graphs-and-networks](../rendered-examples/graphs-and-networks.mp4) | **SCENE-CX:** named vertices rearrange while directed edges and their labels are regenerated from the sampled endpoint positions. |
+| [semantic-nested-affine-transforms](../rendered-examples/semantic-nested-affine-transforms.mp4) | **SCENE-DK:** a whole linear-algebra diagram is sheared, then its named unit square is independently reflected and recoloured without rasterizing the enclosing group. |
+| [serializable-rate-functions](../rendered-examples/serializable-rate-functions.mp4) | **SCENE-DL:** linear, smooth, rush-into, and there-and-back-with-pause use named callable values that can also participate in automatic authored-section cache keys. |
+| [boolean-path-geometry](../rendered-examples/boolean-path-geometry.mp4) | **SCENE-DM:** two overlapping cubic disks become ordinary union, intersection, difference, and XOR path geometry. |
+| [adaptive-ode-trajectory](../rendered-examples/adaptive-ode-trajectory.mp4) | **SCENE-DN:** a time-dependent projectile follows adaptive RK45 dense output and stops at a downward ground-contact event. |
+| [zoom-camera-inset](../rendered-examples/zoom-camera-inset.mp4) | **SCENE-DO:** the same live orbit diagram appears in a panning overview and a frame-fixed close-up rendered by a second camera. |
+| [graph-layouts-and-curved-edges](../rendered-examples/graph-layouts-and-curved-edges.mp4) | **SCENE-DP:** a layered directed graph uses parallel curved arrows, a self-loop, and weighted strokes that all remain live while a vertex moves. |
+| [robust-pointwise-maps](../rendered-examples/robust-pointwise-maps.mp4) | **SCENE-DQ:** adaptive samples bend a complex grid under \(z^2\), while a reciprocal pole splits into two visible branches rather than a false connecting chord. |
+| [mathematical-effects](../rendered-examples/mathematical-effects.mp4) | **SCENE-DS:** live flash, focus, and a moving path trace precede a reversible wiggle and three exact-Visual introduction effects. |
+| [probability-and-statistics](../rendered-examples/probability-and-statistics.mp4) | **SCENE-DT:** ordinary named groups make individual chart bars, sample-space cells, probability branches, box-plot parts, and error bars directly animatable. |
+| [layout-finishing](../rendered-examples/layout-finishing.mp4) | **SCENE-DV:** measured render boxes align text baselines, separate cards, distribute markers, and pull a Visual back inside the frame. |
 
 ## Non-video example
 

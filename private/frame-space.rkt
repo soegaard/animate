@@ -30,6 +30,11 @@
          fixed-in-frame
          fixed-in-frame-visual?
          fixed-in-frame-visual-content
+         camera-view
+         camera-view-visual?
+         camera-view-visual-target
+         camera-view-visual-camera
+         camera-view-visual-width
          callout
          callout-visual?
          callout-visual-content
@@ -82,6 +87,43 @@
 ;;
 ;; The content's own geometry, rotation, scale, and opacity remain significant.
 ;; Its containing-coordinate position is ignored during overlay rendering.
+
+;; A camera-view is a frame-space viewport onto one resolved world-space target.
+;; Its target is looked up only during scene rendering, which makes the inset
+;; follow ordinary animation without embedding a mutable secondary Scene.
+(struct camera-view-visual (id transform opacity target camera frame-width width)
+  #:transparent
+  #:methods gen:visual
+  [(define (visual-id visual)
+     (camera-view-visual-id visual))
+   (define (visual-position visual)
+     (affine-transform-translation
+      (camera-view-visual-transform visual)))
+   (define (visual-with-position visual position)
+     (check-frame-position 'visual-with-position position)
+     (struct-copy camera-view-visual visual
+                  [transform
+                   (affine-transform-with-translation
+                    (camera-view-visual-transform visual)
+                    position)]))]
+  #:methods gen:affine-visual
+  [(define (visual-transform visual)
+     (camera-view-visual-transform visual))
+   (define (visual-with-transform visual transform)
+     (check-frame-transform 'visual-with-transform transform)
+     (struct-copy camera-view-visual visual [transform transform]))]
+  #:methods gen:opacity-visual
+  [(define (visual-opacity visual)
+     (camera-view-visual-opacity visual))
+   (define (visual-with-opacity visual opacity)
+     (check-frame-opacity 'visual-with-opacity opacity)
+     (struct-copy camera-view-visual visual [opacity opacity]))])
+
+;; camera-view-visual represents an orthographic view inset.
+;;  - target      symbol? or visual-path?  live world-space target at render time.
+;;  - camera      camera?                 the inset's world-space view.
+;;  - frame-width positive real?          captured outer frame width.
+;;  - width       positive real?          inset width in captured frame units.
 
 (struct callout-visual
   (id transform opacity content frame-width target target-anchor connector-stroke connector-width)
@@ -168,6 +210,37 @@
    content
    (camera-world-width camera)))
 
+;; camera-view : (or/c visual? symbol? visual-path?) #:id symbol?
+;;               [#:camera camera?] [#:frame-camera camera?]
+;;               [#:at vec2?] [#:width positive-finite-real?]
+;;               [#:opacity opacity?] -> camera-view-visual?
+;; Creates a fixed-position inset that renders one live world-space target with
+;; its own orthographic camera. `frame-camera` supplies the stable frame
+;; coordinate system used by `at` and `width`; it defaults to default-camera.
+(define (camera-view target
+                     #:id id
+                     #:camera camera
+                     #:frame-camera [frame-camera default-camera]
+                     #:at [position origin]
+                     #:width [width 3]
+                     #:opacity [opacity 1])
+  (check-camera-view-target 'camera-view target)
+  (unless (symbol? id)
+    (raise-argument-error 'camera-view "symbol?" id))
+  (check-frame-camera 'camera-view camera)
+  (check-frame-camera 'camera-view frame-camera)
+  (check-frame-position 'camera-view position)
+  (check-positive-frame-length 'camera-view "width" width)
+  (check-frame-opacity 'camera-view opacity)
+  (camera-view-visual
+   id
+   (make-affine-transform #:translation position)
+   opacity
+   (normalize-camera-view-target target)
+   camera
+   (camera-world-width frame-camera)
+   width))
+
 ; callout : visual? (or/c visual? symbol? visual-path? vec2?)
 ;           [#:camera camera?]
 ;           [#:at (or/c vec2? false/c)]
@@ -233,6 +306,7 @@
 ;;   Reports whether value is a built-in fixed overlay or callout Visual.
 (define (frame-space-visual? value)
   (or (fixed-in-frame-visual? value)
+      (camera-view-visual? value)
       (callout-visual? value)))
 
 ; frame-space-visual-frame-width : frame-space-visual? -> positive-real?
@@ -241,6 +315,8 @@
   (cond
     [(fixed-in-frame-visual? visual)
      (fixed-in-frame-visual-frame-width visual)]
+    [(camera-view-visual? visual)
+     (camera-view-visual-frame-width visual)]
     [(callout-visual? visual)
      (callout-visual-frame-width visual)]
     [else
@@ -272,6 +348,9 @@
   (if (vec2? target)
       target
       (visual-target-id target 'callout)))
+
+(define (normalize-camera-view-target target)
+  (visual-target-id target 'camera-view))
 
 
 ;;;
@@ -326,6 +405,20 @@
     (visual-target-id target who))
   (void))
 
+(define (check-camera-view-target who target)
+  (unless (or (symbol? target)
+              (visual-path? target)
+              (visual? target))
+    (raise-argument-error who "(or/c visual? symbol? visual-path?)" target))
+  (when (and (visual? target)
+             (frame-space-visual? target))
+    (raise-arguments-error
+     who
+     "a camera-view target must belong to world space"
+     "target" target))
+  (visual-target-id target who)
+  (void))
+
 ; check-callout-target-anchor : symbol? any/c -> void?
 ;;   Validates the one of nine live renderer-box locations that a callout
 ;;   connector may follow on a Visual target.
@@ -352,6 +445,10 @@
   (unless (and (finite-real? frame-width)
                (positive? frame-width))
     (raise-argument-error who "positive finite real?" frame-width)))
+
+(define (check-positive-frame-length who field value)
+  (unless (and (finite-real? value) (positive? value))
+    (raise-arguments-error who "positive finite real?" field value)))
 
 ; check-frame-position : symbol? any/c -> void?
 ;;   Raises an argument error unless value is a frame-space point.

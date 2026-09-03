@@ -347,10 +347,12 @@ applied in this fixed order:
 
 Scale is stored as positive x and y factors. SCENE-CY-A adds separate
 @racket[linear2] and @racket[affine2] values for a full matrix and translation.
-@racket[apply-affine] and @racket[apply-matrix] map a complete top-level world
-Visual through those values. The existing decomposed affine-Visual protocol
-remains unchanged, so a general map does not yet target a nested child or become
-an inherited per-Visual transform.
+@racket[apply-affine] and @racket[apply-matrix] map a world Visual through
+those values. SCENE-DK extends the map layer to ordinary nested paths: a named
+child can be mapped inside an already-mapped group without flattening the
+group. The existing decomposed affine-Visual protocol remains available for
+Visual implementations; the general-map wrapper supplies the bridge through a
+nested group tree.
 
 A group may be translated and rotated normally, but its own legacy scale must be
 uniform. A uniform parent scale and rotation compose exactly with each child's
@@ -1473,6 +1475,65 @@ Example:
 ]
 }
 
+@subsection{Boolean Path Geometry}
+
+SCENE-DM adds pure Boolean operations over immutable @racket[path-geometry?]
+values. The initial practical scope is deliberately narrow: each operand must
+contain exactly one simple convex closed subpath. Line contours are clipped
+directly. Cubic segments are uniformly sampled into
+@racket[#:curve-samples] straight pieces before clipping, so curve results are
+deterministic polygonal approximations rather than exact Bézier intersections.
+
+All five operations return ordinary @racket[path-geometry?] values. They can
+be passed to @racket[make-path-visual], used as a later path-animation target,
+or retained as pure scene-independent model data. When an operation splits an
+area, the returned geometry is a non-overlapping polygon partition with the
+correct odd-even filled set. Give the resulting Visual @racket[#:stroke #f]
+when those internal partition boundaries should not be visible.
+
+@defproc[(path-union [first path-geometry?]
+                     [second path-geometry?]
+                     [#:curve-samples curve-samples exact-positive-integer? 16])
+         path-geometry?]{
+
+Returns the filled union of @racket[first] and @racket[second]. The result is
+the first polygon plus the non-overlapping part of the second polygon.
+}
+
+@defproc[(path-intersection [first path-geometry?]
+                            [second path-geometry?]
+                            [#:curve-samples curve-samples exact-positive-integer? 16])
+         path-geometry?]{
+
+Returns the filled region common to @racket[first] and @racket[second]. A
+touching-without-area intersection is @racket[empty-path-geometry].
+}
+
+@defproc[(path-difference [first path-geometry?]
+                          [second path-geometry?]
+                          [#:curve-samples curve-samples exact-positive-integer? 16])
+         path-geometry?]{
+
+Returns the filled portion of @racket[first] that is outside @racket[second].
+}
+
+@defproc[(path-xor [first path-geometry?]
+                   [second path-geometry?]
+                   [#:curve-samples curve-samples exact-positive-integer? 16])
+         path-geometry?]{
+
+Returns the filled points covered by exactly one operand.
+}
+
+@defproc[(cutout [outer path-geometry?]
+                 [inner path-geometry?]
+                 [#:curve-samples curve-samples exact-positive-integer? 16])
+         path-geometry?]{
+
+A readable alias for @racket[path-difference], intended for a filled outer
+shape from which @racket[inner] is removed.
+}
+
 
 @section[#:tag "affine-transforms"]{Affine Transforms}
 
@@ -1662,6 +1723,13 @@ The identity matrix.
 Returns @racket[(- (* a d) (* b c))] for @racket[map].
 }
 
+@defproc[(linear2-invert [map linear2?]) (or/c linear2? #f)]{
+
+Returns the inverse of @racket[map], or @racket[#f] when its determinant is
+zero. This is useful when converting a world-space affine request to a mapped
+child's local coordinate system.
+}
+
 @defproc[(linear2-compose [outer linear2?] [inner linear2?]) linear2?]{
 
 Returns @racket[outer] composed after @racket[inner].
@@ -1730,6 +1798,12 @@ Returns @racket[map] with a replacement linear component.
 @defproc[(affine2-with-translation [map affine2?] [translation vec2?]) affine2?]{
 
 Returns @racket[map] with a replacement translation.
+}
+
+@defproc[(affine2-invert [map affine2?]) (or/c affine2? #f)]{
+
+Returns the inverse of @racket[map], or @racket[#f] when its linear component
+is singular.
 }
 
 @defproc[(affine2-compose [outer affine2?] [inner affine2?]) affine2?]{
@@ -2099,8 +2173,8 @@ the adapter rather than world coordinates.
 
 @defproc[(frame-space-visual? [value any/c]) boolean?]{
 
-Returns @racket[#t] for the built-in @racket[fixed-in-frame] and
-@racket[callout] wrapper values.
+Returns @racket[#t] for the built-in @racket[fixed-in-frame],
+@racket[camera-view], and @racket[callout] wrapper values.
 }
 
 @defproc[(frame-space-visual-frame-width [visual frame-space-visual?])
@@ -2166,6 +2240,60 @@ Returns @racket[#t] when @racket[value] is a fixed-in-frame wrapper.
 
 Returns the semantic content stored by @racket[visual]. The returned content is
 not a scene-state child and cannot be targeted directly while it is wrapped.
+}
+
+@defproc[(camera-view
+          [target (or/c visual? symbol? visual-path?)]
+          [#:id id symbol?]
+          [#:camera camera camera?]
+          [#:frame-camera frame-camera camera? default-camera]
+          [#:at position vec2? origin]
+          [#:width width (and/c finite-real? positive?) 3]
+          [#:opacity opacity opacity? 1])
+         camera-view-visual?]{
+
+Creates a frame-fixed viewport onto one live world-space @racket[target].
+@racket[camera] is the immutable orthographic camera used inside the inset.
+@racket[frame-camera] supplies the captured origin-centered frame coordinate
+system for @racket[position] and @racket[width], just as @racket[#:camera]
+does for @racket[fixed-in-frame]. The default position is the frame origin.
+
+At scene rendering time, @racket[target] is resolved against the same sampled
+scene state as ordinary Visuals. Its complete world transform and opacity are
+then rendered into a full inset camera canvas, so an ordinary target's movement
+and nested-group transforms appear in both the main view and the inset on the
+same output frame. The viewport itself is an affine/opacity frame-space Visual
+and can be moved, rotated, scaled, faded, or structurally removed.
+
+The target may be a Visual, a top-level symbol, or a nonempty built-in
+group/formula @racket[visual-path?]. It must resolve to world space; direct
+frame-space targets and missing targets are rejected. Unlike a fixed overlay,
+the viewport cannot be converted by @racket[visual->pict] by itself because its
+live target needs a sampled scene state. Use complete scene rendering such as
+@racket[scene-state->pict] or @racket[render-frames!] instead.
+}
+
+@defproc[(camera-view-visual? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a @racket[camera-view] wrapper.
+}
+
+@defproc[(camera-view-visual-target [visual camera-view-visual?])
+         (or/c symbol? visual-path?)]{
+
+Returns the normalized live world target. A Visual-valued constructor target is
+represented by its stable identity; an explicit nested path is preserved.
+}
+
+@defproc[(camera-view-visual-camera [visual camera-view-visual?]) camera?]{
+
+Returns the immutable world-space camera used to render the inset.
+}
+
+@defproc[(camera-view-visual-width [visual camera-view-visual?])
+         (and/c finite-real? positive?)]{
+
+Returns the inset's width in its captured frame coordinate system.
 }
 
 @defproc[(callout
@@ -2400,26 +2528,27 @@ animations.
 
 @defproc[(affine-map [content visual?] [map affine2?]) affine-map-visual?]{
 
-Wraps one complete world-space Visual in a general affine map while preserving
-its stable identity. The Pict adapter first renders @racket[content] normally,
-then applies @racket[map]'s linear component around its semantic centre; normal
-scene placement uses the mapped reference position. This makes a whole group
-shear or reflect as one coherent diagram.
+Wraps an affine Visual in a general affine map while preserving its stable
+identity. The Pict adapter applies @racket[map]'s complete linear component to
+the semantic subtree; normal scene placement uses its mapped reference point.
+This makes a group shear or reflect as one coherent diagram.
 
-The wrapper is intentionally not an @racket[affine-visual?]. It preserves the
-older decomposed transform protocol for existing Visual implementations. Use it
-only as a complete top-level world Visual; it does not expose the wrapped
-group's descendants as independently addressable mapped targets.
+The wrapper is itself an @racket[affine-visual?]. It retains a canonical local
+copy of the subtree plus its full local-to-parent map, which lets ordinary group
+composition preserve the map and lets descendants remain addressable. This is
+the semantic bridge used by nested @racket[apply-affine] requests.
 }
 
 @defproc[(affine-map-visual? [value any/c]) boolean?]{
 
-Returns @racket[#t] when @racket[value] is a whole-Visual affine-map wrapper.
+Returns @racket[#t] when @racket[value] is a semantic affine-map wrapper.
 }
 
 @defproc[(affine-map-visual-content [visual affine-map-visual?]) visual?]{
 
-Returns the unchanged semantic content of @racket[visual].
+Returns the canonical local semantic content of @racket[visual]. Its ordinary
+decomposed transform is neutral; @racket[affine-map-visual-map] contains the
+complete local-to-parent placement.
 }
 
 @defproc[(affine-map-visual-map [visual affine-map-visual?]) affine2?]{
@@ -5564,6 +5693,39 @@ Returns the ordinary Racket complex number whose real and imaginary parts are
 the x and y components of @racket[point].
 }
 
+@defproc[(complex-domain-color
+          [value complex?]
+          [#:saturation saturation (real-in 0 1) 3/4]
+          [#:brightness brightness (real-in 0 1) 4/5]
+          [#:radial? radial? boolean? #t])
+         rgba-color?]{
+Returns an opaque semantic colour whose hue is the argument of @racket[value].
+When @racket[#:radial?] is true, its brightness also increases smoothly with
+the modulus. This is a pure colour helper; it does not create a renderer-only
+pixel effect.
+}
+
+@defproc[(complex-domain-coloring
+          [function (procedure-arity-includes/c 1)]
+          [#:id id symbol?]
+          [#:x-min x-min finite-real? -3]
+          [#:x-max x-max finite-real? 3]
+          [#:y-min y-min finite-real? -2]
+          [#:y-max y-max finite-real? 2]
+          [#:columns columns exact-positive-integer? 24]
+          [#:rows rows exact-positive-integer? 16]
+          [#:saturation saturation (real-in 0 1) 3/4]
+          [#:brightness brightness (real-in 0 1) 4/5]
+          [#:radial? radial? boolean? #t]
+          [#:opacity opacity (real-in 0 1) 1])
+         group-visual?]{
+Samples @racket[function] once at the centre of each rectangular complex cell
+and returns a normal group of coloured rectangle Visuals. The function must
+return finite complex values. Each cell has a stable name derived from
+@racket[id], so the result remains ordinary semantic scene content rather than
+a continuous raster shader.
+}
+
 @defproc[(complex-plane
           [#:id id symbol?]
           [#:x-range x-range axis-range? (axis-range -4 4 1)]
@@ -5595,14 +5757,22 @@ The numeric labels are static construction-time labels.
 @defproc[(apply-complex-function
           [target (or/c visual? symbol? visual-path?)]
           [function (procedure-arity-includes/c 1)]
-          [#:samples samples exact-positive-integer? 24])
+          [#:samples samples exact-positive-integer? 24]
+          [#:adaptive? adaptive? boolean? #t]
+          [#:tolerance tolerance (and/c finite-real? positive?) 1/32]
+          [#:max-depth max-depth exact-nonnegative-integer? 8]
+          [#:discontinuities discontinuities (or/c 'split 'error) 'error])
          apply-pointwise-request?]{
 
 Creates @racket[apply-pointwise] with each sampled world point converted by
 @racket[point->complex], passed to @racket[function], then converted back with
 @racket[complex->point]. The function must return a complex number with finite
-real and imaginary parts at every sampled point. This API does not infer
-branch cuts, clip poles, or normalize by an axes' numeric coordinate scale.
+real and imaginary parts at every retained sampled point. The default strict
+@racket['error] discontinuity policy makes an accidental bad function result
+fail visibly. Use @racket['split] for an intentional pole or excluded domain:
+failed samples then break the path rather than adding a long connecting chord.
+This API does not infer branch cuts or normalize by an axes' numeric coordinate
+scale.
 }
 
 @defproc[(polar-coordinate? [value any/c]) boolean?]{
@@ -5955,8 +6125,9 @@ construction time; the group retains no procedure or renderer state.
 
 @subsection[#:tag "ode-flow"]{Deterministic ODE Flow and Streamlines}
 
-SCENE-DC turns a two-dimensional autonomous vector field into reproducible
-integral-curve geometry. It uses fixed-step fourth-order Runge--Kutta (RK4),
+SCENE-DC turns a two-dimensional vector field into reproducible integral-curve
+geometry. A two-argument field is autonomous; a three-argument field receives
+time first. Fixed-step fourth-order Runge--Kutta (RK4) remains the default,
 with the caller selecting the step size and number of streamline steps. Neither
 the direct numerical solver nor a prepared trajectory depends on a prior
 rendered frame. @racket[prepare-ode-trajectory] stores immutable canonical RK4
@@ -5964,34 +6135,76 @@ checkpoints, so an animated particle does not recompute the complete
 seed-to-time prefix for every frame. The renderer batches selected frame times
 by checkpoint interval, sharing each interval's full RK4 suffix steps.
 
+SCENE-DN adds an optional deterministic adaptive Dormand--Prince 5(4) backend.
+It stores accepted endpoint derivatives for cubic Hermite dense lookup, accepts
+time-dependent fields, can stop at one scalar sign-crossing event, and records
+immutable diagnostics. Once an adaptive trajectory is prepared, dense lookup
+and frame rendering never invoke the author field.
+
 @defproc[(ode-flow-position
-          [field (procedure-arity-includes/c 2)]
+          [field (or/c (procedure-arity-includes/c 2)
+                       (procedure-arity-includes/c 3))]
           [seed vec2?]
           [time finite-real?]
           [#:step-size step-size (and/c finite-real? positive?) 1/20])
          vec2?]{
 
 Returns the RK4 solution beginning at coordinate-space @racket[seed] at time
-zero and integrated through signed @racket[time]. The field receives numeric
-coordinate x and y values and must return one finite @racket[vec2] derivative.
-A positive time advances the field; a negative time integrates it backwards.
+zero and integrated through signed @racket[time]. A two-argument field receives
+numeric coordinate x and y values; a three-argument field receives time, x,
+and y. It must return one finite @racket[vec2] derivative. A positive time
+advances the field; a negative time integrates it backwards.
 
 The final partial step is included, so the requested time is reached exactly
 in ordinary arithmetic rather than rounded to a step-grid endpoint. This is a
 fixed-step solver, not an adaptive tolerance-controlled integrator.
 }
 
+@defproc[(adaptive-rk45
+          [#:relative-tolerance relative-tolerance (and/c finite-real? positive?) 1e-6]
+          [#:absolute-tolerance absolute-tolerance (and/c finite-real? positive?) 1e-8]
+          [#:initial-step initial-step (and/c finite-real? positive?) 1/10]
+          [#:minimum-step minimum-step (and/c finite-real? positive?) 1e-8]
+          [#:maximum-step maximum-step (and/c finite-real? positive?) 1]
+          [#:maximum-steps maximum-steps exact-positive-integer? 100000])
+         adaptive-rk45?]{
+
+Creates immutable configuration for the deterministic Dormand--Prince embedded
+5(4) adaptive solver. The step bounds must satisfy
+@racket[minimum-step <= initial-step <= maximum-step]. The relative and
+absolute tolerances form the usual componentwise scale
+@racket[atol + rtol * max(abs(previous), abs(candidate))].
+}
+
+@defproc[(ode-event
+          [function (or/c (procedure-arity-includes/c 2)
+                          (procedure-arity-includes/c 3))]
+          [#:direction direction (or/c 'any 'increasing 'decreasing) 'any]
+          [#:name name symbol? 'event])
+         ode-event?]{
+
+Creates one terminal scalar event for adaptive preparation. Like a field,
+@racket[function] accepts either @racket[(x y)] or @racket[(time x y)] and
+must return one finite real. A sign crossing ends the trajectory; increasing
+and decreasing select the crossing orientation. The root is located by
+deterministic bisection over the accepted step's cubic dense output.
+}
+
 @defproc[(ode-trajectory? [value any/c]) boolean?]{
 
-Returns @racket[#t] for an immutable prepared fixed-RK4 trajectory.
+Returns @racket[#t] for an immutable prepared fixed-RK4 or adaptive-RK45
+trajectory.
 }
 
 @defproc[(prepare-ode-trajectory
-          [field (procedure-arity-includes/c 2)]
+          [field (or/c (procedure-arity-includes/c 2)
+                       (procedure-arity-includes/c 3))]
           [seed vec2?]
           [#:time-range time-range (cons/c finite-real? finite-real?)]
           [#:step-size step-size (and/c finite-real? positive?) 1/20]
-          [#:checkpoint-every checkpoint-every exact-positive-integer? 16])
+          [#:checkpoint-every checkpoint-every exact-positive-integer? 16]
+          [#:solver solver (or/c false/c adaptive-rk45?) #f]
+          [#:event event (or/c false/c ode-event?) #f])
          ode-trajectory?]{
 
 Prepares a closed time range expressed as @racket[(cons start-time end-time)],
@@ -6009,36 +6222,64 @@ long prefix for each frame.
 The field must be pure and stable for the lifetime of the prepared value. The
 library cannot determine whether an arbitrary Racket procedure's captured state
 has changed.
+
+When @racket[solver] is @racket[#f], this is the established fixed-RK4
+checkpoint trajectory. @racket[event] is then rejected. With an
+@racket[adaptive-rk45?] value, accepted Dormand--Prince endpoint positions and
+derivatives are stored instead. @racket[event], when supplied, truncates the
+actual supported range at its dense scalar root.
 }
 
 @defproc[(ode-trajectory-time-range [trajectory ode-trajectory?])
          (cons/c finite-real? finite-real?)]{
 
-Returns the declared closed time range.
+Returns the supported closed time range. For a trajectory stopped by an
+adaptive event, the relevant endpoint is the detected dense root rather than
+the original requested boundary.
 }
 
 @defproc[(ode-trajectory-step-size [trajectory ode-trajectory?])
-         (and/c finite-real? positive?)]{
+         (or/c (and/c finite-real? positive?) false/c)]{
 
-Returns the fixed RK4 step size.
+Returns the fixed RK4 step size, or @racket[#f] for an adaptive trajectory.
 }
 
 @defproc[(ode-trajectory-checkpoint-every [trajectory ode-trajectory?])
-         exact-positive-integer?]{
+         (or/c exact-positive-integer? false/c)]{
 
-Returns the number of full RK4 steps between stored canonical checkpoints.
+Returns the number of full RK4 steps between stored canonical checkpoints, or
+@racket[#f] for an adaptive trajectory.
+}
+
+@defproc[(ode-trajectory-solver [trajectory ode-trajectory?])
+         (or/c 'fixed-rk4 adaptive-rk45?)]{
+
+Returns @racket['fixed-rk4] for the established checkpoint backend or the
+immutable @racket[adaptive-rk45?] value that prepared an adaptive trajectory.
+}
+
+@defproc[(ode-trajectory-diagnostics [trajectory ode-trajectory?])
+         (or/c false/c ode-trajectory-diagnostics?)]{
+
+Returns @racket[#f] for fixed RK4. An adaptive trajectory returns transparent
+diagnostics containing solver name, accepted and rejected step counts,
+termination time/reason, and the maximum componentwise scaled embedded error.
+The error is a local control diagnostic, not a global proof of solution error.
 }
 
 @defproc[(ode-trajectory-position [trajectory ode-trajectory?]
                                    [time finite-real?])
          vec2?]{
 
-Returns the fixed-RK4 position at @racket[time]. The time must lie inside
-@racket[trajectory]'s declared range.
+Returns the prepared position at @racket[time]. Fixed trajectories reproduce
+the existing checkpoint/remainder RK4 path. Adaptive trajectories use stored
+cubic Hermite dense output and do not call the field. The time must lie inside
+the actual supported range, which may end early at an event root.
 }
 
 @defproc[(streamline-points
-          [field (procedure-arity-includes/c 2)]
+          [field (or/c (procedure-arity-includes/c 2)
+                       (procedure-arity-includes/c 3))]
           [seed vec2?]
           [#:direction direction (or/c 'forward 'backward 'both) 'both]
           [#:step-size step-size (and/c finite-real? positive?) 1/20]
@@ -6053,7 +6294,8 @@ combines both directions without duplicating the seed.
 
 @defproc[(streamline
           [axes axes-visual?]
-          [field (procedure-arity-includes/c 2)]
+          [field (or/c (procedure-arity-includes/c 2)
+                       (procedure-arity-includes/c 3))]
           [seed vec2?]
           [#:id id symbol?]
           [#:direction direction (or/c 'forward 'backward 'both) 'both]
@@ -6072,7 +6314,8 @@ procedure after construction.
 
 @defproc[(streamlines
           [axes axes-visual?]
-          [field (procedure-arity-includes/c 2)]
+          [field (or/c (procedure-arity-includes/c 2)
+                       (procedure-arity-includes/c 3))]
           [seeds (listof vec2?)]
           [#:id id symbol?]
           [#:direction direction (or/c 'forward 'backward 'both) 'both]
@@ -6113,6 +6356,10 @@ full RK4 suffix steps among its selected times. Workers only read those
 coordinates; they never call the author field. Direct arbitrary-time scene
 sampling remains deterministic through
 @racket[ode-trajectory-position].
+
+For an adaptive trajectory, the preparation pass instead reads its stored dense
+output directly; no numerical integration or field call occurs after the
+trajectory has been prepared.
 }
 
 @defproc[(sample-function-path
@@ -7125,15 +7372,17 @@ Returns @racket[#t] when @racket[value] is a request created by
                        [map affine2?])
          apply-affine-request?]{
 
-Creates a SCENE-CY-A whole-Visual general affine-map request. At each sampled
-interior time, the identity-to-@racket[map] entry-wise interpolation is applied
-after @racket[target]'s current outer affine map. The map therefore acts in
-world coordinates; it can express shears, reflections, arbitrary linear maps,
-and translation in one request.
+Creates a SCENE-DK general affine-map request. At each sampled interior time,
+the identity-to-@racket[map] entry-wise interpolation is applied after
+@racket[target]'s current outer affine map. The map therefore acts in world
+coordinates; it can express shears, reflections, arbitrary linear maps, and
+translation in one request.
 
-The target must be a complete top-level world Visual. A nested
-@racket[visual-path?], a derived Visual, and a frame-space overlay are rejected
-during scene compilation. The resulting endpoint is an
+The target may be a top-level world Visual or an ordinary nested
+@racket[visual-path?]. A nested request is rebased through enclosing semantic
+affine maps so its requested map still has world-coordinate meaning. The
+enclosing map must be invertible; derived Visuals and frame-space overlays are
+still rejected during scene compilation. The resulting endpoint is an
 @racket[affine-map-visual?], so a later @racket[apply-affine] composes maps
 without rasterizing the prior result. Existing movement, rotation, and scale
 requests conflict with @racket[apply-affine] for the same target during an
@@ -7154,39 +7403,97 @@ Convenience form of @racket[apply-affine] for a translation-free linear map
 about the world origin.
 }
 
-@subsection[#:tag "pointwise-maps"]{Sampled Pointwise Maps}
+@subsection[#:tag "pointwise-maps"]{Robust Pointwise Maps}
 
-SCENE-CY-C adds a nonlinear companion to the whole-Visual affine-map layer.
+SCENE-DQ extends SCENE-CY-C's nonlinear companion to the affine-map layer.
 It acts on world-space points and samples a path before mapping it, so a line
 under a nonlinear map becomes a visible curve rather than a chord joining two
 transformed endpoints. The exact caller Visual is retained at clip time zero.
+Adaptive refinement checks the deviation of a mapped midpoint from its mapped
+chord, while a failed map sample can split the result into separate subpaths.
 
 @defproc[(apply-pointwise
           [target (or/c visual? symbol? visual-path?)]
           [map-point (procedure-arity-includes/c 1)]
-          [#:samples samples exact-positive-integer? 24])
+          [#:samples samples exact-positive-integer? 24]
+          [#:adaptive? adaptive? boolean? #t]
+          [#:tolerance tolerance (and/c finite-real? positive?) 1/32]
+          [#:max-depth max-depth exact-nonnegative-integer? 8]
+          [#:discontinuities discontinuities (or/c 'split 'error) 'split])
          apply-pointwise-request?]{
 
-Creates a SCENE-CY-C top-level world-space point-map request. At each positive
-clip progress, every supported geometric sample @racket[p] moves to
+Creates a SCENE-DQ world-space point-map request. At each positive clip
+progress, every supported geometric sample @racket[p] moves to
 @racket[(map-point p)] by ordinary linear interpolation. @racket[map-point]
-must return a @racket[vec2?] for every sampled point.
+must return a finite @racket[vec2?] for every retained sample.
 
 Path Visuals, circles, rectangles, axes, and arrows are converted to sampled path
-geometry. Groups retain their ordinary hierarchy and names. Text, images, and
-other affine leaves without an exposed path remain at their original resolved
-world placement so they stay legible; they are not secretly raster-warped.
-The request rejects nested targets, derived Visuals, and frame-space overlays.
+geometry. Groups retain their ordinary hierarchy and names. A nested target is
+resolved into world coordinates and rebased through its invertible enclosing
+affine map, preserving its siblings and their paths. Text, images, and other
+affine leaves without an exposed path remain at their original resolved world
+placement so they stay legible; they are not secretly raster-warped. The
+request rejects derived Visuals and frame-space overlays.
 It conflicts with simultaneous same-target spatial, style, opacity, formula,
 or path changes, because it replaces the complete sampled Visual tree.
 
-@racket[#:samples] is the positive number of straight pieces per original line
-or cubic segment. It is a uniform deterministic sampling count, not an
-adaptive error tolerance or singularity detector.
+@racket[#:samples] gives the initial positive number of pieces per original
+line or cubic segment. With the default @racket[#:adaptive? #t], intervals
+whose mapped midpoint differs from their mapped chord by more than
+@racket[#:tolerance] are bisected, up to @racket[#:max-depth]. At
+@racket['split] discontinuity policy, a raised error or an invalid map result
+omits that interval and leaves adjacent valid fragments disconnected;
+@racket['error] propagates it. Point maps should be pure because refinement
+may call them more than once at a source point.
 }
 
 @defproc[(apply-pointwise-request? [value any/c]) boolean?]{
 Returns @racket[#t] for a request created by @racket[apply-pointwise].
+}
+
+@defproc[(pointwise-jacobian
+          [map-point (procedure-arity-includes/c 1)]
+          [point vec2?]
+          [#:step step (and/c finite-real? positive?) 1/1000])
+         linear2?]{
+Approximates the local Jacobian by centred finite differences. It is an
+inspection helper, not symbolic differentiation.
+}
+
+@defproc[(pointwise-jacobian-determinant
+          [map-point (procedure-arity-includes/c 1)]
+          [point vec2?]
+          [#:step step (and/c finite-real? positive?) 1/1000])
+         finite-real?]{
+Returns the determinant of @racket[pointwise-jacobian] at @racket[point].
+}
+
+@defproc[(pointwise-orientation
+          [map-point (procedure-arity-includes/c 1)]
+          [point vec2?]
+          [#:step step (and/c finite-real? positive?) 1/1000]
+          [#:tolerance tolerance (and/c finite-real? positive?) 1e-8])
+         (or/c 'preserving 'reversing 'singular)]{
+Classifies the numerical Jacobian determinant using @racket[tolerance].
+}
+
+@defproc[(inverse-map-mesh
+          [inverse-map (procedure-arity-includes/c 1)]
+          [#:id id symbol?]
+          [#:x-min x-min finite-real? -3]
+          [#:x-max x-max finite-real? 3]
+          [#:y-min y-min finite-real? -2]
+          [#:y-max y-max finite-real? 2]
+          [#:x-count x-count exact-integer? 7]
+          [#:y-count y-count exact-integer? 5]
+          [#:samples samples exact-positive-integer? 12]
+          [#:tolerance tolerance (and/c finite-real? positive?) 1/32]
+          [#:max-depth max-depth exact-nonnegative-integer? 8]
+          [#:stroke stroke any/c "mediumpurple"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2])
+         group-visual?]{
+Builds a regular target-space grid and adaptively maps it through the explicitly
+provided inverse. This does not attempt to derive an inverse automatically.
 }
 
 @defproc[(stroke-width-to
@@ -7996,10 +8303,81 @@ Returns @racket[#t] when @racket[value] is a request created by
 @racket[unwrite].
 }
 
-@defproc[(linear [progress finite-real?]) finite-real?]{
+@subsection{Serializable Rate Functions}
 
-Returns @racket[progress] unchanged. This is the default easing procedure. The
-scene machinery supplies a clamped finite input and validates the easing result.
+SCENE-DL represents built-in easings as transparent callable values. A
+@racket[rate-function?] can therefore be supplied anywhere the historical API
+accepts a one-argument procedure, while its kind and parameters remain part of
+the scene's serializable representation. Arbitrary one-argument procedures
+remain supported; they are intentionally opaque to automatic authoring caches.
+
+@defproc[(rate-function? [value any/c]) boolean?]{
+
+Returns @racket[#t] when @racket[value] is a built-in callable semantic rate
+function.
+}
+
+@defproc[(rate-function-name [value rate-function?]) symbol?]{
+
+Returns the stable built-in kind, such as @racket['smooth].
+}
+
+@defproc[(rate-function-parameters [value rate-function?]) list?]{
+
+Returns the validated constructor parameters in their stable order.
+}
+
+@defproc[(rate-function->datum [value rate-function?]) pair?]{
+
+Returns a compact serializable description, for example
+@racket['(smooth 10)].
+}
+
+@defproc[(rate-function-apply [value rate-function?]
+                              [progress finite-real?]) finite-real?]{
+
+Applies one semantic rate function. The scene machinery supplies clamped
+progress; built-ins return exact 0 or 1 at the corresponding clip boundaries.
+}
+
+@defthing[linear rate-function?]{
+
+The default rate function, callable as @racket[(linear progress)]. It returns
+@racket[progress] unchanged.
+}
+
+@defproc[(smooth [#:inflection inflection positive-real? 10]) rate-function?]{
+
+Returns a normalized logistic S curve. Greater @racket[inflection] makes its
+departure from zero and arrival at one sharper.
+}
+
+@defproc[(smoothstep) rate-function?]{
+
+Returns the cubic @math{3t^2-2t^3} curve with zero slope at both endpoints.
+}
+
+@defproc[(rush-into) rate-function?]{
+
+Returns a smooth curve that starts slowly and accelerates into its endpoint.
+}
+
+@defproc[(rush-from) rate-function?]{
+
+Returns a smooth curve that leaves quickly and decelerates toward its endpoint.
+}
+
+@defproc[(there-and-back) rate-function?]{
+
+Returns a smooth excursion from zero to one and back to zero.
+}
+
+@defproc[(there-and-back-with-pause
+          [#:pause-ratio pause-ratio (and/c finite-real? (>=/c 0) (</c 1)) 1/3])
+         rate-function?]{
+
+Returns an outward-and-returning curve that holds one for the specified fraction
+of its unit interval.
 }
 
 @defproc[(timed
@@ -9161,6 +9539,62 @@ Only the y component of the Visual position changes. The x component and the
 reference Visual remain unchanged.
 }
 
+@defproc[(align-baselines
+          [visuals (listof visual?)]
+          [#:baseline baseline (or/c finite-real? false/c) #f]
+          [#:camera camera camera? default-camera]
+          [#:renderers renderers pict-renderer-list? default-pict-renderers])
+         (listof visual?)]{
+
+Returns one immutable positioned copy per input Visual, in input order. Their
+reference y coordinates are all set to @racket[baseline], or to the first
+Visual's reference y coordinate when it is @racket[#f]. In particular, this
+aligns the true baselines of text made with @racket[#:vertical-alignment
+'baseline]. Other Visual kinds use their ordinary reference position; no hidden
+font baseline is inferred for them.
+}
+
+@defproc[(keep-inside-frame
+          [visual visual?]
+          [#:margin margin (and/c finite-real? (>=/c 0)) 0]
+          [#:camera camera camera? default-camera]
+          [#:renderers renderers pict-renderer-list? default-pict-renderers])
+         visual?]{
+
+Returns an immutable copy translated minimally so its complete measured render
+box is inside @racket[camera]'s viewport after the requested margin. A Visual
+larger than the available viewport is centred on that axis. The operation is a
+construction-time correction, not a live camera or viewport constraint.
+}
+
+@defproc[(avoid-overlap
+          [visuals (listof visual?)]
+          [#:direction direction (or/c 'right 'up) 'right]
+          [#:gap gap (and/c finite-real? (>=/c 0)) 0]
+          [#:camera camera camera? default-camera]
+          [#:renderers renderers pict-renderer-list? default-pict-renderers])
+         (listof visual?)]{
+
+Returns ordered immutable copies separated by a deterministic greedy pass.
+@racket['right] moves later Visuals rightward until their measured boxes leave
+at least @racket[gap] horizontal space; @racket['up] does the analogous
+vertical pass. It is intentionally not a general two-dimensional packing or
+constraint solver.
+}
+
+@defproc[(distribute-within
+          [visuals (listof visual?)]
+          [start finite-real?]
+          [end finite-real?]
+          [#:axis axis (or/c 'horizontal 'vertical) 'horizontal])
+         (listof visual?)]{
+
+Returns ordered immutable copies whose reference x or y coordinates are evenly
+spaced, including @racket[start] and @racket[end]. An empty list returns empty;
+a singleton is placed at their midpoint. The unselected coordinate and all other
+Visual properties are preserved.
+}
+
 @defproc[(visual-place-above
           [visual visual?]
           [reference visual?]
@@ -9392,6 +9826,57 @@ the same as @racket[circumscribe].
 
 Returns @racket[#t] when @racket[value] is a request created by
 @racket[indicate].
+}
+
+@defproc[(flash [target (or/c visual? symbol? visual-path?)]
+                [#:radius radius (and/c finite-real? (>=/c 0)) 1/2]
+                [#:color color any/c "gold"]
+                [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 3])
+         flash-request?]{
+Draws a short eight-ray burst around the target's live rendered-box centre.
+The transient overlay is absent at both clip endpoints.
+}
+
+@defproc[(focus-on [target (or/c visual? symbol? visual-path?)]
+                   [#:radius radius (and/c finite-real? (>=/c 0)) 1/2]
+                   [#:color color any/c "gold"]
+                   [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 3])
+         focus-on-request?]{
+Expands and fades a circular live-target focus ring over one play clip.
+}
+
+@defproc[(show-passing-flash
+          [target (or/c path-visual? symbol? visual-path?)]
+          [#:time-width time-width (real-in 0 1) 1/5]
+          [#:color color any/c "gold"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 4])
+         show-passing-flash-request?]{
+Renders only a moving arc-length sliver of a path Visual. A symbol/path target
+is checked when the play clip is compiled.
+}
+
+@defproc[(wiggle [target (or/c visual? symbol? visual-path?)]
+                 [#:angle angle finite-real? 1/12]
+                 [#:cycles cycles exact-positive-integer? 2])
+         succession-animation-request?]{
+Returns an ordinary reversible rotation succession. It ends at exactly the
+initial rotation and follows normal composition timing.
+}
+
+@defproc[(grow-from-center [visual (and/c visual? affine-visual? opacity-visual?)])
+         grow-from-center-request?]{
+Introduces an absent Visual from an invisible, centre-scaled source and
+restores the exact supplied endpoint at completion.
+}
+
+@defproc[(grow-arrow [visual arrow-visual?]) grow-arrow-request?]{
+Introduces an absent arrow from its start endpoint, including its arrowhead.
+}
+
+@defproc[(draw-border-then-fill [visual path-visual?])
+         draw-border-then-fill-request?]{
+Introduces an absent path Visual by tracing its outline with arc-length timing,
+then fading in its original fill and final stroke style.
 }
 
 @section[#:tag "rendering"]{Pict, Bitmap, and Frame Conversion}
@@ -9783,9 +10268,9 @@ The default @racket['auto] key fingerprints the serializable scene value,
 section identity/bounds, FPS, camera/renderers, Racket version, and bytes of
 the declared @racket[asset-files]. It reuses a matching
 @filepath{.animate-section-cache.rktd} manifest only if every expected PNG is
-still present. If a procedure other than the built-in @racket[linear] easing is
-present in the scene representation, automatic caching is disabled
-conservatively. An explicit symbol/string remains
+still present. SCENE-DL built-in @racket[rate-function?] values remain
+serializable; if an arbitrary procedure is present in the scene representation,
+automatic caching is disabled conservatively. An explicit symbol/string remains
 available for an author-managed key; @racket[#f] disables caching and removes
 any existing section cache manifest. External dependencies are not discovered:
 declare them in @racket[asset-files] or use a deliberate explicit key.
@@ -9830,9 +10315,10 @@ frames. The two lists have the same order and length.
          (or/c false/c string?)]{
 
 Computes the conservative automatic key used by selected rendering. It returns
-@racket[#f] when the scene contains a procedure other than the built-in
-@racket[linear] easing, because its identity and source cannot be made a
-reliable content hash. The public rendering procedures
+@racket[#f] when the scene contains an arbitrary procedure, because its identity
+and source cannot be made a reliable content hash. Built-in
+@racket[rate-function?] values are represented semantically and remain
+cacheable. The public rendering procedures
 normally call it themselves; it is exposed for diagnostics or a custom partial
 movie workflow.
 }
@@ -9841,26 +10327,36 @@ movie workflow.
 
 @defproc[(graph-vertex [name symbol?]
                        [#:position position (or/c vec2? false/c) #f]
-                       [#:label label (or/c string? false/c) #f])
+                       [#:label label (or/c string? false/c) #f]
+                       [#:partition partition (or/c symbol? false/c) #f])
          graph-vertex?]{
 
 Constructs immutable vertex specification data. A manual graph layout requires
-a @racket[#:position] for every vertex. Circle and tree layouts replace those
-positions deterministically. An optional string label becomes the ordinary
-child at the vertex's @racket['label] path.
+a @racket[#:position] for every vertex. Circle, tree, spring, layered, and
+planar layouts replace those positions deterministically. The partite layout
+requires a @racket[#:partition] for every vertex. An optional string label
+becomes the ordinary child at the vertex's @racket['label] path.
 }
 
 @defproc[(graph-edge [source symbol?]
                      [target symbol?]
                      [#:id id (or/c symbol? false/c) #f]
-                     [#:label label (or/c string? false/c) #f])
+                     [#:label label (or/c string? false/c) #f]
+                     [#:weight weight finite-real? 1]
+                     [#:curvature curvature (or/c finite-real? false/c) #f]
+                     [#:stroke stroke any/c #f]
+                     [#:stroke-width stroke-width (or/c finite-real? false/c) #f])
          graph-edge?]{
 
 Constructs one immutable edge specification. Source and target must later name
-distinct declared vertices. When @racket[#:id] is omitted, its stable nested
-identity is formed as @racket[source] followed by @litchar{->} followed by
-@racket[target], such as @racket['A->B]. An optional label follows the sampled
-geometric midpoint of the endpoints.
+declared vertices; they may be equal to make a loop. When @racket[#:id] is
+omitted, its stable nested identity is formed as @racket[source] followed by
+@litchar{->} followed by @racket[target], such as @racket['A->B]. An optional
+label follows the sampled straight, cubic, or loop route. @racket[weight] is a
+positive finite multiplier for the graph's default stroke width. A nonfalse
+@racket[curvature] explicitly selects a signed cubic bow; otherwise the graph
+assigns lanes to parallel edges. @racket[stroke] and @racket[stroke-width]
+override their graph-wide defaults for this edge.
 }
 
 @defproc[(graph [vertices (listof graph-vertex?)]
@@ -9872,6 +10368,10 @@ geometric midpoint of the endpoints.
                 [#:tree-root tree-root (or/c symbol? false/c) #f]
                 [#:tree-x-spacing tree-x-spacing finite-real? 3/2]
                 [#:tree-y-spacing tree-y-spacing finite-real? 3/2]
+                [#:partite-order partite-order (or/c (listof symbol?) false/c) #f]
+                [#:spring-iterations spring-iterations exact-positive-integer? 60]
+                [#:spring-attraction spring-attraction finite-real? 1]
+                [#:spring-repulsion spring-repulsion finite-real? 1]
                 [#:vertex-shape vertex-shape point-marker-shape? 'circle]
                 [#:vertex-size vertex-size finite-real? 1/2]
                 [#:vertex-fill vertex-fill any/c "aliceblue"]
@@ -9882,6 +10382,9 @@ geometric midpoint of the endpoints.
                 [#:vertex-label-color vertex-label-color any/c "midnightblue"]
                 [#:edge-stroke edge-stroke any/c "slategray"]
                 [#:edge-stroke-width edge-stroke-width finite-real? 2]
+                [#:edge-curvature edge-curvature finite-real? 0]
+                [#:parallel-edge-separation parallel-edge-separation finite-real? 1/3]
+                [#:self-loop-radius self-loop-radius finite-real? 4/5]
                 [#:edge-label-offset edge-label-offset vec2? (vec2 0 1/5)]
                 [#:edge-label-size edge-label-size finite-real? 1/5]
                 [#:edge-label-color edge-label-color any/c "darkslategray"])
@@ -9900,11 +10403,21 @@ it requires exactly one fewer edge than vertices, one root without an incoming
 edge (or a matching @racket[#:tree-root]), one incoming edge for every other
 vertex, and reachability from that root. Sibling order is declared edge order.
 
+SCENE-DP adds deterministic construction-time layouts. @racket['spring] is a
+fixed Jacobi force iteration with the supplied positive iteration, attraction,
+and repulsion values. @racket['layered] is available only on @racket[digraph]
+and requires an acyclic edge relation. @racket['partite] puts the declared
+@racket[#:partition] columns in @racket[#:partite-order] or stable first-use
+order. @racket['planar] searches for a crossing-free circular outerplanar
+embedding, exhaustively through eight vertices.
+
 All dimensions are positive finite reals except the two stroke widths, which
-are nonnegative finite reals. Vertex and edge labels use the ordinary Pict text
-backend. Lines are shortened by half a vertex marker size at each endpoint;
-this keeps markers and directed arrowheads legible. Sampled endpoint positions
-must remain distinct.
+are nonnegative finite reals. @racket[#:edge-curvature],
+@racket[#:parallel-edge-separation], and @racket[#:self-loop-radius] control
+the derived routes. Vertex and edge labels use the ordinary Pict text backend.
+Straight lines are shortened by half a vertex marker size at each endpoint;
+this keeps markers and directed arrowheads legible. Distinct sampled endpoints
+are required for nonloop edges.
 }
 
 @defproc[(digraph [vertices (listof graph-vertex?)]
@@ -9916,6 +10429,10 @@ must remain distinct.
                   [#:tree-root tree-root (or/c symbol? false/c) #f]
                   [#:tree-x-spacing tree-x-spacing finite-real? 3/2]
                   [#:tree-y-spacing tree-y-spacing finite-real? 3/2]
+                  [#:partite-order partite-order (or/c (listof symbol?) false/c) #f]
+                  [#:spring-iterations spring-iterations exact-positive-integer? 60]
+                  [#:spring-attraction spring-attraction finite-real? 1]
+                  [#:spring-repulsion spring-repulsion finite-real? 1]
                   [#:vertex-shape vertex-shape point-marker-shape? 'circle]
                   [#:vertex-size vertex-size finite-real? 1/2]
                   [#:vertex-fill vertex-fill any/c "aliceblue"]
@@ -9926,6 +10443,9 @@ must remain distinct.
                   [#:vertex-label-color vertex-label-color any/c "midnightblue"]
                   [#:edge-stroke edge-stroke any/c "slategray"]
                   [#:edge-stroke-width edge-stroke-width finite-real? 2]
+                  [#:edge-curvature edge-curvature finite-real? 0]
+                  [#:parallel-edge-separation parallel-edge-separation finite-real? 1/3]
+                  [#:self-loop-radius self-loop-radius finite-real? 4/5]
                   [#:edge-label-offset edge-label-offset vec2? (vec2 0 1/5)]
                   [#:edge-label-size edge-label-size finite-real? 1/5]
                   [#:edge-label-color edge-label-color any/c "darkslategray"])
@@ -9934,6 +10454,32 @@ must remain distinct.
 Like @racket[graph], but each derived line is an ordinary arrow whose direction
 is the declared @racket[source] to @racket[target] order. The layout and style
 keywords have the same meaning as for @racket[graph].
+}
+
+@defproc[(graph-vertex-partition [vertex graph-vertex?]) (or/c symbol? false/c)]{
+
+Returns the vertex's optional partite-layout partition name.
+}
+
+@defproc[(graph-edge-weight [edge graph-edge?]) finite-real?]{
+
+Returns the edge's positive stroke-weight multiplier.
+}
+
+@defproc[(graph-edge-curvature [edge graph-edge?]) (or/c finite-real? false/c)]{
+
+Returns the optional explicit signed curvature. @racket[#f] selects automatic
+parallel-edge routing.
+}
+
+@defproc[(graph-edge-stroke [edge graph-edge?]) any/c]{
+
+Returns the optional per-edge stroke override.
+}
+
+@defproc[(graph-edge-stroke-width [edge graph-edge?]) any/c]{
+
+Returns the optional per-edge cosmetic stroke-width override.
 }
 
 @defproc[(graph-vertices-path [graph-id symbol?]) visual-path?]{
@@ -9961,13 +10507,43 @@ Returns @racket[(list graph-id 'edges edge-id)], using an edge specification's
 stable identity when one is supplied.
 }
 
+@defproc[(graph-bfs [edges (listof graph-edge?)]
+                    [source symbol?]
+                    [#:directed? directed? boolean? #t])
+         (listof symbol?)]{
+
+Returns the stable breadth-first vertex visitation order from @racket[source].
+The declared edge-list order breaks ties. With @racket[#:directed? #f], every
+edge contributes both adjacency directions. This creates no mutation or
+animation request.
+}
+
+@defproc[(graph-dfs [edges (listof graph-edge?)]
+                    [source symbol?]
+                    [#:directed? directed? boolean? #t])
+         (listof symbol?)]{
+
+Returns the stable depth-first vertex visitation order using declared edge-list
+order for neighbours.
+}
+
+@defproc[(graph-shortest-path [edges (listof graph-edge?)]
+                              [source symbol?]
+                              [target symbol?]
+                              [#:directed? directed? boolean? #t])
+         (or/c (listof symbol?) false/c)]{
+
+Returns one declaration-order tie-broken unweighted shortest path, including
+its source and target, or @racket[#f] when no path exists.
+}
+
 Graph edge computation is a pure sampled dependency: it reads the current
-world positions of its named vertex groups and reconstructs local line/arrow
-geometry. It therefore works at an arbitrary requested scene time and does not
-depend on previously rendered frames. Whole-graph affine transforms are
-composed once into both vertices and edges. A graph currently must be a
-top-level scene Visual; an outer arbitrary group cannot yet rewrite the graph's
-stored endpoint paths.
+world positions of its named vertex groups and reconstructs local straight,
+cubic, or loop geometry. It therefore works at an arbitrary requested scene
+time and does not depend on previously rendered frames. Whole-graph affine
+transforms are composed once into both vertices and edges. A graph currently
+must be a top-level scene Visual; an outer arbitrary group cannot yet rewrite
+the graph's stored endpoint paths.
 }
 
 @defproc[(encode-mp4! [frames-directory path-string?]
@@ -12384,9 +12960,172 @@ open markers-scatter-areas.mp4
 }
 
 
+@section[#:tag "probability-and-statistical-diagrams"]{
+  Probability and Statistical Diagrams}
+
+SCENE-DT provides small, immutable, addressable diagram groups for common
+probability and statistics explanations. These constructors do not analyse data
+or add a separate scene protocol: their bars, cells, tree branches, quartile
+box, and error-bar elements are ordinary named children that work with existing
+paths, colours, transforms, and attention effects.
+
+@defproc[(bar-chart [values (and/c list? pair?)]
+                    [#:id identifier symbol?]
+                    [#:labels labels (or/c (listof string?) false/c) #f]
+                    [#:center center vec2? origin]
+                    [#:width width positive-real? 6]
+                    [#:height height positive-real? 3]
+                    [#:maximum maximum (or/c positive-real? false/c) #f]
+                    [#:fill fill any/c "cornflowerblue"]
+                    [#:stroke stroke any/c "navy"]
+                    [#:stroke-width stroke-width nonnegative-real? 2]
+                    [#:value-labels? value-labels? boolean? #t])
+         group-visual?]{
+
+Creates a baseline and one upward nonnegative bar per value. Values are scaled
+against @racket[maximum], or the largest supplied value (at least one). Labels
+and value labels are optional ordinary text children. The path of one bar is
+@racket[(bar-chart-bar-path identifier index)], where indexes start at one.
+}
+
+@defproc[(histogram [samples (and/c list? pair?)]
+                    [#:id identifier symbol?]
+                    [#:bins bins exact-positive-integer? 8]
+                    [#:range range (or/c pair? false/c) #f]
+                    [#:center center vec2? origin]
+                    [#:width width positive-real? 6]
+                    [#:height height positive-real? 3])
+         group-visual?]{
+
+Counts finite numeric samples into equally wide bins, then returns the same
+addressable bar-group shape as @racket[bar-chart]. A supplied range is an
+increasing pair; samples outside it are omitted and a sample at the upper bound
+belongs to the final bin.
+}
+
+@defproc[(stacked-bar-chart [rows (and/c list? pair?)]
+                            [#:id identifier symbol?]
+                            [#:center center vec2? origin]
+                            [#:width width positive-real? 6]
+                            [#:height height positive-real? 3]
+                            [#:maximum maximum (or/c positive-real? false/c) #f]
+                            [#:colors colors (and/c list? pair?) any/c]
+                            [#:stroke stroke any/c "navy"]
+                            [#:stroke-width stroke-width nonnegative-real? 1])
+         group-visual?]{
+
+Creates one bar per equal-length nonnegative row and stacks each row's values
+from the common baseline. Use @racket[stacked-bar-path] and
+@racket[stacked-bar-segment-path] for one bar or segment, with one-based
+indexes.
+}
+
+@defproc[(sample-space [rows (and/c list? pair?)]
+                       [#:id identifier symbol?]
+                       [#:center center vec2? origin]
+                       [#:width width positive-real? 5]
+                       [#:height height positive-real? 3])
+         group-visual?]{
+
+Creates equally sized, coloured cells from a nonnegative rectangular matrix.
+Each cell displays its supplied weight. Its path is
+@racket[(sample-space-cell-path identifier row column)], with one-based row and
+column indexes; the geometry remains equal even for unequal weights.
+}
+
+@defstruct*[probability-branch ([id symbol?]
+                                [label string?]
+                                [probability nonnegative-real?]
+                                [children (listof probability-branch?)])
+  #:transparent]{
+
+Describes one immutable node in a finite probability tree. Branch identities
+must be globally unique within one @racket[probability-tree] input.
+}
+
+@defproc[(probability-tree [branches (and/c list? pair?)]
+                           [#:id identifier symbol?]
+                           [#:center center vec2? origin]
+                           [#:width width positive-real? 6]
+                           [#:level-gap gap positive-real? 1]
+                           [#:node-radius radius positive-real? 1/6])
+         group-visual?]{
+
+Lays out an explicit finite forest by leaf order. Child edge labels display the
+child branch probability. A node can be addressed with
+@racket[(probability-tree-node-path identifier branch-id)].
+}
+
+@defproc[(box-plot [values (listof finite-real?)]
+                   [#:id identifier symbol?]
+                   [#:center center vec2? origin]
+                   [#:width width positive-real? 5]
+                   [#:height height positive-real? 3/4])
+         group-visual?]{
+
+Creates whiskers, a quartile box, and a median line from at least two values.
+Quartiles use deterministic linear interpolation between sorted observations;
+outliers are not inferred or displayed. @racket[box-plot-summary] is the
+transparent five-number summary structure used by the constructor.
+}
+
+@defstruct*[error-bar-point ([x finite-real?]
+                             [y finite-real?]
+                             [error nonnegative-real?])
+  #:transparent]{
+
+Describes a point with symmetric vertical error.}
+
+@defproc[(error-bars [points (and/c list? pair?)]
+                     [#:id identifier symbol?]
+                     [#:center center vec2? origin]
+                     [#:cap-width cap-width positive-real? 1/5])
+         group-visual?]{
+
+Creates addressable vertical stems, end caps, and point markers. The path for a
+one-based point index is @racket[(error-bar-path identifier index)].
+}
+
+See @filepath{examples/probability-and-statistics.rkt} for one composition that
+uses chart, finite-outcome, tree, distribution, and uncertainty views together.
+}
+
+
 @section[#:tag "version-history"]{Version History}
 
 @itemlist[
+ @item{@bold{unreleased — SCENE-DV.} Added deterministic renderer-measured
+       finishing helpers: @racket[align-baselines], @racket[keep-inside-frame],
+       @racket[avoid-overlap], and @racket[distribute-within]. They return
+       immutable Visual snapshots rather than live layout constraints.}
+ @item{@bold{unreleased — SCENE-DT.} Added immutable, addressable bar and
+       stacked-bar charts, histograms, finite sample spaces, probability trees,
+       box plots, and error bars. Their components use normal group paths for
+       existing animation and styling operations.}
+ @item{@bold{unreleased — SCENE-DS.} Added live-target flash/focus effects,
+       path passing flashes, reversible wiggle, and exact-endpoint grow and
+       border-then-fill introduction requests.}
+ @item{@bold{unreleased — SCENE-DN.} Added optional deterministic adaptive
+       Dormand--Prince RK45 prepared trajectories with cubic dense lookup,
+       three-argument time-dependent fields, scalar terminal events, and
+       immutable diagnostics. Fixed RK4 checkpoint trajectories remain the
+       default.}
+ @item{@bold{unreleased — SCENE-DM.} Added immutable Boolean path operations:
+       @racket[path-union], @racket[path-intersection],
+       @racket[path-difference], @racket[path-xor], and @racket[cutout]. The
+       first implementation clips one simple convex closed contour per operand
+       and samples cubic segments into deterministic polygonal boundaries.}
+ @item{@bold{unreleased — SCENE-DL.} Added transparent callable rate-function
+       values: @racket[linear], @racket[(smooth)], @racket[(smoothstep)],
+       @racket[(rush-into)], @racket[(rush-from)], @racket[(there-and-back)],
+       and @racket[(there-and-back-with-pause)]. They retain the ordinary
+       easing interface while allowing automatic section-cache fingerprints to
+       represent their kind and parameters.}
+ @item{@bold{unreleased — SCENE-DK.} Extended semantic @racket[apply-affine]
+       and @racket[apply-matrix] requests to ordinary nested paths. A nested
+       child remains a live semantic subtree inside an already mapped group;
+       its new world map is rebased through invertible ancestors instead of
+       transforming a flattened Pict.}
  @item{@bold{1.5.0 — SCENE-DJ.} Added path-backed ellipses, annuli, sectors,
        regular polygons, stars, and rounded rectangles, plus circular arcs
        between endpoints, tangent-aligned curved arrows, double arrows, and

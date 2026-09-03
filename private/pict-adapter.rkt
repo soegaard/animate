@@ -23,10 +23,12 @@
                   blank
                   cellophane
                   dc
+                  frame
                   filled-rectangle
                   pict-height
                   pict-width
-                  pin-over)
+                  pin-over
+                  scale)
          (only-in racket/draw
                   make-pen)
          "affine-map-visual.rkt"
@@ -136,6 +138,11 @@
       (callout-visual-content visual)
       camera
       renderers)]
+    [(camera-view-visual? visual)
+     (raise-arguments-error
+      'visual->pict
+      "a camera-view must be resolved against a scene state before rendering"
+      "visual-id" (visual-id visual))]
     [(number-line-visual? visual)
      (render-visual-or-composite
       (number-line-visual->path-visual visual)
@@ -161,9 +168,10 @@
 
 ;; affine-map-content->pict : affine-map-visual? camera?
 ;;                            (listof pict-renderer?) -> pict?
-;; Renders the wrapped world Visual through the normal dispatcher, then applies
-;; only the affine map's linear part around the semantic Pict centre. The scene
-;; compositor separately places the result at affine-map-visual's transformed
+;; Renders canonical content through the normal dispatcher, applies the full
+;; semantic map's linear part around the Pict centre, and then applies any
+;; ordinary enclosing-group scale/rotation retained by the affine protocol.
+;; The scene compositor separately places the result at the map's translated
 ;; world reference point.
 (define (affine-map-content->pict visual camera renderers)
   (define content
@@ -173,9 +181,13 @@
      'visual->pict
      "a world-space Visual inside affine-map"
      "visual-id" (visual-id content)))
-  (affine2-pict-transform
-   (visual->pict content camera #:renderers renderers)
-   (affine-map-visual-map visual)))
+  (define mapped-pict
+    (affine2-pict-transform
+     (visual->pict content camera #:renderers renderers)
+     (affine-map-visual-map visual)))
+  (define transformed-pict
+    (scale-pict-if-needed mapped-pict (visual-scale visual)))
+  (rotate-pict-if-needed transformed-pict (visual-rotation visual)))
 
 ; frame-space-content->pict : frame-space-visual? visual? camera?
 ;                             (listof pict-renderer?) -> pict?
@@ -346,6 +358,8 @@
   (cond
     [(callout-visual? visual)
      (place-callout-on-pict frame state visual camera renderers)]
+    [(camera-view-visual? visual)
+     (place-camera-view-on-pict frame state visual camera renderers)]
     [(dynamic-endpoint-visual? visual)
      (place-dynamic-endpoint-visual-on-pict
       frame state visual camera renderers)]
@@ -359,6 +373,63 @@
      (place-frame-space-visual-on-pict frame visual camera renderers)]
     [else
      (place-world-visual-on-pict frame visual camera renderers)]))
+
+; place-camera-view-on-pict : pict? scene-state? camera-view-visual? camera?
+;                             (listof pict-renderer?) -> pict?
+;;   Resolves the inset target in the sampled world state, paints it into a
+;;   complete second-camera canvas, and pins that canvas in the outer frame.
+;;   The inset's own local transform and opacity then work exactly as for other
+;;   frame-space Visuals; its target remains a normal world-space Visual.
+(define (place-camera-view-on-pict canvas state view outer-camera renderers)
+  (define target
+    (scene-state-resolved-world-ref
+     state
+     (camera-view-visual-target view)))
+  (when (frame-space-visual? target)
+    (raise-arguments-error
+     'scene-state->pict
+     "a camera-view target must resolve to a world-space Visual"
+     "camera-view-id" (visual-id view)
+     "target" (camera-view-visual-target view)))
+  (define inset-camera
+    (camera-view-visual-camera view))
+  (define inset-background
+    (filled-rectangle (camera-width inset-camera)
+                      (camera-height inset-camera)
+                      #:draw-border? #f
+                      #:color (camera-background inset-camera)))
+  (define inset-pict
+    (place-world-visual-on-pict inset-background
+                                target
+                                inset-camera
+                                renderers))
+  (define desired-width
+    (camera-length->pixels
+     outer-camera
+     (camera-view-visual-width view)))
+  (define scaled-inset
+    (scale inset-pict
+           (/ desired-width
+              (pict-width inset-pict))))
+  ;; A one-pixel frame makes the second coordinate system legible without
+  ;; inventing a separate decoration API for the first version of camera-view.
+  (define framed-inset
+    (frame scaled-inset))
+  (define transformed-inset
+    (rotate-pict-if-needed
+     (scale-pict-if-needed framed-inset (visual-scale view))
+     (visual-rotation view)))
+  (define rendered-inset
+    (if (= (visual-opacity view) 1)
+        transformed-inset
+        (cellophane transformed-inset (visual-opacity view))))
+  (define frame-camera
+    (frame-space-camera
+     outer-camera
+     (frame-space-visual-frame-width view)))
+  (define-values (center-x center-y)
+    (camera-world->pixel frame-camera (visual-position view)))
+  (pin-centered-pict canvas center-x center-y rendered-inset))
 
 ; place-dynamic-endpoint-visual-on-pict : pict? scene-state?
 ;                                         dynamic-endpoint-visual? camera?

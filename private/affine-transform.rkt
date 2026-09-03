@@ -42,6 +42,7 @@
          make-linear2
          identity-linear2
          linear2-determinant
+         linear2-invert
          linear2-compose
          linear2-apply-vector
          affine2
@@ -58,6 +59,7 @@
          identity-affine2
          affine2-with-linear
          affine2-with-translation
+         affine2-invert
          affine2-compose
          affine2-lerp
          affine2-apply-vector
@@ -285,6 +287,19 @@
   (- (* (linear2-a map) (linear2-d map))
      (* (linear2-b map) (linear2-c map))))
 
+;; linear2-invert : linear2? -> (or/c linear2? false/c)
+;; Returns the inverse map when it exists, or #f for a singular map.  Returning
+;; #f gives callers such as nested world-coordinate mapping a deliberate,
+;; inspectable failure mode instead of a division-by-zero exception.
+(define (linear2-invert map)
+  (check-linear2 'linear2-invert map)
+  (define determinant (linear2-determinant map))
+  (and (not (zero? determinant))
+       (make-linear2 (/ (linear2-d map) determinant)
+                     (/ (- (linear2-b map)) determinant)
+                     (/ (- (linear2-c map)) determinant)
+                     (/ (linear2-a map) determinant))))
+
 ;; linear2-compose : linear2? linear2? -> linear2?
 ;; Returns outer ∘ inner, so the inner map acts first.
 (define (linear2-compose outer inner)
@@ -383,6 +398,20 @@
            (affine2-c map)
            (affine2-d map)
            (vec2-y translation)))
+
+;; affine2-invert : affine2? -> (or/c affine2? false/c)
+;; Returns the inverse affine map when its linear portion is nonsingular.
+(define (affine2-invert map)
+  (check-affine2 'affine2-invert map)
+  (define inverse-linear (linear2-invert (affine2-linear map)))
+  (and inverse-linear
+       (make-affine2
+        #:linear inverse-linear
+        #:translation
+        (vec2-scale -1
+                    (linear2-apply-vector
+                     inverse-linear
+                     (affine2-translation map))))))
 
 ;; affine2-compose : affine2? affine2? -> affine2?
 ;; Returns outer ∘ inner, so the inner map acts first.

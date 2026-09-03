@@ -24,6 +24,21 @@
    (ode-flow-position constant-flow (vec2 1 3) -2 #:step-size 1/4)
    (vec2 -3 5))
 
+  ;; A three-argument field receives the physical ODE time at each RK stage.
+  ;; Here x' = t, y' = 0 has the exact solution x(t) = t²/2 from the origin.
+  (define time-driven-flow (lambda (time _x _y) (vec2 time 0)))
+  (check-vec2-close
+   (ode-flow-position time-driven-flow origin 3 #:step-size 1/4)
+   (vec2 9/2 0))
+  (define time-driven-trajectory
+    (prepare-ode-trajectory
+     time-driven-flow origin #:time-range (cons -2 3) #:step-size 1/4
+     #:checkpoint-every 3))
+  (for ([time (in-list (list -2 -3/4 0 9/8 3))])
+    (check-equal?
+     (ode-trajectory-position time-driven-trajectory time)
+     (ode-flow-position time-driven-flow origin time #:step-size 1/4)))
+
   ;; Prepared trajectories preserve the direct fixed-RK4 result while bounding
   ;; arbitrary lookups by their checkpoint stride in either time direction.
   (define constant-trajectory

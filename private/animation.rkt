@@ -22,6 +22,7 @@
          racket/runtime-path
          "affine-map-visual.rkt"
          "affine-transform.rkt"
+         "arrow-visual.rkt"
          "color-style.rkt"
          "derived-visual.rkt"
          "formula-part-transition.rkt"
@@ -33,6 +34,7 @@
          "path-geometry.rkt"
          "parameter.rkt"
          "pointwise-map.rkt"
+         "rate-function.rkt"
          "scene-state.rkt"
          "visual-model.rkt"
          "write-in-adapter.rkt")
@@ -95,6 +97,19 @@
          circumscribe-request?
          indicate
          indicate-request?
+         flash
+         flash-request?
+         focus-on
+         focus-on-request?
+         show-passing-flash
+         show-passing-flash-request?
+         wiggle
+         grow-from-center
+         grow-from-center-request?
+         grow-arrow
+         grow-arrow-request?
+         draw-border-then-fill
+         draw-border-then-fill-request?
          transform-formula-parts
          transform-formula-parts/anchored
          transform-formula-parts-request?
@@ -106,7 +121,7 @@
          write-in-request?
          unwrite
          unwrite-request?
-         linear
+         (all-from-out "rate-function.rkt")
          animation-request?
          animation-request-default-duration
          animation-request-target-id
@@ -191,13 +206,18 @@
 ;;  - target-id  (or/c symbol? visual-path?)  target Visual address.
 ;;  - map        affine2?                     map applied after its current map.
 
-(struct apply-pointwise-request (target-id map-point samples)
+(struct apply-pointwise-request
+  (target-id map-point samples adaptive? tolerance max-depth discontinuity-mode)
   #:transparent)
 
 ;; apply-pointwise-request represents a whole top-level world-space point map.
 ;;  - target-id  (or/c symbol? visual-path?)  target Visual address.
 ;;  - map-point  (-> vec2? vec2?)              destination world point map.
-;;  - samples    positive exact integer?       samples per original segment.
+;;  - samples    positive exact integer?       initial samples per original segment.
+;;  - adaptive?  boolean?                      recursively refine mapped curvature.
+;;  - tolerance  positive finite real?         world-space chord-deviation bound.
+;;  - max-depth  exact nonnegative integer?    refinement limit per sample edge.
+;;  - discontinuity-mode symbol?               'split or 'error for failed samples.
 
 (struct stroke-width-to-request (target-id stroke-width)
   #:transparent)
@@ -371,7 +391,7 @@
 ;;  - destination  affine opacity Visual introduced at clip completion.
 ;;  - route        formula-route?  centre trajectory for the temporary copy.
 
-(struct attention-request (target-id kind padding color stroke-width)
+(struct attention-request (target-id kind padding color stroke-width parameter)
   #:transparent)
 
 ;; attention-request is a non-mutating temporary visual emphasis. `kind` is
@@ -383,6 +403,28 @@
 (define (indicate-request? value)
   (and (attention-request? value)
        (eq? (attention-request-kind value) 'indicate)))
+
+(define (flash-request? value)
+  (and (attention-request? value) (eq? (attention-request-kind value) 'flash)))
+
+(define (focus-on-request? value)
+  (and (attention-request? value) (eq? (attention-request-kind value) 'focus-on)))
+
+(define (show-passing-flash-request? value)
+  (and (attention-request? value)
+       (eq? (attention-request-kind value) 'show-passing-flash)))
+
+(struct grow-request (visual kind)
+  #:transparent)
+
+(define (grow-from-center-request? value)
+  (and (grow-request? value) (eq? (grow-request-kind value) 'center)))
+
+(define (grow-arrow-request? value)
+  (and (grow-request? value) (eq? (grow-request-kind value) 'arrow)))
+
+(struct draw-border-then-fill-request (visual)
+  #:transparent)
 
 (struct create-request (visual)
   #:transparent)
@@ -469,18 +511,23 @@
 ;;  - from       vec2?    positive scale at clip start.
 ;;  - to         vec2?    positive scale at clip end.
 
-(struct affine-map-animation (target-id content from-map map)
+(struct affine-map-animation (target-id content from-map map opacity)
   #:transparent)
 
 ;; affine-map-animation represents a world-coordinate affine map applied to a
-;; complete top-level Visual. `content` is the unwrapped semantic Visual,
-;; `from-map` is its existing outer affine2 map, and `map` is applied after it.
+;; Visual subtree. `content` is its normalized semantic subtree, `from-map` is
+;; its existing local affine2 map, `map` is the world request rebased into the
+;; target's containing coordinates, and `opacity` preserves an existing outer
+;; affine-wrapper opacity.
 
-(struct pointwise-map-animation (target-id source map-point samples)
+(struct pointwise-map-animation
+  (target-id source map-point samples adaptive? tolerance max-depth
+             discontinuity-mode parent-map)
   #:transparent)
 
-;; pointwise-map-animation samples a whole top-level source Visual by mapping
-;; its world-space geometric points at each clip progress.
+;; pointwise-map-animation samples a world-resolved source Visual by mapping
+;; its geometric points at each clip progress. `parent-map` rebases a nested
+;; result back into its containing group after the world-space deformation.
 
 (struct stroke-width-animation (target-id from to)
   #:transparent)
@@ -559,13 +606,25 @@
 ;; source for destination structurally at the clip boundary. Normalized paths
 ;; are false for an intentional cross-fade fallback.
 
-(struct attention-animation (overlay-id target-path kind padding color stroke-width)
+(struct attention-animation (overlay-id target-path kind padding color stroke-width parameter)
   #:transparent)
 
 ;; attention-animation stores a declarative target and outline style. Its
 ;; renderer-measured box is resolved from the fully sampled scene state, so it
 ;; is never part of either structural endpoint and follows a simultaneous
 ;; motion, scale, rotation, or formula rewrite.
+
+(struct grow-animation (target-id source destination kind)
+  #:transparent)
+
+;; grow-animation is a structural introduction with an invisible tiny source
+;; and the caller's exact endpoint Visual.
+
+(struct border-fill-animation (target-id visual)
+  #:transparent)
+
+;; border-fill-animation reveals a path's outline first, then fades in its fill
+;; without changing the endpoint path or semantic style.
 
 (struct path-reveal-animation (target-id path from to remove-at-end?)
   #:transparent)
@@ -709,10 +768,9 @@
 
 ; apply-affine : (or/c visual? symbol? visual-path?) affine2?
 ;                -> apply-affine-request?
-;; Applies a complete world-coordinate affine map after target's current map.
-;; SCENE-CY-A intentionally accepts only top-level world Visuals at scene-play
-;; compilation time; nested path replacement would hide addressable descendants
-;; behind the resulting renderer wrapper.
+;; Applies a world-coordinate affine map after target's current map. Nested
+;; paths remain valid: SCENE-DK rebases the request through enclosing affine
+;; maps and replaces only the addressed semantic subtree.
 (define (apply-affine target map)
   (unless (affine2? map)
     (raise-argument-error 'apply-affine "affine2?" map))
@@ -731,12 +789,20 @@
                 (make-affine2 #:linear matrix)))
 
 ; apply-pointwise : (or/c visual? symbol? visual-path?) (-> vec2? vec2?)
-;                   [#:samples positive-exact-integer?]
+;                   [#:samples positive-exact-integer?] [#:adaptive? boolean?]
+;                   [#:tolerance positive-finite-real?]
+;                   [#:max-depth exact-nonnegative-integer?]
+;                   [#:discontinuities (or/c 'split 'error)]
 ;                   -> apply-pointwise-request?
-;; Applies a nonlinear world-coordinate point map to a complete top-level
-;; Visual. Path, circle, and rectangle outlines are sampled before mapping;
-;; non-geometric leaves such as text remain at their world placement.
-(define (apply-pointwise target map-point #:samples [samples 24])
+;; Applies a nonlinear world-coordinate point map to one ordinary Visual path.
+;; Geometric leaves are adaptively sampled before mapping; non-geometric leaves
+;; remain legible at their ordinary affine world placement.
+(define (apply-pointwise target map-point
+                         #:samples [samples 24]
+                         #:adaptive? [adaptive? #t]
+                         #:tolerance [tolerance 1/32]
+                         #:max-depth [max-depth 8]
+                         #:discontinuities [discontinuity-mode 'split])
   (unless (and (procedure? map-point)
                (procedure-arity-includes? map-point 1))
     (raise-argument-error
@@ -744,10 +810,18 @@
   (unless (and (exact-integer? samples)
                (positive? samples))
     (raise-argument-error 'apply-pointwise "positive exact integer" samples))
+  (unless (boolean? adaptive?)
+    (raise-argument-error 'apply-pointwise "boolean?" adaptive?))
+  (unless (and (finite-real? tolerance) (positive? tolerance))
+    (raise-argument-error 'apply-pointwise "positive finite real?" tolerance))
+  (unless (and (exact-integer? max-depth) (not (negative? max-depth)))
+    (raise-argument-error 'apply-pointwise "exact nonnegative integer" max-depth))
+  (unless (memq discontinuity-mode '(split error))
+    (raise-argument-error 'apply-pointwise "(or/c 'split 'error)" discontinuity-mode))
   (apply-pointwise-request
    (visual-target-id target 'apply-pointwise)
    map-point
-   samples))
+   samples adaptive? tolerance max-depth discontinuity-mode))
 
 ; stroke-width-to : (or/c symbol? (and/c visual? stroke-width-visual?))
 ;                   stroke-width?
@@ -1304,7 +1378,84 @@
   (make-attention-request
    'indicate target padding color stroke-width 'indicate))
 
-(define (make-attention-request kind target padding color stroke-width who)
+; flash : (or/c visual? symbol? visual-path?) ... -> flash-request?
+;; Emits a short radial stroke burst centred on the target's live rendered box.
+(define (flash target
+               #:radius [radius 1/2]
+               #:color [color "gold"]
+               #:stroke-width [stroke-width 3])
+  (make-attention-request
+   'flash target radius color stroke-width 'flash))
+
+; focus-on : (or/c visual? symbol? visual-path?) ... -> focus-on-request?
+;; Expands and fades a circular focus ring at the target's live box centre.
+(define (focus-on target
+                  #:radius [radius 1/2]
+                  #:color [color "gold"]
+                  #:stroke-width [stroke-width 3])
+  (make-attention-request
+   'focus-on target radius color stroke-width 'focus-on))
+
+; show-passing-flash : (or/c path-visual? symbol? visual-path?) ...
+;; Draws only a moving arc-length sliver of the target's path. The target must
+;; resolve to a path Visual when the clip is compiled.
+(define (show-passing-flash target
+                            #:time-width [time-width 1/5]
+                            #:color [color "gold"]
+                            #:stroke-width [stroke-width 4])
+  (unless (and (finite-real? time-width) (positive? time-width) (<= time-width 1))
+    (raise-argument-error
+     'show-passing-flash "finite real in (0, 1]" time-width))
+  (make-attention-request
+   'show-passing-flash target 0 color stroke-width 'show-passing-flash
+   #:parameter time-width))
+
+; wiggle : (or/c visual? symbol? visual-path?) ... -> succession-animation-request?
+;; A deterministic rotation wiggle that returns exactly to the initial angle.
+;; It is intentionally an ordinary composition so it combines with the
+;; scheduler and rate-function infrastructure without a special mutable effect.
+(define (wiggle target #:angle [angle 1/12] #:cycles [cycles 2])
+  (unless (finite-real? angle)
+    (raise-argument-error 'wiggle "finite real?" angle))
+  (unless (and (exact-integer? cycles) (positive? cycles))
+    (raise-argument-error 'wiggle "positive exact integer" cycles))
+  (define moves
+    (append
+     (list (rotate-by target angle))
+     (apply append
+            (for/list ([index (in-range cycles)])
+              (if (= index (sub1 cycles))
+                  (list (rotate-by target (* -2 angle))
+                        (rotate-by target angle))
+                  (list (rotate-by target (* -2 angle))
+                        (rotate-by target (* 2 angle))))))))
+  ;; Scene owns compositions and imports this module, so obtain its public
+  ;; constructor lazily to keep the module graph acyclic.
+  (apply (dynamic-require scene-module 'succession) moves))
+
+; grow-from-center : (and/c visual? affine-visual? opacity-visual?)
+;;                    -> grow-from-center-request?
+;; Introduces a Visual from an invisible, centre-scaled source.
+(define (grow-from-center visual)
+  (check-grow-visual 'grow-from-center visual)
+  (grow-request visual 'center))
+
+; grow-arrow : arrow-visual? -> grow-arrow-request?
+;; Introduces an arrow from its shaft start, retaining its exact endpoint form.
+(define (grow-arrow visual)
+  (unless (arrow-visual? visual)
+    (raise-argument-error 'grow-arrow "arrow-visual?" visual))
+  (grow-request visual 'arrow))
+
+; draw-border-then-fill : path-visual? -> draw-border-then-fill-request?
+;; Reveals a path's border, then fades the original fill in underneath it.
+(define (draw-border-then-fill visual)
+  (unless (path-visual? visual)
+    (raise-argument-error 'draw-border-then-fill "path-visual?" visual))
+  (draw-border-then-fill-request visual))
+
+(define (make-attention-request kind target padding color stroke-width who
+                                #:parameter [parameter #f])
   (unless (or (visual? target)
               (symbol? target)
               (visual-path? target))
@@ -1320,7 +1471,16 @@
    kind
    padding
    color
-   stroke-width))
+   stroke-width
+   parameter))
+
+(define (check-grow-visual who visual)
+  (unless (and (visual? visual)
+               (affine-visual? visual)
+               (opacity-visual? visual))
+    (raise-argument-error who
+                          "(and/c visual? affine-visual? opacity-visual?)"
+                          visual)))
 
 ; transform-formula-parts : formula-correspondence?
 ;                         [#:path-arc finite-real?]
@@ -1548,12 +1708,6 @@
                (procedure-arity-includes? rate-func 1))
     (raise-argument-error who "(procedure-arity-includes/c 1)" rate-func)))
 
-; linear : finite-real? -> finite-real?
-;;   Returns progress unchanged.
-(define (linear progress)
-  progress)
-
-
 ;;;
 ;;; Compilation
 ;;;
@@ -1597,7 +1751,7 @@
        (scene-state-add
         prepared-state
         (path-visual-with-path visual empty-path-geometry))]
-      [(fade-in-request? request)
+    [(fade-in-request? request)
        (define visual
          (fade-in-request-visual request))
        (define id
@@ -1606,6 +1760,23 @@
        (scene-state-add
         prepared-state
         (replace-visual-opacity 'scene-play visual 0))]
+    [(grow-request? request)
+     (define visual (grow-request-visual request))
+     (define id (visual-id visual))
+     (check-absent-introduction-target prepared-state id 'grow-from-center)
+     (scene-state-add
+      prepared-state
+      (replace-visual-opacity
+       'scene-play
+       (grow-start-visual visual (grow-request-kind request))
+       0))]
+    [(draw-border-then-fill-request? request)
+     (define visual (draw-border-then-fill-request-visual request))
+     (define id (visual-id visual))
+     (check-absent-introduction-target prepared-state id 'draw-border-then-fill)
+     (scene-state-add
+      prepared-state
+      (path-visual-with-path visual empty-path-geometry))]
     [(write-in-request? request)
      (define plan
        (write-in-request-plan request))
@@ -1628,11 +1799,6 @@
     (apply-affine-request-target-id request))
   (define path
     (visual-target-path target-id 'apply-affine))
-  (unless (null? (cdr path))
-    (raise-arguments-error
-     'scene-play
-     "apply-affine currently maps a complete top-level Visual"
-     "visual-path" path))
   (define visual
     (scene-state-ref state target-id))
   (when (derived-visual? visual)
@@ -1645,24 +1811,43 @@
      'scene-play
      "apply-affine maps world-space Visuals, not frame-space overlays"
      "visual-id" (visual-id visual)))
-  (define-values (content from-map)
+  (unless (affine-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "an affine Visual target"
+     "visual-path" path
+     "visual" visual))
+  ;; The public request is always expressed in world coordinates. A nested
+  ;; target needs the conjugate local map so parent transforms still produce
+  ;; the requested world-space result at every interpolation progress.
+  (define parent-map
+    (scene-state-parent-affine-map state target-id))
+  (define inverse-parent-map
+    (affine2-invert parent-map))
+  (unless inverse-parent-map
+    (raise-arguments-error
+     'scene-play
+     "a nonsingular enclosing affine map for a nested affine request"
+     "visual-path" path
+     "parent-map" parent-map))
+  (define local-request-map
+    (affine2-compose
+     inverse-parent-map
+     (affine2-compose (apply-affine-request-map request) parent-map)))
+  (define-values (content from-map opacity)
     (affine-map-visual-content+map visual))
   (affine-map-animation
    target-id
    content
    from-map
-   (apply-affine-request-map request)))
+   local-request-map
+   opacity))
 
 (define (compile-apply-pointwise-request state request)
   (define target-id
     (apply-pointwise-request-target-id request))
   (define path
     (visual-target-path target-id 'apply-pointwise))
-  (unless (null? (cdr path))
-    (raise-arguments-error
-     'scene-play
-     "apply-pointwise currently maps a complete top-level Visual"
-     "visual-path" path))
   (define visual
     (scene-state-ref state target-id))
   (when (derived-visual? visual)
@@ -1675,11 +1860,29 @@
      'scene-play
      "apply-pointwise maps world-space Visuals, not frame-space overlays"
      "visual-id" (visual-id visual)))
+  ;; Resolve the selected path to world coordinates at compilation time. A
+  ;; nested result will be rebased through the inverse parent map after every
+  ;; sampled deformation, preserving all unaffected siblings and their paths.
+  (define parent-map
+    (scene-state-parent-affine-map state target-id))
+  (define inverse-parent-map
+    (affine2-invert parent-map))
+  (unless inverse-parent-map
+    (raise-arguments-error
+     'scene-play
+     "a nonsingular enclosing affine map for a nested pointwise request"
+     "visual-path" path
+     "parent-map" parent-map))
   (pointwise-map-animation
    target-id
-   visual
+   (scene-state-resolved-world-ref state target-id)
    (apply-pointwise-request-map-point request)
-   (apply-pointwise-request-samples request)))
+   (apply-pointwise-request-samples request)
+   (apply-pointwise-request-adaptive? request)
+   (apply-pointwise-request-tolerance request)
+   (apply-pointwise-request-max-depth request)
+   (apply-pointwise-request-discontinuity-mode request)
+   parent-map))
 
 (define (compile-animation-request state request)
   (define target-id
@@ -2069,7 +2272,14 @@
        #:mismatch-mode
        (transform-formula-parts-request-mismatch-mode request)
        #:outline-morphs
-       (transform-formula-parts-request-outline-morphs request)))]
+        (transform-formula-parts-request-outline-morphs request)))]
+    [(grow-request? request)
+     (define destination (grow-request-visual request))
+     (grow-animation target-id visual destination (grow-request-kind request))]
+    [(draw-border-then-fill-request? request)
+     (define destination (draw-border-then-fill-request-visual request))
+     (check-path-animation-target destination 'draw-border-then-fill)
+     (border-fill-animation target-id destination)]
     [(create-request? request)
      (define complete-visual
        (create-request-visual request))
@@ -2407,7 +2617,8 @@
    (attention-request-kind request)
    (attention-request-padding request)
    (attention-request-color request)
-   (attention-request-stroke-width request)))
+   (attention-request-stroke-width request)
+   (attention-request-parameter request)))
 
 (define (attention-overlay-id target-path kind)
   (string->symbol
@@ -2431,6 +2642,7 @@
 ;; cycle through tagged-formula -> animation while still measuring exactly what
 ;; the renderer will draw.
 (define-runtime-path relative-layout-module "relative-layout.rkt")
+(define-runtime-path scene-module "scene.rkt")
 
 (define (relative-layout-procedure name)
   (dynamic-require relative-layout-module name))
@@ -2562,6 +2774,8 @@
       (transform-shape-request? value)
       (transform-from-copy-request? value)
       (attention-request? value)
+      (grow-request? value)
+      (draw-border-then-fill-request? value)
       (transform-formula-parts-request? value)
       (create-request? value)
       (uncreate-request? value)
@@ -2647,6 +2861,10 @@
      (visual-id (transform-from-copy-request-destination request))]
     [(attention-request? request)
      (attention-request-target-id request)]
+    [(grow-request? request)
+     (visual-id (grow-request-visual request))]
+    [(draw-border-then-fill-request? request)
+     (visual-id (draw-border-then-fill-request-visual request))]
     [(transform-formula-parts-request? request)
      (visual-id
       (formula-correspondence-source
@@ -2719,6 +2937,10 @@
      '(presence)]
     [(attention-request? request)
      '(attention)]
+    [(grow-request? request)
+     '(translation rotation scale opacity presence)]
+    [(draw-border-then-fill-request? request)
+     '(path-geometry fill-color opacity presence)]
     [(transform-formula-parts-request? request)
      '(formula-parts presence)]
     [(or (create-request? request)
@@ -2834,6 +3056,8 @@
       (transform-shape-animation? value)
       (transform-from-copy-animation? value)
       (attention-animation? value)
+      (grow-animation? value)
+      (border-fill-animation? value)
       (formula-parts-transform-animation? value)
       (path-reveal-animation? value)
       (write-in-animation? value)))
@@ -2878,6 +3102,10 @@
      (apply-transform-from-copy-animation state animation progress)]
     [(attention-animation? animation)
      (apply-attention-animation state animation progress)]
+    [(grow-animation? animation)
+     (apply-grow-animation state animation progress)]
+    [(border-fill-animation? animation)
+     (apply-border-fill-animation state animation progress)]
     [(formula-parts-transform-animation? animation)
      (apply-formula-parts-transform-animation state animation progress)]
     [(path-reveal-animation? animation)
@@ -3039,10 +3267,10 @@
 
 ; apply-affine-map-animation : scene-state? affine-map-animation?
 ;                              finite-real? -> scene-state?
-;; Applies the identity-to-requested map at progress after the target's prior
-;; outer map. The exact clip-start representation is retained at zero; the
-;; mapped endpoint remains an affine-map wrapper so a later apply-affine can
-;; compose without rasterizing or reinterpreting the source Visual.
+;; Applies the identity-to-requested local map after the target's prior map.
+;; The exact clip-start representation is retained at zero; the mapped endpoint
+;; remains a semantic affine wrapper, so later nested requests compose without
+;; rasterizing or hiding descendants.
 (define (apply-affine-map-animation state animation progress)
   (if (zero? progress)
       state
@@ -3054,11 +3282,17 @@
              [combined-map
               (affine2-compose progress-map
                                (affine-map-animation-from-map animation))])
+        (define mapped
+          (affine-map (affine-map-animation-content animation)
+                      combined-map))
         (scene-state-update
          state
          id
-         (affine-map (affine-map-animation-content animation)
-                     combined-map)))))
+         (if (= (affine-map-animation-opacity animation) 1)
+             mapped
+             (visual-with-opacity
+              mapped
+              (affine-map-animation-opacity animation)))))))
 
 ; apply-pointwise-map-animation : scene-state? pointwise-map-animation?
 ;                                 finite-real? -> scene-state?
@@ -3068,14 +3302,31 @@
 (define (apply-pointwise-map-animation state animation progress)
   (if (zero? progress)
       state
-      (scene-state-update
-       state
-       (pointwise-map-animation-target-id animation)
-       (pointwise-map-visual
-        (pointwise-map-animation-source animation)
-        (pointwise-map-animation-map-point animation)
-        progress
-        #:samples (pointwise-map-animation-samples animation)))))
+      (let* ([world-result
+              (pointwise-map-visual
+               (pointwise-map-animation-source animation)
+               (pointwise-map-animation-map-point animation)
+               progress
+               #:samples (pointwise-map-animation-samples animation)
+               #:adaptive? (pointwise-map-animation-adaptive? animation)
+               #:tolerance (pointwise-map-animation-tolerance animation)
+               #:max-depth (pointwise-map-animation-max-depth animation)
+               #:discontinuities
+               (pointwise-map-animation-discontinuity-mode animation))]
+             [parent-map (pointwise-map-animation-parent-map animation)]
+             [replacement
+              (if (equal? parent-map identity-affine2)
+                  world-result
+                  (affine-map world-result
+                              (or (affine2-invert parent-map)
+                                  (raise-arguments-error
+                                   'apply-pointwise
+                                   "a nonsingular enclosing affine map"
+                                   "parent-map" parent-map))))])
+        (scene-state-update
+         state
+         (pointwise-map-animation-target-id animation)
+         replacement))))
 
 ; apply-stroke-width-animation : scene-state? stroke-width-animation?
 ;                                finite-real? -> scene-state?
@@ -3406,12 +3657,132 @@
           (visual-with-opacity
            (visual-with-scale outline (+ 1 (* 1/8 pulse)))
            (* (visual-opacity outline) pulse))]
+         [(flash)
+          (make-flash-overlay
+           overlay-id
+           (renderer-layout-box-center (renderer-layout-box target))
+           (+ (attention-animation-padding animation)
+              (/ (max (renderer-layout-box-width (renderer-layout-box target))
+                      (renderer-layout-box-height (renderer-layout-box target)))
+                 2))
+           (attention-animation-color animation)
+           (attention-animation-stroke-width animation)
+           progress)]
+         [(focus-on)
+          (define box (renderer-layout-box target))
+          (define base-radius
+            (+ (attention-animation-padding animation)
+               (/ (max (renderer-layout-box-width box)
+                       (renderer-layout-box-height box))
+                  2)))
+          (visual-with-opacity
+           (visual-with-scale
+            (circle #:id overlay-id #:center (renderer-layout-box-center box)
+                    #:radius base-radius #:fill #f
+                    #:stroke (attention-animation-color animation)
+                    #:stroke-width (attention-animation-stroke-width animation))
+            (+ 1 (* 1/2 progress)))
+           (- 1 progress))]
+         [(show-passing-flash)
+          (make-passing-flash
+           overlay-id target progress
+           (attention-animation-parameter animation)
+           (attention-animation-color animation)
+           (attention-animation-stroke-width animation))]
          [else
           (raise-argument-error
            'apply-attention-animation
            "supported attention kind"
            (attention-animation-kind animation))]))
      (scene-state-add without-prior-overlay sampled)]))
+
+(define (make-flash-overlay id center radius color stroke-width progress)
+  (define start-radius (* radius (+ 1/5 (* 3/5 progress))))
+  (define end-radius (* radius (+ 2/5 (* 3/5 progress))))
+  (visual-with-opacity
+   (group
+    (for/list ([index (in-range 8)])
+      (define angle (* index (/ pi 4)))
+      (define direction (vec2 (cos angle) (sin angle)))
+      (line (vec2+ center (vec2-scale start-radius direction))
+            (vec2+ center (vec2-scale end-radius direction))
+            #:id (string->symbol (format "~a-ray-~a" id index))
+            #:stroke color #:stroke-width stroke-width))
+    #:id id)
+   (- 1 progress)))
+
+(define (make-passing-flash id target progress time-width color stroke-width)
+  (unless (path-visual? target)
+    (raise-arguments-error
+     'show-passing-flash "a path Visual target" "visual" target))
+  (define from (max 0 (- progress time-width)))
+  (define to (min 1 progress))
+  (make-path-visual
+   (path-geometry-partial (path-visual-path target) from to)
+   #:id id
+   #:center (visual-position target)
+   #:rotation (visual-rotation target)
+   #:scale (visual-scale target)
+   #:opacity (visual-opacity target)
+   #:fill #f #:stroke color #:stroke-width stroke-width))
+
+(define (grow-start-visual visual kind)
+  (case kind
+    [(center)
+     (visual-with-scale visual (vec2-scale 1/1000 (visual-scale visual)))]
+    [(arrow)
+     (define start (arrow-visual-start visual))
+     (define end (arrow-visual-end visual))
+     (arrow start (vec2-lerp start end 1/1000)
+            #:id (visual-id visual)
+            #:stroke (arrow-visual-stroke visual)
+            #:stroke-width (arrow-visual-stroke-width visual)
+            #:tip-length (arrow-visual-tip-length visual)
+            #:tip-width (arrow-visual-tip-width visual)
+            #:start-tip? (arrow-visual-start-tip? visual)
+            #:end-tip? (arrow-visual-end-tip? visual))]
+    [else
+     (raise-argument-error 'grow-start-visual "supported grow kind" kind)]))
+
+(define (apply-grow-animation state animation progress)
+  (define id (grow-animation-target-id animation))
+  (define destination (grow-animation-destination animation))
+  (define sampled
+    (cond
+      [(= progress 1) destination]
+      [(eq? (grow-animation-kind animation) 'center)
+       (define source (grow-animation-source animation))
+       (visual-with-opacity
+        (visual-with-scale
+         destination
+         (vec2-lerp (visual-scale source) (visual-scale destination) progress))
+        (* (visual-opacity destination) progress))]
+      [(eq? (grow-animation-kind animation) 'arrow)
+       (define start (arrow-visual-start destination))
+       (define end (arrow-visual-end destination))
+       (arrow start (vec2-lerp start end (max 1/1000 progress))
+              #:id id #:opacity (* (visual-opacity destination) progress)
+              #:stroke (arrow-visual-stroke destination)
+              #:stroke-width (arrow-visual-stroke-width destination)
+              #:tip-length (arrow-visual-tip-length destination)
+              #:tip-width (arrow-visual-tip-width destination)
+              #:start-tip? (arrow-visual-start-tip? destination)
+              #:end-tip? (arrow-visual-end-tip? destination))]
+      [else
+       (raise-argument-error 'grow-from-center "supported grow kind"
+                             (grow-animation-kind animation))]))
+  (scene-state-update state id sampled))
+
+(define (apply-border-fill-animation state animation progress)
+  (define id (border-fill-animation-target-id animation))
+  (define visual (border-fill-animation-visual animation))
+  (scene-state-update
+   state id
+   (if (= progress 1)
+       visual
+       (write-sample-path visual progress
+                          (max 1 (path-visual-stroke-width visual))
+                          'arc-length #f))))
 
 ; apply-formula-parts-transform-animation : scene-state?
 ;                                            formula-parts-transform-animation?

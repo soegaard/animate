@@ -16,7 +16,8 @@
 ;;;
 
 ;; Imports
-(require "affine-transform.rkt"
+(require "affine-map-visual.rkt"
+         "affine-transform.rkt"
          "frame-space.rkt"
          "geometry.rkt"
          "visual-model.rkt")
@@ -318,14 +319,26 @@
 (define (visual-tree-ids visual who)
   (define id
     (visual-target-id visual who))
-  (if (group-visual? visual)
-      (cons id
-            (for*/list ([child
-                         (in-list (group-visual-children visual))]
-                        [child-id
-                         (in-list (visual-tree-ids child who))])
-              child-id))
-      (list id)))
+  (cond
+    [(group-visual? visual)
+     (cons id
+           (for*/list ([child
+                        (in-list (group-visual-children visual))]
+                       [child-id
+                        (in-list (visual-tree-ids child who))])
+             child-id))]
+    [(and (affine-map-visual? visual)
+          (group-visual? (affine-map-visual-content visual)))
+     (cons id
+           (for*/list ([child
+                        (in-list
+                         (group-visual-children
+                          (affine-map-visual-content visual)))]
+                       [child-id
+                        (in-list (visual-tree-ids child who))])
+             child-id))]
+    [else
+     (list id)]))
 
 ; find-duplicate-id : (listof symbol?) -> (or/c symbol? false/c)
 ;;   Returns the first repeated identity or false when all are distinct.

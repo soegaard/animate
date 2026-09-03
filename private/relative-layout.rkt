@@ -48,7 +48,11 @@
          visual-place-right-of
          visuals-center-at
          arrange-visuals-horizontally
-         arrange-visuals-vertically)
+         arrange-visuals-vertically
+         align-baselines
+         keep-inside-frame
+         avoid-overlap
+         distribute-within)
 
 
 ;;;
@@ -659,6 +663,119 @@
                          #:camera camera
                          #:renderers renderers)
       visuals))
+
+
+;;;
+;;; SCENE-DV Deterministic Finishing Operations
+;;;
+
+; align-baselines : (listof affine-visual?) [#:baseline finite-real?] -> (listof visual?)
+;; Aligns each Visual's semantic reference y coordinate. For text constructed
+;; with `#:vertical-alignment 'baseline`, that reference is its actual Pict
+;; baseline; nontext Visuals deliberately use their normal reference point.
+(define (align-baselines visuals #:baseline [baseline #f])
+  (check-visual-list 'align-baselines visuals)
+  (define target
+    (cond [baseline (unless (finite-real? baseline)
+                      (raise-argument-error 'align-baselines "finite real?" baseline))
+                    baseline]
+          [(null? visuals) 0]
+          [else (vec2-y (visual-position (car visuals)))]))
+  (for/list ([visual (in-list visuals)])
+    (shift-visual-position 'align-baselines visual
+                           (vec2 0 (- target (vec2-y (visual-position visual)))))))
+
+; keep-inside-frame : visual? ... -> visual?
+;; Shifts an object just enough to fit the selected camera viewport. An object
+;; larger than the available area is centered on that axis rather than scaled.
+(define (keep-inside-frame visual
+                           #:margin [margin 0]
+                           #:camera [camera default-camera]
+                           #:renderers [renderers default-pict-renderers])
+  (check-layout-context 'keep-inside-frame camera renderers)
+  (check-layout-gap 'keep-inside-frame margin)
+  (define box (visual-layout-box visual #:camera camera #:renderers renderers))
+  (define center (camera-center camera))
+  (define left (+ (vec2-x center) (- (/ (camera-world-width camera) 2)) margin))
+  (define right (+ (vec2-x center) (/ (camera-world-width camera) 2) (- margin)))
+  (define bottom (+ (vec2-y center) (- (/ (camera-world-height camera) 2)) margin))
+  (define top (+ (vec2-y center) (/ (camera-world-height camera) 2) (- margin)))
+  (define (axis-shift low high allowed-low allowed-high)
+    (cond [(> (- high low) (- allowed-high allowed-low))
+           (- (/ (+ allowed-low allowed-high) 2) (/ (+ low high) 2))]
+          [(< low allowed-low) (- allowed-low low)]
+          [(> high allowed-high) (- allowed-high high)]
+          [else 0]))
+  (shift-visual-position
+   'keep-inside-frame visual
+   (vec2 (axis-shift (layout-box-left box) (layout-box-right box) left right)
+         (axis-shift (layout-box-bottom box) (layout-box-top box) bottom top))))
+
+; avoid-overlap : (listof visual?) ... -> (listof visual?)
+;; Greedily preserves declaration order. Each later item is moved in a fixed
+;; direction beyond every earlier rendered box it overlaps; no global solver or
+;; nondeterministic packing heuristic is involved.
+(define (avoid-overlap visuals
+                       #:direction [direction 'right]
+                       #:gap [gap 1/5]
+                       #:camera [camera default-camera]
+                       #:renderers [renderers default-pict-renderers])
+  (check-layout-context 'avoid-overlap camera renderers)
+  (check-visual-list 'avoid-overlap visuals) (check-layout-gap 'avoid-overlap gap)
+  (unless (memq direction '(right up))
+    (raise-argument-error 'avoid-overlap "(or/c 'right 'up)" direction))
+  (let loop ([remaining visuals] [placed '()])
+    (cond [(null? remaining) (reverse placed)]
+          [else
+           (define candidate
+             (let settle ([item (car remaining)])
+               (define box (visual-layout-box item #:camera camera #:renderers renderers))
+               (define conflicts
+                 (for/list ([prior (in-list placed)]
+                            #:when (layout-box-overlap?
+                                    box (visual-layout-box prior #:camera camera #:renderers renderers)))
+                   prior))
+               (if (null? conflicts) item
+                   (let ([displacement
+                          (if (eq? direction 'right)
+                              (max 0 (apply max (for/list ([prior (in-list conflicts)])
+                                                  (- (+ (layout-box-right (visual-layout-box prior #:camera camera #:renderers renderers)) gap)
+                                                     (layout-box-left box)))))
+                              (max 0 (apply max (for/list ([prior (in-list conflicts)])
+                                                  (- (+ (layout-box-top (visual-layout-box prior #:camera camera #:renderers renderers)) gap)
+                                                     (layout-box-bottom box))))))])
+                     (settle (shift-visual-position 'avoid-overlap item
+                                                     (if (eq? direction 'right)
+                                                         (vec2 displacement 0)
+                                                         (vec2 0 displacement))))))))
+           (loop (cdr remaining) (cons candidate placed))])))
+
+; distribute-within : (listof visual?) finite-real? finite-real? ... -> (listof visual?)
+;; Places reference points evenly along a horizontal or vertical interval.
+(define (distribute-within visuals start end
+                           #:axis [axis 'horizontal])
+  (check-visual-list 'distribute-within visuals)
+  (unless (and (finite-real? start) (finite-real? end) (<= start end))
+    (raise-arguments-error 'distribute-within "increasing finite interval"
+                           "start" start "end" end))
+  (unless (memq axis '(horizontal vertical))
+    (raise-argument-error 'distribute-within "(or/c 'horizontal 'vertical)" axis))
+  (define count (length visuals))
+  (for/list ([visual (in-list visuals)] [index (in-naturals)])
+    (define coordinate
+      (if (<= count 1) (/ (+ start end) 2)
+          (+ start (* index (/ (- end start) (sub1 count))))))
+    (define position (visual-position visual))
+    (visual-with-position visual
+                          (if (eq? axis 'horizontal)
+                              (vec2 coordinate (vec2-y position))
+                              (vec2 (vec2-x position) coordinate)))))
+
+(define (layout-box-overlap? first second)
+  (and (< (layout-box-left first) (layout-box-right second))
+       (< (layout-box-left second) (layout-box-right first))
+       (< (layout-box-bottom first) (layout-box-top second))
+       (< (layout-box-bottom second) (layout-box-top first))))
 
 
 ;;;

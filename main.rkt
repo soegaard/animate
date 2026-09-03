@@ -52,14 +52,17 @@
          "private/matrix-table.rkt"
          "private/numeric-display.rkt"
          "private/ode-flow.rkt"
+         "private/path-boolean.rkt"
          "private/path-geometry.rkt"
          "private/parameter.rkt"
          "private/parametric-data-plot.rkt"
          "private/polar-plane.rkt"
          "private/pict-adapter.rkt"
          "private/pict-renderer.rkt"
+         "private/pointwise-map.rkt"
          "private/png-renderer.rkt"
          "private/relative-layout.rkt"
+         "private/rate-function.rkt"
          "private/scene-state.rkt"
          "private/scene.rkt"
          "private/shape-catalogue.rkt"
@@ -86,6 +89,35 @@
  vec2-lerp
  interpolable?
  interpolate-value
+
+ ;; Semantic rate functions
+ rate-function?
+ rate-function-name
+ rate-function-parameters
+ rate-function->datum
+ rate-function-apply
+ linear
+ smooth
+ smoothstep
+ rush-into
+ rush-from
+ there-and-back
+ there-and-back-with-pause
+
+ ;; Adaptive ODE solver configuration and events
+ adaptive-rk45
+ adaptive-rk45?
+ adaptive-rk45-relative-tolerance
+ adaptive-rk45-absolute-tolerance
+ adaptive-rk45-initial-step
+ adaptive-rk45-minimum-step
+ adaptive-rk45-maximum-step
+ adaptive-rk45-maximum-steps
+ ode-event
+ ode-event?
+ ode-event-function
+ ode-event-direction
+ ode-event-name
 
  ;; Scene value parameters
  parameter
@@ -138,6 +170,13 @@
  polygon-path
  cubic-bezier-path
 
+ ;; Boolean path geometry (SCENE-DM)
+ path-union
+ path-intersection
+ path-difference
+ path-xor
+ cutout
+
  ;; Affine transforms
  affine-transform?
  affine-transform-translation
@@ -162,6 +201,7 @@
  make-linear2
  identity-linear2
  linear2-determinant
+ linear2-invert
  linear2-compose
  linear2-apply-vector
  affine2
@@ -178,6 +218,7 @@
  identity-affine2
  affine2-with-linear
  affine2-with-translation
+ affine2-invert
  affine2-compose
  affine2-lerp
  affine2-apply-vector
@@ -204,6 +245,8 @@
  ;; SCENE-DA complex planes and maps
  complex->point
  point->complex
+ complex-domain-color
+ complex-domain-coloring
  complex-plane
  apply-complex-function
 
@@ -252,6 +295,11 @@
  fixed-in-frame
  fixed-in-frame-visual?
  fixed-in-frame-visual-content
+ camera-view
+ camera-view-visual?
+ camera-view-visual-target
+ camera-view-visual-camera
+ camera-view-visual-width
  callout
  callout-visual?
  callout-visual-content
@@ -454,6 +502,15 @@
  ode-trajectory-time-range
  ode-trajectory-step-size
  ode-trajectory-checkpoint-every
+ ode-trajectory-solver
+ ode-trajectory-diagnostics
+ ode-trajectory-diagnostics?
+ ode-trajectory-diagnostics-solver
+ ode-trajectory-diagnostics-accepted-steps
+ ode-trajectory-diagnostics-rejected-steps
+ ode-trajectory-diagnostics-termination-time
+ ode-trajectory-diagnostics-termination-reason
+ ode-trajectory-diagnostics-maximum-error
  prepare-ode-trajectory
  ode-trajectory-position
  streamline-points
@@ -603,6 +660,10 @@
  visuals-center-at
  arrange-visuals-horizontally
  arrange-visuals-vertically
+ align-baselines
+ keep-inside-frame
+ avoid-overlap
+ distribute-within
 
  ;; Immutable scene state
  scene-state?
@@ -638,6 +699,14 @@
  apply-matrix
  apply-pointwise
  apply-pointwise-request?
+ pointwise-jacobian
+ pointwise-jacobian-determinant
+ pointwise-orientation
+ inverse-map-mesh
+ pointwise-jacobian
+ pointwise-jacobian-determinant
+ pointwise-orientation
+ inverse-map-mesh
  stroke-width-to
  stroke-width-to-request?
  fill-color-to
@@ -674,6 +743,19 @@
  circumscribe-request?
  indicate
  indicate-request?
+ flash
+ flash-request?
+ focus-on
+ focus-on-request?
+ show-passing-flash
+ show-passing-flash-request?
+ wiggle
+ grow-from-center
+ grow-from-center-request?
+ grow-arrow
+ grow-arrow-request?
+ draw-border-then-fill
+ draw-border-then-fill-request?
  transform-formula-parts
  transform-formula-parts-request?
  transform-matching-formula
@@ -769,13 +851,15 @@
 
 ;; SCENE-V point markers, scatter plots, and filled coordinate areas
 (require "private/point-marker-visual.rkt"
-         "private/scatter-area-plot.rkt")
+         "private/scatter-area-plot.rkt"
+         "private/statistics-visual.rkt")
 
 (provide
  (except-out
   (all-from-out "private/point-marker-visual.rkt")
   point-marker-visual->visual)
- (all-from-out "private/scatter-area-plot.rkt"))
+ (all-from-out "private/scatter-area-plot.rkt")
+ (all-from-out "private/statistics-visual.rkt"))
 
 
 ;; SCENE-CW authored timelines, selected rendering, and cue metadata

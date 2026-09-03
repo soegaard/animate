@@ -4,10 +4,10 @@
 ;;; Deterministic ODE Flow and Streamlines
 ;;;
 
-;; Integrates a two-dimensional autonomous field with fixed-step RK4. Direct
-;; numerical queries remain history-free, while prepared trajectories retain
-;; immutable canonical checkpoints so animation rendering does not recompute a
-;; seed-to-time prefix for every frame.
+;; Integrates a two-dimensional autonomous or time-dependent field with
+;; fixed-step RK4. Direct numerical queries remain history-free, while prepared
+;; trajectories retain immutable canonical checkpoints so animation rendering
+;; does not recompute a seed-to-time prefix for every frame.
 
 
 ;;;
@@ -25,10 +25,32 @@
          "visual-model.rkt")
 
 (provide ode-flow-position
+         adaptive-rk45
+         adaptive-rk45?
+         adaptive-rk45-relative-tolerance
+         adaptive-rk45-absolute-tolerance
+         adaptive-rk45-initial-step
+         adaptive-rk45-minimum-step
+         adaptive-rk45-maximum-step
+         adaptive-rk45-maximum-steps
+         ode-event
+         ode-event?
+         ode-event-function
+         ode-event-direction
+         ode-event-name
          ode-trajectory?
          ode-trajectory-time-range
          ode-trajectory-step-size
          ode-trajectory-checkpoint-every
+         ode-trajectory-solver
+         ode-trajectory-diagnostics
+         ode-trajectory-diagnostics?
+         ode-trajectory-diagnostics-solver
+         ode-trajectory-diagnostics-accepted-steps
+         ode-trajectory-diagnostics-rejected-steps
+         ode-trajectory-diagnostics-termination-time
+         ode-trajectory-diagnostics-termination-reason
+         ode-trajectory-diagnostics-maximum-error
          prepare-ode-trajectory
          ode-trajectory-position
          streamline-points
@@ -56,13 +78,15 @@
      (define direction (if (positive? time) 1 -1))
      (define full-step (* direction step-size))
      (define whole-count (inexact->exact (floor (/ (abs time) step-size))))
-     (define state
-       (for/fold ([point seed]) ([ignored (in-range whole-count)])
-         (rk4-step field point full-step)))
+     (define-values (state current-time)
+       (for/fold ([point seed] [current-time 0])
+                 ([ignored (in-range whole-count)])
+         (values (rk4-step field current-time point full-step)
+                 (+ current-time full-step))))
      (define remainder (- time (* whole-count full-step)))
      (if (zero? remainder)
          state
-         (rk4-step field state remainder))]))
+         (rk4-step field current-time state remainder))]))
 
 
 ;;;
@@ -72,32 +96,154 @@
 ;; value problem. The forward and backward vectors hold positions at step
 ;; indices 0, checkpoint-every, 2*checkpoint-every, ... from time zero. They
 ;; are immutable after construction, so lookup is independent of query order
-;; and safe to share among renderer workers.
+;; and safe to share among renderer workers. The field may accept either
+;; `(x y)` for an autonomous system or `(time x y)` for a non-autonomous one.
 (struct ode-trajectory-value
   (field seed start-time end-time step-size checkpoint-every
          forward-checkpoints backward-checkpoints)
   #:transparent)
 
+;; `adaptive-rk45` is immutable solver configuration. The solver uses the
+;; Dormand--Prince embedded 5(4) pair with deterministic accept/reject rules.
+(struct adaptive-rk45-value
+  (relative-tolerance absolute-tolerance initial-step minimum-step maximum-step
+                      maximum-steps)
+  #:transparent)
+
+;; adaptive-rk45 : [#:relative-tolerance positive-finite-real?]
+;;                  [#:absolute-tolerance positive-finite-real?]
+;;                  [#:initial-step positive-finite-real?]
+;;                  [#:minimum-step positive-finite-real?]
+;;                  [#:maximum-step positive-finite-real?]
+;;                  [#:maximum-steps positive-exact-integer?]
+;;                  -> adaptive-rk45?
+(define (adaptive-rk45 #:relative-tolerance [relative-tolerance 1e-6]
+                       #:absolute-tolerance [absolute-tolerance 1e-8]
+                       #:initial-step [initial-step 1/10]
+                       #:minimum-step [minimum-step 1e-8]
+                       #:maximum-step [maximum-step 1]
+                       #:maximum-steps [maximum-steps 100000])
+  (check-positive 'adaptive-rk45 "relative-tolerance" relative-tolerance)
+  (check-positive 'adaptive-rk45 "absolute-tolerance" absolute-tolerance)
+  (check-positive 'adaptive-rk45 "initial-step" initial-step)
+  (check-positive 'adaptive-rk45 "minimum-step" minimum-step)
+  (check-positive 'adaptive-rk45 "maximum-step" maximum-step)
+  (check-steps 'adaptive-rk45 maximum-steps)
+  (unless (<= minimum-step initial-step maximum-step)
+    (raise-arguments-error
+     'adaptive-rk45
+     "minimum-step <= initial-step <= maximum-step is required"
+     "minimum-step" minimum-step
+     "initial-step" initial-step
+     "maximum-step" maximum-step))
+  (adaptive-rk45-value relative-tolerance absolute-tolerance initial-step
+                        minimum-step maximum-step maximum-steps))
+
+(define (adaptive-rk45? value)
+  (adaptive-rk45-value? value))
+(define (adaptive-rk45-relative-tolerance value)
+  (adaptive-rk45-value-relative-tolerance value))
+(define (adaptive-rk45-absolute-tolerance value)
+  (adaptive-rk45-value-absolute-tolerance value))
+(define (adaptive-rk45-initial-step value)
+  (adaptive-rk45-value-initial-step value))
+(define (adaptive-rk45-minimum-step value)
+  (adaptive-rk45-value-minimum-step value))
+(define (adaptive-rk45-maximum-step value)
+  (adaptive-rk45-value-maximum-step value))
+(define (adaptive-rk45-maximum-steps value)
+  (adaptive-rk45-value-maximum-steps value))
+
+;; An event supplies a scalar whose sign crossing ends adaptive integration.
+;; It accepts either `(x y)` or `(time x y)`, exactly like an ODE field.
+(struct ode-event-value (function direction name)
+  #:transparent)
+
+(define (ode-event function #:direction [direction 'any] #:name [name 'event])
+  (check-field 'ode-event function)
+  (unless (memq direction '(any increasing decreasing))
+    (raise-argument-error 'ode-event "'any, 'increasing, or 'decreasing"
+                          direction))
+  (unless (symbol? name)
+    (raise-argument-error 'ode-event "symbol?" name))
+  (ode-event-value function direction name))
+
+(define (ode-event? value) (ode-event-value? value))
+(define (ode-event-function value) (ode-event-value-function value))
+(define (ode-event-direction value) (ode-event-value-direction value))
+(define (ode-event-name value) (ode-event-value-name value))
+
+;; Adaptive nodes retain endpoint derivatives so arbitrary-time lookup can use
+;; deterministic cubic Hermite dense output without reinvoking the field.
+(struct adaptive-ode-node (time position derivative)
+  #:transparent)
+
+(struct ode-trajectory-diagnostics-value
+  (solver accepted-steps rejected-steps termination-time termination-reason
+          maximum-error)
+  #:transparent)
+
+(define (ode-trajectory-diagnostics? value)
+  (ode-trajectory-diagnostics-value? value))
+(define (ode-trajectory-diagnostics-solver value)
+  (ode-trajectory-diagnostics-value-solver value))
+(define (ode-trajectory-diagnostics-accepted-steps value)
+  (ode-trajectory-diagnostics-value-accepted-steps value))
+(define (ode-trajectory-diagnostics-rejected-steps value)
+  (ode-trajectory-diagnostics-value-rejected-steps value))
+(define (ode-trajectory-diagnostics-termination-time value)
+  (ode-trajectory-diagnostics-value-termination-time value))
+(define (ode-trajectory-diagnostics-termination-reason value)
+  (ode-trajectory-diagnostics-value-termination-reason value))
+(define (ode-trajectory-diagnostics-maximum-error value)
+  (ode-trajectory-diagnostics-value-maximum-error value))
+
+(struct adaptive-ode-trajectory-value
+  (field seed start-time end-time solver nodes diagnostics)
+  #:transparent)
+
 ;; ode-trajectory? : any/c -> boolean?
 (define (ode-trajectory? value)
-  (ode-trajectory-value? value))
+  (or (ode-trajectory-value? value)
+      (adaptive-ode-trajectory-value? value)))
 
 ;; ode-trajectory-time-range : ode-trajectory? -> pair?
 ;; Returns the closed supported range as (cons start-time end-time).
 (define (ode-trajectory-time-range trajectory)
   (check-trajectory 'ode-trajectory-time-range trajectory)
-  (cons (ode-trajectory-value-start-time trajectory)
-        (ode-trajectory-value-end-time trajectory)))
+  (if (adaptive-ode-trajectory-value? trajectory)
+      (cons (adaptive-ode-trajectory-value-start-time trajectory)
+            (adaptive-ode-trajectory-value-end-time trajectory))
+      (cons (ode-trajectory-value-start-time trajectory)
+            (ode-trajectory-value-end-time trajectory))))
 
 ;; ode-trajectory-step-size : ode-trajectory? -> positive-finite-real?
 (define (ode-trajectory-step-size trajectory)
   (check-trajectory 'ode-trajectory-step-size trajectory)
-  (ode-trajectory-value-step-size trajectory))
+  (if (adaptive-ode-trajectory-value? trajectory)
+      #f
+      (ode-trajectory-value-step-size trajectory)))
 
 ;; ode-trajectory-checkpoint-every : ode-trajectory? -> positive-exact-integer?
 (define (ode-trajectory-checkpoint-every trajectory)
   (check-trajectory 'ode-trajectory-checkpoint-every trajectory)
-  (ode-trajectory-value-checkpoint-every trajectory))
+  (if (adaptive-ode-trajectory-value? trajectory)
+      #f
+      (ode-trajectory-value-checkpoint-every trajectory)))
+
+;; ode-trajectory-solver : ode-trajectory? -> (or/c 'fixed-rk4 adaptive-rk45?)
+(define (ode-trajectory-solver trajectory)
+  (check-trajectory 'ode-trajectory-solver trajectory)
+  (if (adaptive-ode-trajectory-value? trajectory)
+      (adaptive-ode-trajectory-value-solver trajectory)
+      'fixed-rk4))
+
+;; ode-trajectory-diagnostics : ode-trajectory? -> (or/c false/c ...)
+;; Fixed RK4 keeps its established checkpoint representation and returns #f.
+(define (ode-trajectory-diagnostics trajectory)
+  (check-trajectory 'ode-trajectory-diagnostics trajectory)
+  (and (adaptive-ode-trajectory-value? trajectory)
+       (adaptive-ode-trajectory-value-diagnostics trajectory)))
 
 ;; prepare-ode-trajectory : field vec2? #:time-range (cons/c finite-real? finite-real?)
 ;;                          #:step-size positive-finite-real?
@@ -110,19 +256,31 @@
 (define (prepare-ode-trajectory field seed
                                 #:time-range time-range
                                 #:step-size [step-size 1/20]
-                                #:checkpoint-every [checkpoint-every 16])
+                                #:checkpoint-every [checkpoint-every 16]
+                                #:solver [solver #f]
+                                #:event [event #f])
   (check-field 'prepare-ode-trajectory field)
   (check-vec2 'prepare-ode-trajectory seed)
   (check-positive 'prepare-ode-trajectory "step-size" step-size)
   (check-checkpoint-every 'prepare-ode-trajectory checkpoint-every)
   (define-values (start-time end-time)
     (check-time-range 'prepare-ode-trajectory time-range))
-  (ode-trajectory-value
-   field seed start-time end-time step-size checkpoint-every
-   (build-checkpoints field seed 1 step-size checkpoint-every
-                      (max 0 end-time))
-   (build-checkpoints field seed -1 step-size checkpoint-every
-                      (max 0 (- start-time)))))
+  (check-solver 'prepare-ode-trajectory solver)
+  (check-event 'prepare-ode-trajectory event)
+  (if solver
+      (prepare-adaptive-trajectory field seed start-time end-time solver event)
+      (begin
+        (when event
+          (raise-arguments-error
+           'prepare-ode-trajectory
+           "#:event requires an adaptive solver"
+           "event" event))
+        (ode-trajectory-value
+         field seed start-time end-time step-size checkpoint-every
+         (build-checkpoints field seed 1 step-size checkpoint-every
+                            (max 0 end-time))
+         (build-checkpoints field seed -1 step-size checkpoint-every
+                            (max 0 (- start-time)))))))
 
 ;; ode-trajectory-position : ode-trajectory? finite-real? -> vec2?
 ;; Looks up one time in a prepared trajectory. The selected checkpoint is always
@@ -132,6 +290,11 @@
 (define (ode-trajectory-position trajectory time)
   (check-trajectory 'ode-trajectory-position trajectory)
   (check-trajectory-time 'ode-trajectory-position trajectory time)
+  (if (adaptive-ode-trajectory-value? trajectory)
+      (adaptive-trajectory-position trajectory time)
+      (fixed-trajectory-position trajectory time)))
+
+(define (fixed-trajectory-position trajectory time)
   (define field (ode-trajectory-value-field trajectory))
   (define-values (direction full-step checkpoint-index suffix-steps remainder)
     (trajectory-query-parts trajectory time))
@@ -141,13 +304,18 @@
         (ode-trajectory-value-forward-checkpoints trajectory)))
   (define checkpoint
     (vector-ref checkpoints checkpoint-index))
-  (define state
-    (for/fold ([point checkpoint])
+  (define checkpoint-time
+    (* direction checkpoint-index
+       (ode-trajectory-value-checkpoint-every trajectory)
+       (ode-trajectory-value-step-size trajectory)))
+  (define-values (state current-time)
+    (for/fold ([point checkpoint] [current-time checkpoint-time])
               ([ignored (in-range suffix-steps)])
-      (rk4-step field point full-step)))
+      (values (rk4-step field current-time point full-step)
+              (+ current-time full-step))))
   (if (zero? remainder)
       state
-      (rk4-step field state remainder)))
+      (rk4-step field current-time state remainder)))
 
 ;; trajectory-query-parts : ode-trajectory? finite-real?
 ;;                           -> (values -1-or-1 finite-real?
@@ -182,24 +350,319 @@
   (define checkpoint-count
     (add1 (quotient full-count checkpoint-every)))
   (define full-step (* direction step-size))
-  (define (advance point count)
-    (for/fold ([state point]) ([ignored (in-range count)])
-      (rk4-step field state full-step)))
+  (define (advance point start-time count)
+    (for/fold ([state point] [current-time start-time])
+              ([ignored (in-range count)])
+      (values (rk4-step field current-time state full-step)
+              (+ current-time full-step))))
   (define checkpoints
     (let loop ([checkpoint-index 0] [state seed] [reversed '()])
       (if (= checkpoint-index checkpoint-count)
           (reverse reversed)
-          (loop (add1 checkpoint-index)
-                (if (= checkpoint-index (sub1 checkpoint-count))
-                    state
-                    (advance state checkpoint-every))
-                (cons state reversed)))))
+          (let-values ([(next-state _next-time)
+                        (if (= checkpoint-index (sub1 checkpoint-count))
+                            (values state
+                                    (* direction checkpoint-index
+                                       checkpoint-every step-size))
+                            (advance state
+                                     (* direction checkpoint-index
+                                        checkpoint-every step-size)
+                                     checkpoint-every))])
+            (loop (add1 checkpoint-index)
+                  next-state
+                  (cons state reversed))))))
   (vector->immutable-vector (list->vector checkpoints)))
 
 ;; whole-step-count : finite-real? positive-finite-real? -> exact-nonnegative-integer?
 ;; Mirrors ode-flow-position's canonical full-step decision exactly.
 (define (whole-step-count time step-size)
   (inexact->exact (floor (/ (abs time) step-size))))
+
+
+;;;
+;;; Prepared Adaptive RK45 Trajectories
+
+;; An adaptive trajectory stores accepted endpoint nodes in increasing time
+;; order. Queries interpolate only stored values; unlike a direct fixed query,
+;; they never run the author field after construction.
+
+(define (prepare-adaptive-trajectory field seed start-time end-time solver event)
+  (define-values (backward-nodes backward-diagnostics)
+    (adaptive-node-series field seed 0 start-time solver event))
+  (define-values (forward-nodes forward-diagnostics)
+    (adaptive-node-series field seed 0 end-time solver event))
+  ;; Backward integration visits 0, negative times, ...; reverse all but the
+  ;; shared seed before joining it with forward nodes to obtain increasing time.
+  (define nodes
+    (append (reverse (cdr backward-nodes)) forward-nodes))
+  (define start
+    (adaptive-ode-node-time (car nodes)))
+  (define end
+    (adaptive-ode-node-time (last nodes)))
+  (define termination
+    (cond
+      [(not (eq? (ode-trajectory-diagnostics-value-termination-reason
+                  backward-diagnostics)
+                 'time-range))
+       backward-diagnostics]
+      [(not (eq? (ode-trajectory-diagnostics-value-termination-reason
+                  forward-diagnostics)
+                 'time-range))
+       forward-diagnostics]
+      [else forward-diagnostics]))
+  (adaptive-ode-trajectory-value
+   field seed start end solver (vector->immutable-vector (list->vector nodes))
+   (ode-trajectory-diagnostics-value
+    'adaptive-rk45
+    (+ (ode-trajectory-diagnostics-value-accepted-steps backward-diagnostics)
+       (ode-trajectory-diagnostics-value-accepted-steps forward-diagnostics))
+    (+ (ode-trajectory-diagnostics-value-rejected-steps backward-diagnostics)
+       (ode-trajectory-diagnostics-value-rejected-steps forward-diagnostics))
+    (ode-trajectory-diagnostics-value-termination-time termination)
+    (ode-trajectory-diagnostics-value-termination-reason termination)
+    (max (ode-trajectory-diagnostics-value-maximum-error backward-diagnostics)
+         (ode-trajectory-diagnostics-value-maximum-error forward-diagnostics)))))
+
+;; Integrates from `start-time` to `target-time`. The final node either reaches
+;; the requested boundary or an event root located by dense interpolation.
+(define (adaptive-node-series field seed start-time target-time solver event)
+  (define direction
+    (if (negative? (- target-time start-time)) -1 1))
+  (define initial-derivative
+    (call-field field start-time seed))
+  (define initial-node
+    (adaptive-ode-node start-time seed initial-derivative))
+  (cond
+    [(= start-time target-time)
+     (values (list initial-node)
+             (ode-trajectory-diagnostics-value
+              'adaptive-rk45 0 0 start-time 'time-range 0))]
+    [else
+     (let loop ([current initial-node]
+                [step (* direction (adaptive-rk45-value-initial-step solver))]
+                [reverse-nodes (list initial-node)]
+                [accepted 0]
+                [rejected 0]
+                [maximum-error 0])
+       (when (>= (+ accepted rejected)
+                 (adaptive-rk45-value-maximum-steps solver))
+         (raise-arguments-error
+          'prepare-ode-trajectory
+          "adaptive solver exceeded maximum-steps"
+          "maximum-steps" (adaptive-rk45-value-maximum-steps solver)
+          "last-time" (adaptive-ode-node-time current)
+          "target-time" target-time))
+       (define remaining
+         (- target-time (adaptive-ode-node-time current)))
+       (define trial-step
+         (* direction
+            (min (abs remaining)
+                 (adaptive-rk45-value-maximum-step solver)
+                 (max (adaptive-rk45-value-minimum-step solver)
+                      (abs step)))))
+       (define-values (candidate endpoint-derivative error)
+         (dormand-prince-step field
+                              (adaptive-ode-node-time current)
+                              (adaptive-ode-node-position current)
+                              trial-step solver))
+       (define next-maximum-error
+         (max maximum-error error))
+       (cond
+         [(<= error 1)
+          (define candidate-node
+            (adaptive-ode-node (+ (adaptive-ode-node-time current) trial-step)
+                               candidate endpoint-derivative))
+          (define event-node
+            (and event
+                 (event-crossing-node field event current candidate-node)))
+          (if event-node
+              (values (reverse (cons event-node reverse-nodes))
+                      (ode-trajectory-diagnostics-value
+                       'adaptive-rk45 (add1 accepted) rejected
+                       (adaptive-ode-node-time event-node)
+                       (ode-event-value-name event)
+                       next-maximum-error))
+              (if (= (adaptive-ode-node-time candidate-node) target-time)
+                  (values (reverse (cons candidate-node reverse-nodes))
+                          (ode-trajectory-diagnostics-value
+                           'adaptive-rk45 (add1 accepted) rejected target-time
+                           'time-range next-maximum-error))
+                  (loop candidate-node
+                        (* direction
+                           (adaptive-next-step-magnitude solver
+                                                         (abs trial-step) error))
+                        (cons candidate-node reverse-nodes)
+                        (add1 accepted) rejected next-maximum-error)))]
+         [else
+          (when (<= (abs trial-step)
+                    (adaptive-rk45-value-minimum-step solver))
+            (raise-arguments-error
+             'prepare-ode-trajectory
+             "adaptive solver reached minimum-step before satisfying tolerance"
+             "minimum-step" (adaptive-rk45-value-minimum-step solver)
+             "error-ratio" error
+             "time" (adaptive-ode-node-time current)))
+          (loop current
+                (* direction
+                   (adaptive-rejected-step-magnitude solver
+                                                     (abs trial-step) error))
+                reverse-nodes accepted (add1 rejected) next-maximum-error)]))]))
+
+;; Dormand--Prince 5(4), returned as the 5th-order endpoint, its derivative,
+;; and the maximum componentwise scaled embedded error.
+(define (dormand-prince-step field time point step solver)
+  (define (at offset terms)
+    (call-field field (+ time (* offset step))
+                (vec2+ point
+                       (vec2-scale step (weighted-sum terms)))))
+  (define k1 (call-field field time point))
+  (define k2 (at 1/5 (list (cons 1/5 k1))))
+  (define k3 (at 3/10 (list (cons 3/40 k1) (cons 9/40 k2))))
+  (define k4 (at 4/5 (list (cons 44/45 k1) (cons -56/15 k2)
+                            (cons 32/9 k3))))
+  (define k5 (at 8/9 (list (cons 19372/6561 k1) (cons -25360/2187 k2)
+                            (cons 64448/6561 k3) (cons -212/729 k4))))
+  (define k6 (at 1 (list (cons 9017/3168 k1) (cons -355/33 k2)
+                          (cons 46732/5247 k3) (cons 49/176 k4)
+                          (cons -5103/18656 k5))))
+  (define fifth-order
+    (vec2+ point
+           (vec2-scale
+            step
+            (weighted-sum (list (cons 35/384 k1) (cons 500/1113 k3)
+                                (cons 125/192 k4) (cons -2187/6784 k5)
+                                (cons 11/84 k6))))))
+  (define k7 (call-field field (+ time step) fifth-order))
+  (define fourth-order
+    (vec2+ point
+           (vec2-scale
+            step
+            (weighted-sum
+             (list (cons 5179/57600 k1) (cons 7571/16695 k3)
+                   (cons 393/640 k4) (cons -92097/339200 k5)
+                   (cons 187/2100 k6) (cons 1/40 k7))))))
+  (values fifth-order k7
+          (embedded-error-ratio point fifth-order fourth-order solver)))
+
+(define (weighted-sum terms)
+  (for/fold ([sum origin]) ([term (in-list terms)])
+    (vec2+ sum (vec2-scale (car term) (cdr term)))))
+
+(define (embedded-error-ratio previous fifth fourth solver)
+  (define (component-error before after estimate)
+    (/ (abs (- after estimate))
+       (+ (adaptive-rk45-value-absolute-tolerance solver)
+          (* (adaptive-rk45-value-relative-tolerance solver)
+             (max (abs before) (abs after))))))
+  (max (component-error (vec2-x previous) (vec2-x fifth) (vec2-x fourth))
+       (component-error (vec2-y previous) (vec2-y fifth) (vec2-y fourth))))
+
+(define (adaptive-next-step-magnitude solver old-step error)
+  (min (adaptive-rk45-value-maximum-step solver)
+       (max (adaptive-rk45-value-minimum-step solver)
+            (* old-step
+               (min 5
+                    (max 1/5
+                         (* 9/10
+                            (if (zero? error)
+                                5
+                                (expt (/ 1 error) 1/5)))))))))
+
+(define (adaptive-rejected-step-magnitude solver old-step error)
+  (max (adaptive-rk45-value-minimum-step solver)
+       (* old-step
+          (min 1
+               (max 1/10 (* 9/10 (expt (/ 1 error) 1/5)))))))
+
+(define (event-crossing-node field event first second)
+  (define first-value
+    (call-event event (adaptive-ode-node-time first)
+                (adaptive-ode-node-position first)))
+  (define second-value
+    (call-event event (adaptive-ode-node-time second)
+                (adaptive-ode-node-position second)))
+  (and (event-crosses? (ode-event-value-direction event)
+                       first-value second-value)
+       (locate-event-node field event first second first-value second-value)))
+
+(define (event-crosses? direction first second)
+  (case direction
+    [(increasing) (and (< first 0) (>= second 0))]
+    [(decreasing) (and (> first 0) (<= second 0))]
+    [else (or (and (< first 0) (>= second 0))
+              (and (> first 0) (<= second 0)))]))
+
+;; Forty bisections make the deterministic dense event position much more
+;; precise than the default adaptive tolerance without requiring another field
+;; integration. The endpoint derivative is sampled once for later dense lookup.
+(define (locate-event-node field event first second first-value second-value)
+  (define-values (low-time low-value high-time high-value)
+    (if (zero? first-value)
+        (values (adaptive-ode-node-time first) first-value
+                (adaptive-ode-node-time first) first-value)
+        (values (adaptive-ode-node-time first) first-value
+                (adaptive-ode-node-time second) second-value)))
+  (define root-time
+    (if (= low-time high-time)
+        low-time
+        (let loop ([low low-time] [low-value low-value]
+                   [high high-time] [high-value high-value]
+                   [remaining 40])
+          (if (zero? remaining)
+              (/ (+ low high) 2)
+              (let* ([middle (/ (+ low high) 2)]
+                     [position (interpolate-adaptive-nodes first second middle)]
+                     [middle-value (call-event event middle position)])
+                (if (or (zero? middle-value)
+                        (event-crosses? (ode-event-value-direction event)
+                                        low-value middle-value))
+                    (loop low low-value middle middle-value (sub1 remaining))
+                    (loop middle middle-value high high-value
+                          (sub1 remaining))))))))
+  (define root-position
+    (interpolate-adaptive-nodes first second root-time))
+  (adaptive-ode-node root-time root-position
+                     (call-field field root-time root-position)))
+
+(define (adaptive-trajectory-position trajectory time)
+  (define nodes
+    (adaptive-ode-trajectory-value-nodes trajectory))
+  (define count (vector-length nodes))
+  (let loop ([index 0])
+    (define current (vector-ref nodes index))
+    (cond
+      [(= time (adaptive-ode-node-time current))
+       (adaptive-ode-node-position current)]
+      [(= index (sub1 count))
+       (adaptive-ode-node-position current)]
+      [else
+       (define next (vector-ref nodes (add1 index)))
+       (if (<= (adaptive-ode-node-time current) time
+               (adaptive-ode-node-time next))
+           (interpolate-adaptive-nodes current next time)
+           (loop (add1 index)))])))
+
+(define (interpolate-adaptive-nodes first second time)
+  (define start-time (adaptive-ode-node-time first))
+  (define step (- (adaptive-ode-node-time second) start-time))
+  (cond
+    [(zero? step) (adaptive-ode-node-position first)]
+    [else
+     (define progress (/ (- time start-time) step))
+     (define complement (- 1 progress))
+     (define h00 (+ (* 2 progress progress progress)
+                     (* -3 progress progress) 1))
+     (define h10 (+ (* progress progress progress)
+                     (* -2 progress progress) progress))
+     (define h01 (+ (* -2 progress progress progress)
+                     (* 3 progress progress)))
+     (define h11 (+ (* progress progress progress)
+                     (* -1 progress progress)))
+     (vec2+
+      (vec2+ (vec2-scale h00 (adaptive-ode-node-position first))
+             (vec2-scale (* h10 step) (adaptive-ode-node-derivative first)))
+      (vec2+ (vec2-scale h01 (adaptive-ode-node-position second))
+             (vec2-scale (* h11 step) (adaptive-ode-node-derivative second))))]))
 
 ;; streamline-points : field vec2? #:direction flow-direction?
 ;;                     #:step-size positive-finite-real? #:steps positive-integer?
@@ -432,6 +895,16 @@
 ;; walked only once per used checkpoint, preserving the same RK4 arithmetic for
 ;; every individual time while sharing the intervening full-step states.
 (define (prepare-trajectory-frame-samples trajectory times)
+  (if (adaptive-ode-trajectory-value? trajectory)
+      ;; An adaptive trajectory already owns all accepted nodes and endpoint
+      ;; derivatives. Dense lookup is pure interpolation, so freezing these
+      ;; positions before worker rendering requires no field calls at all.
+      (for/fold ([positions (hash)]) ([time (in-list times)])
+        (check-trajectory-time 'prepare-ode-frame-samples trajectory time)
+        (hash-set positions time (adaptive-trajectory-position trajectory time)))
+      (prepare-fixed-trajectory-frame-samples trajectory times)))
+
+(define (prepare-fixed-trajectory-frame-samples trajectory times)
   (define groups (make-hash))
   (for ([time (in-list times)])
     (check-trajectory-time 'prepare-ode-frame-samples trajectory time)
@@ -462,15 +935,22 @@
                 ([query (in-list sorted-queries)])
         (define suffix-steps
           (frame-trajectory-query-suffix-steps query))
-        (define state*
-          (for/fold ([point state])
+        (define current-time
+          (* direction checkpoint-index
+             (ode-trajectory-value-checkpoint-every trajectory)
+             step-size))
+        (define-values (state* state-time)
+          (for/fold ([point state]
+                     [point-time (+ current-time
+                                    (* completed-suffix full-step))])
                     ([ignored (in-range (- suffix-steps completed-suffix))])
-            (rk4-step field point full-step)))
+            (values (rk4-step field point-time point full-step)
+                    (+ point-time full-step))))
         (define remainder (frame-trajectory-query-remainder query))
         (define coordinate
           (if (zero? remainder)
               state*
-              (rk4-step field state* remainder)))
+              (rk4-step field state-time state* remainder)))
         (values state*
                 suffix-steps
                 (hash-set samples
@@ -518,12 +998,15 @@
    #:id id #:center center #:opacity opacity #:fill #f
    #:stroke stroke #:stroke-width stroke-width))
 
-(define (rk4-step field point step)
+(define (rk4-step field time point step)
   (define half-step (/ step 2))
-  (define k1 (call-field field point))
-  (define k2 (call-field field (vec2+ point (vec2-scale half-step k1))))
-  (define k3 (call-field field (vec2+ point (vec2-scale half-step k2))))
-  (define k4 (call-field field (vec2+ point (vec2-scale step k3))))
+  (define k1 (call-field field time point))
+  (define k2 (call-field field (+ time half-step)
+                         (vec2+ point (vec2-scale half-step k1))))
+  (define k3 (call-field field (+ time half-step)
+                         (vec2+ point (vec2-scale half-step k2))))
+  (define k4 (call-field field (+ time step)
+                         (vec2+ point (vec2-scale step k3))))
   (vec2+
    point
    (vec2-scale
@@ -532,7 +1015,7 @@
            (vec2+ (vec2-scale 2 k2)
                   (vec2+ (vec2-scale 2 k3) k4))))))
 
-(define (call-field field point)
+(define (call-field field time point)
   (define result
     (with-handlers
         ([exn:fail?
@@ -543,7 +1026,10 @@
              "point" point
              "exception message" (exn-message exception)))])
       (call-with-values
-       (lambda () (field (vec2-x point) (vec2-y point)))
+       (lambda ()
+         (if (procedure-arity-includes? field 3)
+             (field time (vec2-x point) (vec2-y point))
+             (field (vec2-x point) (vec2-y point))))
        list)))
   (unless (= (length result) 1)
     (raise-arguments-error
@@ -560,13 +1046,61 @@
      "result" value))
   value)
 
+(define (call-event event time point)
+  (define function (ode-event-value-function event))
+  (define values
+    (with-handlers
+        ([exn:fail?
+          (lambda (exception)
+            (raise-arguments-error
+             'prepare-ode-trajectory
+             "the ODE event raised an exception"
+             "event" (ode-event-value-name event)
+             "time" time
+             "point" point
+             "exception message" (exn-message exception)))])
+      (call-with-values
+       (lambda ()
+         (if (procedure-arity-includes? function 3)
+             (function time (vec2-x point) (vec2-y point))
+             (function (vec2-x point) (vec2-y point))))
+       list)))
+  (unless (= (length values) 1)
+    (raise-arguments-error
+     'prepare-ode-trajectory
+     "the ODE event must return exactly one finite real"
+     "event" (ode-event-value-name event)
+     "time" time
+     "result count" (length values)))
+  (define value (car values))
+  (unless (finite-real? value)
+    (raise-arguments-error
+     'prepare-ode-trajectory
+     "the ODE event must return a finite real"
+     "event" (ode-event-value-name event)
+     "time" time
+     "result" value))
+  value)
+
 (define (streamline-id id index)
   (string->symbol (format "~a-~a" (symbol->string id) index)))
 
 (define (check-field who field)
   (unless (and (procedure? field)
-               (procedure-arity-includes? field 2))
-    (raise-argument-error who "procedure accepting two numeric arguments" field)))
+               (or (procedure-arity-includes? field 2)
+                   (procedure-arity-includes? field 3)))
+    (raise-argument-error
+     who
+     "procedure accepting either (x y) or (time x y) numeric arguments"
+     field)))
+
+(define (check-solver who value)
+  (unless (or (not value) (adaptive-rk45? value))
+    (raise-argument-error who "#f or adaptive-rk45?" value)))
+
+(define (check-event who value)
+  (unless (or (not value) (ode-event? value))
+    (raise-argument-error who "#f or ode-event?" value)))
 
 (define (check-trajectory who value)
   (unless (ode-trajectory? value)
@@ -574,8 +1108,9 @@
 
 (define (check-trajectory-time who trajectory time)
   (check-finite who "time" time)
-  (define start-time (ode-trajectory-value-start-time trajectory))
-  (define end-time (ode-trajectory-value-end-time trajectory))
+  (define range (ode-trajectory-time-range trajectory))
+  (define start-time (car range))
+  (define end-time (cdr range))
   (unless (<= start-time time end-time)
     (raise-arguments-error
      who

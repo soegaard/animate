@@ -511,9 +511,10 @@
 ;                            -> (listof path?)
 ;; Renders one named section to locally numbered PNGs. The default 'auto key
 ;; fingerprints a serializable scene representation, camera/renderers, runtime,
-;; and declared asset files. The library's named `linear` easing is canonical;
-;; every other procedure conservatively disables that cache. Callers can still
-;; choose a deliberate explicit key or #f.
+;; and declared asset files. Built-in semantic rate-function values are
+;; transparent and therefore canonical; every arbitrary procedure conservatively
+;; disables that cache. Callers can still choose a deliberate explicit key or
+;; #f.
 (define (render-timeline-section! timeline section-or-name output-directory
                                   #:fps [fps 30]
                                   #:camera [camera #f]
@@ -682,15 +683,13 @@
          "auto:"
          (sha1 (open-input-string (format "~s" payload)))))))
 
-;; `linear` is the package's default pure easing and is stable as part of the
-;; API. A printed name alone cannot prove the implementation of any caller
-;; procedure (or a future library procedure), so those values invalidate rather
-;; than creating a cache key that could survive a source edit incorrectly.
+;; Built-in rate functions are transparent semantic values, so their scene
+;; representation has no procedure token. A printed name alone cannot prove the
+;; implementation of a caller procedure, so any remaining procedure invalidates
+;; rather than creating a cache key that could survive a source edit incorrectly.
 (define (scene-representation-has-opaque-procedure? representation)
-  (for/or ([printed-procedure
-            (in-list
-             (regexp-match* #px"#<procedure(?::[^>]*)?>" representation))])
-    (not (string=? printed-procedure "#<procedure:linear>"))))
+  (not (null?
+        (regexp-match* #px"#<procedure(?::[^>]*)?>" representation))))
 
 (define (file-fingerprint path-string)
   (if (file-exists? path-string)

@@ -55,11 +55,29 @@
    (car (car (path-geometry-subpath-points (path-visual-path mapped-disc))))
    (vec2 4 0))
 
-  ;; World-space mapping is deliberately a top-level operation, just as the
-  ;; affine world map is: replacing a descendant would obscure its siblings.
-  (check-exn
-   exn:fail:contract?
-   (lambda ()
-     (scene-play
-      (scene-add (make-scene) (group (list horizontal) #:id 'diagram))
-      (apply-pointwise '(diagram horizontal) square-map)))))
+  ;; A nested target is resolved into world coordinates, then rebased through
+  ;; its enclosing transform. Its sibling stays untouched and its displayed
+  ;; geometry still uses the requested world-space map.
+  (define guide
+    (line (vec2 -1 -1) (vec2 1 -1) #:id 'guide #:stroke "gray"))
+  (define nested
+    (scene-play
+     (scene-add
+      (make-scene)
+      (group (list horizontal guide) #:id 'diagram #:center (vec2 2 0)))
+     (apply-pointwise '(diagram horizontal) square-map #:samples 8)
+     #:duration 1))
+  (define rebased-curve
+    (scene-visual-at nested '(diagram horizontal) 1))
+  (check-true (affine-map-visual? rebased-curve))
+  (define world-curve (affine-map-visual-content rebased-curve))
+  (check-true (path-visual? world-curve))
+  ;; The source endpoints are at world (1,1) and (3,1), so z^2 gives
+  ;; (0,2) and (8,6).
+  (define nested-points
+    (car (path-geometry-subpath-points (path-visual-path world-curve))))
+  (check-equal? (car nested-points) (vec2 0 2))
+  (check-equal? (last nested-points) (vec2 8 6))
+  (check-equal?
+   (scene-visual-at nested '(diagram guide) 1)
+   guide))

@@ -148,11 +148,16 @@
    (lambda ()
      (graph (list (graph-vertex 'A #:position origin))
             (list (graph-edge 'A 'missing)) #:id 'bad)))
-  (check-exn
-   exn:fail:contract?
-   (lambda ()
-     (graph (list (graph-vertex 'A #:position origin))
-            (list (graph-edge 'A 'A)) #:id 'bad)))
+  ;; SCENE-DP upgrades the former self-loop rejection to derived loop geometry.
+  (define self-loop
+    (digraph (list (graph-vertex 'A #:position origin))
+             (list (graph-edge 'A 'A #:id 'A-loop))
+             #:id 'self-loop))
+  (check-true
+   (group-visual?
+    (scene-visual-at (scene-add (make-scene) self-loop)
+                     '(self-loop edges A-loop line)
+                     0)))
   (check-exn
    exn:fail:contract?
    (lambda ()
