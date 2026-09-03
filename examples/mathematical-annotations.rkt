@@ -23,13 +23,15 @@
                 #:font-size 1/5 #:color "darkslategray"))
   (define A
     (circle #:id 'A #:center (vec2 -2 -3/2) #:radius 1/6
-            #:fill "royalblue" #:stroke "navy" #:stroke-width 2))
+            ;; Semantic vertex anchors: deliberately invisible so the TeX
+            ;; brace and the triangle's annotation marks remain unobscured.
+            #:opacity 0))
   (define B
     (circle #:id 'B #:center (vec2 2 -3/2) #:radius 1/6
-            #:fill "royalblue" #:stroke "navy" #:stroke-width 2))
+            #:opacity 0))
   (define C
     (circle #:id 'C #:center (vec2 -2 3/2) #:radius 1/6
-            #:fill "royalblue" #:stroke "navy" #:stroke-width 2))
+            #:opacity 0))
   (define AB (segment-between 'A 'B #:id 'AB #:stroke "steelblue" #:stroke-width 4))
   (define BC (segment-between 'B 'C #:id 'BC #:stroke "steelblue" #:stroke-width 4))
   (define CA (segment-between 'C 'A #:id 'CA #:stroke "steelblue" #:stroke-width 4))
@@ -51,7 +53,12 @@
                       #:stroke "crimson" #:stroke-width 3)
          (angle a c b #:id 'angle-mark #:radius 1/2
                 #:stroke "darkorange" #:stroke-width 3)
-         (brace-label a b "base" #:id 'base-brace #:offset -1/2 #:gap 1/6
+         ;; A TeX underbrace is wide and shallow. Place the entire mark below
+         ;; AB so even its upward end curls remain clearly separated from the
+         ;; edge, and use the TeX-like shallow central depth.
+         (brace-label (vec2+ a (vec2 0 -1/4))
+                      (vec2+ b (vec2 0 -1/4))
+                      "base" #:id 'base-brace #:offset -1/12 #:gap 1/6
                       #:font-size 1/4 #:color "darkgreen"
                       #:stroke "darkgreen" #:stroke-width 3))
         #:id 'annotations))))
@@ -63,15 +70,22 @@
                            #:stroke "goldenrod" #:stroke-width 2))
   (define initial
     (scene-add (make-scene)
-               AB BC CA A B C
+               ;; Explanatory marks belong behind the diagram they describe.
+               ;; In particular, the triangle edges stay visually continuous
+               ;; where an angle mark or brace meets them.
+               annotations angle-outline AB BC CA A B C
                (label "A" 'A-label 'A)
                (label "B" 'B-label 'B)
                (label "C" 'C-label 'C)
-               annotations angle-outline title explanation))
+               title explanation))
   (scene-wait
    (scene-play initial
-               (move-to 'B (vec2 5/2 -1))
-               (move-to 'C (vec2 -2 2))
+               ;; Keep AB fixed and AC vertical, so `right-mark` remains an
+               ;; honest right-angle marker. A and the base annotation do not
+               ;; need to move for this stage's live angle/enclosure example.
+               ;; Moving C by one world unit also gives its point marker at
+               ;; least one pixel of travel per 30 fps frame.
+               (move-to 'C (vec2 -2 1/2))
                #:duration 3)
    1))
 

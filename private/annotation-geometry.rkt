@@ -220,8 +220,11 @@
 ;                 [#:offset finite-real?]
 ;                 ... ordinary path style keywords ...
 ;                 -> path-visual?
-;; Creates a symmetric cubic curly brace from start to end. Positive offset is
+;; Creates a symmetric filled curly brace from start to end. Positive offset is
 ;; to the left of start-to-end travel; a negative offset selects the other side.
+;; The colour is taken from `stroke`, for compatibility with the other path
+;; annotations.  Its silhouette follows TeX's `\underbrace` construction: a
+;; broad horizontal rule narrows smoothly to the central point.
 (define (brace-between start end
                        #:id id
                        #:offset [offset 1/3]
@@ -241,20 +244,58 @@
     (vec2+ start
            (vec2+ (vec2-scale (* along length) direction)
                   (vec2-scale perpendicular normal))))
-  ;; Four cubics form the two mirrored S-curves, with a sharp explanatory
-  ;; pinch at the midpoint. The offset remains in world units.
-  (define quarter-a (at 1/4 offset))
-  (define middle (at 1/2 0))
-  (define quarter-b (at 3/4 offset))
+  ;; TeX renders an underbrace as a filled outline rather than a stroked wavy
+  ;; centreline.  This normalised version includes its two end curls, followed
+  ;; by the horizontal rule nearest the annotated segment. Its lower edge
+  ;; remains thin until it smoothly tapers to the central outward point. It is
+  ;; a single closed path, so the Pict and SVG renderers receive the same
+  ;; unambiguous fill geometry.
+  (define band-thickness (/ offset 7))
+  (define end-curl-offset (* -5/7 offset))
+  (define middle (at 1/2 offset))
+  ;; The outer tips align directly with `start` and `end`. The little horizontal
+  ;; span of each curl is four percent of the annotated segment, matching the
+  ;; TeX proportions while preserving the endpoint alignment expected in a
+  ;; geometry diagram.
+  (define end-curl-width 1/25)
+  ;; In TeX, the two central brace glyphs together occupy roughly eight percent
+  ;; of the rule. Keeping that narrow prevents the point from reading as a
+  ;; broad filled wedge in a large diagram.
+  (define central-half-width 1/25)
+  (define central-right (+ 1/2 central-half-width))
+  (define central-left (- 1/2 central-half-width))
+  (define central-right-control (+ 1/2 (/ central-half-width 2)))
+  (define central-left-control (- 1/2 (/ central-half-width 2)))
   (define geometry
-    (cubic-bezier-path
-     start
+    (path-subpath
+     (at 0 end-curl-offset)
      (list
-      (cubic-bezier-path-segment (at 1/20 offset) (at 3/20 offset) quarter-a)
-      (cubic-bezier-path-segment (at 7/20 offset) (at 9/20 0) middle)
-      (cubic-bezier-path-segment (at 11/20 0) (at 13/20 offset) quarter-b)
-      (cubic-bezier-path-segment (at 17/20 offset) (at 19/20 offset) end))))
-  (centered-path-visual 'brace-between geometry id opacity stroke stroke-width))
+      ;; Left outer curl, then the upper edge of TeX's horizontal rule.
+      (cubic-bezier-path-segment (at 0 end-curl-offset)
+                                 (at (/ end-curl-width 2) 0)
+                                 (at end-curl-width 0))
+      (line-path-segment (at (- 1 end-curl-width) 0))
+      ;; This is the exact mirror of the left curl about the brace midpoint.
+      (cubic-bezier-path-segment (at (- 1 (/ end-curl-width 2)) 0)
+                                 (at 1 end-curl-offset)
+                                 (at 1 end-curl-offset))
+      (cubic-bezier-path-segment (at 1 end-curl-offset)
+                                 (at (- 1 (/ end-curl-width 2)) band-thickness)
+                                 (at (- 1 end-curl-width) band-thickness))
+      (line-path-segment (at central-right band-thickness))
+      (cubic-bezier-path-segment (at central-right-control band-thickness)
+                                 (at 1/2 (* 7/8 offset))
+                                 middle)
+      (cubic-bezier-path-segment (at 1/2 (* 7/8 offset))
+                                 (at central-left-control band-thickness)
+                                 (at central-left band-thickness))
+      (line-path-segment (at end-curl-width band-thickness))
+      (cubic-bezier-path-segment (at (/ end-curl-width 2) band-thickness)
+                                 (at 0 end-curl-offset)
+                                 (at 0 end-curl-offset)))
+     #t))
+  (centered-filled-path-visual
+   'brace-between (path-geometry (list geometry)) id opacity stroke stroke-width))
 
 ; brace-label : vec2? vec2? string?
 ;               #:id symbol?
@@ -435,6 +476,18 @@
    (path-geometry-translate geometry (vec2-scale -1 center))
    #:id id #:center center #:opacity opacity #:fill #f
    #:stroke stroke #:stroke-width stroke-width))
+
+(define (centered-filled-path-visual who geometry id opacity fill stroke-width)
+  (check-symbol who id)
+  (unless (opacity? opacity)
+    (raise-argument-error who "finite real in [0, 1]" opacity))
+  (unless (stroke-width? stroke-width)
+    (raise-argument-error who "nonnegative finite real?" stroke-width))
+  (define center (path-geometry-center geometry))
+  (make-path-visual
+   (path-geometry-translate geometry (vec2-scale -1 center))
+   #:id id #:center center #:opacity opacity #:fill fill
+   #:stroke fill #:stroke-width stroke-width))
 
 (define (principal-angle value)
   (cond [(> value pi) (- value (* 2 pi))]

@@ -6,9 +6,13 @@
 
 (require rackunit
          racket/class
+         racket/runtime-path
          (only-in pict pict->bitmap)
          (only-in racket/math pi)
          "../main.rkt")
+
+(define-runtime-path mathematical-annotations-example
+  "../examples/mathematical-annotations.rkt")
 
 (define (close? actual expected [tolerance 1e-8])
   (<= (abs (- actual expected)) tolerance))
@@ -64,15 +68,29 @@
      (car (path-geometry-subpaths (path-visual-path right-mark)))))
    2)
 
-  ;; A brace is an ordinary cubic path; brace-label groups it with a separately
-  ;; addressable text child using stable, derived child identities.
+  ;; A TeX-style brace is one closed filled path with outer curls and a smooth
+  ;; central point; brace-label groups it with a separately addressable text
+  ;; child using stable, derived child identities.
   (define curly
     (brace-between (vec2 -2 0) (vec2 2 0) #:id 'curly #:offset 1/2))
   (check-equal?
    (length
-    (path-subpath-segments
-     (car (path-geometry-subpaths (path-visual-path curly)))))
-   4)
+    (path-geometry-subpaths (path-visual-path curly)))
+   1)
+  (check-true
+   (andmap path-subpath-closed?
+           (path-geometry-subpaths (path-visual-path curly))))
+  (check-equal? (length (path-subpath-segments
+                         (car (path-geometry-subpaths
+                               (path-visual-path curly)))))
+                9)
+  (check-equal? (path-visual-fill curly) "black")
+  ;; Curl tips are exactly aligned with the annotated endpoints, rather than
+  ;; extending beyond them. This is important for braces in geometric figures.
+  (define-values (brace-minimum-x _brace-minimum-y brace-maximum-x _brace-maximum-y)
+    (path-geometry-bounds (path-visual-path curly)))
+  (check-true (close? brace-minimum-x -2))
+  (check-true (close? brace-maximum-x 2))
   (define labelled
     (brace-label (vec2 -2 0) (vec2 2 0) "base"
                  #:id 'base-brace #:offset -1/2))
@@ -119,4 +137,32 @@
                (brace-between origin origin #:id 'bad)))
   (check-exn exn:fail:contract?
              (lambda ()
-               (surrounding-rectangle 'target #:id 'target))))
+               (surrounding-rectangle 'target #:id 'target)))
+
+  ;; The stage example preserves the theorem asserted by its right-angle mark:
+  ;; AB stays horizontal while AC stays vertical during its deformation.
+  (define make-mathematical-annotations-example
+    (dynamic-require mathematical-annotations-example 'make-demo-scene))
+  (define example-scene
+    (make-mathematical-annotations-example))
+  (define example-a (scene-visual-at example-scene 'A 3))
+  (define example-b (scene-visual-at example-scene 'B 3))
+  (define example-c (scene-visual-at example-scene 'C 3))
+  (define ab
+    (vec2- (visual-position example-b) (visual-position example-a)))
+  (define ac
+    (vec2- (visual-position example-c) (visual-position example-a)))
+  (check-=
+   (+ (* (vec2-x ab) (vec2-x ac))
+      (* (vec2-y ab) (vec2-y ac)))
+   0
+   1e-9)
+
+  ;; Symmetric base motion leaves the brace-label's model position fixed. This
+  ;; avoids the one-pixel-at-a-time movement inherent in a bitmap text raster.
+  (define base-label-at-start
+    (scene-visual-at example-scene '(annotations base-brace base-brace-label) 0))
+  (define base-label-at-end
+    (scene-visual-at example-scene '(annotations base-brace base-brace-label) 3))
+  (check-equal? (visual-position base-label-at-start)
+                (visual-position base-label-at-end)))
