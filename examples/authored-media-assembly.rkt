@@ -5,14 +5,18 @@
 ;;;
 
 ;; The image is intentionally an ordinary scene diagram: it illustrates the
-;; production data flow without requiring a local narration file. The real
-;; assembly API is exercised with a generated audio source in scene-dg-test.rkt.
+;; production data flow while the bundled CC0 piano track exercises the real
+;; audio/caption assembly path. The test suite separately uses a generated tone.
 
-(require "../main.rkt"
-         "private/run-demo.rkt")
+(require racket/cmdline
+         racket/runtime-path
+         "../main.rkt")
 
 (provide make-demo-scene
          make-demo-timeline)
+
+(define-runtime-path background-music
+  "assets/slow-piano-intermission.ogg")
 
 (define (card id center title detail fill stroke)
   (group
@@ -61,7 +65,7 @@
      #:id 'partials))
   (define final-movie
     (card 'final-movie (vec2 0 -31/10) "production.mp4"
-          "AAC narration + captions" "lavender" "darkviolet"))
+          "AAC piano cue + captions" "lavender" "darkviolet"))
   (define down-arrow-one
     (arrow (vec2 0 1/5) (vec2 0 -2/5) #:id 'down-arrow-one
            #:stroke "slategray" #:stroke-width 2
@@ -96,10 +100,37 @@
                     (section 'partials 1 3)
                     (section 'final-mux 3 5)
                     (section 'hold 5 6))
+   ;; CC0 background cue; the source and licence are recorded in
+   ;; examples/assets/ATTRIBUTION.md. Its quiet source master needs positive
+   ;; gain so it remains audible in this narration-free demonstration.
+   #:audio-cues
+   (list (audio-cue background-music
+                    #:duration 6
+                    #:gain 8
+                    #:fade-in 1/2
+                    #:fade-out 1/2))
    #:subtitles
    (list (subtitle 0 1 "Three named sections share one output grid.")
          (subtitle 1 3 "Only an invalidated partial is rendered again.")
          (subtitle 3 5 "Audio and captions are muxed once at the end."))))
 
 (module+ main
-  (run-demo "authored-media-assembly.rkt" make-demo-scene))
+  ;; With an MP4 destination, exercise the actual SCENE-DG/DH production path
+  ;; so the result carries both the CC0 music cue and MP4 subtitle stream.
+  (define work-directory "frames")
+  (define output-video #f)
+  (command-line
+   #:program "authored-media-assembly.rkt"
+   #:args ([directory "frames"] [mp4-file #f])
+   (set! work-directory directory)
+   (set! output-video mp4-file))
+  (cond
+    [output-video
+     (render-authored-mp4! (make-demo-timeline)
+                           work-directory output-video
+                           #:fps 30)
+     (printf "Assembled ~a with audio and captions\n" output-video)]
+    [else
+     (define paths
+       (render-frames! (make-demo-scene) work-directory #:fps 30))
+     (printf "Rendered ~a frames to ~a\n" (length paths) work-directory)]))

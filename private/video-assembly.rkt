@@ -80,7 +80,8 @@
      (if subtitle-file
          (list "-i" (path-string->string* subtitle-file))
          '())
-     (output-arguments audio-cues subtitle-file)
+     (output-arguments audio-cues subtitle-file
+                       (scene-duration (authored-timeline-scene timeline)))
      (list (path-string->string* output-file))))
   (unless (apply system* ffmpeg arguments)
     (raise-arguments-error
@@ -125,13 +126,15 @@
                      (list "-map" "1:0" "-c:s" "mov_text")
                      '()))
          (append (list "-map" "0:v:0" "-c:v" "copy"
-                       "-filter_complex" (audio-filter-graph audio-cues)
+                       "-filter_complex"
+                       (audio-filter-graph
+                        audio-cues
+                        (scene-duration (authored-timeline-scene timeline)))
                        "-map" "[mixed]" "-c:a" "aac")
                  (if subtitle-file
                      (list "-map" (format "~a:0" (add1 (length audio-cues)))
                            "-c:s" "mov_text")
-                     '())
-                 (list "-shortest")))
+                     '())))
      (list (path-string->string* output-file))))
   (unless (apply system* ffmpeg arguments)
     (raise-arguments-error
@@ -153,25 +156,29 @@
     (unless (file-exists? movie)
       (raise-arguments-error 'concatenate-mp4! "an existing partial MP4"
                              "partial-movie" movie)))
+  ;; FFmpeg resolves `file` entries relative to the concat manifest. Normalize
+  ;; before writing it so a caller may safely use relative partial/output paths.
+  (define complete-partial-movies
+    (map path->complete-path partial-movies))
+  (define complete-output-file
+    (path->complete-path output-file))
   (define ffmpeg (required-ffmpeg 'concatenate-mp4!))
   (define manifest
     (make-temporary-file "animate-concat-~a.txt" #f
-                         (path-only (if (path? output-file)
-                                        output-file
-                                        (string->path output-file)))))
+                         (path-only complete-output-file)))
   (dynamic-wind
    void
    (lambda ()
      (call-with-output-file
       manifest
       (lambda (output)
-        (for ([movie (in-list partial-movies)])
+        (for ([movie (in-list complete-partial-movies)])
           (fprintf output "file '~a'\n"
                    (concat-manifest-path (path-string->string* movie)))))
       #:exists 'truncate/replace)
      (unless (system* ffmpeg "-y" "-f" "concat" "-safe" "0"
                        "-i" (path->string manifest)
-                       "-c" "copy" (path-string->string* output-file))
+                       "-c" "copy" (path->string complete-output-file))
        (raise-arguments-error
         'concatenate-mp4! "FFmpeg failed to concatenate partial movies"
         "output-file" output-file)))
@@ -341,12 +348,13 @@
           '())
       (list "-i" (path-string->string* (audio-cue-source entry)))))))
 
-(define (output-arguments audio-cues subtitle-file)
+(define (output-arguments audio-cues subtitle-file timeline-duration)
   (define audio-count (length audio-cues))
   (define audio-options
     (if (zero? audio-count)
         '()
-        (list "-filter_complex" (audio-filter-graph audio-cues)
+        (list "-filter_complex"
+              (audio-filter-graph audio-cues timeline-duration)
               "-map" "[mixed]"
               "-c:a" "aac")))
   (define subtitle-options
@@ -360,11 +368,9 @@
          "-pix_fmt" "yuv420p"
          "-movflags" "+faststart")
    audio-options
-   subtitle-options
-   ;; Do not extend a completed visual movie with a frozen final image.
-   (if (positive? audio-count) (list "-shortest") '())))
+   subtitle-options))
 
-(define (audio-filter-graph entries)
+(define (audio-filter-graph entries timeline-duration)
   (define filters
     (for/list ([entry (in-list entries)] [index (in-naturals 1)])
       (format "[~a:a]~a[a~a]"
@@ -375,10 +381,12 @@
    (string-join filters ";")
    ";"
    (string-join
-    (for/list ([index (in-range 1 (add1 (length entries)))])
+   (for/list ([index (in-range 1 (add1 (length entries)))])
       (format "[a~a]" index))
     "")
-   (format "amix=inputs=~a:duration=longest[mixed]" (length entries))))
+   (format "amix=inputs=~a:duration=longest[mix];[mix]apad,atrim=duration=~a[mixed]"
+           (length entries)
+           (ffmpeg-number timeline-duration))))
 
 (define (audio-filter-chain entry)
   (define fade-in (audio-cue-fade-in entry))

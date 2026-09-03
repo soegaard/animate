@@ -130,6 +130,12 @@
        (define concatenated (build-path output-directory "concatenated.mp4"))
        (concatenate-mp4! (list visual-partial visual-partial) concatenated)
        (check-true (file-exists? concatenated))
+       ;; Relative partial/output paths must work too: the concat manifest is
+       ;; written beside the output, so its entries are normalized first.
+       (parameterize ([current-directory output-directory])
+         (concatenate-mp4! (list "visual-partial.mp4" "visual-partial.mp4")
+                           "concatenated-relative.mp4")
+         (check-true (file-exists? "concatenated-relative.mp4")))
 
        ;; The high-level path keeps visual-only partials under its work
        ;; directory, reuses the section cache on a repeat invocation, and
