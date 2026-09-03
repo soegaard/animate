@@ -25,10 +25,10 @@
      #:gap 1/4))
   (define dots
     (distribute-within
-     (list (circle #:id 'dot-1 #:radius 1/7 #:fill "coral")
-           (circle #:id 'dot-2 #:radius 1/7 #:fill "coral")
-           (circle #:id 'dot-3 #:radius 1/7 #:fill "coral")
-           (circle #:id 'dot-4 #:radius 1/7 #:fill "coral")) -5/2 5/2))
+     (list (circle #:id 'dot-1 #:center (vec2 0 -1) #:radius 1/7 #:fill "coral")
+           (circle #:id 'dot-2 #:center (vec2 0 -1) #:radius 1/7 #:fill "coral")
+           (circle #:id 'dot-3 #:center (vec2 0 -1) #:radius 1/7 #:fill "coral")
+           (circle #:id 'dot-4 #:center (vec2 0 -1) #:radius 1/7 #:fill "coral")) -5/2 5/2))
   (define offscreen (keep-inside-frame (circle #:id 'fitted #:center (vec2 9 -2) #:radius 2/5 #:fill "gold" #:stroke "goldenrod") #:margin 1/4))
   (define initial (scene-wait (apply scene-add (append (list (make-scene) title explanation offscreen) labels cards dots)) 1))
   (scene-wait (scene-play initial (wiggle 'card-2 #:angle 1/16) (flash 'fitted #:color "gold") #:duration 2) 1))
