@@ -33,6 +33,7 @@
          affine-transform-lerp
          affine-transform-apply-vector
          affine-transform-apply-point
+         linear2
          linear2?
          linear2-a
          linear2-b
@@ -43,7 +44,14 @@
          linear2-determinant
          linear2-compose
          linear2-apply-vector
+         affine2
          affine2?
+         affine2-a
+         affine2-b
+         affine2-h
+         affine2-c
+         affine2-d
+         affine2-k
          affine2-linear
          affine2-translation
          make-affine2
@@ -243,8 +251,8 @@
 
 ;; linear2 represents the matrix
 ;;
-;;     [ a c ]
-;;     [ b d ]
+;;     [ a b ]
+;;     [ c d ]
 ;;
 ;; acting on column vectors.  All entries are finite, but the matrix may be
 ;; singular: a continuous animation to a reflection necessarily passes through
@@ -259,7 +267,11 @@
     (values a b c d)))
 
 ;; make-linear2 : finite-real? finite-real? finite-real? finite-real? -> linear2?
-;; Creates the linear map whose matrix is [a c; b d].
+;; Creates the linear map whose matrix is [a b; c d].  Arguments follow
+;; ordinary row order, so a matrix literal can be indented naturally:
+;;
+;;   (linear2 a b
+;;            c d)
 (define (make-linear2 a b c d)
   (linear2 a b c d))
 
@@ -280,12 +292,12 @@
   (check-linear2 'linear2-compose inner)
   (make-linear2
    (+ (* (linear2-a outer) (linear2-a inner))
-      (* (linear2-c outer) (linear2-b inner)))
-   (+ (* (linear2-b outer) (linear2-a inner))
-      (* (linear2-d outer) (linear2-b inner)))
-   (+ (* (linear2-a outer) (linear2-c inner))
-      (* (linear2-c outer) (linear2-d inner)))
-   (+ (* (linear2-b outer) (linear2-c inner))
+      (* (linear2-b outer) (linear2-c inner)))
+   (+ (* (linear2-a outer) (linear2-b inner))
+      (* (linear2-b outer) (linear2-d inner)))
+   (+ (* (linear2-c outer) (linear2-a inner))
+      (* (linear2-d outer) (linear2-c inner)))
+   (+ (* (linear2-c outer) (linear2-b inner))
       (* (linear2-d outer) (linear2-d inner)))))
 
 ;; linear2-apply-vector : linear2? vec2? -> vec2?
@@ -294,27 +306,55 @@
   (unless (vec2? vector)
     (raise-argument-error 'linear2-apply-vector "vec2?" vector))
   (vec2 (+ (* (linear2-a map) (vec2-x vector))
-           (* (linear2-c map) (vec2-y vector)))
-        (+ (* (linear2-b map) (vec2-x vector))
+           (* (linear2-b map) (vec2-y vector)))
+        (+ (* (linear2-c map) (vec2-x vector))
            (* (linear2-d map) (vec2-y vector)))))
 
 ;; affine2 represents a general linear map followed by translation.  It is
 ;; intentionally separate from affine-transform: the latter remains the stable
 ;; decomposed translation/rotation/positive-scale public protocol.
-(struct affine2 (linear translation)
+;;
+;; The constructor also follows ordinary augmented-row order:
+;;
+;;   (affine2 a b h
+;;            c d k)
+;;
+;; represents x' = a*x + b*y + h and y' = c*x + d*y + k.
+(struct affine2 (a b h c d k)
   #:transparent
   #:guard
-  (lambda (linear translation who)
-    (unless (linear2? linear)
-      (raise-argument-error who "linear2?" linear))
-    (unless (vec2? translation)
-      (raise-argument-error who "vec2?" translation))
-    (values linear translation)))
+  (lambda (a b h c d k who)
+    (for ([entry (in-list (list a b h c d k))])
+      (unless (finite-real? entry)
+        (raise-argument-error who "six finite real affine-map entries" entry)))
+    (values a b h c d k)))
+
+;; affine2-linear : affine2? -> linear2?
+;; Extracts the matrix portion in the same row order as linear2.
+(define (affine2-linear map)
+  (check-affine2 'affine2-linear map)
+  (linear2 (affine2-a map) (affine2-b map)
+           (affine2-c map) (affine2-d map)))
+
+;; affine2-translation : affine2? -> vec2?
+;; Extracts the translation column (h, k).
+(define (affine2-translation map)
+  (check-affine2 'affine2-translation map)
+  (vec2 (affine2-h map) (affine2-k map)))
 
 ;; make-affine2 : [#:linear linear2?] [#:translation vec2?] -> affine2?
 (define (make-affine2 #:linear [linear identity-linear2]
                       #:translation [translation origin])
-  (affine2 linear translation))
+  (unless (linear2? linear)
+    (raise-argument-error 'make-affine2 "linear2?" linear))
+  (unless (vec2? translation)
+    (raise-argument-error 'make-affine2 "vec2?" translation))
+  (affine2 (linear2-a linear)
+           (linear2-b linear)
+           (vec2-x translation)
+           (linear2-c linear)
+           (linear2-d linear)
+           (vec2-y translation)))
 
 ;; identity-affine2 : affine2?
 (define identity-affine2
@@ -325,14 +365,24 @@
   (check-affine2 'affine2-with-linear map)
   (unless (linear2? linear)
     (raise-argument-error 'affine2-with-linear "linear2?" linear))
-  (struct-copy affine2 map [linear linear]))
+  (affine2 (linear2-a linear)
+           (linear2-b linear)
+           (affine2-h map)
+           (linear2-c linear)
+           (linear2-d linear)
+           (affine2-k map)))
 
 ;; affine2-with-translation : affine2? vec2? -> affine2?
 (define (affine2-with-translation map translation)
   (check-affine2 'affine2-with-translation map)
   (unless (vec2? translation)
     (raise-argument-error 'affine2-with-translation "vec2?" translation))
-  (struct-copy affine2 map [translation translation]))
+  (affine2 (affine2-a map)
+           (affine2-b map)
+           (vec2-x translation)
+           (affine2-c map)
+           (affine2-d map)
+           (vec2-y translation)))
 
 ;; affine2-compose : affine2? affine2? -> affine2?
 ;; Returns outer ∘ inner, so the inner map acts first.
@@ -400,8 +450,8 @@
   (make-affine2
    #:linear
    (make-linear2 (* cosine (vec2-x scale))
-                 (* sine (vec2-x scale))
                  (* (- sine) (vec2-y scale))
+                 (* sine (vec2-x scale))
                  (* cosine (vec2-y scale)))
    #:translation (affine-transform-translation transform)))
 

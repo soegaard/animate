@@ -3178,17 +3178,20 @@ Version `0.99.0` adds a full affine-map layer without changing the historical
 `affine-transform` API. `linear2` stores the matrix
 
 \[
-\begin{pmatrix}a & c\\ b & d\end{pmatrix},
+\begin{pmatrix}a & b\\ c & d\end{pmatrix},
 \]
 
-and `affine2` combines that map with a translation. `apply-affine` applies an
-`affine2` after the target's existing map; `apply-matrix` is the translation-free
-convenience form. Matrix entries and translation interpolate directly from the
-identity map, which makes a shear continuous and also gives a defined (possibly
-singular) intermediate path for a reflection.
+in ordinary row order. `affine2` uses the corresponding augmented rows
+`(affine2 a b h c d k)`, where `(h,k)` is the translation. `apply-affine`
+applies an `affine2` after the target's existing map; `apply-matrix` is the
+translation-free convenience form. Matrix entries and translation interpolate
+directly from the identity map, which makes a shear continuous and also gives a
+defined (possibly singular) intermediate path for a reflection.
 
 ```racket
-(define shear (make-linear2 1 0 1 1))
+(define shear
+  (linear2 1 1
+           0 1))
 
 (scene-play
  (scene-add (make-scene) diagram)
@@ -3219,7 +3222,9 @@ unit square, and arbitrary vector under stable paths such as
 
 (scene-play
  (scene-add (make-scene) diagram)
- (apply-matrix 'diagram (make-linear2 1 0 1 1))
+ (apply-matrix 'diagram
+               (linear2 1 1
+                        0 1))
  #:duration 3)
 ```
 

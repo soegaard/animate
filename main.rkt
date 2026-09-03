@@ -153,6 +153,7 @@
  affine-transform-lerp
  affine-transform-apply-vector
  affine-transform-apply-point
+ linear2
  linear2?
  linear2-a
  linear2-b
@@ -163,7 +164,14 @@
  linear2-determinant
  linear2-compose
  linear2-apply-vector
+ affine2
  affine2?
+ affine2-a
+ affine2-b
+ affine2-h
+ affine2-c
+ affine2-d
+ affine2-k
  affine2-linear
  affine2-translation
  make-affine2

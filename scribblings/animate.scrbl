@@ -1598,15 +1598,43 @@ SCENE-CY-A keeps @racket[affine-transform] as the established decomposed
 placement protocol and adds @racket[linear2] and @racket[affine2] for general
 mathematical maps. A @racket[linear2] value represents the matrix
 
-@centered{@tt{| a  c |   | b  d |}}
+@centered{@tt{| a  b |   | c  d |}}
 
 acting on column vectors. Matrix entries may be negative or form a singular
 matrix. In particular, entry-wise interpolation toward a reflection normally
 passes through a singular map.
 
+The public constructor follows the displayed row order, which keeps matrix
+literals readable when split across lines:
+
+@racketblock[
+(linear2 a b
+         c d)
+]
+
+An @racket[affine2] adds the translation column in the same order:
+
+@racketblock[
+(affine2 a b h
+         c d k)
+]
+
+This represents @racket[(values (+ (* a x) (* b y) h)
+                         (+ (* c x) (* d y) k))].
+
 @defproc[(linear2? [value any/c]) boolean?]{
 
 Returns @racket[#t] for a general two-dimensional linear map.
+}
+
+@defproc[(linear2 [a finite-real?]
+                  [b finite-real?]
+                  [c finite-real?]
+                  [d finite-real?])
+         linear2?]{
+
+Constructs the matrix @tt{| a  b |   | c  d |}. The arguments are in row
+order.
 }
 
 @defproc[(make-linear2 [a finite-real?]
@@ -1615,7 +1643,8 @@ Returns @racket[#t] for a general two-dimensional linear map.
                         [d finite-real?])
          linear2?]{
 
-Constructs the matrix @tt{| a  c |   | b  d |}.
+Convenience constructor for the matrix @tt{| a  b |   | c  d |}. Its arguments
+have the same row order as @racket[linear2].
 }
 
 @defthing[identity-linear2 linear2?]{
@@ -1648,13 +1677,27 @@ Applies @racket[map] to one displacement vector.
 Returns @racket[#t] for a general linear map followed by translation.
 }
 
+@defproc[(affine2 [a finite-real?]
+                  [b finite-real?]
+                  [h finite-real?]
+                  [c finite-real?]
+                  [d finite-real?]
+                  [k finite-real?])
+         affine2?]{
+
+Constructs the affine map @racket[(values (+ (* a x) (* b y) h)
+                                  (+ (* c x) (* d y) k))]. The entries are in
+augmented-row order: @racket[(affine2 a b h c d k)].
+}
+
 @defproc[(make-affine2
           [#:linear linear linear2? identity-linear2]
           [#:translation translation vec2? origin])
          affine2?]{
 
 Constructs a general affine map. The linear map acts first and translation is
-added afterward.
+added afterward. Use this keyword form when the linear and translation parts
+are already available separately; use @racket[affine2] for a matrix literal.
 }
 
 @defthing[identity-affine2 affine2?]{
@@ -1671,6 +1714,13 @@ Returns @racket[map]'s linear component.
 
 Returns @racket[map]'s translation component.
 }
+
+@defproc[(affine2-a [map affine2?]) finite-real?]{Returns the @racket[a] entry.}
+@defproc[(affine2-b [map affine2?]) finite-real?]{Returns the @racket[b] entry.}
+@defproc[(affine2-h [map affine2?]) finite-real?]{Returns the x translation @racket[h].}
+@defproc[(affine2-c [map affine2?]) finite-real?]{Returns the @racket[c] entry.}
+@defproc[(affine2-d [map affine2?]) finite-real?]{Returns the @racket[d] entry.}
+@defproc[(affine2-k [map affine2?]) finite-real?]{Returns the y translation @racket[k].}
 
 @defproc[(affine2-with-linear [map affine2?] [linear linear2?]) affine2?]{
 
@@ -5491,7 +5541,9 @@ fixed outside the mapped group:
 
 (scene-play
  (scene-add (make-scene) diagram)
- (apply-matrix 'diagram (make-linear2 1 0 1 1))
+ (apply-matrix 'diagram
+               (linear2 1 1
+                        0 1))
  #:duration 3)
 ]
 }

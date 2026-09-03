@@ -37,7 +37,8 @@
   (define sheared
     (scene-play
      initial
-     (apply-matrix 'diagram (make-linear2 1 0 1 1))
+     (apply-matrix 'diagram (linear2 1 1
+                                     0 1))
      #:duration 3))
   (scene-wait sheared 2))
 

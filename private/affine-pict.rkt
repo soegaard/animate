@@ -35,13 +35,13 @@
     (raise-argument-error 'affine2-pict-transform "affine2?" map))
   (define linear
     (affine2-linear map))
-  ;; World: (x', y') = (a*x + c*y, b*x + d*y).
+  ;; World: (x', y') = (a*x + b*y, c*x + d*y).
   ;; Pixels use (x, -y), yielding (x', y') =
-  ;; (a*x - c*y, -b*x + d*y).
+  ;; (a*x - b*y, -c*x + d*y).
   (define pixel-map
     (vector (linear2-a linear)
-            (- (linear2-b linear))
             (- (linear2-c linear))
+            (- (linear2-b linear))
             (linear2-d linear)
             0
             0))

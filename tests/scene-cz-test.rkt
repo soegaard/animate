@@ -62,7 +62,7 @@
     (scene-wait
      (scene-play
       (scene-add (make-scene) diagram)
-      (apply-matrix 'diagram (make-linear2 1 0 1 1))
+      (apply-matrix 'diagram (linear2 1 1 0 1))
       #:duration 1)
      1))
   (check-true (group-visual?

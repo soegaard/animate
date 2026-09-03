@@ -8,7 +8,8 @@
 ;; layer. Existing affine-transform placement remains unchanged; the new API
 ;; maps complete top-level world Visuals through a full 2x2 matrix.
 
-(require rackunit
+(require racket/math
+         rackunit
          (only-in pict pict-height pict-width)
          "../main.rkt")
 
@@ -20,28 +21,53 @@
     (check-real-close (vec2-x actual) (vec2-x expected))
     (check-real-close (vec2-y actual) (vec2-y expected)))
 
-  ;; The matrix convention is [a c; b d] acting on column vectors.
+  ;; The matrix convention is [a b; c d] acting on column vectors.
   (define shear
-    (make-linear2 1 0 1 1))
+    (linear2 1 1
+             0 1))
   (check-equal? (linear2-determinant shear) 1)
   (check-equal? (linear2-apply-vector shear (vec2 2 3))
                 (vec2 5 3))
   (check-equal?
    (linear2-compose shear identity-linear2)
    shear)
+  (check-equal?
+   (make-linear2 2 3 5 7)
+   (linear2 2 3 5 7))
+
+  ;; Composition uses ordinary matrix multiplication in the same row order.
+  (define outer-linear (linear2 2 3 5 7))
+  (define inner-linear (linear2 11 13 17 19))
+  (check-equal?
+   (linear2-compose outer-linear inner-linear)
+   (linear2 73 83 174 198))
 
   (define translated-shear
-    (make-affine2 #:linear shear #:translation (vec2 2 -1)))
+    (affine2 1 1 2
+             0 1 -1))
   (check-equal? (affine2-apply-point translated-shear (vec2 2 1))
                 (vec2 5 0))
   (check-equal?
    (affine2-compose translated-shear identity-affine2)
    translated-shear)
+  (define outer-affine
+    (affine2 2 3 29
+             5 7 31))
+  (define inner-affine
+    (affine2 11 13 23
+             17 19 29))
+  (check-equal?
+   (affine2-compose outer-affine inner-affine)
+   (affine2 73 83 162
+            174 198 349))
+  (check-equal? (affine2-translation translated-shear) (vec2 2 -1))
+  (check-equal? (affine2-h translated-shear) 2)
+  (check-equal? (affine2-k translated-shear) -1)
 
   ;; Existing decomposed transforms convert exactly to the new representation.
   (define old-transform
     (make-affine-transform #:translation (vec2 3 -2)
-                           #:rotation 0
+                           #:rotation (/ pi 2)
                            #:scale (vec2 2 3)))
   (check-equal?
    (affine2-apply-point (affine-transform->affine2 old-transform)
