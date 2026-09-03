@@ -27,6 +27,13 @@
   (define (scene-time->argb-bytes scene time)
     (bitmap->argb-bytes
      (pict->bitmap (scene->pict scene time) 'aligned)))
+  (define (bitmap-rgb-at bitmap x y)
+    (define width (send bitmap get-width))
+    (define pixels (bitmap->argb-bytes bitmap))
+    (define offset (* 4 (+ x (* y width))))
+    (list (bytes-ref pixels (+ offset 1))
+          (bytes-ref pixels (+ offset 2))
+          (bytes-ref pixels (+ offset 3))))
   (define disk
     (circle #:id 'disk
             #:radius 1
@@ -125,6 +132,25 @@
              (scene-time->argb-bytes color-only-scene 1))
      (format "default renderer ignored semantic color for ~a"
              (visual-id visual))))
+
+  ;; `#:fill #f` is an actual transparent interior, rather than the black
+  ;; fallback used by Pict's filled-shape constructors. Check both built-in
+  ;; closed shapes at their centres, well away from their strokes.
+  (for ([unfilled
+         (list (circle #:id 'transparent-circle #:radius 1
+                       #:fill #f #:stroke "black" #:stroke-width 4)
+               (rectangle #:id 'transparent-rectangle #:width 2 #:height 2
+                          #:fill #f #:stroke "black" #:stroke-width 4))])
+    (define bitmap
+      (pict->bitmap
+       (scene->pict
+        (scene-add (make-scene #:camera camera) unfilled)
+        0)
+       'aligned))
+    (check-equal? (bitmap-rgb-at bitmap 160 90)
+                  '(255 255 255)
+                  (format "~a filled its transparent interior"
+                          (visual-id unfilled))))
 
   ;; Alpha-bearing semantic colors reach racket/draw only at adapter conversion.
   (define alpha-scene

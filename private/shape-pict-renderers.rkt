@@ -22,6 +22,7 @@
                   colorize
                   dc
                   draw-pict
+                  ellipse
                   filled-ellipse
                   filled-rectangle
                   hb-append
@@ -32,6 +33,7 @@
                   pict-width
                   scale
                   text)
+         (only-in pict [rectangle pict-rectangle])
          (only-in racket/draw
                   dc-path%
                   make-brush
@@ -235,12 +237,17 @@
     (camera-length->pixels camera
                            (* diameter (vec2-y scale))))
   (define shape
-    (filled-ellipse width
-                    height
-                    #:color (draw-color-spec (circle-visual-fill circle))
-                    #:border-color
-                    (draw-color-spec (circle-visual-stroke circle))
-                    #:border-width (circle-visual-stroke-width circle)))
+    (if (circle-visual-fill circle)
+        (filled-ellipse width
+                        height
+                        #:color (draw-color-spec (circle-visual-fill circle))
+                        #:border-color
+                        (draw-color-spec (circle-visual-stroke circle))
+                        #:border-width (circle-visual-stroke-width circle))
+        (ellipse width
+                 height
+                 #:border-color (draw-color-spec (circle-visual-stroke circle))
+                 #:border-width (circle-visual-stroke-width circle))))
   (if (or (zero? (visual-rotation circle))
           (= (vec2-x scale) (vec2-y scale)))
       shape
@@ -266,14 +273,21 @@
      (* (rectangle-visual-height rectangle)
         (vec2-y scale))))
   (define shape
-    (filled-rectangle width
-                      height
-                      #:color
-                      (draw-color-spec (rectangle-visual-fill rectangle))
-                      #:border-color
-                      (draw-color-spec (rectangle-visual-stroke rectangle))
-                      #:border-width
-                      (rectangle-visual-stroke-width rectangle)))
+    (if (rectangle-visual-fill rectangle)
+        (filled-rectangle width
+                          height
+                          #:color
+                          (draw-color-spec (rectangle-visual-fill rectangle))
+                          #:border-color
+                          (draw-color-spec (rectangle-visual-stroke rectangle))
+                          #:border-width
+                          (rectangle-visual-stroke-width rectangle))
+        (pict-rectangle width
+                        height
+                        #:border-color
+                        (draw-color-spec (rectangle-visual-stroke rectangle))
+                        #:border-width
+                        (rectangle-visual-stroke-width rectangle))))
   (rotate-pict-if-needed shape
                          (visual-rotation rectangle)))
 

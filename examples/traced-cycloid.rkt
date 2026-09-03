@@ -19,7 +19,9 @@
   (define wheel
     (derived-visual
      (circle #:id 'wheel #:center (vec2 start-x 1) #:radius 1
-             #:fill "white" #:stroke "royalblue" #:stroke-width 3)
+             ;; An outline keeps the ground and previously traced cycloid
+             ;; visible as the wheel rolls over them.
+             #:fill #f #:stroke "royalblue" #:stroke-width 3)
      (lambda (context template)
        (visual-with-position
         template
