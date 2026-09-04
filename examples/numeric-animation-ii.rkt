@@ -28,7 +28,7 @@
 
   (define title
     (plain-text "SCENE-EF: numeric animation II"
-                #:id 'title #:center (vec2 0 18/5)
+                #:id 'title #:center (vec2 0 17/5)
                 #:font-size 2/5 #:font-family 'swiss #:font-weight 'bold
                 #:color "navy"))
   (define explanation

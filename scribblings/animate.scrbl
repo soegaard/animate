@@ -7,7 +7,9 @@
                      racket/generic
                      racket/math
                      (only-in pict pict?)
-                     "../main.rkt"))
+                     "../main.rkt"
+                     "../authoring.rkt"
+                     "../preview.rkt"))
 
 @title[#:tag "animate"]{Visual Animation}
 
@@ -16,7 +18,7 @@
 Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
 semantic scene data separate from Pict rendering and file output.
 
- The public API in this manual is version @tt{1.6.0}. This is still a
+ The public API in this manual is version @tt{1.7.0}. This is still a
 prototype, so later versions may change names or behavior.
 
 @table-of-contents[]
@@ -30,6 +32,124 @@ compiled artifacts, and Finder metadata. The optional Rhombus examples remain
 in the source archive for reference, but @tt{compile-omit-paths} keeps them
 out of normal Racket compilation. This manual is source-only: the package does
 not register or build it automatically during installation.
+
+@section[#:tag "interactive-preview"]{Interactive Preview and Authoring}
+
+The optional @racketmodname[animate/preview] module provides a persistent,
+interactive draft view. Requiring @racketmodname[animate] remains headless: it
+does not initialize @racketmodname[racket/gui] or require a display. On macOS,
+start an example with the Racket installation's @tt{gracket} executable, not
+the non-GUI @tt{racket} executable. The @tt{raco animate preview} command
+relaunches itself with @tt{gracket} when necessary.
+
+@racketmod[
+racket/base
+
+(require animate
+         animate/authoring
+         animate/preview)
+
+(define-scene-program derivative-video
+  #:initial (make-scene)
+
+  (scene-block setup (scene)
+    ;; add axes, a graph, and a secant
+    ...)
+
+  (scene-block move-secant (scene)
+    ;; animate h towards zero
+    ...)
+
+  (scene-block tangent (scene)
+    ;; replace the secant and introduce the limit
+    ...))
+
+(module+ main
+  (open-program-preview
+   "derivative.rkt" 'derivative-video
+   #:start-block 'move-secant
+   #:repl? #t))
+]
+
+@racket[define-scene-program] creates an immutable program of explicitly named
+@racket[scene-block] values. A block receives the preceding immutable Scene and
+must return a Scene. Compilation records both its input and output checkpoint;
+it can therefore rebuild a changed suffix without replaying a verified,
+unchanged prefix. The source macro records a source location for each block and
+the loader hashes the corresponding source range, declared assets, and ambient
+source. It deliberately rebuilds the whole program when it cannot prove that a
+prefix is safe to reuse.
+
+The returned preview session can seek an exact frame or time, play a range,
+jump to an authored section or source block, refresh its cache, and close:
+
+@racketblock[
+(preview-seek-frame! preview 90)
+(preview-step! preview -1)
+(preview-play-range! preview 3 7)
+(preview-jump-to-block! preview 'tangent)
+(preview-refresh! preview)
+]
+
+Preview and production share the normal sampled-scene-to-Pict-to-bitmap path.
+@racket[#:pixel-scale] changes only draft bitmap resolution; it does not choose
+different geometry, formula, easing, or numeric algorithms. Frame samples are
+identified by their exact frame index and time samples by their exact requested
+time, so viewing frames out of order does not change their pixels. The preview
+cache is bounded by byte count, and the controller discards late results from an
+old source or render generation.
+
+Saving a source file loads it in a fresh namespace and atomically installs the
+new immutable compiled Scene only if every changed block succeeds. Errors are
+reported in the preview while the last good Scene remains usable. Optional
+automatic reload uses a debounced portable watcher; explicit
+@racket[preview-reload!] is always available. The command-line entry point is:
+
+@commandline{raco animate preview @litchar{[}--fps @italic{n}@litchar{]}
+  @litchar{[}--block @italic{name}@litchar{]} @italic{file.rkt}
+  @italic{binding}}
+
+@subsection{Scratch Experiments, REPL, and Inspection}
+
+An authoring transaction first builds a candidate immutable Scene, asks the
+preview controller to install it, and only then records an undoable snapshot.
+The display time is separate from the edit base: ordinary seeking is never an
+edit, while @racket[preview-play-request!] and @racket[preview-wait!] append to
+the current scratch timeline. Undo, redo, named checkpoints, and reset work on
+immutable snapshots. Reloading source intentionally discards scratch history
+rather than trying to replay an experiment against potentially different code.
+
+@racketblock[
+(define repl (open-preview-repl! preview))
+(preview-repl-evaluate-string! repl "(checkpoint! 'before-emphasis)")
+(preview-repl-evaluate-string! repl "(wait! 1/2)")
+(preview-repl-evaluate-string! repl "(undo!)")
+(preview-repl-evaluate-string! repl "(select! '(diagram secant delta-y))")
+(preview-repl-evaluate-string! repl "(inspect)")
+]
+
+The REPL evaluates in a fresh namespace attached to the current source module.
+Its editing names delegate through the same transaction/controller boundary as
+the GUI; it receives no mutable Scene or widget state. After reload it is
+refreshed to the new module generation.
+
+The inspector exposes stable nested Visual paths, composed transforms, sampled
+style and opacity, layout boxes, drawing order, and the block covering the
+current display time. Click selection cycles overlapping candidates and draws a
+preview-only overlay; the overlay never enters a final render. In the GUI,
+@tt{Copy selected path} copies the selected symbolic path. Use
+@racket[preview-open-selection-source!] or
+@racket[preview-open-current-block-source!] with an editor-opening procedure to
+navigate to the recorded source location.
+
+@bold{Limitations.} The first inspector uses layout boxes for hit testing, so
+thin, rotated, or transparent geometry can be selected near its box rather than
+only on painted pixels. Source navigation is block-granular: generated Visuals
+inside one block do not yet carry individual expression locations. The GUI is a
+draft workbench, not a live audio monitor; audio timing and final encoding
+remain in the normal rendering workflow. The controller has one renderer worker
+for deterministic Pict/racket-draw operation, so a blocking custom renderer can
+delay shutdown.
 
 @section[#:tag "quick-start"]{Quick Start}
 

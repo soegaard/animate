@@ -63,7 +63,7 @@
                  #:id 'title #:center origin
                  #:font-size 2/5 #:font-family 'swiss #:font-weight 'bold
                  #:color "navy")
-     #:camera main-camera #:at (vec2 0 18/5)))
+     #:camera main-camera #:at (vec2 0 17/5)))
   (define explanation
     (fixed-in-frame
      (plain-text "One rounded close-up follows the rover; one overview pans across every world layer."

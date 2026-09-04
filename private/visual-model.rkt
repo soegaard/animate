@@ -31,6 +31,10 @@
          visual-path?
          visual-target-id
          visual-target-path
+         gen:visual-container
+         visual-container?
+         visual-child-entries
+         (struct-out visual-child)
          gen:affine-visual
          affine-visual?
          visual-transform
@@ -100,6 +104,26 @@
   (visual-id visual)
   (visual-position visual)
   (visual-with-position visual position))
+
+;; A read-only structural protocol for tools such as the authoring inspector.
+;; It deliberately says nothing about rendering or mutation: child identity and
+;; ordering are semantic information already present in composite Visuals.
+(define-generics visual-container
+  (visual-child-entries visual-container))
+
+(struct visual-child (id visual)
+  #:transparent
+  #:guard
+  (lambda (id visual who)
+    (unless (symbol? id)
+      (raise-argument-error who "symbol?" id))
+    (unless (visual? visual)
+      (raise-argument-error who "visual?" visual))
+    (unless (eq? id (visual-id visual))
+      (raise-arguments-error who "a child ID matching visual-id"
+                             "id" id
+                             "visual-id" (visual-id visual)))
+    (values id visual)))
 
 ; visual-transform : affine-visual? -> affine-transform?
 ;;   Returns the decomposed affine transform of visual.

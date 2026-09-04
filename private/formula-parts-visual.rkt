@@ -170,8 +170,12 @@
       assembly
       [group
        (generic-visual-with-opacity
-        (formula-assembly-visual-group assembly)
-        opacity)]))])
+       (formula-assembly-visual-group assembly)
+        opacity)]))]
+  #:methods gen:visual-container
+  [(define (visual-child-entries assembly)
+     (for/list ([part (in-list (formula-assembly-visual-parts assembly))])
+       (visual-child (formula-part-name part) (formula-part-formula part))))])
 
 ;; formula-assembly-visual represents one composite formula with named parts.
 ;;  - group  group-visual?          validated composite identity and transform.

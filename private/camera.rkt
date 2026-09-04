@@ -29,7 +29,8 @@
          camera-scale
          camera-world-height
          camera-length->pixels
-         camera-world->pixel)
+         camera-world->pixel
+         camera-pixel->world)
 
 
 ;;;
@@ -127,3 +128,21 @@
       (* scale (- (vec2-x point) (vec2-x center))))
    (- (/ (camera-height camera) 2)
       (* scale (- (vec2-y point) (vec2-y center))))))
+
+; camera-pixel->world : camera? real? real? -> vec2?
+;; Inverts camera-world->pixel exactly in the same pixel coordinate convention:
+;; origin at the upper-left and positive pixel y downward. This belongs in the
+;; pure camera model so hit testing can be renderer-independent.
+(define (camera-pixel->world camera pixel-x pixel-y)
+  (unless (camera? camera)
+    (raise-argument-error 'camera-pixel->world "camera?" camera))
+  (unless (finite-real? pixel-x)
+    (raise-argument-error 'camera-pixel->world "finite real?" pixel-x))
+  (unless (finite-real? pixel-y)
+    (raise-argument-error 'camera-pixel->world "finite real?" pixel-y))
+  (define scale (camera-scale camera))
+  (define center (camera-center camera))
+  (vec2 (+ (vec2-x center)
+           (/ (- pixel-x (/ (camera-width camera) 2)) scale))
+        (- (vec2-y center)
+           (/ (- pixel-y (/ (camera-height camera) 2)) scale))))

@@ -1,9 +1,28 @@
-# animate — SCENE-EF
+# animate — SCENE-EI
 
 > **Work in progress:** this project is under active development and its API may change.
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
+
+SCENE-EG through SCENE-EI turn the library into a persistent, deterministic
+authoring workbench. `animate/preview` is optional and GUI-lazy, so `require
+animate` remains headless. It provides exact frame/time scrubbing, transport,
+section navigation, a byte-bounded draft-frame cache, generation-safe
+asynchronous Pict rendering, and a `raco animate preview` entry point.
+`animate/authoring` supplies `define-scene-program` and `scene-block`: named
+immutable checkpoints support conservative source-range, asset, and ambient
+fingerprint invalidation, fresh-namespace reload, atomic replacement, and
+optional debounced file watching. The preview adds immutable scratch
+transactions, undo/redo/checkpoints, a session-bound Racket REPL, nested Visual
+inspection, approximate hit testing, selection overlays, and block-level source
+navigation.
+
+The first inspector deliberately uses sampled layout boxes rather than painted
+pixel masks; thin or rotated shapes can be selected near their bounds. The
+preview uses the same scene/Pict/bitmap semantics as final rendering, but it is
+not an audio monitor and its single deterministic Pict worker cannot interrupt
+a blocking custom renderer.
 
 SCENE-DK extends the SCENE-CY affine-map layer through ordinary nested Visual
 trees. `linear2` represents a full 2×2 matrix, `affine2` adds translation, and

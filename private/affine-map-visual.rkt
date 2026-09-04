@@ -89,6 +89,14 @@
      (unless (opacity? opacity)
        (raise-argument-error 'visual-with-opacity "opacity?" opacity))
      (struct-copy affine-map-visual visual [opacity opacity]))]
+  #:methods gen:visual-container
+  [(define (visual-child-entries visual)
+     ;; The wrapper is transparent in the semantic path model: its mapped
+     ;; content retains the same stable descendant IDs as the unwrapped tree.
+     (define content (affine-map-visual-content visual))
+     (if (visual-container? content)
+         (visual-child-entries content)
+         '()))]
   #:methods gen:stroke-width-visual
   [(define/generic generic-visual-stroke-width visual-stroke-width)
    (define/generic generic-visual-with-stroke-width visual-with-stroke-width)

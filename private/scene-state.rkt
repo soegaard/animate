@@ -42,6 +42,7 @@
          scene-state-visuals-in-drawing-order
          scene-state-resolved-ref
          scene-state-resolved-world-ref
+         scene-state-resolved-world-refs
          scene-state-parent-affine-map
          scene-state-resolved-visuals-in-drawing-order
          scene-state-value-has?
@@ -267,7 +268,7 @@
 
 
 
-; make-scene-state-resolver : scene-state? -> (-> symbol? visual?)
+; make-scene-state-resolver : scene-state? -> (values local-resolver world-resolver)
 ;;   Creates one local dependency resolver for a sampled immutable state.
 ;;   Resolution is memoized only for this traversal. The stored scene state and
 ;;   derived definitions are never mutated or replaced by concrete results.
@@ -381,7 +382,7 @@
      (cdr path)
      path))
 
-  resolve-target)
+  (values resolve-target resolve-target-world))
 
 ; scene-state-resolved-ref : scene-state? (or/c visual? symbol? visual-path?) -> visual?
 ;;   Resolves target against the state. Ordinary Visuals are returned unchanged;
@@ -389,7 +390,9 @@
 (define (scene-state-resolved-ref state target)
   (unless (scene-state? state)
     (raise-argument-error 'scene-state-resolved-ref "scene-state?" state))
-  ((make-scene-state-resolver state) target))
+  (let-values ([(resolve-target _resolve-target-world)
+                (make-scene-state-resolver state)])
+    (resolve-target target)))
 
 ; scene-state-resolved-world-ref : scene-state?
 ;                                  (or/c visual? symbol? visual-path?) -> visual?
@@ -401,12 +404,22 @@
     (raise-argument-error 'scene-state-resolved-world-ref "scene-state?" state))
   (define path
     (visual-target-path target 'scene-state-resolved-world-ref))
-  (define resolve-id
-    (make-scene-state-resolver state))
-  (resolved-world-descendant-ref
-   (resolve-id (car path))
-   (cdr path)
-   path))
+  (let-values ([(_resolve-target resolve-target-world)
+                (make-scene-state-resolver state)])
+    (resolve-target-world path)))
+
+;; Resolves several world paths through one memoized sampled-state resolver.
+;; Inspection tools call this rather than repeatedly resolving derived Visuals
+;; one target at a time.
+(define (scene-state-resolved-world-refs state targets)
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-state-resolved-world-refs "scene-state?" state))
+  (unless (list? targets)
+    (raise-argument-error 'scene-state-resolved-world-refs "list?" targets))
+  (let-values ([(_resolve-target resolve-target-world)
+                (make-scene-state-resolver state)])
+    (for/list ([target (in-list targets)])
+      (resolve-target-world target))))
 
 ; resolved-world-descendant-ref : visual? (listof symbol?) visual-path? -> visual?
 ;;   Descends through a Visual tree after each parent has resolved the next
@@ -505,7 +518,7 @@
      'scene-state-resolved-visuals-in-drawing-order
      "scene-state?"
      state))
-  (define resolve-target
+  (define-values (resolve-target _resolve-target-world)
     (make-scene-state-resolver state))
   (for/list ([id (in-list (scene-state-drawing-order state))])
     (resolve-target id)))

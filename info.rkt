@@ -22,7 +22,13 @@
 ; deps : (listof string?)
 ;;   Lists runtime package dependencies.
 (define deps
-  '("base" "draw-lib" "latex-pict" "pict-lib" ("svg" #:version "0.3")))
+  '("base" "draw-lib" "gui-lib" "latex-pict" "pict-lib" ("svg" #:version "0.3")))
+
+; raco-commands : (listof raco-command-spec?)
+;; GUI code stays out of main.rkt; this command loads preview.rkt only when an
+;; author explicitly invokes `raco animate preview`.
+(define raco-commands
+  '(("animate" animate/preview-cli "open an interactive animate source preview" #f)))
 
 ; build-deps : (listof string?)
 ;;   Lists dependencies needed for tests and examples.
@@ -48,11 +54,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-EF: immutable numeric animation and displays")
+  "SCENE-EI: deterministic interactive animation authoring workbench")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "1.6.0")
+(define version "1.7.0")
 
 ; license : symbol?
 ;;   Declares the package license.

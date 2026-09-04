@@ -293,6 +293,7 @@
  camera-world-height
  camera-length->pixels
  camera-world->pixel
+ camera-pixel->world
  camera-pan-to
  camera-pan-to-request?
  camera-pan-by
@@ -360,6 +361,10 @@
  visual-with-position
  visual-path?
  visual-target-path
+ gen:visual-container
+ visual-container?
+ visual-child-entries
+ (struct-out visual-child)
  gen:affine-visual
  affine-visual?
  visual-transform

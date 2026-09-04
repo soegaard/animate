@@ -16,7 +16,8 @@
 ;;;
 
 ;; Imports
-(require "affine-map-visual.rkt"
+(require (only-in racket/generic define/generic)
+         "affine-map-visual.rkt"
          "affine-transform.rkt"
          "frame-space.rkt"
          "geometry.rkt"
@@ -61,7 +62,11 @@
      (group-visual-opacity group))
    (define (visual-with-opacity group opacity)
      (check-group-opacity 'visual-with-opacity opacity)
-     (struct-copy group-visual group [opacity opacity]))])
+     (struct-copy group-visual group [opacity opacity]))]
+  #:methods gen:visual-container
+  [(define (visual-child-entries group)
+     (for/list ([child (in-list (group-visual-children group))])
+       (visual-child (visual-id child) child)))])
 
 ;; group-visual represents one semantic composite Visual.
 ;;  - id         symbol?                  stable group identity.
