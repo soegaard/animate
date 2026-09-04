@@ -37,4 +37,4 @@
 
 (module+ main
   (void
-   (open-program-preview source-path 'hot-reload-demo #:title "animate: hot reload")))
+   (open-program-preview source-path 'hot-reload-demo #:title "Animate: hot reload")))

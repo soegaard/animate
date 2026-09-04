@@ -56,13 +56,40 @@
                              #:section [section #f]
                              #:camera [camera #f]
                              #:renderers [renderers default-pict-renderers]
-                             #:pixel-scale [pixel-scale 1/2]
+                             #:pixel-scale [pixel-scale 1]
                              #:cache-megabytes [cache-megabytes 128]
                              #:prefetch [prefetch 3]
-                             #:title [title "animate preview"])
+                             #:title [title "Animate"])
   (define frame-count
     (scene-frame-count (preview-source-scene source) #:fps fps))
   (define controller-box (box #f))
+  (define current-pixel-scale (box pixel-scale))
+  (define pixel-scale-items-box (box '()))
+  (define pixel-scale-options
+    (list (cons "50%" 1/2)
+          (cons "100%" 1)
+          (cons "200%" 2)))
+  (define (update-pixel-scale-checkmarks!)
+    (for ([item (in-list (unbox pixel-scale-items-box))]
+          [option (in-list pixel-scale-options)])
+      (send item check (= (cdr option) (unbox current-pixel-scale)))))
+  (define (set-preview-pixel-scale! scale)
+    (define session (unbox controller-box))
+    (cond
+      [(= scale (unbox current-pixel-scale))
+       ;; A checkable menu item toggles before its callback runs. Restore the
+       ;; active radio-style choice when it was clicked again.
+       (update-pixel-scale-checkmarks!)]
+      [else
+       (set-box! current-pixel-scale scale)
+       (update-pixel-scale-checkmarks!)
+       (when session
+         ;; Replacing the immutable render spec atomically invalidates the
+         ;; bitmap cache and requests the same semantic frame at the new scale.
+         (preview-set-render-spec!
+          session
+          (make-preview-render-spec #:fps fps #:camera camera #:renderers renderers
+                                    #:pixel-scale scale)))]))
   ;; Program previews currently expose named blocks rather than authored
   ;; timeline sections.  Keep the generic section controls inert in that
   ;; case, instead of sending an invalid jump command to the controller.
@@ -82,6 +109,19 @@
      [label title]
      [width 900]
      [height 650]))
+  (define menu-bar (new menu-bar% [parent frame]))
+  (define animate-menu (new menu% [parent menu-bar] [label "Animate"]))
+  (define pixel-scale-menu
+    (new menu% [parent animate-menu] [label "Pixel scale"] ))
+  (define pixel-scale-items
+    (for/list ([option (in-list pixel-scale-options)])
+      (new checkable-menu-item%
+           [parent pixel-scale-menu]
+           [label (car option)]
+           [callback (lambda (_item _event)
+                       (set-preview-pixel-scale! (cdr option)))])))
+  (set-box! pixel-scale-items-box pixel-scale-items)
+  (update-pixel-scale-checkmarks!)
   (define outer (new vertical-panel% [parent frame] [alignment '(center center)]))
   (define bitmap-box (box #f))
   (define white (make-object color% 255 255 255))
@@ -100,8 +140,8 @@
          (send dc clear)
          (define bitmap (unbox bitmap-box))
          (when bitmap
-           ;; Initial previews use draft-sized bitmaps.  Letterboxing without a
-           ;; re-render on every resize keeps interaction responsive.
+           ;; Native-resolution previews are letterboxed without a re-render
+           ;; on every resize, keeping interaction responsive.
            (define bitmap-width (send bitmap get-width))
            (define bitmap-height (send bitmap get-height))
            (define scale

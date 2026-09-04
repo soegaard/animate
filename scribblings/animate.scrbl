@@ -92,7 +92,8 @@ jump to an authored section or source block, refresh its cache, and close:
 ]
 
 Preview and production share the normal sampled-scene-to-Pict-to-bitmap path.
-@racket[#:pixel-scale] changes only draft bitmap resolution; it does not choose
+@racket[#:pixel-scale] changes only preview bitmap resolution (the default is
+@racket[1]); it does not choose
 different geometry, formula, easing, or numeric algorithms. Frame samples are
 identified by their exact frame index and time samples by their exact requested
 time, so viewing frames out of order does not change their pixels. The preview

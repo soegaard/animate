@@ -58,7 +58,7 @@
                                          #:section [section #f]
                                          #:camera [camera #f]
                                          #:renderers [renderers default-pict-renderers]
-                                         #:pixel-scale [pixel-scale 1/2]
+                                         #:pixel-scale [pixel-scale 1]
                                          #:supersample [supersample 1]
                                          #:cache-megabytes [cache-megabytes 128]
                                          #:prefetch [prefetch 3]

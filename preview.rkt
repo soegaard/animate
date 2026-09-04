@@ -62,10 +62,10 @@
                             #:section [section #f]
                             #:camera [camera #f]
                             #:renderers [renderers default-pict-renderers]
-                            #:pixel-scale [pixel-scale 1/2]
+                            #:pixel-scale [pixel-scale 1]
                             #:cache-megabytes [cache-megabytes 128]
                             #:prefetch [prefetch 3]
-                            #:title [title "animate preview"])
+                            #:title [title "Animate"])
   (ensure-preview-gui 'open-scene-preview)
   (define session
     ((dynamic-require preview-window-path 'open-preview-window)
@@ -112,12 +112,12 @@
                               #:section [section #f]
                               #:camera [camera #f]
                               #:renderers [renderers default-pict-renderers]
-                              #:pixel-scale [pixel-scale 1/2]
+                              #:pixel-scale [pixel-scale 1]
                               #:cache-megabytes [cache-megabytes 128]
                               #:prefetch [prefetch 3]
                               #:repl? [repl? #f]
                               #:open-source [open-source #f]
-                              #:title [title "animate preview"])
+                              #:title [title "Animate"])
   (ensure-preview-gui 'open-program-preview)
   (unless (or (not start-block) (symbol? start-block))
     (raise-argument-error 'open-program-preview "(or/c #f symbol?)" start-block))

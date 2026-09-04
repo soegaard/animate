@@ -10,4 +10,4 @@
 (module+ main
   (void
    (open-scene-preview (make-demo-timeline)
-                       #:title "animate: authored sections")))
+                       #:title "Animate: authored sections")))

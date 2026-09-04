@@ -31,7 +31,7 @@
 
 (module+ main
   (define preview
-    (open-program-preview source-path 'inspector-demo #:title "animate: inspector"))
+    (open-program-preview source-path 'inspector-demo #:title "Animate: inspector"))
   (define repl (open-preview-repl! preview))
   (displayln "Preview REPL ready. Try (inspect), (checkpoint! 'before-experiment), or (reload!).")
   repl)
