@@ -6,9 +6,9 @@
 
 ;; Graphs are regular immutable group trees. Vertices are ordinary groups that
 ;; can be targeted and animated at `(graph-id vertices vertex-id)`. Edges are
-;; pure derived children under `(graph-id edges edge-id)`, so their concrete
-;; geometry is rebuilt from the sampled endpoint vertices rather than from
-;; mutable updater state or previous rendered frames.
+;; explicit relation children under `(graph-id edges edge-id)`, so their
+;; concrete geometry is rebuilt from declared sampled endpoint vertices rather
+;; than from mutable updater state or previous rendered frames.
 
 
 ;;;
@@ -19,11 +19,13 @@
          racket/math
          "affine-transform.rkt"
          "arrow-visual.rkt"
-         "derived-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "path-geometry.rkt"
          "point-marker-visual.rkt"
+         "relation-context.rkt"
+         "relation-dependency.rkt"
+         "relation-visual.rkt"
          "text-visual.rkt"
          "visual-model.rkt")
 
@@ -867,18 +869,24 @@
   (define stroke-width
     (or (graph-edge-stroke-width edge)
         (* default-stroke-width (graph-edge-weight edge))))
+  (define dependencies
+    (list (visual-dependency graph-id)
+          (visual-dependency start-path)
+          (visual-dependency end-path)))
   (define (current-endpoints context)
     (values
      (graph-world-point->local
       context graph-id
-      (visual-position (derived-context-visual-ref context start-path)))
+      (visual-position (relation-context-visual-ref context start-path)))
      (graph-world-point->local
       context graph-id
-      (visual-position (derived-context-visual-ref context end-path)))))
+      (visual-position (relation-context-visual-ref context end-path)))))
   (define edge-line
-    (derived-visual
+    (relation-visual
      (live-edge-visual (vec2 -1/2 0) (vec2 1/2 0) 'line directed?
                        vertex-size route stroke stroke-width)
+     #:depends-on dependencies
+     #:structure 'fixed
      (lambda (context _template)
        (define-values (start end) (current-endpoints context))
        (live-edge-visual start end 'line directed? vertex-size route
@@ -886,11 +894,12 @@
   (define children
     (if (graph-edge-label edge)
         (list edge-line
-              (derived-visual
+              (relation-visual
                (plain-text (graph-edge-label edge)
                            #:id 'label #:center origin
                            #:font-size label-size #:font-family 'swiss
                            #:color label-color)
+               #:depends-on dependencies
                (lambda (context template)
                  (define-values (start end) (current-endpoints context))
                  (visual-with-position
@@ -1183,7 +1192,7 @@
 ;; complete graph apply exactly once to both vertices and live edges.
 (define (graph-world-point->local context graph-id point)
   (define root
-    (derived-context-visual-ref context graph-id))
+    (relation-context-visual-ref context graph-id))
   (unless (affine-visual? root)
     (raise-arguments-error
      'graph "an affine graph root" "graph ID" graph-id "root" root))

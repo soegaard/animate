@@ -31,9 +31,9 @@
    (group-visual?
     (curved-arrow-between origin (vec2 2 0) #:id 'literal-curved-arrow)))
 
-  ;; Centre references and point-valued parameters remain regular pure derived
-  ;; Visuals. Sampling a later state rebuilds the concrete annotation from the
-  ;; new values rather than moving a path snapshot.
+  ;; Centre references and point-valued parameters are semantic relations.
+  ;; Sampling a later state rebuilds the concrete annotation from the new
+  ;; values rather than moving a path snapshot.
   (define vertex
     (parameter 'vertex origin))
   (define parameter-angle
@@ -44,9 +44,14 @@
                          #:id 'parameter-right-angle #:size 1/2))
   (define parameter-arrow
     (curved-arrow-between vertex (vec2 2 1) #:id 'parameter-arrow))
-  (check-true (derived-visual? parameter-angle))
-  (check-true (derived-visual? parameter-right-angle))
-  (check-true (derived-visual? parameter-arrow))
+  (check-true (relation-visual? parameter-angle))
+  (check-true (relation-visual? parameter-right-angle))
+  (check-true (relation-visual? parameter-arrow))
+  (check-eq? (relation-visual-phase parameter-angle) 'semantic)
+  ;; Annotation builders are generic author procedures, so their cache policy
+  ;; is honestly inspectable as disabled rather than pretending to fingerprint
+  ;; a closure.
+  (check-eq? (relation-visual-cacheability parameter-angle) 'disabled)
   (define parameter-scene
     (scene-play
      (scene-add
@@ -66,9 +71,9 @@
    (group-visual?
     (scene-visual-at parameter-scene 'parameter-arrow 1)))
 
-  ;; Non-centre anchors wait for renderer measurement. A live brace label and
-  ;; curved arrow can share this protocol and remain renderable after the
-  ;; target circles move and scale in the same clip.
+  ;; Non-centre anchors are layout relations. A live brace label and curved
+  ;; arrow share that protocol and remain renderable after target circles move
+  ;; and scale in the same clip.
   (define left
     (circle #:id 'left #:center (vec2 -2 0) #:radius 1/3
             #:fill "aliceblue" #:stroke "navy" #:stroke-width 2))
@@ -83,10 +88,10 @@
     (curved-arrow-between (anchor-of 'left 'top)
                           (anchor-of 'right 'top)
                           #:id 'anchored-arrow #:angle -1))
-  (check-true (dynamic-endpoint-visual? anchored-brace))
-  (check-true (dynamic-endpoint-visual? anchored-arrow))
-  (check-true (dynamic-endpoint-visual-has-renderer-anchors? anchored-brace))
-  (check-true (dynamic-endpoint-visual-has-renderer-anchors? anchored-arrow))
+  (check-true (relation-visual? anchored-brace))
+  (check-true (relation-visual? anchored-arrow))
+  (check-eq? (relation-visual-phase anchored-brace) 'layout)
+  (check-eq? (relation-visual-phase anchored-arrow) 'layout)
   (define anchored-scene
     (scene-play
      (scene-add (make-scene #:camera camera)
@@ -98,6 +103,16 @@
   (check-not-false (pict->bitmap (scene->pict anchored-scene 0) 'aligned))
   (check-not-false (pict->bitmap (scene->pict anchored-scene 1) 'aligned))
   (check-not-false (pict->bitmap (scene->pict anchored-scene 2) 'aligned))
+
+  ;; The relation envelope remains independent of the live geometry. A style
+  ;; fade applies after the current layout-anchor calculation, not by mutating
+  ;; a previously rendered annotation.
+  (define faded-arrow
+    (scene-play anchored-scene (fade-to 'anchored-arrow 1/2) #:duration 1))
+  (check-=
+   (visual-opacity (scene-visual-at faded-arrow 'anchored-arrow 3))
+   1/2
+   1e-9)
 
   ;; Targeting an annotation with one of its own endpoints would make the
   ;; dependency graph cyclic, and is rejected at construction time.

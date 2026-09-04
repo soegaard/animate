@@ -14,11 +14,11 @@
 (provide make-demo-scene)
 
 (define (equals-position assembly)
-  (for/first ([part (in-list (formula-assembly-visual-parts assembly))]
-              #:when (string=? (formula-visual-source
-                                 (formula-part-formula part))
-                               "="))
-    (visual-position (formula-part-formula part))))
+  (define selection (formula-source-select-one assembly "="))
+  (define part-name (caar (visual-selection-paths selection)))
+  (visual-position
+   (formula-part-formula
+    (formula-assembly-visual-ref assembly part-name))))
 
 ;; Shift a completed TeX layout as a rigid unit so that every stage shares one
 ;; equals-sign anchor. Its independently rendered formula fragments can then
@@ -34,27 +34,39 @@
        (formula-part-formula part)
        (vec2+ (visual-position (formula-part-formula part)) shift))))))
 
+(define (equation source parts)
+  (math-tex
+   #:id 'equation
+   #:font-size 3/5
+   #:source-map 'declared
+   #:parts parts
+   source))
+
 (define (make-demo-scene)
   (define start
-    (math-tex
-     #:id 'equation
-     #:font-size 3/5
-     "{{ \\frac{6x}{3} }} = {{ 4 }}"))
+    (equation
+     "\\frac{6x}{3} = 4"
+     (list (source-part 'left "\\frac{6x}{3}")
+           (source-part 'equals "=")
+           (source-part 'right "4"))))
   (define simplified-left-layout
-    (math-tex
-     #:id 'equation
-     #:font-size 3/5
-     "{{ 2x }} = {{ 4 }}"))
+    (equation
+     "2x = 4"
+     (list (source-part 'left "2x")
+           (source-part 'equals "=")
+           (source-part 'right "4"))))
   (define divided-layout
-    (math-tex
-     #:id 'equation
-     #:font-size 3/5
-     "{{ \\frac{2x}{2} }} = {{ \\frac{4}{2} }}"))
+    (equation
+     "\\frac{2x}{2} = \\frac{4}{2}"
+     (list (source-part 'left "\\frac{2x}{2}")
+           (source-part 'equals "=")
+           (source-part 'right "\\frac{4}{2}"))))
   (define solution-layout
-    (math-tex
-     #:id 'equation
-     #:font-size 3/5
-     "{{ x }} = {{ 2 }}"))
+    (equation
+     "x = 2"
+     (list (source-part 'left "x")
+           (source-part 'equals "=")
+           (source-part 'right "2"))))
   (define fixed-equals-position (equals-position start))
   (define simplified-left
     (formula-with-equals-at simplified-left-layout fixed-equals-position))
@@ -101,9 +113,9 @@
     (scene-play
      before-simplifying
      ;; The fraction reduces to 2x; = and 4 remain exact automatic matches.
-     (transform-matching-tex start
-                             simplified-left
-                             #:mismatch-mode 'fade-transform)
+     (transform-matching-strings start
+                                 simplified-left
+                                 #:mismatch-mode 'fade-transform)
      #:duration 2))
   (define before-dividing
     (scene-wait left-simplified 1))
@@ -111,9 +123,9 @@
     (scene-play
      before-dividing
      ;; Introduce the same division on both sides of the equation.
-     (transform-matching-tex simplified-left
-                             divided
-                             #:mismatch-mode 'fade-transform)
+     (transform-matching-strings simplified-left
+                                 divided
+                                 #:mismatch-mode 'fade-transform)
      #:duration 2))
   (define before-finishing
     (scene-wait divided-by-two 1))
@@ -121,9 +133,9 @@
     (scene-play
      before-finishing
      ;; Both fractions now reduce to their final values.
-     (transform-matching-tex divided
-                             solution
-                             #:mismatch-mode 'fade-transform)
+     (transform-matching-strings divided
+                                 solution
+                                 #:mismatch-mode 'fade-transform)
      #:duration 2))
   (scene-wait solved 1))
 

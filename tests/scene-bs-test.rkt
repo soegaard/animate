@@ -10,16 +10,26 @@
 
 (require (only-in racket/math pi)
          rackunit
+         racket/string
          (only-in pict pict?)
          "../main.rkt")
 
 (define (formula-for-source assembly source)
   (formula-part-formula
    (for/first ([part (in-list (formula-assembly-visual-parts assembly))]
-               #:when (string=? (formula-visual-source
-                                 (formula-part-formula part))
+               #:when (string=? (string-trim
+                                 (formula-visual-source
+                                  (formula-part-formula part)))
                                 source))
      part)))
+
+(define (source-mapped-equation id source parts)
+  (math-tex
+   #:id id
+   #:font-size 2/5
+   #:source-map 'declared
+   #:parts parts
+   source))
 
 (module+ test
   (define source
@@ -109,87 +119,94 @@
      destination
      #:matches (list (formula-part-match 'plus 'minus)))))
 
-  ;; `math-tex` accepts the familiar Manim double-brace notation, but keeps
-  ;; one complete TeX layout for the fragment geometry.
+  ;; Source-mapped `math-tex` keeps one complete TeX layout while the author
+  ;; selects formula material by its source rather than generated child IDs.
   (define manim-source
-    (math-tex
-     #:id 'manim-equation
-     #:font-size 2/5
-     "{{ a^2 }} + {{ b^2 }} = {{ c^2 }}"))
+    (source-mapped-equation
+     'manim-equation
+     "a^2 + b^2 = c^2"
+     (list (source-part 'a-square "a^2")
+           (source-part 'plus "+")
+           (source-part 'b-square "b^2")
+           (source-part 'equals "=")
+           (source-part 'c-square "c^2"))))
   (define manim-destination
-    (math-tex
-     #:id 'manim-equation
-     #:font-size 2/5
-     "{{ b^2 }} = {{ c^2 }} - {{ a^2 }}"))
+    (source-mapped-equation
+     'manim-equation
+     "b^2 = c^2 - a^2"
+     (list (source-part 'b-square "b^2")
+           (source-part 'equals "=")
+           (source-part 'c-square "c^2")
+           (source-part 'minus "-")
+           (source-part 'a-square "a^2"))))
   (check-equal?
    (formula-assembly-visual-part-names manim-source)
-   '(math-tex-part-0
-     math-tex-part-1
-     math-tex-part-2
-     math-tex-part-3
-     math-tex-part-4))
+   '(a-square plus b-square equals c-square))
   (check-equal?
    (map (lambda (part)
-          (formula-visual-source (formula-part-formula part)))
+          (string-trim (formula-visual-source (formula-part-formula part))))
         (formula-assembly-visual-parts manim-source))
    '("a^2" "+" "b^2" "=" "c^2"))
 
   (define manim-animated
     (scene-play
      (scene-add (make-scene) manim-source)
-     (transform-matching-tex manim-source manim-destination)
+     (transform-matching-strings manim-source manim-destination)
      #:duration 2))
   (check-equal?
    (map (lambda (part)
-          (formula-visual-source (formula-part-formula part)))
+          (string-trim (formula-visual-source (formula-part-formula part))))
         (formula-assembly-visual-parts
          (scene-state-ref (scene-current-state manim-animated)
                           'manim-equation)))
    '("b^2" "=" "c^2" "-" "a^2"))
   (check-true (pict? (scene->pict manim-animated 1)))
 
-  ;; A selected TeX pair can use an arc without bending every matched term.
+  ;; A selected source pair can use an arc without bending every matched term.
   ;; Both cross-fade layers occupy the same curved position at the midpoint.
   (define arced-manim
     (scene-play
      (scene-add (make-scene) manim-source)
-     (transform-matching-tex
+     (transform-matching-strings
       manim-source
       manim-destination
-      #:key-map (hash "+" "-")
-      #:path-map
-      (hash (cons "+" "-")
-            (formula-arc #:angle (/ pi 2))))
+      #:key-map
+      (list
+       (string-match "+" "-" #:route (formula-arc #:angle (/ pi 2)))))
      #:duration 2))
   (define arced-midpoint
     (scene-state-ref (scene-sample arced-manim 1) 'manim-equation))
   (define source-plus
     (formula-part-formula
      (for/first ([part (in-list (formula-assembly-visual-parts manim-source))]
-                 #:when (string=? (formula-visual-source
-                                   (formula-part-formula part))
+                 #:when (string=? (string-trim
+                                   (formula-visual-source
+                                    (formula-part-formula part)))
                                   "+"))
        part)))
   (define destination-minus
     (formula-part-formula
      (for/first
          ([part (in-list (formula-assembly-visual-parts manim-destination))]
-          #:when (string=? (formula-visual-source
-                            (formula-part-formula part))
+          #:when (string=? (string-trim
+                            (formula-visual-source
+                             (formula-part-formula part)))
                            "-"))
        part)))
   (define arced-plus
     (formula-part-formula
      (for/first ([part (in-list (formula-assembly-visual-parts arced-midpoint))]
-                 #:when (string=? (formula-visual-source
-                                   (formula-part-formula part))
+                 #:when (string=? (string-trim
+                                   (formula-visual-source
+                                    (formula-part-formula part)))
                                   "+"))
        part)))
   (define arced-minus
     (formula-part-formula
      (for/first ([part (in-list (formula-assembly-visual-parts arced-midpoint))]
-                 #:when (string=? (formula-visual-source
-                                   (formula-part-formula part))
+                 #:when (string=? (string-trim
+                                   (formula-visual-source
+                                    (formula-part-formula part)))
                                   "-"))
        part)))
   (check-equal? (visual-position arced-plus)
@@ -203,13 +220,13 @@
                       1/2))))
       1/1000))
 
-  ;; A global path arc is the concise Manim-style form. It affects all matched
+  ;; A global path arc is the concise source-matching form. It affects all matched
   ;; fragments, while unpaired source/destination fragments still fade in place.
   (define globally-arced-manim
     (scene-play
      (scene-add (make-scene) manim-source)
-     (transform-matching-tex manim-source manim-destination
-                             #:path-arc (/ pi 2))
+     (transform-matching-strings manim-source manim-destination
+                                 #:path-arc (/ pi 2))
      #:duration 2))
   (define globally-arced-midpoint
     (scene-state-ref (scene-sample globally-arced-manim 1) 'manim-equation))
@@ -232,9 +249,9 @@
   (define mismatch-fade-transformed
     (scene-play
      (scene-add (make-scene) manim-source)
-     (transform-matching-tex manim-source
-                             manim-destination
-                             #:mismatch-mode 'fade-transform)
+     (transform-matching-strings manim-source
+                                 manim-destination
+                                 #:mismatch-mode 'fade-transform)
      #:duration 2))
   (define mismatch-fade-transform-midpoint
     (scene-state-ref (scene-sample mismatch-fade-transformed 1)
@@ -251,30 +268,35 @@
               (visual-position destination-minus)
               1/2))
 
-  ;; `key-map` permits an explicit changed-term pairing without exposing the
+  ;; `key-map` permits an explicit changed-term pairing without exposing
   ;; generated fragment names.
   (define mapped-source
-    (math-tex #:id 'mapped #:font-size 2/5 "{{ x }} = {{ x }}"))
+    (source-mapped-equation
+     'mapped
+     "x = x"
+     (list (source-part 'left-x (source-span 0 1))
+           (source-part 'equals "=")
+           (source-part 'right-x (source-span 4 5)))))
   (define mapped-destination
-    (math-tex #:id 'mapped #:font-size 2/5 "{{ y }} = {{ y }}"))
+    (source-mapped-equation
+     'mapped
+     "y = y"
+     (list (source-part 'left-y (source-span 0 1))
+           (source-part 'equals "=")
+           (source-part 'right-y (source-span 4 5)))))
   (check-true
    (transform-formula-parts-request?
-    (transform-matching-tex mapped-source
-                            mapped-destination
-                            #:key-map (hash "x" "y"))))
+    (transform-matching-strings mapped-source
+                                mapped-destination
+                                #:key-map (list (string-match "x" "y")))))
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (transform-matching-tex manim-source
-                             manim-destination
-                             #:key-map (hash 'x "y"))))
+     (string-match 'x "y")))
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (transform-matching-tex
-      manim-source
-      manim-destination
-      #:path-map (hash (cons "+" "-") 'not-a-formula-arc))))
+     (string-match "+" "-" #:route 'not-a-formula-arc)))
   (check-exn
    exn:fail:contract?
    (lambda ()
@@ -282,13 +304,14 @@
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (transform-matching-tex manim-source
-                             manim-destination
-                             #:mismatch-mode 'transform)))
+     (transform-matching-strings manim-source
+                                 manim-destination
+                                 #:mismatch-mode 'transform)))
 
-  ;; Groups can occur beside ordinary TeX text, just as they can in Manim.
+  ;; Ordinary token mapping gives short source atoms without author-supplied
+  ;; part names.
   (define inline-group
-    (math-tex #:id 'inline-group "x{{ + }}y"))
+    (math-tex #:id 'inline-group "x+y"))
   (check-equal?
    (map (lambda (part)
           (formula-visual-source (formula-part-formula part)))

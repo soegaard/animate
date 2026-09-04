@@ -36,6 +36,9 @@
          "private/formula-part-transition.rkt"
          "private/formula-derivation.rkt"
          "private/formula-parts-visual.rkt"
+         "private/formula-source-map.rkt"
+         "private/formula-source.rkt"
+         "private/formula-string-match.rkt"
          "private/formula-style.rkt"
          "private/formula-visual.rkt"
          "private/tagged-formula.rkt"
@@ -64,10 +67,16 @@
          "private/pointwise-map.rkt"
          "private/png-renderer.rkt"
          "private/relative-layout.rkt"
+         "private/relation-context.rkt"
+         "private/relation-dependency.rkt"
+         "private/relation-resolver.rkt"
+         "private/relation-visual.rkt"
          "private/rate-function.rkt"
          "private/scene-state.rkt"
          "private/scene.rkt"
          "private/shape-catalogue.rkt"
+         "private/source-document.rkt"
+         "private/source-selector.rkt"
          "private/svg-import.rkt"
          "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
@@ -75,6 +84,7 @@
          "private/video-assembly.rkt"
          "private/video-encoder.rkt"
          "private/vector-field.rkt"
+         "private/visual-selection.rkt"
          "private/visual-model.rkt")
 
 ;; Exports
@@ -337,12 +347,6 @@
 
  ;; Live world-space attachments
  attach-to
- layout-attached-visual?
- layout-attached-visual-content
- layout-attached-visual-target
- layout-attached-visual-target-anchor
- layout-attached-visual-self-anchor
- layout-attached-visual-offset
 
  ;; Pure derived Visuals
  derived-visual
@@ -352,6 +356,40 @@
  derived-context-value-ref
  derived-context-visual-has?
  derived-context-visual-ref
+
+ ;; First-class semantic relations (SCENE-EL)
+ relation-visual
+ relation-visual?
+ relation-visual-dependencies
+ relation-visual-phase
+ relation-visual-structure
+ relation-visual-space
+ relation-visual-cache-key
+ relation-visual-cacheability
+ relation-dependency?
+ (struct-out value-dependency)
+ (struct-out visual-dependency)
+ (struct-out anchor-dependency)
+ (struct-out selection-dependency)
+ relation-context?
+ relation-context-relation-id
+ relation-context-declared-dependencies
+ relation-context-used-dependencies
+ relation-context-unused-dependencies
+ relation-context-value-has?
+ relation-context-value-ref
+ relation-context-visual-has?
+ relation-context-visual-ref
+ relation-context-world-ref
+ relation-context-position
+ relation-context-anchor-ref
+ relation-context-layout-box
+ relation-context-selection-box
+ relation-context-selection-anchor
+ scene-relation-dependency-graph
+ scene-validate-relations
+ (struct-out relation-resolution-report)
+ scene-relation-report
 
  ;; Visual model
  gen:visual
@@ -478,6 +516,22 @@
  formula-visual-horizontal-alignment
  formula-visual-vertical-alignment
  formula-visual-with-source
+
+ ;; Source-addressing foundations (SCENE-EJ)
+ (struct-out source-span)
+ (struct-out source-occurrence)
+ (struct-out source-part)
+ source-selector?
+
+ ;; Root-relative semantic selections (SCENE-EJ)
+ (struct-out visual-selection)
+ visual-selection-empty?
+ visual-selection-count
+ visual-selection-union
+ visual-selection-intersection
+ visual-selection-rebase
+ visual-selection-absolute-paths
+
  formula-arc
  formula-arc?
  formula-arc-angle
@@ -506,6 +560,7 @@
  formula-assembly
  formula-assembly-visual?
  formula-assembly-visual-parts
+ formula-assembly-visual-source-map
  formula-assembly-visual-with-parts
  formula-assembly-visual-part-names
  formula-assembly-visual-has-part?
@@ -514,6 +569,39 @@
  formula-style
  formula-color
  formula-color-map
+
+ ;; Source-addressable formulas (SCENE-EJ)
+ formula-source
+ formula-source-map
+ formula-source-map?
+ formula-source-map-matches
+ formula-find
+ formula-source-select
+ formula-source-select-one
+ formula-source-match-selection
+ (struct-out source-selection-report)
+ formula-explain-selection
+ (struct-out formula-source-match)
+
+ ;; String-aware formula correspondence (SCENE-EK)
+ string-match
+ string-match?
+ string-match-source-selector
+ string-match-destination-selector
+ string-match-route
+ string-match-mode
+ string-path
+ string-copy
+ string-copy?
+ string-copy-source-selector
+ string-copy-destination-selector
+ string-copy-route
+ string-copy-mode
+ (struct-out planned-string-match)
+ (struct-out string-match-plan)
+ string-match-plan-warnings
+ string-match-plan->datum
+ plan-matching-strings
 
  ;; SCENE-CT matrices and tables
  matrix
@@ -572,6 +660,7 @@
  rational-number
  complex-number
  numeric-label
+ (struct-out parameter-display-relation-spec)
  parameter-display
  rolling-number-display
 
@@ -587,12 +676,17 @@
  formula-correspondence-auto
  formula-correspondence-unmatched-source-names
  formula-correspondence-unmatched-destination-names
- transform-matching-tex
 
  ;; Structured formula derivations
  formula-step
  formula-derivation-step?
  formula-derivation
+ matching-fragments
+ matching-fragments?
+ matching-glyphs
+ matching-glyphs?
+ matching-strings
+ matching-strings?
 
  ;; Arrows and axes
  arrow
@@ -614,8 +708,7 @@
  segment-between
  arrow-between
  ray-from
- dynamic-endpoint-visual?
- dynamic-endpoint-visual-has-renderer-anchors?
+ (struct-out endpoint-relation-spec)
 
  ;; SCENE-CO mathematical annotation geometry
  arc
@@ -630,9 +723,6 @@
  brace-label
  curved-arrow-between
  surrounding-rectangle
- surrounding-rectangle-visual?
- surrounding-rectangle-visual-target
- surrounding-rectangle-visual-padding
 
  ;; SCENE-CP coordinate-system and calculus helpers
  graph-point
@@ -837,6 +927,8 @@
  transform-formula-parts-request?
  transform-matching-formula
  transform-matching-glyphs
+ transform-matching-strings
+ rewrite-matching-strings
  rewrite-formula
  create
  create-request?

@@ -38,7 +38,10 @@
          "paint.rkt"
          "pointwise-map.rkt"
          "rate-function.rkt"
+         "relation-visual.rkt"
+         "resolvable-visual.rkt"
          "scene-state.rkt"
+         "visual-selection.rkt"
          "visual-model.rkt"
          "write-in-adapter.rkt")
 
@@ -522,7 +525,8 @@
   #:transparent)
 
 ;; create-request represents an uncompiled path introduction request.
-;;  - visual  path-visual?  complete Visual introduced during the play clip.
+;;  - visual  path-visual? or relation-visual? complete Visual introduced
+;;            during the play clip. A relation is resolved afresh per sample.
 
 (struct uncreate-request (target-id)
   #:transparent)
@@ -732,7 +736,7 @@
 ;; as transform-shape: the root source/destination trees are never rewritten,
 ;; only hidden/replaced around a temporary overlay at interior samples.
 
-(struct attention-animation (overlay-id target-path kind padding color stroke-width parameter)
+(struct attention-animation (overlay-id target-paths kind padding color stroke-width parameter)
   #:transparent)
 
 ;; attention-animation stores a declarative target and outline style. Its
@@ -761,6 +765,13 @@
 ;;  - from            finite-real?    visible prefix fraction at clip start.
 ;;  - to              finite-real?    visible prefix fraction at clip end.
 ;;  - remove-at-end?  boolean?        whether completion removes the Visual.
+
+(struct relation-path-reveal-animation (target-id reverse? remove-at-end?)
+  #:transparent)
+
+;; relation-path-reveal-animation is the deferred counterpart to
+;; path-reveal-animation. It stores no path geometry: the current relation
+;; result is resolved first at each sample and only then partially revealed.
 
 (struct write-in-animation (target-id plan reverse? remove-at-end?)
   #:transparent)
@@ -1678,7 +1689,7 @@
    destination
    checked-route))
 
-; circumscribe : (or/c visual? symbol? visual-path?)
+; circumscribe : (or/c visual? symbol? visual-path? visual-selection?)
 ;               [#:padding nonnegative-finite-real?]
 ;               [#:color any/c]
 ;               [#:stroke-width nonnegative-finite-real?]
@@ -1693,7 +1704,7 @@
   (make-attention-request
    'circumscribe target padding color stroke-width 'circumscribe))
 
-; indicate : (or/c visual? symbol? visual-path?)
+; indicate : (or/c visual? symbol? visual-path? visual-selection?)
 ;            [#:padding nonnegative-finite-real?]
 ;            [#:color any/c]
 ;            [#:stroke-width nonnegative-finite-real?]
@@ -1716,7 +1727,8 @@
   (make-attention-request
    'flash target radius color stroke-width 'flash))
 
-; focus-on : (or/c visual? symbol? visual-path?) ... -> focus-on-request?
+; focus-on : (or/c visual? symbol? visual-path? visual-selection?) ...
+;             -> focus-on-request?
 ;; Expands and fades a circular focus ring at the target's live box centre.
 (define (focus-on target
                   #:radius [radius 1/2]
@@ -1787,8 +1799,24 @@
                                 #:parameter [parameter #f])
   (unless (or (visual? target)
               (symbol? target)
-              (visual-path? target))
-    (raise-argument-error who "(or/c visual? symbol? visual-path?)" target))
+              (visual-path? target)
+              (visual-selection? target))
+    (raise-argument-error
+     who
+     "(or/c visual? symbol? visual-path? visual-selection?)"
+     target))
+  (when (and (visual-selection? target)
+             (visual-selection-empty? target))
+    (raise-arguments-error
+     who
+     "a nonempty visual selection"
+     "selection" target))
+  (when (and (visual-selection? target)
+             (eq? kind 'show-passing-flash))
+    (raise-arguments-error
+     who
+     "one path Visual rather than a multi-leaf visual selection"
+     "selection" target))
   (unless (and (finite-real? padding)
                (not (negative? padding)))
     (raise-argument-error who "nonnegative finite real?" padding))
@@ -1796,7 +1824,9 @@
                (not (negative? stroke-width)))
     (raise-argument-error who "nonnegative finite real?" stroke-width))
   (attention-request
-   (visual-target-id target who)
+   (if (visual-selection? target)
+       target
+       (visual-target-id target who))
    kind
    padding
    color
@@ -1918,22 +1948,26 @@
   (transform-formula-parts-request
    correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary))
 
-; create : path-visual? -> create-request?
+; create : (or/c path-visual? relation-visual?) -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
+;;   Relation paths are deferred so their moving dependencies are sampled at
+;;   every frame rather than frozen at compilation.
 (define (create visual)
-  (unless (path-visual? visual)
-    (raise-argument-error 'create "path-visual?" visual))
+  (unless (or (path-visual? visual) (relation-visual? visual))
+    (raise-argument-error 'create "(or/c path-visual? relation-visual?)" visual))
   (create-request visual))
 
-; uncreate : (or/c path-visual? symbol? visual-path?) -> uncreate-request?
+; uncreate : (or/c path-visual? relation-visual? symbol? visual-path?)
+;;             -> uncreate-request?
 ;;   Creates a request that hides and then removes a path Visual.
 (define (uncreate target)
   (unless (or (symbol? target)
               (visual-path? target)
-              (path-visual? target))
+              (path-visual? target)
+              (relation-visual? target))
     (raise-argument-error
      'uncreate
-     "(or/c path-visual? symbol? visual-path?)"
+     "(or/c path-visual? relation-visual? symbol? visual-path?)"
      target))
   (uncreate-request (visual-target-id target 'uncreate)))
 
@@ -2079,7 +2113,12 @@
        (check-absent-introduction-target prepared-state id 'create)
        (scene-state-add
         prepared-state
-        (path-visual-with-path visual empty-path-geometry))]
+        (if (relation-visual? visual)
+            ;; Keep the definition, not a compilation-time concrete path. The
+            ;; sampled relation-path-reveal effect supplies an empty prefix at
+            ;; clip time zero and the complete definition at completion.
+            visual
+            (path-visual-with-path visual empty-path-geometry)))]
     [(fade-in-request? request)
        (define visual
          (fade-in-request-visual request))
@@ -2130,7 +2169,7 @@
     (visual-target-path target-id 'apply-affine))
   (define visual
     (scene-state-ref state target-id))
-  (when (derived-visual? visual)
+  (when (resolvable-visual? visual)
     (raise-arguments-error
      'scene-play
      "a derived Visual cannot be mapped directly; map its ordinary inputs or output"
@@ -2179,7 +2218,7 @@
     (visual-target-path target-id 'apply-pointwise))
   (define visual
     (scene-state-ref state target-id))
-  (when (derived-visual? visual)
+  (when (resolvable-visual? visual)
     (raise-arguments-error
      'scene-play
      "a derived Visual cannot be mapped directly; map its ordinary inputs or output"
@@ -2220,7 +2259,7 @@
     (visual-target-path target-id 'apply-homotopy))
   (define visual
     (scene-state-ref state target-id))
-  (when (derived-visual? visual)
+  (when (resolvable-visual? visual)
     (raise-arguments-error
      'scene-play
      "a derived Visual cannot be mapped directly; map its ordinary inputs or output"
@@ -2375,7 +2414,8 @@
     [else
      (define visual
        (scene-state-ref state target-id))
-     (when (derived-visual? visual)
+     (when (and (resolvable-visual? visual)
+                (not (relation-visual? visual)))
      (raise-arguments-error
         'scene-play
         "derived Visuals are controlled by named scalar values and cannot be animated directly"
@@ -2745,19 +2785,25 @@
     [(create-request? request)
      (define complete-visual
        (create-request-visual request))
-     (check-path-animation-target complete-visual 'create)
-     (path-reveal-animation target-id
-                            (path-visual-path complete-visual)
-                            0
-                            1
-                            #f)]
+     (if (relation-visual? complete-visual)
+         (relation-path-reveal-animation target-id #f #f)
+         (begin
+           (check-path-animation-target complete-visual 'create)
+           (path-reveal-animation target-id
+                                  (path-visual-path complete-visual)
+                                  0
+                                  1
+                                  #f)))]
     [(uncreate-request? request)
-     (check-path-animation-target visual 'uncreate)
-     (path-reveal-animation target-id
-                            (path-visual-path visual)
-                            1
-                            0
-                            #t)]
+     (if (relation-visual? visual)
+         (relation-path-reveal-animation target-id #t #t)
+         (begin
+           (check-path-animation-target visual 'uncreate)
+           (path-reveal-animation target-id
+                                  (path-visual-path visual)
+                                  1
+                                  0
+                                  #t)))]
     [(write-in-request? request)
      (write-in-animation target-id
                          (write-in-request-plan request)
@@ -2803,7 +2849,7 @@
   (check-absent-introduction-target state destination-id 'transform-shape)
   (define source
     (scene-state-ref state source-id))
-  (when (derived-visual? source)
+  (when (resolvable-visual? source)
     (raise-arguments-error
      'transform-shape
      "a non-derived source Visual"
@@ -3294,7 +3340,7 @@
   ;; enclosing group/formula transforms and opacities must be composed first.
   (define source-root
     (scene-state-ref state (car source-path)))
-  (when (derived-visual? source-root)
+  (when (resolvable-visual? source-root)
     (raise-arguments-error
      'transform-from-copy
      "a non-derived source Visual"
@@ -3321,30 +3367,33 @@
                   (symbol->string destination-id))))
 
 (define (compile-attention-request state request)
-  (define target-id
+  (define target
     (attention-request-target-id request))
-  (define target-path
-    (visual-target-path target-id (attention-request-kind request)))
-  (unless (scene-state-has? state target-path)
-    (raise-arguments-error
-     (attention-request-kind request)
-     "a Visual present at the requested path in the scene"
-     "target-path" target-path))
+  (define target-paths
+    (if (visual-selection? target)
+        (visual-selection-absolute-paths target)
+        (list (visual-target-path target (attention-request-kind request)))))
+  (for ([target-path (in-list target-paths)])
+    (unless (scene-state-has? state target-path)
+      (raise-arguments-error
+       (attention-request-kind request)
+       "a Visual present at every requested selection path in the scene"
+       "target-path" target-path)))
   (define overlay-id
-    (attention-overlay-id target-path (attention-request-kind request)))
+    (attention-overlay-id target-paths (attention-request-kind request)))
   (check-absent-introduction-target state overlay-id (attention-request-kind request))
   (attention-animation
    overlay-id
-   target-path
+   target-paths
    (attention-request-kind request)
    (attention-request-padding request)
    (attention-request-color request)
    (attention-request-stroke-width request)
    (attention-request-parameter request)))
 
-(define (attention-overlay-id target-path kind)
+(define (attention-overlay-id target-paths kind)
   (string->symbol
-   (format "__~a-~s" kind target-path)))
+   (format "__~a-~s" kind target-paths)))
 
 (define (make-attention-outline id box padding color stroke-width)
   (define half-width
@@ -3371,6 +3420,9 @@
 
 (define (renderer-layout-box visual)
   ((relative-layout-procedure 'visual-layout-box) visual))
+
+(define (renderer-layout-boxes visuals)
+  ((relative-layout-procedure 'visuals-layout-box) visuals))
 
 (define (renderer-layout-box-width box)
   ((relative-layout-procedure 'layout-box-width) box))
@@ -3455,6 +3507,11 @@
      (list (transform-matching-visuals-request-source-id request)
            (visual-id
             (transform-matching-visuals-request-destination request)))]
+    [(attention-request? request)
+     (define target (attention-request-target-id request))
+     (if (visual-selection? target)
+         (list (car (visual-selection-root target)))
+         (list target))]
     [else (list (animation-request-target-id request))]))
 
 ; find-duplicate-key : list? -> any/c
@@ -3620,7 +3677,10 @@
     [(transform-from-copy-request? request)
      (visual-id (transform-from-copy-request-destination request))]
     [(attention-request? request)
-     (attention-request-target-id request)]
+     (define target (attention-request-target-id request))
+     (if (visual-selection? target)
+         (car (visual-selection-root target))
+         target)]
     [(grow-request? request)
      (visual-id (grow-request-visual request))]
     [(draw-border-then-fill-request? request)
@@ -3852,6 +3912,7 @@
       (border-fill-animation? value)
       (formula-parts-transform-animation? value)
       (path-reveal-animation? value)
+      (relation-path-reveal-animation? value)
       (write-in-animation? value)))
 
 ; apply-compiled-animation : scene-state? compiled-animation? finite-real?
@@ -3914,6 +3975,8 @@
      (apply-formula-parts-transform-animation state animation progress)]
     [(path-reveal-animation? animation)
      (apply-path-reveal-animation state animation progress)]
+    [(relation-path-reveal-animation? animation)
+     (apply-relation-path-reveal-animation state animation progress)]
     [(write-in-animation? animation)
      (apply-write-in-animation state
                                animation
@@ -4681,19 +4744,27 @@
     [(or (zero? progress) (= progress 1))
      without-prior-overlay]
     [else
-     (define target-path
-       (attention-animation-target-path animation))
-     (unless (scene-state-has? without-prior-overlay target-path)
+     (define target-paths
+       (attention-animation-target-paths animation))
+     (for ([target-path (in-list target-paths)])
+       (unless (scene-state-has? without-prior-overlay target-path)
+         (raise-arguments-error
+          'attention
+          "a target Visual present at every requested selection path while sampled"
+          "target-path" target-path)))
+     (define targets
+       (for/list ([target-path (in-list target-paths)])
+         (scene-state-resolved-world-ref without-prior-overlay target-path)))
+     (define target-box (renderer-layout-boxes targets))
+     (unless target-box
        (raise-arguments-error
         'attention
-        "a target Visual present at its requested path while sampled"
-        "target-path" target-path))
-     (define target
-       (scene-state-resolved-world-ref without-prior-overlay target-path))
+        "a nonempty selection of renderer-measurable Visuals"
+        "target-paths" target-paths))
      (define outline
        (make-attention-outline
         overlay-id
-        (renderer-layout-box target)
+        target-box
         (attention-animation-padding animation)
         (attention-animation-color animation)
         (attention-animation-stroke-width animation)))
@@ -4717,18 +4788,18 @@
            (visual-with-scale outline (+ 1 (* 1/8 pulse)))
            (* (visual-opacity outline) pulse))]
          [(flash)
-          (make-flash-overlay
+         (make-flash-overlay
            overlay-id
-           (renderer-layout-box-center (renderer-layout-box target))
+           (renderer-layout-box-center target-box)
            (+ (attention-animation-padding animation)
-              (/ (max (renderer-layout-box-width (renderer-layout-box target))
-                      (renderer-layout-box-height (renderer-layout-box target)))
+              (/ (max (renderer-layout-box-width target-box)
+                      (renderer-layout-box-height target-box))
                  2))
            (attention-animation-color animation)
            (attention-animation-stroke-width animation)
            progress)]
          [(focus-on)
-          (define box (renderer-layout-box target))
+          (define box target-box)
           (define base-radius
             (+ (attention-animation-padding animation)
                (/ (max (renderer-layout-box-width box)
@@ -4744,7 +4815,7 @@
            (- 1 progress))]
          [(show-passing-flash)
           (make-passing-flash
-           overlay-id target progress
+           overlay-id (car targets) progress
            (attention-animation-parameter animation)
            (attention-animation-color animation)
            (attention-animation-stroke-width animation))]
@@ -4861,6 +4932,10 @@
     assembly
     (formula-transition-plan-sample-parts
      (formula-parts-transform-animation-plan animation)
+     progress)
+    #:source-map
+    (formula-transition-plan-source-map-at
+     (formula-parts-transform-animation-plan animation)
      progress))))
 
 ; apply-path-reveal-animation : scene-state? path-reveal-animation?
@@ -4884,6 +4959,32 @@
      (path-reveal-animation-path animation)
      0
      visible-fraction))))
+
+;; apply-relation-path-reveal-animation : scene-state?
+;;                                         relation-path-reveal-animation?
+;;                                         finite-real? -> scene-state?
+;; Stores a deferred effect definition.  The actual path is intentionally not
+;; resolved here: ordinary animation sampling has no renderer/layout context,
+;; and resolving now would freeze geometry before the final semantic/layout
+;; pass for this same frame.
+(define (apply-relation-path-reveal-animation state animation progress)
+  (define id (relation-path-reveal-animation-target-id animation))
+  (define stored (scene-state-ref state id))
+  (define relation
+    (if (relation-path-reveal-visual? stored)
+        (relation-path-reveal-visual-relation stored)
+        stored))
+  (unless (relation-visual? relation)
+    (raise-arguments-error
+     'apply-relation-path-reveal-animation
+     "a relation Visual target"
+     "visual-id" id
+     "visual" stored))
+  (scene-state-update
+   state id
+   (make-relation-path-reveal-visual
+    relation progress
+    #:reverse? (relation-path-reveal-animation-reverse? animation))))
 
 ; apply-write-in-animation : scene-state? write-in-animation? finite-real?
 ;                           (-> finite-real? finite-real?) -> scene-state?
@@ -5343,7 +5444,11 @@
       (formula-assembly-visual-with-parts
        assembly
        (formula-transition-plan-destination-parts
-        (formula-parts-transform-animation-plan animation))))]
+        (formula-parts-transform-animation-plan animation))
+       #:source-map
+       (formula-transition-plan-source-map-at
+        (formula-parts-transform-animation-plan animation)
+        1)))]
     [(and (path-reveal-animation? animation)
           (path-reveal-animation-remove-at-end? animation))
      (scene-state-remove
@@ -5358,8 +5463,24 @@
       state
       id
       (path-visual-with-path
-       visual
-       (path-reveal-animation-path animation)))]
+      visual
+      (path-reveal-animation-path animation)))]
+    [(and (relation-path-reveal-animation? animation)
+          (relation-path-reveal-animation-remove-at-end? animation))
+     (scene-state-remove
+      state
+      (relation-path-reveal-animation-target-id animation))]
+    [(relation-path-reveal-animation? animation)
+     ;; Creation retains the relation definition itself, not the final concrete
+     ;; path sampled for this particular frame. This preserves dynamic
+     ;; dependencies for all later clips and random-access renders.
+     (define id (relation-path-reveal-animation-target-id animation))
+     (define stored (scene-state-ref state id))
+     (scene-state-update
+      state id
+      (if (relation-path-reveal-visual? stored)
+          (relation-path-reveal-visual-relation stored)
+          stored))]
     [(write-in-animation? animation)
      (if (write-in-animation-remove-at-end? animation)
          (scene-state-remove state (write-in-animation-target-id animation))
@@ -5422,14 +5543,14 @@
      path]
     [(path-visual? path)
      (visual-id path)]
-    [(derived-visual? path)
+    [(resolvable-visual? path)
      (visual-id path)]
     [(symbol? path)
      path]
     [else
      (raise-argument-error
       who
-      "(or/c path-geometry? path-visual? derived-visual? symbol?)"
+      "(or/c path-geometry? path-visual? resolvable-visual? symbol?)"
       path)]))
 
 ; resolve-path-animation-route : scene-state? visual?
@@ -5946,34 +6067,36 @@
     (cond
       [(not anchor) correspondence]
       [else
-     (define destination
-       (formula-correspondence-destination correspondence))
-     (define source-anchor
-       (formula-part-formula
-        (formula-assembly-visual-ref
-         current-source
-         (formula-part-match-source-name anchor))))
-     (define destination-anchor
-       (formula-part-formula
-        (formula-assembly-visual-ref
-         destination
-         (formula-part-match-destination-name anchor))))
-     (define shift
-       (vec2- (visual-position source-anchor)
-              (visual-position destination-anchor)))
-     (define anchored-destination
-       (formula-assembly-visual-with-parts
-        destination
-        (for/list ([part (in-list (formula-assembly-visual-parts destination))])
-          (formula-part
-           (formula-part-name part)
-           (visual-with-position
-            (formula-part-formula part)
-            (vec2+ (visual-position (formula-part-formula part)) shift))))))
-     (formula-correspondence
-      (formula-correspondence-source correspondence)
-      anchored-destination
-      (formula-correspondence-matches correspondence))]))
+       (define destination
+         (formula-correspondence-destination correspondence))
+       (define source-anchor
+         (formula-part-formula
+          (formula-assembly-visual-ref
+           current-source
+           (formula-part-match-source-name anchor))))
+       (define destination-anchor
+         (formula-part-formula
+          (formula-assembly-visual-ref
+           destination
+           (formula-part-match-destination-name anchor))))
+       (define shift
+         (vec2- (visual-position source-anchor)
+                (visual-position destination-anchor)))
+       (define anchored-destination
+         (formula-assembly-visual-with-parts
+          destination
+          (for/list ([part (in-list (formula-assembly-visual-parts destination))])
+            (formula-part
+             (formula-part-name part)
+             (visual-with-position
+              (formula-part-formula part)
+              (vec2+ (visual-position (formula-part-formula part)) shift))))
+          ;; Translation preserves every destination local identity and path.
+          #:source-map (formula-assembly-visual-source-map destination)))
+       (formula-correspondence
+        (formula-correspondence-source correspondence)
+        anchored-destination
+        (formula-correspondence-matches correspondence))]))
   (if (null? stationary)
       anchored-correspondence
       (let* ([destination
@@ -5998,7 +6121,9 @@
                         (visual-with-transform
                          (formula-part-formula part)
                          (visual-transform current-formula))))
-                     part)))])
+                     part))
+               ;; Stationary placement also preserves the exact part tree.
+               #:source-map (formula-assembly-visual-source-map destination))])
         (formula-correspondence
          (formula-correspondence-source anchored-correspondence)
          fixed-destination

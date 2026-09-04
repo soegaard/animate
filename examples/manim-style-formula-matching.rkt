@@ -4,8 +4,8 @@
 ;;; Manim-Style Formula Matching
 ;;;
 
-;; `math-tex` retains one TeX layout per endpoint. Its `{{ ... }}` groups make
-;; the intended matchable pieces visible in source without naming every part.
+;; `math-tex` retains one TeX layout per endpoint. Source selections make the
+;; intended matchable pieces explicit without coordinating generated part IDs.
 
 (require (only-in racket/math pi)
          "../main.rkt"
@@ -14,11 +14,11 @@
 (provide make-demo-scene)
 
 (define (equals-position assembly)
-  (for/first ([part (in-list (formula-assembly-visual-parts assembly))]
-              #:when (string=? (formula-visual-source
-                                 (formula-part-formula part))
-                               "="))
-    (visual-position (formula-part-formula part))))
+  (define selection (formula-source-select-one assembly "="))
+  (define part-name (caar (visual-selection-paths selection)))
+  (visual-position
+   (formula-part-formula
+    (formula-assembly-visual-ref assembly part-name))))
 
 ;; Shift the complete TeX layout as a rigid unit so all endpoints share the
 ;; first equation's equals-sign position. The individual matched fragments can
@@ -34,22 +34,39 @@
        (formula-part-formula part)
        (vec2+ (visual-position (formula-part-formula part)) shift))))))
 
+(define (equation source parts)
+  (math-tex
+   #:id 'equation
+   #:font-size 1/2
+   #:source-map 'declared
+   #:parts parts
+   source))
+
 (define (make-demo-scene)
   (define pythagoras
-    (math-tex
-     #:id 'equation
-     #:font-size 1/2
-     "{{ a^2 }} + {{ b^2 }} = {{ c^2 }}"))
+    (equation
+     "a^2 + b^2 = c^2"
+     (list (source-part 'a-square "a^2")
+           (source-part 'plus "+")
+           (source-part 'b-square "b^2")
+           (source-part 'equals "=")
+           (source-part 'c-square "c^2"))))
   (define isolated-b-layout
-    (math-tex
-     #:id 'equation
-     #:font-size 1/2
-     "{{ b^2 }} = {{ c^2 }} - {{ a^2 }}"))
+    (equation
+     "b^2 = c^2 - a^2"
+     (list (source-part 'b-square "b^2")
+           (source-part 'equals "=")
+           (source-part 'c-square "c^2")
+           (source-part 'minus "-")
+           (source-part 'a-square "a^2"))))
   (define reversed-sides-layout
-    (math-tex
-     #:id 'equation
-     #:font-size 1/2
-     "{{ c^2 }} - {{ a^2 }} = {{ b^2 }}"))
+    (equation
+     "c^2 - a^2 = b^2"
+     (list (source-part 'c-square "c^2")
+           (source-part 'minus "-")
+           (source-part 'a-square "a^2")
+           (source-part 'equals "=")
+           (source-part 'b-square "b^2"))))
   (define fixed-equals-position (equals-position pythagoras))
   (define isolated-b
     (formula-with-equals-at isolated-b-layout fixed-equals-position))
@@ -57,7 +74,7 @@
     (formula-with-equals-at reversed-sides-layout fixed-equals-position))
   (define title
     (plain-text
-     "Manim-style {{...}} formula matching"
+     "Source-addressed formula matching"
      #:id 'title
      #:center (vec2 0 2)
      #:font-size 1/3
@@ -68,17 +85,19 @@
     (scene-add (scene-add (make-scene) title) pythagoras))
   (define before-isolating
     (scene-wait initial 1))
-  ;; Identical grouped source strings move automatically. `key-map` says that
-  ;; the old `+` is the new `-`; its explicit arc travels below the fixed `=`
-  ;; while cross-fading into the changed glyph.
+  ;; Identical source atoms move automatically. The explicit source match says
+  ;; that the old `+` is the new `-`; its arc travels below the fixed `=` while
+  ;; cross-fading into the changed glyph.
   (define b-isolated
     (scene-play before-isolating
-                (transform-matching-tex pythagoras
-                                        isolated-b
-                                        #:key-map (hash "+" "-")
-                                        #:path-map
-                                        (hash (cons "+" "-")
-                                              (formula-arc #:angle (/ pi 2))))
+                (transform-matching-strings
+                 pythagoras
+                 isolated-b
+                 #:key-map
+                 (list
+                  (string-match "+" "-"
+                                #:route (formula-arc #:angle (/ pi 2))))
+                 #:mismatch-mode 'fade-transform)
                 #:duration 2))
   (define before-reversing
     (scene-wait b-isolated 1))
@@ -86,7 +105,7 @@
   ;; the equals sign remains in its fixed position throughout.
   (define sides-reversed
     (scene-play before-reversing
-                (transform-matching-tex isolated-b reversed-sides)
+                (transform-matching-strings isolated-b reversed-sides)
                 #:duration 2))
   (scene-wait sides-reversed 1))
 

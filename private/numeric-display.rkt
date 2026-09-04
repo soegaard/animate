@@ -4,7 +4,7 @@
 ;;; Numeric Displays
 ;;;
 
-;; Creates immutable text Visuals for formatted numeric values and derived
+;; Creates immutable text Visuals for formatted numeric values and relation
 ;; parameter displays. A display is recomputed from sampled parameter state;
 ;; it never mutates a previous string or stores a renderer-specific tracker.
 
@@ -15,13 +15,17 @@
 (require racket/list
          racket/string
          "clipped-visual.rkt"
-         "derived-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "interpolation.rkt"
          "parameter.rkt"
          "path-geometry.rkt"
-         "text-visual.rkt")
+         "relation-context.rkt"
+         "relation-dependency.rkt"
+         "relation-spec.rkt"
+         "relation-visual.rkt"
+         "text-visual.rkt"
+         "visual-model.rkt")
 
 (provide numeric-display-anchor?
          numeric-unit?
@@ -41,6 +45,7 @@
          rational-number
          complex-number
          numeric-label
+         (struct-out parameter-display-relation-spec)
          parameter-display
          rolling-number-display)
 
@@ -467,7 +472,97 @@
 ;;;
 ;;; Parameter Display
 
-;; parameter-display : parameter #:id symbol? ... -> derived-visual?
+;; A transparent built-in relation specification replaces the former resolver
+;; closure.  It records only durable formatting data, so relation inspection
+;; and cache identity do not have to treat parameter displays as opaque
+;; procedures.
+(struct parameter-display-relation-spec
+  (source-id kind decimal-places significant-figures notation max-denominator
+             mixed? grouping? show-sign? imaginary-unit unit anchor font-size
+             font-family font-style font-weight color vertical-alignment)
+  #:transparent
+  #:methods gen:relation-spec
+  [(define (resolve-relation-spec spec context template)
+     (parameter-display-spec-build
+      spec
+      (relation-context-value-ref
+       context
+       (parameter-display-relation-spec-source-id spec))
+      (visual-id template)
+      (visual-position template)))])
+
+(define (parameter-display-spec-format-value spec value)
+  (define source-id (parameter-display-relation-spec-source-id spec))
+  (define kind (parameter-display-relation-spec-kind spec))
+  (define decimal-places (parameter-display-relation-spec-decimal-places spec))
+  (define significant-figures
+    (parameter-display-relation-spec-significant-figures spec))
+  (define notation (parameter-display-relation-spec-notation spec))
+  (define max-denominator (parameter-display-relation-spec-max-denominator spec))
+  (define mixed? (parameter-display-relation-spec-mixed? spec))
+  (define grouping? (parameter-display-relation-spec-grouping? spec))
+  (define show-sign? (parameter-display-relation-spec-show-sign? spec))
+  (define imaginary-unit (parameter-display-relation-spec-imaginary-unit spec))
+  (define unit (parameter-display-relation-spec-unit spec))
+  (case kind
+    [(integer)
+     (check-display-real-value 'parameter-display source-id kind value)
+     (format-integer (inexact->exact (round value)) #:grouping? grouping?
+                     #:show-sign? show-sign? #:unit unit)]
+    [(decimal)
+     (check-display-real-value 'parameter-display source-id kind value)
+     (format-decimal value #:decimal-places decimal-places
+                     #:grouping? grouping?
+                     #:show-sign? show-sign? #:unit unit)]
+    [(scientific)
+     (check-display-real-value 'parameter-display source-id kind value)
+     (format-scientific value #:significant-figures significant-figures
+                        #:show-sign? show-sign? #:unit unit)]
+    [(significant)
+     (check-display-real-value 'parameter-display source-id kind value)
+     (format-significant value #:significant-figures significant-figures
+                         #:notation notation #:grouping? grouping?
+                         #:show-sign? show-sign? #:unit unit)]
+    [(rational)
+     (check-display-real-value 'parameter-display source-id kind value)
+     (format-rational value #:max-denominator max-denominator #:mixed? mixed?
+                      #:show-sign? show-sign? #:unit unit)]
+    [(complex)
+     (unless (finite-number? value)
+       (raise-arguments-error
+        'parameter-display
+        "a complex display requires its parameter to hold a finite real or complex value"
+        "parameter-id" source-id
+        "value" value))
+     (format-complex value #:decimal-places decimal-places
+                     #:grouping? grouping? #:show-sign? show-sign?
+                     #:imaginary-unit imaginary-unit #:unit unit)]))
+
+(define (parameter-display-spec-build spec value id center)
+  (define kind (parameter-display-relation-spec-kind spec))
+  (define anchor (parameter-display-relation-spec-anchor spec))
+  (define font-size (parameter-display-relation-spec-font-size spec))
+  (define font-family (parameter-display-relation-spec-font-family spec))
+  (define font-style (parameter-display-relation-spec-font-style spec))
+  (define font-weight (parameter-display-relation-spec-font-weight spec))
+  (define color (parameter-display-relation-spec-color spec))
+  (define vertical-alignment
+    (parameter-display-relation-spec-vertical-alignment spec))
+  (define text (parameter-display-spec-format-value spec value))
+  (if (and (eq? anchor 'decimal)
+           (memq kind '(decimal significant scientific)))
+      (make-decimal-anchored-display
+       text id center font-size font-family font-style font-weight color
+       vertical-alignment)
+      (numeric-text
+       text id center font-size font-family font-style font-weight color
+       (case anchor
+         [(left sign) 'left]
+         [(center) 'center]
+         [(right) 'right])
+       vertical-alignment)))
+
+;; parameter-display : parameter #:id symbol? ... -> relation-visual?
 ;; The anchor controls the stable side of the changing text. `decimal` builds
 ;; two aligned pieces around a fixed decimal point; `sign` always emits a sign
 ;; and fixes its left edge.
@@ -512,65 +607,27 @@
   (check-unit-spec 'parameter-display unit)
   (unless (numeric-display-anchor? anchor)
     (raise-argument-error 'parameter-display "numeric-display-anchor?" anchor))
-  (define effective-show-sign? (or show-sign? (eq? anchor 'sign)))
-  (define (format-value value)
-    (case kind
-      [(integer)
-       (check-display-real-value 'parameter-display source-id kind value)
-       (format-integer (inexact->exact (round value)) #:grouping? grouping?
-                       #:show-sign? effective-show-sign? #:unit unit)]
-      [(decimal)
-       (check-display-real-value 'parameter-display source-id kind value)
-       (format-decimal value #:decimal-places decimal-places
-                       #:grouping? grouping?
-                       #:show-sign? effective-show-sign? #:unit unit)]
-      [(scientific)
-       (check-display-real-value 'parameter-display source-id kind value)
-       (format-scientific value #:significant-figures significant-figures
-                          #:show-sign? effective-show-sign? #:unit unit)]
-      [(significant)
-       (check-display-real-value 'parameter-display source-id kind value)
-       (format-significant value #:significant-figures significant-figures
-                           #:notation notation #:grouping? grouping?
-                           #:show-sign? effective-show-sign? #:unit unit)]
-      [(rational)
-       (check-display-real-value 'parameter-display source-id kind value)
-       (format-rational value #:max-denominator max-denominator #:mixed? mixed?
-                        #:show-sign? effective-show-sign? #:unit unit)]
-      [(complex)
-       (unless (finite-number? value)
-         (raise-arguments-error
-          'parameter-display
-          "a complex display requires its parameter to hold a finite real or complex value"
-          "parameter-id" source-id
-          "value" value))
-       (format-complex value #:decimal-places decimal-places
-                       #:grouping? grouping? #:show-sign? effective-show-sign?
-                       #:imaginary-unit imaginary-unit #:unit unit)]))
-  (define (make-display value)
-    (if (and (eq? anchor 'decimal)
-             (memq kind '(decimal significant scientific)))
-        (make-decimal-anchored-display
-         (format-value value) id center font-size font-family font-style
-         font-weight color vertical-alignment)
-        (numeric-text
-         (format-value value) id center font-size font-family font-style
-         font-weight color
-         (case anchor
-           [(left sign) 'left]
-           [(center) 'center]
-           [(right) 'right])
-         vertical-alignment)))
-  (derived-visual
-   (make-display (if (eq? kind 'integer) 0 0.0))
-   (lambda (context _template)
-     (make-display (derived-context-value-ref context source-id)))))
+  (define spec
+    (parameter-display-relation-spec
+     source-id kind decimal-places significant-figures notation max-denominator
+     mixed? grouping? (or show-sign? (eq? anchor 'sign)) imaginary-unit unit
+     anchor font-size font-family font-style font-weight color
+     vertical-alignment))
+  ;; The initial template establishes the authored outer placement. During
+  ;; relation resolution the same specification rebuilds local content at the
+  ;; template's local origin, and the relation envelope reapplies this centre.
+  (relation-visual
+   (parameter-display-spec-build
+    spec (if (eq? kind 'integer) 0 0.0) id center)
+   #:depends-on (list (value-dependency source-id))
+   #:structure 'fixed
+   spec))
 
 
 ;;;
 ;;; Rolling Digits
 
-;; rolling-number-display : parameter #:id symbol? ... -> derived-visual?
+;; rolling-number-display : parameter #:id symbol? ... -> relation-visual?
 ;; Renders fixed digit slots as clipped, vertically rolling digit wheels. The
 ;; display is evaluated from the scalar value at each requested scene sample;
 ;; it does not inspect a preceding frame.
@@ -702,10 +759,12 @@
                   (string->symbol (format "unit-~a" index))))))
     (group (append integer-wheels fractional-wheels static-pieces)
            #:id id #:center center))
-  (derived-visual
+  (relation-visual
    (make-display 0)
+   #:depends-on (list (value-dependency source-id))
+   #:structure 'fixed
    (lambda (context _template)
-     (make-display (derived-context-value-ref context source-id)))))
+     (make-display (relation-context-value-ref context source-id)))))
 
 
 ;;;

@@ -28,6 +28,8 @@
          "group-visual.rkt"
          "interpolation.rkt"
          "parameter.rkt"
+         "relation-visual.rkt"
+         "resolvable-visual.rkt"
          "visual-model.rkt")
 
 ;; Exports
@@ -178,7 +180,9 @@
       "visual" visual)]))
 
 ; visual-descendant-ref : visual? (listof symbol?) visual-path? symbol? -> visual?
-;; Resolves descendant IDs through built-in semantic groups and formula assemblies.
+;; Resolves descendant IDs through Visuals that publish a stable child tree.
+;; This includes a fixed relation's declared template tree; root-only relations
+;; publish no descendants and are rejected explicitly before this traversal.
 (define (visual-descendant-ref visual descendant-ids full-path who)
   (cond
     [(null? descendant-ids)
@@ -186,7 +190,7 @@
     [(not (composite-visual? visual))
      (raise-arguments-error
       who
-      "an intermediate Visual path entry must name a built-in group or formula assembly"
+        "an intermediate Visual path entry must publish stable child identities"
       "visual-path" full-path
       "visual" visual)]
     [else
@@ -204,10 +208,11 @@
      (visual-descendant-ref child (cdr descendant-ids) full-path who)]))
 
 ; composite-visual? : any/c -> boolean?
-;; Reports whether visual exposes built-in stable child identities.
+;; Reports whether visual exposes stable child identities.  The generic is
+;; deliberately broader than groups/formulas so a fixed relation's template
+;; tree is targetable by the same path machinery.
 (define (composite-visual? visual)
-  (or (group-visual? visual)
-      (formula-assembly-visual? visual)
+  (or (visual-container? visual)
       (and (affine-map-visual? visual)
            (composite-visual? (affine-map-visual-content visual)))))
 
@@ -222,6 +227,9 @@
       (formula-assembly-visual-group visual))]
     [(affine-map-visual? visual)
      (composite-visual-children (affine-map-visual-content visual))]
+    [(visual-container? visual)
+     (for/list ([entry (in-list (visual-child-entries visual))])
+       (visual-child-visual entry))]
     [else
      (raise-argument-error
       'composite-visual-children
@@ -311,13 +319,14 @@
        (define visual
          (scene-state-ref state id))
        (define resolved
-         (if (derived-visual? visual)
+         (if (and (resolvable-visual? visual)
+                  (eq? (resolvable-visual-phase visual) 'semantic))
              (let ([saved-active active])
                (set! active (append active (list id)))
                (dynamic-wind
                  void
                  (lambda ()
-                   (resolve-derived-visual visual context))
+                   (resolve-resolvable-visual visual context))
                  (lambda ()
                    (set! active saved-active))))
              visual))
@@ -330,9 +339,10 @@
   ;; retaining normal group rendering and nested lookup.
   (define (resolve-visual-tree visual)
     (cond
-      [(derived-visual? visual)
+      [(and (resolvable-visual? visual)
+            (eq? (resolvable-visual-phase visual) 'semantic))
        (resolve-visual-tree
-        (resolve-derived-visual visual context))]
+        (resolve-resolvable-visual visual context))]
       [(group-visual? visual)
        (group-visual-with-children
         visual
@@ -351,6 +361,7 @@
   (define (resolve-target/raw target)
     (define path
       (visual-target-path target 'scene-state-resolved-ref))
+    (check-root-only-relation-target state path 'scene-state-resolved-ref)
     (visual-descendant-ref
      (resolve-id (car path))
      (cdr path)
@@ -360,6 +371,7 @@
   (define (resolve-target-world/raw target)
     (define path
       (visual-target-path target 'scene-state-resolved-ref))
+    (check-root-only-relation-target state path 'scene-state-resolved-ref)
     (resolved-world-descendant-ref
      (resolve-id (car path))
      (cdr path)
@@ -368,6 +380,7 @@
   (define (resolve-target target)
     (define path
       (visual-target-path target 'scene-state-resolved-ref))
+    (check-root-only-relation-target state path 'scene-state-resolved-ref)
     (visual-descendant-ref
      (resolve-visual-tree (resolve-id (car path)))
      (cdr path)
@@ -377,12 +390,50 @@
   (define (resolve-target-world target)
     (define path
       (visual-target-path target 'scene-state-resolved-world-ref))
+    (check-root-only-relation-target state path
+                                     'scene-state-resolved-world-ref)
     (resolved-world-descendant-ref
      (resolve-visual-tree (resolve-id (car path)))
      (cdr path)
      path))
 
   (values resolve-target resolve-target-world))
+
+;; Reject paths that descend through a root-only relation before resolving its
+;; concrete output.  Otherwise a transient group returned on one sampled frame
+;; would accidentally make its temporary children public stable targets.
+(define (check-root-only-relation-target state path who)
+  (define root (scene-state-ref state (car path)))
+  (let loop ([visual root] [remaining (cdr path)] [prefix (list (car path))])
+    (cond
+      [(and (relation-root-only? visual)
+            (pair? remaining))
+       (raise-arguments-error
+        who
+        "a root-only relation targeted only at its stable root"
+        "relation path" prefix
+        "requested visual-path" path)]
+      [(null? remaining) (void)]
+      [(affine-map-visual? visual)
+       (loop (affine-map-visual-content visual) remaining prefix)]
+      [(visual-container? visual)
+       (define next-id (car remaining))
+       (define child
+         (for/first ([entry (in-list (visual-child-entries visual))]
+                     #:when (eq? (visual-child-id entry) next-id))
+           (visual-child-visual entry)))
+       ;; Let ordinary path lookup issue its established missing-child error.
+       (when child
+         (loop child (cdr remaining) (append prefix (list next-id))))]
+      [else (void)])))
+
+(define (relation-root-only? visual)
+  (define relation
+    (if (relation-path-reveal-visual? visual)
+        (relation-path-reveal-visual-relation visual)
+        visual))
+  (and (relation-visual? relation)
+       (eq? (relation-visual-structure relation) 'root-only)))
 
 ; scene-state-resolved-ref : scene-state? (or/c visual? symbol? visual-path?) -> visual?
 ;;   Resolves target against the state. Ordinary Visuals are returned unchanged;

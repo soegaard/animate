@@ -64,7 +64,9 @@
   ; mutable-source : string?
   ;;   Gives mutable input that must not remain shared with the model.
   (define mutable-source
-    (string-copy "x+1"))
+    ;; `string-copy` is animate's source-addressed formula-copy constructor.
+    ;; Construct the mutable Racket string directly here instead.
+    (string #\x #\+ #\1))
 
   ; copied-part : formula-part?
   ;;   Gives a part constructed from mutable source.

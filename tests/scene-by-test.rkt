@@ -1,7 +1,7 @@
 #lang racket/base
 
 ;; SCENE-BY: dvisvgm glyph formulas match by rendered outline, not complete
-;; formula source. The test uses a genuine algebraic rewrite without {{...}}
+;; formula source. The test uses a genuine algebraic rewrite with source maps.
 ;; groups or manually declared formula fragments.
 
 (require (only-in pict pict?)
@@ -57,7 +57,7 @@
    exn:fail:contract?
    (lambda ()
      (transform-matching-glyphs
-      (math-tex #:id 'other "{{ x }}")
+      (math-tex #:id 'other "x")
       destination)))
 
   ;; SCENE-BZ is opt-in. The explicit + -> - pair has one closed dvisvgm

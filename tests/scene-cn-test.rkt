@@ -35,11 +35,15 @@
   (define edge
     (arrow-between 'A B #:id 'edge #:stroke "crimson" #:stroke-width 3))
 
-  ;; Centre references and point-valued parameters stay fully inside the pure
-  ;; derived-Visual architecture, so another derived definition can use their
-  ;; concrete output at any arbitrary scene sample.
-  (check-true (derived-visual? edge))
-  (check-false (dynamic-endpoint-visual? edge))
+  ;; Centre references and point-valued parameters produce an inspectable
+  ;; semantic relation backed by a serializable endpoint specification.
+  (check-true (relation-visual? edge))
+  (check-eq? (relation-visual-phase edge) 'semantic)
+  (check-true (endpoint-relation-spec?
+               (relation-visual-cache-key edge)))
+  (check-equal?
+   (relation-visual-dependencies edge)
+   (list (visual-dependency 'A) (value-dependency B)))
   (define moving-edge
     (scene-play
      (scene-add
@@ -58,7 +62,7 @@
   ;; relationship. ray-from normalizes its live direction to a fixed length.
   (define segment
     (segment-between (vec2 -1 -1) (vec2 1 -1) #:id 'segment))
-  (check-true (derived-visual? segment))
+  (check-true (relation-visual? segment))
   (define ray
     (ray-from (vec2 0 0) (vec2 3 4) #:id 'ray #:length 10))
   (define ray-scene (scene-add (make-scene #:camera camera) ray))
@@ -66,16 +70,20 @@
   (check-equal? (arrow-visual-start resolved-ray) origin)
   (check-equal? (arrow-visual-end resolved-ray) (vec2 6 8))
 
-  ;; An edge or corner endpoint is renderer-aware. Its target's live measured
-  ;; right edge coincides pixel-for-pixel with an explicitly authored segment.
+  ;; An edge or corner endpoint is a layout relation. Its target's live
+  ;; measured right edge coincides pixel-for-pixel with an explicitly authored
+  ;; segment.
   (define box
     (rectangle #:id 'box #:center origin #:width 2 #:height 1
                #:fill "aliceblue" #:stroke #f #:stroke-width 0))
   (define anchored-segment
     (line-between (anchor-of 'box 'right) (vec2 3 0)
                   #:id 'anchored-segment #:stroke "darkgreen" #:stroke-width 3))
-  (check-true (dynamic-endpoint-visual? anchored-segment))
-  (check-true (dynamic-endpoint-visual-has-renderer-anchors? anchored-segment))
+  (check-true (relation-visual? anchored-segment))
+  (check-eq? (relation-visual-phase anchored-segment) 'layout)
+  (check-equal?
+   (relation-visual-dependencies anchored-segment)
+   (list (anchor-dependency 'box 'right)))
   (define anchored-scene
     (scene-wait
      (scene-add (make-scene #:camera camera) box anchored-segment)

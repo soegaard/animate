@@ -22,6 +22,7 @@
          "geometry.rkt"
          "interpolation.rkt"
          "parameter.rkt"
+         "resolvable-visual.rkt"
          "visual-model.rkt")
 
 (provide derived-visual
@@ -252,10 +253,22 @@
      (struct-copy
       derived-visual-value
       definition
-      [template
+     [template
        (template-visual-with-opacity
         (derived-visual-value-template definition)
-        opacity)]))])
+        opacity)]))]
+  #:methods gen:resolvable-visual
+  [(define (resolvable-visual-template definition)
+     (derived-visual-value-template definition))
+   ;; Existing derived Visuals discover dependencies dynamically through their
+   ;; read-only context.  An empty declaration here is intentionally distinct
+   ;; from a relation's explicit dependency list.
+   (define (resolvable-visual-dependencies _definition)
+     '())
+   (define (resolvable-visual-phase _definition)
+     'semantic)
+   (define (resolve-resolvable-visual definition context)
+     (resolve-derived-visual definition context))])
 
 ; derived-visual? : any/c -> boolean?
 ;;   Reports whether value is a SCENE-AW derived Visual definition.

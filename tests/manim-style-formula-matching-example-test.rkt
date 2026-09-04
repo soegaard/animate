@@ -1,14 +1,15 @@
 #lang racket/base
 
-;; Construction coverage for the `math-tex` / `transform-matching-tex` demo.
+;; Construction coverage for the source-addressed formula-matching demo.
 
 (require rackunit
+         racket/string
          "../main.rkt"
          "../examples/manim-style-formula-matching.rkt")
 
 (define (formula-sources scene time)
   (map (lambda (part)
-         (formula-visual-source (formula-part-formula part)))
+         (string-trim (formula-visual-source (formula-part-formula part))))
        (formula-assembly-visual-parts
         (scene-visual-at scene 'equation time))))
 
@@ -17,8 +18,9 @@
                (in-list
                 (formula-assembly-visual-parts
                  (scene-visual-at scene 'equation time)))]
-              #:when (string=? (formula-visual-source
-                                 (formula-part-formula part))
+              #:when (string=? (string-trim
+                                 (formula-visual-source
+                                  (formula-part-formula part)))
                                "="))
     (visual-position (formula-part-formula part))))
 

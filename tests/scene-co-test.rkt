@@ -126,8 +126,11 @@
   (define enclosure
     (surrounding-rectangle 'target #:id 'outline #:padding 1/5
                            #:fill #f #:stroke "crimson" #:stroke-width 3))
-  (check-true (surrounding-rectangle-visual? enclosure))
-  (check-equal? (surrounding-rectangle-visual-target enclosure) 'target)
+  (check-true (relation-visual? enclosure))
+  (check-eq? (relation-visual-phase enclosure) 'layout)
+  (check-equal?
+   (relation-visual-dependencies enclosure)
+   (list (selection-dependency (visual-selection '(target) '(())))))
   (define live-scene
     (scene-wait (scene-add (make-scene #:camera camera) target enclosure) 1))
   (define explicit-scene
@@ -143,6 +146,15 @@
      1))
   (check-true (bytes=? (scene-bytes live-scene 0)
                        (scene-bytes explicit-scene 0)))
+
+  ;; The enclosure is an ordinary layout relation, so its post-resolution
+  ;; opacity envelope can animate independently of the renderer measurement.
+  (define faded-enclosure-scene
+    (scene-play live-scene (fade-to 'outline 1/2) #:duration 1))
+  (check-=
+   (visual-opacity (scene-visual-at faded-enclosure-scene 'outline 2))
+   1/2
+   1e-9)
 
   (check-exn exn:fail:contract?
              (lambda ()

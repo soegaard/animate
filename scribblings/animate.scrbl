@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@(require (for-label (except-in racket/base angle)
+@(require (for-label (except-in racket/base angle string-copy)
                      racket/class
                      racket/contract
                      racket/draw
@@ -3738,8 +3738,9 @@ the result is the immutable concatenation of the supplied spans.
 SCENE-EF provides number-shaped text and numerical transitions without
 introducing a mutable value tracker. Static constructors return ordinary
 @racket[text-visual?] values. @racket[parameter-display] and
-@racket[rolling-number-display] are @racket[derived-visual?] values that format
-the current scalar scene parameter independently at each sampled frame.
+@racket[rolling-number-display] format the current scalar scene parameter
+independently at each sampled frame. Both are fixed-structure
+@racket[relation-visual?] values with an explicit scalar dependency.
 
 @defproc[(numeric-display-anchor? [value any/c]) boolean?]{
 
@@ -3994,14 +3995,19 @@ The explicit @racket[#:kind] choices select every SCENE-EF formatter.
           [#:color color any/c "black"]
           [#:vertical-alignment vertical-alignment
                                 text-vertical-alignment? 'center])
-         derived-visual?]{
+         relation-visual?]{
 
 Reads @racket[source] from each sampled scene state and formats its finite real
 or Cartesian-complex value. A @racket['decimal] display has exactly its
 requested decimal places; an @racket['integer] display rounds a finite real to
 the nearest integer. Scientific, significant, rational, and complex kinds use
 the correspondingly named formatter. The source must be installed with
-@racket[scene-set-value] before the derived display is resolved.
+@racket[scene-set-value] before the relation is resolved. Its dependency and
+built-in serializable specification are inspectable with
+@racket[relation-visual-dependencies] and
+@racket[relation-visual-cacheability]. Because the display has fixed child
+structure, its decimal @racket['whole] and @racket['fraction] paths remain
+addressable as its value changes.
 
 The @racket[#:anchor] choice fixes one stable reference as the text width
 changes. @racket['left], @racket['center], and @racket['right] are the normal
@@ -4514,14 +4520,26 @@ declared fragment.
                                     (listof latex-option?)
                                     '()]
           [#:color-map color-map (hash/c symbol? color-spec?) (hash)]
+          [#:source-map source-map (or/c 'none 'declared 'tokens) 'tokens]
+          [#:parts parts (listof source-part?) '()]
           [source string?] ...)
          formula-assembly-visual?]{
 
-Manim-style convenience syntax for one complete formula. Each @tt{{{ ... }}}
-group becomes one named fragment in source order; ungrouped content is also
-made available as a fragment. It accepts the same layout and
-@racket[color-map] options as @racket[tagged-formula]. Use
-@racket[tagged-formula] when the author needs explicit stable part names.
+Source-addressable construction for one complete formula. It accepts the same
+layout and @racket[color-map] options as @racket[tagged-formula]. Use
+@racket[tagged-formula] when the author needs explicit stable part names
+without source queries.
+
+@racket[math-tex] records a canonical source string and a conservative
+token-to-rendered-part source map by default. Use @racket[formula-find] or
+@racket[formula-source-select] to query rendered source material by a literal
+string, regexp, source span, or occurrence. @racket['none] is the explicit
+opt-out when no source queries are required. @racket['declared] requires
+@racket[#:parts], a list of named @racket[source-part] declarations; it maps
+only those author-declared ranges. The token scanner establishes safe TeX
+boundaries, not algebraic meaning or a complete TeX parse: user macros,
+category-code changes, and source that has no visible output may not be
+selectable.
 }
 
 @defproc[(glyph-tex
@@ -4559,6 +4577,85 @@ repeated outlines match greedily in source order.
 @racket[color-map] maps generated names such as @racket['glyph-0] to semantic
 colours. Generated names are positional, so explicit tagged fragments are
 usually preferable for durable pedagogical styling.
+}
+
+@subsection[#:tag "source-addressable-formulas"]{Source-Addressable Formulas}
+
+Source selectors address character ranges in the canonical TeX source retained
+by @racket[math-tex]. They complement named formula fragments; they do not
+recognize algebraic roles or prove mathematical equivalence. Source indices are
+Racket string-character indices in half-open ranges, so
+@racket[(source-span 2 5)] selects characters 2 through 4.
+
+@defstruct*[source-span ([start exact-nonnegative-integer?]
+                         [end exact-nonnegative-integer?])]{
+
+Represents one half-open source range. It is checked against the formula's
+canonical source when used.
+}
+
+@defstruct*[source-occurrence ([selector source-selector?]
+                               [index exact-nonnegative-integer?])]{
+
+Selects the zero-based occurrence of a literal-string, regexp, or source-span
+selector.
+}
+
+@defstruct*[source-part ([name symbol?] [selector source-selector?])]{
+
+Gives a declared source selector one stable author-facing name. This is used by
+@racket[math-tex] with @racket[#:source-map 'declared].
+}
+
+@defproc[(formula-source [formula formula-assembly-visual?]) string?]{
+
+Returns the immutable canonical source string retained by a source-mapped
+formula. For several @racket[math-tex] source arguments, arguments are joined
+by one literal space; that separator is part of the documented coordinate
+system. A formula constructed with @racket[#:source-map 'none] raises an error.
+}
+
+@defproc[(formula-find [formula formula-assembly-visual?]
+                       [selector source-selector?])
+         (listof formula-source-match?)]{
+
+Returns every mapped source occurrence in source order. A string matches
+non-overlapping occurrences from left to right; a regexp may not match an empty
+range. An unmatched query produces the empty list.
+}
+
+@defproc[(formula-source-select [formula formula-assembly-visual?]
+                                [selector source-selector?])
+         visual-selection?]{
+
+Returns the immutable selection of all leaves mapped by @racket[selector]. The
+selection is a query result, not a new scene Visual. It may therefore be used
+for read-only selection operations and formula styling, but not as a target for
+replacement, removal, or arbitrary movement. It raises an error when no mapped
+rendered leaf is selected.
+}
+
+@defproc[(formula-source-select-one [formula formula-assembly-visual?]
+                                    [selector source-selector?])
+         visual-selection?]{
+
+Like @racket[formula-source-select], but requires exactly one matched source
+occurrence.
+}
+
+@defproc[(plan-matching-strings [source formula-assembly-visual?]
+                                [destination formula-assembly-visual?]
+                                [#:matches matches (listof string-match?) '()]
+                                [#:copies copies (listof string-copy?) '()])
+         string-match-plan?]{
+
+Plans a deterministic source-addressed correspondence without rendering it.
+Explicit @racket[string-match] declarations take precedence; remaining equal
+normalized source material is matched in source order. The resulting plan can
+be inspected with @racket[string-match-plan->datum], then animated with
+@racket[transform-matching-strings]. Changed material uses the requested fade
+or fade-transform policy; unmatched material fades. This is syntactic matching,
+not symbolic algebra or a general TeX parser.
 }
 
 @defproc[(tagged-formula-fragment-visual? [value any/c]) boolean?]{
@@ -5447,7 +5544,7 @@ the SCENE-CN constructors.
                        [#:opacity opacity opacity? 1]
                        [#:stroke stroke any/c "black"]
                        [#:stroke-width stroke-width stroke-width? 2])
-         visual?]{
+         relation-visual?]{
 
 Creates a finite line segment with independently sampled endpoints.
 }
@@ -5457,7 +5554,7 @@ Creates a finite line segment with independently sampled endpoints.
                           [#:opacity opacity opacity? 1]
                           [#:stroke stroke any/c "black"]
                           [#:stroke-width stroke-width stroke-width? 2])
-         visual?]{
+         relation-visual?]{
 
 The mathematical finite-segment spelling of @racket[line-between].
 }
@@ -5471,7 +5568,7 @@ The mathematical finite-segment spelling of @racket[line-between].
                         [#:tip-width tip-width (and/c finite-real? positive?) 1/4]
                         [#:start-tip? start-tip? boolean? #f]
                         [#:end-tip? end-tip? boolean? #t])
-         visual?]{
+         relation-visual?]{
 
 Creates an arrow with a shaft and optional tips that follow independently
 sampled endpoints.
@@ -5487,34 +5584,20 @@ sampled endpoints.
                    [#:tip-width tip-width (and/c finite-real? positive?) 1/4]
                    [#:start-tip? start-tip? boolean? #f]
                    [#:end-tip? end-tip? boolean? #t])
-         visual?]{
+         relation-visual?]{
 
 Creates a finite visible ray that begins at @racket[start] and points through
 @racket[through]. Its rendered length is fixed by @racket[length], avoiding an
 ill-defined infinite renderer object.
 }
 
-For literal/parameter/centre-reference endpoints, these constructors return a
-pure @racket[derived-visual?]. A non-centre @racket[anchor-of] returns a
-top-level renderer-aware definition instead. It is deterministic for one
-sampled state/camera/renderer set, but cannot be grouped, animated with
-@racket[create] or @racket[uncreate], chained, or used as another relationship's
-target. Endpoints must resolve to distinct points at the sampled time.
-
-@defproc[(dynamic-endpoint-visual? [value any/c]) boolean?]{
-
-Recognizes a renderer-aware definition selected by a non-centre
-@racket[anchor-of] endpoint. Besides SCENE-CN lines/arrows, this includes the
-live SCENE-ED angle, right-angle, brace, brace-label, and curved-arrow
-annotations.
-}
-
-@defproc[(dynamic-endpoint-visual-has-renderer-anchors?
-          [value dynamic-endpoint-visual?])
-         boolean?]{
-
-Reports whether the definition depends on a non-centre live rendered-box anchor.
-}
+Every endpoint constructor returns a @racket[relation-visual?]. Literal points,
+parameters, and centre references create a @racket['semantic] relation; a
+non-centre @racket[anchor-of] creates a @racket['layout] relation, measured
+against the current renderer-visible box after normal scene sampling. The
+relations retain their identity, support their ordinary outer movement and
+opacity animation, and can be inspected before rendering. Endpoint geometry
+must still resolve to distinct points at the sampled time.
 
 @subsubsection{Mathematical Annotations}
 
@@ -5524,10 +5607,10 @@ SCENE-ED additionally gives selected marks the same live endpoint protocol as
 @racket[scene-parameter], Visual ID/path (its semantic centre), or
 @racket[anchor-of] description. Literal points return the same immediate
 @racket[path-visual?] or @racket[group-visual?] values as before. Parameter and
-centre-reference inputs are pure derived Visuals; an edge/corner anchor is a
-top-level renderer-aware definition. Such renderer-aware annotations cannot be
-placed in a group, chained as another live endpoint's target, or made
-collision-aware automatically.
+centre-reference inputs create semantic relations; an edge/corner anchor creates
+a layout relation. Both are deterministic from the sampled state. The layout
+phase remains top-level in this release, and it uses complete renderer bounds
+rather than exact visible outlines.
 
 @defproc[(arc [#:id id symbol?]
               [#:center center vec2? origin]
@@ -5695,33 +5778,16 @@ support arbitrary Bézier/elliptical routes.
                                 [#:fill fill any/c #f]
                                 [#:stroke stroke any/c "yellow"]
                                 [#:stroke-width stroke-width stroke-width? 3])
-         surrounding-rectangle-visual?]{
+         relation-visual?]{
 
-Creates a top-level renderer-aware rectangular outline around the sampled
-rendered bounding box of @racket[target]. Padding is in world coordinates. The
-returned definition follows motion, scale, rotation, and nested/derived target
-layout, but cannot be placed in a group, chained, or used as a target itself.
-Its current implementation is square-cornered; @racket[#f] selects its default
-transparent fill.
-}
-
-@defproc[(surrounding-rectangle-visual? [value any/c]) boolean?]{
-
-Recognizes a SCENE-CO renderer-aware enclosure definition.
-}
-
-@defproc[(surrounding-rectangle-visual-target
-          [value surrounding-rectangle-visual?])
-         (or/c symbol? visual-path?)]{
-
-Returns the live top-level identity or nested target path.
-}
-
-@defproc[(surrounding-rectangle-visual-padding
-          [value surrounding-rectangle-visual?])
-         stroke-width?]{
-
-Returns the enclosure's nonnegative world-space padding scalar.
+Creates a layout relation around the sampled rendered bounding box of
+@racket[target]. Padding is in world coordinates. The relation follows motion,
+scale, rotation, and nested/derived target layout, retains its ordinary outer
+style and opacity animation, and records its target as a semantic selection
+dependency. Its current implementation is square-cornered; @racket[#f] selects
+its default transparent fill. Like other layout relations, it must currently
+remain top-level and its box includes renderer padding rather than only visible
+ink.
 }
 
 @subsubsection{Mathematical Shape Catalogue}
@@ -7511,6 +7577,92 @@ group is unchanged.
 }
 
 
+@section[#:tag "relation-visuals"]{First-Class Relation Visuals}
+
+A relation is an immutable Visual whose concrete geometry is recomputed from
+explicit dependencies in each sampled scene state. It replaces the former split
+between pure endpoint geometry and renderer-aware endpoint wrappers. No relation
+uses a mutable updater or needs the preceding frame.
+
+@defproc[(relation-visual
+          [template visual?]
+          [#:depends-on dependencies (listof relation-dependency?) '()]
+          [#:phase phase (or/c 'semantic 'layout) 'semantic]
+          [#:structure structure (or/c 'root-only 'fixed) 'root-only]
+          [#:space space (or/c 'world 'local) 'world]
+          [#:cache-key cache-key any/c #f]
+          [resolver (-> relation-context? visual? visual?)])
+         relation-visual?]{
+
+Creates a relation with the stable identity of @racket[template]. The resolver
+receives a read-only @racket[relation-context?] and a local template, and must
+return one concrete Visual with the same identity. Every value, Visual,
+renderer-anchor, or semantic selection read through the context must be named
+in @racket[dependencies]; undeclared reads fail descriptively.
+
+The ordinary movement, rotation, scale, opacity, fill, stroke, and stroke-width
+controls form an outer envelope. They are applied after the resolver has
+computed the current geometry, so a relation may be animated concurrently with
+its own changing dependencies. A requested style must be supported by both the
+template and the concrete result. A @racket['fixed] relation preserves the
+template's complete child-ID tree and may expose nested paths; a
+@racket['root-only] relation deliberately exposes only its root ID.
+
+A @racket['semantic] relation is resolved from model data. A @racket['layout]
+relation may use @racket[relation-context-anchor-ref],
+@racket[relation-context-layout-box], or selection boxes after the active
+renderer has measured its targets. Layout relations are currently top-level
+only, and their measurements are complete Pict boxes rather than tight visible
+outlines.
+}
+
+@defproc[(relation-context-layout-box [context relation-context?]
+                                      [visual visual?])
+         layout-box?]{
+
+Measures one resolver-local concrete Visual in the active renderer/camera
+configuration. This operation is available only to layout relations. It is
+intended for relations such as @racket[attach-to] that must align one anchor of
+their own content to an anchor of another Visual.
+}
+
+@defproc[(value-dependency [target (or/c symbol? scene-parameter?)])
+         relation-dependency?]{Declares one sampled scalar/value input.}
+
+@defproc[(visual-dependency [target (or/c visual? symbol? visual-path?)])
+         relation-dependency?]{Declares one semantic Visual input.}
+
+@defproc[(anchor-dependency [target (or/c visual? symbol? visual-path?)]
+                            [anchor symbol?])
+         relation-dependency?]{Declares one renderer-measured anchor input.}
+
+@defproc[(selection-dependency [selection visual-selection?])
+         relation-dependency?]{Declares one semantic selection input.}
+
+@defproc[(scene-validate-relations [state scene-state?]) immutable-hash?]{
+
+Checks declared relation dependencies and reports missing targets or deterministic
+dependency cycles before rendering.
+}
+
+@defproc[(scene-relation-report [state scene-state?]
+                                [target (or/c #f visual? symbol? visual-path?) #f])
+         any/c]{
+
+Returns deterministic relation-resolution report data without invoking author
+resolver procedures. It records full path, drawing order, phase, structure,
+declared dependencies, cacheability, and warnings. Library-owned serializable
+specifications are cacheable; generic resolver procedures remain opaque unless
+the author supplies @racket[#:cache-key].
+}
+
+Built-in @racket[line-between], @racket[arrow-between], @racket[ray-from],
+@racket[parameter-display], and @racket[attach-to] use serializable relation
+specifications. The live
+angle, brace, and curved-arrow constructors use generic relations because their
+builder procedure is author-specific; therefore they deliberately do not claim
+automatic persistent-cache reuse.
+
 @section[#:tag "derived-visuals"]{Pure Derived Visuals}
 
 SCENE-AW introduced persistent top-level derived Visual definitions driven by
@@ -7608,76 +7760,30 @@ persistent derived definition in scene state.
                                'left 'center 'right
                                'top-left 'top 'top-right)
                          'center])
-         (or/c derived-visual? layout-attached-visual?)]{
+         relation-visual?]{
 
-Creates one world-space derived Visual whose reference position is the sampled
-world-space reference position of @racket[target] plus @racket[offset].
+Creates one world-space relation whose selected content anchor follows the
+selected sampled anchor of @racket[target], plus @racket[offset].
 @racket[target] may be a top-level Visual, its symbol identity, or a nested
-built-in group/formula path. It is looked up anew at every scene sample, so the
-attachment follows target motion and enclosing parent transforms.
-
-When both anchors are @racket['center], this is SCENE-CD's original pure
-@racket[derived-visual?] operation. The content's reference point follows the
-target reference point plus @racket[offset].
-
-When either anchor is not @racket['center], the result is a
-@racket[layout-attached-visual?]. At rendering time it measures the target's
-sampled rendered box with the active camera and Pict renderers, then places the
-selected anchor of @racket[content] at the selected target anchor plus the
-world-space @racket[offset]. This follows target movement, scale, rotation, and
-renderer-visible layout changes without frame-mutating callbacks.
+path. The default centre-to-centre form is a semantic relation: it follows the
+target's sampled reference point without invoking a renderer. Choosing a
+non-centre target or content anchor creates a layout relation, which measures
+the relevant Pict box in the active camera and renderer configuration. Both
+forms follow target motion without frame-mutating callbacks.
 
 The content must be a concrete, non-frame-space Visual, and content and target
-must have distinct identities. Renderer-aware attachments are top-level
-render-time decorations: they cannot be nested in a group, animated directly,
-or used to avoid collisions. They do not inherit target rotation. SCENE-DE does
-allow one attachment to target another when the resulting dependency graph is
-acyclic.
-}
-
-@defproc[(layout-attached-visual? [value any/c]) boolean?]{
-
-Recognizes the renderer-aware attachment result returned by @racket[attach-to]
-when a non-center target or self anchor is selected.
-}
-
-@defproc[(layout-attached-visual-content [value layout-attached-visual?])
-         visual?]{
-
-Returns the concrete world-space content Visual carried by the attachment.
-}
-
-@defproc[(layout-attached-visual-target [value layout-attached-visual?])
-         (or/c symbol? visual-path?)]{
-
-Returns the top-level identity or nested Visual path selected as the live
-renderer-measured target.
-}
-
-@defproc[(layout-attached-visual-target-anchor [value layout-attached-visual?])
-         symbol?]{
-
-Returns the selected target rendered-box anchor.
-}
-
-@defproc[(layout-attached-visual-self-anchor [value layout-attached-visual?])
-         symbol?]{
-
-Returns the selected content rendered-box anchor.
-}
-
-@defproc[(layout-attached-visual-offset [value layout-attached-visual?])
-         vec2?]{
-
-Returns the world-space offset from target anchor to content anchor.
+must have distinct identities. Attachments may be animated through the normal
+relation envelope. One attachment may target another when the resulting
+relation graph is acyclic; they neither avoid other labels nor inherit target
+rotation. Layout attachments are top-level and renderer-dependent; a semantic
+centre attachment can be queried directly from a sampled scene state.
 }
 
 @subsection[#:tag "live-layout"]{Acyclic Live Layout}
 
 SCENE-DE gives the renderer-aware attachment model concise relationship names.
-Their dependency graph is resolved from an attachment's concrete target outward
-at each render. A direct or indirect cycle raises an exception; no prior frame
-is consulted.
+Their relation graph is resolved from a concrete target outward at each render.
+A direct or indirect cycle raises an exception; no prior frame is consulted.
 
 @defproc[(follow-anchor
           [content visual?]
@@ -7685,7 +7791,7 @@ is consulted.
           [#:offset offset vec2? origin]
           [#:target-anchor target-anchor layout-box-anchor? 'center]
           [#:self-anchor self-anchor layout-box-anchor? 'center])
-         (or/c derived-visual? layout-attached-visual?)]{
+         relation-visual?]{
 
 The explicit SCENE-DE name for @racket[attach-to], with the same behavior and
 anchor vocabulary.
@@ -7694,7 +7800,7 @@ anchor vocabulary.
 @defproc[(keep-above [content visual?]
                      [target (or/c visual? symbol? visual-path?)]
                      [#:gap gap (and/c finite-real? (>=/c 0)) 0])
-         layout-attached-visual?]{
+         relation-visual?]{
 
 Places the content's bottom anchor at the target's top anchor plus @racket[gap].
 }
@@ -7702,7 +7808,7 @@ Places the content's bottom anchor at the target's top anchor plus @racket[gap].
 @defproc[(keep-below [content visual?]
                      [target (or/c visual? symbol? visual-path?)]
                      [#:gap gap (and/c finite-real? (>=/c 0)) 0])
-         layout-attached-visual?]{
+         relation-visual?]{
 
 Places the content's top anchor at the target's bottom anchor minus @racket[gap].
 }
@@ -7710,7 +7816,7 @@ Places the content's top anchor at the target's bottom anchor minus @racket[gap]
 @defproc[(keep-left-of [content visual?]
                         [target (or/c visual? symbol? visual-path?)]
                         [#:gap gap (and/c finite-real? (>=/c 0)) 0])
-         layout-attached-visual?]{
+         relation-visual?]{
 
 Places the content's right anchor at the target's left anchor minus @racket[gap].
 }
@@ -7718,7 +7824,7 @@ Places the content's right anchor at the target's left anchor minus @racket[gap]
 @defproc[(keep-right-of [content visual?]
                          [target (or/c visual? symbol? visual-path?)]
                          [#:gap gap (and/c finite-real? (>=/c 0)) 0])
-         layout-attached-visual?]{
+         relation-visual?]{
 
 Places the content's left anchor at the target's right anchor plus @racket[gap].
 }

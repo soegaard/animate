@@ -208,6 +208,14 @@
                        #:decimal-places 1 #:anchor 'decimal))
   (define sign-display
     (parameter-display value #:id 'sign-display #:kind 'integer #:anchor 'sign))
+  ;; Parameter displays are now fixed-structure relation Visuals backed by a
+  ;; transparent built-in formatting specification, not opaque derived
+  ;; resolver closures. The specification is also the conservative cache key.
+  (check-true (relation-visual? decimal-display))
+  (check-true
+   (parameter-display-relation-spec?
+    (relation-visual-cache-key decimal-display)))
+  (check-eq? (relation-visual-cacheability decimal-display) 'serializable)
   (define display-scene
     (scene-play
      (scene-add (scene-set-value (make-scene) value)

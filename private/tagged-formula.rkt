@@ -11,6 +11,7 @@
 
 (require racket/class
          racket/file
+         racket/list
          racket/port
          racket/string
          (only-in pict pict->bitmap pict-height pict-width)
@@ -19,12 +20,19 @@
          "animation.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
+         "formula-source-map.rkt"
+         "formula-source.rkt"
          "formula-style.rkt"
+         "formula-string-match.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "path-geometry.rkt"
+         "source-document.rkt"
+         "source-selector.rkt"
          "svg-write-paths.rkt"
+         "tex-source-scanner.rkt"
+         "visual-selection.rkt"
          "write-in-adapter.rkt"
          "visual-model.rkt")
 
@@ -36,8 +44,9 @@
          tagged-formula-fragment-visual-svg-source
          transform-matching-formula
          transform-matching-glyphs
-         rewrite-formula
-         transform-matching-tex)
+         transform-matching-strings
+         rewrite-matching-strings
+         rewrite-formula)
 
 
 ;;; Fragment Definitions
@@ -288,7 +297,7 @@
    color-map))
 
 
-;;; Manim-Style Formula Convenience
+;;; Source-Addressable Formula Construction
 
 ; math-tex : #:id symbol?
 ;            [#:center vec2?]
@@ -300,12 +309,14 @@
 ;            [#:preamble string?]
 ;            [#:document-class-options (listof latex-option?)]
 ;            [#:color-map (hash/c symbol? color-spec?)]
+;            [#:source-map (or/c 'none 'declared 'tokens)]
+;            [#:parts (listof source-part?)]
 ;            string? ...
 ;            -> formula-assembly-visual?
-;; Typesets a complete TeX formula while using Manim-style `{{ ... }}` groups
-;; to declare matchable fragments. Text between those groups is matchable too.
-;; This is shorthand for tagged-formula; use tagged-formula directly when
-;; repeated terms need stable, author-chosen identities.
+;; Typesets one complete TeX formula. Source selectors, rather than
+;; parser-specific fragment syntax, drive source inspection and matching.
+;; Use tagged-formula directly when author-chosen local part identities are
+;; the appropriate semantic vocabulary.
 (define (math-tex #:id id
                   #:center [center origin]
                   #:rotation [rotation 0]
@@ -317,33 +328,387 @@
                   #:document-class-options
                   [document-class-options '()]
                   #:color-map [color-map (hash)]
+                  ;; Source-addressability is ordinary math-tex behavior. An
+                  ;; author opts out explicitly with #:source-map 'none when
+                  ;; they deliberately require an opaque, one-part formula.
+                  #:source-map [source-map 'tokens]
+                  #:parts [declared-parts '()]
                   . tex-strings)
   (unless (and (pair? tex-strings)
                (andmap string? tex-strings))
     (raise-argument-error 'math-tex "nonempty list of strings" tex-strings))
-  (define fragments
-    (for/list ([source (in-list (math-tex-split (string-join tex-strings " ")))]
-               [index (in-naturals)])
-      (formula-fragment
-       (string->symbol (format "math-tex-part-~a" index))
-       source)))
-  (unless (pair? fragments)
+  (unless (memq source-map '(none declared tokens))
+    (raise-argument-error 'math-tex "(or/c 'none 'declared 'tokens)" source-map))
+  (unless (and (list? declared-parts)
+               (andmap source-part? declared-parts))
+    (raise-argument-error 'math-tex "list of source-part? values" declared-parts))
+  (case source-map
+    [(none)
+     (unless (null? declared-parts)
+       (raise-arguments-error
+        'math-tex
+        "#:parts only when #:source-map is 'declared"
+        "source-map" source-map
+        "parts" declared-parts))
+     (define source (string-join tex-strings " "))
+     (apply tagged-formula
+            #:id id
+            #:center center
+            #:rotation rotation
+            #:scale scale
+            #:opacity opacity
+            #:mode mode
+            #:font-size font-size
+            #:preamble preamble
+            #:document-class-options document-class-options
+            #:color-map color-map
+            (list (formula-fragment 'math-tex source)))]
+    [(declared)
+     (unless (pair? declared-parts)
+       (raise-arguments-error
+        'math-tex
+        "at least one declared source part when #:source-map is 'declared"
+        "parts" declared-parts))
+     (define document (source-document-from-strings tex-strings))
+     (define-values (fragments mapping)
+       (declared-source-fragments document declared-parts))
+     (formula-assembly-visual-with-source-map
+      (apply tagged-formula
+             #:id id
+             #:center center
+             #:rotation rotation
+             #:scale scale
+             #:opacity opacity
+             #:mode mode
+             #:font-size font-size
+             #:preamble preamble
+             #:document-class-options document-class-options
+             #:color-map color-map
+             fragments)
+      mapping)]
+    [(tokens)
+     (unless (null? declared-parts)
+       (raise-arguments-error
+        'math-tex
+        "#:parts is not needed when #:source-map is 'tokens"
+        "source-map" source-map
+        "parts" declared-parts))
+     (define document (source-document-from-strings tex-strings))
+     (define-values (fragments mapping)
+       (declared-source-fragments document (token-source-parts document)))
+     (formula-assembly-visual-with-source-map
+      (apply tagged-formula
+             #:id id
+             #:center center
+             #:rotation rotation
+             #:scale scale
+             #:opacity opacity
+             #:mode mode
+             #:font-size font-size
+             #:preamble preamble
+             #:document-class-options document-class-options
+             #:color-map color-map
+             fragments)
+      mapping)]))
+
+
+;;; Declared Source Mapping
+
+;; A declared entry records one stable source-part and the one contiguous span
+;; it resolved to. The public source-part name becomes the formula child ID.
+(struct declared-source-entry (part span)
+  #:transparent)
+
+;; A physical fragment can include adjacent unselected whitespace/comments so
+;; no invisible SVG group is ever requested from the tagged-formula compiler.
+;; Its `name` is either a source-part name or a deterministic source-gap name.
+(struct declared-source-fragment (name span)
+  #:transparent)
+
+;; token-source-parts : source-document? -> (listof source-part?)
+;; Produces conservative TeX *atoms*, not a full TeX parse and not a proven
+;; token-to-glyph map.  Each atom can safely stand inside the existing tagged
+;; fragment wrapper: bases retain their scripts, known multi-argument commands
+;; retain their groups, and ordinary brace groups stay intact.  This gives
+;; useful post-construction source selection without ever splitting syntax such
+;; as `x^2` or `\\frac{a}{b}` into invalid TeX fragments.
+;;
+;; Unknown commands followed by one braced group are kept with that group. An
+;; unknown command with several required arguments, category-code changes, or
+;; a macro whose expansion crosses a selected boundary remains advanced input;
+;; callers can use `#:source-map 'declared` for explicitly chosen spans.
+(define (token-source-parts document)
+  (define source (source-document-text document))
+  (define scan (scan-tex-source source))
+  (when (pair? (tex-source-scan-diagnostics scan))
     (raise-arguments-error
      'math-tex
-     "at least one `{{ ... }}` group or ordinary TeX fragment with visible ink"
-     "tex-strings" tex-strings))
-  (apply tagged-formula
-         #:id id
-         #:center center
-         #:rotation rotation
-         #:scale scale
-         #:opacity opacity
-         #:mode mode
-         #:font-size font-size
-         #:preamble preamble
-         #:document-class-options document-class-options
-         #:color-map color-map
-         fragments))
+     "balanced TeX source before automatic source atom mapping"
+     "diagnostic" (car (tex-source-scan-diagnostics scan))))
+  (define tokens (tex-source-scan-tokens scan))
+  (define token-count (length tokens))
+  (define (token-at index) (list-ref tokens index))
+  (define (token-source index)
+    (define token (token-at index))
+    (substring source
+               (tex-source-token-start token)
+               (tex-source-token-end token)))
+  (define (in-range? index) (< index token-count))
+  (define (ignorable? index)
+    (memq (tex-source-token-kind (token-at index)) '(whitespace comment)))
+  (define (skip-ignorable index)
+    (if (and (in-range? index) (ignorable? index))
+        (skip-ignorable (add1 index))
+        index))
+  ;; Returns the token index immediately after a braced group, or #f when the
+  ;; next material is not a complete `{ ... }` group.
+  (define (group-end index)
+    (cond
+      [(or (not (in-range? index))
+           (not (eq? (tex-source-token-kind (token-at index)) 'open-brace)))
+       #f]
+      [else
+       (let loop ([cursor index] [depth 0])
+         (cond
+           [(not (in-range? cursor)) #f]
+           [else
+            (define kind (tex-source-token-kind (token-at cursor)))
+            (define next-depth
+              (cond [(eq? kind 'open-brace) (add1 depth)]
+                    [(eq? kind 'close-brace) (sub1 depth)]
+                    [else depth]))
+            (cond [(negative? next-depth) #f]
+                  [(zero? next-depth) (add1 cursor)]
+                  [else (loop (add1 cursor) next-depth)])]))]))
+  (define (groups-end index count)
+    (let loop ([cursor index] [remaining count])
+      (cond
+        [(zero? remaining) cursor]
+        [else
+         (define group (group-end (skip-ignorable cursor)))
+         (and group (loop group (sub1 remaining)))])))
+  (define (script-tail-end index)
+    (let loop ([cursor index])
+      (cond
+        [(or (not (in-range? cursor))
+             (not (eq? (tex-source-token-kind (token-at cursor))
+                       'script-marker)))
+         cursor]
+        [else
+         (define argument-start (skip-ignorable (add1 cursor)))
+         (cond
+           [(not (in-range? argument-start)) cursor]
+           [(eq? (tex-source-token-kind (token-at argument-start)) 'open-brace)
+            (define group (group-end argument-start))
+            (if group (loop group) cursor)]
+           [else (loop (add1 argument-start))])])))
+  (define (control-end index)
+    (define command (token-source index))
+    (define after-command (add1 index))
+    (define required-groups
+      (cond [(member command '("\\frac" "\\dfrac" "\\tfrac")) 2]
+            [(member command '("\\sqrt" "\\text" "\\mathrm" "\\mathbf"
+                               "\\mathit" "\\operatorname" "\\overline"
+                               "\\underline" "\\hat" "\\bar" "\\vec")) 1]
+            [else 0]))
+    (define with-required-groups
+      (and (positive? required-groups)
+           (groups-end after-command required-groups)))
+    (define initial-end
+      (cond [with-required-groups with-required-groups]
+            [(positive? required-groups) after-command]
+            [else
+             ;; This conservative default handles common one-argument macros
+             ;; without pretending to know arbitrary macro arities.
+             (or (groups-end after-command 1) after-command)]))
+    (script-tail-end initial-end))
+  (define (atom-end index)
+    (define token (token-at index))
+    (define end
+      (case (tex-source-token-kind token)
+        [(ordinary) (add1 index)]
+        [(control-word control-symbol) (control-end index)]
+        [(open-brace) (or (group-end index) (add1 index))]
+        [else (add1 index)]))
+    (script-tail-end end))
+  (define parts-reversed '())
+  (define next-name-index 0)
+  (let loop ([cursor 0])
+    (define atom-start (skip-ignorable cursor))
+    (cond
+      [(not (in-range? atom-start)) (reverse parts-reversed)]
+      [else
+       (define token (token-at atom-start))
+       (define atom-end-index (atom-end atom-start))
+       ;; A top-level script marker cannot form valid TeX independently.  It
+       ;; only arises after malformed source or an unsupported previous atom;
+       ;; leave it as an unselected physical gap rather than claiming a map.
+       (if (eq? (tex-source-token-kind token) 'script-marker)
+           (loop (add1 atom-start))
+           (let* ([last-token (token-at (sub1 atom-end-index))]
+                  [span (source-span (tex-source-token-start token)
+                                     (tex-source-token-end last-token))]
+                  [name (string->symbol
+                         (format "source-token-~a" next-name-index))])
+             (set! next-name-index (add1 next-name-index))
+             (set! parts-reversed (cons (source-part name span) parts-reversed))
+             (loop atom-end-index)))]))
+  (when (null? parts-reversed)
+    (raise-arguments-error
+     'math-tex
+     "at least one safely wrappable TeX source atom"
+     "source" source))
+  (reverse parts-reversed))
+
+;; declared-source-fragments : source-document? (listof source-part?)
+;;                             -> (values (listof formula-fragment?)
+;;                                        formula-source-map?)
+;; Validates selectors before invoking TeX. Each named declaration must resolve
+;; to exactly one safe, contiguous source span; overlaps and nesting are
+;; intentionally rejected while formula assemblies remain a flat part list.
+(define (declared-source-fragments document parts)
+  (define scan (scan-tex-source (source-document-text document)))
+  (check-distinct-declared-source-names parts)
+  (define entries
+    (for/list ([part (in-list parts)])
+      (define spans (resolve-source-selector document part))
+      (unless (= (length spans) 1)
+        (raise-arguments-error
+         'math-tex
+         "each declared source part to resolve to exactly one contiguous source span"
+         "part-name" (source-part-name part)
+         "selector" (source-part-selector part)
+         "match-count" (length spans)))
+      (define span (car spans))
+      (define diagnostic (tex-source-span-diagnostic scan span))
+      (when diagnostic
+        (raise-arguments-error
+         'math-tex
+         "a declared source span that can safely receive a TeX fragment wrapper"
+         "part-name" (source-part-name part)
+         "span" span
+         "diagnostic" diagnostic))
+      (declared-source-entry part span)))
+  (define sorted-entries
+    (sort entries
+          (lambda (left right)
+            (< (source-span-start (declared-source-entry-span left))
+               (source-span-start (declared-source-entry-span right))))))
+  (check-disjoint-declared-source-entries sorted-entries)
+  (define physical-fragments
+    (partition-declared-source document scan sorted-entries))
+  (values
+   (for/list ([fragment (in-list physical-fragments)])
+     (formula-fragment
+      (declared-source-fragment-name fragment)
+      (source-document-span-text document
+                                 (declared-source-fragment-span fragment))))
+   (make-formula-source-map
+    document
+    (for/list ([entry (in-list sorted-entries)])
+      (define part (declared-source-entry-part entry))
+      (define span (declared-source-entry-span entry))
+      (formula-source-match
+       span
+       (source-document-span-text document span)
+       (source-part-name part)
+       (list (list (source-part-name part))))))))
+
+(define (check-distinct-declared-source-names parts)
+  (define names (map source-part-name parts))
+  (unless (= (length names) (length (remove-duplicates names)))
+    (raise-arguments-error
+     'math-tex
+     "declared source parts with distinct names"
+     "part-names" names)))
+
+(define (check-disjoint-declared-source-entries entries)
+  (let loop ([previous #f] [remaining entries])
+    (cond
+      [(null? remaining) (void)]
+      [else
+       (define current (car remaining))
+       (when (and previous
+                  (< (source-span-start (declared-source-entry-span current))
+                     (source-span-end (declared-source-entry-span previous))))
+         (raise-arguments-error
+          'math-tex
+          "disjoint declared source spans; nested and overlapping declarations are not supported"
+          "first-part-name" (source-part-name (declared-source-entry-part previous))
+          "first-span" (declared-source-entry-span previous)
+          "second-part-name" (source-part-name (declared-source-entry-part current))
+          "second-span" (declared-source-entry-span current)))
+       (loop current (cdr remaining))])))
+
+;; partition-declared-source : source-document? tex-source-scan?
+;;                             (listof declared-source-entry?)
+;;                             -> (listof declared-source-fragment?)
+(define (partition-declared-source document scan entries)
+  (define text-length (source-document-length document))
+  (define pieces-reversed '())
+  (define (add-piece! name span)
+    (unless (= (source-span-start span) (source-span-end span))
+      (set! pieces-reversed (cons (cons name span) pieces-reversed))))
+  (define cursor 0)
+  (for ([entry (in-list entries)])
+    (define span (declared-source-entry-span entry))
+    (when (< cursor (source-span-start span))
+      (add-piece! #f (source-span cursor (source-span-start span))))
+    (add-piece! (source-part-name (declared-source-entry-part entry)) span)
+    (set! cursor (source-span-end span)))
+  (when (< cursor text-length)
+    (add-piece! #f (source-span cursor text-length)))
+  (define pieces (reverse pieces-reversed))
+  (define taken-names (make-hasheq))
+  (for ([entry (in-list entries)])
+    (hash-set! taken-names (source-part-name (declared-source-entry-part entry)) #t))
+  (define next-gap-index 0)
+  (define (fresh-gap-name)
+    (let loop ()
+      (define candidate (string->symbol (format "source-gap-~a" next-gap-index)))
+      (set! next-gap-index (add1 next-gap-index))
+      (if (hash-has-key? taken-names candidate)
+          (loop)
+          (begin
+            (hash-set! taken-names candidate #t)
+            candidate))))
+  (define fragments-reversed '())
+  (define leading-invisible-start #f)
+  (define (append-invisible! span)
+    (cond
+      [(pair? fragments-reversed)
+       (define previous (car fragments-reversed))
+       (define previous-span (declared-source-fragment-span previous))
+       (unless (= (source-span-end previous-span) (source-span-start span))
+         (error 'math-tex "internal error: non-adjacent source fragments"))
+       (set! fragments-reversed
+             (cons (declared-source-fragment
+                    (declared-source-fragment-name previous)
+                    (source-span (source-span-start previous-span)
+                                 (source-span-end span)))
+                   (cdr fragments-reversed)))]
+      [else
+       (set! leading-invisible-start
+             (or leading-invisible-start (source-span-start span)))]))
+  (for ([piece (in-list pieces)])
+    (define name (car piece))
+    (define span (cdr piece))
+    (cond
+      [(not (tex-source-span-has-visible-source? scan span))
+       (append-invisible! span)]
+      [else
+       (define fragment-name (or name (fresh-gap-name)))
+       (define fragment-start (or leading-invisible-start (source-span-start span)))
+       (set! fragments-reversed
+             (cons (declared-source-fragment
+                    fragment-name
+                    (source-span fragment-start (source-span-end span)))
+                   fragments-reversed))
+       (set! leading-invisible-start #f)]))
+  ;; All declared spans are scanner-validated as visible, so at least one
+  ;; physical fragment exists. A trailing invisible gap was already attached
+  ;; to its predecessor during the loop.
+  (reverse fragments-reversed))
 
 ; glyph-tex : #:id symbol?
 ;             [#:center vec2?]
@@ -467,70 +832,6 @@
                      #:opacity opacity)
    color-map))
 
-;; math-tex-split : string? -> (listof nonempty-string?)
-;; Splits Manim's double-brace form wherever it occurs. Nested TeX braces and
-;; escaped braces are retained inside a group. Whitespace-only pieces cannot
-;; be rendered as formula fragments.
-(define (math-tex-split source)
-  (define length (string-length source))
-  (define pieces-reversed '())
-  (define output (open-output-string))
-  (define (emit-current!)
-    (define piece (string-trim (get-output-string output)))
-    (unless (string=? piece "")
-      (set! pieces-reversed (cons piece pieces-reversed)))
-    (set! output (open-output-string)))
-  (define (starts-with? index text)
-    (and (<= (+ index (string-length text)) length)
-         (string=? (substring source index (+ index (string-length text)))
-                   text)))
-  (let loop ([index 0] [inside-group? #f] [brace-depth 0])
-    (cond
-      [(= index length)
-       (when inside-group?
-         (raise-arguments-error
-          'math-tex
-          "balanced Manim-style `{{ ... }}` groups"
-          "source" source))
-       (emit-current!)
-       (reverse pieces-reversed)]
-      [else
-       (define character (string-ref source index))
-       ;; Treat an escaped brace/backslash as literal TeX input. The two
-       ;; characters must stay together so `\\}}` cannot terminate a group.
-       (cond
-         [(and (char=? character #\\)
-               (< (add1 index) length)
-               (let ([next (string-ref source (add1 index))])
-                 (or (char=? next #\\)
-                     (char=? next #\{)
-                     (char=? next #\}))))
-          (write-char character output)
-          (write-char (string-ref source (add1 index)) output)
-         (loop (+ index 2) inside-group? brace-depth)]
-         [(not inside-group?)
-          (if (starts-with? index "{{")
-              (begin
-                (emit-current!)
-                (loop (+ index 2) #t 0))
-              (begin
-                (write-char character output)
-                (loop (add1 index) #f 0)))]
-         [(char=? character #\{)
-          (write-char character output)
-          (loop (add1 index) #t (add1 brace-depth))]
-         [(and (char=? character #\})
-               (zero? brace-depth)
-               (starts-with? index "}}"))
-          (emit-current!)
-          (loop (+ index 2) #f 0)]
-         [(char=? character #\})
-          (write-char character output)
-          (loop (add1 index) #t (sub1 brace-depth))]
-         [else
-          (write-char character output)
-          (loop (add1 index) #t brace-depth)])])))
-
 ; transform-matching-formula : formula-assembly-visual?
 ;                              formula-assembly-visual?
 ;                              [#:matches (listof formula-part-match?)]
@@ -557,6 +858,260 @@
    #:part-paths part-paths
    #:copies copies
    #:mismatch-mode mismatch-mode))
+
+; transform-matching-strings : formula-assembly-visual?
+;                              formula-assembly-visual?
+;                              [#:matches (listof string-match?)]
+;                              [#:key-map (listof string-match?)]
+;                              [#:protect-source (listof source-selector?)]
+;                              [#:protect-destination (listof source-selector?)]
+;                              [#:copies (listof string-copy?)]
+;                              [#:on-ambiguity (or/c 'left-to-right 'error)]
+;                              [#:path-arc finite-real?]
+;                              [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                              -> transform-formula-parts-request?
+;; Plans declared source-map correspondences, then compiles each selected
+;; complete formula fragment into the established deterministic part-transition
+;; system. Explicit maps outrank automatic source blocks. A future token map
+;; will allow several glyph leaves per planned string block; this initial
+;; compiler intentionally rejects anything other than whole declared parts.
+(define (transform-matching-strings source destination
+                                    #:matches [matches '()]
+                                    #:key-map [key-map '()]
+                                    #:protect-source [protect-source '()]
+                                    #:protect-destination [protect-destination '()]
+                                    #:copies [copies '()]
+                                    #:on-ambiguity [on-ambiguity 'left-to-right]
+                                    #:path-arc [path-arc 0]
+                                    #:mismatch-mode [mismatch-mode 'fade])
+  (define plan
+    (plan-matching-strings
+     source destination
+     #:matches matches
+     #:key-map key-map
+     #:protect-source protect-source
+     #:protect-destination protect-destination
+     #:on-ambiguity on-ambiguity))
+  (check-string-copy-list 'transform-matching-strings copies)
+  (define correspondence
+    (string-match-plan->formula-correspondence plan))
+  (transform-formula-parts
+   correspondence
+   #:path-arc path-arc
+   #:part-paths (string-match-plan->formula-part-paths plan)
+   #:copies (string-copies->formula-part-copies
+             source destination correspondence copies path-arc)
+   #:mismatch-mode mismatch-mode))
+
+; rewrite-matching-strings : formula-assembly-visual? formula-assembly-visual?
+;                            #:anchor source-selector?
+;                            [#:stationary (listof source-selector?)]
+;                            [#:matches (listof string-match?)]
+;                            [#:key-map (listof string-match?)]
+;                            [#:protect-source (listof source-selector?)]
+;                            [#:protect-destination (listof source-selector?)]
+;                            [#:copies (listof string-copy?)]
+;                            [#:on-ambiguity (or/c 'left-to-right 'error)]
+;                            [#:path-arc finite-real?]
+;                            [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                            -> transform-formula-parts-request?
+;; A source-addressed counterpart to `rewrite-formula`.  The anchor and every
+;; stationary selector are made explicit before automatic matching, then the
+;; established scene-compile-time anchoring logic measures the *current*
+;; formula layout.  Each selector must resolve to exactly one declared part in
+;; both formulas in this first implementation.
+(define (rewrite-matching-strings source destination
+                                  #:anchor anchor
+                                  #:stationary [stationary '()]
+                                  #:matches [matches '()]
+                                  #:key-map [key-map '()]
+                                  #:protect-source [protect-source '()]
+                                  #:protect-destination [protect-destination '()]
+                                  #:copies [copies '()]
+                                  #:on-ambiguity [on-ambiguity 'left-to-right]
+                                  #:path-arc [path-arc 0]
+                                  #:mismatch-mode [mismatch-mode 'fade])
+  (unless (source-selector? anchor)
+    (raise-argument-error 'rewrite-matching-strings "source-selector?" anchor))
+  (unless (and (list? stationary) (andmap source-selector? stationary))
+    (raise-argument-error
+     'rewrite-matching-strings
+     "list of source-selector? values"
+     stationary))
+  ;; Explicitly installing these pairs means an occurrence selector determines
+  ;; the exact correspondence before any repeated-string heuristic runs.
+  (define required-matches
+    (append (list (string-match anchor anchor))
+            (for/list ([selector (in-list stationary)])
+              (string-match selector selector))
+            matches))
+  (define plan
+    (plan-matching-strings
+     source destination
+     #:matches required-matches
+     #:key-map key-map
+     #:protect-source protect-source
+     #:protect-destination protect-destination
+     #:on-ambiguity on-ambiguity))
+  (check-string-copy-list 'rewrite-matching-strings copies)
+  (define correspondence (string-match-plan->formula-correspondence plan))
+  (define anchor-match
+    (selector->single-part-match source destination anchor))
+  (define stationary-matches
+    (for/list ([selector (in-list stationary)])
+      (selector->single-part-match source destination selector)))
+  (transform-formula-parts/anchored
+   correspondence
+   anchor-match
+   #:path-arc path-arc
+   #:part-paths (string-match-plan->formula-part-paths plan)
+   #:copies (string-copies->formula-part-copies
+             source destination correspondence copies path-arc)
+   #:stationary stationary-matches
+   #:mismatch-mode mismatch-mode))
+
+(define (string-match-plan->formula-correspondence plan)
+  (unless (string-match-plan? plan)
+    (raise-argument-error
+     'transform-matching-strings
+     "string-match-plan?"
+     plan))
+  (define source (string-match-plan-source plan))
+  (define destination (string-match-plan-destination plan))
+  (formula-correspondence
+   source
+   destination
+   (append*
+    (for/list ([match (in-list (string-match-plan-matches plan))])
+      (planned-string-match->formula-part-matches source destination match)))))
+
+(define (string-match-plan->formula-part-paths plan)
+  (unless (string-match-plan? plan)
+    (raise-argument-error
+     'transform-matching-strings
+     "string-match-plan?"
+     plan))
+  (define source (string-match-plan-source plan))
+  (define destination (string-match-plan-destination plan))
+  (append*
+   (for/list ([match (in-list (string-match-plan-matches plan))]
+              #:when (planned-string-match-route match))
+     (planned-string-match->formula-part-paths source destination match))))
+
+;; planned-string-match->formula-part-matches : formula assembly formula
+;;                                               planned-string-match?
+;;                                               -> (listof formula-part-match?)
+(define (planned-string-match->formula-part-matches source destination match)
+  (define source-names
+    (selection->declared-part-names
+     source (planned-string-match-source-selection match)))
+  (define destination-names
+    (selection->declared-part-names
+     destination (planned-string-match-destination-selection match)))
+  (unless (= (length source-names) (length destination-names))
+    (raise-arguments-error
+     'transform-matching-strings
+     "planned source/destination selections with the same declared part count"
+     "planned-match" match
+     "source-count" (length source-names)
+     "destination-count" (length destination-names)))
+  (for/list ([source-name (in-list source-names)]
+             [destination-name (in-list destination-names)])
+    (formula-part-match source-name destination-name)))
+
+(define (planned-string-match->formula-part-paths source destination match)
+  (for/list ([part-match
+              (in-list
+               (planned-string-match->formula-part-matches
+                source destination match))])
+    (formula-part-path
+     (formula-part-match-source-name part-match)
+     (formula-part-match-destination-name part-match)
+     (planned-string-match-route match))))
+
+(define (selection->declared-part-names formula selection)
+  (unless (and (visual-selection? selection)
+               (equal? (visual-selection-root selection)
+                       (list (visual-id formula))))
+    (raise-arguments-error
+     'transform-matching-strings
+     "a formula-local source selection rooted at the planned formula"
+     "formula-id" (visual-id formula)
+     "selection" selection))
+  (for/list ([path (in-list (visual-selection-paths selection))])
+    (unless (and (pair? path) (null? (cdr path)))
+      (raise-arguments-error
+       'transform-matching-strings
+       "a planned selection of complete declared formula fragments"
+       "formula-id" (visual-id formula)
+       "selection" selection
+       "relative-path" path))
+    (define name (car path))
+    (unless (formula-assembly-visual-has-part? formula name)
+      (raise-arguments-error
+       'transform-matching-strings
+       "a planned formula part present in the target formula"
+       "formula-id" (visual-id formula)
+       "part-name" name))
+    name))
+
+(define (selector->single-part-match source destination selector)
+  (define source-names
+    (selection->declared-part-names
+     source (formula-source-select-one source selector)))
+  (define destination-names
+    (selection->declared-part-names
+     destination (formula-source-select-one destination selector)))
+  (unless (and (= (length source-names) 1)
+               (= (length destination-names) 1))
+    (raise-arguments-error
+     'rewrite-matching-strings
+     "a selector resolving to one declared source part in each formula"
+     "selector" selector
+     "source-count" (length source-names)
+     "destination-count" (length destination-names)))
+  (formula-part-match (car source-names) (car destination-names)))
+
+(define (string-copies->formula-part-copies source destination correspondence
+                                             copies path-arc)
+  (define unmatched-destinations
+    (formula-correspondence-unmatched-destination-names correspondence))
+  (define default-route (formula-arc #:angle path-arc))
+  (append*
+   (for/list ([copy (in-list copies)])
+     (define source-names
+       (selection->declared-part-names
+        source
+        (formula-source-select source (string-copy-source-selector copy))))
+     (define destination-names
+       (selection->declared-part-names
+        destination
+        (formula-source-select destination
+                               (string-copy-destination-selector copy))))
+     (unless (= (length source-names) (length destination-names))
+       (raise-arguments-error
+        'transform-matching-strings
+        "copy selectors resolving to the same number of declared formula parts"
+        "source-selector" (string-copy-source-selector copy)
+        "destination-selector" (string-copy-destination-selector copy)
+        "source-count" (length source-names)
+        "destination-count" (length destination-names)))
+     (for/list ([source-name (in-list source-names)]
+                [destination-name (in-list destination-names)])
+       (unless (member destination-name unmatched-destinations)
+         (raise-arguments-error
+          'transform-matching-strings
+          "a copied destination part left unmatched by ordinary string matching"
+          "destination-name" destination-name
+          "copy" copy))
+       (formula-part-copy
+        source-name
+        destination-name
+        (or (string-copy-route copy) default-route))))))
+
+(define (check-string-copy-list who copies)
+  (unless (and (list? copies) (andmap string-copy? copies))
+    (raise-argument-error who "list of string-copy? values" copies)))
 
 ; transform-matching-glyphs : formula-assembly-visual?
 ;                            formula-assembly-visual?
@@ -751,153 +1306,6 @@
      "an anchor or stationary part that does not conflict with an explicit match"
      "required-match" anchor
      "match" overlapping)]))
-
-; transform-matching-tex : formula-assembly-visual? formula-assembly-visual?
-;                          [#:key-map (hash/c string? string?)]
-;                          [#:path-arc finite-real?]
-;                          [#:path-map (hash/c (cons/c string? string?) formula-route?)]
-;                          [#:mismatch-mode (or/c 'fade 'fade-transform)]
-;                          -> transform-formula-parts-request?
-;; A Manim-style shorthand for transitions between math-tex formulas. Exact
-;; TeX fragments match automatically. `key-map` explicitly pairs every
-;; source occurrence of one mapped string with the first available destination
-;; occurrence of its mapped string. Key-map pairs take priority over automatic
-;; matches. `path-arc` sets the default circular route; `path-map` selects
-;; routes by (cons source-TeX destination-TeX). Named tagged-formulas remain
-;; the precise option when duplicate occurrences need individual control.
-;; `mismatch-mode` can turn remaining unmatched pieces into moving cross-fades.
-(define (transform-matching-tex source destination
-                                #:key-map [key-map (hash)]
-                                #:path-arc [path-arc 0]
-                                #:path-map [path-map (hash)]
-                                #:mismatch-mode [mismatch-mode 'fade])
-  (unless (formula-assembly-visual? source)
-    (raise-argument-error
-     'transform-matching-tex
-     "formula-assembly-visual?"
-     source))
-  (unless (formula-assembly-visual? destination)
-    (raise-argument-error
-     'transform-matching-tex
-     "formula-assembly-visual?"
-     destination))
-  (check-tex-key-map key-map)
-  (check-tex-path-map path-map)
-  ;; Key-map pairs are deliberate overrides, analogous to Manim's key_map.
-  ;; Match them before exact-text pairing so a caller can redirect a source
-  ;; fragment even if an identical target fragment also exists.
-  (define-values (mapped-reversed used-source used-destination)
-    (for/fold ([matches '()]
-               [source-used (hash)]
-               [destination-used (hash)])
-              ([source-part (in-list (formula-assembly-visual-parts source))])
-      (define source-name (formula-part-name source-part))
-      (define mapped-source
-        (formula-visual-source (formula-part-formula source-part)))
-      (define destination-source
-        (hash-ref key-map mapped-source #f))
-      (define destination-part
-        (and destination-source
-             (for/first ([candidate
-                          (in-list (formula-assembly-visual-parts destination))]
-                         #:unless (hash-has-key? destination-used
-                                                  (formula-part-name candidate))
-                         #:when (string=? destination-source
-                                          (formula-visual-source
-                                           (formula-part-formula candidate))))
-               candidate)))
-      (if destination-part
-          (values
-           (cons (formula-part-match source-name
-                                     (formula-part-name destination-part))
-                 matches)
-           (hash-set source-used source-name #t)
-           (hash-set destination-used (formula-part-name destination-part) #t))
-          (values matches source-used destination-used))))
-  (define automatic
-    (formula-correspondence-auto source destination))
-  (define automatic-remaining
-    (filter
-     (lambda (match)
-       (and (not (hash-has-key? used-source
-                                (formula-part-match-source-name match)))
-            (not (hash-has-key? used-destination
-                                (formula-part-match-destination-name match)))))
-     (formula-correspondence-matches automatic)))
-  (define correspondence
-    (formula-correspondence
-     source
-     destination
-     (append (reverse mapped-reversed) automatic-remaining)))
-  (transform-formula-parts
-   correspondence
-   #:path-arc path-arc
-   #:part-paths (tex-path-map->part-paths correspondence path-map)
-   #:mismatch-mode mismatch-mode))
-
-(define (check-tex-key-map key-map)
-  (unless (hash? key-map)
-    (raise-argument-error 'transform-matching-tex "hash?" key-map))
-  (for ([(source destination) (in-hash key-map)])
-    (unless (string? source)
-      (raise-arguments-error
-       'transform-matching-tex
-       "a hash mapping TeX source strings to TeX source strings"
-       "key" source
-       "value" destination))
-    (unless (string? destination)
-      (raise-arguments-error
-       'transform-matching-tex
-       "a hash mapping TeX source strings to TeX source strings"
-       "key" source
-       "value" destination))))
-
-(define (check-tex-path-map path-map)
-  (unless (hash? path-map)
-    (raise-argument-error 'transform-matching-tex "hash?" path-map))
-  (for ([(key route) (in-hash path-map)])
-    (unless (and (pair? key)
-                 (string? (car key))
-                 (string? (cdr key)))
-      (raise-arguments-error
-       'transform-matching-tex
-       "a hash mapping (cons TeX-source TeX-source) pairs to formula routes"
-       "key" key
-       "value" route))
-    (unless (formula-route? route)
-      (raise-arguments-error
-       'transform-matching-tex
-       "a hash mapping (cons TeX-source TeX-source) pairs to formula routes"
-       "key" key
-       "value" route))))
-
-(define (tex-path-map->part-paths correspondence path-map)
-  (reverse
-   (for/fold ([result '()])
-             ([match (in-list (formula-correspondence-matches correspondence))])
-     (define source-part
-       (formula-assembly-visual-ref
-        (formula-correspondence-source correspondence)
-        (formula-part-match-source-name match)))
-     (define destination-part
-       (formula-assembly-visual-ref
-        (formula-correspondence-destination correspondence)
-        (formula-part-match-destination-name match)))
-     (define route
-       (hash-ref
-        path-map
-        (cons (formula-visual-source (formula-part-formula source-part))
-              (formula-visual-source (formula-part-formula destination-part)))
-        #f))
-     (if route
-         (cons
-          (formula-part-path
-           (formula-part-match-source-name match)
-           (formula-part-match-destination-name match)
-           route)
-          result)
-         result))))
-
 
 ;;; SVG Compilation
 

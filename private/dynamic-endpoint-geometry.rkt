@@ -4,11 +4,10 @@
 ;;; Dynamic Endpoint Geometry
 ;;;
 
-;; Defines deterministic line and arrow definitions whose endpoints are sampled
-;; from immutable scene state.  Ordinary point/parameter/reference endpoints are
-;; pure derived Visuals.  An endpoint that selects a non-centre rendered-box
-;; anchor is instead a small renderer-aware wrapper, just like SCENE-CM's live
-;; attachment: only the adapter knows the measured extent of a Visual.
+;; Defines deterministic line and arrow relations whose endpoints are sampled
+;; from immutable scene state. A centre reference is a semantic dependency; an
+;; edge or corner reference is a renderer-aware layout dependency. Both use the
+;; same persistent relation protocol—there is no special endpoint wrapper.
 
 (require racket/list
          "arrow-visual.rkt"
@@ -16,6 +15,10 @@
          "geometry.rkt"
          "layout-attachment.rkt"
          "parameter.rkt"
+         "relation-context.rkt"
+         "relation-dependency.rkt"
+         "relation-spec.rkt"
+         "relation-visual.rkt"
          "visual-model.rkt")
 
 (provide anchor-of
@@ -23,6 +26,7 @@
          segment-between
          arrow-between
          ray-from
+         (struct-out endpoint-relation-spec)
          dynamic-endpoint-visual?
          dynamic-endpoint-visual-template
          dynamic-endpoint-visual-start
@@ -85,6 +89,82 @@
          (if (symbol? target)
              target
              (car (reverse target))))))
+
+;; endpoint-relation-spec is the serializable, library-interpreted form used
+;; by line-between, arrow-between, and ray-from.  It deliberately stores
+;; endpoint descriptions and style data only—no author callback—so it is a
+;; stable relation cache identity and an inspectable dependency description.
+(struct endpoint-relation-spec
+  (kind start end ray-length stroke stroke-width tip-length tip-width
+        start-tip? end-tip? who)
+  #:transparent
+  #:methods gen:relation-spec
+  [(define (resolve-relation-spec spec context template)
+     (define start
+       (resolve-relation-endpoint
+        context (endpoint-relation-spec-start spec)
+        (endpoint-relation-spec-who spec)))
+     (define end
+       (resolve-relation-endpoint
+        context (endpoint-relation-spec-end spec)
+        (endpoint-relation-spec-who spec)))
+     (make-concrete-endpoint-visual
+      (endpoint-relation-spec-kind spec)
+      start end
+      (endpoint-relation-spec-ray-length spec)
+      (visual-id template)
+      ;; The relation envelope owns opacity. The local template passed here is
+      ;; normalized to one, so this preserves a simultaneous relation fade.
+      (visual-opacity template)
+      (endpoint-relation-spec-stroke spec)
+      (endpoint-relation-spec-stroke-width spec)
+      (endpoint-relation-spec-tip-length spec)
+      (endpoint-relation-spec-tip-width spec)
+      (endpoint-relation-spec-start-tip? spec)
+      (endpoint-relation-spec-end-tip? spec)
+      (endpoint-relation-spec-who spec)))])
+
+(define (endpoint-dependency endpoint)
+  (cond
+    [(point-endpoint? endpoint) #f]
+    [(parameter-endpoint? endpoint)
+     (value-dependency (parameter-endpoint-parameter endpoint))]
+    [(visual-endpoint? endpoint)
+     (if (eq? (visual-endpoint-anchor endpoint) 'center)
+         (visual-dependency (visual-endpoint-target endpoint))
+         (anchor-dependency (visual-endpoint-target endpoint)
+                            (visual-endpoint-anchor endpoint)))]
+    [else
+     (raise-argument-error 'endpoint-dependency "endpoint description" endpoint)]))
+
+(define (resolve-relation-endpoint context endpoint who)
+  (define point
+    (cond
+      [(point-endpoint? endpoint)
+       (point-endpoint-point endpoint)]
+      [(parameter-endpoint? endpoint)
+       (relation-context-value-ref context
+                                   (parameter-endpoint-parameter endpoint))]
+      [(visual-endpoint? endpoint)
+       (if (eq? (visual-endpoint-anchor endpoint) 'center)
+           (visual-position
+            (relation-context-visual-ref
+             context (visual-endpoint-target endpoint)))
+           (relation-context-anchor-ref
+            context
+            (visual-endpoint-target endpoint)
+            (visual-endpoint-anchor endpoint)))]
+      [else
+       (raise-argument-error who "endpoint description" endpoint)]))
+  (unless (vec2? point)
+    (raise-arguments-error
+     who
+     "a point-valued endpoint dependency"
+     "endpoint" endpoint
+     "sampled-value" point))
+  (if (visual-endpoint? endpoint)
+      (vec2+ point (visual-endpoint-offset endpoint))
+      point))
 
 ; resolve-pure-endpoint : derived-context? endpoint-description? -> vec2?
 ;; Resolves the renderer-independent endpoint kinds through the ordinary pure
@@ -377,32 +457,49 @@
        "a geometry identity distinct from every endpoint target"
        "id" id
        "endpoint" endpoint)))
-  ;; A harmless concrete template preserves the normal Visual protocol before
-  ;; a scene has supplied actual endpoint coordinates.
+  ;; A centred concrete template gives the relation an identity outer envelope;
+  ;; endpoint coordinates are resolver-local scene coordinates, rather than an
+  ;; accidental translation inherited from a nominal origin-to-one segment.
   (define template
-    (make-concrete-endpoint-visual
-     kind origin (vec2 1 0) ray-length id opacity stroke stroke-width
-     tip-length tip-width start-tip? end-tip? who))
-  (define definition
-    (dynamic-endpoint-visual-value
-     template kind start-endpoint end-endpoint ray-length stroke stroke-width
-     tip-length tip-width start-tip? end-tip?))
-  (if (dynamic-endpoint-visual-has-renderer-anchors? definition)
-      definition
-      (derived-visual
-       template
-       (lambda (context _template)
-         (dynamic-endpoint-visual-resolve
-          definition
-          (lambda (endpoint)
-            (resolve-pure-endpoint context endpoint)))))))
+    (case kind
+      [(line)
+       (line (vec2 -1/2 0) (vec2 1/2 0)
+             #:id id #:opacity opacity #:stroke stroke #:stroke-width stroke-width)]
+      [(arrow)
+       (arrow (vec2 -1/2 0) (vec2 1/2 0)
+              #:id id #:opacity opacity #:stroke stroke #:stroke-width stroke-width
+              #:tip-length tip-length #:tip-width tip-width
+              #:start-tip? start-tip? #:end-tip? end-tip?)]
+      [else
+       (raise-argument-error who "supported endpoint geometry kind" kind)]))
+  (define spec
+    (endpoint-relation-spec
+     kind start-endpoint end-endpoint ray-length stroke stroke-width tip-length
+     tip-width start-tip? end-tip? who))
+  (define dependencies
+    (remove-duplicates
+     (filter values
+             (list (endpoint-dependency start-endpoint)
+                   (endpoint-dependency end-endpoint)))
+     equal?))
+  (define layout?
+    (for/or ([endpoint (in-list (list start-endpoint end-endpoint))])
+      (endpoint-has-renderer-anchor? endpoint)))
+  (relation-visual
+   template
+   #:depends-on dependencies
+   #:phase (if layout? 'layout 'semantic)
+   spec))
 
 ;; make-live-endpoint-annotation : (listof endpoint?) visual?
 ;;                                  ((listof vec2?) -> visual?) symbol?
-;;                                  -> (or/c derived-visual? dynamic-endpoint-visual?)
-;; Internal construction hook shared by the live mathematical annotations. A
-;; pure centre/parameter dependency is an ordinary derived Visual; an edge or
-;; corner anchor waits for the renderer just as line-between does.
+;;                                  -> relation-visual?
+;; Internal construction hook shared by live mathematical annotations.  The
+;; old implementation split semantic annotations and renderer-aware anchors
+;; into two proprietary wrapper types.  They are now ordinary relations: a
+;; centre reference is a semantic dependency, and an edge/corner reference is
+;; an explicit layout dependency.  The builder remains an author procedure, so
+;; this generic relation intentionally has no automatic persistent cache key.
 (define (make-live-endpoint-annotation endpoints template build who)
   (unless (and (list? endpoints) (pair? endpoints))
     (raise-argument-error who "nonempty list of endpoint descriptions" endpoints))
@@ -421,17 +518,42 @@
        "an annotation identity distinct from every endpoint target"
        "id" id
        "endpoint" endpoint)))
-  (define definition
-    (dynamic-endpoint-annotation-value template descriptions build who))
-  (if (dynamic-endpoint-visual-has-renderer-anchors? definition)
-      definition
-      (derived-visual
-       template
-       (lambda (context _template)
-         (dynamic-endpoint-visual-resolve
-          definition
-          (lambda (endpoint)
-            (resolve-pure-endpoint context endpoint)))))))
+  ;; The resolver reconstructs geometry in world coordinates.  Its nominal
+  ;; template therefore has an identity outer translation; `relation-visual`
+  ;; retains the original opacity in its normal outer envelope.  Callers build
+  ;; local content at opacity one, so the stored authored opacity is applied
+  ;; exactly once after each current endpoint calculation.
+  (define normalized-template
+    (visual-with-position template origin))
+  (define dependencies
+    (remove-duplicates
+     (filter values (map endpoint-dependency descriptions))
+     equal?))
+  (define layout?
+    (for/or ([endpoint (in-list descriptions)])
+      (endpoint-has-renderer-anchor? endpoint)))
+  (relation-visual
+   normalized-template
+   #:depends-on dependencies
+   #:phase (if layout? 'layout 'semantic)
+   #:structure 'fixed
+   (lambda (context _local-template)
+     (define result
+       (build
+        (for/list ([endpoint (in-list descriptions)])
+          (resolve-relation-endpoint context endpoint who))))
+     (unless (visual? result)
+       (raise-arguments-error
+        who
+        "an annotation builder that returns a Visual"
+        "result" result))
+     (unless (eq? (visual-id result) id)
+       (raise-arguments-error
+        who
+        "an annotation builder preserving the template identity"
+        "template-id" id
+        "result-id" (visual-id result)))
+     result)))
 
 ; dynamic-endpoint-visual-resolve : dynamic-endpoint-visual?
 ;                                   (-> endpoint-description? vec2?) -> visual?

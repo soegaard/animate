@@ -102,9 +102,18 @@ nested world-space targets, and random-access frame semantics.
 SCENE-ED makes common explanatory marks live: `angle-between`,
 `right-angle-between`, `brace-between`, `brace-label`, and
 `curved-arrow-between` accept the same literal-point, parameter, visual, and
-`anchor-of` endpoint descriptions as `line-between`. A pure centre or
-parameter relationship is a normal derived Visual, while a measured edge or
-corner anchor is resolved after sampling by the active renderer.
+`anchor-of` endpoint descriptions as `line-between`. They return first-class
+relations: centre/parameter references are semantic relations, while measured
+edge or corner anchors are layout relations resolved after ordinary sampling by
+the active renderer.
+
+SCENE-EJ makes `math-tex` source-addressable by default. Canonical TeX source
+ranges, literal strings, regexps, and occurrences resolve to immutable rendered
+leaf selections without claiming algebraic meaning. SCENE-EK turns those source
+maps into deterministic `transform-matching-strings` plans. SCENE-EL supplies
+the common first-class relation protocol: explicit dependencies, semantic/layout
+phases, stable structures, ordinary outer animation envelopes, and inspectable
+cache policy.
 
 SCENE-DX extends matching transforms from tagged formulas to ordinary diagram
 trees. `transform-matching-visuals` pairs named leaves by explicit relative
@@ -144,8 +153,8 @@ SCENE-DC adds deterministic two-dimensional ODE flow. Fixed-step RK4 computes
 streamlines directly and supplies immutable prepared trajectories for animated
 particles. Canonical checkpoints plus a batched renderer preparation pass avoid
 repeated seed-to-time integration while retaining random-access frame results.
-SCENE-DD adds static integer/decimal labels and a `parameter-display` derived
-Visual with fixed left, right, sign, or decimal anchors.
+SCENE-DD adds static integer/decimal labels and a fixed-structure
+`parameter-display` relation with left, right, sign, or decimal anchors.
 
 SCENE-DE makes renderer-measured attachments composable through an acyclic
 dependency chain: `follow-anchor`, `keep-above`, `keep-below`, `keep-left-of`,
@@ -180,7 +189,7 @@ path protocols, so they are not renderer-only conveniences. See
 
 SCENE-CX adds immutable mathematical graph and directed-network diagrams.
 `graph` and `digraph` return ordinary nested group trees: vertices live at
-paths such as `'(network vertices A)` and derived edges at
+paths such as `'(network vertices A)` and relation edges at
 `'(network edges A->B)`. Moving a vertex with the usual scene API regenerates
 its incident line or arrow from the sampled endpoint positions; labels follow
 the same immutable dependency relationship. SCENE-DP extends the initial
@@ -1048,8 +1057,9 @@ source and destination; positive local y points to the chord's left:
 ```
 
 Use a `formula-part-path` in `#:part-paths` to route an ordinary matched pair,
-or use the same route directly in `formula-part-copy`. `transform-matching-tex`
-also accepts these routes in `#:path-map`. See
+or use the same route directly in `formula-part-copy`. For source-addressed
+formulas, use `(string-match source destination #:route route)` inside
+`transform-matching-strings`. See
 `examples/copying-and-emphasizing-formula-parts.rkt` for the complete rendered
 example.
 
@@ -3024,13 +3034,16 @@ precisely; do not silently lose the follow-on idea that led to the work.
   `#:max-denominator`; it is a display approximation, not symbolic arithmetic.
   Complex formatting has no polar mode, branch-aware formatting, or automatic
   simplification of zero components.
-- `parameter-display` reads a scalar scene parameter through a derived Visual.
-  Its left/right/center/sign anchors use ordinary text anchors; `decimal`
-  anchors two separately rendered text pieces at the decimal point. Integer
-  parameter displays round a finite sampled value to the nearest integer.
-- `rolling-number-display` is a derived vector digit wheel, not a stateful
-  frame cache. It accepts nonnegative finite real values below its declared
-  integer-slot limit and rolls during the final tenth of each digit interval.
+- `parameter-display` is a fixed-structure relation that reads a scalar scene
+  parameter. Its left/right/center/sign anchors use ordinary text anchors;
+  `decimal` anchors two separately rendered text pieces at the decimal point.
+  Integer parameter displays round a finite sampled value to the nearest
+  integer. Its serializable relation specification and dependency are
+  inspectable; it does not require a prior frame.
+- `rolling-number-display` is a fixed-structure relation digit wheel, not a
+  stateful frame cache. It accepts nonnegative finite real values below its
+  declared integer-slot limit and rolls during the final tenth of each digit
+  interval.
   Digit width is a nominal monospaced advance rather than renderer-measured
   tabular-figure layout; it has no negative counters, arbitrary overflow,
   locale-aware separators, or arbitrary textual transitions.
@@ -3094,12 +3107,20 @@ precisely; do not silently lose the follow-on idea that led to the work.
   paths, open geometry, incompatible contour topology, changed paint styles,
   and unsupported SVG geometry keep the moving cross-fade. Neither mode
   performs algebra or semantic name/token matching.
-- SCENE-CR styles only whole, author-named formula parts. It does not parse TeX
-  to find substrings, infer algebraic terms, create rich inline spans,
-  cancellation marks, underbraces, gradients, or per-glyph semantic groups
-  (except when an author explicitly uses `glyph-tex`). A fragment whose colour
-  changes across a rewrite uses the established cross-fade fallback; use
-  `fill-color-to` on `formula-select` for a deliberate in-place colour change.
+- SCENE-EJ makes `math-tex` source-addressable by default. A source span is a
+  half-open Racket character range in the retained canonical TeX string;
+  literal strings, nonempty regexps, and zero-based occurrences produce
+  deterministic source-order selections. `formula-style` can rebuild selected
+  formula leaves immutably. This is conservative TeX token instrumentation,
+  not an algebra system or a full TeX parser: it does not infer coefficients or
+  equivalence, and advanced macros/category-code changes or non-ink source may
+  be unavailable for token selection. Rich/plain text source mapping remains
+  future work.
+- SCENE-EK's `transform-matching-strings` gives explicit string/span mappings
+  priority, then matches remaining equal normalized mapped source in source
+  order. Changed or unmatched material fades according to the selected policy;
+  there is no automatic algebraic reduction, semantic term inference, or
+  arbitrary glyph-outline matching beyond the established formula fallbacks.
 - `formula-part-copy` can copy one whole named fragment to any number of
   explicitly named unmatched destinations, and formula parts can now follow
   circular or normalized custom paths. It still has no semantic algebra,
@@ -3166,23 +3187,32 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Visuals, plots, and SVG
 
-- Derived Visuals are read-only computed output and cannot be animated directly;
-  animate their values or the ordinary Visuals they depend on instead.
-  `attach-to` retains its pure derived-Visual centre-to-centre operation and now
-  also supports live renderer-box target/self anchors. Renderer-aware attachments
-  are top-level render-time wrappers, so they remain deterministic for one sampled
-  state/camera/renderer combination without introducing derived-layout feedback
-  cycles. They do not yet avoid other labels, inherit target rotation, support
-  attachment chains, or provide a general constraint solver.
+- SCENE-EL relations are immutable dependency definitions rather than frame
+  callbacks. Their declared value, Visual, anchor, or selection dependencies
+  are validated deterministically; generic resolver procedures are intentionally
+  opaque for persistent caching unless given an explicit cache key. Fixed
+  relations preserve their declared child-ID tree, while root-only relations
+  expose only their root. The common outer envelope supports ordinary affine,
+  opacity, and supported fill/stroke animation after current relation geometry
+  is resolved. Layout relations are still top-level and measure Pict boxes,
+  not exact visible outlines.
+- `attach-to` and `follow-anchor` with both anchors at `'center` return semantic
+  relations; they can be resolved from a sampled scene without a renderer.
+  Choosing an edge or corner, and all directional attachment helpers, returns a
+  top-level layout relation. Both forms expose an acyclic dependency graph and
+  support ordinary relation-envelope animation. They do not yet avoid other
+  labels, inherit target rotation, or provide a general constraint solver.
 - SCENE-CN supplies deterministic live endpoints for new lines, segments,
   arrows, and finite rays. Existing `line`/`arrow` values remain static
-  geometry, and dynamic endpoint definitions cannot yet be `create`d,
-  `uncreate`d, grouped, chained, or used as another relationship's target.
+  geometry. Endpoint constructors now return relations, so path-valued
+  semantic relations support `create`/`uncreate` and ordinary outer movement,
+  fade, and style animation. Layout-phase endpoint relations remain top-level
+  in this release and use complete rendered boxes rather than tight ink bounds.
 - SCENE-ED extends angle, right-angle, brace, brace-label, and curved-arrow
-  annotations with live endpoint descriptions. It deliberately does not infer
-  that rays are perpendicular or tangent, route a curved arrow around an
-  obstacle, prevent a dynamic label collision, or maintain a group of
-  renderer-measured annotations as a target. The ordinary static `angle`,
+  annotations with the same semantic/layout relation protocol. It deliberately
+  does not infer that rays are perpendicular or tangent, route a curved arrow
+  around an obstacle, prevent a dynamic label collision, or nest a layout
+  relation inside an arbitrary group. The ordinary static `angle`,
   `right-angle`, and `curved-arrow` constructors remain the direct way to draw
   a fixed mark.
 - SCENE-DX matches ordinary affine/opacity leaves below a replaced top-level
@@ -4128,10 +4158,11 @@ style operations:
 ```
 
 The graph contains `vertices` and `edges` subgroups. The concrete arrow at
-`'(network edges A->B line)` is a derived child that queries the sampled world
-positions of `'(network vertices A)` and `'(network vertices B)`, then returns
-local geometry for the graph group to render. This preserves arbitrary-time
-sampling: no edge remembers any prior frame. `graph` creates plain lines;
+`'(network edges A->B line)` is a fixed-structure relation child that declares
+the sampled world positions of `'(network vertices A)` and
+`'(network vertices B)`, then returns local geometry for the graph group to
+render. This preserves arbitrary-time sampling: no edge remembers any prior
+frame. `graph` creates plain lines;
 `digraph` uses arrowheads in the declared source-to-target order. Circle and
 rooted-tree layouts calculate initial positions deterministically from declared
 vertex/edge order. SCENE-DP adds spring, layered, partite, and outerplanar

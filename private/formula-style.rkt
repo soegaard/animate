@@ -15,7 +15,8 @@
          "color-style.rkt"
          "formula-parts-visual.rkt"
          "formula-visual.rkt"
-         "visual-model.rkt")
+         "visual-model.rkt"
+         "visual-selection.rkt")
 
 (provide formula-select
          formula-style
@@ -139,7 +140,8 @@
   (check-part-name 'formula-select formula name)
   (list (visual-id formula) name))
 
-; formula-style : formula-assembly-visual? (or/c symbol? (listof symbol?))
+; formula-style : formula-assembly-visual?
+;                 (or/c symbol? (listof symbol?) visual-selection?)
 ;                 [#:color (or/c false/c color-spec?)]
 ;                 [#:opacity (or/c false/c opacity?)]
 ;                 -> formula-assembly-visual?
@@ -150,7 +152,7 @@
                        #:color [color #f]
                        #:opacity [opacity #f])
   (check-formula-assembly 'formula-style formula)
-  (define names (normalize-selection 'formula-style selection))
+  (define names (normalize-selection 'formula-style formula selection))
   (for ([name (in-list names)])
     (check-part-name 'formula-style formula name))
   (when (and (not color) (not opacity))
@@ -174,7 +176,11 @@
                             (visual-with-opacity painted opacity)
                             painted)])
            (formula-part (formula-part-name part) styled))
-         part))))
+         part))
+   ;; Styling changes paint/opacity only. The source part tree and all local
+   ;; identities are intact, so retaining the source map is deliberate rather
+   ;; than a stale-map fallback.
+   #:source-map (formula-assembly-visual-source-map formula)))
 
 ; formula-color : formula-assembly-visual? (or/c symbol? (listof symbol?))
 ;                 color-spec? -> formula-assembly-visual?
@@ -221,7 +227,7 @@
      "formula-id" (visual-id formula)
      "part-name" name)))
 
-(define (normalize-selection who selection)
+(define (normalize-selection who formula selection)
   (define names
     (cond
       [(symbol? selection) (list selection)]
@@ -229,8 +235,29 @@
             (pair? selection)
             (andmap symbol? selection))
        selection]
+      [(visual-selection? selection)
+       (unless (equal? (visual-selection-root selection)
+                       (list (visual-id formula)))
+         (raise-arguments-error
+          who
+          "a visual selection rooted at the supplied formula"
+          "formula-id" (visual-id formula)
+          "selection-root" (visual-selection-root selection)))
+       (for/list ([path (in-list (visual-selection-paths selection))])
+         (unless (and (list? path)
+                      (= (length path) 1)
+                      (symbol? (car path)))
+           (raise-arguments-error
+            who
+            "a formula-part selection with one local part path per leaf"
+            "formula-id" (visual-id formula)
+            "selection-path" path))
+         (car path))]
       [else
-       (raise-argument-error who "symbol? or nonempty list of symbols" selection)]))
+       (raise-argument-error
+        who
+        "symbol?, nonempty list of symbols, or visual-selection?"
+        selection)]))
   (when (not (= (length names) (length (remove-duplicates names))))
     (raise-arguments-error
      who

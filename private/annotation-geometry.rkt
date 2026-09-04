@@ -13,9 +13,14 @@
          "dynamic-endpoint-geometry.rkt"
          "geometry.rkt"
          "group-visual.rkt"
+         "layout-box.rkt"
          "path-geometry.rkt"
+         "relation-context.rkt"
+         "relation-dependency.rkt"
+         "relation-visual.rkt"
          "shape-catalogue.rkt"
          "visual-model.rkt"
+         "visual-selection.rkt"
          "text-visual.rkt")
 
 (provide arc
@@ -29,11 +34,7 @@
          brace-between
          brace-label
          curved-arrow-between
-         surrounding-rectangle
-         surrounding-rectangle-visual?
-         surrounding-rectangle-template
-         surrounding-rectangle-visual-target
-         surrounding-rectangle-visual-padding)
+         surrounding-rectangle)
 
 
 ;;;
@@ -229,7 +230,7 @@
          (lambda (points)
            (angle (car points) (cadr points) (caddr points)
                   #:id id #:radius radius #:reflex? reflex?
-                  #:opacity opacity #:stroke stroke #:stroke-width stroke-width))
+                  #:opacity 1 #:stroke stroke #:stroke-width stroke-width))
          'angle-between))))
 
 (define (right-angle-between first vertex second
@@ -251,7 +252,7 @@
          template
          (lambda (points)
            (right-angle (car points) (cadr points) (caddr points)
-                        #:id id #:size size #:opacity opacity
+                        #:id id #:size size #:opacity 1
                         #:stroke stroke #:stroke-width stroke-width))
          'right-angle-between))))
 
@@ -362,7 +363,7 @@
                              #:stroke stroke #:stroke-width stroke-width)
        (lambda (points)
          (static-brace-between (car points) (cadr points)
-                               #:id id #:offset offset #:opacity opacity
+                               #:id id #:offset offset #:opacity 1
                                #:stroke stroke #:stroke-width stroke-width))
        'brace-between)))
 
@@ -429,7 +430,7 @@
        (lambda (points)
          (static-brace-label (car points) (cadr points) label
                              #:id id #:offset offset #:gap gap #:font-size font-size
-                             #:color color #:opacity opacity #:stroke stroke
+                             #:color color #:opacity 1 #:stroke stroke
                              #:stroke-width stroke-width))
        'brace-label)))
 
@@ -462,7 +463,7 @@
          template
          (lambda (points)
            (curved-arrow (car points) (cadr points)
-                         #:id id #:angle sweep-angle #:opacity opacity
+                         #:id id #:angle sweep-angle #:opacity 1
                          #:stroke stroke #:stroke-width stroke-width
                          #:tip-length tip-length #:tip-width tip-width))
          'curved-arrow-between))))
@@ -472,40 +473,6 @@
 ;;; Renderer-Measured Enclosure
 ;;;
 
-;; The selected target's rendered bounds only exist in the adapter, so this is
-;; declarative model data. Its concrete rectangle is constructed after ordinary
-;; scene sampling, exactly as SCENE-CM's non-centre attachment is.
-(define enclosure-template-id visual-id)
-(define enclosure-template-position visual-position)
-(define enclosure-template-with-position visual-with-position)
-(define enclosure-template-opacity visual-opacity)
-(define enclosure-template-with-opacity visual-with-opacity)
-
-(struct surrounding-rectangle-value (template target padding)
-  #:transparent
-  #:methods gen:visual
-  [(define (visual-id enclosure)
-     (enclosure-template-id (surrounding-rectangle-value-template enclosure)))
-   (define (visual-position enclosure)
-     (enclosure-template-position
-      (surrounding-rectangle-value-template enclosure)))
-   (define (visual-with-position enclosure position)
-     (struct-copy
-      surrounding-rectangle-value enclosure
-      [template
-       (enclosure-template-with-position
-        (surrounding-rectangle-value-template enclosure) position)]))]
-  #:methods gen:opacity-visual
-  [(define (visual-opacity enclosure)
-     (enclosure-template-opacity
-      (surrounding-rectangle-value-template enclosure)))
-   (define (visual-with-opacity enclosure opacity)
-     (struct-copy
-      surrounding-rectangle-value enclosure
-      [template
-       (enclosure-template-with-opacity
-        (surrounding-rectangle-value-template enclosure) opacity)]))])
-
 ; surrounding-rectangle : (or/c visual? symbol? visual-path?)
 ;                         #:id symbol?
 ;                         [#:padding nonnegative-finite-real?]
@@ -513,9 +480,9 @@
 ;                         [#:fill any/c]
 ;                         [#:stroke any/c]
 ;                         [#:stroke-width stroke-width?]
-;                         -> surrounding-rectangle-visual?
-;; Creates a top-level renderer-aware outline around the target's live rendered
-;; bounding box. Padding is measured in world coordinates on every render.
+;                         -> relation-visual?
+;; Creates a layout relation around the target's live rendered bounding box.
+;; Padding is measured in world coordinates on every render.
 (define (surrounding-rectangle target
                                #:id id
                                #:padding [padding 1/8]
@@ -536,21 +503,38 @@
     (raise-arguments-error
      'surrounding-rectangle "an enclosure identity distinct from its target"
      "id" id "target" target-path))
-  (surrounding-rectangle-value
-   (rectangle #:id id #:center origin #:width 1 #:height 1
-              #:opacity opacity #:fill fill #:stroke stroke #:stroke-width stroke-width)
-   target-path
-   padding))
-
-(define (surrounding-rectangle-visual? value)
-  (surrounding-rectangle-value? value))
-
-(define surrounding-rectangle-template
-  surrounding-rectangle-value-template)
-(define surrounding-rectangle-visual-target
-  surrounding-rectangle-value-target)
-(define surrounding-rectangle-visual-padding
-  surrounding-rectangle-value-padding)
+  ;; The selected root is one immutable semantic selection rather than an
+  ;; ad-hoc enclosure wrapper. The renderer measures it only in the explicit
+  ;; layout phase, and the relation rebuilds an ordinary unfilled path there.
+  (define selection
+    (visual-selection
+     (visual-target-path target-path 'surrounding-rectangle)
+     (list '())))
+  (define template
+    (make-path-visual
+     (polygon-path
+      (list (vec2 -1/2 -1/2) (vec2 1/2 -1/2)
+            (vec2 1/2 1/2) (vec2 -1/2 1/2)))
+     #:id id #:center origin #:opacity opacity #:fill fill
+     #:stroke stroke #:stroke-width stroke-width))
+  (relation-visual
+   template
+   #:depends-on (list (selection-dependency selection))
+   #:phase 'layout
+   (lambda (context local-template)
+     (define box (relation-context-selection-box context selection))
+     (define half-width (/ (+ (layout-box-width box) (* 2 padding)) 2))
+     (define half-height (/ (+ (layout-box-height box) (* 2 padding)) 2))
+     (make-path-visual
+      (polygon-path
+       (list (vec2 (- half-width) (- half-height))
+             (vec2 half-width (- half-height))
+             (vec2 half-width half-height)
+             (vec2 (- half-width) half-height)))
+      #:id id #:center (layout-box-center box) #:opacity 1
+      #:fill (path-visual-fill local-template)
+      #:stroke (path-visual-stroke local-template)
+      #:stroke-width (path-visual-stroke-width local-template)))))
 
 
 ;;;

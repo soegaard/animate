@@ -28,7 +28,9 @@
          formula-assembly
          formula-assembly-visual?
          formula-assembly-visual-parts
+         formula-assembly-visual-source-map
          formula-assembly-visual-with-parts
+         formula-assembly-visual-with-source-map
          formula-assembly-visual-part-names
          formula-assembly-visual-has-part?
          formula-assembly-visual-ref
@@ -124,7 +126,7 @@
 ;;; Formula Assemblies
 ;;;
 
-(struct formula-assembly-visual (group parts)
+(struct formula-assembly-visual (group parts source-map)
   #:transparent
   #:methods gen:visual
   [(define/generic generic-visual-id visual-id)
@@ -181,6 +183,7 @@
 ;;  - group  group-visual?          validated composite identity and transform.
 ;;  - parts  (listof formula-part?) named parts in back-to-front drawing order.
 ;;                                  Ordering is significant.
+;;  - source-map any/c              optional immutable source metadata.
 ;;
 ;; Part names form a local namespace. They are addressable with nested Visual
 ;; paths through their assembly, while a formula correspondence animates the
@@ -194,6 +197,7 @@
 ;                    [#:rotation finite-real?]
 ;                    [#:scale scale-factor?]
 ;                    [#:opacity opacity?]
+;                    [#:source-map any/c]
 ;                    -> formula-assembly-visual?
 ;;   Creates a semantic formula assembly from explicitly positioned parts.
 (define (formula-assembly parts
@@ -201,7 +205,8 @@
                           #:center [center origin]
                           #:rotation [rotation 0]
                           #:scale [scale 1]
-                          #:opacity [opacity 1])
+                          #:opacity [opacity 1]
+                          #:source-map [source-map #f])
   (define checked-parts
     (check-formula-parts 'formula-assembly parts))
   (formula-assembly-visual
@@ -211,13 +216,18 @@
           #:rotation rotation
           #:scale scale
           #:opacity opacity)
-   checked-parts))
+   checked-parts
+   source-map))
 
 ; formula-assembly-visual-with-parts : formula-assembly-visual?
 ;                                      (listof formula-part?)
 ;                                      -> formula-assembly-visual?
 ;;   Returns assembly with its significant ordered part list replaced.
-(define (formula-assembly-visual-with-parts assembly parts)
+(define (formula-assembly-visual-with-parts
+         assembly
+         parts
+         #:source-map
+         [source-map (formula-assembly-visual-source-map assembly)])
   (unless (formula-assembly-visual? assembly)
     (raise-argument-error
      'formula-assembly-visual-with-parts
@@ -231,7 +241,19 @@
    (group-visual-with-children
     (formula-assembly-visual-group assembly)
     (formula-parts->visuals checked-parts))
-   checked-parts))
+   checked-parts
+   source-map))
+
+;; formula-assembly-visual-with-source-map : formula-assembly-visual? any/c
+;;                                             -> formula-assembly-visual?
+;; Associates immutable source metadata with an unchanged assembly tree.
+(define (formula-assembly-visual-with-source-map assembly source-map)
+  (unless (formula-assembly-visual? assembly)
+    (raise-argument-error
+     'formula-assembly-visual-with-source-map
+     "formula-assembly-visual?"
+     assembly))
+  (struct-copy formula-assembly-visual assembly [source-map source-map]))
 
 ; formula-assembly-visual-part-names : formula-assembly-visual?
 ;                                      -> (listof symbol?)

@@ -40,15 +40,24 @@
      #:self-anchor 'left
      #:offset (vec2 1/10 0)))
 
-  ;; Centre-to-centre remains SCENE-CD's pure derived-Visual convenience, while
-  ;; an edge anchor selects SCENE-CM's renderer-aware layout wrapper.
-  (check-true (derived-visual?
-               (attach-to
-                (circle #:id 'centre-marker #:radius 1/5)
-                'target)))
-  (check-true (layout-attached-visual? attached-marker))
-  (check-equal? (layout-attached-visual-target-anchor attached-marker) 'right)
-  (check-equal? (layout-attached-visual-self-anchor attached-marker) 'left)
+  ;; Centre-to-centre following is a semantic relation; an edge/corner choice
+  ;; is the renderer-aware layout form. Both expose normal relation metadata.
+  (define centre-marker
+    (attach-to
+     (circle #:id 'centre-marker #:radius 1/5)
+     'target))
+  (check-true (relation-visual? centre-marker))
+  (check-equal? (relation-visual-phase centre-marker) 'semantic)
+  (check-equal?
+   (relation-visual-dependencies centre-marker)
+   (list (visual-dependency '(target))))
+  (check-true (relation-visual? attached-marker))
+  (check-equal? (relation-visual-phase attached-marker) 'layout)
+  (check-equal? (relation-visual-structure attached-marker) 'fixed)
+  (check-equal?
+   (relation-visual-dependencies attached-marker)
+   (list (anchor-dependency '(target) 'right)))
+  (check-equal? (relation-visual-cacheability attached-marker) 'serializable)
 
   ;; The target's right edge is x = 1; placing the marker's left edge one tenth
   ;; beyond it puts the marker centre at x = 13/10.

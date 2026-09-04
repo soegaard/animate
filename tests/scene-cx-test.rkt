@@ -42,12 +42,22 @@
                 (move-to (graph-vertex-path 'network 'B) (vec2 2 2))
                 #:duration 2))
 
-  ;; The arrow and its optional label are derived children, not a frame-history
-  ;; effect. Their sampled midpoint follows the moving target exactly.
+  ;; The arrow and its optional label are explicit relation children, not a
+  ;; frame-history effect. Their sampled midpoint follows the moving target
+  ;; exactly.
   (define edge-line-path
     '(network edges A->B line))
   (define edge-label-path
     '(network edges A->B label))
+  (define base-state (scene-current-state base))
+  (check-true
+   (relation-visual? (scene-state-ref base-state edge-line-path)))
+  (check-equal?
+   (relation-visual-dependencies
+    (scene-state-ref base-state edge-line-path))
+   (list (visual-dependency 'network)
+         (visual-dependency '(network vertices A))
+         (visual-dependency '(network vertices B))))
   (define start-edge
     (scene-visual-at animated edge-line-path 0))
   (define middle-edge
@@ -68,9 +78,9 @@
     (scene-visual-at animated (graph-vertex-path 'network 'B) 2))
    (vec2 2 2))
 
-  ;; A whole-graph affine move is composed once. The derived edge first converts
-  ;; world endpoint positions back into graph-local coordinates before the root
-  ;; group is rendered, avoiding a doubled translation.
+  ;; A whole-graph affine move is composed once. The relation edge first
+  ;; converts world endpoint positions back into graph-local coordinates before
+  ;; the root group is rendered, avoiding a doubled translation.
   (define whole-graph-move
     (scene-play base (move-to 'network (vec2 1 -1)) #:duration 1))
   (define moved-edge-world

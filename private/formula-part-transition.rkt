@@ -50,6 +50,7 @@
          make-formula-transition-plan
          formula-transition-plan-source-parts
          formula-transition-plan-destination-parts
+         formula-transition-plan-source-map-at
          formula-transition-plan-sample-parts)
 
 
@@ -204,7 +205,7 @@
 ;;  - to-opacity      opacity?            local opacity at progress one.
 
 (struct formula-transition-plan
-  (source-parts layers destination-parts)
+  (source-parts layers destination-parts source-map destination-source-map)
   #:transparent)
 
 ;; formula-transition-plan represents one compiled formula-part transformation.
@@ -212,6 +213,8 @@
 ;;  - layers             (listof formula-transition-layer?)
 ;;                       deterministic interior drawing order.
 ;;  - destination-parts  (listof formula-part?)  exact destination order.
+;;  - source-map         any/c                   exact source endpoint metadata.
+;;  - destination-source-map any/c               exact destination endpoint metadata.
 ;;
 ;; The layer order is source-only parts, matched layers in correspondence order,
 ;; and destination-only parts. A changed matched part contributes a source layer
@@ -311,10 +314,12 @@
    (formula-assembly-visual-parts current-source)
    (name-transition-specs
     (visual-id current-source)
-    current-source
-    destination
-    specs)
-   settled-destination-parts))
+   current-source
+   destination
+   specs)
+   settled-destination-parts
+   (formula-assembly-visual-source-map current-source)
+   (formula-assembly-visual-source-map destination)))
 
 ; check-current-source-names : formula-assembly-visual?
 ;                              formula-correspondence?
@@ -680,6 +685,27 @@
 ;;;
 ;;; Plan Sampling
 ;;;
+
+;; formula-transition-plan-source-map-at : formula-transition-plan?
+;;                                           finite-real? -> any/c
+;; Source maps describe exact endpoint leaf trees. Interior transition layers
+;; deliberately have no map, preventing stale source paths from targeting
+;; temporary transition identities.
+(define (formula-transition-plan-source-map-at plan progress)
+  (unless (formula-transition-plan? plan)
+    (raise-argument-error
+     'formula-transition-plan-source-map-at
+     "formula-transition-plan?"
+     plan))
+  (unless (and (finite-real? progress)
+               (<= 0 progress 1))
+    (raise-argument-error
+     'formula-transition-plan-source-map-at
+     "finite real in [0, 1]"
+     progress))
+  (cond [(zero? progress) (formula-transition-plan-source-map plan)]
+        [(= progress 1) (formula-transition-plan-destination-source-map plan)]
+        [else #f]))
 
 ; formula-transition-plan-sample-parts : formula-transition-plan?
 ;                                        finite-real?

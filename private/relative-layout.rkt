@@ -22,6 +22,7 @@
          "camera.rkt"
          "frame-space.rkt"
          "geometry.rkt"
+         "layout-box.rkt"
          "pict-adapter.rkt"
          "pict-renderer.rkt"
          "visual-model.rkt")
@@ -53,127 +54,6 @@
          keep-inside-frame
          avoid-overlap
          distribute-within)
-
-
-;;;
-;;; Data Representation
-;;;
-
-(struct layout-box (left bottom right top)
-  #:transparent
-  #:guard
-  (lambda (left bottom right top who)
-    (unless (finite-real? left)
-      (raise-argument-error who "finite real?" left))
-    (unless (finite-real? bottom)
-      (raise-argument-error who "finite real?" bottom))
-    (unless (finite-real? right)
-      (raise-argument-error who "finite real?" right))
-    (unless (finite-real? top)
-      (raise-argument-error who "finite real?" top))
-    (when (> left right)
-      (raise-arguments-error
-       who
-       "a layout box left edge must not exceed its right edge"
-       "left" left
-       "right" right))
-    (when (> bottom top)
-      (raise-arguments-error
-       who
-       "a layout box bottom edge must not exceed its top edge"
-       "bottom" bottom
-       "top" top))
-    (values left bottom right top)))
-
-;; layout-box represents an axis-aligned rendered box in containing coordinates.
-;;  - left    finite-real?  smallest horizontal coordinate.
-;;  - bottom  finite-real?  smallest vertical coordinate.
-;;  - right   finite-real?  largest horizontal coordinate.
-;;  - top     finite-real?  largest vertical coordinate.
-
-
-;;;
-;;; Alignment Predicates
-;;;
-
-; layout-horizontal-alignment? : any/c -> boolean?
-;;   Reports whether value names a horizontal layout-box anchor.
-(define (layout-horizontal-alignment? value)
-  (and (symbol? value)
-       (memq value '(left center right))
-       #t))
-
-; layout-vertical-alignment? : any/c -> boolean?
-;;   Reports whether value names a vertical layout-box anchor.
-(define (layout-vertical-alignment? value)
-  (and (symbol? value)
-       (memq value '(bottom center top))
-       #t))
-
-; layout-box-anchor? : any/c -> boolean?
-;;   Reports whether value names one of the nine canonical render-box anchors.
-(define (layout-box-anchor? value)
-  (and (symbol? value)
-       (memq value
-             '(bottom-left bottom bottom-right
-               left center right
-               top-left top top-right))
-       #t))
-
-
-;;;
-;;; Layout-Box Queries
-;;;
-
-; layout-box-width : layout-box? -> nonnegative-real?
-;;   Returns the horizontal extent of box.
-(define (layout-box-width box)
-  (check-layout-box 'layout-box-width box)
-  (- (layout-box-right box)
-     (layout-box-left box)))
-
-; layout-box-height : layout-box? -> nonnegative-real?
-;;   Returns the vertical extent of box.
-(define (layout-box-height box)
-  (check-layout-box 'layout-box-height box)
-  (- (layout-box-top box)
-     (layout-box-bottom box)))
-
-; layout-box-center : layout-box? -> vec2?
-;;   Returns the center of box.
-(define (layout-box-center box)
-  (check-layout-box 'layout-box-center box)
-  (vec2 (/ (+ (layout-box-left box)
-              (layout-box-right box))
-           2)
-        (/ (+ (layout-box-bottom box)
-              (layout-box-top box))
-           2)))
-
-; layout-box-anchor : layout-box? layout-box-anchor? -> vec2?
-;;   Returns the requested canonical anchor of box in its containing coordinates.
-(define (layout-box-anchor box anchor)
-  (check-layout-box 'layout-box-anchor box)
-  (check-layout-box-anchor 'layout-box-anchor anchor)
-  (case anchor
-    [(bottom-left)
-     (vec2 (layout-box-left box) (layout-box-bottom box))]
-    [(bottom)
-     (vec2 (vec2-x (layout-box-center box)) (layout-box-bottom box))]
-    [(bottom-right)
-     (vec2 (layout-box-right box) (layout-box-bottom box))]
-    [(left)
-     (vec2 (layout-box-left box) (vec2-y (layout-box-center box)))]
-    [(center)
-     (layout-box-center box)]
-    [(right)
-     (vec2 (layout-box-right box) (vec2-y (layout-box-center box)))]
-    [(top-left)
-     (vec2 (layout-box-left box) (layout-box-top box))]
-    [(top)
-     (vec2 (vec2-x (layout-box-center box)) (layout-box-top box))]
-    [(top-right)
-     (vec2 (layout-box-right box) (layout-box-top box))]))
 
 
 ;;;
