@@ -25,13 +25,17 @@
   (scene-block settle (scene)
     (scene-wait scene 1)))
 
-(provide inspector-demo)
+(provide inspector-demo
+         open-inspector-preview)
 
 (define-runtime-path source-path "preview-repl-inspector.rkt")
 
-(module+ main
+(define (open-inspector-preview)
   (define preview
     (open-program-preview source-path 'inspector-demo #:title "Animate: inspector"))
-  (define repl (open-preview-repl! preview))
+  (values preview (open-preview-repl! preview)))
+
+(module+ main
+  (define-values (preview repl) (open-inspector-preview))
   (displayln "Preview REPL ready. Try (inspect), (checkpoint! 'before-experiment), or (reload!).")
   repl)
