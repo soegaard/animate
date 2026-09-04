@@ -154,19 +154,28 @@
              (with-handlers ([exn:fail? (lambda (_error) (void))])
                (define source (preview-source-scene (preview-source session)))
                (define time (preview-current-time session))
-               (define camera (scene-camera-at source time))
-               (define inspection (scene-inspect-path source path time #:camera camera))
+               ;; The cached bitmap may use a caller-supplied static camera.
+               ;; Its raster size can be a draft-scale version of that camera,
+               ;; but the camera's pixel coordinates remain the shared bridge
+               ;; for inspection, hit testing, and the overlay.
+               (define preview-camera (or camera (scene-camera-at source time)))
+               (define inspection
+                 (scene-inspect-path source path time #:camera preview-camera))
                (when (and inspection (visual-inspection-layout-box inspection))
                  (define box (visual-inspection-layout-box inspection))
                  (define-values (left top)
-                   (camera-world->pixel camera
+                   (camera-world->pixel preview-camera
                                         (vec2 (layout-box-left box) (layout-box-top box))))
                  (define-values (right bottom)
-                   (camera-world->pixel camera
+                   (camera-world->pixel preview-camera
                                         (vec2 (layout-box-right box) (layout-box-bottom box))))
-                 (define factor-x (/ width (send bitmap get-width)))
-                 (define factor-y (/ height (send bitmap get-height)))
-                 (send dc set-pen (make-pen #:color "#d7263d" #:width 2))
+                 ;; `left` etc. are pixels in `preview-camera`, while the
+                 ;; bitmap can be a half-scale draft rendering.  Scale from
+                 ;; camera pixels directly, not from bitmap pixels, otherwise
+                 ;; the preview pixel scale is applied twice.
+                 (define factor-x (/ width (camera-width preview-camera)))
+                 (define factor-y (/ height (camera-height preview-camera)))
+                 (send dc set-pen (make-pen #:color "crimson" #:width 2))
                  (send dc set-brush (make-brush #:style 'transparent))
                  (send dc draw-rectangle (+ x (* left factor-x))
                        (+ y (* top factor-y))
@@ -190,13 +199,16 @@
              (when (and (<= 0 local-x drawn-width) (<= 0 local-y drawn-height))
                (define source (preview-source-scene (preview-source session)))
                (define time (preview-current-time session))
-               (define camera (scene-camera-at source time))
-               (define semantic-x (* (/ local-x drawn-width) (camera-width camera)))
-               (define semantic-y (* (/ local-y drawn-height) (camera-height camera)))
+               (define preview-camera (or camera (scene-camera-at source time)))
+               (define semantic-x
+                 (* (/ local-x drawn-width) (camera-width preview-camera)))
+               (define semantic-y
+                 (* (/ local-y drawn-height) (camera-height preview-camera)))
                (define selected
-                 (scene-hit-test source time semantic-x semantic-y #:camera camera
+                 (scene-hit-test source time semantic-x semantic-y #:camera preview-camera
                                  #:after-path (preview-selection session)))
                (preview-select! session (and selected (visual-inspection-path selected)))
+               (update-selection-message!)
                (send canvas refresh))))))))
   (define controls (new horizontal-panel% [parent outer] [alignment '(center center)]))
   (define backward
@@ -273,6 +285,14 @@
   (define model
     (window-model #f #f canvas slider frame-message time-message section-choice block-choice
                   status-message play selection-message 0 #f))
+  (define (update-selection-message!)
+    (define session (unbox controller-box))
+    (when (and session (preview-transaction-session? session))
+      (define selection (preview-selection session))
+      (send selection-message set-label
+            (if selection
+                (format "selection: ~s" selection)
+                "selection: none"))))
   (define (install-section-navigation! names)
     (unless (equal? names (unbox section-names-box))
       (set-box! section-names-box names)
@@ -338,12 +358,7 @@
             index))
         (when selection-index
           (send section-choice set-selection selection-index)))
-      (when (preview-transaction-session? session)
-        (define selection (preview-selection session))
-        (send selection-message set-label
-              (if selection
-                  (format "selection: ~s" selection)
-                  "selection: none"))))
+      (update-selection-message!))
     (set-window-model-handling?! model #f))
   (define session
     (open-preview-controller
