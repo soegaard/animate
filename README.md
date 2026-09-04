@@ -1,4 +1,4 @@
-# animate — SCENE-DV
+# animate — SCENE-EF
 
 > **Work in progress:** this project is under active development and its API may change.
 
@@ -18,12 +18,20 @@ SCENE-DL adds serializable named rate functions. `linear`, `(smooth)`,
 accepts a procedure. Unlike an arbitrary Racket closure, they are transparent
 semantic values, so automatic section-cache keys can safely include them.
 
-SCENE-DM adds pure Boolean operations for the practical first case: one simple
-convex closed path per operand. `path-union`, `path-intersection`,
-`path-difference`, `path-xor`, and `cutout` return ordinary immutable path
-geometry. Cubic boundaries are sampled with an explicit `#:curve-samples`
-quality setting, so the results can be filled, styled, placed in a
-`path-visual`, or fed back into existing path animation tools.
+SCENE-DY generalizes pure Boolean operations to simple concave and compound
+closed paths. `path-union`, `path-intersection`, `path-difference`,
+`path-xor`, `cutout`, `clip-to`, and `mask-with` return ordinary immutable path
+geometry with reconstructed exterior and hole contours—so strokes do not reveal
+the internal triangulation. Cubic boundaries are sampled with an explicit
+`#:curve-samples` quality setting. The default `#:fill-rule 'odd-even` matches
+the renderer; `nonzero` supports nonintersecting oriented contour nests.
+
+SCENE-EC adds renderer-independent fill paints: `linear-gradient`,
+`radial-gradient`, and `checker-pattern` are immutable semantic values with
+local geometry and ordered colour stops. The Pict/racket-draw backend creates
+native vector gradient brushes at render time, so painted paths, circles, and
+rectangles remain normal transformable Visuals. Compatible paints animate with
+`fill-color-to`; unlike paint kinds require an intentional cross-fade.
 
 SCENE-DN extends prepared ODE trajectories with optional adaptive
 Dormand–Prince RK45 integration, cubic dense lookup, time-dependent fields,
@@ -38,6 +46,19 @@ is resolved from the same sampled Scene as the main view, so ordinary motion,
 nested transforms, and opacity remain synchronized without a copied secondary
 Scene or mutable observer state.
 
+SCENE-EE evolves that inset into an independently animated secondary camera.
+`camera-view` can select several live world targets or, with no target
+selection, every top-level world layer. Its camera may pan, zoom, follow a
+moving world target, or animate to an existing renderer-aware fit. Rounded and
+rectangular viewport clips are semantic choices; each view continues to sample
+from the same immutable Scene state as the main camera.
+
+SCENE-EF extends immutable numeric displays with scientific, significant-figure,
+rational, and Cartesian-complex formatting; semantic upright unit factors; and
+clipped rolling-digit displays. `change-number-to`, `count-to`, and
+`count-from` are ordinary named-value animation requests, so their numbers are
+interpolated directly from a sampled clip rather than kept in a mutable tracker.
+
 SCENE-DP upgrades graph construction with deterministic spring, layered,
 partite, and small outerplanar layouts. Parallel links route onto distinct live
 cubic arcs, directed self-loops have matching tangent arrowheads, and edge
@@ -51,6 +72,31 @@ than drawing false chords across failed samples, and can now address a nested
 ordinary Visual through its enclosing affine maps. Jacobian/orientation queries,
 an optional inverse-map mesh, and a semantic cell-sampled complex-domain colour
 field make the result inspectable without a renderer-specific transform layer.
+
+SCENE-DW extends this with time-dependent deformation. `apply-homotopy`
+evaluates `H(point, alpha)` directly from immutable source geometry at each
+sampled clip phase, rather than interpolating toward a precomputed endpoint.
+`apply-complex-homotopy` provides the same operation over ordinary Racket
+complex numbers. Both retain DQ's adaptive sampling, split discontinuities,
+nested world-space targets, and random-access frame semantics.
+
+SCENE-ED makes common explanatory marks live: `angle-between`,
+`right-angle-between`, `brace-between`, `brace-label`, and
+`curved-arrow-between` accept the same literal-point, parameter, visual, and
+`anchor-of` endpoint descriptions as `line-between`. A pure centre or
+parameter relationship is a normal derived Visual, while a measured edge or
+corner anchor is resolved after sampling by the active renderer.
+
+SCENE-DX extends matching transforms from tagged formulas to ordinary diagram
+trees. `transform-matching-visuals` pairs named leaves by explicit relative
+paths, unchanged nested paths, compatible shape/style, local shape fingerprints,
+and finally nearby compatible geometry. Matched primitive shapes morph when
+possible; other matches move by cross-fade, while unmatched material fades.
+
+SCENE-DZ adds serializable time reparameterization to the existing `timed`
+scheduler slot. `change-speed` turns a piecewise-linear speed profile into a
+rate function; `cubic-bezier`, `spring`, `reverse-rate`, `compose-rate`, and
+`squish-rate` provide further inspectable timing descriptions.
 
 SCENE-DS adds a compact mathematical-effects vocabulary. `flash`, `focus-on`,
 and `show-passing-flash` are temporary live overlays, so they track their
@@ -2766,13 +2812,24 @@ precisely; do not silently lose the follow-on idea that led to the work.
   (zoom, fit) conflict with one another. A pan/follow and a zoom may run in
   parallel. Follow expects a world-space target to remain available for its
   active interval; it is not a general relation that survives a removal.
-- SCENE-DO's `camera-view` renders one resolved world-space Visual through one
-  fixed orthographic inset camera. It does not yet render an arbitrary selected
-  set of scene layers, follow a target automatically, fit/zoom its inset camera
-  during a clip, crop through a semantic clip path, support labels or controls
-  inside the viewport, or coordinate overlap/collision with other frame-space
-  overlays. The simple one-pixel inset border is renderer-side presentation,
-  not a separately styleable Visual. A target cannot itself be frame-space.
+- SCENE-EE's `camera-view` renders one target, an explicit nonempty target list,
+  or all top-level world-space layers through an independently animated inset
+  camera. Explicit nested paths resolve in world coordinates; all-layer views
+  intentionally do not descend into groups and exclude all frame-space overlays
+  (including other views) to avoid recursion. The only viewport clips are the
+  fixed-style `rectangle` and `rounded` borders; there is no arbitrary clip
+  path, separately styleable frame, viewport title/control child, or automatic
+  frame-overlay collision avoidance. A selected or followed target cannot be
+  frame-space.
+- Secondary-camera pan, zoom, follow, and fit work only on a top-level named
+  `camera-view`. Follow preserves a target's reference-position offset, rather
+  than centering or tracking its rendered box, and requires the target to remain
+  available in world space for the active clip. A fit is the existing measured
+  center/width snapshot, not a continuously recomputed fit. Secondary views do
+  not add camera rotation, perspective, animated pixel dimensions/background,
+  or a persistent observer across clips. As with the main camera, one view may
+  update center once and visible width once in an overlapping interval; a
+  pan/follow and a zoom can run together.
 
 ### Video authoring, assembly, and caching
 
@@ -2888,6 +2945,15 @@ precisely; do not silently lose the follow-on idea that led to the work.
   symbolic differentiation. `inverse-map-mesh` only samples an explicitly
   supplied inverse. `complex-domain-coloring` is a semantic rectangular cell
   field rather than a continuous raster shader.
+- SCENE-DW's `apply-homotopy` evaluates an author-supplied pure `H(p, alpha)`
+  from the immutable clip-start source at every positive eased clip phase; it
+  does not integrate from a preceding frame or interpolate to an endpoint map.
+  Authors normally make `H(p, 0)` equal `p`; the exact original Visual remains
+  at time zero. Adaptive subdivision is deterministic at each requested phase,
+  but remains a sampled approximation and can use a different refinement tree
+  at different phases. As with DQ, failed samples can split a path but there is
+  no automatic branch-cut, topology-transition, or continuity analysis over
+  the full time interval.
 - SCENE-DA treats Racket complex values as world points. `complex-plane` is a
   conventional static Cartesian grid with Re/Im labels; `complex-domain-color`
   and `complex-domain-coloring` use argument for hue and optional modulus for
@@ -2929,16 +2995,26 @@ precisely; do not silently lose the follow-on idea that led to the work.
 
 ### Numeric displays
 
-- SCENE-DD formats finite real scalar values only. It supplies fixed decimal
-  places, grouping, signs, and string units, but not complex/scientific/
-  rational notation, locale-aware formatting, automatic significant figures,
-  typeset mathematical units, or renderer-measured digit-width alignment.
+- SCENE-EF formats finite reals as integers, fixed decimals, scientific values,
+  significant figures, or bounded-denominator rationals; Cartesian complex
+  values format their real and imaginary components independently. Semantic
+  units are upright Unicode factors and superscripts, not a dimension-analysis,
+  locale, TeX-math, or SI-prefix system. Scientific notation deliberately uses
+  plain `e+3` text for consistency with the ordinary text renderer.
+- Rational formatting is a deterministic nearest fraction search bounded by
+  `#:max-denominator`; it is a display approximation, not symbolic arithmetic.
+  Complex formatting has no polar mode, branch-aware formatting, or automatic
+  simplification of zero components.
 - `parameter-display` reads a scalar scene parameter through a derived Visual.
   Its left/right/center/sign anchors use ordinary text anchors; `decimal`
-  anchors two separately rendered text pieces at the decimal point. It has no
-  general live label relationship, animated rolling digits, baseline alignment
-  with arbitrary formulas, or automatic collision avoidance. Integer parameter
-  displays round a finite sampled value to the nearest integer.
+  anchors two separately rendered text pieces at the decimal point. Integer
+  parameter displays round a finite sampled value to the nearest integer.
+- `rolling-number-display` is a derived vector digit wheel, not a stateful
+  frame cache. It accepts nonnegative finite real values below its declared
+  integer-slot limit and rolls during the final tenth of each digit interval.
+  Digit width is a nominal monospaced advance rather than renderer-measured
+  tabular-figure layout; it has no negative counters, arbitrary overflow,
+  locale-aware separators, or arbitrary textual transitions.
 
 ### Live layout relationships
 
@@ -3083,10 +3159,25 @@ precisely; do not silently lose the follow-on idea that led to the work.
   arrows, and finite rays. Existing `line`/`arrow` values remain static
   geometry, and dynamic endpoint definitions cannot yet be `create`d,
   `uncreate`d, grouped, chained, or used as another relationship's target.
-- SCENE-CO adds semantic static annotation constructors and a live
-  `surrounding-rectangle`. The arc/angle/brace constructors do not yet directly
-  accept dynamic endpoint descriptions, infer right angles or tangencies,
-  provide dashed fills, rounded enclosure corners, or collision-aware labels.
+- SCENE-ED extends angle, right-angle, brace, brace-label, and curved-arrow
+  annotations with live endpoint descriptions. It deliberately does not infer
+  that rays are perpendicular or tangent, route a curved arrow around an
+  obstacle, prevent a dynamic label collision, or maintain a group of
+  renderer-measured annotations as a target. The ordinary static `angle`,
+  `right-angle`, and `curved-arrow` constructors remain the direct way to draw
+  a fixed mark.
+- SCENE-DX matches ordinary affine/opacity leaves below a replaced top-level
+  root. Its automatic semantic fallback is deliberately conservative: it knows
+  built-in paths, circles, and rectangles, but does not derive application
+  meaning from arbitrary SVG/text/custom Visuals, preserve a repeated leaf
+  through a structural split/merge, or route a match around another diagram
+  element. Use `visual-match` for an intentional pairing or formula APIs for
+  TeX/glyph semantics.
+- SCENE-DZ's `change-speed` controls only the rate at which a request consumes
+  its own local unit interval. It does not retime an entire previously-built
+  scene, infer a duration from physical velocity, or coordinate multiple
+  independently scheduled requests. `spring` may overshoot under direct use;
+  ordinary scene playback clamps a progress value to its [0,1] endpoint range.
   A `derived-visual` can nevertheless rebuild ordinary annotations from sampled
   geometry, as the stage example does.
 - SCENE-CP supplies axes-aware numeric snapshots for common calculus diagrams.
@@ -3392,18 +3483,28 @@ one-argument procedure:
 
 `linear` remains the default callable value. The other initial constructors are
 `smoothstep`, `rush-into`, `rush-from`, `there-and-back`, and
-`there-and-back-with-pause`. Built-in values appear as semantic data in a scene,
+`there-and-back-with-pause`; SCENE-DZ additionally offers `cubic-bezier`,
+`spring`, `reverse-rate`, `compose-rate`, `squish-rate`, and `change-speed`.
+Built-in values appear as semantic data in a scene,
 so `render-timeline-section!` can derive an automatic cache key; an arbitrary
 lambda remains legal but deliberately bypasses automatic cache reuse. See
 `examples/serializable-rate-functions.rkt`.
 
-## SCENE-DM: Boolean path geometry
+## SCENE-DY: General Boolean path geometry and clipping
 
 Boolean operations work on immutable local `path-geometry` values, then the
-result becomes a normal `path-visual` when it is time to render it. The first
-implementation intentionally accepts one simple convex closed contour per
-operand. It clips straight polygons directly and approximates each cubic
-segment by `#:curve-samples` straight pieces (16 by default).
+result becomes a normal `path-visual` when it is time to render it. Every input
+contour must be simple and closed, but may be concave; each operand may contain
+multiple contours. Cubic segments are uniformly sampled into
+`#:curve-samples` straight pieces (16 by default), so curve results are
+deterministic polygonal approximations rather than exact Bézier intersections.
+
+The default `#:fill-rule 'odd-even` exactly matches the fill rule used by the
+path renderers: a nested inner contour makes a hole regardless of orientation.
+Use `#:fill-rule 'nonzero` for conventional oriented compound paths; it accepts
+nonintersecting contour boundaries and treats reversed inner loops as holes.
+Boolean results reconstruct their exterior and hole loops, so a normal stroke
+shows only the true boundary—not ear-clipping seams.
 
 ```racket
 (define left
@@ -3418,14 +3519,85 @@ segment by `#:curve-samples` straight pieces (16 by default).
 (define left-only (cutout left right))
 
 (make-path-visual overlap #:id 'overlap
-                  #:fill "mediumpurple" #:stroke #f)
+                  #:fill "mediumpurple" #:stroke "indigo" #:stroke-width 3)
 ```
 
-`path-union`, `path-difference`, and `path-xor` complete the set. In this
-first release, operations that can split a result return non-overlapping
-polygon partitions with correct filled area; suppress the cosmetic stroke when
-the partitions should read as one filled set. See
-`examples/boolean-path-geometry.rkt`.
+`path-union`, `path-difference`, and `path-xor` complete the set. With two
+paths, `clip-to` and `mask-with` are readable intersection aliases. With an
+affine Visual plus a local mask path, they instead return a `clipped-visual`
+that clips the complete vector content at render time:
+
+```racket
+(clip-to (latex-formula "f(x)" #:id 'formula)
+         viewport-path
+         #:id 'cropped-formula)
+```
+
+The wrapper is itself an ordinary affine/opacity Visual, so moves, rotations,
+and fades apply to its content and path together. See
+`examples/general-boolean-clipping.rkt`.
+
+Current limits: the default `odd-even` rule repairs proper self-crossings but
+rejects touching or overlapping segments; `nonzero` rejects crossing contour
+boundaries; and curved input is flattened rather than preserved as cubic
+output.
+
+## SCENE-EC: semantic vector paints
+
+Fill styles can now be semantic paints rather than only solid colours. A paint
+contains no `racket/draw` object or cached bitmap: it is ordinary immutable
+scene data, so it survives scene sampling, nesting, clipping, and affine motion.
+The built-in Pict renderer installs its native brush only while drawing the
+shape.
+
+```racket
+(define warm-to-cool
+  (linear-gradient
+   (vec2 -2 0) (vec2 2 0)
+   (list (paint-stop 0 "tomato")
+         (paint-stop 1 "gold"))))
+
+(define disk-glow
+  (radial-gradient
+   origin 1
+   (list (paint-stop 0 "white")
+         (paint-stop 1 "mediumpurple"))))
+
+(define tiles
+  (checker-pattern "aliceblue" "lightsteelblue" #:cell-size 1/4))
+
+(scene-play
+ (scene-add (make-scene)
+            (rectangle #:id 'panel #:width 4 #:height 2
+                       #:fill warm-to-cool #:stroke "navy"))
+ (fill-color-to 'panel
+                (linear-gradient
+                 (vec2 0 -1) (vec2 0 1)
+                 (list (paint-stop 0 "deepskyblue")
+                       (paint-stop 1 "mediumpurple"))))
+ #:duration 2)
+```
+
+Gradient points and radii use the receiving Visual's local coordinate system.
+They therefore rotate, scale, and move with that Visual, including when the
+Visual is wrapped by `clip-to` or `mask-with`. A `paint-stop` offset is in
+`[0, 1]`; each gradient has at least two nondecreasing stops. A radial gradient
+can also set `#:focal-center` and `#:focal-radius`.
+
+Solid textual colours and `rgba-color` values remain paints, so existing fill
+code needs no change. `paint-lerp` and `fill-color-to` interpolate only pairs
+of the same kind: two solids, two linear gradients with the same number of
+stops, two radial gradients with the same number of stops, or two checker
+patterns. Exact endpoints remain the original objects. To change a solid into a
+gradient (or otherwise change paint kinds), overlap the two Visuals and use the
+existing fade/cross-fade composition deliberately.
+
+Current limits: paints apply to fills only; strokes remain solid colours. The
+default Pict renderer uses native vector gradients, but a checker tile is a
+deterministic device-aligned stipple and does not yet follow an enclosing affine
+transform. Formula, SVG, image, and custom renderers keep their own paint
+semantics until they opt into the paint protocol. See
+[`examples/semantic-paints.rkt`](examples/semantic-paints.rkt).
 
 ## SCENE-DN: adaptive and time-dependent ODE flow
 
@@ -3485,6 +3657,86 @@ through its own camera. Thus, a marker moved with `(move-to '(diagram marker)
 frame-space Visual: it may be moved, rotated, scaled, faded, or removed.
 Direct `visual->pict` rendering deliberately rejects it because resolving its
 live target requires a sampled Scene. See `examples/zoom-camera-inset.rkt`.
+
+## SCENE-EE: animated secondary cameras
+
+A `camera-view` may select one positional target, a nonempty `#:targets` list,
+or—when neither is supplied—every top-level world-space layer in drawing order.
+The latter is useful for an overview; frame-space labels, controls, callouts,
+and other insets are deliberately excluded to prevent recursive views. Use
+`#:clip 'rounded` for a rounded viewport border (the historical
+`'rounded-frame` spelling is accepted as an alias).
+
+```racket
+(define detail
+  (camera-view #:id 'detail
+               #:targets '(terrain route rover)
+               #:camera detail-camera
+               #:frame-camera main-camera
+               #:at (vec2 19/5 2)
+               #:width 18/5
+               #:clip 'rounded))
+
+(define route-fit
+  (camera-fit-visuals (list route beacon)
+                      #:camera detail-camera
+                      #:padding 1/2))
+
+(scene-play scene
+            (animation-group
+             (move-along-path 'rover route-path)
+             (camera-view-follow 'detail 'rover)
+             (camera-view-zoom-by 'detail 2)
+             (camera-view-pan-to 'overview (vec2 1/2 0)))
+            #:duration 3
+            #:easing (smooth))
+
+(scene-play scene (camera-view-fit 'detail route-fit) #:duration 2)
+```
+
+The view camera is an immutable field of the frame-space Visual. A follow is
+therefore evaluated after ordinary world motion at each requested sample; it
+does not retain rendered frames or mutable integration history. Its target
+keeps the same initial world-space offset inside the inset while the view may
+zoom simultaneously. `camera-view-fit` consumes the existing snapshot returned
+by `camera-fit-visuals`, `camera-fit-scene`, or `camera-fit-layout-box`; compute
+that snapshot with the inset camera so its aspect ratio is correct. See
+`examples/secondary-camera-views.rkt`.
+
+## SCENE-EF: numeric animation II
+
+Numeric values remain ordinary immutable scene parameters. `change-number-to`
+accepts finite real or Cartesian-complex destinations, while `count-to` reads a
+finite-real clip-start value and `count-from` declares both finite-real
+endpoints explicitly.
+
+```racket
+(define counter (parameter 'counter 0))
+(define speed (parameter 'speed 0))
+
+(define display
+  (rolling-number-display counter #:id 'counter-display
+                          #:integer-digits 2 #:decimal-places 1))
+
+(define speed-display
+  (parameter-display speed #:id 'speed-display
+                     #:kind 'scientific
+                     #:unit (unit-product (unit "m")
+                                          (unit "s" #:power -2))))
+
+(scene-play
+ (scene-add (scene-set-value (scene-set-value (make-scene) counter) speed)
+            display speed-display)
+ (animation-group (count-from counter 0 42.7)
+                  (change-number-to speed 12700))
+ #:duration 3)
+```
+
+`format-scientific`, `format-significant`, `format-rational`, and
+`format-complex` also create deterministic strings for static labels. Rolling
+wheels derive their current and next glyphs directly from the sampled number;
+they do not retain a previous bitmap or mutable counter. See
+`examples/numeric-animation-ii.rkt`.
 
 ## SCENE-DP: graph layouts and live curved edges
 
@@ -3617,6 +3869,102 @@ existing placement functions, but solve common finishing operations directly:
 one axis. All four helpers return new immutable Visual values; they never alter
 the original Visuals or maintain constraints after construction. See
 `examples/layout-finishing.rkt`.
+
+## SCENE-DW: time-dependent homotopies
+
+`apply-homotopy` is the direct time-dependent counterpart of
+`apply-pointwise`. Instead of calculating a final map and blending each source
+point toward it, it evaluates the supplied map at the current eased local phase:
+
+```racket
+(scene-play
+ (scene-add (make-scene) grid)
+ (apply-homotopy
+  'grid
+ (lambda (point alpha)
+    (vec2 (+ (vec2-x point)
+             (* alpha (sin (* 2 (vec2-y point)))))
+          (vec2-y point))))
+ #:duration 3
+ #:easing (smooth))
+```
+
+At every frame, geometric source points are placed at `H(point, alpha)` from
+the same immutable clip-start geometry. The result is therefore independent of
+render order. `apply-complex-homotopy` applies the analogous two-argument
+function to Racket complex values. Both forms inherit adaptive sampling,
+split/error discontinuity policy, and nested world-space target support from
+`apply-pointwise`. See `examples/time-dependent-homotopies.rkt`.
+
+## SCENE-ED: live mathematical annotations
+
+The annotation constructors parallel `line-between` when their geometry is
+defined by moving points:
+
+```racket
+(define base
+  (brace-label (anchor-of 'A 'bottom #:offset (vec2 0 -1/12))
+               (anchor-of 'B 'bottom #:offset (vec2 0 -1/12))
+               "base" #:id 'base #:offset -1/12))
+
+(define mark (right-angle-between 'B 'A 'C #:id 'right-mark))
+(define relation
+  (curved-arrow-between (anchor-of 'C 'right) (anchor-of 'B 'top)
+                        #:id 'relation #:angle -1))
+```
+
+With literal `vec2` endpoints these functions return the familiar fixed
+path/group Visuals. A parameter or centre reference produces a normal pure
+`derived-visual`; a non-centre `anchor-of` produces a top-level,
+renderer-resolved definition. The latter is useful when an annotation must meet
+the visible edge of a moving circle, formula, or other rendered Visual.
+`examples/live-mathematical-annotations.rkt` demonstrates both modes.
+
+## SCENE-DX: transform matching for diagrams
+
+`transform-matching-visuals` replaces one ordinary root Visual by another while
+using its named leaves as a correspondence tree:
+
+```racket
+(scene-play
+ (scene-add (make-scene) before)
+ (transform-matching-visuals
+  before after
+  #:matches (list (visual-match '(source-dot) '(result-dot))))
+ #:duration 2)
+```
+
+The empty list in a `visual-match` denotes an atomic root; otherwise each list
+is a path below `before` or `after`. Explicit pairs win. The automatic matching
+then uses equal relative paths, exact built-in type/style, exact local shape,
+and nearest remaining path/circle/rectangle geometry. Compatible shapes share
+the existing normalized morph interior. Other matched leaves interpolate their
+affine placement while cross-fading their content; unmatched leaves fade by
+default, or use moving cross-fades under `#:mismatch-mode 'fade-transform`.
+The exact destination tree is installed at the end. See
+`examples/transform-matching-visuals.rkt`.
+
+## SCENE-DZ: time reparameterization
+
+Use a speed profile as the local `#:easing` of an existing `timed` request:
+
+```racket
+(define middle-fast
+  (change-speed '((0 1/2) (1/3 3) (2/3 3) (1 1/2))))
+
+(scene-play
+ scene
+ (timed (move-to 'dot (vec2 4 0))
+        #:duration 4 #:easing middle-fast)
+ #:duration 4)
+```
+
+Each pair is `(time speed)`, times must strictly increase from `0` to `1`, and
+positive speeds are linearly interpolated before their integral is normalized
+to animation progress. This means it composes cleanly with the existing local
+scheduler and remains serializable for caches. `cubic-bezier`, `spring`,
+`reverse-rate`, `compose-rate`, and `squish-rate` return the same kind of rate
+value. See `examples/time-reparameterization.rkt`.
 
 ## SCENE-CZ: linear-algebra diagrams
 

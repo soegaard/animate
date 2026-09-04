@@ -60,6 +60,8 @@
                 (cons "boolean-path-geometry.rkt" '(title explanation))
                 (cons "adaptive-ode-trajectory.rkt" '(title explanation))
                 (cons "zoom-camera-inset.rkt" '(title explanation))
+                (cons "secondary-camera-views.rkt" '(title explanation))
+                (cons "numeric-animation-ii.rkt" '(title explanation))
                 (cons "graph-layouts-and-curved-edges.rkt" '(title explanation))
                 (cons "robust-pointwise-maps.rkt" '(title explanation))
                 (cons "mathematical-effects.rkt" '(title explanation))

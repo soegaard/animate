@@ -19,6 +19,7 @@
          "affine-transform.rkt"
          "color-style.rkt"
          "geometry.rkt"
+         "paint.rkt"
          "path-geometry.rkt")
 
 ;; Exports
@@ -310,7 +311,7 @@
   [(define (visual-fill-color circle)
      (circle-visual-fill circle))
    (define (visual-with-fill-color circle color)
-     (check-color-spec 'visual-with-fill-color color)
+     (check-paint-spec 'visual-with-fill-color color)
      (struct-copy circle-visual circle [fill color]))]
   #:methods gen:stroke-color-visual
   [(define (visual-stroke-color circle)
@@ -407,7 +408,7 @@
   [(define (visual-fill-color rectangle)
      (rectangle-visual-fill rectangle))
    (define (visual-with-fill-color rectangle color)
-     (check-color-spec 'visual-with-fill-color color)
+     (check-paint-spec 'visual-with-fill-color color)
      (struct-copy rectangle-visual rectangle [fill color]))]
   #:methods gen:stroke-color-visual
   [(define (visual-stroke-color rectangle)
@@ -512,7 +513,7 @@
   [(define (visual-fill-color path-visual-value)
      (path-visual-fill path-visual-value))
    (define (visual-with-fill-color path-visual-value color)
-     (check-color-spec 'visual-with-fill-color color)
+     (check-paint-spec 'visual-with-fill-color color)
      (struct-copy path-visual path-visual-value [fill color]))]
   #:methods gen:stroke-color-visual
   [(define (visual-stroke-color path-visual-value)
@@ -791,3 +792,9 @@
      who
      "color-spec?"
      color)))
+
+;; Fill paints extend solid colors with gradients and patterns. Stroke paints
+;; remain solid colors for now because racket/draw pens have no gradient API.
+(define (check-paint-spec who paint)
+  (unless (paint? paint)
+    (raise-argument-error who "paint?" paint)))

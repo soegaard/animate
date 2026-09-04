@@ -50,8 +50,11 @@
          "glyph-outline-morph-pict-renderer.rkt"
          "image-pict-renderer.rkt"
          "latex-formula-pict-renderer.rkt"
-         (only-in "path-pict-renderer.rkt" path-pict-renderer)
+         (only-in "path-pict-renderer.rkt"
+                  path-pict-renderer
+                  [path-visual->pict generic-path-visual->pict])
          "path-geometry.rkt"
+         "paint.rkt"
          "pict-renderer.rkt"
          "renderer-resources.rkt"
          "svg-pict-renderer.rkt"
@@ -226,33 +229,31 @@
   (check-default-pict-stroke-width
    'circle-visual->pict
    (circle-visual-stroke-width circle))
-  (define scale
-    (visual-scale circle))
-  (define diameter
-    (* 2 (circle-visual-radius circle)))
-  (define width
-    (camera-length->pixels camera
-                           (* diameter (vec2-x scale))))
-  (define height
-    (camera-length->pixels camera
-                           (* diameter (vec2-y scale))))
-  (define shape
-    (if (circle-visual-fill circle)
-        (filled-ellipse width
-                        height
-                        #:color (draw-color-spec (circle-visual-fill circle))
-                        #:border-color
-                        (draw-color-spec (circle-visual-stroke circle))
-                        #:border-width (circle-visual-stroke-width circle))
-        (ellipse width
-                 height
-                 #:border-color (draw-color-spec (circle-visual-stroke circle))
-                 #:border-width (circle-visual-stroke-width circle))))
-  (if (or (zero? (visual-rotation circle))
-          (= (vec2-x scale) (vec2-y scale)))
-      shape
-      (rotate-pict-if-needed shape
-                             (visual-rotation circle))))
+  (if (structured-paint? (circle-visual-fill circle))
+      (generic-path-visual->pict (circle->path-visual circle) camera)
+      (let* ([scale (visual-scale circle)]
+             [diameter (* 2 (circle-visual-radius circle))]
+             [width (camera-length->pixels camera
+                                            (* diameter (vec2-x scale)))]
+             [height (camera-length->pixels camera
+                                             (* diameter (vec2-y scale)))]
+             [shape
+              (if (circle-visual-fill circle)
+                  (filled-ellipse width
+                                  height
+                                  #:color (draw-color-spec (circle-visual-fill circle))
+                                  #:border-color
+                                  (draw-color-spec (circle-visual-stroke circle))
+                                  #:border-width (circle-visual-stroke-width circle))
+                  (ellipse width
+                           height
+                           #:border-color (draw-color-spec (circle-visual-stroke circle))
+                           #:border-width (circle-visual-stroke-width circle)))])
+        (if (or (zero? (visual-rotation circle))
+                (= (vec2-x scale) (vec2-y scale)))
+            shape
+            (rotate-pict-if-needed shape
+                                   (visual-rotation circle))))))
 
 ; rectangle-visual->pict : rectangle-visual? camera? -> pict?
 ;;   Converts rectangle to a scaled and rotated rectangle Pict.
@@ -260,36 +261,89 @@
   (check-default-pict-stroke-width
    'rectangle-visual->pict
    (rectangle-visual-stroke-width rectangle))
-  (define scale
-    (visual-scale rectangle))
-  (define width
-    (camera-length->pixels
-     camera
-     (* (rectangle-visual-width rectangle)
-        (vec2-x scale))))
-  (define height
-    (camera-length->pixels
-     camera
-     (* (rectangle-visual-height rectangle)
-        (vec2-y scale))))
-  (define shape
-    (if (rectangle-visual-fill rectangle)
-        (filled-rectangle width
-                          height
-                          #:color
-                          (draw-color-spec (rectangle-visual-fill rectangle))
-                          #:border-color
-                          (draw-color-spec (rectangle-visual-stroke rectangle))
-                          #:border-width
-                          (rectangle-visual-stroke-width rectangle))
-        (pict-rectangle width
-                        height
-                        #:border-color
-                        (draw-color-spec (rectangle-visual-stroke rectangle))
-                        #:border-width
-                        (rectangle-visual-stroke-width rectangle))))
-  (rotate-pict-if-needed shape
-                         (visual-rotation rectangle)))
+  (if (structured-paint? (rectangle-visual-fill rectangle))
+      (generic-path-visual->pict (rectangle->path-visual rectangle) camera)
+      (let* ([scale (visual-scale rectangle)]
+             [width
+              (camera-length->pixels
+               camera
+               (* (rectangle-visual-width rectangle)
+                  (vec2-x scale)))]
+             [height
+              (camera-length->pixels
+               camera
+               (* (rectangle-visual-height rectangle)
+                  (vec2-y scale)))]
+             [shape
+              (if (rectangle-visual-fill rectangle)
+                  (filled-rectangle width
+                                    height
+                                    #:color
+                                    (draw-color-spec (rectangle-visual-fill rectangle))
+                                    #:border-color
+                                    (draw-color-spec (rectangle-visual-stroke rectangle))
+                                    #:border-width
+                                    (rectangle-visual-stroke-width rectangle))
+                  (pict-rectangle width
+                                  height
+                                  #:border-color
+                                  (draw-color-spec (rectangle-visual-stroke rectangle))
+                                  #:border-width
+                                  (rectangle-visual-stroke-width rectangle)))])
+        (rotate-pict-if-needed shape
+                               (visual-rotation rectangle)))))
+
+;; Native Pict ellipses and rectangles accept only solid brushes.  Structured
+;; semantic paints therefore use the shared vector-path renderer, which can
+;; install racket/draw's native gradient and stipple brushes without first
+;; rasterising the shape.
+(define (structured-paint? fill)
+  (and fill (paint? fill) (not (color-spec? fill))))
+
+(define (circle->path-visual visual)
+  (define radius (circle-visual-radius visual))
+  ;; The standard four-cubic approximation has its extrema exactly at the
+  ;; cardinal points, so bounds and alignment stay consistent with circle.
+  (define handle (* radius 0.5522847498307936))
+  (make-path-visual
+   (cubic-bezier-path
+    (vec2 radius 0)
+    (list (cubic-bezier-path-segment (vec2 radius handle)
+                                     (vec2 handle radius)
+                                     (vec2 0 radius))
+          (cubic-bezier-path-segment (vec2 (- handle) radius)
+                                     (vec2 (- radius) handle)
+                                     (vec2 (- radius) 0))
+          (cubic-bezier-path-segment (vec2 (- radius) (- handle))
+                                     (vec2 (- handle) (- radius))
+                                     (vec2 0 (- radius)))
+          (cubic-bezier-path-segment (vec2 handle (- radius))
+                                     (vec2 radius (- handle))
+                                     (vec2 radius 0)))
+    #:closed? #t)
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:fill (circle-visual-fill visual)
+   #:stroke (circle-visual-stroke visual)
+   #:stroke-width (circle-visual-stroke-width visual)))
+
+(define (rectangle->path-visual visual)
+  (define half-width (/ (rectangle-visual-width visual) 2))
+  (define half-height (/ (rectangle-visual-height visual) 2))
+  (make-path-visual
+   (polygon-path (list (vec2 (- half-width) (- half-height))
+                       (vec2 half-width (- half-height))
+                       (vec2 half-width half-height)
+                       (vec2 (- half-width) half-height)))
+   #:id (visual-id visual)
+   #:center (visual-position visual)
+   #:rotation (visual-rotation visual)
+   #:scale (visual-scale visual)
+   #:fill (rectangle-visual-fill visual)
+   #:stroke (rectangle-visual-stroke visual)
+   #:stroke-width (rectangle-visual-stroke-width visual)))
 
 ;;;
 ;;; Arrow and Axes Conversion

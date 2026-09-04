@@ -1,7 +1,7 @@
 #lang racket/base
 
 ;;;
-;;; SCENE-DM: Boolean Path Geometry
+;;; SCENE-DY: General Boolean Path Geometry
 ;;;
 
 ;; Two overlapping cubic paths are combined into ordinary fillable path
@@ -33,14 +33,14 @@
   (make-path-visual geometry #:id id #:fill #f #:stroke color #:stroke-width 2))
 
 (define (result id geometry color)
-  ;; Difference and XOR are intentionally a disjoint path partition in the
-  ;; first Boolean implementation. Suppressing its cosmetic stroke keeps the
-  ;; panel focused on the correct filled set rather than partition boundaries.
+  ;; Boolean results now reconstruct exterior/hole contours. This older compact
+  ;; gallery keeps its fill-only presentation; the SCENE-DY demo also strokes
+  ;; concave and compound results to show that no partition seams remain.
   (make-path-visual geometry #:id id #:fill color #:stroke #f))
 
 (define (make-demo-scene)
   (define title
-    (plain-text "SCENE-DM: Boolean path geometry"
+    (plain-text "SCENE-DY: Boolean path geometry"
                 #:id 'title #:center (vec2 0 17/5)
                 #:font-size 1/3 #:font-family 'swiss #:font-weight 'bold
                 #:color "navy"))

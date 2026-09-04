@@ -10,9 +10,11 @@
 ;; without an annotation-specific backend.
 
 (require (only-in racket/math pi)
+         "dynamic-endpoint-geometry.rkt"
          "geometry.rkt"
          "group-visual.rkt"
          "path-geometry.rkt"
+         "shape-catalogue.rkt"
          "visual-model.rkt"
          "text-visual.rkt")
 
@@ -20,10 +22,13 @@
          dashed-path
          dashed-line
          angle
+         angle-between
          right-angle
+         right-angle-between
          brace
          brace-between
          brace-label
+         curved-arrow-between
          surrounding-rectangle
          surrounding-rectangle-visual?
          surrounding-rectangle-template
@@ -199,6 +204,57 @@
   (centered-path-visual
    'right-angle (polyline-path (list a b c)) id opacity stroke stroke-width))
 
+;; angle-between and right-angle-between accept the same literal points,
+;; point-valued parameters, visual references, and anchor-of descriptions as
+;; line-between. Literal points retain the ordinary static constructors above;
+;; live inputs become derived or renderer-resolved endpoint annotations.
+(define (angle-between first vertex second
+                       #:id id
+                       #:radius [radius 1/3]
+                       #:reflex? [reflex? #f]
+                       #:opacity [opacity 1]
+                       #:stroke [stroke "black"]
+                       #:stroke-width [stroke-width 2])
+  (if (and (vec2? first) (vec2? vertex) (vec2? second))
+      (angle first vertex second
+             #:id id #:radius radius #:reflex? reflex?
+             #:opacity opacity #:stroke stroke #:stroke-width stroke-width)
+      (let ([template
+             (angle (vec2 1 0) origin (vec2 0 1)
+                    #:id id #:radius radius #:reflex? reflex?
+                    #:opacity opacity #:stroke stroke #:stroke-width stroke-width)])
+        (make-live-endpoint-annotation
+         (list first vertex second)
+         template
+         (lambda (points)
+           (angle (car points) (cadr points) (caddr points)
+                  #:id id #:radius radius #:reflex? reflex?
+                  #:opacity opacity #:stroke stroke #:stroke-width stroke-width))
+         'angle-between))))
+
+(define (right-angle-between first vertex second
+                             #:id id
+                             #:size [size 1/3]
+                             #:opacity [opacity 1]
+                             #:stroke [stroke "black"]
+                             #:stroke-width [stroke-width 2])
+  (if (and (vec2? first) (vec2? vertex) (vec2? second))
+      (right-angle first vertex second
+                   #:id id #:size size #:opacity opacity
+                   #:stroke stroke #:stroke-width stroke-width)
+      (let ([template
+             (right-angle (vec2 1 0) origin (vec2 0 1)
+                          #:id id #:size size #:opacity opacity
+                          #:stroke stroke #:stroke-width stroke-width)])
+        (make-live-endpoint-annotation
+         (list first vertex second)
+         template
+         (lambda (points)
+           (right-angle (car points) (cadr points) (caddr points)
+                        #:id id #:size size #:opacity opacity
+                        #:stroke stroke #:stroke-width stroke-width))
+         'right-angle-between))))
+
 
 ;;;
 ;;; Braces
@@ -224,12 +280,12 @@
 ;; to the left of start-to-end travel; a negative offset selects the other side.
 ;; Its stroke follows the Manim/TeX brace convention: shallow end curls lead
 ;; into a rule with one narrow, unfilled central cusp.
-(define (brace-between start end
-                       #:id id
-                       #:offset [offset 1/3]
-                       #:opacity [opacity 1]
-                       #:stroke [stroke "black"]
-                       #:stroke-width [stroke-width 2])
+(define (static-brace-between start end
+                              #:id id
+                              #:offset [offset 1/3]
+                              #:opacity [opacity 1]
+                              #:stroke [stroke "black"]
+                              #:stroke-width [stroke-width 2])
   (check-point 'brace-between start)
   (check-point 'brace-between end)
   (check-symbol 'brace-between id)
@@ -290,6 +346,26 @@
   (centered-path-visual
    'brace-between (path-geometry (list geometry)) id opacity stroke stroke-width))
 
+(define (brace-between start end
+                       #:id id
+                       #:offset [offset 1/3]
+                       #:opacity [opacity 1]
+                       #:stroke [stroke "black"]
+                       #:stroke-width [stroke-width 2])
+  (if (and (vec2? start) (vec2? end))
+      (static-brace-between start end #:id id #:offset offset #:opacity opacity
+                            #:stroke stroke #:stroke-width stroke-width)
+      (make-live-endpoint-annotation
+       (list start end)
+       (static-brace-between origin (vec2 1 0)
+                             #:id id #:offset offset #:opacity opacity
+                             #:stroke stroke #:stroke-width stroke-width)
+       (lambda (points)
+         (static-brace-between (car points) (cadr points)
+                               #:id id #:offset offset #:opacity opacity
+                               #:stroke stroke #:stroke-width stroke-width))
+       'brace-between)))
+
 ; brace-label : vec2? vec2? string?
 ;               #:id symbol?
 ;               [#:offset finite-real?]
@@ -298,15 +374,15 @@
 ;               -> group-visual?
 ;; Constructs a static brace with a centered ordinary text label on the brace's
 ;; selected side.  The group's stable child IDs are derived from id.
-(define (brace-label start end label
-                     #:id id
-                     #:offset [offset 1/3]
-                     #:gap [gap 1/6]
-                     #:font-size [font-size 1/4]
-                     #:color [color "black"]
-                     #:opacity [opacity 1]
-                     #:stroke [stroke "black"]
-                     #:stroke-width [stroke-width 2])
+(define (static-brace-label start end label
+                            #:id id
+                            #:offset [offset 1/3]
+                            #:gap [gap 1/6]
+                            #:font-size [font-size 1/4]
+                            #:color [color "black"]
+                            #:opacity [opacity 1]
+                            #:stroke [stroke "black"]
+                            #:stroke-width [stroke-width 2])
   (unless (string? label)
     (raise-argument-error 'brace-label "string?" label))
   (check-symbol 'brace-label id)
@@ -324,11 +400,72 @@
      (vec2-scale (+ cusp-offset (if (negative? offset) (- gap) gap)) normal)))
   (group
    (list
-    (brace-between start end #:id (derived-id id "brace") #:offset offset
-                   #:opacity opacity #:stroke stroke #:stroke-width stroke-width)
+    (static-brace-between start end #:id (derived-id id "brace") #:offset offset
+                          #:opacity opacity #:stroke stroke #:stroke-width stroke-width)
     (plain-text label #:id (derived-id id "label") #:center label-position
                 #:font-size font-size #:color color #:opacity opacity))
    #:id id))
+
+(define (brace-label start end label
+                     #:id id
+                     #:offset [offset 1/3]
+                     #:gap [gap 1/6]
+                     #:font-size [font-size 1/4]
+                     #:color [color "black"]
+                     #:opacity [opacity 1]
+                     #:stroke [stroke "black"]
+                     #:stroke-width [stroke-width 2])
+  (if (and (vec2? start) (vec2? end))
+      (static-brace-label start end label
+                          #:id id #:offset offset #:gap gap #:font-size font-size
+                          #:color color #:opacity opacity #:stroke stroke
+                          #:stroke-width stroke-width)
+      (make-live-endpoint-annotation
+       (list start end)
+       (static-brace-label origin (vec2 1 0) label
+                           #:id id #:offset offset #:gap gap #:font-size font-size
+                           #:color color #:opacity opacity #:stroke stroke
+                           #:stroke-width stroke-width)
+       (lambda (points)
+         (static-brace-label (car points) (cadr points) label
+                             #:id id #:offset offset #:gap gap #:font-size font-size
+                             #:color color #:opacity opacity #:stroke stroke
+                             #:stroke-width stroke-width))
+       'brace-label)))
+
+
+; curved-arrow-between : endpoint? endpoint? #:id symbol? ... -> visual?
+;; Produces a curved arrow with endpoints sampled from the same endpoint
+;; protocol as line-between.  The curve's circular geometry and its tip are
+;; rebuilt together at every sampled scene state, so the tip remains tangent
+;; to the live arc.
+(define (curved-arrow-between start end
+                              #:id id
+                              #:angle [sweep-angle (/ pi 2)]
+                              #:opacity [opacity 1]
+                              #:stroke [stroke "black"]
+                              #:stroke-width [stroke-width 2]
+                              #:tip-length [tip-length 3/10]
+                              #:tip-width [tip-width 1/4])
+  (if (and (vec2? start) (vec2? end))
+      (curved-arrow start end
+                    #:id id #:angle sweep-angle #:opacity opacity
+                    #:stroke stroke #:stroke-width stroke-width
+                    #:tip-length tip-length #:tip-width tip-width)
+      (let ([template
+             (curved-arrow origin (vec2 1 0)
+                           #:id id #:angle sweep-angle #:opacity opacity
+                           #:stroke stroke #:stroke-width stroke-width
+                           #:tip-length tip-length #:tip-width tip-width)])
+        (make-live-endpoint-annotation
+         (list start end)
+         template
+         (lambda (points)
+           (curved-arrow (car points) (cadr points)
+                         #:id id #:angle sweep-angle #:opacity opacity
+                         #:stroke stroke #:stroke-width stroke-width
+                         #:tip-length tip-length #:tip-width tip-width))
+         'curved-arrow-between))))
 
 
 ;;;

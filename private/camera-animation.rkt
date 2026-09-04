@@ -34,6 +34,8 @@
          camera-follow
          camera-follow-request?
          camera-fit-request?
+         camera-fit-request-center
+         camera-fit-request-world-width
          make-camera-fit-request
          camera-animation-request?
          camera-animation-request-components

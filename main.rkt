@@ -27,6 +27,7 @@
          "private/camera-framing.rkt"
          "private/camera.rkt"
          "private/calculus-helpers.rkt"
+         "private/clipped-visual.rkt"
          "private/color-style.rkt"
          "private/complex-plane.rkt"
          "private/coordinate-series.rkt"
@@ -56,6 +57,7 @@
          "private/path-geometry.rkt"
          "private/parameter.rkt"
          "private/parametric-data-plot.rkt"
+         "private/paint.rkt"
          "private/polar-plane.rkt"
          "private/pict-adapter.rkt"
          "private/pict-renderer.rkt"
@@ -87,6 +89,7 @@
  vec2-scale
  vec2*
  vec2-lerp
+ finite-complex?
  interpolable?
  interpolate-value
 
@@ -103,6 +106,12 @@
  rush-from
  there-and-back
  there-and-back-with-pause
+ cubic-bezier
+ spring
+ reverse-rate
+ compose-rate
+ squish-rate
+ change-speed
 
  ;; Adaptive ODE solver configuration and events
  adaptive-rk45
@@ -131,6 +140,15 @@
  color-spec?
  color-spec->rgba-color
  rgba-color-lerp
+ (struct-out paint-stop)
+ (struct-out linear-gradient-paint)
+ (struct-out radial-gradient-paint)
+ (struct-out checker-pattern-paint)
+ linear-gradient
+ radial-gradient
+ checker-pattern
+ paint?
+ paint-lerp
 
  ;; Path geometry
  (struct-out line-path-segment)
@@ -176,6 +194,8 @@
  path-difference
  path-xor
  cutout
+ clip-to
+ mask-with
 
  ;; Affine transforms
  affine-transform?
@@ -249,6 +269,7 @@
  complex-domain-coloring
  complex-plane
  apply-complex-function
+ apply-complex-homotopy
 
  ;; SCENE-DB polar coordinates and graphs
  polar-coordinate?
@@ -283,6 +304,8 @@
  camera-follow
  camera-follow-request?
  camera-fit-request?
+ camera-fit-request-center
+ camera-fit-request-world-width
  camera-fit-layout-box
  camera-fit-visuals
  camera-fit-scene
@@ -298,8 +321,11 @@
  camera-view
  camera-view-visual?
  camera-view-visual-target
+ camera-view-visual-targets
  camera-view-visual-camera
+ camera-view-visual-with-camera
  camera-view-visual-width
+ camera-view-visual-clip
  callout
  callout-visual?
  callout-visual-content
@@ -397,6 +423,10 @@
  group-visual?
  group-visual-children
  group-visual-with-children
+ clip-visual
+ clipped-visual?
+ clipped-visual-content
+ clipped-visual-path
  text-font-family?
  text-font-style?
  text-font-weight?
@@ -520,12 +550,25 @@
 
  ;; SCENE-DD numeric displays
  numeric-display-anchor?
+ numeric-unit?
+ unit
+ unit-product
+ format-unit
  format-integer
  format-decimal
+ format-scientific
+ format-significant
+ format-rational
+ format-complex
  integer
  decimal-number
+ scientific-number
+ significant-number
+ rational-number
+ complex-number
  numeric-label
  parameter-display
+ rolling-number-display
 
  ;; SCENE-DE acyclic live layout
  follow-anchor
@@ -574,10 +617,13 @@
  dashed-path
  dashed-line
  angle
+ angle-between
  right-angle
+ right-angle-between
  brace
  brace-between
  brace-label
+ curved-arrow-between
  surrounding-rectangle
  surrounding-rectangle-visual?
  surrounding-rectangle-visual-target
@@ -680,6 +726,12 @@
  ;; Animation and timeline
  value-to
  value-to-request?
+ change-number-to
+ change-number-to-request?
+ count-to
+ count-to-request?
+ count-from
+ count-from-request?
  move-to
  move-to-request?
  move-along-path
@@ -699,6 +751,8 @@
  apply-matrix
  apply-pointwise
  apply-pointwise-request?
+ apply-homotopy
+ apply-homotopy-request?
  pointwise-jacobian
  pointwise-jacobian-determinant
  pointwise-orientation
@@ -719,6 +773,18 @@
  fade-in-request?
  fade-out
  fade-out-request?
+ camera-view-pan-to
+ camera-view-pan-to-request?
+ camera-view-pan-by
+ camera-view-pan-by-request?
+ camera-view-zoom-to
+ camera-view-zoom-to-request?
+ camera-view-zoom-by
+ camera-view-zoom-by-request?
+ camera-view-follow
+ camera-view-follow-request?
+ camera-view-fit
+ camera-view-fit-request?
  morph-to
  morph-to-request?
  morph-to-normalized
@@ -737,6 +803,12 @@
  morph-to-compound-aligned-request?
  transform-shape
  transform-shape-request?
+ visual-match
+ visual-match?
+ visual-match-source-path
+ visual-match-destination-path
+ transform-matching-visuals
+ transform-matching-visuals-request?
  transform-from-copy
  transform-from-copy-request?
  circumscribe

@@ -23,6 +23,8 @@
          "affine-map-visual.rkt"
          "affine-transform.rkt"
          "arrow-visual.rkt"
+         "camera-animation.rkt"
+         "camera.rkt"
          "color-style.rkt"
          "derived-visual.rkt"
          "formula-part-transition.rkt"
@@ -33,6 +35,7 @@
          "interpolation.rkt"
          "path-geometry.rkt"
          "parameter.rkt"
+         "paint.rkt"
          "pointwise-map.rkt"
          "rate-function.rkt"
          "scene-state.rkt"
@@ -42,6 +45,12 @@
 ;; Exports
 (provide value-to
          value-to-request?
+         change-number-to
+         change-number-to-request?
+         count-to
+         count-to-request?
+         count-from
+         count-from-request?
          move-to
          move-to-request?
          move-along-path
@@ -61,6 +70,8 @@
          apply-matrix
          apply-pointwise
          apply-pointwise-request?
+         apply-homotopy
+         apply-homotopy-request?
          stroke-width-to
          stroke-width-to-request?
          fill-color-to
@@ -73,6 +84,18 @@
          fade-in-request?
          fade-out
          fade-out-request?
+         camera-view-pan-to
+         camera-view-pan-to-request?
+         camera-view-pan-by
+         camera-view-pan-by-request?
+         camera-view-zoom-to
+         camera-view-zoom-to-request?
+         camera-view-zoom-by
+         camera-view-zoom-by-request?
+         camera-view-follow
+         camera-view-follow-request?
+         camera-view-fit
+         camera-view-fit-request?
          morph-to
          morph-to-request?
          morph-to-normalized
@@ -91,6 +114,12 @@
          morph-to-compound-aligned-request?
          transform-shape
          transform-shape-request?
+         visual-match
+         visual-match?
+         visual-match-source-path
+         visual-match-destination-path
+         transform-matching-visuals
+         transform-matching-visuals-request?
          transform-from-copy
          transform-from-copy-request?
          circumscribe
@@ -142,6 +171,34 @@
 ;; value-to-request represents an uncompiled named semantic-value transition.
 ;;  - target-id    symbol?       stable scene value identity.
 ;;  - destination  interpolable? requested final semantic value.
+
+(struct change-number-to-request (target-id destination)
+  #:transparent)
+
+;; change-number-to-request represents an uncompiled transition of one finite
+;; real or complex scene value.  It is intentionally separate from value-to:
+;; authors can communicate numerical intent while compilation continues to use
+;; the normal immutable scalar-value animation.
+;;  - target-id    symbol?         stable scene value identity.
+;;  - destination  finite-number?  requested final numerical value.
+
+(struct count-to-request (target-id destination)
+  #:transparent)
+
+;; count-to-request represents a counter transition from the named value's
+;; current clip-start value to a finite real destination.
+;;  - target-id    symbol?       stable scene value identity.
+;;  - destination  finite-real?  requested final counter value.
+
+(struct count-from-request (target-id from to)
+  #:transparent)
+
+;; count-from-request represents a counter transition with explicit endpoints.
+;; The `from` value is installed at clip phase zero even if the preceding scene
+;; state had another value, making the request independently reproducible.
+;;  - target-id  symbol?       stable scene value identity.
+;;  - from       finite-real?  requested clip-start counter value.
+;;  - to         finite-real?  requested clip-end counter value.
 
 (struct move-to-request (target-id destination)
   #:transparent)
@@ -219,6 +276,16 @@
 ;;  - max-depth  exact nonnegative integer?    refinement limit per sample edge.
 ;;  - discontinuity-mode symbol?               'split or 'error for failed samples.
 
+(struct apply-homotopy-request
+  (target-id homotopy samples adaptive? tolerance max-depth discontinuity-mode)
+  #:transparent)
+
+;; apply-homotopy-request represents a time-dependent whole-Visual world map.
+;; At a positive clip phase alpha, each geometric source sample is placed
+;; directly at (homotopy point alpha), rather than linearly interpolating
+;; toward a precomputed endpoint. The remaining fields have the same meaning
+;; as for apply-pointwise-request.
+
 (struct stroke-width-to-request (target-id stroke-width)
   #:transparent)
 
@@ -259,6 +326,16 @@
 
 ;; fade-out-request represents an uncompiled opacity removal request.
 ;;  - target-id  symbol?  stable id of the opacity Visual removed at clip end.
+
+;; Secondary-camera requests target an ordinary frame-space camera-view Visual.
+;; A follow request additionally reads one world-space target from the sampled
+;; state, so it has no mutable camera history.
+(struct camera-view-pan-to-request (target-id center) #:transparent)
+(struct camera-view-pan-by-request (target-id delta) #:transparent)
+(struct camera-view-zoom-to-request (target-id world-width) #:transparent)
+(struct camera-view-zoom-by-request (target-id factor) #:transparent)
+(struct camera-view-follow-request (target-id followed-target) #:transparent)
+(struct camera-view-fit-request (target-id center world-width) #:transparent)
 
 (struct morph-to-request (target-id destination)
   #:transparent)
@@ -367,6 +444,21 @@
 ;;  - correspondence  (or/c 'auto 'perimeter 'path) geometric pairing policy.
 ;;  - allow-reverse?  boolean?  whether geometric correspondence may reverse.
 ;;  - sample-count    exact-integer?  deterministic correspondence resolution.
+
+;; A `visual-match` names two leaf paths relative to the roots passed to
+;; transform-matching-visuals. The empty list names an atomic root. It gives an
+;; author an explicit semantic pairing before automatic structural matching.
+(struct visual-match (source-path destination-path)
+  #:transparent)
+
+(struct transform-matching-visuals-request
+  (source-id destination matches mode mismatch-mode allow-reverse? sample-count)
+  #:transparent)
+
+;; transform-matching-visuals-request replaces one top-level composite Visual
+;; with a fresh composite endpoint. During the clip it draws an overlay of
+;; matched world-space leaves; unmatched leaves fade, or receive moving
+;; fade-transforms when mismatch-mode selects that policy.
 
 (struct transform-formula-parts-request
   (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary)
@@ -529,6 +621,15 @@
 ;; its geometric points at each clip progress. `parent-map` rebases a nested
 ;; result back into its containing group after the world-space deformation.
 
+(struct homotopy-map-animation
+  (target-id source homotopy samples adaptive? tolerance max-depth
+             discontinuity-mode parent-map)
+  #:transparent)
+
+;; homotopy-map-animation evaluates its world-space map afresh from the source
+;; geometry and sampled clip phase. It intentionally stores neither frame
+;; history nor a mutable integrator-like state.
+
 (struct stroke-width-animation (target-id from to)
   #:transparent)
 
@@ -538,21 +639,30 @@
 ;;  - to         stroke-width?  requested width at clip end.
 
 (struct fill-color-animation
-  (target-id from-spec from-color to-spec to-color)
+  (target-id from-paint to-paint)
   #:transparent)
 
-;; fill-color-animation keeps exact style endpoints plus resolved RGBA interiors.
-;;  - target-id  symbol?       stable id of the fill-color Visual.
-;;  - from-spec  color-spec?   exact semantic style at interval start.
-;;  - from-color rgba-color?   normalized interpolation source.
-;;  - to-spec    color-spec?   exact requested semantic endpoint.
-;;  - to-color   rgba-color?   normalized interpolation destination.
+;; fill-color-animation keeps exact semantic paint endpoints. Solid colours,
+;; compatible gradients, and compatible checker patterns interpolate directly.
 
 (struct stroke-color-animation
   (target-id from-spec from-color to-spec to-color)
   #:transparent)
 
 ;; stroke-color-animation is the corresponding semantic stroke-color transition.
+
+(struct camera-view-center-animation (target-id from to)
+  #:transparent)
+
+(struct camera-view-world-width-animation (target-id from to)
+  #:transparent)
+
+(struct camera-view-follow-animation (target-id followed-target offset)
+  #:transparent)
+
+(struct camera-view-fit-animation
+  (target-id center-from center-to world-width-from world-width-to)
+  #:transparent)
 
 (struct opacity-animation
   (target-id from to force-to-at-end? remove-at-end?)
@@ -605,6 +715,22 @@
 ;; transform-shape-animation renders an interior replacement layer, then swaps
 ;; source for destination structurally at the clip boundary. Normalized paths
 ;; are false for an intentional cross-fade fallback.
+
+(struct visual-match-spec
+  (source destination normalized-source normalized-destination)
+  #:transparent)
+
+;; `source` or `destination` is false only for a one-sided unmatched leaf.
+;; When both normalized paths are present the two leaf layers share a
+;; geometry-morph interior; otherwise they share an affine interpolant.
+
+(struct transform-matching-visuals-animation
+  (source-id source destination overlay-id specs)
+  #:transparent)
+
+;; transform-matching-visuals-animation follows the same exact endpoint rule
+;; as transform-shape: the root source/destination trees are never rewritten,
+;; only hidden/replaced around a temporary overlay at interior samples.
 
 (struct attention-animation (overlay-id target-path kind padding color stroke-width parameter)
   #:transparent)
@@ -673,6 +799,37 @@
   (unless (interpolable? destination)
     (raise-argument-error 'value-to "interpolable?" destination))
   (value-to-request target-id destination))
+
+; change-number-to : (or/c symbol? scene-parameter?) finite-number?
+;                    -> change-number-to-request?
+;; Creates an absolute numerical-value request.  Unlike value-to it accepts
+;; only finite real or complex values, so it is a useful author-level contract
+;; for numeric displays and simulations.
+(define (change-number-to target destination)
+  (define target-id
+    (parameter-target-id target 'change-number-to))
+  (check-numeric-animation-value 'change-number-to destination)
+  (change-number-to-request target-id destination))
+
+; count-to : (or/c symbol? scene-parameter?) finite-real? -> count-to-request?
+;; Counts from the target's clip-start value to destination.
+(define (count-to target destination)
+  (define target-id
+    (parameter-target-id target 'count-to))
+  (check-finite-real-value 'count-to destination)
+  (count-to-request target-id destination))
+
+; count-from : (or/c symbol? scene-parameter?) finite-real? finite-real?
+;              -> count-from-request?
+;; Counts between explicit values, overriding the target's preceding value at
+;; the start of this clip.  It remains a pure sampled transition rather than a
+;; mutable counter.
+(define (count-from target from to)
+  (define target-id
+    (parameter-target-id target 'count-from))
+  (check-finite-real-value 'count-from from)
+  (check-finite-real-value 'count-from to)
+  (count-from-request target-id from to))
 
 ; move-to : (or/c visual? symbol?) vec2? -> move-to-request?
 ;;   Creates a request to move target to destination.
@@ -823,6 +980,46 @@
    map-point
    samples adaptive? tolerance max-depth discontinuity-mode))
 
+; apply-homotopy : (or/c visual? symbol? visual-path?)
+;                  (-> vec2? finite-real? vec2?)
+;                  [#:samples positive-exact-integer?] [#:adaptive? boolean?]
+;                  [#:tolerance positive-finite-real?]
+;                  [#:max-depth exact-nonnegative-integer?]
+;                  [#:discontinuities (or/c 'split 'error)]
+;                  -> apply-homotopy-request?
+;; Applies a time-dependent nonlinear world-coordinate map to one ordinary
+;; Visual tree. The homotopy is evaluated directly from the clip's eased local
+;; phase, so arbitrary frame sampling never relies on a previous frame. Authors
+;; normally provide H(p, 0) = p; the source Visual is retained exactly at the
+;; clip's zero boundary.
+(define (apply-homotopy target homotopy
+                        #:samples [samples 24]
+                        #:adaptive? [adaptive? #t]
+                        #:tolerance [tolerance 1/32]
+                        #:max-depth [max-depth 8]
+                        #:discontinuities [discontinuity-mode 'split])
+  (unless (and (procedure? homotopy)
+               (procedure-arity-includes? homotopy 2))
+    (raise-argument-error
+     'apply-homotopy "(procedure-arity-includes/c 2)" homotopy))
+  (unless (and (exact-integer? samples)
+               (positive? samples))
+    (raise-argument-error 'apply-homotopy "positive exact integer" samples))
+  (unless (boolean? adaptive?)
+    (raise-argument-error 'apply-homotopy "boolean?" adaptive?))
+  (unless (and (finite-real? tolerance) (positive? tolerance))
+    (raise-argument-error 'apply-homotopy "positive finite real?" tolerance))
+  (unless (and (exact-integer? max-depth) (not (negative? max-depth)))
+    (raise-argument-error 'apply-homotopy
+                          "exact nonnegative integer" max-depth))
+  (unless (memq discontinuity-mode '(split error))
+    (raise-argument-error 'apply-homotopy
+                          "(or/c 'split 'error)" discontinuity-mode))
+  (apply-homotopy-request
+   (visual-target-id target 'apply-homotopy)
+   homotopy
+   samples adaptive? tolerance max-depth discontinuity-mode))
+
 ; stroke-width-to : (or/c symbol? (and/c visual? stroke-width-visual?))
 ;                   stroke-width?
 ;                   -> stroke-width-to-request?
@@ -834,12 +1031,12 @@
    (visual-target-id target 'stroke-width-to)
    stroke-width))
 
-; fill-color-to : (or/c symbol? (and/c visual? fill-color-visual?)) color-spec?
+; fill-color-to : (or/c symbol? (and/c visual? fill-color-visual?)) paint?
 ;                 -> fill-color-to-request?
 ;;   Creates a request to replace target's semantic fill color.
 (define (fill-color-to target color)
   (check-fill-color-request-target 'fill-color-to target)
-  (check-animation-color-spec 'fill-color-to color)
+  (check-animation-paint 'fill-color-to color)
   (fill-color-to-request
    (visual-target-id target 'fill-color-to)
    color))
@@ -875,6 +1072,69 @@
 (define (fade-out target)
   (check-opacity-request-target 'fade-out target)
   (fade-out-request (visual-target-id target 'fade-out)))
+
+; camera-view-pan-to : (or/c symbol? camera-view-visual?) vec2?
+;;                      -> camera-view-pan-to-request?
+;;   Animates the centre of one named secondary camera.
+(define (camera-view-pan-to target center)
+  (check-camera-view-animation-target 'camera-view-pan-to target)
+  (unless (vec2? center)
+    (raise-argument-error 'camera-view-pan-to "vec2?" center))
+  (camera-view-pan-to-request
+   (camera-view-animation-target-id target 'camera-view-pan-to) center))
+
+; camera-view-pan-by : (or/c symbol? camera-view-visual?) vec2?
+;;                      -> camera-view-pan-by-request?
+;;   Adds a clip-start-relative world displacement to one secondary camera.
+(define (camera-view-pan-by target delta)
+  (check-camera-view-animation-target 'camera-view-pan-by target)
+  (unless (vec2? delta)
+    (raise-argument-error 'camera-view-pan-by "vec2?" delta))
+  (camera-view-pan-by-request
+   (camera-view-animation-target-id target 'camera-view-pan-by) delta))
+
+; camera-view-zoom-to : (or/c symbol? camera-view-visual?) positive-real?
+;;                       -> camera-view-zoom-to-request?
+;;   Sets a secondary camera's visible world width at the clip endpoint.
+(define (camera-view-zoom-to target world-width)
+  (check-camera-view-animation-target 'camera-view-zoom-to target)
+  (check-positive-finite-real 'camera-view-zoom-to world-width)
+  (camera-view-zoom-to-request
+   (camera-view-animation-target-id target 'camera-view-zoom-to) world-width))
+
+; camera-view-zoom-by : (or/c symbol? camera-view-visual?) positive-real?
+;;                       -> camera-view-zoom-by-request?
+;;   Applies a magnification factor above one for zooming in.
+(define (camera-view-zoom-by target factor)
+  (check-camera-view-animation-target 'camera-view-zoom-by target)
+  (check-positive-finite-real 'camera-view-zoom-by factor)
+  (camera-view-zoom-by-request
+   (camera-view-animation-target-id target 'camera-view-zoom-by) factor))
+
+; camera-view-follow : (or/c symbol? camera-view-visual?)
+;;                      (or/c visual? symbol? visual-path?)
+;;                      -> camera-view-follow-request?
+;;   Keeps a target at its clip-start inset-frame offset with no frame history.
+(define (camera-view-follow target followed-target)
+  (check-camera-view-animation-target 'camera-view-follow target)
+  (check-world-follow-target 'camera-view-follow followed-target)
+  (camera-view-follow-request
+   (camera-view-animation-target-id target 'camera-view-follow)
+   (visual-target-id followed-target 'camera-view-follow)))
+
+; camera-view-fit : (or/c symbol? camera-view-visual?) camera-fit-request?
+;;                   -> camera-view-fit-request?
+;;   Animates a secondary camera to one renderer-aware measured fit endpoint.
+;;   Construct the fit with camera-fit-visuals, camera-fit-scene, or
+;;   camera-fit-layout-box using the inset camera.
+(define (camera-view-fit target fit)
+  (check-camera-view-animation-target 'camera-view-fit target)
+  (unless (camera-fit-request? fit)
+    (raise-argument-error 'camera-view-fit "camera-fit-request?" fit))
+  (camera-view-fit-request
+   (camera-view-animation-target-id target 'camera-view-fit)
+   (camera-fit-request-center fit)
+   (camera-fit-request-world-width fit)))
 
 ; morph-to : (or/c path-visual? symbol?) path-geometry?
 ;            -> morph-to-request?
@@ -1307,6 +1567,75 @@
      "destination-id" (visual-id destination)))
   (transform-shape-request
    source-id destination mode correspondence allow-reverse? sample-count))
+
+; transform-matching-visuals : visual? (and/c visual? affine-visual? opacity-visual?)
+;                              [#:matches (listof visual-match?)]
+;                              [#:mode (or/c 'auto 'morph 'cross-fade)]
+;                              [#:mismatch-mode (or/c 'fade 'fade-transform)]
+;                              [#:allow-reverse? boolean?]
+;                              [#:sample-count exact-integer?]
+;                              -> transform-matching-visuals-request?
+;; Replaces a present top-level Visual with a fresh composite endpoint. The
+;; matching passes are deterministic: explicit relative leaf paths, equal
+;; relative paths, exact semantic type/style, exact local-shape fingerprints,
+;; then nearest compatible geometry. Matched path/circle/rectangle leaves use
+;; the established topology-aware shape morph where possible; all other pairs
+;; use a moving cross-fade. This deliberately complements, rather than
+;; replaces, tagged-formula's glyph-specific matching machinery.
+(define (transform-matching-visuals source destination
+                                    #:matches [matches '()]
+                                    #:mode [mode 'auto]
+                                    #:mismatch-mode [mismatch-mode 'fade]
+                                    #:allow-reverse? [allow-reverse? #t]
+                                    #:sample-count [sample-count 64])
+  (unless (visual? source)
+    (raise-argument-error 'transform-matching-visuals "visual?" source))
+  (unless (and (visual? destination)
+               (affine-visual? destination)
+               (opacity-visual? destination))
+    (raise-argument-error
+     'transform-matching-visuals
+     "(and/c visual? affine-visual? opacity-visual?)"
+     destination))
+  (unless (memq mode '(auto morph cross-fade))
+    (raise-argument-error
+     'transform-matching-visuals
+     "(or/c 'auto 'morph 'cross-fade)"
+     mode))
+  (unless (memq mismatch-mode '(fade fade-transform))
+    (raise-argument-error
+     'transform-matching-visuals
+     "(or/c 'fade 'fade-transform)"
+     mismatch-mode))
+  (unless (boolean? allow-reverse?)
+    (raise-argument-error
+     'transform-matching-visuals "boolean?" allow-reverse?))
+  (unless (and (exact-integer? sample-count) (>= sample-count 8))
+    (raise-argument-error
+     'transform-matching-visuals
+     "exact integer greater than or equal to 8"
+     sample-count))
+  (unless (and (list? matches) (andmap visual-match? matches))
+    (raise-argument-error
+     'transform-matching-visuals "(listof visual-match?)" matches))
+  (for ([match (in-list matches)])
+    (check-relative-visual-path
+     'transform-matching-visuals (visual-match-source-path match))
+    (check-relative-visual-path
+     'transform-matching-visuals (visual-match-destination-path match)))
+  (define source-id (visual-id source))
+  (when (eq? source-id (visual-id destination))
+    (raise-arguments-error
+     'transform-matching-visuals
+     "source and destination must have distinct Visual identities"
+     "source-id" source-id
+     "destination-id" (visual-id destination)))
+  (transform-matching-visuals-request
+   source-id destination matches mode mismatch-mode allow-reverse? sample-count))
+
+(define (check-relative-visual-path who path)
+  (unless (and (list? path) (andmap symbol? path))
+    (raise-argument-error who "(listof symbol?)" path)))
 
 ; transform-from-copy : (or/c visual? symbol? visual-path?)
 ;                       (and/c visual? affine-visual? opacity-visual?)
@@ -1884,12 +2213,120 @@
    (apply-pointwise-request-discontinuity-mode request)
    parent-map))
 
+(define (compile-apply-homotopy-request state request)
+  (define target-id
+    (apply-homotopy-request-target-id request))
+  (define path
+    (visual-target-path target-id 'apply-homotopy))
+  (define visual
+    (scene-state-ref state target-id))
+  (when (derived-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "a derived Visual cannot be mapped directly; map its ordinary inputs or output"
+     "visual-id" (visual-id visual)))
+  (when (frame-space-visual? visual)
+    (raise-arguments-error
+     'scene-play
+     "apply-homotopy maps world-space Visuals, not frame-space overlays"
+     "visual-id" (visual-id visual)))
+  ;; Resolve the selected source once in world coordinates. Each frame then
+  ;; evaluates H(source-point, alpha) directly and rebases a nested result
+  ;; through the inverse enclosing affine map.
+  (define parent-map
+    (scene-state-parent-affine-map state target-id))
+  (define inverse-parent-map
+    (affine2-invert parent-map))
+  (unless inverse-parent-map
+    (raise-arguments-error
+     'scene-play
+     "a nonsingular enclosing affine map for a nested homotopy request"
+     "visual-path" path
+     "parent-map" parent-map))
+  (homotopy-map-animation
+   target-id
+   (scene-state-resolved-world-ref state target-id)
+   (apply-homotopy-request-homotopy request)
+   (apply-homotopy-request-samples request)
+   (apply-homotopy-request-adaptive? request)
+   (apply-homotopy-request-tolerance request)
+   (apply-homotopy-request-max-depth request)
+   (apply-homotopy-request-discontinuity-mode request)
+   parent-map))
+
+;; Secondary camera leaves compile against the camera stored in their target
+;; frame-space Visual. The normal scene camera is unaffected.
+(define (compile-camera-view-request state request)
+  (define target-id (animation-request-target-id request))
+  (define view (scene-state-ref state target-id))
+  (unless (camera-view-visual? view)
+    (raise-arguments-error
+     'scene-play
+     "a camera-view Visual target"
+     "visual-id" target-id
+     "request" request
+     "visual" view))
+  (define camera (camera-view-visual-camera view))
+  (cond
+    [(camera-view-pan-to-request? request)
+     (camera-view-center-animation target-id
+                                   (camera-center camera)
+                                   (camera-view-pan-to-request-center request))]
+    [(camera-view-pan-by-request? request)
+     (camera-view-center-animation
+      target-id
+      (camera-center camera)
+      (vec2+ (camera-center camera)
+             (camera-view-pan-by-request-delta request)))]
+    [(camera-view-zoom-to-request? request)
+     (camera-view-world-width-animation
+      target-id
+      (camera-world-width camera)
+      (camera-view-zoom-to-request-world-width request))]
+    [(camera-view-zoom-by-request? request)
+     (define destination
+       (/ (camera-world-width camera)
+          (camera-view-zoom-by-request-factor request)))
+     (unless (and (finite-real? destination) (positive? destination))
+       (raise-arguments-error
+        'scene-play
+        "a secondary-camera zoom whose resulting visible width is positive and finite"
+        "visual-id" target-id
+        "factor" (camera-view-zoom-by-request-factor request)))
+     (camera-view-world-width-animation
+      target-id (camera-world-width camera) destination)]
+    [(camera-view-follow-request? request)
+     (define followed
+       (scene-state-resolved-world-ref
+        state (camera-view-follow-request-followed-target request)))
+     (when (frame-space-visual? followed)
+       (raise-arguments-error
+        'scene-play
+        "a world-space secondary-camera follow target"
+        "target" (camera-view-follow-request-followed-target request)))
+     (camera-view-follow-animation
+      target-id
+      (camera-view-follow-request-followed-target request)
+      (vec2- (camera-center camera) (visual-position followed)))]
+    [(camera-view-fit-request? request)
+     (camera-view-fit-animation
+      target-id
+      (camera-center camera)
+      (camera-view-fit-request-center request)
+      (camera-world-width camera)
+      (camera-view-fit-request-world-width request))]
+    [else
+     (raise-argument-error 'compile-camera-view-request
+                           "camera-view animation request" request)]))
+
 (define (compile-animation-request state request)
   (define target-id
     (animation-request-target-id request))
   (cond
     [(transform-shape-request? request)
      (compile-transform-shape-request state request)]
+    [(transform-matching-visuals-request? request)
+     (compile-transform-matching-visuals-request state request)]
     [(transform-from-copy-request? request)
      (compile-transform-from-copy-request state request)]
     [(attention-request? request)
@@ -1898,11 +2335,28 @@
      (compile-apply-affine-request state request)]
     [(apply-pointwise-request? request)
      (compile-apply-pointwise-request state request)]
-    [(value-to-request? request)
+    [(apply-homotopy-request? request)
+     (compile-apply-homotopy-request state request)]
+    [(or (camera-view-pan-to-request? request)
+         (camera-view-pan-by-request? request)
+         (camera-view-zoom-to-request? request)
+         (camera-view-zoom-by-request? request)
+         (camera-view-follow-request? request)
+         (camera-view-fit-request? request))
+     (compile-camera-view-request state request)]
+    [(or (value-to-request? request)
+         (change-number-to-request? request)
+         (count-to-request? request))
      (define from
        (scene-state-value-ref state target-id))
      (define to
-       (value-to-request-destination request))
+       (cond
+         [(value-to-request? request)
+          (value-to-request-destination request)]
+         [(change-number-to-request? request)
+          (change-number-to-request-destination request)]
+         [else
+          (count-to-request-destination request)]))
      ;; Validate compatibility during compilation, before a scene acquires the
      ;; clip. The result is deliberately discarded; sampling preserves exact
      ;; endpoint representations through interpolate-value.
@@ -1911,6 +2365,13 @@
       target-id
       from
       to)]
+    [(count-from-request? request)
+     ;; Explicit count endpoints deliberately ignore the preceding state.  The
+     ;; scalar-value animation still gives frame t a direct, history-free value.
+     (define from (count-from-request-from request))
+     (define to (count-from-request-to request))
+     (interpolate-value from to 1/2)
+     (scalar-value-animation target-id from to)]
     [else
      (define visual
        (scene-state-ref state target-id))
@@ -2017,17 +2478,18 @@
 
     [(fill-color-to-request? request)
      (check-fill-color-animation-target visual 'fill-color-to)
-     (define from-spec
+     (define from-paint
        (checked-visual-fill-color 'scene-play visual))
-     (define to-spec
+     (define to-paint
        (fill-color-to-request-color request))
-     (replace-visual-fill-color 'scene-play visual to-spec)
+     ;; Check the pair during compilation, so a video cannot fail only while
+     ;; sampling an interior frame.  Unlike kinds need an explicit cross-fade.
+     (paint-lerp from-paint to-paint 1/2)
+     (replace-visual-fill-color 'scene-play visual to-paint)
      (fill-color-animation
       target-id
-      from-spec
-      (color-spec->rgba-color from-spec 'scene-play)
-      to-spec
-      (color-spec->rgba-color to-spec 'scene-play))]
+      from-paint
+      to-paint)]
     [(stroke-color-to-request? request)
      (check-stroke-color-animation-target visual 'stroke-color-to)
      (define from-spec
@@ -2383,6 +2845,266 @@
    (and morph-paths (car morph-paths))
    (and morph-paths (cdr morph-paths))))
 
+; compile-transform-matching-visuals-request
+; : scene-state? transform-matching-visuals-request?
+;   -> transform-matching-visuals-animation?
+;; The source is fetched from the current start state, not trusted from the
+;; construction-time value. This preserves the usual scene-play semantics when
+;; an earlier clip has moved or styled the composite before it is matched.
+(define (compile-transform-matching-visuals-request state request)
+  (define source-id
+    (transform-matching-visuals-request-source-id request))
+  (define destination
+    (transform-matching-visuals-request-destination request))
+  (define destination-id (visual-id destination))
+  (unless (scene-state-has? state source-id)
+    (raise-arguments-error
+     'transform-matching-visuals
+     "a source Visual present at the start of the clip"
+     "source-id" source-id))
+  (check-absent-introduction-target state destination-id
+                                    'transform-matching-visuals)
+  (define source (scene-state-ref state source-id))
+  (unless (and (affine-visual? source) (opacity-visual? source))
+    (raise-arguments-error
+     'transform-matching-visuals
+     "a source Visual that supports affine placement and opacity"
+     "source-id" source-id
+     "source" source))
+  (define source-leaves (flatten-matching-visual-leaves source))
+  (define destination-leaves (flatten-matching-visual-leaves destination))
+  (check-matching-leaf-protocol 'transform-matching-visuals source-leaves)
+  (check-matching-leaf-protocol 'transform-matching-visuals destination-leaves)
+  (define specs
+    (make-visual-match-specs
+     source-leaves
+     destination-leaves
+     (transform-matching-visuals-request-matches request)
+     (transform-matching-visuals-request-mode request)
+     (transform-matching-visuals-request-mismatch-mode request)
+     (transform-matching-visuals-request-allow-reverse? request)
+     (transform-matching-visuals-request-sample-count request)))
+  (define overlay-id
+    (transform-matching-visuals-overlay-id source-id destination-id))
+  (check-absent-introduction-target state overlay-id
+                                    'transform-matching-visuals)
+  (transform-matching-visuals-animation
+   source-id source destination overlay-id specs))
+
+;; Each leaf path is relative to the matching root. Group transforms are
+;; resolved before recursing, which places the overlay leaves in the same world
+;; coordinate system as their original top-level roots.
+(struct matching-visual-leaf (path visual) #:transparent)
+
+(define (flatten-matching-visual-leaves visual [path '()])
+  (cond
+    [(group-visual? visual)
+     (apply append
+            (for/list ([child
+                        (in-list (group-visual-resolved-children visual))])
+              (flatten-matching-visual-leaves
+               child
+               (append path (list (visual-id child))))))]
+    [else (list (matching-visual-leaf path visual))]))
+
+(define (check-matching-leaf-protocol who leaves)
+  (for ([leaf (in-list leaves)])
+    (define visual (matching-visual-leaf-visual leaf))
+    (unless (and (affine-visual? visual) (opacity-visual? visual))
+      (raise-arguments-error
+       who
+       "matching leaves supporting affine placement and opacity"
+       "path" (matching-visual-leaf-path leaf)
+       "visual" visual))))
+
+;; make-visual-match-specs : leaves leaves matches symbol symbol boolean integer
+;;                            -> (listof visual-match-spec?)
+;; Applies the public hierarchy in fixed, deterministic passes. A leaf is used
+;; at most once. Equal paths make ordinary diagrams stable under reordering;
+;; geometry is only a final conservative fallback for shape leaves.
+(define (make-visual-match-specs source-leaves destination-leaves explicit-matches
+                                 mode mismatch-mode allow-reverse? sample-count)
+  (define source-by-path
+    (for/hash ([leaf (in-list source-leaves)])
+      (values (matching-visual-leaf-path leaf) leaf)))
+  (define destination-by-path
+    (for/hash ([leaf (in-list destination-leaves)])
+      (values (matching-visual-leaf-path leaf) leaf)))
+  (define used-source (make-hash))
+  (define used-destination (make-hash))
+  (define pairs '())
+  (define (used? table leaf) (hash-has-key? table (matching-visual-leaf-path leaf)))
+  (define (record-pair! source destination)
+    (when (used? used-source source)
+      (raise-arguments-error
+       'transform-matching-visuals
+       "each source leaf matched at most once"
+       "source-path" (matching-visual-leaf-path source)))
+    (when (used? used-destination destination)
+      (raise-arguments-error
+       'transform-matching-visuals
+       "each destination leaf matched at most once"
+       "destination-path" (matching-visual-leaf-path destination)))
+    (hash-set! used-source (matching-visual-leaf-path source) #t)
+    (hash-set! used-destination (matching-visual-leaf-path destination) #t)
+    (set! pairs (append pairs (list (cons source destination)))))
+  ;; 1. Explicit author intent always wins.
+  (for ([match (in-list explicit-matches)])
+    (define source
+      (hash-ref source-by-path (visual-match-source-path match) #f))
+    (define destination
+      (hash-ref destination-by-path (visual-match-destination-path match) #f))
+    (unless source
+      (raise-arguments-error
+       'transform-matching-visuals
+       "an explicit source leaf path in the source Visual"
+       "source-path" (visual-match-source-path match)))
+    (unless destination
+      (raise-arguments-error
+       'transform-matching-visuals
+       "an explicit destination leaf path in the destination Visual"
+       "destination-path" (visual-match-destination-path match)))
+    (record-pair! source destination))
+  (define (remaining leaves used)
+    (filter (lambda (leaf) (not (used? used leaf))) leaves))
+  ;; 2. Equal nested paths are semantic identities below the replaced roots.
+  (for ([source (in-list (remaining source-leaves used-source))])
+    (define destination
+      (hash-ref destination-by-path (matching-visual-leaf-path source) #f))
+    (when (and destination (not (used? used-destination destination)))
+      (record-pair! source destination)))
+  ;; 3. Exact kind/style gives common diagram symbols a stable pairing even
+  ;; when a parent reorders or renames them.
+  (match-leaves-by-key!
+   remaining used-source used-destination record-pair!
+   visual-semantic-style-key source-leaves destination-leaves)
+  ;; 4. A local-shape fingerprint catches identical unstyled glyph/path forms
+  ;; left over after a style change.
+  (match-leaves-by-key!
+   remaining used-source used-destination record-pair!
+   visual-fingerprint source-leaves destination-leaves)
+  ;; 5. Pair remaining compatible geometry by nearest world-space reference
+  ;; point. This permits, for example, a circle/rectangle semantic shape morph.
+  (match-compatible-leaves-by-distance!
+   remaining used-source used-destination record-pair!
+   source-leaves destination-leaves)
+  ;; An explicit mismatch policy remains useful when an author wants Manim's
+  ;; moving cross-fade for otherwise incomparable leaf kinds.
+  (when (eq? mismatch-mode 'fade-transform)
+    (match-any-leaves-by-distance!
+     remaining used-source used-destination record-pair!
+     source-leaves destination-leaves))
+  (define paired-specs
+    (for/list ([pair (in-list pairs)])
+      (make-one-visual-match-spec (car pair) (cdr pair)
+                                  mode allow-reverse? sample-count)))
+  (append
+   paired-specs
+   (for/list ([source (in-list (remaining source-leaves used-source))])
+     (visual-match-spec (matching-visual-leaf-visual source) #f #f #f))
+   (for/list ([destination (in-list (remaining destination-leaves used-destination))])
+     (visual-match-spec #f (matching-visual-leaf-visual destination) #f #f))))
+
+(define (match-leaves-by-key! remaining used-source used-destination record-pair!
+                              key source-leaves destination-leaves)
+  (for ([source (in-list (remaining source-leaves used-source))])
+    (define source-key (key (matching-visual-leaf-visual source)))
+    (when source-key
+      (define destination
+        (for/first ([candidate
+                     (in-list (remaining destination-leaves used-destination))]
+                    #:when (equal? source-key
+                                   (key (matching-visual-leaf-visual candidate))))
+          candidate))
+      (when destination (record-pair! source destination)))))
+
+(define (match-compatible-leaves-by-distance! remaining used-source used-destination
+                                              record-pair! source-leaves destination-leaves)
+  (for ([source (in-list (remaining source-leaves used-source))])
+    (define source-visual (matching-visual-leaf-visual source))
+    (when (matching-shape-visual? source-visual)
+      (define destination
+        (nearest-matching-leaf
+         source
+         (filter (lambda (candidate)
+                   (matching-shape-visual?
+                    (matching-visual-leaf-visual candidate)))
+                 (remaining destination-leaves used-destination))))
+      (when destination (record-pair! source destination)))))
+
+(define (match-any-leaves-by-distance! remaining used-source used-destination
+                                       record-pair! source-leaves destination-leaves)
+  (for ([source (in-list (remaining source-leaves used-source))])
+    (define destination
+      (nearest-matching-leaf source
+                             (remaining destination-leaves used-destination)))
+    (when destination (record-pair! source destination))))
+
+(define (nearest-matching-leaf source candidates)
+  (and (pair? candidates)
+       (argmin
+        (lambda (candidate)
+          (matching-leaf-distance source candidate))
+        candidates)))
+
+(define (matching-leaf-distance source destination)
+  (define delta
+    (vec2- (visual-position (matching-visual-leaf-visual source))
+           (visual-position (matching-visual-leaf-visual destination))))
+  (+ (* (vec2-x delta) (vec2-x delta))
+     (* (vec2-y delta) (vec2-y delta))))
+
+(define (matching-shape-visual? visual)
+  (or (path-visual? visual) (circle-visual? visual) (rectangle-visual? visual)))
+
+(define (visual-semantic-style-key visual)
+  (define kind
+    (cond [(path-visual? visual) 'path]
+          [(circle-visual? visual) 'circle]
+          [(rectangle-visual? visual) 'rectangle]
+          [else #f]))
+  (and kind
+       (list kind
+             (with-handlers ([exn:fail? (lambda (_ignored) #f)])
+               (visual-fill-color visual))
+             (with-handlers ([exn:fail? (lambda (_ignored) #f)])
+               (visual-stroke-color visual))
+             (with-handlers ([exn:fail? (lambda (_ignored) #f)])
+               (visual-stroke-width visual)))))
+
+(define (visual-fingerprint visual)
+  (cond
+    [(path-visual? visual) (list 'path (path-visual-path visual))]
+    [(circle-visual? visual) (list 'circle (circle-visual-radius visual))]
+    [(rectangle-visual? visual)
+     (list 'rectangle (rectangle-visual-width visual)
+           (rectangle-visual-height visual))]
+    [else #f]))
+
+(define (make-one-visual-match-spec source-leaf destination-leaf
+                                    mode allow-reverse? sample-count)
+  (define source (matching-visual-leaf-visual source-leaf))
+  (define destination (matching-visual-leaf-visual destination-leaf))
+  (define morph-paths
+    (case mode
+      [(cross-fade) #f]
+      [else
+       (make-transform-shape-morph-paths source destination 'auto
+                                         allow-reverse? sample-count)]))
+  (when (and (eq? mode 'morph) (not morph-paths))
+    (raise-arguments-error
+     'transform-matching-visuals
+     "matched atomic path, circle, or rectangle leaves whose outlines can be morphed"
+     "source" source
+     "destination" destination))
+  (visual-match-spec source destination
+                     (and morph-paths (car morph-paths))
+                     (and morph-paths (cdr morph-paths))))
+
+(define (transform-matching-visuals-overlay-id source-id destination-id)
+  (string->symbol
+   (format "__transform-matching-visuals-~s-to-~s" source-id destination-id)))
+
 ; make-transform-shape-morph-paths : visual? visual? symbol? boolean? exact-integer?
 ;                                     -> (or/c false/c (cons/c path-geometry?
 ;                                                                  path-geometry?))
@@ -2725,10 +3447,15 @@
 ;; destination identity, which prevents a simultaneous introduction or a second
 ;; replacement from silently colliding at the clip boundary.
 (define (animation-request-affected-ids request)
-  (if (transform-shape-request? request)
-      (list (transform-shape-request-source-id request)
-            (visual-id (transform-shape-request-destination request)))
-      (list (animation-request-target-id request))))
+  (cond
+    [(transform-shape-request? request)
+     (list (transform-shape-request-source-id request)
+           (visual-id (transform-shape-request-destination request)))]
+    [(transform-matching-visuals-request? request)
+     (list (transform-matching-visuals-request-source-id request)
+           (visual-id
+            (transform-matching-visuals-request-destination request)))]
+    [else (list (animation-request-target-id request))]))
 
 ; find-duplicate-key : list? -> any/c
 ;;   Returns the first duplicate key or #f when all keys are distinct.
@@ -2748,6 +3475,9 @@
 ;;   Reports whether value is a supported uncompiled animation request.
 (define (animation-request? value)
   (or (value-to-request? value)
+      (change-number-to-request? value)
+      (count-to-request? value)
+      (count-from-request? value)
       (move-to-request? value)
       (move-along-path-request? value)
       (orient-along-path-request? value)
@@ -2757,12 +3487,19 @@
       (scale-by-request? value)
       (apply-affine-request? value)
       (apply-pointwise-request? value)
+      (apply-homotopy-request? value)
       (stroke-width-to-request? value)
       (fill-color-to-request? value)
       (stroke-color-to-request? value)
       (fade-to-request? value)
       (fade-in-request? value)
       (fade-out-request? value)
+      (camera-view-pan-to-request? value)
+      (camera-view-pan-by-request? value)
+      (camera-view-zoom-to-request? value)
+      (camera-view-zoom-by-request? value)
+      (camera-view-follow-request? value)
+      (camera-view-fit-request? value)
       (morph-to-request? value)
       (morph-to-normalized-request? value)
       (morph-to-aligned-request? value)
@@ -2772,6 +3509,7 @@
       (morph-to-topology-changing-request? value)
       (morph-to-compound-aligned-request? value)
       (transform-shape-request? value)
+      (transform-matching-visuals-request? value)
       (transform-from-copy-request? value)
       (attention-request? value)
       (grow-request? value)
@@ -2809,6 +3547,12 @@
   (cond
     [(value-to-request? request)
      (value-to-request-target-id request)]
+    [(change-number-to-request? request)
+     (change-number-to-request-target-id request)]
+    [(count-to-request? request)
+     (count-to-request-target-id request)]
+    [(count-from-request? request)
+     (count-from-request-target-id request)]
     [(move-to-request? request)
      (move-to-request-target-id request)]
     [(move-along-path-request? request)
@@ -2827,6 +3571,8 @@
      (apply-affine-request-target-id request)]
     [(apply-pointwise-request? request)
      (apply-pointwise-request-target-id request)]
+    [(apply-homotopy-request? request)
+     (apply-homotopy-request-target-id request)]
     [(stroke-width-to-request? request)
      (stroke-width-to-request-target-id request)]
     [(fill-color-to-request? request)
@@ -2839,6 +3585,18 @@
      (visual-id (fade-in-request-visual request))]
     [(fade-out-request? request)
      (fade-out-request-target-id request)]
+    [(camera-view-pan-to-request? request)
+     (camera-view-pan-to-request-target-id request)]
+    [(camera-view-pan-by-request? request)
+     (camera-view-pan-by-request-target-id request)]
+    [(camera-view-zoom-to-request? request)
+     (camera-view-zoom-to-request-target-id request)]
+    [(camera-view-zoom-by-request? request)
+     (camera-view-zoom-by-request-target-id request)]
+    [(camera-view-follow-request? request)
+     (camera-view-follow-request-target-id request)]
+    [(camera-view-fit-request? request)
+     (camera-view-fit-request-target-id request)]
     [(morph-to-request? request)
      (morph-to-request-target-id request)]
     [(morph-to-normalized-request? request)
@@ -2857,6 +3615,8 @@
      (morph-to-compound-aligned-request-target-id request)]
     [(transform-shape-request? request)
      (transform-shape-request-source-id request)]
+    [(transform-matching-visuals-request? request)
+     (transform-matching-visuals-request-source-id request)]
     [(transform-from-copy-request? request)
      (visual-id (transform-from-copy-request-destination request))]
     [(attention-request? request)
@@ -2889,7 +3649,10 @@
 ;;   Returns every animation component changed by request.
 (define (animation-request-components request)
   (cond
-    [(value-to-request? request)
+    [(or (value-to-request? request)
+         (change-number-to-request? request)
+         (count-to-request? request)
+         (count-from-request? request))
      '(scalar-value)]
     [(or (move-to-request? request)
          (move-along-path-request? request))
@@ -2910,6 +3673,11 @@
      ;; cannot be meaningfully combined with any concurrent visual component.
      '(translation rotation scale stroke-width fill-color stroke-color opacity
                    path-geometry formula-parts pointwise-map)]
+    [(apply-homotopy-request? request)
+     ;; Like apply-pointwise, direct phase-dependent sampling replaces the
+     ;; complete ordinary Visual tree during the clip.
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts pointwise-map)]
     [(stroke-width-to-request? request)
      '(stroke-width)]
     [(fill-color-to-request? request)
@@ -2921,6 +3689,15 @@
     [(or (fade-in-request? request)
          (fade-out-request? request))
      '(opacity presence)]
+    [(or (camera-view-pan-to-request? request)
+         (camera-view-pan-by-request? request)
+         (camera-view-follow-request? request))
+     '(camera-view-center)]
+    [(or (camera-view-zoom-to-request? request)
+         (camera-view-zoom-by-request? request))
+     '(camera-view-world-width)]
+    [(camera-view-fit-request? request)
+     '(camera-view-center camera-view-world-width)]
     [(or (morph-to-request? request)
          (morph-to-normalized-request? request)
          (morph-to-aligned-request? request)
@@ -2931,6 +3708,9 @@
          (morph-to-compound-aligned-request? request))
      '(path-geometry)]
     [(transform-shape-request? request)
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts presence)]
+    [(transform-matching-visuals-request? request)
      '(translation rotation scale stroke-width fill-color stroke-color opacity
                    path-geometry formula-parts presence)]
     [(transform-from-copy-request? request)
@@ -3019,8 +3799,14 @@
   ;; resizing order-independent while retaining its frontmost draw position.
   (define ordered-animations
     (append
-     (filter (lambda (animation) (not (attention-animation? animation)))
+     (filter (lambda (animation)
+               (and (not (attention-animation? animation))
+                    (not (camera-view-follow-animation? animation))))
              animations)
+     ;; A secondary-camera follow reads the current sampled world target, so
+     ;; sample it after every ordinary world update in this clip. This keeps
+     ;; follow a pure function of (clip-start state, time), not a history.
+     (filter camera-view-follow-animation? animations)
      (filter attention-animation? animations)))
   (for/fold ([sampled-state state])
             ([animation (in-list ordered-animations)])
@@ -3047,13 +3833,19 @@
       (scaling-animation? value)
       (affine-map-animation? value)
       (pointwise-map-animation? value)
+      (homotopy-map-animation? value)
       (stroke-width-animation? value)
       (fill-color-animation? value)
       (stroke-color-animation? value)
+      (camera-view-center-animation? value)
+      (camera-view-world-width-animation? value)
+      (camera-view-follow-animation? value)
+      (camera-view-fit-animation? value)
       (opacity-animation? value)
       (path-morph-animation? value)
       (normalized-path-morph-animation? value)
       (transform-shape-animation? value)
+      (transform-matching-visuals-animation? value)
       (transform-from-copy-animation? value)
       (attention-animation? value)
       (grow-animation? value)
@@ -3084,12 +3876,22 @@
      (apply-affine-map-animation state animation progress)]
     [(pointwise-map-animation? animation)
      (apply-pointwise-map-animation state animation progress)]
+    [(homotopy-map-animation? animation)
+     (apply-homotopy-map-animation state animation progress)]
     [(stroke-width-animation? animation)
      (apply-stroke-width-animation state animation progress)]
     [(fill-color-animation? animation)
      (apply-fill-color-animation state animation progress)]
     [(stroke-color-animation? animation)
      (apply-stroke-color-animation state animation progress)]
+    [(camera-view-center-animation? animation)
+     (apply-camera-view-center-animation state animation progress)]
+    [(camera-view-world-width-animation? animation)
+     (apply-camera-view-world-width-animation state animation progress)]
+    [(camera-view-follow-animation? animation)
+     (apply-camera-view-follow-animation state animation progress)]
+    [(camera-view-fit-animation? animation)
+     (apply-camera-view-fit-animation state animation progress)]
     [(opacity-animation? animation)
      (apply-opacity-animation state animation progress)]
     [(path-morph-animation? animation)
@@ -3098,6 +3900,8 @@
      (apply-normalized-path-morph-animation state animation progress)]
     [(transform-shape-animation? animation)
      (apply-transform-shape-animation state animation progress)]
+    [(transform-matching-visuals-animation? animation)
+     (apply-transform-matching-visuals-animation state animation progress)]
     [(transform-from-copy-animation? animation)
      (apply-transform-from-copy-animation state animation progress)]
     [(attention-animation? animation)
@@ -3328,6 +4132,43 @@
          (pointwise-map-animation-target-id animation)
          replacement))))
 
+; apply-homotopy-map-animation : scene-state? homotopy-map-animation?
+;                                finite-real? -> scene-state?
+;; Retains the exact source at progress zero. At every later phase, map each
+;; source point directly through H(p, alpha); passing progress 1 to the shared
+;; pointwise mapper disables its endpoint blend while retaining phase-specific
+;; adaptive subdivision and the existing discontinuity policy.
+(define (apply-homotopy-map-animation state animation progress)
+  (if (zero? progress)
+      state
+      (let* ([homotopy (homotopy-map-animation-homotopy animation)]
+             [world-result
+              (pointwise-map-visual
+               (homotopy-map-animation-source animation)
+               (lambda (point)
+                 (homotopy point progress))
+               1
+               #:samples (homotopy-map-animation-samples animation)
+               #:adaptive? (homotopy-map-animation-adaptive? animation)
+               #:tolerance (homotopy-map-animation-tolerance animation)
+               #:max-depth (homotopy-map-animation-max-depth animation)
+               #:discontinuities
+               (homotopy-map-animation-discontinuity-mode animation))]
+             [parent-map (homotopy-map-animation-parent-map animation)]
+             [replacement
+              (if (equal? parent-map identity-affine2)
+                  world-result
+                  (affine-map world-result
+                              (or (affine2-invert parent-map)
+                                  (raise-arguments-error
+                                   'apply-homotopy
+                                   "a nonsingular enclosing affine map"
+                                   "parent-map" parent-map))))])
+        (scene-state-update
+         state
+         (homotopy-map-animation-target-id animation)
+         replacement))))
+
 ; apply-stroke-width-animation : scene-state? stroke-width-animation?
 ;                                finite-real? -> scene-state?
 ;;   Applies one compiled cosmetic stroke-width transition at progress.
@@ -3356,26 +4197,26 @@
 
 ; apply-fill-color-animation : scene-state? fill-color-animation? finite-real?
 ;                              -> scene-state?
-;;   Applies one semantic fill-color transition while preserving exact endpoints.
+;;   Applies one semantic fill-paint transition while preserving exact endpoints.
 (define (apply-fill-color-animation state animation progress)
   (define id
     (fill-color-animation-target-id animation))
   (define visual
     (scene-state-ref state id))
-  (define color
+  (define paint
     (cond
       [(zero? progress)
-       (fill-color-animation-from-spec animation)]
+       (fill-color-animation-from-paint animation)]
       [(= progress 1)
-       (fill-color-animation-to-spec animation)]
+       (fill-color-animation-to-paint animation)]
       [else
-       (rgba-color-lerp (fill-color-animation-from-color animation)
-                        (fill-color-animation-to-color animation)
-                        progress)]))
+       (paint-lerp (fill-color-animation-from-paint animation)
+                   (fill-color-animation-to-paint animation)
+                   progress)]))
   (scene-state-update
    state
    id
-   (replace-visual-fill-color 'scene-sample visual color)))
+   (replace-visual-fill-color 'scene-sample visual paint)))
 
 ; apply-stroke-color-animation : scene-state? stroke-color-animation? finite-real?
 ;                                -> scene-state?
@@ -3399,6 +4240,124 @@
    state
    id
    (replace-visual-stroke-color 'scene-sample visual color)))
+
+;; camera-with-view : camera? vec2? positive-real? -> camera?
+;; Retains pixel dimensions and background while replacing the two animated
+;; secondary-camera fields.
+(define (camera-with-view camera center world-width)
+  (make-camera #:width (camera-width camera)
+               #:height (camera-height camera)
+               #:world-width world-width
+               #:center center
+               #:background (camera-background camera)))
+
+;; update-camera-view-camera : scene-state? symbol? camera? -> scene-state?
+;; Updates only a top-level camera-view's immutable camera value.
+(define (update-camera-view-camera state target-id camera)
+  (define view (scene-state-ref state target-id))
+  (unless (camera-view-visual? view)
+    (raise-arguments-error
+     'scene-sample
+     "a camera-view Visual target"
+     "visual-id" target-id
+     "visual" view))
+  (scene-state-update
+   state
+   target-id
+   (camera-view-visual-with-camera view camera)))
+
+; apply-camera-view-center-animation : scene-state?
+;                                      camera-view-center-animation?
+;                                      finite-real? -> scene-state?
+;; Samples a secondary-camera centre while leaving its world width unchanged.
+(define (apply-camera-view-center-animation state animation progress)
+  (define target-id (camera-view-center-animation-target-id animation))
+  (define view (scene-state-ref state target-id))
+  (define camera (camera-view-visual-camera view))
+  (define center
+    (if (zero? progress)
+        (camera-view-center-animation-from animation)
+        (if (= progress 1)
+            (camera-view-center-animation-to animation)
+            (vec2-lerp (camera-view-center-animation-from animation)
+                       (camera-view-center-animation-to animation)
+                       progress))))
+  (update-camera-view-camera
+   state target-id (camera-with-view camera center (camera-world-width camera))))
+
+; apply-camera-view-world-width-animation : scene-state?
+;                                           camera-view-world-width-animation?
+;                                           finite-real? -> scene-state?
+;; Samples a secondary-camera visible width while retaining its centre.
+(define (apply-camera-view-world-width-animation state animation progress)
+  (define target-id (camera-view-world-width-animation-target-id animation))
+  (define view (scene-state-ref state target-id))
+  (define camera (camera-view-visual-camera view))
+  (define world-width
+    (if (zero? progress)
+        (camera-view-world-width-animation-from animation)
+        (if (= progress 1)
+            (camera-view-world-width-animation-to animation)
+            (real-lerp (camera-view-world-width-animation-from animation)
+                       (camera-view-world-width-animation-to animation)
+                       progress))))
+  (update-camera-view-camera
+   state target-id (camera-with-view camera (camera-center camera) world-width)))
+
+; apply-camera-view-follow-animation : scene-state?
+;                                      camera-view-follow-animation?
+;                                      finite-real? -> scene-state?
+;; Keeps a world target at its original offset in the inset. The target is
+;; resolved from the state already sampled at this same clip time.
+(define (apply-camera-view-follow-animation state animation progress)
+  (if (zero? progress)
+      state
+      (let* ([target-id (camera-view-follow-animation-target-id animation)]
+             [view (scene-state-ref state target-id)]
+             [camera (camera-view-visual-camera view)]
+             [followed
+              (scene-state-resolved-world-ref
+               state
+               (camera-view-follow-animation-followed-target animation))])
+        (when (frame-space-visual? followed)
+          (raise-arguments-error
+           'scene-sample
+           "a world-space secondary-camera follow target"
+           "target" (camera-view-follow-animation-followed-target animation)))
+        (update-camera-view-camera
+         state
+         target-id
+         (camera-with-view
+          camera
+          (vec2+ (visual-position followed)
+                 (camera-view-follow-animation-offset animation))
+          (camera-world-width camera))))))
+
+; apply-camera-view-fit-animation : scene-state? camera-view-fit-animation?
+;                                   finite-real? -> scene-state?
+;; Samples a measured secondary-camera centre and width together.
+(define (apply-camera-view-fit-animation state animation progress)
+  (define target-id (camera-view-fit-animation-target-id animation))
+  (define view (scene-state-ref state target-id))
+  (define camera (camera-view-visual-camera view))
+  (define center
+    (if (zero? progress)
+        (camera-view-fit-animation-center-from animation)
+        (if (= progress 1)
+            (camera-view-fit-animation-center-to animation)
+            (vec2-lerp (camera-view-fit-animation-center-from animation)
+                       (camera-view-fit-animation-center-to animation)
+                       progress))))
+  (define world-width
+    (if (zero? progress)
+        (camera-view-fit-animation-world-width-from animation)
+        (if (= progress 1)
+            (camera-view-fit-animation-world-width-to animation)
+            (real-lerp (camera-view-fit-animation-world-width-from animation)
+                       (camera-view-fit-animation-world-width-to animation)
+                       progress))))
+  (update-camera-view-camera
+   state target-id (camera-with-view camera center world-width)))
 
 ; apply-opacity-animation : scene-state? opacity-animation? finite-real?
 ;                           -> scene-state?
@@ -3547,6 +4506,106 @@
    (visual-with-transform
     (path-visual-with-path destination-proxy geometry)
     transform)))
+
+; apply-transform-matching-visuals-animation
+; : scene-state? transform-matching-visuals-animation? finite-real? -> scene-state?
+;; Hides the original root only at interior samples and puts independently
+;; matched leaves into one frontmost transient overlay. Keeping the exact roots
+;; intact makes arbitrary frame evaluation and end-of-clip replacement as
+;; deterministic as transform-shape.
+(define (apply-transform-matching-visuals-animation state animation progress)
+  (define overlay-id (transform-matching-visuals-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(or (zero? progress) (= progress 1)) without-prior-overlay]
+    [else
+     (define children
+       (apply append
+              (for/list ([spec
+                          (in-list
+                           (transform-matching-visuals-animation-specs animation))]
+                         [index (in-naturals)])
+                (visual-match-spec-overlay-layers spec overlay-id index progress))))
+     (define source
+       (transform-matching-visuals-animation-source animation))
+     (define hidden-source-state
+       (scene-state-update
+        without-prior-overlay
+        (transform-matching-visuals-animation-source-id animation)
+        (visual-with-opacity source 0)))
+     (scene-state-add hidden-source-state (group children #:id overlay-id))]))
+
+;; A paired spec has two moving/fading layers. One-sided specs are the ordinary
+;; stationary unmatched fade used by TransformMatchingShapes-like transitions.
+(define (visual-match-spec-overlay-layers spec overlay-id index progress)
+  (define source (visual-match-spec-source spec))
+  (define destination (visual-match-spec-destination spec))
+  (define source-layer-id
+    (matching-overlay-child-id overlay-id index 'source))
+  (define destination-layer-id
+    (matching-overlay-child-id overlay-id index 'destination))
+  (cond
+    [(and source destination)
+     (define-values (source-layer destination-layer)
+       (visual-match-spec-layers spec progress))
+     (list
+      (transient-visual
+       source-layer-id
+       (visual-with-opacity
+        source-layer
+        (* (visual-opacity source-layer) (- 1 progress))))
+      (transient-visual
+       destination-layer-id
+       (visual-with-opacity
+        destination-layer
+        (* (visual-opacity destination-layer) progress))))]
+    [source
+     (list
+      (transient-visual
+       source-layer-id
+       (visual-with-opacity source (* (visual-opacity source) (- 1 progress)))))]
+    [destination
+     (list
+      (transient-visual
+       destination-layer-id
+       (visual-with-opacity destination (* (visual-opacity destination) progress))))]
+    [else '()]))
+
+(define (matching-overlay-child-id overlay-id index role)
+  (string->symbol
+   (format "~a-~a-~a" overlay-id index role)))
+
+(define (visual-match-spec-layers spec progress)
+  (define source (visual-match-spec-source spec))
+  (define destination (visual-match-spec-destination spec))
+  (define transform
+    (affine-transform-lerp (visual-transform source)
+                           (visual-transform destination)
+                           progress))
+  (cond
+    [(visual-match-spec-normalized-source spec)
+     (define source-proxy (transform-shape-path-proxy source))
+     (define destination-proxy (transform-shape-path-proxy destination))
+     (unless (and source-proxy destination-proxy)
+       (raise-arguments-error
+        'transform-matching-visuals
+        "compiled geometric path proxies"
+        "source" source
+        "destination" destination))
+     (define geometry
+       (path-geometry-lerp
+        (visual-match-spec-normalized-source spec)
+        (visual-match-spec-normalized-destination spec)
+        progress))
+     (values
+      (visual-with-transform (path-visual-with-path source-proxy geometry) transform)
+      (visual-with-transform (path-visual-with-path destination-proxy geometry) transform))]
+    [else
+     (values (visual-with-transform source transform)
+             (visual-with-transform destination transform))]))
 
 ; apply-transform-from-copy-animation : scene-state?
 ;                                       transform-from-copy-animation?
@@ -4241,8 +5300,22 @@
      (scene-state-add
       (scene-state-remove
        cleaned-state
-       (transform-shape-animation-source-id animation))
+      (transform-shape-animation-source-id animation))
       (transform-shape-animation-destination animation))]
+    [(transform-matching-visuals-animation? animation)
+     (define cleaned-state
+       (if (scene-state-has?
+            state
+            (transform-matching-visuals-animation-overlay-id animation))
+           (scene-state-remove
+            state
+            (transform-matching-visuals-animation-overlay-id animation))
+           state))
+     (scene-state-add
+      (scene-state-remove
+       cleaned-state
+       (transform-matching-visuals-animation-source-id animation))
+      (transform-matching-visuals-animation-destination animation))]
     [(transform-from-copy-animation? animation)
      (define cleaned-state
        (if (scene-state-has?
@@ -4312,6 +5385,23 @@
 ;;;
 ;;; Validation
 ;;;
+
+; check-numeric-animation-value : symbol? any/c -> void?
+;; Validates the finite scalar domain intentionally supported by numerical
+;; animation requests.  `finite-complex?` excludes a real number, so these two
+;; cases cover each finite real or cartesian complex value exactly once.
+(define (check-numeric-animation-value who value)
+  (unless (or (finite-real? value) (finite-complex? value))
+    (raise-argument-error
+     who
+     "finite real or finite complex number"
+     value)))
+
+; check-finite-real-value : symbol? any/c -> void?
+;; Validates the real counter domain used by count-from and count-to.
+(define (check-finite-real-value who value)
+  (unless (finite-real? value)
+    (raise-argument-error who "finite-real?" value)))
 
 ; check-path-motion-fraction : symbol? string? any/c -> void?
 ;;   Raises unless value is a finite real in the closed unit interval.
@@ -4429,6 +5519,36 @@
      who
      "positive finite real or vec2 with positive components"
      scale)))
+
+; check-positive-finite-real : symbol? any/c -> void?
+;; Validates positive secondary-camera widths and magnification factors.
+(define (check-positive-finite-real who value)
+  (unless (and (finite-real? value) (positive? value))
+    (raise-argument-error who "positive finite real?" value)))
+
+; check-camera-view-animation-target : symbol? any/c -> void?
+;; Accepts a named view or a directly supplied camera-view Visual.
+(define (check-camera-view-animation-target who target)
+  (unless (or (symbol? target) (camera-view-visual? target))
+    (raise-argument-error who "(or/c symbol? camera-view-visual?)" target))
+  (void))
+
+; camera-view-animation-target-id : (or/c symbol? camera-view-visual?) symbol?
+;; Normalizes a direct camera-view target to its stable scene identity.
+(define (camera-view-animation-target-id target who)
+  (if (symbol? target)
+      target
+      (visual-target-id target who)))
+
+; check-world-follow-target : symbol? any/c -> void?
+;; Validates the public form; sampled-state resolution proves world-space later.
+(define (check-world-follow-target who target)
+  (unless (or (symbol? target) (visual-path? target) (visual? target))
+    (raise-argument-error who "(or/c visual? symbol? visual-path?)" target))
+  (when (and (visual? target) (frame-space-visual? target))
+    (raise-arguments-error who "a world-space Visual follow target" "target" target))
+  (visual-target-id target who)
+  (void))
 
 ; check-affine-animation-target : visual? symbol? -> void?
 ;;   Raises an error unless visual supports the requested affine component.
@@ -4571,6 +5691,12 @@
   (unless (color-spec? color)
     (raise-argument-error who "color-spec?" color)))
 
+; check-animation-paint : symbol? any/c -> void?
+;;   Raises an argument error unless paint is a supported semantic fill paint.
+(define (check-animation-paint who paint)
+  (unless (paint? paint)
+    (raise-argument-error who "paint?" paint)))
+
 ; check-fill-color-request-target : symbol? any/c -> void?
 ;;   Validates a public fill-color animation target argument.
 (define (check-fill-color-request-target who target)
@@ -4623,17 +5749,17 @@
      "visual" visual))
   (checked-visual-stroke-color 'scene-play visual))
 
-; checked-visual-fill-color : symbol? fill-color-visual? -> color-spec?
+; checked-visual-fill-color : symbol? fill-color-visual? -> paint?
 (define (checked-visual-fill-color who visual)
-  (define color
+  (define paint
     (visual-fill-color visual))
-  (unless (color-spec? color)
+  (unless (paint? paint)
     (raise-arguments-error
      who
-     "a fill-color Visual must return a supported color specification"
+     "a fill-color Visual must return a supported semantic paint"
      "visual" visual
-     "fill-color" color))
-  color)
+     "fill-color" paint))
+  paint)
 
 ; checked-visual-stroke-color : symbol? stroke-color-visual? -> color-spec?
 (define (checked-visual-stroke-color who visual)
@@ -4647,10 +5773,10 @@
      "stroke-color" color))
   color)
 
-; replace-visual-fill-color : symbol? fill-color-visual? color-spec?
+; replace-visual-fill-color : symbol? fill-color-visual? paint?
 ;                             -> fill-color-visual?
 (define (replace-visual-fill-color who visual color)
-  (check-animation-color-spec who color)
+  (check-animation-paint who color)
   (define id (visual-id visual))
   (define result (visual-with-fill-color visual color))
   (unless (and (visual? result) (fill-color-visual? result))

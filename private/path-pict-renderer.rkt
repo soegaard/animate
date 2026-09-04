@@ -16,6 +16,7 @@
          "camera.rkt"
          "color-style.rkt"
          "geometry.rkt"
+         "paint-pict.rkt"
          "path-geometry.rkt"
          "pict-renderer.rkt"
          "visual-model.rkt")
@@ -54,7 +55,10 @@
                                      (+ y half-height)
                                      (path-visual-fill visual)
                                      (path-visual-stroke visual)
-                                     (path-visual-stroke-width visual)))
+                                     (path-visual-stroke-width visual)
+                                     (path-paint-point-mapper visual camera
+                                                              (+ x half-width)
+                                                              (+ y half-height))))
               (* 2 half-width)
               (* 2 half-height))))))
 
@@ -91,14 +95,14 @@
      "maximum-stroke-width" maximum-default-pict-stroke-width)))
 
 (define (draw-path-geometry! drawing-context geometry x-offset y-offset
-                             fill stroke stroke-width)
+                             fill stroke stroke-width paint-point-mapper)
   (define old-pen (send drawing-context get-pen))
   (define old-brush (send drawing-context get-brush))
   (dynamic-wind
     void
     (lambda ()
       (draw-closed-subpaths! drawing-context geometry x-offset y-offset
-                             fill stroke stroke-width)
+                             fill stroke stroke-width paint-point-mapper)
       (draw-open-subpaths! drawing-context geometry x-offset y-offset
                            stroke stroke-width))
     (lambda ()
@@ -106,14 +110,14 @@
       (send drawing-context set-brush old-brush))))
 
 (define (draw-closed-subpaths! drawing-context geometry x-offset y-offset
-                               fill stroke stroke-width)
+                               fill stroke stroke-width paint-point-mapper)
   (define closed-subpaths
     (for/list ([subpath (in-list (path-geometry-subpaths geometry))]
                #:when (path-subpath-closed? subpath))
       subpath))
   (unless (null? closed-subpaths)
     (send drawing-context set-pen (make-closed-path-pen stroke stroke-width))
-    (send drawing-context set-brush (make-path-brush fill))
+    (send drawing-context set-brush (make-path-brush fill paint-point-mapper))
     (send drawing-context draw-path (subpaths->dc-path closed-subpaths)
           x-offset y-offset 'odd-even)))
 
@@ -168,9 +172,17 @@
             #:cap 'round
             #:join 'miter))
 
-(define (make-path-brush fill)
-  (make-brush #:color (if fill (draw-color-spec fill) "black")
-              #:style (if fill 'solid 'transparent)))
+(define (make-path-brush fill
+                         [paint-point-mapper (lambda (point) point)])
+  (make-paint-brush fill paint-point-mapper))
+
+(define (path-paint-point-mapper visual camera x-offset y-offset)
+  (define transform (visual-transform visual))
+  (define pixel-scale (camera-scale camera))
+  (lambda (point)
+    (define transformed (affine-transform-apply-vector transform point))
+    (vec2 (+ x-offset (* pixel-scale (vec2-x transformed)))
+          (+ y-offset (* -1 pixel-scale (vec2-y transformed))))))
 
 (define (draw-color-spec color)
   (define resolved

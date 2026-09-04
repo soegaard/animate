@@ -23,7 +23,8 @@
          complex-domain-color
          complex-domain-coloring
          complex-plane
-         apply-complex-function)
+         apply-complex-function
+         apply-complex-homotopy)
 
 ;; complex->point : complex? -> vec2?
 ;; Maps a + bi to the usual Cartesian point (a,b).
@@ -235,6 +236,37 @@
         'apply-complex-function
         "the complex function must return a complex number"
         "point" point
+        "result" result))
+     (complex->point result))
+   #:samples samples
+   #:adaptive? adaptive?
+   #:tolerance tolerance
+   #:max-depth max-depth
+   #:discontinuities discontinuity-mode))
+
+;; apply-complex-homotopy : target (-> complex? finite-real? complex?) ...
+;; Applies H(z, alpha) to every sampled world point interpreted as a complex
+;; value. It is the time-dependent counterpart of apply-complex-function.
+(define (apply-complex-homotopy target homotopy
+                                #:samples [samples 24]
+                                #:adaptive? [adaptive? #t]
+                                #:tolerance [tolerance 1/32]
+                                #:max-depth [max-depth 8]
+                                #:discontinuities [discontinuity-mode 'error])
+  (unless (and (procedure? homotopy)
+               (procedure-arity-includes? homotopy 2))
+    (raise-argument-error
+     'apply-complex-homotopy "(procedure-arity-includes/c 2)" homotopy))
+  (apply-homotopy
+   target
+   (lambda (point alpha)
+     (define result (homotopy (point->complex point) alpha))
+     (unless (complex? result)
+       (raise-arguments-error
+        'apply-complex-homotopy
+        "the complex homotopy must return a complex number"
+        "point" point
+        "alpha" alpha
         "result" result))
      (complex->point result))
    #:samples samples

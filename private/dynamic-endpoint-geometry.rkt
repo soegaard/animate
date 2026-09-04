@@ -10,7 +10,8 @@
 ;; anchor is instead a small renderer-aware wrapper, just like SCENE-CM's live
 ;; attachment: only the adapter knows the measured extent of a Visual.
 
-(require "arrow-visual.rkt"
+(require racket/list
+         "arrow-visual.rkt"
          "derived-visual.rkt"
          "geometry.rkt"
          "layout-attachment.rkt"
@@ -29,7 +30,8 @@
          dynamic-endpoint-visual-ray-length
          dynamic-endpoint-visual-resolve
          dynamic-endpoint-visual-resolve-renderer
-         dynamic-endpoint-visual-has-renderer-anchors?)
+         dynamic-endpoint-visual-has-renderer-anchors?
+         make-live-endpoint-annotation)
 
 
 ;;;
@@ -166,19 +168,88 @@
         (dynamic-endpoint-visual-value-template definition)
         opacity)]))])
 
+;; A general annotation uses the same endpoint descriptions as lines and
+;; arrows, but lets its builder turn a resolved list of points into any ordinary
+;; Visual. It is kept here, rather than in annotation-geometry.rkt, so the Pict
+;; adapter has exactly one protocol for resolving renderer-measured anchors.
+(struct dynamic-endpoint-annotation-value
+  (template endpoints build who)
+  #:transparent
+  #:methods gen:visual
+  [(define (visual-id definition)
+     (endpoint-template-id
+      (dynamic-endpoint-annotation-value-template definition)))
+   (define (visual-position definition)
+     (endpoint-template-position
+      (dynamic-endpoint-annotation-value-template definition)))
+   (define (visual-with-position definition position)
+     (struct-copy
+      dynamic-endpoint-annotation-value
+      definition
+      [template
+       (endpoint-template-with-position
+        (dynamic-endpoint-annotation-value-template definition)
+        position)]))]
+  #:methods gen:opacity-visual
+  [(define (visual-opacity definition)
+     (endpoint-template-opacity
+      (dynamic-endpoint-annotation-value-template definition)))
+   (define (visual-with-opacity definition opacity)
+     (struct-copy
+      dynamic-endpoint-annotation-value
+      definition
+      [template
+       (endpoint-template-with-opacity
+        (dynamic-endpoint-annotation-value-template definition)
+        opacity)]))])
+
 ; dynamic-endpoint-visual? : any/c -> boolean?
 ;; Recognizes a renderer-aware endpoint definition returned for an edge/corner.
 (define (dynamic-endpoint-visual? value)
-  (dynamic-endpoint-visual-value? value))
+  (or (dynamic-endpoint-visual-value? value)
+      (dynamic-endpoint-annotation-value? value)))
 
-(define dynamic-endpoint-visual-template
-  dynamic-endpoint-visual-value-template)
-(define dynamic-endpoint-visual-start
-  dynamic-endpoint-visual-value-start)
-(define dynamic-endpoint-visual-end
-  dynamic-endpoint-visual-value-end)
-(define dynamic-endpoint-visual-ray-length
-  dynamic-endpoint-visual-value-ray-length)
+(define (dynamic-endpoint-visual-template definition)
+  (cond
+    [(dynamic-endpoint-visual-value? definition)
+     (dynamic-endpoint-visual-value-template definition)]
+    [(dynamic-endpoint-annotation-value? definition)
+     (dynamic-endpoint-annotation-value-template definition)]
+    [else
+     (raise-argument-error 'dynamic-endpoint-visual-template
+                           "dynamic-endpoint-visual?" definition)]))
+
+;; These historical accessors have an obvious interpretation for a general
+;; annotation: its first and final endpoint. `ray-length` is false because a
+;; general annotation has no ray-specific direction rule.
+(define (dynamic-endpoint-visual-start definition)
+  (cond
+    [(dynamic-endpoint-visual-value? definition)
+     (dynamic-endpoint-visual-value-start definition)]
+    [(dynamic-endpoint-annotation-value? definition)
+     (car (dynamic-endpoint-annotation-value-endpoints definition))]
+    [else
+     (raise-argument-error 'dynamic-endpoint-visual-start
+                           "dynamic-endpoint-visual?" definition)]))
+
+(define (dynamic-endpoint-visual-end definition)
+  (cond
+    [(dynamic-endpoint-visual-value? definition)
+     (dynamic-endpoint-visual-value-end definition)]
+    [(dynamic-endpoint-annotation-value? definition)
+     (last (dynamic-endpoint-annotation-value-endpoints definition))]
+    [else
+     (raise-argument-error 'dynamic-endpoint-visual-end
+                           "dynamic-endpoint-visual?" definition)]))
+
+(define (dynamic-endpoint-visual-ray-length definition)
+  (cond
+    [(dynamic-endpoint-visual-value? definition)
+     (dynamic-endpoint-visual-value-ray-length definition)]
+    [(dynamic-endpoint-annotation-value? definition) #f]
+    [else
+     (raise-argument-error 'dynamic-endpoint-visual-ray-length
+                           "dynamic-endpoint-visual?" definition)]))
 
 ; dynamic-endpoint-visual-has-renderer-anchors? : dynamic-endpoint-visual?
 ;                                                  -> boolean?
@@ -189,10 +260,19 @@
      'dynamic-endpoint-visual-has-renderer-anchors?
      "dynamic-endpoint-visual?"
      definition))
-  (or (endpoint-has-renderer-anchor?
-       (dynamic-endpoint-visual-value-start definition))
-      (endpoint-has-renderer-anchor?
-       (dynamic-endpoint-visual-value-end definition))))
+  (for/or ([endpoint (in-list (dynamic-endpoint-visual-endpoints definition))])
+    (endpoint-has-renderer-anchor? endpoint)))
+
+(define (dynamic-endpoint-visual-endpoints definition)
+  (cond
+    [(dynamic-endpoint-visual-value? definition)
+     (list (dynamic-endpoint-visual-value-start definition)
+           (dynamic-endpoint-visual-value-end definition))]
+    [(dynamic-endpoint-annotation-value? definition)
+     (dynamic-endpoint-annotation-value-endpoints definition)]
+    [else
+     (raise-argument-error 'dynamic-endpoint-visual-endpoints
+                           "dynamic-endpoint-visual?" definition)]))
 
 ; line-between : endpoint? endpoint?
 ;                #:id symbol?
@@ -317,6 +397,42 @@
           (lambda (endpoint)
             (resolve-pure-endpoint context endpoint)))))))
 
+;; make-live-endpoint-annotation : (listof endpoint?) visual?
+;;                                  ((listof vec2?) -> visual?) symbol?
+;;                                  -> (or/c derived-visual? dynamic-endpoint-visual?)
+;; Internal construction hook shared by the live mathematical annotations. A
+;; pure centre/parameter dependency is an ordinary derived Visual; an edge or
+;; corner anchor waits for the renderer just as line-between does.
+(define (make-live-endpoint-annotation endpoints template build who)
+  (unless (and (list? endpoints) (pair? endpoints))
+    (raise-argument-error who "nonempty list of endpoint descriptions" endpoints))
+  (unless (visual? template)
+    (raise-argument-error who "visual? template" template))
+  (unless (and (procedure? build) (procedure-arity-includes? build 1))
+    (raise-argument-error who "procedure accepting one point list" build))
+  (define descriptions
+    (for/list ([endpoint (in-list endpoints)])
+      (endpoint-description endpoint who)))
+  (define id (visual-id template))
+  (for ([endpoint (in-list descriptions)])
+    (when (eq? id (endpoint-target-terminal-id endpoint))
+      (raise-arguments-error
+       who
+       "an annotation identity distinct from every endpoint target"
+       "id" id
+       "endpoint" endpoint)))
+  (define definition
+    (dynamic-endpoint-annotation-value template descriptions build who))
+  (if (dynamic-endpoint-visual-has-renderer-anchors? definition)
+      definition
+      (derived-visual
+       template
+       (lambda (context _template)
+         (dynamic-endpoint-visual-resolve
+          definition
+          (lambda (endpoint)
+            (resolve-pure-endpoint context endpoint)))))))
+
 ; dynamic-endpoint-visual-resolve : dynamic-endpoint-visual?
 ;                                   (-> endpoint-description? vec2?) -> visual?
 ;; Builds this sampled geometry using resolver for the two endpoint descriptions.
@@ -334,28 +450,48 @@
      'dynamic-endpoint-visual-resolve
      "procedure accepting one endpoint description"
      resolve-endpoint))
-  (define start
-    (checked-resolved-endpoint
-     'dynamic-endpoint-visual-resolve
-     (resolve-endpoint (dynamic-endpoint-visual-value-start definition))))
-  (define end
-    (checked-resolved-endpoint
-     'dynamic-endpoint-visual-resolve
-     (resolve-endpoint (dynamic-endpoint-visual-value-end definition))))
-  (make-concrete-endpoint-visual
-   (dynamic-endpoint-visual-value-kind definition)
-   start
-   end
-   (dynamic-endpoint-visual-value-ray-length definition)
-   (visual-id (dynamic-endpoint-visual-value-template definition))
-   (visual-opacity (dynamic-endpoint-visual-value-template definition))
-   (dynamic-endpoint-visual-value-stroke definition)
-   (dynamic-endpoint-visual-value-stroke-width definition)
-   (dynamic-endpoint-visual-value-tip-length definition)
-   (dynamic-endpoint-visual-value-tip-width definition)
-   (dynamic-endpoint-visual-value-start-tip? definition)
-   (dynamic-endpoint-visual-value-end-tip? definition)
-   'dynamic-endpoint-visual-resolve))
+  (define points
+    (for/list ([endpoint (in-list (dynamic-endpoint-visual-endpoints definition))])
+      (checked-resolved-endpoint
+       'dynamic-endpoint-visual-resolve
+       (resolve-endpoint endpoint))))
+  (cond
+    [(dynamic-endpoint-visual-value? definition)
+     (make-concrete-endpoint-visual
+      (dynamic-endpoint-visual-value-kind definition)
+      (car points)
+      (cadr points)
+      (dynamic-endpoint-visual-value-ray-length definition)
+      (visual-id (dynamic-endpoint-visual-value-template definition))
+      (visual-opacity (dynamic-endpoint-visual-value-template definition))
+      (dynamic-endpoint-visual-value-stroke definition)
+      (dynamic-endpoint-visual-value-stroke-width definition)
+      (dynamic-endpoint-visual-value-tip-length definition)
+      (dynamic-endpoint-visual-value-tip-width definition)
+      (dynamic-endpoint-visual-value-start-tip? definition)
+      (dynamic-endpoint-visual-value-end-tip? definition)
+      'dynamic-endpoint-visual-resolve)]
+    [(dynamic-endpoint-annotation-value? definition)
+     (define result
+       ((dynamic-endpoint-annotation-value-build definition) points))
+     (unless (visual? result)
+       (raise-arguments-error
+        (dynamic-endpoint-annotation-value-who definition)
+        "an annotation builder that returns a Visual"
+        "result" result))
+     (unless (eq? (visual-id result)
+                  (visual-id
+                   (dynamic-endpoint-annotation-value-template definition)))
+       (raise-arguments-error
+        (dynamic-endpoint-annotation-value-who definition)
+        "an annotation builder preserving the template identity"
+        "template-id"
+        (visual-id (dynamic-endpoint-annotation-value-template definition))
+        "result-id" (visual-id result)))
+     result]
+    [else
+     (raise-argument-error 'dynamic-endpoint-visual-resolve
+                           "dynamic-endpoint-visual?" definition)]))
 
 ; dynamic-endpoint-visual-resolve-renderer : dynamic-endpoint-visual?
 ;                                            (-> scene-parameter? vec2?)

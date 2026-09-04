@@ -33,8 +33,11 @@
          camera-view
          camera-view-visual?
          camera-view-visual-target
+         camera-view-visual-targets
          camera-view-visual-camera
+         camera-view-visual-with-camera
          camera-view-visual-width
+         camera-view-visual-clip
          callout
          callout-visual?
          callout-visual-content
@@ -88,10 +91,12 @@
 ;; The content's own geometry, rotation, scale, and opacity remain significant.
 ;; Its containing-coordinate position is ignored during overlay rendering.
 
-;; A camera-view is a frame-space viewport onto one resolved world-space target.
-;; Its target is looked up only during scene rendering, which makes the inset
-;; follow ordinary animation without embedding a mutable secondary Scene.
-(struct camera-view-visual (id transform opacity target camera frame-width width)
+;; A camera-view is a frame-space viewport onto explicitly selected world-space
+;; targets or every world-space top-level layer. Targets are looked up only
+;; during scene rendering, which keeps the inset synchronized without a mutable
+;; secondary Scene.
+(struct camera-view-visual
+  (id transform opacity target-values camera frame-width width clip)
   #:transparent
   #:methods gen:visual
   [(define (visual-id visual)
@@ -120,10 +125,12 @@
      (struct-copy camera-view-visual visual [opacity opacity]))])
 
 ;; camera-view-visual represents an orthographic view inset.
-;;  - target      symbol? or visual-path?  live world-space target at render time.
+;;  - target-values (or/c false/c (listof (or/c symbol? visual-path?)))
+;;                  #f means all world-space top-level layers at render time.
 ;;  - camera      camera?                 the inset's world-space view.
 ;;  - frame-width positive real?          captured outer frame width.
 ;;  - width       positive real?          inset width in captured frame units.
+;;  - clip        (or/c 'rectangle 'rounded) frame shape for the inset canvas.
 
 (struct callout-visual
   (id transform opacity content frame-width target target-anchor connector-stroke connector-width)
@@ -210,36 +217,43 @@
    content
    (camera-world-width camera)))
 
-;; camera-view : (or/c visual? symbol? visual-path?) #:id symbol?
+;; camera-view : [(or/c false/c visual? symbol? visual-path?)] #:id symbol?
+;;               [#:targets (or/c false/c (listof (or/c visual? symbol? visual-path?)))]
 ;;               [#:camera camera?] [#:frame-camera camera?]
 ;;               [#:at vec2?] [#:width positive-finite-real?]
+;;               [#:clip (or/c 'rectangle 'rounded 'rounded-frame)]
 ;;               [#:opacity opacity?] -> camera-view-visual?
-;; Creates a fixed-position inset that renders one live world-space target with
-;; its own orthographic camera. `frame-camera` supplies the stable frame
+;; Creates a fixed-position inset that renders selected live world-space targets
+;; with its own orthographic camera. Omit both target arguments for every
+;; world-space top-level layer. `frame-camera` supplies the stable frame
 ;; coordinate system used by `at` and `width`; it defaults to default-camera.
-(define (camera-view target
+(define (camera-view [target #f]
                      #:id id
                      #:camera camera
+                     #:targets [targets #f]
                      #:frame-camera [frame-camera default-camera]
                      #:at [position origin]
                      #:width [width 3]
+                     #:clip [clip 'rectangle]
                      #:opacity [opacity 1])
-  (check-camera-view-target 'camera-view target)
+  (check-camera-view-target-selection 'camera-view target targets)
   (unless (symbol? id)
     (raise-argument-error 'camera-view "symbol?" id))
   (check-frame-camera 'camera-view camera)
   (check-frame-camera 'camera-view frame-camera)
   (check-frame-position 'camera-view position)
   (check-positive-frame-length 'camera-view "width" width)
+  (check-camera-view-clip 'camera-view clip)
   (check-frame-opacity 'camera-view opacity)
   (camera-view-visual
    id
    (make-affine-transform #:translation position)
    opacity
-   (normalize-camera-view-target target)
+   (normalize-camera-view-target-selection target targets)
    camera
    (camera-world-width frame-camera)
-   width))
+   width
+   (normalize-camera-view-clip clip)))
 
 ; callout : visual? (or/c visual? symbol? visual-path? vec2?)
 ;           [#:camera camera?]
@@ -309,6 +323,33 @@
       (camera-view-visual? value)
       (callout-visual? value)))
 
+; camera-view-visual-target : camera-view-visual? -> (or/c false/c symbol? visual-path?)
+;;   Compatibility accessor for a one-target view. A multi-target or all-layer
+;;   view has no singular target and returns #f; use camera-view-visual-targets.
+(define (camera-view-visual-target visual)
+  (unless (camera-view-visual? visual)
+    (raise-argument-error 'camera-view-visual-target "camera-view-visual?" visual))
+  (define targets (camera-view-visual-target-values visual))
+  (and (pair? targets) (null? (cdr targets)) (car targets)))
+
+; camera-view-visual-targets : camera-view-visual?
+;;                              -> (or/c false/c (listof (or/c symbol? visual-path?)))
+;;   Returns #f for an all-world-layers view, otherwise its declared target list.
+(define (camera-view-visual-targets visual)
+  (unless (camera-view-visual? visual)
+    (raise-argument-error 'camera-view-visual-targets "camera-view-visual?" visual))
+  (camera-view-visual-target-values visual))
+
+; camera-view-visual-with-camera : camera-view-visual? camera?
+;;                                  -> camera-view-visual?
+;;   Replaces only the semantic inset camera, preserving identity and frame pose.
+(define (camera-view-visual-with-camera visual camera)
+  (unless (camera-view-visual? visual)
+    (raise-argument-error 'camera-view-visual-with-camera
+                          "camera-view-visual?" visual))
+  (check-frame-camera 'camera-view-visual-with-camera camera)
+  (struct-copy camera-view-visual visual [camera camera]))
+
 ; frame-space-visual-frame-width : frame-space-visual? -> positive-real?
 ;;   Returns the captured visible width of visual's frame coordinate system.
 (define (frame-space-visual-frame-width visual)
@@ -349,8 +390,16 @@
       target
       (visual-target-id target 'callout)))
 
-(define (normalize-camera-view-target target)
-  (visual-target-id target 'camera-view))
+(define (normalize-camera-view-target-selection target targets)
+  (cond [targets
+         (for/list ([candidate (in-list targets)])
+           (visual-target-id candidate 'camera-view))]
+        [target
+         (list (visual-target-id target 'camera-view))]
+        [else #f]))
+
+(define (normalize-camera-view-clip clip)
+  (if (eq? clip 'rounded-frame) 'rounded clip))
 
 
 ;;;
@@ -405,19 +454,38 @@
     (visual-target-id target who))
   (void))
 
-(define (check-camera-view-target who target)
-  (unless (or (symbol? target)
-              (visual-path? target)
-              (visual? target))
-    (raise-argument-error who "(or/c visual? symbol? visual-path?)" target))
-  (when (and (visual? target)
-             (frame-space-visual? target))
+(define (check-camera-view-target-selection who target targets)
+  (when (and target targets)
     (raise-arguments-error
      who
-     "a camera-view target must belong to world space"
-     "target" target))
-  (visual-target-id target who)
+     "provide either the positional target or #:targets, not both"
+     "target" target
+     "targets" targets))
+  (when targets
+    (unless (and (list? targets) (pair? targets))
+      (raise-arguments-error who "a nonempty list of world-space targets"
+                             "targets" targets)))
+  (for ([candidate (in-list (cond [targets targets]
+                                  [target (list target)]
+                                  [else '()]))])
+    (unless (or (symbol? candidate)
+                (visual-path? candidate)
+                (visual? candidate))
+      (raise-argument-error who "(or/c visual? symbol? visual-path?)" candidate))
+    (when (and (visual? candidate)
+               (frame-space-visual? candidate))
+      (raise-arguments-error
+       who
+       "a camera-view target must belong to world space"
+       "target" candidate))
+    (visual-target-id candidate who))
   (void))
+
+(define (check-camera-view-clip who clip)
+  (unless (memq clip '(rectangle rounded rounded-frame))
+    (raise-argument-error who
+                          "(or/c 'rectangle 'rounded 'rounded-frame)"
+                          clip)))
 
 ; check-callout-target-anchor : symbol? any/c -> void?
 ;;   Validates the one of nine live renderer-box locations that a callout

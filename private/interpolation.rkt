@@ -6,7 +6,7 @@
 
 ;; Defines the small common interpolation protocol used by named scene values.
 ;; Values deliberately stay renderer-independent: currently finite reals, vec2
-;; coordinates, and semantic RGBA colors participate.  New semantic value kinds
+;; coordinates, finite complex values, and semantic RGBA colors participate.  New semantic value kinds
 ;; can be added here without changing scene-state or timeline scheduling.
 
 
@@ -17,7 +17,8 @@
 (require "color-style.rkt"
          "geometry.rkt")
 
-(provide interpolable?
+(provide finite-complex?
+         interpolable?
          interpolate-value)
 
 
@@ -29,6 +30,7 @@
 ;; Reports whether value is a semantic value supported by interpolate-value.
 (define (interpolable? value)
   (or (finite-real? value)
+      (finite-complex? value)
       (vec2? value)
       (rgba-color? value)))
 
@@ -49,6 +51,8 @@
   (cond
     [(and (finite-real? from) (finite-real? to))
      (interpolate-endpoints from to progress real-lerp)]
+    [(and (finite-complex? from) (finite-complex? to))
+     (interpolate-endpoints from to progress complex-lerp)]
     [(and (vec2? from) (vec2? to))
      (interpolate-endpoints from to progress vec2-lerp)]
     [(and (rgba-color? from) (rgba-color? to))
@@ -59,6 +63,22 @@
       "the values must have the same interpolable semantic kind"
       "from" from
       "to" to)]))
+
+;; finite-complex? : any/c -> boolean?
+;; A complex scene value is finite only when both cartesian components are
+;; finite reals. Real numbers are handled by finite-real? before this case.
+(define (finite-complex? value)
+  (and (number? value)
+       (not (real? value))
+       (finite-real? (real-part value))
+       (finite-real? (imag-part value))))
+
+;; complex-lerp : finite-complex? finite-complex? finite-real? -> complex?
+;; Interpolates real and imaginary coordinates independently.
+(define (complex-lerp from to progress)
+  (make-rectangular
+   (real-lerp (real-part from) (real-part to) progress)
+   (real-lerp (imag-part from) (imag-part to) progress)))
 
 ; interpolate-endpoints : any/c any/c finite-real? procedure? -> any/c
 ;; Keeps a caller's endpoint representation intact instead of reconstructing it.

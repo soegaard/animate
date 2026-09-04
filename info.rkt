@@ -48,11 +48,11 @@
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-DJ: path-backed mathematical shape catalogue")
+  "SCENE-EF: immutable numeric animation and displays")
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "1.5.0")
+(define version "1.6.0")
 
 ; license : symbol?
 ;;   Declares the package license.

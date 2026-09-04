@@ -25,6 +25,7 @@
                   cc-superimpose
                   clip
                   dc
+                  draw-pict
                   frame
                   filled-rectangle
                   pict-height
@@ -32,7 +33,10 @@
                   pin-over
                   scale)
          (only-in racket/draw
-                  make-pen)
+                  dc-path%
+                  make-brush
+                  make-pen
+                  region%)
          "affine-map-visual.rkt"
          "affine-pict.rkt"
          "affine-transform.rkt"
@@ -43,6 +47,7 @@
          "camera.rkt"
          "derived-visual.rkt"
          "dynamic-endpoint-geometry.rkt"
+         "clipped-visual.rkt"
          "formula-parts-visual.rkt"
          "frame-space.rkt"
          "geometry.rkt"
@@ -158,6 +163,8 @@
       (point-marker-visual->visual visual)
       camera
       renderers)]
+    [(clipped-visual? visual)
+     (clipped-visual->pict visual camera renderers)]
     [(group-visual? visual)
      (group-visual->pict visual camera renderers)]
     [(formula-assembly-visual? visual)
@@ -645,6 +652,114 @@
 
 
 ;;;
+;;; Semantic path clipping
+;;;
+
+;; `clip-visual` remains entirely vector based. Its content is rendered through
+;; the normal dispatcher, but the Pict drawing context is restricted by a
+;; region made from the semantic clip path. This keeps formula/SVG/shape
+;; content crisp and allows the wrapper to participate in ordinary affine and
+;; opacity animations without pre-rasterising it.
+
+(define (clipped-visual->pict visual camera renderers)
+  (define content (clipped-visual-content visual))
+  (when (frame-space-visual? content)
+    (raise-arguments-error
+     'visual->pict
+     "a world-space Visual inside clip-to/mask-with"
+     "visual-id" (visual-id visual)))
+  (define resolved-content
+    (resolve-clipped-content content (visual-transform visual)))
+  (define content-pict
+    (visual->pict resolved-content camera #:renderers renderers))
+  (define pixel-clip
+    (clip-path->pixel-geometry (clipped-visual-path visual)
+                               (visual-transform visual)
+                               camera))
+  (cond [(path-geometry-empty? pixel-clip) (blank 1 1)]
+        [else
+         (define-values (minimum-x minimum-y maximum-x maximum-y)
+           (path-geometry-bounds pixel-clip))
+         (define pixel-scale (camera-scale camera))
+         (define content-position (visual-position resolved-content))
+         (define content-x (* pixel-scale (vec2-x content-position)))
+         (define content-y (* -1 pixel-scale (vec2-y content-position)))
+         (define half-width
+           (max 1/2
+                (abs minimum-x) (abs maximum-x)
+                (abs (- content-x (/ (pict-width content-pict) 2)))
+                (abs (+ content-x (/ (pict-width content-pict) 2)))))
+         (define half-height
+           (max 1/2
+                (abs minimum-y) (abs maximum-y)
+                (abs (- content-y (/ (pict-height content-pict) 2)))
+                (abs (+ content-y (/ (pict-height content-pict) 2)))))
+         (dc
+          (lambda (drawing-context x y)
+            (define old-region (send drawing-context get-clipping-region))
+            (define clip-region (new region% [dc drawing-context]))
+            (send clip-region set-path (path-geometry->dc-path pixel-clip)
+                  (+ x half-width) (+ y half-height) 'odd-even)
+            (when old-region (send clip-region intersect old-region))
+            (dynamic-wind
+              (lambda () (send drawing-context set-clipping-region clip-region))
+              (lambda ()
+                (draw-pict content-pict drawing-context
+                           (+ x half-width content-x
+                              (- (/ (pict-width content-pict) 2)))
+                           (+ y half-height content-y
+                              (- (/ (pict-height content-pict) 2)))))
+              (lambda () (send drawing-context set-clipping-region old-region))))
+          (* 2 half-width)
+          (* 2 half-height))]))
+
+(define (resolve-clipped-content content parent-transform)
+  (define content-transform (visual-transform content))
+  (visual-with-transform
+   content
+   (make-affine-transform
+    #:translation
+    (affine-transform-apply-vector
+     parent-transform (affine-transform-translation content-transform))
+    #:rotation
+    (+ (affine-transform-rotation parent-transform)
+       (affine-transform-rotation content-transform))
+    #:scale
+    (vec2* (affine-transform-scale parent-transform)
+           (affine-transform-scale content-transform)))))
+
+(define (clip-path->pixel-geometry path transform camera)
+  (define pixel-scale (camera-scale camera))
+  (path-geometry-map-points
+   path
+   (lambda (point)
+     (define transformed (affine-transform-apply-vector transform point))
+     (vec2 (* pixel-scale (vec2-x transformed))
+           (* -1 pixel-scale (vec2-y transformed))))))
+
+(define (path-geometry->dc-path geometry)
+  (define drawing-path (new dc-path%))
+  (for ([subpath (in-list (path-geometry-subpaths geometry))])
+    (define start (path-subpath-start subpath))
+    (send drawing-path move-to (vec2-x start) (vec2-y start))
+    (for ([segment (in-list (path-subpath-segments subpath))])
+      (cond [(line-path-segment? segment)
+             (define end (line-path-segment-end segment))
+             (send drawing-path line-to (vec2-x end) (vec2-y end))]
+            [(cubic-bezier-path-segment? segment)
+             (define control1 (cubic-bezier-path-segment-control1 segment))
+             (define control2 (cubic-bezier-path-segment-control2 segment))
+             (define end (cubic-bezier-path-segment-end segment))
+             (send drawing-path curve-to
+                   (vec2-x control1) (vec2-y control1)
+                   (vec2-x control2) (vec2-y control2)
+                   (vec2-x end) (vec2-y end))]))
+    (when (path-subpath-closed? subpath)
+      (send drawing-path close)))
+  drawing-path)
+
+
+;;;
 ;;; Scene-State Conversion
 ;;;
 
@@ -706,16 +821,8 @@
 ;;   The inset's own local transform and opacity then work exactly as for other
 ;;   frame-space Visuals; its target remains a normal world-space Visual.
 (define (place-camera-view-on-pict canvas state view outer-camera renderers)
-  (define target
-    (scene-state-resolved-world-ref
-     state
-     (camera-view-visual-target view)))
-  (when (frame-space-visual? target)
-    (raise-arguments-error
-     'scene-state->pict
-     "a camera-view target must resolve to a world-space Visual"
-     "camera-view-id" (visual-id view)
-     "target" (camera-view-visual-target view)))
+  (define targets
+    (camera-view-resolved-targets state view))
   (define inset-camera
     (camera-view-visual-camera view))
   (define inset-background
@@ -727,11 +834,10 @@
   ;; a drawing clip.  A view is a viewport, so discard the portions of a large
   ;; target that lie outside the inset camera canvas before scaling it.
   (define inset-pict
-    (clip
-     (place-world-visual-on-pict inset-background
-                                 target
-                                 inset-camera
-                                 renderers)))
+   (clip
+     (for/fold ([inset inset-background])
+               ([target (in-list targets)])
+       (place-world-visual-on-pict inset target inset-camera renderers))))
   (define desired-width
     (camera-length->pixels
      outer-camera
@@ -740,10 +846,13 @@
     (scale inset-pict
            (/ desired-width
               (pict-width inset-pict))))
-  ;; A one-pixel frame makes the second coordinate system legible without
-  ;; inventing a separate decoration API for the first version of camera-view.
   (define framed-inset
-    (frame scaled-inset))
+    (case (camera-view-visual-clip view)
+      [(rounded) (rounded-inset-pict scaled-inset)]
+      [else
+       ;; A one-pixel frame makes the second coordinate system legible without
+       ;; inventing a separate decoration API for the basic rectangular view.
+       (frame scaled-inset)]))
   (define transformed-inset
     (rotate-pict-if-needed
      (scale-pict-if-needed framed-inset (visual-scale view))
@@ -759,6 +868,71 @@
   (define-values (center-x center-y)
     (camera-world->pixel frame-camera (visual-position view)))
   (pin-centered-pict canvas center-x center-y rendered-inset))
+
+;; Resolves either the explicitly selected world-space layers, in declaration
+;; order, or every ordinary top-level world-space layer. A camera view must
+;; never recursively paint itself or another frame-space overlay into its inset.
+(define (camera-view-resolved-targets state view)
+  (define declared (camera-view-visual-targets view))
+  (define candidates
+    (if declared
+        (for/list ([target (in-list declared)])
+          (scene-state-resolved-world-ref state target))
+        (filter (lambda (visual) (not (frame-space-visual? visual)))
+                (scene-state-resolved-visuals-in-drawing-order state))))
+  (for ([target (in-list candidates)])
+    (when (frame-space-visual? target)
+      (raise-arguments-error
+       'scene-state->pict
+       "a camera-view target must resolve to a world-space Visual"
+       "camera-view-id" (visual-id view)
+       "targets" declared)))
+  candidates)
+
+;; A rounded clip is deliberately part of the viewport decoration, not a
+;; bitmap mask. It is applied directly to the dc that draws the scaled inset,
+;; preserving the vector content inside it.
+(define (rounded-inset-pict inset)
+  (define width (pict-width inset))
+  (define height (pict-height inset))
+  (define radius (min (/ width 8) (/ height 8)))
+  (dc
+   (lambda (drawing-context x y)
+     (define old-region (send drawing-context get-clipping-region))
+     (define old-pen (send drawing-context get-pen))
+     (define old-brush (send drawing-context get-brush))
+     (define rounded-path (rounded-rectangle-dc-path width height radius))
+     (define clip-region (new region% [dc drawing-context]))
+     (send clip-region set-path rounded-path x y 'odd-even)
+     (when old-region (send clip-region intersect old-region))
+     (dynamic-wind
+       (lambda () (send drawing-context set-clipping-region clip-region))
+       (lambda () (draw-pict inset drawing-context x y))
+       (lambda () (send drawing-context set-clipping-region old-region)))
+     (send drawing-context set-pen (make-pen #:color "black" #:width 1))
+     (send drawing-context set-brush (make-brush #:color "black" #:style 'transparent))
+     (send drawing-context draw-path rounded-path x y)
+     (send drawing-context set-pen old-pen)
+     (send drawing-context set-brush old-brush))
+   width height))
+
+(define (rounded-rectangle-dc-path width height radius)
+  (define handle (* radius 0.5522847498307936))
+  (define path (new dc-path%))
+  (send path move-to radius 0)
+  (send path line-to (- width radius) 0)
+  (send path curve-to (+ (- width radius) handle) 0
+        width (- radius handle) width radius)
+  (send path line-to width (- height radius))
+  (send path curve-to width (+ (- height radius) handle)
+        (+ (- width radius) handle) height (- width radius) height)
+  (send path line-to radius height)
+  (send path curve-to (- radius handle) height
+        0 (+ (- height radius) handle) 0 (- height radius))
+  (send path line-to 0 radius)
+  (send path curve-to 0 (- radius handle) (- radius handle) 0 radius 0)
+  (send path close)
+  path)
 
 ; place-dynamic-endpoint-visual-on-pict : pict? scene-state?
 ;                                         dynamic-endpoint-visual? camera?
