@@ -10,7 +10,7 @@
 ;; curved route; all remaining identical source atoms match automatically.
 
 (require (only-in racket/math pi)
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

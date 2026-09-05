@@ -9,7 +9,8 @@
 ;; one-outline interpretation, so auto mode deliberately uses a cross-fade.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

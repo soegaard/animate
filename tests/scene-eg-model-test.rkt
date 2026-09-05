@@ -4,6 +4,7 @@
 
 (require rackunit
          "../main.rkt"
+         "../authoring.rkt"
          "../preview.rkt")
 
 (module+ test

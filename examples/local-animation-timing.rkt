@@ -8,7 +8,8 @@
 ;; requests their own local start times, durations, and optional easing.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

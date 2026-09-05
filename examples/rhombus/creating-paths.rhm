@@ -3,7 +3,8 @@
 // The SCENE-F path reveal API consists of ordinary Racket values and functions
 // that Rhombus can import directly.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def panel = polygon(

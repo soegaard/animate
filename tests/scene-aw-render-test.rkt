@@ -1,4 +1,5 @@
 #lang racket/base
+(require "../experimental.rkt")
 
 ;;;
 ;;; SCENE-AW Pure Derived Visual Rendering Tests
@@ -8,7 +9,8 @@
          racket/file
          rackunit
          (only-in pict pict->bitmap)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 (module+ test
   (define (bitmap->argb-bytes bitmap)

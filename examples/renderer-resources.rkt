@@ -1,7 +1,7 @@
 #lang racket/base
 
 (require racket/runtime-path
-         "../main.rkt" "private/run-demo.rkt")
+         animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define-runtime-path assets-directory "assets")

@@ -33,7 +33,12 @@
 ; build-deps : (listof string?)
 ;;   Lists dependencies needed for tests and examples.
 (define build-deps
-  '("rackunit-lib"))
+  '("rackunit-lib" "scribble-lib" "racket-doc"))
+
+; scribblings : (listof scribbling-spec?)
+;;   Registers the package manual so normal installation builds and links it.
+(define scribblings
+  '(("scribblings/animate.scrbl" (multi-page) ("Animation"))))
 
 ; compile-omit-paths : (listof path-string?)
 ;;   Keeps optional Rhombus examples out of normal Racket compilation.
@@ -47,18 +52,22 @@
 (define source-omit-files
   '("tmp"
     "rendered-examples"
+    ".git"
     ".DS_Store"
     "examples/.DS_Store"
-    "examples/private/.DS_Store"))
+    "examples/private/.DS_Store"
+    "private/.DS_Store"
+    "scribblings/.DS_Store"
+    "tests/.DS_Store"))
+
+; version : string?
+;;   Gives the prototype package version.
+(define version "1.8.0")
 
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-EI: deterministic interactive animation authoring workbench")
-
-; version : string?
-;;   Gives the prototype package version.
-(define version "1.7.0")
+  "SCENE-EM: immutable Racket animation authoring toolkit")
 
 ; license : symbol?
 ;;   Declares the package license.

@@ -41,7 +41,7 @@
            #:rotation (/ pi 2)
            #:scale 2))
   (define badge
-    (attach-to
+    (follow-anchor
      (circle #:id 'badge
              #:center origin
              #:radius 1/5
@@ -97,11 +97,11 @@
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (attach-to overlay '(system satellite))))
+     (follow-anchor overlay '(system satellite))))
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (attach-to satellite '(system satellite) #:offset 'not-a-point)))
+     (follow-anchor satellite '(system satellite) #:offset 'not-a-point)))
   (check-exn
    exn:fail:contract?
    (lambda ()

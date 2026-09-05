@@ -8,7 +8,7 @@
 ;; x = 2 becomes x + x = 2 + x by adding x to both sides. The original x is
 ;; still present while two transient copies follow different curved routes.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)
@@ -149,7 +149,7 @@
   (define after-operation
     (scene-play
      (scene-wait pulsed 1/2)
-     (transform-matching-formula
+     (transform-matching-parts
       source
       destination
       #:matches

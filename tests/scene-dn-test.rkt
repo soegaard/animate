@@ -9,7 +9,8 @@
          racket/draw
          racket/file
          racket/math
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 (module+ test
   (define (check-vec2-close actual expected [tolerance 1e-7])

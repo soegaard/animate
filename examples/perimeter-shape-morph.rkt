@@ -7,7 +7,7 @@
 ;; Circle and rectangle primitives share canonical cardinal/corner perimeter
 ;; anchors. The square's four corners therefore round evenly into a circle.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

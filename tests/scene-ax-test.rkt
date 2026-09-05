@@ -1,4 +1,5 @@
 #lang racket/base
+(require "../experimental.rkt")
 
 ;;;
 ;;; SCENE-AX Dependency-Driven Derived Geometry Tests

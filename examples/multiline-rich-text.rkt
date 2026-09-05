@@ -8,7 +8,7 @@
 ;; Its styled inline terms are regular immutable text spans; the formula keeps
 ;; its own semantic term colours during the fixed-equals rewrite.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

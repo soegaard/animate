@@ -7,7 +7,7 @@
 ;; The outline is measured after the card's sampled motion and scale. The
 ;; fixed annotation's leader follows the card's live rendered right edge.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

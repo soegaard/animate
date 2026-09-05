@@ -8,7 +8,8 @@
 ;; subpath death and one closed-loop birth in the same compound path.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

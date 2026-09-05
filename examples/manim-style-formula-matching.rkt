@@ -8,7 +8,7 @@
 ;; intended matchable pieces explicit without coordinating generated part IDs.
 
 (require (only-in racket/math pi)
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

@@ -8,7 +8,7 @@
 ;; is a separate renderer-aware layout relation, declared against the altitude's
 ;; rendered top anchor. Neither is a mutable per-frame callback.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

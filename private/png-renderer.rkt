@@ -20,11 +20,13 @@
          racket/path
          "camera.rkt"
          "frame-renderer.rkt"
+         "scene-frame-grid.rkt"
          "ode-flow.rkt"
          "pict-adapter.rkt"
          "pict-renderer.rkt"
          "scene.rkt"
-         "shape-pict-renderers.rkt")
+         "shape-pict-renderers.rkt"
+         "../version.rkt")
 
 ;; Exports
 (provide render-frames!
@@ -90,10 +92,11 @@
 
 ;; render-diagnostics contains the deterministic output paths, actual worker
 ;; count, wall time, per-frame render/write durations in frame-index order, and
-;; the resource-cache counter deltas observed for built-in renderers.
+;; the resource-cache counter deltas observed for built-in renderers. Its
+;; release identity records the implementation that produced those files.
 (struct render-diagnostics
   (paths frame-count workers elapsed-milliseconds frame-milliseconds
-         cache-hits cache-misses cache-evictions)
+         cache-hits cache-misses cache-evictions release-version release-stage)
   #:transparent)
 
 ;; pending-frame transfers one finished bitmap from a render worker to the
@@ -253,7 +256,9 @@
    (- (renderer-cache-counters-misses after-counters)
       (renderer-cache-counters-misses before-counters))
    (- (renderer-cache-counters-evictions after-counters)
-      (renderer-cache-counters-evictions before-counters))))
+      (renderer-cache-counters-evictions before-counters))
+   animate-version
+   animate-stage))
 
 ; render-frame-index-jobs! : scene? (listof exact-nonnegative-integer?)
 ;                            path-string? exact-positive-integer?

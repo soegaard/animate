@@ -8,7 +8,7 @@
 ;; requests rebuilds the graph's derived arrow and label children at each sampled
 ;; time; no object keeps mutable frame-to-frame updater state.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

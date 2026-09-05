@@ -4,7 +4,7 @@
 ;;; SCENE-EC: Semantic vector paints
 ;;;
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

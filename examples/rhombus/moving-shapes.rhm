@@ -3,7 +3,8 @@
 // The semantic Visual model and renderer protocol are implemented in Racket,
 // but their ordinary values and functions can be used directly from Rhombus.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def moving_rectangle = rectangle(

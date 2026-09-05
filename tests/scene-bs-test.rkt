@@ -75,7 +75,7 @@
   (define animated
     (scene-play
      (scene-add (make-scene) source)
-     (transform-matching-formula source destination)
+    (transform-matching-parts source destination)
      #:duration 2))
 
   (define midpoint
@@ -114,7 +114,7 @@
   ;; two different pieces.
   (check-true
    (transform-formula-parts-request?
-    (transform-matching-formula
+    (transform-matching-parts
      source
      destination
      #:matches (list (formula-part-match 'plus 'minus)))))

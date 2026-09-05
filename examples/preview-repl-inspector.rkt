@@ -5,9 +5,9 @@
 ;; (wait! 1), (undo!), (inspect), or (reload!).
 
 (require racket/runtime-path
-         "../authoring.rkt"
-         "../main.rkt"
-         "../preview.rkt")
+         animate/authoring
+         animate
+         animate/preview)
 
 (define-scene-program inspector-demo
   #:initial

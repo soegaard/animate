@@ -8,7 +8,8 @@
          racket/file
          racket/list
          (only-in racket/math pi)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 (define (approximately=? first second [tolerance 1e-8])
   (<= (abs (- first second)) tolerance))

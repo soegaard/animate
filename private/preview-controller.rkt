@@ -19,11 +19,17 @@
          "frame-renderer.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers)
          "preview-cache.rkt"
+         "preview-cancellation.rkt"
+         "preview-diagnostics.rkt"
          "preview-model.rkt"
+         "preview-quality.rkt"
+         "preview-render-request.rkt"
+         "preview-worker-process.rkt"
          "scene.rkt")
 
 (provide (struct-out preview-event)
          (struct-out preview-status)
+         (struct-out preview-playback-range)
          preview-session?
          open-preview-controller
          preview-open?
@@ -31,14 +37,26 @@
          preview-current-frame
          preview-current-time
          preview-current-sample
+         preview-displayed-sample
          preview-current-bitmap
+         preview-current-quality
          preview-playing?
          preview-session-status
          preview-seek-frame!
          preview-seek!
+         preview-scrub-frame!
+         preview-scrub!
          preview-step!
          preview-play!
          preview-play-range!
+         preview-playback-speed
+         preview-set-playback-speed!
+         preview-loop-range
+         preview-set-loop-range!
+         preview-clear-loop-range!
+         preview-playback-policy
+         preview-set-playback-policy!
+         preview-quality-policy
          preview-pause!
          preview-toggle-play!
          preview-jump-to-section!
@@ -51,6 +69,10 @@
          preview-set-render-spec!
          preview-set-source!
          preview-report-error!
+         preview-canceled-request-count
+         preview-session-trace
+         preview-session-diagnostics
+         preview-write-session-trace!
          preview-add-close-hook!
          preview-close!)
 
@@ -81,7 +103,24 @@
                         cache-count
                         pending-count
                         rendering?
-                        error)
+                        error
+                        canceled-request-count
+                        quality
+                        worker-mode
+                        playback-speed
+                        loop-range
+                        looping?
+                        displayed-sample
+                        displayed-frame
+                        displayed-time
+                        visual-lag-milliseconds
+                        last-render-diagnostics)
+  #:transparent)
+
+;; A half-open semantic-time range, shared by a timeline selection, a one-shot
+;; range playback, and optional looping.  Keeping it as an immutable value
+;; prevents the GUI from owning a separate, frame-rounded interpretation.
+(struct preview-playback-range (start end)
   #:transparent)
 
 
@@ -95,10 +134,10 @@
 (struct controller-reply (ok? value)
   #:transparent)
 
-(struct render-job (key document sample render-spec)
+(struct render-job (request key document sample render-spec)
   #:transparent)
 
-(struct render-result (key value bytes error)
+(struct render-result (request key status value bytes diagnostics error)
   #:transparent)
 
 (struct controller-state (document
@@ -107,14 +146,29 @@
                           cache
                           current-sample
                           current-bitmap
+                          displayed-sample
+                          quality-policy
+                          current-quality
+                          worker-mode
+                          scrubbing?
+                          last-scrub-milliseconds
+                          settle-milliseconds
                           playing?
+                          playback-policy
+                          playback-speed
+                          loop-range
+                          looping?
                           play-start-index
                           play-end-index
                           play-start-milliseconds
                           high-jobs
                           low-jobs
                           pending
-                          active-key
+                          active-job
+                          next-request-id
+                          trace
+                          canceled-request-count
+                          last-render-diagnostics
                           error
                           event-callback)
   #:mutable
@@ -125,7 +179,10 @@
 ;;; Construction
 ;;;
 
-;; `producer` receives immutable values in the order document, sample, spec.
+;; `producer` receives immutable values in the order document, sample, spec,
+;; cancellation-token.  It must treat the token cooperatively: built-in work
+;; checks at deterministic semantic boundaries while arbitrary custom code is
+;; allowed to finish before its obsolete result is discarded.
 ;; Tests may inject a controlled fake producer; production defaults to the same
 ;; scene->pict/pict->bitmap path as ordinary frame rendering.
 (define (open-preview-controller source
@@ -138,13 +195,21 @@
                                  #:supersample [supersample 1]
                                  #:cache-megabytes [cache-megabytes 128]
                                  #:prefetch [prefetch 3]
-                                 #:producer [producer default-frame-producer]
+                                 #:playback-policy [playback-policy 'realtime]
+                                 #:quality-policy [quality-policy 'adaptive]
+                                 #:settle-milliseconds [settle-milliseconds 120]
+                                 #:worker-mode [worker-mode 'in-process]
+                                 #:producer [producer #f]
                                  #:byte-size [byte-size default-bitmap-bytes]
                                  #:on-event [on-event void])
-  (unless (procedure? producer)
-    (raise-argument-error 'open-preview-controller "procedure?" producer))
-  (unless (procedure? byte-size)
-    (raise-argument-error 'open-preview-controller "procedure?" byte-size))
+  (define actual-producer (or producer default-frame-producer))
+  (unless (procedure-arity-includes? actual-producer 4)
+    (raise-argument-error
+     'open-preview-controller
+     "procedure accepting document, sample, render-spec, and cancellation-token"
+     actual-producer))
+  (unless (procedure-arity-includes? byte-size 1)
+    (raise-argument-error 'open-preview-controller "procedure accepting one bitmap value" byte-size))
   (unless (procedure? on-event)
     (raise-argument-error 'open-preview-controller "procedure?" on-event))
   (unless (and (real? cache-megabytes) (rational? cache-megabytes)
@@ -152,6 +217,17 @@
     (raise-argument-error 'open-preview-controller "positive finite real?" cache-megabytes))
   (unless (exact-nonnegative-integer? prefetch)
     (raise-argument-error 'open-preview-controller "exact-nonnegative-integer?" prefetch))
+  (unless (memq playback-policy '(realtime exact))
+    (raise-argument-error 'open-preview-controller "'realtime or 'exact" playback-policy))
+  (unless (memq quality-policy '(adaptive full))
+    (raise-argument-error 'open-preview-controller "'adaptive or 'full" quality-policy))
+  (unless (memq worker-mode '(in-process subprocess))
+    (raise-argument-error 'open-preview-controller "'in-process or 'subprocess" worker-mode))
+  (unless (and (exact-positive-integer? settle-milliseconds)
+               (<= settle-milliseconds 10000))
+    (raise-argument-error 'open-preview-controller
+                          "exact-positive-integer? no greater than 10000"
+                          settle-milliseconds))
   (define spec
     (make-preview-render-spec #:fps fps #:camera camera #:renderers renderers
                               #:pixel-scale pixel-scale #:supersample supersample))
@@ -165,11 +241,13 @@
   (define jobs (make-async-channel))
   (define alive? (box #t))
   (define worker
-    (thread (lambda () (renderer-loop jobs completed producer byte-size))))
+    (thread (lambda () (renderer-loop jobs completed actual-producer byte-size))))
   (define state
     (controller-state document spec 0 (make-preview-cache byte-limit)
-                      initial-sample #f #f #f #f #f
-                      '() '() (make-hash) #f #f on-event))
+                      initial-sample #f #f quality-policy
+                      (full-quality-for spec) worker-mode #f #f settle-milliseconds
+                      #f playback-policy 1 #f #f #f #f #f
+                      '() '() (make-hash) #f 0 (make-preview-trace) 0 #f #f on-event))
   (define controller
     (thread
      (lambda ()
@@ -201,8 +279,14 @@
 (define (preview-current-sample session)
   (status-field 'preview-current-sample session preview-status-sample))
 
+(define (preview-displayed-sample session)
+  (status-field 'preview-displayed-sample session preview-status-displayed-sample))
+
 (define (preview-current-bitmap session)
   (send-controller-command 'preview-current-bitmap session 'bitmap '()))
+
+(define (preview-current-quality session)
+  (status-field 'preview-current-quality session preview-status-quality))
 
 (define (preview-playing? session)
   (status-field 'preview-playing? session preview-status-playing?))
@@ -210,11 +294,40 @@
 (define (preview-session-status session)
   (send-controller-command 'preview-session-status session 'status '()))
 
+(define (preview-canceled-request-count session)
+  (status-field 'preview-canceled-request-count session
+                preview-status-canceled-request-count))
+
+;; Return a datum snapshot so callers cannot mutate controller diagnostics
+;; state from a GUI eventspace or REPL thread.
+(define (preview-session-trace session)
+  (send-controller-command 'preview-session-trace session 'trace '()))
+
+;; An immutable production-monitor snapshot.  It deliberately distinguishes
+;; the requested sample from the last bitmap that was actually installed: a
+;; scrub can choose a new semantic time while the previous image remains on
+;; screen until the current render completes.
+(define (preview-session-diagnostics session)
+  (send-controller-command 'preview-session-diagnostics session 'diagnostics '()))
+
+(define (preview-write-session-trace! session path)
+  (unless (path-string? path)
+    (raise-argument-error 'preview-write-session-trace! "path-string?" path))
+  (preview-write-trace!
+   (send-controller-command 'preview-write-session-trace! session 'trace-object '())
+   path))
+
 (define (preview-seek-frame! session frame-index)
   (send-controller-command 'preview-seek-frame! session 'seek-frame (list frame-index)))
 
 (define (preview-seek! session time)
   (send-controller-command 'preview-seek! session 'seek-time (list time)))
+
+(define (preview-scrub-frame! session frame-index)
+  (send-controller-command 'preview-scrub-frame! session 'scrub-frame (list frame-index)))
+
+(define (preview-scrub! session time)
+  (send-controller-command 'preview-scrub! session 'scrub-time (list time)))
 
 (define (preview-step! session [delta 1])
   (send-controller-command 'preview-step! session 'step (list delta)))
@@ -224,6 +337,34 @@
 
 (define (preview-play-range! session start end)
   (send-controller-command 'preview-play-range! session 'play-range (list start end)))
+
+(define (preview-playback-speed session)
+  (send-controller-command 'preview-playback-speed session 'playback-speed '()))
+
+(define (preview-set-playback-speed! session speed)
+  (send-controller-command 'preview-set-playback-speed! session
+                           'set-playback-speed (list speed)))
+
+(define (preview-loop-range session)
+  (send-controller-command 'preview-loop-range session 'loop-range '()))
+
+(define (preview-set-loop-range! session start end)
+  (send-controller-command 'preview-set-loop-range! session
+                           'set-loop-range (list start end)))
+
+(define (preview-clear-loop-range! session)
+  (send-controller-command 'preview-clear-loop-range! session
+                           'clear-loop-range '()))
+
+(define (preview-playback-policy session)
+  (send-controller-command 'preview-playback-policy session 'playback-policy '()))
+
+(define (preview-set-playback-policy! session policy)
+  (send-controller-command 'preview-set-playback-policy! session
+                           'set-playback-policy (list policy)))
+
+(define (preview-quality-policy session)
+  (send-controller-command 'preview-quality-policy session 'quality-policy '()))
 
 (define (preview-pause! session)
   (send-controller-command 'preview-pause! session 'pause '()))
@@ -299,21 +440,38 @@
 
 (define (controller-loop state commands jobs completed worker alive? prefetch)
   (let loop ()
+    ;; Transport commands have priority over a completed bitmap. This matters
+    ;; for exact looping with a very cheap renderer: without the zero-wait
+    ;; command check, an always-ready completion channel can starve Pause,
+    ;; Close, and Scrub indefinitely.
+    (define waiting-command (sync/timeout 0 commands))
     ;; A short timeout keeps playback tied to a monotonic clock even when no
     ;; command or renderer completion arrives.
     (define message
-      (sync/timeout
-       1/120
-       (handle-evt commands
-                   (lambda (command) (cons 'command command)))
-       (handle-evt completed
-                   (lambda (result) (cons 'result result)))))
+      (or (and waiting-command (cons 'command waiting-command))
+          (sync/timeout
+           1/120
+           (handle-evt commands
+                       (lambda (command) (cons 'command command)))
+           (handle-evt completed
+                       (lambda (result) (cons 'result result))))))
     (cond
       [(and message (eq? (car message) 'command))
        (handle-command! state (cdr message) jobs worker alive? prefetch)]
       [(and message (eq? (car message) 'result))
        (handle-render-result! state (cdr message) jobs prefetch)]
-      [else (advance-playback! state jobs prefetch)])
+      [else
+       ;; A slider callback only says that a new position was chosen; it has no
+       ;; portable "drag ended" event.  The actor therefore settles a scrub
+       ;; after a short idle interval and requests the same semantic frame at
+       ;; full configured preview quality.
+       (settle-scrub! state jobs prefetch)
+       (if (eq? (controller-state-playback-policy state) 'exact)
+           ;; Exact mode deliberately advances on a controller tick rather
+           ;; than recursively from an immediate cache hit. A loop whose two
+           ;; frames are cached must still leave room for Pause and Close.
+           (advance-exact-playback! state jobs prefetch)
+           (advance-playback! state jobs prefetch))])
     (unless (not (unbox alive?))
       (loop))))
 
@@ -332,10 +490,62 @@
          (request-current! state jobs prefetch)
          (void)]
         [(status) (state-status state)]
+        [(playback-policy) (controller-state-playback-policy state)]
+        [(playback-speed) (controller-state-playback-speed state)]
+        [(loop-range) (controller-state-loop-range state)]
+        [(quality-policy) (controller-state-quality-policy state)]
+        [(set-playback-policy)
+         (match-arguments 'set-playback-policy (controller-command-arguments command) 1)
+         (define policy (car (controller-command-arguments command)))
+         (unless (memq policy '(realtime exact))
+           (raise-argument-error 'preview-set-playback-policy! "'realtime or 'exact" policy))
+         (set-controller-state-playback-policy! state policy)
+         (emit! state 'status #f #f)
+         (state-status state)]
+        [(set-playback-speed)
+         (match-arguments 'set-playback-speed (controller-command-arguments command) 1)
+         (define speed (car (controller-command-arguments command)))
+         (unless (and (real? speed) (rational? speed) (positive? speed))
+           (raise-argument-error
+            'preview-set-playback-speed! "positive finite real?" speed))
+         ;; Restart the one controller-owned clock at the displayed semantic
+         ;; frame. This keeps the image stable while the next real-time tick
+         ;; applies the newly requested rate.
+         (set-controller-state-playback-speed! state speed)
+         (when (controller-state-playing? state)
+           (restart-playback-clock! state))
+         (emit! state 'status #f #f)
+         (state-status state)]
+        [(set-loop-range)
+         (match-arguments 'set-loop-range (controller-command-arguments command) 2)
+         (define range
+           (normalize-playback-range
+            state
+            (car (controller-command-arguments command))
+            (cadr (controller-command-arguments command))
+            'preview-set-loop-range!))
+         (set-controller-state-loop-range! state range)
+         ;; Editing in/out points changes the *next* Play operation. It does
+         ;; not surprise an author by jumping or restarting playback already
+         ;; in progress.
+         (emit! state 'status #f #f)
+         range]
+        [(clear-loop-range)
+         (match-arguments 'clear-loop-range (controller-command-arguments command) 0)
+         (set-controller-state-loop-range! state #f)
+         (set-controller-state-looping?! state #f)
+         (emit! state 'status #f #f)
+         (state-status state)]
+        [(trace) (preview-trace->datum (controller-state-trace state))]
+        [(trace-object) (controller-state-trace state)]
+        [(diagnostics) (state-diagnostics state)]
         [(bitmap) (controller-state-current-bitmap state)]
         [(seek-frame)
          (match-arguments 'seek-frame (controller-command-arguments command) 1)
          (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #f)
+         (set-controller-state-current-quality!
+          state (full-quality-for (controller-state-render-spec state)))
          (set-controller-state-current-sample!
           state
           (preview-normalize-frame-sample
@@ -348,6 +558,9 @@
         [(seek-time)
          (match-arguments 'seek-time (controller-command-arguments command) 1)
          (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #f)
+         (set-controller-state-current-quality!
+          state (full-quality-for (controller-state-render-spec state)))
          (set-controller-state-current-sample!
           state
           (preview-normalize-time-sample
@@ -356,12 +569,48 @@
          (set-controller-state-error! state #f)
          (request-current! state jobs prefetch)
          (state-status state)]
+        [(scrub-frame)
+         (match-arguments 'scrub-frame (controller-command-arguments command) 1)
+         (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #t)
+         (set-controller-state-last-scrub-milliseconds!
+          state (current-inexact-monotonic-milliseconds))
+         (set-controller-state-current-quality!
+          state (scrub-quality-for state))
+         (set-controller-state-current-sample!
+          state
+          (preview-normalize-frame-sample
+           (controller-state-document state)
+           (car (controller-command-arguments command))
+           (controller-state-render-spec state)))
+         (set-controller-state-error! state #f)
+         (request-current! state jobs 0)
+         (state-status state)]
+        [(scrub-time)
+         (match-arguments 'scrub-time (controller-command-arguments command) 1)
+         (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #t)
+         (set-controller-state-last-scrub-milliseconds!
+          state (current-inexact-monotonic-milliseconds))
+         (set-controller-state-current-quality!
+          state (scrub-quality-for state))
+         (set-controller-state-current-sample!
+          state
+          (preview-normalize-time-sample
+           (controller-state-document state)
+           (car (controller-command-arguments command))))
+         (set-controller-state-error! state #f)
+         (request-current! state jobs 0)
+         (state-status state)]
         [(step)
          (match-arguments 'step (controller-command-arguments command) 1)
          (define delta (car (controller-command-arguments command)))
          (unless (exact-integer? delta)
            (raise-argument-error 'preview-step! "exact-integer?" delta))
          (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #f)
+         (set-controller-state-current-quality!
+          state (full-quality-for (controller-state-render-spec state)))
          (set-controller-state-current-sample!
           state
           (preview-normalize-frame-sample
@@ -371,8 +620,7 @@
          (request-current! state jobs prefetch)
          (state-status state)]
         [(play)
-         (start-playback! state (current-frame-index state)
-                          (last-frame-index state) jobs prefetch)
+         (start-configured-playback! state jobs prefetch)
          (state-status state)]
         [(play-range)
          (match-arguments 'play-range (controller-command-arguments command) 2)
@@ -382,15 +630,19 @@
          (state-status state)]
         [(pause)
          (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #f)
+         (set-controller-state-looping?! state #f)
+         (set-controller-state-current-quality!
+          state (full-quality-for (controller-state-render-spec state)))
          (emit! state 'status #f #f)
          (state-status state)]
         [(toggle-play)
          (if (controller-state-playing? state)
              (begin
                (set-controller-state-playing?! state #f)
+               (set-controller-state-looping?! state #f)
                (emit! state 'status #f #f))
-             (start-playback! state (current-frame-index state)
-                              (last-frame-index state) jobs prefetch))
+             (start-configured-playback! state jobs prefetch))
          (state-status state)]
         [(jump-section)
          (match-arguments 'jump-section (controller-command-arguments command) 1)
@@ -417,6 +669,8 @@
          (unless (preview-render-spec? spec)
            (raise-argument-error 'preview-set-render-spec! "preview-render-spec?" spec))
          (set-controller-state-render-spec! state spec)
+         (set-controller-state-current-quality! state (full-quality-for spec))
+         (set-controller-state-scrubbing?! state #f)
          (set-controller-state-current-sample!
           state
           (normalize-sample-for-document
@@ -447,6 +701,10 @@
           (preview-normalize-time-sample next-document old-time))
          (set-controller-state-current-bitmap! state #f)
          (set-controller-state-playing?! state #f)
+         (set-controller-state-scrubbing?! state #f)
+         (set-controller-state-looping?! state #f)
+         (set-controller-state-current-quality!
+          state (full-quality-for (controller-state-render-spec state)))
          (invalidate-render! state)
          (request-current! state jobs prefetch)
          (state-status state)]
@@ -460,6 +718,8 @@
          (state-status state)]
         [(close)
          (set-controller-state-playing?! state #f)
+         (cancel-active-job! state 'preview-closed)
+         (clear-queued-jobs! state 'preview-closed)
          (set-box! alive? #f)
          (async-channel-put jobs 'close)
          (thread-wait worker)
@@ -480,23 +740,36 @@
 
 (define (request-current! state jobs prefetch)
   (define sample (controller-state-current-sample state))
+  (define render-spec (active-render-spec state))
   (define key (current-key state))
   (define missing (gensym 'preview-cache-missing))
   (define cached (preview-cache-ref! (controller-state-cache state) key missing))
   (cond
     [(not (eq? cached missing))
      (set-controller-state-current-bitmap! state cached)
+     (set-controller-state-displayed-sample! state sample)
      (emit! state 'frame-ready cached #f)
-     (schedule-prefetch! state jobs prefetch)]
+     (schedule-prefetch! state jobs prefetch)
+     ;; Exact playback advances on the next actor tick. Deferring it avoids
+     ;; recursive cache-hit rendering when a short loop is entirely cached.
+     (void)]
     [else
      ;; A new exact request supersedes queued scrub and prefetch work.  An
-     ;; already-running worker cannot safely be interrupted, but its late result
-     ;; will only be displayed if it still matches this key.
-     (clear-queued-jobs! state)
-     (enqueue-job! state (render-job key
-                                     (controller-state-document state)
-                                     sample
-                                     (controller-state-render-spec state))
+     ;; already-running in-process producer may only cooperate at its safe
+     ;; boundaries, so we cancel it and retain its slot until it reports a
+     ;; result.  The newest exact request is then first in the high queue.
+     (clear-queued-jobs! state 'superseded)
+     (when (and (controller-state-active-job state)
+                (not (equal? key
+                             (render-job-key
+                              (controller-state-active-job state)))))
+       (cancel-active-job! state 'superseded))
+     (enqueue-job! state (make-render-job! state
+                                           key
+                                           (controller-state-document state)
+                                           sample
+                                           render-spec
+                                           (if (controller-state-playing? state) 1 0))
                    #:high? #t)
      (start-next-job! state jobs)
      (emit! state 'rendering #f #f)]))
@@ -507,7 +780,7 @@
     (define sample (controller-state-current-sample state))
     (define fps (frame-sample-fps sample))
     (define document (controller-state-document state))
-    (define spec (controller-state-render-spec state))
+    (define spec (active-render-spec state))
     (for ([index (in-range (add1 (frame-sample-frame-index sample))
                            (add1 (min (last-frame-index state)
                                       (+ (frame-sample-frame-index sample) prefetch))))])
@@ -518,7 +791,8 @@
                                 next-sample spec))
       (define missing (gensym 'preview-cache-missing))
       (when (eq? (preview-cache-ref! (controller-state-cache state) key missing) missing)
-        (enqueue-job! state (render-job key document next-sample spec) #:high? #f)))
+        (enqueue-job! state (make-render-job! state key document next-sample spec 4)
+                      #:high? #f)))
     (start-next-job! state jobs)))
 
 (define (enqueue-job! state job #:high? high?)
@@ -533,15 +807,41 @@
          state
          (append (controller-state-low-jobs state) (list job))))))
 
-(define (clear-queued-jobs! state)
+(define (clear-queued-jobs! state [reason 'superseded])
   (for ([job (in-list (append (controller-state-high-jobs state)
                               (controller-state-low-jobs state)))])
+    (cancel! (preview-render-request-cancellation-token (render-job-request job))
+             reason)
     (hash-remove! (controller-state-pending state) (render-job-key job)))
   (set-controller-state-high-jobs! state '())
   (set-controller-state-low-jobs! state '()))
 
+;; New job identifiers are controller-local and monotonic.  They allow a
+;; renderer, future subprocess worker, and diagnostics trace to distinguish
+;; two requests for the same semantic frame after a source reload.
+(define (make-render-job! state key document sample render-spec priority)
+  (define request-id (add1 (controller-state-next-request-id state)))
+  (set-controller-state-next-request-id! state request-id)
+  (define request
+    (preview-render-request
+     #:id request-id
+     #:document-generation (preview-frame-key-generation key)
+     #:render-generation (preview-frame-key-render-generation key)
+     #:sample sample
+     #:quality
+     (controller-state-current-quality state)
+     #:priority priority))
+  (render-job request key document sample render-spec))
+
+(define (cancel-active-job! state [reason 'superseded])
+  (define active (controller-state-active-job state))
+  (when active
+    (cancel! (preview-render-request-cancellation-token (render-job-request active))
+             reason))
+  (void))
+
 (define (start-next-job! state jobs)
-  (unless (controller-state-active-key state)
+  (unless (controller-state-active-job state)
     (define job
       (cond
         [(pair? (controller-state-high-jobs state))
@@ -554,12 +854,15 @@
          next]
         [else #f]))
     (when job
-      (set-controller-state-active-key! state (render-job-key job))
+      (set-controller-state-active-job! state job)
       (async-channel-put jobs job))))
 
 (define (handle-render-result! state result jobs prefetch)
-  (when (equal? (controller-state-active-key state) (render-result-key result))
-    (set-controller-state-active-key! state #f))
+  (when (and (controller-state-active-job state)
+             (= (preview-render-request-id
+                 (render-job-request (controller-state-active-job state)))
+                (preview-render-request-id (render-result-request result))))
+    (set-controller-state-active-job! state #f))
   (hash-remove! (controller-state-pending state) (render-result-key result))
   (define still-current-generation?
     (and (= (preview-frame-key-generation (render-result-key result))
@@ -570,6 +873,46 @@
     [(not still-current-generation?)
      ;; Stale work is deliberately neither cached nor displayed.
      (void)]
+    [(memq (render-result-status result) '(canceled superseded))
+     ;; Cancellation is an expected scheduling outcome.  It is neither an
+     ;; author error nor a cacheable render result.
+     (set-controller-state-canceled-request-count!
+      state (add1 (controller-state-canceled-request-count state)))
+     (preview-trace-record!
+      (controller-state-trace state)
+      (if (eq? (render-result-status result) 'superseded)
+          'superseded-request
+          'canceled-request)
+      (current-inexact-monotonic-milliseconds)
+      (hasheq 'request-id (preview-render-request-id (render-result-request result))
+              'status (render-result-status result)
+              'reason (and (render-result-error result)
+                           (exn:fail:preview-canceled-reason
+                            (render-result-error result)))))
+     (void)]
+    [(eq? (render-result-status result) 'timed-out)
+     ;; The subprocess supervisor has already started a clean replacement.
+     ;; Preserve the last good bitmap and request the current semantic frame
+     ;; again. Timeout and restart are separate diagnostic facts.
+     (preview-trace-record!
+      (controller-state-trace state) 'render-timed-out
+      (current-inexact-monotonic-milliseconds)
+      (hasheq 'request-id (preview-render-request-id (render-result-request result))))
+     (preview-trace-record!
+      (controller-state-trace state) 'worker-restarted
+      (current-inexact-monotonic-milliseconds)
+      (hasheq 'request-id (preview-render-request-id (render-result-request result))
+              'reason 'timeout))
+     (request-current! state jobs prefetch)]
+    [(eq? (render-result-status result) 'worker-restarted)
+     ;; The process supervisor has already loaded a clean replacement.  Keep
+     ;; the last good bitmap visible and immediately ask it for the still
+     ;; current semantic frame.
+     (preview-trace-record!
+      (controller-state-trace state) 'worker-restarted
+      (current-inexact-monotonic-milliseconds)
+      (hasheq 'request-id (preview-render-request-id (render-result-request result))))
+     (request-current! state jobs prefetch)]
     [(render-result-error result)
      (set-controller-state-error! state (render-result-error result))
      (emit! state 'error #f (render-result-error result))]
@@ -580,9 +923,22 @@
                          (render-result-bytes result))
      (when (equal? (render-result-key result) (current-key state))
        (set-controller-state-current-bitmap! state (render-result-value result))
+       (set-controller-state-displayed-sample!
+        state
+        (controller-state-current-sample state))
        (set-controller-state-error! state #f)
        (emit! state 'frame-ready (render-result-value result) #f)
-       (schedule-prefetch! state jobs prefetch))])
+       (schedule-prefetch! state jobs prefetch)
+       (void))])
+  (when (hash? (render-result-diagnostics result))
+    (set-controller-state-last-render-diagnostics!
+     state
+     (make-immutable-hash
+      (hash->list (render-result-diagnostics result))))
+    (preview-trace-record!
+     (controller-state-trace state) 'render-result
+     (current-inexact-monotonic-milliseconds)
+     (render-result-diagnostics result)))
   (start-next-job! state jobs))
 
 (define (invalidate-render! state)
@@ -590,8 +946,10 @@
    state
    (add1 (controller-state-render-generation state)))
   (preview-cache-clear! (controller-state-cache state))
-  (clear-queued-jobs! state)
+  (cancel-active-job! state 'render-invalidated)
+  (clear-queued-jobs! state 'render-invalidated)
   (set-controller-state-current-bitmap! state #f)
+  (set-controller-state-displayed-sample! state #f)
   (set-controller-state-error! state #f))
 
 
@@ -599,17 +957,44 @@
 ;;; Playback and Timeline Navigation
 ;;;
 
-(define (start-playback! state start-index end-index jobs prefetch)
+(define (start-configured-playback! state jobs prefetch)
+  (define range (controller-state-loop-range state))
+  (cond
+    [range
+     (define fps (preview-render-spec-fps (controller-state-render-spec state)))
+     (define start-index (playback-range-start-index range fps))
+     (define end-index (min (playback-range-end-index range fps)
+                            (last-frame-index state)))
+     (define current (current-frame-index state))
+     ;; A click on Play within the marked interval continues from the
+     ;; playhead. Outside it, playback begins at the in point. After reaching
+     ;; the out point, the loop always returns to the in point.
+     (start-playback! state
+                      (if (<= start-index current end-index) current start-index)
+                      end-index
+                      #t
+                      jobs prefetch)]
+    [else
+     (start-playback! state (current-frame-index state)
+                      (last-frame-index state)
+                      #f
+                      jobs prefetch)]))
+
+(define (start-playback! state start-index end-index looping? jobs prefetch)
   (cond
     [(negative? end-index)
      (set-controller-state-playing?! state #f)]
     [else
      (define start (min (max start-index 0) end-index))
+     (set-controller-state-scrubbing?! state #f)
+     (set-controller-state-current-quality!
+      state (full-quality-for (controller-state-render-spec state)))
      (set-controller-state-current-sample!
       state
       (frame-sample start (preview-render-spec-fps (controller-state-render-spec state))))
      (set-controller-state-play-start-index! state start)
      (set-controller-state-play-end-index! state end-index)
+     (set-controller-state-looping?! state looping?)
      (set-controller-state-play-start-milliseconds! state
                                                      (current-inexact-monotonic-milliseconds))
      (set-controller-state-playing?! state #t)
@@ -617,30 +1002,47 @@
      (emit! state 'status #f #f)]))
 
 (define (start-playback-range! state start end jobs prefetch)
-  (check-time 'preview-play-range! "start" start)
-  (check-time 'preview-play-range! "end" end)
+  (define range (normalize-playback-range state start end 'preview-play-range!))
+  (define fps (preview-render-spec-fps (controller-state-render-spec state)))
+  (start-playback! state
+                   (playback-range-start-index range fps)
+                   (min (playback-range-end-index range fps)
+                        (last-frame-index state))
+                   #f jobs prefetch))
+
+;; Normalizing timing ranges in one place makes the public loop and one-shot
+;; forms agree about clamping and half-open endpoints. The stored range stays
+;; in semantic seconds; frame rounding happens only at the controller boundary.
+(define (normalize-playback-range state start end who)
+  (check-time who "start" start)
+  (check-time who "end" end)
   (unless (< start end)
-    (raise-arguments-error
-     'preview-play-range!
-     "start must be less than end"
-     "start" start "end" end))
-  (define document (controller-state-document state))
-  (define duration (scene-duration (preview-document-scene document)))
+    (raise-arguments-error who "start must be less than end" "start" start "end" end))
+  (define duration
+    (scene-duration (preview-document-scene (controller-state-document state))))
   (define clamped-start (min (max start 0) duration))
   (define clamped-end (min (max end 0) duration))
   (unless (< clamped-start clamped-end)
     (raise-arguments-error
-     'preview-play-range!
-     "range intersects the scene"
+     who "range intersects the scene"
      "start" start "end" end "duration" duration))
-  (define fps (preview-render-spec-fps (controller-state-render-spec state)))
-  (define start-index (inexact->exact (ceiling (* clamped-start fps))))
-  ;; The endpoint is exclusive, exactly like authored sections.
-  (define end-index (sub1 (inexact->exact (ceiling (* clamped-end fps)))))
-  (start-playback! state start-index (min end-index (last-frame-index state)) jobs prefetch))
+  (preview-playback-range clamped-start clamped-end))
+
+(define (playback-range-start-index range fps)
+  (inexact->exact (ceiling (* (preview-playback-range-start range) fps))))
+
+(define (playback-range-end-index range fps)
+  ;; As with authored sections, the out point is exclusive.
+  (sub1 (inexact->exact (ceiling (* (preview-playback-range-end range) fps)))))
+
+(define (restart-playback-clock! state)
+  (set-controller-state-play-start-index! state (current-frame-index state))
+  (set-controller-state-play-start-milliseconds!
+   state (current-inexact-monotonic-milliseconds)))
 
 (define (advance-playback! state jobs prefetch)
-  (when (controller-state-playing? state)
+  (when (and (controller-state-playing? state)
+             (eq? (controller-state-playback-policy state) 'realtime))
     (define elapsed
       (/ (- (current-inexact-monotonic-milliseconds)
             (controller-state-play-start-milliseconds state))
@@ -648,20 +1050,64 @@
     (define fps (preview-render-spec-fps (controller-state-render-spec state)))
     (define desired
       (+ (controller-state-play-start-index state)
-         (inexact->exact (floor (* fps elapsed)))))
+         (inexact->exact
+          (floor (* fps elapsed (controller-state-playback-speed state))))))
     (cond
       [(> desired (controller-state-play-end-index state))
-       (set-controller-state-playing?! state #f)
-       (set-controller-state-current-sample!
-        state
-        (frame-sample (controller-state-play-end-index state) fps))
-       (request-current! state jobs prefetch)
-       (emit! state 'status #f #f)]
+       (if (controller-state-looping? state)
+           (let* ([range (controller-state-loop-range state)]
+                  [start-index
+                   (playback-range-start-index range fps)]
+                  [length (add1 (- (controller-state-play-end-index state)
+                                   start-index))]
+                  ;; The initial pass may start in the middle of a marked
+                  ;; range. Every later pass is anchored at its in point.
+                  [wrapped
+                   (+ start-index
+                      (modulo (- desired
+                                 (add1 (controller-state-play-end-index state)))
+                              length))])
+             (set-controller-state-current-sample! state (frame-sample wrapped fps))
+             (request-current! state jobs prefetch))
+           (begin
+             (set-controller-state-playing?! state #f)
+             (set-controller-state-looping?! state #f)
+             (set-controller-state-current-sample!
+              state
+              (frame-sample (controller-state-play-end-index state) fps))
+             (request-current! state jobs prefetch)
+             (emit! state 'status #f #f)))]
       [(not (equal? (controller-state-current-sample state)
                     (frame-sample desired fps)))
        (set-controller-state-current-sample! state (frame-sample desired fps))
        ;; Slow rendering cannot slow semantic playback.  A newly desired frame
        ;; replaces queued frames that were never displayed.
+       (request-current! state jobs prefetch)])))
+
+;; Exact playback advances after the currently requested frame is installed,
+;; not after an elapsed wall-clock interval. This intentionally slows down
+;; when rendering is expensive, while preserving every discrete frame.
+(define (advance-exact-playback! state jobs prefetch)
+  (when (controller-state-playing? state)
+    (define next-index (add1 (current-frame-index state)))
+    (cond
+      [(> next-index (controller-state-play-end-index state))
+       (if (controller-state-looping? state)
+           (let* ([range (controller-state-loop-range state)]
+                  [fps (preview-render-spec-fps (controller-state-render-spec state))])
+             (set-controller-state-current-sample!
+              state
+              (frame-sample (playback-range-start-index range fps) fps))
+             (request-current! state jobs prefetch))
+           (begin
+             (set-controller-state-playing?! state #f)
+             (set-controller-state-looping?! state #f)
+             (emit! state 'status #f #f)))]
+      [else
+       (set-controller-state-current-sample!
+        state
+        (frame-sample next-index
+                      (preview-render-spec-fps (controller-state-render-spec state))))
        (request-current! state jobs prefetch)])))
 
 (define (jump-to-section! state name jobs prefetch)
@@ -676,6 +1122,9 @@
   (define indices
     (preview-document-section-frame-indices document name (controller-state-render-spec state)))
   (set-controller-state-playing?! state #f)
+  (set-controller-state-scrubbing?! state #f)
+  (set-controller-state-current-quality!
+   state (full-quality-for (controller-state-render-spec state)))
   (set-controller-state-current-sample!
    state
    (if (pair? indices)
@@ -709,6 +1158,9 @@
   (unless cue-value
     (raise-arguments-error 'preview-jump-to-cue! "known cue name" "name" name))
   (set-controller-state-playing?! state #f)
+  (set-controller-state-scrubbing?! state #f)
+  (set-controller-state-current-quality!
+   state (full-quality-for (controller-state-render-spec state)))
   (set-controller-state-current-sample!
    state
    (preview-normalize-time-sample (controller-state-document state) (cue-time cue-value)))
@@ -723,22 +1175,67 @@
   (let loop ()
     (define job (async-channel-get jobs))
     (unless (eq? job 'close)
+      (define started (current-inexact-monotonic-milliseconds))
       (define result
         (with-handlers
-            ([exn:fail?
+            ([exn:fail:preview-canceled?
+              (lambda (canceled)
+                (render-result (render-job-request job)
+                               (render-job-key job)
+                               (if (eq? (exn:fail:preview-canceled-reason canceled)
+                                        'superseded)
+                                   'superseded
+                                   'canceled)
+                               #f 0
+                               (hasheq 'render-milliseconds
+                                       (- (current-inexact-monotonic-milliseconds) started))
+                               canceled))]
+             [exn:fail:preview-worker-timed-out?
+              (lambda (timed-out)
+                (render-result (render-job-request job)
+                               (render-job-key job)
+                               'timed-out #f 0
+                               (hasheq 'render-milliseconds
+                                       (- (current-inexact-monotonic-milliseconds) started))
+                               timed-out))]
+             [exn:fail:preview-worker-restarted?
+              (lambda (restarted)
+                (render-result (render-job-request job)
+                               (render-job-key job)
+                               'worker-restarted #f 0
+                               (hasheq 'render-milliseconds
+                                       (- (current-inexact-monotonic-milliseconds) started))
+                               restarted))]
+             [exn:fail?
               (lambda (error)
-                (render-result (render-job-key job) #f 0 error))])
+                (render-result (render-job-request job)
+                               (render-job-key job)
+                               'failed #f 0
+                               (hasheq 'render-milliseconds
+                                       (- (current-inexact-monotonic-milliseconds) started))
+                               error))])
+          (define token
+            (preview-render-request-cancellation-token
+             (render-job-request job)))
+          (check-cancellation token)
           (define value
             (producer (render-job-document job)
                       (render-job-sample job)
-                      (render-job-render-spec job)))
+                      (render-job-render-spec job)
+                      token))
+          (check-cancellation token)
           (define bytes (byte-size value))
           (unless (exact-nonnegative-integer? bytes)
             (raise-arguments-error
              'preview-frame-producer
              "byte-size procedure returned exact-nonnegative-integer?"
              "bytes" bytes))
-          (render-result (render-job-key job) value bytes #f)))
+          (render-result (render-job-request job)
+                         (render-job-key job)
+                         'complete value bytes
+                         (hasheq 'render-milliseconds
+                                 (- (current-inexact-monotonic-milliseconds) started))
+                         #f)))
       (async-channel-put completed result)
       (loop))))
 
@@ -746,15 +1243,18 @@
 ;; just as final frame rendering is.  `pixel-scale` changes only the sampled
 ;; camera raster dimensions; world geometry, scene sampling, and easing remain
 ;; identical.
-(define (default-frame-producer document sample render-spec)
+(define (default-frame-producer document sample render-spec cancellation-token)
+  (check-cancellation cancellation-token)
   (define scene (preview-document-scene document))
   (define time (preview-sample-time document sample))
   (define source-camera
     (or (preview-render-spec-camera render-spec)
         (let-values ([(ignored camera) (scene-sample-with-camera scene time)])
           camera)))
+  (check-cancellation cancellation-token)
   (define preview-camera
     (camera-at-pixel-scale source-camera (preview-render-spec-pixel-scale render-spec)))
+  (check-cancellation cancellation-token)
   (pict->bitmap
    (scene->pict scene time
                 #:camera preview-camera
@@ -784,26 +1284,115 @@
 (define (state-status state)
   (define document (controller-state-document state))
   (define sample (controller-state-current-sample state))
+  (define displayed (controller-state-displayed-sample state))
+  (define desired-time (preview-sample-time document sample))
+  (define displayed-time
+    (and displayed (preview-sample-time document displayed)))
+  ;; This is semantic visual lag, not a claim about GUI paint latency. It
+  ;; answers the production question “how far behind the requested timeline is
+  ;; the bitmap currently on screen?” without inventing a value before any
+  ;; bitmap exists.
+  (define visual-lag
+    (and displayed-time
+         (* 1000 (max 0 (- desired-time displayed-time)))))
   (preview-status #t
                   (preview-document-source document)
                   (preview-document-generation document)
                   (controller-state-render-generation state)
                   sample
                   (preview-sample-frame-index sample)
-                  (preview-sample-time document sample)
+                  desired-time
                   (controller-state-playing? state)
                   (current-section-name state)
                   (preview-cache-byte-count (controller-state-cache state))
                   (preview-cache-count (controller-state-cache state))
                   (hash-count (controller-state-pending state))
-                  (and (controller-state-active-key state) #t)
-                  (controller-state-error state)))
+                  (and (controller-state-active-job state) #t)
+                  (controller-state-error state)
+                  (controller-state-canceled-request-count state)
+                  (controller-state-current-quality state)
+                  (controller-state-worker-mode state)
+                  (controller-state-playback-speed state)
+                  (controller-state-loop-range state)
+                  (and (controller-state-playing? state)
+                       (controller-state-looping? state))
+                  displayed
+                  (and displayed (preview-sample-frame-index displayed))
+                  displayed-time
+                  visual-lag
+                  (controller-state-last-render-diagnostics state)))
+
+;; The status record is ideal for a controller/GUI event. This richer immutable
+;; datum is convenient for bug reports, a diagnostic pane, and headless tests.
+;; It contains only measured or directly known values; #f means “not available”
+;; rather than an estimated placeholder.
+(define (state-diagnostics state)
+  (define status (state-status state))
+  (hasheq
+   'timeline-time (preview-status-time status)
+   'desired-frame (preview-status-frame status)
+   'displayed-frame (preview-status-displayed-frame status)
+   'displayed-time (preview-status-displayed-time status)
+   'visual-lag-milliseconds (preview-status-visual-lag-milliseconds status)
+   'preview-quality (preview-quality-name (preview-status-quality status))
+   'worker-mode (preview-status-worker-mode status)
+   'worker-hard-cancellation?
+   (eq? (preview-status-worker-mode status) 'subprocess)
+   'rendering? (preview-status-rendering? status)
+   'pending-requests (preview-status-pending-count status)
+   'cache-bytes (preview-status-cache-bytes status)
+   'cache-count (preview-status-cache-count status)
+   'canceled-requests (preview-status-canceled-request-count status)
+   'recent-render-diagnostics
+   (or (preview-status-last-render-diagnostics status) #hasheq())
+   'playback-speed (preview-status-playback-speed status)
+   'loop-range (preview-status-loop-range status)))
 
 (define (current-key state)
   (make-preview-frame-key (controller-state-document state)
                           (controller-state-render-generation state)
                           (controller-state-current-sample state)
-                          (controller-state-render-spec state)))
+                          (active-render-spec state)))
+
+;; Quality remains a rendering choice only.  All levels retain the configured
+;; FPS, camera, renderer collection, and world-space sampling path.  The
+;; different immutable render specs merely produce separate bitmap cache keys.
+(define (active-render-spec state)
+  (define base (controller-state-render-spec state))
+  (define quality (controller-state-current-quality state))
+  (make-preview-render-spec
+   #:fps (preview-render-spec-fps base)
+   #:camera (preview-render-spec-camera base)
+   #:renderers (preview-render-spec-renderers base)
+   #:pixel-scale (preview-quality-pixel-scale quality)
+   #:supersample (preview-quality-supersample quality)))
+
+(define (full-quality-for render-spec)
+  (preview-quality #:name 'full
+                   #:pixel-scale (preview-render-spec-pixel-scale render-spec)
+                   #:supersample (preview-render-spec-supersample render-spec)))
+
+(define (scrub-quality-for state)
+  (define spec (controller-state-render-spec state))
+  (if (eq? (controller-state-quality-policy state) 'full)
+      (full-quality-for spec)
+      (preview-quality
+       #:name 'draft
+       #:pixel-scale (* 1/2 (preview-render-spec-pixel-scale spec))
+       #:supersample (preview-render-spec-supersample spec))))
+
+(define (settle-scrub! state jobs prefetch)
+  (when (and (controller-state-scrubbing? state)
+             (>= (- (current-inexact-monotonic-milliseconds)
+                    (controller-state-last-scrub-milliseconds state))
+                 (controller-state-settle-milliseconds state)))
+    (set-controller-state-scrubbing?! state #f)
+    (set-controller-state-current-quality!
+     state (full-quality-for (controller-state-render-spec state)))
+    ;; The draft and settled keys intentionally differ, so a low-resolution
+    ;; bitmap cannot masquerade as the paused inspection frame.
+    (request-current! state jobs prefetch)
+    (emit! state 'status #f #f)))
 
 (define (current-frame-index state)
   (define sample (controller-state-current-sample state))

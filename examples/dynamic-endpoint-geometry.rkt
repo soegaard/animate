@@ -1,4 +1,5 @@
 #lang racket/base
+(require animate/experimental)
 
 ;;;
 ;;; SCENE-CN: Dynamic Endpoint Geometry
@@ -8,7 +9,7 @@
 ;; recomputed.  As the three vertices move, the sides and the highlighted arrow
 ;; remain connected at every sampled frame.
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 ;; The perpendicular foot of point c on the infinite line through a and b.
@@ -51,17 +52,17 @@
     (circle #:id 'C #:center (vec2 1/2 2) #:radius 1/6
             #:fill "royalblue" #:stroke "navy" #:stroke-width 2))
   (define A-label
-    (attach-to
+    (follow-anchor
      (plain-text "A" #:id 'A-label #:center origin
                  #:font-size 1/4 #:color "navy")
      'A #:target-anchor 'top #:self-anchor 'bottom #:offset (vec2 0 1/8)))
   (define B-label
-    (attach-to
+    (follow-anchor
      (plain-text "B" #:id 'B-label #:center origin
                  #:font-size 1/4 #:color "navy")
      'B #:target-anchor 'top #:self-anchor 'bottom #:offset (vec2 0 1/8)))
   (define C-label
-    (attach-to
+    (follow-anchor
      (plain-text "C" #:id 'C-label #:center origin
                  #:font-size 1/4 #:color "navy")
      'C #:target-anchor 'top #:self-anchor 'bottom #:offset (vec2 0 1/8)))

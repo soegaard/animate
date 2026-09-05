@@ -3,7 +3,8 @@
 // The SCENE-N named formula-part and correspondence APIs are ordinary Racket
 // values and functions that Rhombus can import directly.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def source_a = #{latex-formula-part}(

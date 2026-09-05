@@ -8,7 +8,7 @@
 ;; use `fade-transform`, while the equality sign remains at one fixed visual
 ;; position throughout the derivation.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

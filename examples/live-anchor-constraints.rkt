@@ -8,7 +8,7 @@
 ;; card's live upper-right rendered-box corner while the card moves, rotates,
 ;; and scales.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)
@@ -27,7 +27,7 @@
     (rectangle #:id 'card #:center (vec2 -5/2 0) #:width 2 #:height 1
                #:fill "aliceblue" #:stroke "navy" #:stroke-width 3))
   (define badge
-    (attach-to
+    (follow-anchor
      (plain-text "attached label" #:id 'badge #:center origin
                  #:font-size 1/5 #:font-family 'swiss #:color "crimson")
      'card

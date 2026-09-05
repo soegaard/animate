@@ -1,4 +1,5 @@
 #lang racket/base
+(require animate/experimental)
 
 ;;;
 ;;; SCENE-CP: Secant to Tangent
@@ -8,7 +9,7 @@
 ;; group rebuilds the ordinary secant-slope construction for each sampled h;
 ;; no updater or frame history is needed as the secant approaches the tangent.
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define h (parameter 'h 2))

@@ -3,7 +3,8 @@
 // The implementation is a Racket module, but its ordinary values and
 // functions can be used directly from Rhombus.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def moving_circle = circle(

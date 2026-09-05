@@ -8,7 +8,7 @@
 ;; grid geometry. It is not a linear interpolation toward the final wavy grid.
 
 (require racket/math
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

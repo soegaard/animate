@@ -16,6 +16,7 @@
          racket/file
          (only-in pict pict-height pict-width)
          "../main.rkt"
+         "../render.rkt"
          (submod "../private/shape-pict-renderers.rkt" test-support))
 
 

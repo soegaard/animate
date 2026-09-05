@@ -10,7 +10,8 @@
 ;; penalty, making the global assignment exchange the two destination identities.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

@@ -8,7 +8,7 @@
 ;; correspondence and formula-derivation for notes, pauses, and anchored
 ;; rewrite sequencing. It does not ask Animate to infer the algebra.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

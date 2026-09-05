@@ -3,7 +3,8 @@
 // The SCENE-C affine transform API consists of ordinary Racket values and
 // functions that Rhombus can import directly.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def moving_rectangle = rectangle(

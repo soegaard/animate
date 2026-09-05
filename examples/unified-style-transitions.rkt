@@ -8,7 +8,8 @@
 ;; while leaving each property an independent scheduler component.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

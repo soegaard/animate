@@ -19,12 +19,11 @@
 (require (only-in pict pict->bitmap)
          "camera.rkt"
          "pict-adapter.rkt"
+         "scene-frame-grid.rkt"
          "scene.rkt")
 
 ;; Exports
 (provide scene->pict
-         scene-frame-count
-         frame-index->time
          scene-frame->bitmap)
 
 
@@ -60,32 +59,6 @@
       'scene->pict
       "(or/c camera? false/c)"
       camera)]))
-
-; scene-frame-count : scene? [#:fps exact-positive-integer?]
-;                     -> exact-nonnegative-integer?
-;;   Returns the number of sampled frames needed for scene.
-(define (scene-frame-count scene #:fps [fps 30])
-  (unless (scene? scene)
-    (raise-argument-error 'scene-frame-count "scene?" scene))
-  (check-fps 'scene-frame-count fps)
-  (define count
-    (ceiling (* (scene-duration scene) fps)))
-  (if (exact-integer? count)
-      count
-      (inexact->exact count)))
-
-; frame-index->time : exact-nonnegative-integer?
-;                     [#:fps exact-positive-integer?]
-;                     -> nonnegative-real?
-;;   Converts a zero-based frame index to its exact sample time.
-(define (frame-index->time frame-index #:fps [fps 30])
-  (check-fps 'frame-index->time fps)
-  (unless (exact-nonnegative-integer? frame-index)
-    (raise-argument-error
-     'frame-index->time
-     "exact-nonnegative-integer?"
-     frame-index))
-  (/ frame-index fps))
 
 ; scene-frame->bitmap : scene? exact-nonnegative-integer?
 ;                       [#:fps exact-positive-integer?]
@@ -123,12 +96,6 @@
 ;;;
 ;;; Validation
 ;;;
-
-; check-fps : symbol? any/c -> void?
-;;   Raises an argument error unless fps is a positive exact integer.
-(define (check-fps who fps)
-  (unless (exact-positive-integer? fps)
-    (raise-argument-error who "exact-positive-integer?" fps)))
 
 ; check-supersample : symbol? any/c -> void?
 ;;   Raises unless supersample is an integral raster-resolution multiplier.

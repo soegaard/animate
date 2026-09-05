@@ -1,4 +1,5 @@
 #lang racket/base
+(require "../experimental.rkt")
 
 ;;;
 ;;; SCENE-BB Nested Visual Addressing Tests

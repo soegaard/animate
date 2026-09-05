@@ -8,7 +8,7 @@
 ;; RK45 prepares immutable dense nodes until the downward y = 0 event, then a
 ;; normal phase parameter drives the particle without any renderer-side solver.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

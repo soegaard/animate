@@ -8,7 +8,7 @@
 ;; moving card. The table independently snapshots measured text widths into its
 ;; ordinary addressable row/column group tree.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)
@@ -23,13 +23,13 @@
                #:width 3 #:height 7/5
                #:fill "aliceblue" #:stroke "steelblue" #:stroke-width 3))
   (define caption
-    (keep-above
+    (follow-above
      (plain-text "measured anchor"
                  #:id 'caption #:font-size 1/4 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
      'card #:gap 1/5))
   (define detail
-    (keep-above
+    (follow-above
      (plain-text "the second label follows the first"
                  #:id 'detail #:font-size 1/5 #:font-family 'swiss
                  #:color "darkslategray")

@@ -8,7 +8,7 @@
 ;; derivation itself only sequences the author-supplied algebra and explanations.
 
 (require (only-in racket/math pi)
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

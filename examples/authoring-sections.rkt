@@ -9,7 +9,8 @@
 ;; global output timeline; selected section renders write those global samples
 ;; as a separately numbered local frame sequence.
 
-(require "../main.rkt"
+(require animate
+         animate/authoring
          "private/run-demo.rkt")
 
 (provide make-demo-scene
@@ -66,7 +67,7 @@
     (line (vec2 -4 -3/10) (vec2 -4 4/5)
           #:id 'playhead #:stroke "crimson" #:stroke-width 4))
   (define playhead-label
-    (attach-to
+    (follow-anchor
      (plain-text "global frame time" #:id 'playhead-label #:center origin
                  #:font-size 1/5 #:font-family 'swiss #:color "firebrick")
      'playhead #:target-anchor 'top #:self-anchor 'bottom

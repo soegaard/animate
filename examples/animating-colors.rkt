@@ -8,7 +8,8 @@
 ;; fill-color and stroke-color animation components.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

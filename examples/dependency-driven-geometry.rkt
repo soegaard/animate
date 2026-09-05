@@ -1,4 +1,5 @@
 #lang racket/base
+(require animate/experimental)
 
 ;;;
 ;;; Dependency-Driven Geometry Example
@@ -8,7 +9,8 @@
 ;; Visual from the same immutable sampled scene state.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

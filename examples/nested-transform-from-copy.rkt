@@ -5,7 +5,7 @@
 ;;;
 
 (require racket/runtime-path
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

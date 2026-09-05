@@ -8,7 +8,7 @@
 ;; reciprocal samples a division-by-zero pole as a gap; the sine curve starts
 ;; with a sparse grid and receives extra midpoint samples where it bends.
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define (make-demo-scene)

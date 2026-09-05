@@ -392,7 +392,7 @@
       #:copies (formula-derivation-step-copies step)
       #:mismatch-mode (formula-derivation-step-mismatch-mode step))]
     [(matching-fragments? strategy)
-     (transform-matching-formula
+     (transform-matching-parts
       source destination
       #:matches (matching-fragments-value-matches strategy)
       #:path-arc (matching-fragments-value-path-arc strategy)

@@ -9,7 +9,7 @@
 ;; an authored-timeline automatic cache key.
 
 (require racket/list
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

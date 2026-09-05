@@ -9,7 +9,7 @@
 ;; circle/rectangle/arrow primitives.
 
 (require (only-in racket/math pi)
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

@@ -7,7 +7,8 @@
 (require rackunit
          racket/file
          (only-in pict pict-height pict-width pict?)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 (module+ test
   (define test-camera

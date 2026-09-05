@@ -8,7 +8,7 @@
 ;; not a temporary group or a new scene Visual: the same source formula remains
 ;; in the scene while attention effects address its selected rendered leaves.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

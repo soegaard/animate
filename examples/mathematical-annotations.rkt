@@ -1,4 +1,5 @@
 #lang racket/base
+(require animate/experimental)
 
 ;;;
 ;;; SCENE-CO: Mathematical Annotation Geometry
@@ -9,7 +10,7 @@
 ;; triangle keeps its right-angle square, angle arc, base brace, and label in
 ;; the appropriate geometric relationship.
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define (make-demo-scene)
@@ -36,7 +37,7 @@
   (define BC (segment-between 'B 'C #:id 'BC #:stroke "steelblue" #:stroke-width 4))
   (define CA (segment-between 'C 'A #:id 'CA #:stroke "steelblue" #:stroke-width 4))
   (define (label text id target)
-    (attach-to
+    (follow-anchor
      (plain-text text #:id id #:center origin
                  #:font-size 1/4 #:color "navy")
      target #:target-anchor 'top #:self-anchor 'bottom #:offset (vec2 0 1/8)))

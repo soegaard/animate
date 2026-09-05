@@ -18,6 +18,7 @@
          svg/svg
          "affine-transform.rkt"
          "animation.rkt"
+         "animation-inspection.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
          "formula-source-map.rkt"
@@ -42,7 +43,7 @@
          glyph-tex
          tagged-formula-fragment-visual?
          tagged-formula-fragment-visual-svg-source
-         transform-matching-formula
+         transform-matching-parts
          transform-matching-glyphs
          transform-matching-strings
          rewrite-matching-strings
@@ -832,7 +833,7 @@
                      #:opacity opacity)
    color-map))
 
-; transform-matching-formula : formula-assembly-visual?
+; transform-matching-parts : formula-assembly-visual?
 ;                              formula-assembly-visual?
 ;                              [#:matches (listof formula-part-match?)]
 ;                              [#:path-arc finite-real?]
@@ -845,7 +846,7 @@
 ;; `path-arc` is the default route, with `part-paths` as precise overrides.
 ;; `copies` preserve a source part while directing transient copies to
 ;; otherwise unmatched destinations. `mismatch-mode` controls the rest.
-(define (transform-matching-formula source destination
+(define (transform-matching-parts source destination
                                     #:matches [matches '()]
                                     #:path-arc [path-arc 0]
                                     #:part-paths [part-paths '()]
@@ -853,7 +854,7 @@
                                     #:mismatch-mode [mismatch-mode 'fade])
   (transform-formula-parts
    (make-matching-formula-correspondence
-    'transform-matching-formula source destination matches)
+    'transform-matching-parts source destination matches)
    #:path-arc path-arc
    #:part-paths part-paths
    #:copies copies
@@ -895,13 +896,20 @@
   (check-string-copy-list 'transform-matching-strings copies)
   (define correspondence
     (string-match-plan->formula-correspondence plan))
-  (transform-formula-parts
-   correspondence
-   #:path-arc path-arc
-   #:part-paths (string-match-plan->formula-part-paths plan)
-   #:copies (string-copies->formula-part-copies
-             source destination correspondence copies path-arc)
-   #:mismatch-mode mismatch-mode))
+  (with-animation-inspection
+   (transform-formula-parts
+    correspondence
+    #:path-arc path-arc
+    #:part-paths (string-match-plan->formula-part-paths plan)
+    #:copies (string-copies->formula-part-copies
+              source destination correspondence copies path-arc)
+    #:mismatch-mode mismatch-mode)
+   (string-transition-inspection
+    plan source destination
+    (string-transition-options
+     matches key-map protect-source protect-destination copies
+     on-ambiguity path-arc mismatch-mode #f '())
+    #f #f)))
 
 ; rewrite-matching-strings : formula-assembly-visual? formula-assembly-visual?
 ;                            #:anchor source-selector?
@@ -960,15 +968,22 @@
   (define stationary-matches
     (for/list ([selector (in-list stationary)])
       (selector->single-part-match source destination selector)))
-  (transform-formula-parts/anchored
-   correspondence
-   anchor-match
-   #:path-arc path-arc
-   #:part-paths (string-match-plan->formula-part-paths plan)
-   #:copies (string-copies->formula-part-copies
-             source destination correspondence copies path-arc)
-   #:stationary stationary-matches
-   #:mismatch-mode mismatch-mode))
+  (with-animation-inspection
+   (transform-formula-parts/anchored
+    correspondence
+    anchor-match
+    #:path-arc path-arc
+    #:part-paths (string-match-plan->formula-part-paths plan)
+    #:copies (string-copies->formula-part-copies
+              source destination correspondence copies path-arc)
+    #:stationary stationary-matches
+    #:mismatch-mode mismatch-mode)
+   (string-transition-inspection
+    plan source destination
+    (string-transition-options
+     matches key-map protect-source protect-destination copies
+     on-ambiguity path-arc mismatch-mode anchor stationary)
+    #f #f)))
 
 (define (string-match-plan->formula-correspondence plan)
   (unless (string-match-plan? plan)
@@ -1112,6 +1127,23 @@
 (define (check-string-copy-list who copies)
   (unless (and (list? copies) (andmap string-copy? copies))
     (raise-argument-error who "list of string-copy? values" copies)))
+
+;; string-transition-options records author-level planner inputs separately
+;; from the compiled correspondence.  The inspector can therefore explain a
+;; match without attempting to reconstruct choices from rendered geometry.
+(define (string-transition-options matches key-map protect-source
+                                   protect-destination copies on-ambiguity
+                                   path-arc mismatch-mode anchor stationary)
+  (hasheq 'matches matches
+          'key-map key-map
+          'protect-source protect-source
+          'protect-destination protect-destination
+          'copies copies
+          'on-ambiguity on-ambiguity
+          'path-arc path-arc
+          'mismatch-mode mismatch-mode
+          'anchor anchor
+          'stationary stationary))
 
 ; transform-matching-glyphs : formula-assembly-visual?
 ;                            formula-assembly-visual?

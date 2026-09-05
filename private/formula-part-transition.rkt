@@ -46,10 +46,12 @@
          formula-part-copy-destination-name
          formula-part-copy-route
          (struct-out formula-part-outline-morph)
+         (struct-out formula-transition-route)
          formula-transition-plan?
          make-formula-transition-plan
          formula-transition-plan-source-parts
          formula-transition-plan-destination-parts
+         formula-transition-plan-match-routes
          formula-transition-plan-source-map-at
          formula-transition-plan-sample-parts)
 
@@ -204,8 +206,17 @@
 ;;  - from-opacity    opacity?            local opacity at progress zero.
 ;;  - to-opacity      opacity?            local opacity at progress one.
 
+(struct formula-transition-route
+  (source-name destination-name from-transform to-transform route)
+  #:transparent)
+
+;; formula-transition-route records one author-visible correspondence after it
+;; has been compiled against the current source formula. It is deliberately
+;; separate from temporary transition layers: a changed fragment may render as
+;; two fading layers, but it still has one semantic source-to-destination path.
+
 (struct formula-transition-plan
-  (source-parts layers destination-parts source-map destination-source-map)
+  (source-parts layers destination-parts source-map destination-source-map routes)
   #:transparent)
 
 ;; formula-transition-plan represents one compiled formula-part transformation.
@@ -215,6 +226,8 @@
 ;;  - destination-parts  (listof formula-part?)  exact destination order.
 ;;  - source-map         any/c                   exact source endpoint metadata.
 ;;  - destination-source-map any/c               exact destination endpoint metadata.
+;;  - routes             (listof formula-transition-route?) semantic movement
+;;                       descriptions independent of temporary layer names.
 ;;
 ;; The layer order is source-only parts, matched layers in correspondence order,
 ;; and destination-only parts. A changed matched part contributes a source layer
@@ -319,7 +332,56 @@
    specs)
    settled-destination-parts
    (formula-assembly-visual-source-map current-source)
-   (formula-assembly-visual-source-map destination)))
+   (formula-assembly-visual-source-map destination)
+   (make-transition-routes current-source
+                           correspondence
+                           default-route
+                           part-paths-by-match)))
+
+;; formula-transition-plan-match-routes : formula-transition-plan? symbol? symbol?
+;;                                        -> (listof formula-transition-route?)
+;; Returns the compiled routes for one named semantic correspondence. The list
+;; form leaves room for future one-to-many transparent specifications, while
+;; today's ordinary formula correspondence is one-to-one.
+(define (formula-transition-plan-match-routes plan source-name destination-name)
+  (unless (formula-transition-plan? plan)
+    (raise-argument-error 'formula-transition-plan-match-routes
+                          "formula-transition-plan?" plan))
+  (unless (symbol? source-name)
+    (raise-argument-error 'formula-transition-plan-match-routes "symbol?" source-name))
+  (unless (symbol? destination-name)
+    (raise-argument-error 'formula-transition-plan-match-routes "symbol?" destination-name))
+  (filter
+   (lambda (route)
+     (and (eq? source-name (formula-transition-route-source-name route))
+          (eq? destination-name (formula-transition-route-destination-name route))))
+   (formula-transition-plan-routes plan)))
+
+;; Captures exactly the route selected for every semantic correspondence. The
+;; rendering compiler may later split a changed fragment into two cross-fading
+;; layers; inspector clients still see one planned route rather than an
+;; implementation-detail pair of temporary paths.
+(define (make-transition-routes current-source correspondence default-route
+                                part-paths-by-match)
+  (for/list ([match (in-list (formula-correspondence-matches correspondence))])
+    (define source-name (formula-part-match-source-name match))
+    (define destination-name (formula-part-match-destination-name match))
+    (define source-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref current-source source-name)))
+    (define destination-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref
+        (formula-correspondence-destination correspondence)
+        destination-name)))
+    (formula-transition-route
+     source-name
+     destination-name
+     (visual-transform source-formula)
+     (visual-transform destination-formula)
+     (hash-ref part-paths-by-match
+               (match-key source-name destination-name)
+               default-route))))
 
 ; check-current-source-names : formula-assembly-visual?
 ;                              formula-correspondence?

@@ -8,7 +8,7 @@
 ;; usual renderers; only the animation interval uses expanded vector paths.
 
 (require racket/runtime-path
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

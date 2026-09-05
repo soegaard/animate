@@ -35,7 +35,7 @@
       (define session
         (open-program-preview-controller
          source-path 'watched #:auto-reload? #t #:fps 2 #:prefetch 0
-         #:producer (lambda (_document _sample _spec) 'bitmap)
+         #:producer (lambda (_document _sample _spec _cancellation-token) 'bitmap)
          #:byte-size (lambda (_bitmap) 1)))
       ;; Let the watcher take its initial content snapshot before simulating
       ;; an editor save burst.

@@ -13,7 +13,8 @@
 
 ;; Imports
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 ;; Exports
 (provide make-demo-scene)

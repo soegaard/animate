@@ -12,7 +12,8 @@
 ;;;
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 
 ;;;

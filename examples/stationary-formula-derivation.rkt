@@ -7,7 +7,7 @@
 ;; A derivation can retain more than its main anchor. Here `2x`, `=`, and the
 ;; existing `5` remain still while the subtraction is introduced on the right.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

@@ -6,9 +6,9 @@
 ;; `block` selector lists these source-level units directly.
 
 (require racket/runtime-path
-         "../authoring.rkt"
-         "../main.rkt"
-         "../preview.rkt")
+         animate/authoring
+         animate
+         animate/preview)
 
 (define dot
   (circle #:id 'dot #:center (vec2 -3 0) #:radius 1/2

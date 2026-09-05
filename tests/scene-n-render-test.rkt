@@ -21,7 +21,8 @@
                   pict-width)
          (only-in "../private/group-visual.rkt"
                   group-visual-resolved-children)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

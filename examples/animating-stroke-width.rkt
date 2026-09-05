@@ -8,7 +8,8 @@
 ;; The same request composes with the AN-AR timing tree just like motion/opacity.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

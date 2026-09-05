@@ -4,9 +4,9 @@
 ;;; Visual Animation
 ;;;
 
-;; Provides the documented SCENE-AW API for semantic Visuals, animated cameras,
-;; coordinate-aware plots, renderer-aware layout, immutable timelines,
-;; deterministic frame sampling, PNG output, and optional MP4 encoding.
+;; Provides the semantic SCENE-EM API for immutable Visuals, animated cameras,
+;; coordinate-aware plots, renderer-aware layout, and deterministic scene
+;; sampling. Effectful PNG and media output live in animate/render.
 
 
 ;;;
@@ -16,9 +16,7 @@
 ;; Imports
 (require "private/affine-map-visual.rkt"
          "private/affine-transform.rkt"
-         "private/attachment.rkt"
          "private/annotation-geometry.rkt"
-         "private/authoring-timeline.rkt"
          "private/arrow-visual.rkt"
          "private/axes-visual.rkt"
          "private/dynamic-endpoint-geometry.rkt"
@@ -31,7 +29,6 @@
          "private/color-style.rkt"
          "private/complex-plane.rkt"
          "private/coordinate-series.rkt"
-         "private/derived-visual.rkt"
          "private/derived-plot.rkt"
          "private/formula-part-transition.rkt"
          "private/formula-derivation.rkt"
@@ -45,6 +42,7 @@
          "private/frame-space.rkt"
          "private/function-graph.rkt"
          "private/frame-renderer.rkt"
+         "private/scene-frame-grid.rkt"
          "private/graph-visual.rkt"
          "private/geometry.rkt"
          "private/group-visual.rkt"
@@ -65,7 +63,6 @@
          "private/pict-adapter.rkt"
          "private/pict-renderer.rkt"
          "private/pointwise-map.rkt"
-         "private/png-renderer.rkt"
          "private/relative-layout.rkt"
          "private/relation-context.rkt"
          "private/relation-dependency.rkt"
@@ -81,8 +78,6 @@
          "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
          "private/traced-path.rkt"
-         "private/video-assembly.rkt"
-         "private/video-encoder.rkt"
          "private/vector-field.rkt"
          "private/visual-selection.rkt"
          "private/visual-model.rkt")
@@ -345,18 +340,6 @@
  callout-visual-connector-stroke
  callout-visual-connector-width
 
- ;; Live world-space attachments
- attach-to
-
- ;; Pure derived Visuals
- derived-visual
- derived-visual?
- derived-context?
- derived-context-value-has?
- derived-context-value-ref
- derived-context-visual-has?
- derived-context-visual-ref
-
  ;; First-class semantic relations (SCENE-EL)
  relation-visual
  relation-visual?
@@ -390,6 +373,7 @@
  scene-validate-relations
  (struct-out relation-resolution-report)
  scene-relation-report
+ scene-relation-sample-report
 
  ;; Visual model
  gen:visual
@@ -601,6 +585,7 @@
  (struct-out string-match-plan)
  string-match-plan-warnings
  string-match-plan->datum
+ compare-string-match-plans
  plan-matching-strings
 
  ;; SCENE-CT matrices and tables
@@ -666,10 +651,10 @@
 
  ;; SCENE-DE acyclic live layout
  follow-anchor
- keep-above
- keep-below
- keep-left-of
- keep-right-of
+ follow-above
+ follow-below
+ follow-left-of
+ follow-right-of
 
  (struct-out formula-part-match)
  (struct-out formula-correspondence)
@@ -925,7 +910,7 @@
  draw-border-then-fill-request?
  transform-formula-parts
  transform-formula-parts-request?
- transform-matching-formula
+ transform-matching-parts
  transform-matching-glyphs
  transform-matching-strings
  rewrite-matching-strings
@@ -964,6 +949,9 @@
  scene-wait
  scene-sample
  scene-camera-at
+ scene-clip-at
+ scene-clip-index-at
+ scene-animation-inspections-at
  scene-duration
  scene-current-state
  scene-current-camera
@@ -985,26 +973,7 @@
  frame-index->time
  scene-frame->bitmap
 
- ;; External output
- render-frames!
- render-frames/report!
- render-frame-indices!
- render-frame-indices/report!
- render-diagnostics
- render-diagnostics?
- render-diagnostics-paths
- render-diagnostics-frame-count
- render-diagnostics-workers
- render-diagnostics-elapsed-milliseconds
- render-diagnostics-frame-milliseconds
- render-diagnostics-cache-hits
- render-diagnostics-cache-misses
- render-diagnostics-cache-evictions
- encode-mp4!
- assemble-authored-mp4!
- mux-authored-video!
- concatenate-mp4!
- render-authored-mp4!)
+ )
 
 
 ;; SCENE-T number lines and coordinate decorations
@@ -1029,10 +998,6 @@
   point-marker-visual->visual)
  (all-from-out "private/scatter-area-plot.rkt")
  (all-from-out "private/statistics-visual.rkt"))
-
-
-;; SCENE-CW authored timelines, selected rendering, and cue metadata
-(provide (all-from-out "private/authoring-timeline.rkt"))
 
 
 ;; SCENE-DJ path-backed mathematical shape catalogue

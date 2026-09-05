@@ -9,7 +9,7 @@
 ;; + to - correspondence makes the sign change visible as the 3 moves right.
 
 (require (only-in racket/math pi)
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

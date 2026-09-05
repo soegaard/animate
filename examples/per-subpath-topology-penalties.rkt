@@ -10,7 +10,8 @@
 ;; pair remains a real morph while the lower pair still collapses/regrows.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

@@ -8,7 +8,7 @@
 ;; This example deliberately mixes centre references (the two angle marks)
 ;; with renderer-measured circle anchors (the brace and curved arrow).
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define (make-demo-scene)

@@ -99,6 +99,16 @@
    (relation-resolution-report-path
     (scene-relation-report base-state 'follower))
    '(follower))
+  ;; The static report deliberately does not execute arbitrary author code.
+  ;; The explicitly requested sampled report does, and records exactly the
+  ;; declared entries read through the checked relation context.
+  (define sampled-follower-report
+    (scene-relation-sample-report base-state 'follower))
+  (check-equal? (relation-resolution-report-used-dependencies sampled-follower-report)
+                (list (visual-dependency 'anchor)
+                      (value-dependency 'offset)))
+  (check-equal? (relation-resolution-report-unused-dependencies sampled-follower-report)
+                '())
 
   ;; Both an ordinary Visual and a semantic value may animate independently;
   ;; every queried sample is computed directly from its immutable state.

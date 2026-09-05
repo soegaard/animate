@@ -7,7 +7,7 @@
 ;; A Manim-like formula transition: TeX lays out each endpoint as one formula,
 ;; while Animate moves its declared fragments as rigid SVG groups.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)
@@ -126,13 +126,13 @@
     (scene-wait initial 1))
   (define after-making-space
     (scene-play pause-before
-                (transform-matching-formula source subtraction-with-space)
+                (transform-matching-parts source subtraction-with-space)
                 #:duration 2))
   (define pause-before-introducing-terms
     (scene-wait after-making-space 1/2))
   (define after-introducing-terms
     (scene-play pause-before-introducing-terms
-                (transform-matching-formula subtraction-with-space subtraction)
+                (transform-matching-parts subtraction-with-space subtraction)
                 #:duration 1))
   (define pause-before-cancelling
     (scene-wait after-introducing-terms 1))
@@ -144,7 +144,7 @@
      ;; Keep the surviving right-side a^2 paired with itself. Without these
      ;; explicit matches, automatic matching can pair an eliminated left a^2
      ;; with the identical right a^2 and make it appear to move across =.
-     (transform-matching-formula
+     (transform-matching-parts
       subtraction
       subtraction-with-cancelled-left
       #:matches
@@ -161,7 +161,7 @@
   (define simplified-scene
     (scene-play
      pause-before-moving-b-square
-     (transform-matching-formula subtraction-with-cancelled-left
+     (transform-matching-parts subtraction-with-cancelled-left
                                  simplified-with-stationary-equals)
      #:duration 1))
   (scene-wait simplified-scene 1))

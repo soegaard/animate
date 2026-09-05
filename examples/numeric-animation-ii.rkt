@@ -8,7 +8,7 @@
 ;; values. The digit wheels, formatting, and sampled values are reproducible at
 ;; any requested frame; no display stores a previous rendered number.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

@@ -1,11 +1,12 @@
 #lang racket/base
+(require animate/experimental)
 
 ;;;
 ;;; SCENE-CU: Deterministic Traced Cycloid
 ;;;
 
 (require racket/math
-         "../main.rkt" "private/run-demo.rkt")
+         animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define phase (parameter 'phase 0))

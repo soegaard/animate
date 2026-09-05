@@ -10,7 +10,8 @@
 ;; collapses locally and regrows locally because that costs less than matching.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

@@ -10,7 +10,8 @@
 ;; birth/death demonstration.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

@@ -19,7 +19,8 @@
                   filled-rectangle
                   pict-height
                   pict-width)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

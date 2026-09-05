@@ -1,4 +1,5 @@
 #lang racket/base
+(require "../experimental.rkt")
 
 ;;;
 ;;; SCENE-AW Pure Derived Visual Tests

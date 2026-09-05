@@ -5,7 +5,9 @@
 ;;;
 
 (require rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../authoring.rkt"
+         "../render.rkt")
 
 (module+ test
   (define (check-close actual expected)

@@ -9,7 +9,8 @@
 ;; loop grows from that same hub. A surviving upper curve still morphs visibly.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

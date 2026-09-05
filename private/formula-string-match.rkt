@@ -38,6 +38,7 @@
          (struct-out string-match-plan)
          string-match-plan-warnings
          string-match-plan->datum
+         compare-string-match-plans
          plan-matching-strings)
 
 
@@ -284,6 +285,68 @@
    'unmatched-destination
    (map unit->datum (string-match-plan-unmatched-destination plan))
    'diagnostics (string-match-plan-diagnostics plan)))
+
+; compare-string-match-plans : string-match-plan? string-match-plan? -> immutable-hash?
+;; Reports semantic planner changes after a source reload.  Matches are keyed
+;; by exact source/destination spans, so repeated textual occurrences remain
+;; distinct and a changed decision is not mistaken for a removal plus addition.
+(define (compare-string-match-plans before after)
+  (check-plan 'compare-string-match-plans before)
+  (check-plan 'compare-string-match-plans after)
+  (define before-matches (string-match-plan-matches before))
+  (define after-matches (string-match-plan-matches after))
+  (define before-by-key
+    (for/hash ([match (in-list before-matches)])
+      (values (planned-match-key match) match)))
+  (define after-by-key
+    (for/hash ([match (in-list after-matches)])
+      (values (planned-match-key match) match)))
+  (define added-keys
+    (filter (lambda (key) (not (hash-has-key? before-by-key key)))
+            (hash-keys-in-order after-by-key after-matches)))
+  (define removed-keys
+    (filter (lambda (key) (not (hash-has-key? after-by-key key)))
+            (hash-keys-in-order before-by-key before-matches)))
+  (define shared-keys
+    (filter (lambda (key) (hash-has-key? after-by-key key))
+            (hash-keys-in-order before-by-key before-matches)))
+  (hash
+   'matches-added (map (lambda (key) (planned-match->datum (hash-ref after-by-key key)))
+                       added-keys)
+   'matches-removed (map (lambda (key) (planned-match->datum (hash-ref before-by-key key)))
+                         removed-keys)
+   'matches-changed
+   (for/list ([key (in-list shared-keys)]
+              #:unless (equal? (planned-match-decision (hash-ref before-by-key key))
+                               (planned-match-decision (hash-ref after-by-key key))))
+     (hash 'before (planned-match->datum (hash-ref before-by-key key))
+           'after (planned-match->datum (hash-ref after-by-key key))))
+   'unmatched-source-changed?
+   (not (equal? (string-match-plan-unmatched-source before)
+                (string-match-plan-unmatched-source after)))
+   'unmatched-destination-changed?
+   (not (equal? (string-match-plan-unmatched-destination before)
+                (string-match-plan-unmatched-destination after)))))
+
+(define (hash-keys-in-order table matches)
+  (for/list ([match (in-list matches)])
+    (planned-match-key match)))
+
+(define (planned-match-key match)
+  (list (span->datum (planned-string-match-source-span match))
+        (span->datum (planned-string-match-destination-span match))))
+
+(define (planned-match-decision match)
+  (list (planned-string-match-reason match)
+        (planned-string-match-movement-mode match)
+        (planned-string-match-route match)))
+
+(define (planned-match->datum match)
+  (hash 'source-span (span->datum (planned-string-match-source-span match))
+        'destination-span (span->datum (planned-string-match-destination-span match))
+        'reason (planned-string-match-reason match)
+        'movement-mode (planned-string-match-movement-mode match)
+        'route (planned-string-match-route match)))
 
 
 ;;;

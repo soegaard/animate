@@ -13,7 +13,7 @@
   (define session
     (open-preview-controller
      initial #:fps 4 #:prefetch 0
-     #:producer (lambda (document sample _spec)
+     #:producer (lambda (document sample _spec _cancellation-token)
                   (list (preview-document-generation document) sample))
      #:byte-size (lambda (_value) 1)))
   (void (attach-preview-transactions! session))

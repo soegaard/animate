@@ -8,7 +8,7 @@
 ;; spelling.  The blue unknown, red constant, and green result therefore keep
 ;; their identities while the subtraction step rearranges the equation.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

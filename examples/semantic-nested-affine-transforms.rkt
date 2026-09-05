@@ -9,7 +9,7 @@
 ;; rest of the already-sheared diagram stays in place.  This exercises affine
 ;; composition through an ordinary nested Visual tree.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

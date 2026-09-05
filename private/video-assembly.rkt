@@ -15,6 +15,7 @@
          racket/string
          racket/system
          "authoring-timeline.rkt"
+         "section-renderer.rkt"
          "scene.rkt"
          "shape-pict-renderers.rkt"
          "video-encoder.rkt")

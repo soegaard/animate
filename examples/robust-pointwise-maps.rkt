@@ -8,7 +8,7 @@
 ;; separate reciprocal curve demonstrates that samples at its pole split the
 ;; image into two branches instead of adding a false line across infinity.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

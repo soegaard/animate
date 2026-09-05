@@ -1,4 +1,5 @@
 #lang racket/base
+(require animate/experimental)
 
 ;;;
 ;;; Pure Derived Visual Example
@@ -8,7 +9,8 @@
 ;; The resolver is pure; this SCENE-AW example reads only scalar context entries.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

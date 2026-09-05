@@ -4,7 +4,7 @@
 ;;; SCENE-DT: Probability and Statistical Diagrams
 ;;;
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

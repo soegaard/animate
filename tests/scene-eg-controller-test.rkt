@@ -28,7 +28,7 @@
     (open-preview-controller
      scene #:fps 2 #:prefetch 0 #:cache-megabytes 1
      #:producer
-     (lambda (document sample spec)
+     (lambda (document sample _spec _cancellation-token)
        (list (preview-document-generation document) sample))
      #:byte-size (lambda (value) 8)
      #:on-event (lambda (event) (async-channel-put events event))))
@@ -59,7 +59,7 @@
     (open-preview-controller
      scene #:fps 2 #:prefetch 0 #:cache-megabytes 1
      #:producer
-     (lambda (document sample spec)
+     (lambda (document sample _spec _cancellation-token)
        (async-channel-put requests (list (preview-document-generation document) sample))
        (async-channel-get releases))
      #:byte-size (lambda (value) 8)
@@ -90,7 +90,7 @@
     (open-preview-controller
      scene #:fps 2 #:prefetch 0 #:cache-megabytes 1/1000000
      #:producer
-     (lambda (document sample spec)
+     (lambda (document sample _spec _cancellation-token)
        (set! render-count (add1 render-count))
        (list render-count sample))
      #:byte-size (lambda (value) 8)

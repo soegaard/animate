@@ -9,7 +9,7 @@
 ;; while the grid, basis arrows, unit square, and arbitrary vector form one
 ;; transformed group.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

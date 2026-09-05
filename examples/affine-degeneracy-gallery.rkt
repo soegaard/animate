@@ -9,7 +9,7 @@
 ;; the gallery layout and exposes the renderer's zero-width behaviour.
 
 (require racket/runtime-path
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

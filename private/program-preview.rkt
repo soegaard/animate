@@ -26,6 +26,7 @@
          preview-program-loader
          preview-program-generation
          preview-program-blocks
+         preview-program-block-ranges
          preview-current-block
          preview-jump-to-block!
          preview-restore-block-input!
@@ -160,6 +161,22 @@
 
 (define (preview-program-blocks session)
   (scene-program-blocks (preview-program session)))
+
+;; Source-block names alone are enough for the chooser, but the production
+;; timeline also needs the exact compiled half-open interval for every block.
+;; Exposing it here keeps both views tied to the retained compilation rather
+;; than asking GUI code to reconstruct timings from the source declarations.
+(define (preview-program-block-ranges session)
+  (define context (program-context 'preview-program-block-ranges session))
+  (with-context context
+    (lambda ()
+      (for/list ([run (in-list
+                        (compiled-scene-program-block-runs
+                         (scene-program-loader-compiled
+                          (program-preview-context-loader context))))])
+        (list (scene-block-run-id run)
+              (scene-block-run-start-time run)
+              (scene-block-run-end-time run))))))
 
 (define (preview-program-branch-mode session)
   (program-preview-context-branch-mode

@@ -9,7 +9,8 @@
 
 (require racket/cmdline
          racket/math
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

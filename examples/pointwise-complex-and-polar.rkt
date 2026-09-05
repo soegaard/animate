@@ -8,7 +8,7 @@
 ;; z -> z^2, then the same scene introduces a polar grid and a rose curve.
 
 (require (only-in racket/math pi)
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

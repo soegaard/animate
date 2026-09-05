@@ -9,7 +9,8 @@
 ;; spans are 1, 2, and 1, so an eight-second play gives durations 2, 4, and 2.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

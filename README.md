@@ -1,28 +1,56 @@
-# animate — SCENE-EI
+# animate — SCENE-EM
 
-> **Work in progress:** this project is under active development and its API may change.
+> **Current prototype:** when the API improves, Animate updates its own
+> implementation, examples, tests, README, and manual together. Obsolete
+> spellings are removed instead of retained as compatibility shims.
+
+**Prototype version 1.8.0.**
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-EG through SCENE-EI turn the library into a persistent, deterministic
-authoring workbench. `animate/preview` is optional and GUI-lazy, so `require
-animate` remains headless. It provides exact frame/time scrubbing, transport,
-section navigation, a byte-bounded draft-frame cache, generation-safe
-asynchronous Pict rendering, and a `raco animate preview` entry point.
-`animate/authoring` supplies `define-scene-program` and `scene-block`: named
-immutable checkpoints support conservative source-range, asset, and ambient
-fingerprint invalidation, fresh-namespace reload, atomic replacement, and
-optional debounced file watching. The preview adds immutable scratch
-transactions, undo/redo/checkpoints, a session-bound Racket REPL, nested Visual
-inspection, approximate hit testing, selection overlays, and block-level source
-navigation.
+SCENE-EM begins the repository-coherence pass after the source-addressable
+formula and relation foundations in SCENE-EJ–EL. The central API stays
+headless: `require animate` constructs immutable scenes, formulas, relations,
+geometry, and sampled timelines without opening a GUI or writing files.
+`animate/authoring` adds source blocks and reloadable programs; the optional
+`animate/preview` module adds interactive inspection. Rendering and media
+output are being collected behind a deliberate render boundary.
+
+Before a release, run `raco animate check-repo`. It checks the current metadata
+and public boundaries, compiles the Racket sources and examples, runs the test
+suite, builds the registered manual, and creates, installs, sets up, and
+requires a fresh source package. The check validates the current repository;
+it intentionally does not enforce an API-compatibility policy against an older
+release.
+
+The following checked-in section is generated from the executable catalogue in
+`private/example-catalog.rkt`. The repository check verifies that it stays
+exactly synchronized with the gallery and example requirements.
+
+<!-- BEGIN GENERATED: canonical examples -->
+## Canonical examples
+
+- [A moving circle](examples/parallel-animation-groups.rkt) — basics, animation; requires core.
+- [Composed parallel animation](examples/parallel-animation-groups.rkt) — animation, composition; requires core.
+- [Source-addressed formula matching](examples/transform-matching-strings.rkt) — formula, source-selection; requires core, latex, dvisvgm.
+- [Structured formula derivation](examples/structured-formula-derivation.rkt) — formula, derivation; requires core, latex, dvisvgm.
+- [First-class relations](examples/relation-visuals.rkt) — relations, geometry; requires core.
+- [Adaptive function plot](examples/function-graphs.rkt) — plotting, adaptive; requires core.
+- [Adaptive ODE trajectory](examples/adaptive-ode-trajectory.rkt) — ode, flow; requires core.
+- [Source-block hot reload](examples/source-block-hot-reload.rkt) — authoring, preview; requires core, gui.
+- [Preview REPL and inspector](examples/source-block-hot-reload.rkt) — preview, repl, inspector; requires core, gui.
+- [Authored audio and video](examples/authored-media-assembly.rkt) — rendering, audio, subtitles; requires core, ffmpeg.
+<!-- END GENERATED: canonical examples -->
 
 The first inspector deliberately uses sampled layout boxes rather than painted
-pixel masks; thin or rotated shapes can be selected near their bounds. The
-preview uses the same scene/Pict/bitmap semantics as final rendering, but it is
-not an audio monitor and its single deterministic Pict worker cannot interrupt
-a blocking custom renderer.
+pixel masks; thin or rotated shapes can be selected near their bounds. Its
+section selector presents the current Visual, formula-source, relation, and
+active string-match explanation data without invalidating the frame cache. A
+project preview with `#:audio? #t` builds a reusable PCM proxy and waveform;
+`ffplay` audio is optional and never controls semantic scene time. Module-backed
+project rendering runs in a restartable worker process, while direct Scene
+previews retain cooperative cancellation for arbitrary in-memory procedures.
 
 SCENE-DK extends the SCENE-CY affine-map layer through ordinary nested Visual
 trees. `linear2` represents a full 2×2 matrix, `affine2` adds translation, and
@@ -157,8 +185,8 @@ SCENE-DD adds static integer/decimal labels and a fixed-structure
 `parameter-display` relation with left, right, sign, or decimal anchors.
 
 SCENE-DE makes renderer-measured attachments composable through an acyclic
-dependency chain: `follow-anchor`, `keep-above`, `keep-below`, `keep-left-of`,
-and `keep-right-of` remain live after ordinary scene sampling. SCENE-DF extends
+dependency chain: `follow-anchor`, `follow-above`, `follow-below`, `follow-left-of`,
+and `follow-right-of` remain live after ordinary scene sampling. SCENE-DF extends
 the existing matrix/table group tree with per-axis sizes or an `'auto` measured
 snapshot, so named cells keep their paths while columns and rows fit contents.
 
@@ -310,7 +338,7 @@ its fully composed world coordinates, so an imported SVG part or formula child
 can be emphasized without rebuilding its parent diagram.
 
 SCENE-CD adds live attachments to top-level and nested Visual paths.
-`attach-to` makes an ordinary world-space Visual follow the sampled reference
+`follow-anchor` makes an ordinary world-space Visual follow the sampled reference
 point of its target, while `callout` now accepts the same nested paths for its
 frame-fixed leader. Both compose every enclosing group/formula transform, so an
 SVG subpart may move, rotate, and scale with its parent without manual geometry.
@@ -398,7 +426,7 @@ and `#:rate-func` is evaluated separately for each staggered leaf.
 SCENE-BS adds full-layout tagged TeX formulas. `tagged-formula` typesets one
 complete formula through `latex` and `dvisvgm`, then turns explicitly declared
 fragments into rigid SVG groups at their TeX-determined positions.
-`transform-matching-formula` moves unchanged fragments automatically and fades
+`transform-matching-parts` moves unchanged fragments automatically and fades
 changed fragments. This requires the external `latex` and `dvisvgm` executables
 when a tagged formula is constructed; rendering sampled animation frames does
 not rerun TeX.
@@ -497,15 +525,15 @@ styling, renderer-measured multiline rich text, addressable matrices/tables,
 deterministic traced loci, composable camera timing, reproducible
 section-oriented rendering metadata, and live endpoint-derived network edges.
 
-The public package version is `1.5.0`. The public module's bindings are covered
-by the Scribble reference source.
+The current public package version is `1.8.0` (`SCENE-EM`). The public modules'
+bindings are covered by the registered Scribble manual.
 
 ## Documentation source
 
-The complete Scribble reference source remains in
-[`scribblings/animate.scrbl`](scribblings/animate.scrbl), but
-it is deliberately not registered with Racket's documentation system. Installing
-this package therefore does not build or hook up documentation.
+The manual entry point is
+[`scribblings/animate.scrbl`](scribblings/animate.scrbl). It is registered in
+[`info.rkt`](info.rkt), so installing the package builds and links the guide,
+concept, reference, and cookbook chapters with Racket's documentation system.
 
 Install the package from a checkout:
 
@@ -1016,7 +1044,7 @@ snapshot: use a later clip when a target itself moves or changes shape.
 
 `formula-part-copy` names an existing source part, an otherwise unmatched
 destination part, and a route. Pass those descriptors through `#:copies` on
-`transform-formula-parts` or `transform-matching-formula`. The source remains
+`transform-formula-parts` or `transform-matching-parts`. The source remains
 in the ordinary correspondence; each named destination receives a transient
 copy instead of an ordinary fade-in.
 
@@ -1025,7 +1053,7 @@ following step is algebraically valid: it adds `x` to both sides of `x = 2`.
 The original `x` is matched normally while two copies travel to the added terms:
 
 ```racket
-(transform-matching-formula
+(transform-matching-parts
  source
  destination
  #:matches
@@ -1118,11 +1146,11 @@ fragment as a rigid movable part:
    (formula-fragment 'a-square "a^2")))
 
 (scene-play (scene-add (make-scene) initial)
-            (transform-matching-formula initial rearranged)
+            (transform-matching-parts initial rearranged)
             #:duration 2)
 ```
 
-`transform-matching-formula` first accepts optional explicit
+`transform-matching-parts` first accepts optional explicit
 `formula-part-match` values through `#:matches`; it then pairs every remaining
 fragment whose source and typesetting options are exactly equal, in source
 order. In the example, `a^2`, `b^2`, `=`, and `c^2` move rigidly, while `+`
@@ -2778,11 +2806,11 @@ bitmap / PNG / optional MP4
 
 ## Limitations and follow-on ideas
 
-This is the running design backlog for version `1.5.0`. Every completed SCENE
-stage must update it with the limitations, edge cases, and useful next ideas
-revealed by that stage. When a later stage delivers an item, retain its history
-in that stage's notes and revise this list to state the remaining boundary
-precisely; do not silently lose the follow-on idea that led to the work.
+These are the current limitations and follow-on ideas. Every completed SCENE
+stage updates them with the edge cases and useful next steps it reveals. When a
+later stage delivers an item, retain its history in that stage's notes and
+revise this list to state the remaining boundary precisely; do not silently
+lose the follow-on idea that led to the work.
 
 ### Text, formulas, and layout
 
@@ -3097,7 +3125,7 @@ precisely; do not silently lose the follow-on idea that led to the work.
   and spacing remain explicit. `tagged-formula` typesets author-declared
   fragments together, but it is not a TeX parser: every fragment must be a
   contiguous valid TeX piece with visible ink.
-- `formula-correspondence-auto` and `transform-matching-formula` match whole
+- `formula-correspondence-auto` and `transform-matching-parts` match whole
   rendering-equivalent fragments in order. `glyph-tex` and
   `transform-matching-glyphs` additionally match exact dvisvgm glyph outlines
   in source order. Its opt-in `#:changed-mode 'morph` interpolates one painted,
@@ -3196,7 +3224,7 @@ precisely; do not silently lose the follow-on idea that led to the work.
   opacity, and supported fill/stroke animation after current relation geometry
   is resolved. Layout relations are still top-level and measure Pict boxes,
   not exact visible outlines.
-- `attach-to` and `follow-anchor` with both anchors at `'center` return semantic
+- `follow-anchor` with both anchors at `'center` returns a semantic
   relations; they can be resolved from a sampled scene without a renderer.
   Choosing an edge or corner, and all directional attachment helpers, returns a
   top-level layout relation. Both forms expose an acyclic dependency graph and
@@ -3346,7 +3374,7 @@ raco test tests/scene-l-render-test.rkt \
 ## SCENE-BS: tagged full-formula layouts
 
 Version `0.68.0` adds `formula-fragment`, `tagged-formula`, and
-`transform-matching-formula`. A tagged formula uses one `latex` → `dvisvgm`
+`transform-matching-parts`. A tagged formula uses one `latex` → `dvisvgm`
 compilation to preserve TeX's complete layout, then isolates each declared
 fragment as an SVG group. Exact unchanged fragments move as a single rigid
 layer; changed or unmatched fragments retain the existing fade behavior.
@@ -4118,8 +4146,8 @@ fixed-decimal time display.
 ## SCENE-DE: acyclic live layout
 
 Version `1.2.0` makes renderer-measured attachments composable. Use
-`follow-anchor` for explicit anchor relationships or `keep-above`,
-`keep-below`, `keep-left-of`, and `keep-right-of` for common gaps. A target may
+`follow-anchor` for explicit anchor relationships or `follow-above`,
+`follow-below`, `follow-left-of`, and `follow-right-of` for common gaps. A target may
 itself be a live attachment; the renderer resolves the finite dependency chain
 from its concrete target outward and reports a cycle instead of using stale
 frame state.
@@ -4342,7 +4370,7 @@ each row and cell available by a stable nested path:
 
 The entry Visuals are re-based at their cell centres, retaining their identity,
 rotation, scale, appearance, and children. This makes the cell group itself a
-convenient target for `indicate`, `circumscribe`, `move-to`, `attach-to`, or a
+convenient target for `indicate`, `circumscribe`, `move-to`, `follow-anchor`, or a
 source for `transform-from-copy`. Matrix square brackets are named
 `left-bracket` and `right-bracket`; a table also exposes its shared grid-line
 paths. Separate row branches may reuse a local `col-N` identity because their
@@ -4501,12 +4529,12 @@ its sides and a corner-anchored arrow remain connected.
 
 ## SCENE-CM: live anchor constraints
 
-Version `0.87.0` extends `attach-to` beyond SCENE-CD's renderer-independent
+Version `0.87.0` extends `follow-anchor` beyond SCENE-CD's renderer-independent
 reference-point following. Supplying a non-center `#:target-anchor` or
 `#:self-anchor` creates a top-level renderer-aware attachment:
 
 ```racket
-(attach-to label 'card
+(follow-anchor label 'card
            #:target-anchor 'top-right
            #:self-anchor 'bottom-left
            #:offset (vec2 1/5 1/5))
@@ -4570,11 +4598,11 @@ than visible glyph contours.
 
 ## SCENE-CD: live nested attachments
 
-Version `0.78.0` adds `attach-to`, a small declarative way to keep ordinary
+Version `0.78.0` adds `follow-anchor`, a small declarative way to keep ordinary
 world-space content at a target's sampled reference point plus a fixed offset:
 
 ```racket
-(attach-to badge '(rocket-diagram rocket window))
+(follow-anchor badge '(rocket-diagram rocket window))
 ```
 
 Nested dependencies now compose every enclosing group or formula transform

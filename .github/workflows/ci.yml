@@ -1,0 +1,82 @@
+name: animate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-minimum:
+    name: Core / Racket ${{ matrix.racket }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        racket: ["8.12", "9.3"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: ${{ matrix.racket }}
+      - run: raco pkg install --auto --name animate .
+      - run: raco make animate animate/authoring animate/preview animate/project animate/render
+      - run: raco test tests/version-coherence-test.rkt tests/documentation-structure-test.rkt tests/public-module-boundaries-test.rkt tests/example-public-imports-test.rkt tests/example-catalog-test.rkt tests/documented-bindings-exist-test.rkt
+
+  current-headless:
+    name: Full headless suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: raco pkg install --auto --name animate .
+      - run: raco test tests
+      - run: raco test tests/scene-bq-br-test.rkt
+
+  documentation-and-examples:
+    name: Documentation and examples
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: raco pkg install --auto --name animate .
+      - run: raco setup --pkgs animate
+      - run: raco test tests/all-examples-compile-test.rkt
+
+  release-check:
+    name: Repository release check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-base
+      - run: raco pkg install --auto --name animate .
+      - run: raco animate check-repo
+
+  latex-and-media:
+    name: Formula and media integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-base
+      - run: raco pkg install --auto --name animate .
+      - run: raco test tests/scene-ej-token-formula-test.rkt tests/scene-ek-match-plan-test.rkt tests/scene-dg-test.rkt tests/scene-dh-test.rkt
+
+  gui-smoke:
+    name: GRacket preview smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: sudo apt-get update && sudo apt-get install -y xvfb
+      - run: raco pkg install --auto --name animate .
+      - run: xvfb-run -a gracket -l raco/main -- test tests/scene-ep-gui-smoke-test.rkt

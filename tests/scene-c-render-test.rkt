@@ -15,7 +15,8 @@
          racket/file
          (only-in pict pict-height pict-width)
          (only-in racket/math pi)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

@@ -56,6 +56,9 @@
          scene-sample
          scene-camera-at
          scene-sample-with-camera
+         scene-clip-at
+         scene-clip-index-at
+         scene-animation-inspections-at
          scene-clip-count)
 
 
@@ -1292,7 +1295,7 @@
      (scene-current-state scn)]
     [else
      (clip->state-at
-      (scene-clip-at 'scene-sample scn time)
+      (scene-clip-at/internal 'scene-sample scn time)
       time)]))
 
 ; scene-camera-at : scene? nonnegative-real? -> camera?
@@ -1304,7 +1307,7 @@
      (scene-current-camera scn)]
     [else
      (clip->camera-at
-      (scene-clip-at 'scene-camera-at scn time)
+      (scene-clip-at/internal 'scene-camera-at scn time)
       time)]))
 
 ; scene-sample-with-camera : scene? nonnegative-real?
@@ -1318,7 +1321,7 @@
              (scene-current-camera scn))]
     [else
      (clip->scene-values-at
-      (scene-clip-at 'scene-sample-with-camera scn time)
+      (scene-clip-at/internal 'scene-sample-with-camera scn time)
       time)]))
 
 ; scene-endpoint-time? : scene? nonnegative-real? -> boolean?
@@ -1327,10 +1330,10 @@
   (or (null? (scene-clips scn))
       (= time (scene-duration scn))))
 
-; scene-clip-at : symbol? scene? nonnegative-real?
+; scene-clip-at/internal : symbol? scene? nonnegative-real?
 ;                 -> (or/c play-clip? timed-play-clip? wait-clip?)
 ;;   Returns the timeline clip at time or raises an error for a broken timeline.
-(define (scene-clip-at who scn time)
+(define (scene-clip-at/internal who scn time)
   (define clip
     (find-clip-at scn time))
   (unless clip
@@ -1339,6 +1342,66 @@
      "no timeline clip covers the requested time"
      "time" time))
   clip)
+
+; scene-clip-at : scene? nonnegative-real?
+;                 -> (or/c play-clip? timed-play-clip? wait-clip? false/c)
+;; Returns the clip selected by `time`.  Normal boundaries use the clip that
+;; begins there; the exact scene endpoint returns the final completed clip so
+;; inspection clients can still explain its final transition.  An empty scene
+;; has no clip and returns #f.
+(define (scene-clip-at scn time)
+  (check-scene-sample-arguments 'scene-clip-at scn time)
+  (cond
+    [(null? (scene-clips scn)) #f]
+    [(= time (scene-duration scn)) (last (scene-clips scn))]
+    [else (find-clip-at scn time)]))
+
+; scene-clip-index-at : scene? nonnegative-real? -> (or/c exact-nonnegative-integer? false/c)
+;; Returns the zero-based index of `scene-clip-at`, or #f for an empty scene.
+(define (scene-clip-index-at scn time)
+  (define clip (scene-clip-at scn time))
+  (and clip
+       (for/first ([candidate (in-list (scene-clips scn))]
+                   [index (in-naturals)]
+                   #:when (eq? candidate clip))
+         index)))
+
+; scene-animation-inspections-at : scene? nonnegative-real?
+;;                                  -> (listof animation-inspection?)
+;; Retrieves retained inspection data for the animations relevant at `time`.
+;; Scheduled clips include only their currently active leaves, except at the
+;; exact scene endpoint where the final clip's complete metadata is retained.
+(define (scene-animation-inspections-at scn time)
+  (define clip (scene-clip-at scn time))
+  (cond
+    [(not clip) '()]
+    [(play-clip? clip)
+     (compiled-animations->inspections (play-clip-animations clip))]
+    [(timed-play-clip? clip)
+     (define local-time
+       (timed-clip-local-time clip time))
+     (define endpoint?
+       (= time (scene-duration scn)))
+     (append*
+      (for/list ([batch (in-list (timed-play-clip-visual-batches clip))]
+                 #:when (or endpoint?
+                            (<= (scheduled-visual-batch-start batch)
+                                local-time)))
+        (compiled-animations->inspections
+         (for/list ([scheduled
+                     (in-list (scheduled-visual-batch-animations batch))]
+                    #:when
+                    (or endpoint?
+                        (< local-time
+                           (+ (scheduled-visual-batch-start batch)
+                              (scheduled-visual-animation-duration scheduled)))))
+           (scheduled-visual-animation-animation scheduled)))))]
+    [else '()]))
+
+(define (compiled-animations->inspections animations)
+  (filter values
+          (for/list ([animation (in-list animations)])
+            (compiled-animation-inspection animation))))
 
 ; scene-clip-count : scene? -> exact-nonnegative-integer?
 ;;   Returns the number of chronological clips in scene.

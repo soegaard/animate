@@ -23,6 +23,7 @@
          "affine-map-visual.rkt"
          "affine-transform.rkt"
          "arrow-visual.rkt"
+         "animation-inspection.rkt"
          "camera-animation.rkt"
          "camera.rkt"
          "color-style.rkt"
@@ -145,6 +146,9 @@
          transform-formula-parts
          transform-formula-parts/anchored
          transform-formula-parts-request?
+         with-animation-inspection
+         animation-request-inspection
+         compiled-animation-inspection
          create
          create-request?
          uncreate
@@ -464,7 +468,7 @@
 ;; fade-transforms when mismatch-mode selects that policy.
 
 (struct transform-formula-parts-request
-  (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary)
+  (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary inspection)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
@@ -476,6 +480,7 @@
 ;;  - outline-morphs  (listof formula-part-outline-morph?) optional interiors.
 ;;  - anchor          (or/c #f formula-part-match?) current-state layout anchor.
 ;;  - stationary      (listof formula-part-match?) parts held at current positions.
+;;  - inspection      (or/c #f animation-inspection?) immutable explanation data.
 
 (struct transform-from-copy-request
   (source-id destination route)
@@ -698,12 +703,13 @@
 ;;  - normalized-destination  path-geometry?  compatible cubic destination.
 ;;  - destination             path-geometry?  exact requested destination.
 
-(struct formula-parts-transform-animation (target-id plan)
+(struct formula-parts-transform-animation (target-id plan inspection)
   #:transparent)
 
 ;; formula-parts-transform-animation represents one compiled part transition.
 ;;  - target-id  symbol?                    stable assembly identity.
 ;;  - plan       formula-transition-plan?  exact endpoints and interior layers.
+;;  - inspection (or/c #f animation-inspection?) retained planner explanation.
 
 (struct transform-from-copy-animation (source destination route overlay-id)
   #:transparent)
@@ -1861,7 +1867,7 @@
                                  #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'transform-formula-parts
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs #f '()))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs #f '() #f))
 
 ; transform-formula-parts/anchored : formula-correspondence? formula-part-match?
 ;                                    [#:path-arc finite-real?]
@@ -1882,7 +1888,7 @@
                                          #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'rewrite-formula
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary #f))
 
 ; make-transform-formula-parts-request : symbol? formula-correspondence?
 ;                                         finite-real? list? list? list? symbol? list?
@@ -1891,7 +1897,7 @@
 ;;   Validates the common ordinary and anchored formula-transition inputs.
 (define (make-transform-formula-parts-request who correspondence path-arc
                                               part-paths copies mismatch-mode
-                                              outline-morphs anchor stationary)
+                                              outline-morphs anchor stationary inspection)
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
      who
@@ -1943,10 +1949,46 @@
       (raise-arguments-error
        who
        "stationary pairs included in the formula correspondence"
-       "stationary" match
-       "correspondence" correspondence)))
+     "stationary" match
+      "correspondence" correspondence)))
   (transform-formula-parts-request
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary))
+   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary inspection))
+
+; with-animation-inspection : transform-formula-parts-request?
+;                             animation-inspection? -> transform-formula-parts-request?
+;; Attaches immutable planner data to one formula transition.  This is kept as
+;; a separate operation so ordinary animation constructors do not acquire
+;; preview-only keywords.
+(define (with-animation-inspection request inspection)
+  (unless (transform-formula-parts-request? request)
+    (raise-argument-error
+     'with-animation-inspection
+     "transform-formula-parts-request?"
+     request))
+  (unless (animation-inspection? inspection)
+    (raise-argument-error
+     'with-animation-inspection
+     "animation-inspection?"
+     inspection))
+  (struct-copy transform-formula-parts-request request
+               [inspection inspection]))
+
+; animation-request-inspection : animation-request? -> (or/c #f animation-inspection?)
+;; Retrieves inspection data before scene compilation.  Requests without
+;; attached explanation data deliberately return #f.
+(define (animation-request-inspection request)
+  (cond
+    [(transform-formula-parts-request? request)
+     (transform-formula-parts-request-inspection request)]
+    [else #f]))
+
+; compiled-animation-inspection : compiled-animation? -> (or/c #f animation-inspection?)
+;; Retrieves one compiled animation's retained explanation data.
+(define (compiled-animation-inspection animation)
+  (cond
+    [(formula-parts-transform-animation? animation)
+     (formula-parts-transform-animation-inspection animation)]
+    [else #f]))
 
 ; create : (or/c path-visual? relation-visual?) -> create-request?
 ;;   Creates a request that introduces visual by revealing its path prefix.
@@ -2763,18 +2805,24 @@
         (transform-formula-parts-request-correspondence request)
         (transform-formula-parts-request-anchor request)
         (transform-formula-parts-request-stationary request)))
+     (define transition-plan
+       (make-formula-transition-plan
+        visual
+        correspondence
+        #:path-arc (transform-formula-parts-request-path-arc request)
+        #:part-paths (transform-formula-parts-request-part-paths request)
+        #:copies (transform-formula-parts-request-copies request)
+        #:mismatch-mode
+        (transform-formula-parts-request-mismatch-mode request)
+        #:outline-morphs
+        (transform-formula-parts-request-outline-morphs request)))
      (formula-parts-transform-animation
       target-id
-     (make-formula-transition-plan
-       visual
-       correspondence
-       #:path-arc (transform-formula-parts-request-path-arc request)
-       #:part-paths (transform-formula-parts-request-part-paths request)
-       #:copies (transform-formula-parts-request-copies request)
-       #:mismatch-mode
-       (transform-formula-parts-request-mismatch-mode request)
-       #:outline-morphs
-        (transform-formula-parts-request-outline-morphs request)))]
+      transition-plan
+      (string-transition-inspection-with-compiled-plan
+       (transform-formula-parts-request-inspection request)
+       target-id
+       transition-plan))]
     [(grow-request? request)
      (define destination (grow-request-visual request))
      (grow-animation target-id visual destination (grow-request-kind request))]

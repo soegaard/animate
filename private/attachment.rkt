@@ -19,9 +19,9 @@
          "relation-visual.rkt"
          "visual-model.rkt")
 
-(provide attach-to)
+(provide make-anchor-relation)
 
-; attach-to : visual? (or/c visual? symbol? visual-path?)
+; make-anchor-relation : visual? (or/c visual? symbol? visual-path?)
 ;             [#:offset vec2?]
 ;             [#:target-anchor layout-attachment-anchor?]
 ;             [#:self-anchor layout-attachment-anchor?]
@@ -30,40 +30,40 @@
 ;; centre-to-centre attachment is semantic: it does not require renderer
 ;; measurement. Choosing an edge or corner of either Visual promotes the
 ;; relationship to the renderer-aware layout phase.
-(define (attach-to content target
-                   #:offset [offset origin]
-                   #:target-anchor [target-anchor 'center]
-                   #:self-anchor [self-anchor 'center])
+(define (make-anchor-relation content target
+                              #:offset [offset origin]
+                              #:target-anchor [target-anchor 'center]
+                              #:self-anchor [self-anchor 'center])
   (unless (visual? content)
-    (raise-argument-error 'attach-to "visual?" content))
+    (raise-argument-error 'make-anchor-relation "visual?" content))
   (when (derived-visual? content)
     (raise-arguments-error
-     'attach-to
+     'make-anchor-relation
      "a concrete content Visual, not a derived Visual"
      "content" content))
   (when (frame-space-visual? content)
     (raise-arguments-error
-     'attach-to
+     'make-anchor-relation
      "ordinary world-space content, not a frame-space Visual"
      "content" content))
   (unless (and (affine-visual? content) (opacity-visual? content))
     (raise-argument-error
-     'attach-to
+     'make-anchor-relation
      "a concrete world-space Visual supporting affine placement and opacity"
      content))
   (unless (vec2? offset)
-    (raise-argument-error 'attach-to "vec2?" offset))
+    (raise-argument-error 'make-anchor-relation "vec2?" offset))
   (unless (layout-attachment-anchor? target-anchor)
-    (raise-argument-error 'attach-to "layout-attachment-anchor?" target-anchor))
+    (raise-argument-error 'make-anchor-relation "layout-attachment-anchor?" target-anchor))
   (unless (layout-attachment-anchor? self-anchor)
-    (raise-argument-error 'attach-to "layout-attachment-anchor?" self-anchor))
-  (define target-address (visual-target-path target 'attach-to))
+    (raise-argument-error 'make-anchor-relation "layout-attachment-anchor?" self-anchor))
+  (define target-address (visual-target-path target 'make-anchor-relation))
   (define content-id (visual-id content))
   (define target-id
     (car (reverse target-address)))
   (when (eq? content-id target-id)
     (raise-arguments-error
-     'attach-to
+     'make-anchor-relation
      "content and target with distinct identities"
      "content-id" content-id
      "target" target-address))
@@ -95,7 +95,7 @@
 
 ;; Built-in attachment semantics are a serializable relation specification.
 ;; The stored intrinsic envelope is deliberately separate from the relation's
-;; animation envelope, which begins at identity in `attach-to` above.
+;; animation envelope, which begins at identity in `make-anchor-relation` above.
 (struct attachment-relation-spec
   (target target-anchor self-anchor offset intrinsic-transform intrinsic-opacity)
   #:transparent

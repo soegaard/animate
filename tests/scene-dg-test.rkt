@@ -1,4 +1,5 @@
 #lang racket/base
+(require "../experimental.rkt")
 
 ;;;
 ;;; SCENE-DG Authored Audio, Subtitles, and Assembly Tests
@@ -8,7 +9,9 @@
          racket/file
          racket/path
          racket/system
-         "../main.rkt")
+         "../main.rkt"
+         "../authoring.rkt"
+         "../render.rkt")
 
 (module+ test
   (define scene (scene-wait (make-scene) 1))

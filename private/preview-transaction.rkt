@@ -10,10 +10,16 @@
 
 (require racket/list
          "camera.rkt"
+         "formula-parts-visual.rkt"
+         "formula-source.rkt"
+         "formula-source-map.rkt"
          "preview-controller.rkt"
          "preview-model.rkt"
          "rate-function.rkt"
-         "scene.rkt")
+         "scene.rkt"
+         "scene-state.rkt"
+         "source-document.rkt"
+         "visual-model.rkt")
 
 (provide (struct-out authoring-snapshot)
          attach-preview-transactions!
@@ -36,14 +42,16 @@
          preview-reset-to-initial-source!
          preview-rebase-transactions!
          preview-selection
-         preview-select!)
+         preview-select!
+         preview-selection-reload-diagnostic)
 
 (struct authoring-snapshot
   (document edit-scene display-sample current-block selection scratch? label)
   #:transparent)
 
 (struct transaction-context
-  (initial-scene edit-scene current-block selection scratch? undo redo checkpoints lock)
+  (initial-scene edit-scene current-block selection selection-reload-diagnostic
+                 scratch? undo redo checkpoints lock)
   #:mutable
   #:transparent)
 
@@ -56,7 +64,7 @@
   (unless (scene? source)
     (raise-argument-error 'attach-preview-transactions! "scene? initial source" source))
   (or (hash-ref contexts session #f)
-      (let ([context (transaction-context source source #f #f #f '() '() (hash)
+      (let ([context (transaction-context source source #f #f #f #f '() '() (hash)
                                           (make-semaphore 1))])
         (hash-set! contexts session context)
         (preview-add-close-hook! session (lambda () (hash-remove! contexts session)))
@@ -207,16 +215,29 @@
 
 ;; Source reloads call this only after a fresh candidate is installed in the
 ;; controller. Any scratch history refers to the old module generation and is
-;; safely discarded rather than replayed against incompatible code.
+;; safely discarded rather than replayed against incompatible code. Selection
+;; identity is handled separately and conservatively: a reload may retain an
+;; exact Visual path, then a unique named formula part, then an exact mapped
+;; source span. It never guesses between repeated formula occurrences.
 (define (preview-rebase-transactions! session scene)
   (unless (scene? scene)
     (raise-argument-error 'preview-rebase-transactions! "scene?" scene))
   (define context (context-for 'preview-rebase-transactions! session))
   (with-context context
     (lambda ()
+      (define old-scene (transaction-context-edit-scene context))
+      (define old-selection (transaction-context-selection context))
+      (define-values (selection diagnostic)
+        (preserve-selection-after-reload
+         old-scene
+         (preview-current-time session)
+         old-selection
+         scene))
       (set-transaction-context-initial-scene! context scene)
       (set-transaction-context-edit-scene! context scene)
       (set-transaction-context-current-block! context #f)
+      (set-transaction-context-selection! context selection)
+      (set-transaction-context-selection-reload-diagnostic! context diagnostic)
       (set-transaction-context-scratch?! context #f)
       (set-transaction-context-undo! context '())
       (set-transaction-context-redo! context '())
@@ -226,6 +247,14 @@
 (define (preview-selection session)
   (transaction-context-selection (context-for 'preview-selection session)))
 
+;; Returns #f for an ordinary live selection, or an immutable explanatory
+;; string after a source reload. The diagnostic is deliberately separate from
+;; the path: consumers can show it without treating a failed identity match as
+;; a selectable Visual.
+(define (preview-selection-reload-diagnostic session)
+  (transaction-context-selection-reload-diagnostic
+   (context-for 'preview-selection-reload-diagnostic session)))
+
 (define (preview-select! session selection)
   (unless (or (not selection) (and (list? selection) (pair? selection) (andmap symbol? selection)))
     (raise-argument-error 'preview-select! "(or/c #f nonempty-listof-symbol?)" selection))
@@ -233,6 +262,7 @@
   (with-context context
     (lambda ()
       (set-transaction-context-selection! context selection)
+      (set-transaction-context-selection-reload-diagnostic! context #f)
       selection)))
 
 (define (perform-edit! who session operation #:label label)
@@ -265,12 +295,15 @@
   (set-transaction-context-edit-scene! context (authoring-snapshot-edit-scene snapshot))
   (set-transaction-context-current-block! context (authoring-snapshot-current-block snapshot))
   (set-transaction-context-selection! context (authoring-snapshot-selection snapshot))
+  (set-transaction-context-selection-reload-diagnostic! context #f)
   (set-transaction-context-scratch?! context (authoring-snapshot-scratch? snapshot)))
 
 (define (reset-context! session context scene)
   (preview-set-source! session scene)
   (set-transaction-context-edit-scene! context scene)
   (set-transaction-context-current-block! context #f)
+  (set-transaction-context-selection! context #f)
+  (set-transaction-context-selection-reload-diagnostic! context #f)
   (set-transaction-context-scratch?! context #f)
   (set-transaction-context-undo! context '())
   (set-transaction-context-redo! context '())
@@ -295,3 +328,129 @@
 
 (define (with-context context thunk)
   (call-with-semaphore (transaction-context-lock context) thunk))
+
+
+;;;
+;;; Selection Identity Across Source Reload
+;;;
+
+;; This code purposefully lives next to transaction rebasing rather than in the
+;; GUI. A source reload performed by the REPL, file watcher, or a future editor
+;; bridge gets the exact same conservative identity policy.
+
+(define (preserve-selection-after-reload old-scene time old-selection new-scene)
+  (cond
+    [(not old-selection) (values #f #f)]
+    [else
+     (with-handlers
+         ([exn:fail?
+           (lambda (_error)
+             (values #f
+                     "selection cleared after reload: its previous semantic path could not be resolved"))])
+       (define old-state (scene-state-at old-scene time))
+       (define new-state (scene-state-at new-scene time))
+       (cond
+         [(scene-state-has? new-state old-selection)
+          (values old-selection "selection retained after reload: exact Visual path")]
+         [else
+          (define named-candidates
+            (named-formula-part-candidates old-state old-selection new-state))
+          (cond
+            [(= (length named-candidates) 1)
+             (values (car named-candidates)
+                     "selection retained after reload: unique named formula part")]
+            [(pair? named-candidates)
+             (values #f
+                     "selection cleared after reload: named formula part is ambiguous")]
+            [else
+             (define source-candidates
+               (source-span-candidates old-state old-selection new-state))
+             (cond
+               [(= (length source-candidates) 1)
+                (values (car source-candidates)
+                        "selection retained after reload: exact formula source span")]
+               [(pair? source-candidates)
+                (values #f
+                        "selection cleared after reload: formula source span is ambiguous")]
+               [else
+                (values #f
+                        "selection cleared after reload: no stable Visual, named-part, or source-span identity")])])]))]))
+
+(define (scene-state-at scene time)
+  (scene-sample scene (min time (scene-duration scene))))
+
+(define (named-formula-part-candidates old-state old-selection new-state)
+  (define part-name (selected-formula-part-name old-state old-selection))
+  (if (not part-name)
+      '()
+      (for/list ([entry (in-list (formula-roots new-state))]
+                 #:when (formula-assembly-visual-has-part?
+                         (cdr entry) part-name))
+        (append (car entry) (list part-name)))))
+
+(define (selected-formula-part-name state selection)
+  (for/or ([length (in-range (sub1 (length selection)) 0 -1)])
+    (define prefix (take selection length))
+    (define suffix (drop selection length))
+    (and (pair? suffix)
+         (with-handlers ([exn:fail? (lambda (_error) #f)])
+           (define candidate (scene-state-ref state prefix))
+           (and (formula-assembly-visual? candidate)
+                (formula-assembly-visual-has-part? candidate (car suffix))
+                (car suffix))))))
+
+;; An exact source fallback needs both the complete canonical formula text and
+;; its exact map span. Matching text alone would silently select the wrong
+;; repeated occurrence, which is precisely what reload recovery must avoid.
+(define (source-span-candidates old-state old-selection new-state)
+  (define old-identity (selected-formula-source-identity old-state old-selection))
+  (if (not old-identity)
+      '()
+      (let ([source (car old-identity)]
+            [span (cdr old-identity)])
+        (append*
+         (for/list ([entry (in-list (formula-roots new-state))]
+                    #:when
+                    (with-handlers ([exn:fail? (lambda (_error) #f)])
+                      (string=? source (formula-source (cdr entry)))))
+           (for/list ([match (in-list (formula-source-map-matches
+                                       (formula-source-map (cdr entry))))]
+                      #:when (equal? span (formula-source-match-span match))
+                      [relative (in-list (formula-source-match-relative-paths match))])
+             (append (car entry) relative)))))))
+
+(define (selected-formula-source-identity state selection)
+  (for/or ([length (in-range (sub1 (length selection)) 0 -1)])
+    (define prefix (take selection length))
+    (define relative (drop selection length))
+    (and (pair? relative)
+         (with-handlers ([exn:fail? (lambda (_error) #f)])
+           (define formula (scene-state-ref state prefix))
+           (define mapping
+             (and (formula-assembly-visual? formula)
+                  (formula-source-map formula)))
+           (and mapping
+                (for/or ([match (in-list (formula-source-map-matches mapping))]
+                         #:when (member relative
+                                        (formula-source-match-relative-paths match)
+                                        equal?))
+                  (cons (formula-source formula)
+                        (formula-source-match-span match))))))))
+
+(define (formula-roots state)
+  (append*
+   (for/list ([visual (in-list (scene-state-visuals-in-drawing-order state))])
+     (enumerate-formula-roots visual (list (visual-id visual))))))
+
+(define (enumerate-formula-roots visual path)
+  (append
+   (if (formula-assembly-visual? visual)
+       (list (cons path visual))
+       '())
+   (if (visual-container? visual)
+       (append*
+        (for/list ([child (in-list (visual-child-entries visual))])
+          (enumerate-formula-roots
+           (visual-child-visual child)
+           (append path (list (visual-child-id child))))))
+       '())))

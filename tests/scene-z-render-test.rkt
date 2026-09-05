@@ -17,7 +17,8 @@
          racket/file
          (only-in racket/math pi)
          rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

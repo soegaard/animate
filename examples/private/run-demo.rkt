@@ -1,7 +1,8 @@
 #lang racket/base
 
 (require racket/cmdline
-         "../../main.rkt")
+         animate
+         animate/render)
 
 (provide run-demo)
 

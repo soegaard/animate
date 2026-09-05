@@ -5,7 +5,7 @@
 ;; selector contains editorial time ranges supplied by the author.
 
 (require "authoring-sections.rkt"
-         "../preview.rkt")
+         animate/preview)
 
 (module+ main
   (void

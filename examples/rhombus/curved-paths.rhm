@@ -3,7 +3,8 @@
 // The SCENE-G cubic path API consists of ordinary Racket values and functions
 // that Rhombus can import directly.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def wave_path = #{cubic-bezier-path}(

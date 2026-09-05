@@ -8,7 +8,7 @@
 ;; final panel introduces three ordinary Visuals with centre growth, arrow
 ;; growth, and outline-then-fill, respectively.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

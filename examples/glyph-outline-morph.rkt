@@ -4,7 +4,7 @@
 ;;; SCENE-BZ: Compatible dvisvgm Glyph Outline Morphing
 ;;;
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

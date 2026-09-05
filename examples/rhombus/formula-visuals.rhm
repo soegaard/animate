@@ -3,7 +3,8 @@
 // The SCENE-M formula and timeline APIs are ordinary Racket values and
 // functions that Rhombus can import directly.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   def identity_formula = #{latex-formula}(

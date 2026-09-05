@@ -8,7 +8,7 @@
 ;; as their internal ear-clipping triangles, diagonal seams would be visible.
 ;; The rendered result instead has just exterior and hole boundaries.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

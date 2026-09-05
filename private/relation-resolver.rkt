@@ -10,7 +10,9 @@
 
 (require racket/list
          "affine-map-visual.rkt"
+         "derived-visual.rkt"
          "parameter.rkt"
+         "relation-context.rkt"
          "relation-dependency.rkt"
          "relation-visual.rkt"
          "scene-state.rkt"
@@ -20,14 +22,16 @@
 (provide scene-relation-dependency-graph
          scene-validate-relations
          (struct-out relation-resolution-report)
-         scene-relation-report)
+         scene-relation-report
+         scene-relation-sample-report)
 
 ;; A report is static, inspectable relation metadata for one sampled scene
 ;; definition. `order` is its deterministic drawing-order index. Runtime
 ;; context accesses are separately checked while a resolver runs; this report
 ;; intentionally does not execute arbitrary author code merely to inspect it.
 (struct relation-resolution-report
-  (path order phase structure dependencies cacheability warnings)
+  (path order phase structure dependencies used-dependencies unused-dependencies
+        cacheability warnings)
   #:transparent)
 
 ;; scene-relation-dependency-graph : scene-state? -> immutable-hash?
@@ -80,31 +84,87 @@
   (unless (scene-state? state)
     (raise-argument-error 'scene-relation-report "scene-state?" state))
   (scene-validate-relations state)
+  (select-relation-report (static-relation-reports state) target
+                          'scene-relation-report))
+
+;; scene-relation-sample-report resolves each semantic relation once and
+;; records the dependency descriptions actually read in that relation's
+;; context.  This is intentionally separate from the static report: callers
+;; choose whether an inspector query is allowed to execute author code.
+(define (scene-relation-sample-report state [target #f])
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-relation-sample-report "scene-state?" state))
+  (scene-validate-relations state)
+  (define base-context
+    (make-derived-context
+     (lambda (id) (scene-state-value-has? state id))
+     (lambda (id) (scene-state-value-ref state id))
+     (lambda (visual-target) (scene-state-has? state visual-target))
+     (lambda (visual-target)
+       (scene-state-resolved-world-ref state visual-target))))
   (define reports
-    (for/list ([entry (in-list (scene-relation-entries state))]
-               [order (in-naturals)])
-      (define path (car entry))
-      (define relation (cdr entry))
-      (define cacheability (relation-visual-cacheability relation))
-      (relation-resolution-report
-       path
-       order
-       (relation-visual-phase relation)
-       (relation-visual-structure relation)
-       (relation-visual-dependencies relation)
-       cacheability
-       (case cacheability
-         [(disabled)
-          (list "generic relation resolver has no persistent cache key")]
-         [else '()]))))
+    (for/list ([report (in-list (static-relation-reports state))])
+      (define relation
+        (scene-state-ref state (relation-resolution-report-path report)))
+      (cond
+        [(eq? (relation-resolution-report-phase report) 'layout)
+         (struct-copy relation-resolution-report report
+                      [warnings
+                       (append (relation-resolution-report-warnings report)
+                               (list "used dependencies require renderer-aware layout resolution"))])]
+        [else
+         (define used #f)
+         (define resolution-warning #f)
+         (with-handlers
+             ([exn:fail?
+               (lambda (error) (set! resolution-warning (exn-message error)))])
+           (resolve-relation-visual
+            relation base-context
+            #:on-context
+            (lambda (context)
+              (set! used (relation-context-used-dependencies context)))))
+         (if resolution-warning
+             (struct-copy relation-resolution-report report
+                          [warnings
+                           (append (relation-resolution-report-warnings report)
+                                   (list (string-append "sample resolution failed: "
+                                                        resolution-warning)))])
+             (struct-copy relation-resolution-report report
+                          [used-dependencies used]
+                          [unused-dependencies
+                           (filter (lambda (dependency) (not (member dependency used)))
+                                   (relation-resolution-report-dependencies report))]))])))
+  (select-relation-report reports target 'scene-relation-sample-report))
+
+(define (static-relation-reports state)
+  (for/list ([entry (in-list (scene-relation-entries state))]
+             [order (in-naturals)])
+    (define path (car entry))
+    (define relation (cdr entry))
+    (define cacheability (relation-visual-cacheability relation))
+    (relation-resolution-report
+     path
+     order
+     (relation-visual-phase relation)
+     (relation-visual-structure relation)
+     (relation-visual-dependencies relation)
+     #f
+     #f
+     cacheability
+     (case cacheability
+       [(disabled)
+        (list "generic relation resolver has no persistent cache key")]
+       [else '()]))))
+
+(define (select-relation-report reports target who)
   (if target
-      (let ([path (visual-target-path target 'scene-relation-report)])
+      (let ([path (visual-target-path target who)])
         (or (for/first ([report (in-list reports)]
                         #:when (equal? (relation-resolution-report-path report)
                                        path))
               report)
             (raise-arguments-error
-             'scene-relation-report
+             who
              "a relation Visual path present in the scene"
              "visual-path" path)))
       reports))

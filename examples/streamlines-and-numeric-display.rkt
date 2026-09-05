@@ -9,7 +9,7 @@
 ;; particle nor the label depends on a previously rendered frame.
 
 (require racket/math
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

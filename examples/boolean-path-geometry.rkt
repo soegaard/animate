@@ -9,7 +9,7 @@
 ;; each coloured result demonstrates one Boolean operation.
 
 (require racket/list
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

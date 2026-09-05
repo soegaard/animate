@@ -12,7 +12,9 @@
          racket/file
          racket/path
          racket/runtime-path
-         "../main.rkt")
+         "../main.rkt"
+         "../authoring.rkt"
+         "../render.rkt")
 
 (define-runtime-path authoring-sections-example
   "../examples/authoring-sections.rkt")

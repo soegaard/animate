@@ -15,7 +15,8 @@
 (require racket/file
          rackunit
          (only-in pict blank pict-height pict-width)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

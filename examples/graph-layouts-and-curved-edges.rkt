@@ -9,7 +9,8 @@
 ;; and labels are rebuilt from the one sampled vertex position.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

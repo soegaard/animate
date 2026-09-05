@@ -25,7 +25,8 @@
                   group-visual-resolved-children)
          (submod "../private/latex-formula-pict-renderer.rkt"
                  test-support)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

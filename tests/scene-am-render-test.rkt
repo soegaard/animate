@@ -7,7 +7,8 @@
 (require racket/class
          racket/file
          rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 (module+ test
   (define (bitmap->argb-bytes bitmap)

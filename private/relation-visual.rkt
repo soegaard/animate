@@ -407,18 +407,26 @@
     [else 'disabled]))
 
 ;; resolve-relation-visual : relation-visual? derived-context?
-;;                           [#:anchor-ref (or/c false/c procedure?)] -> visual?
+;;                           [#:anchor-ref (or/c false/c procedure?)]
+;;                           [#:on-context (or/c false/c procedure?)] -> visual?
 ;; Shared result validation for the semantic scene resolver and the later
 ;; renderer-aware layout phase. The semantic generic invokes it without an
 ;; anchor callback; the Pict adapter supplies one for `'layout` relations.
 (define (resolve-relation-visual relation context
                                  #:anchor-ref [anchor-ref #f]
                                  #:layout-box-ref [layout-box-ref #f]
-                                 #:selection-box-ref [selection-box-ref #f])
+                                 #:selection-box-ref [selection-box-ref #f]
+                                 #:on-context [on-context #f])
   (unless (relation-visual? relation)
     (raise-argument-error 'resolve-relation-visual "relation-visual?" relation))
   (unless (derived-context? context)
     (raise-argument-error 'resolve-relation-visual "derived-context?" context))
+  (unless (or (not on-context)
+              (procedure-arity-includes? on-context 1))
+    (raise-argument-error
+     'resolve-relation-visual
+     "#f or procedure accepting a relation-context?"
+     on-context))
   (define template (relation-visual-value-template relation))
   (define relation-context
     (make-relation-context
@@ -466,6 +474,10 @@
      "visual-id" (visual-id template)
      "expected tree" (visual-tree-signature template)
      "result tree" (visual-tree-signature result)))
+  ;; Inspection is an observation of the per-resolution context, not a second
+  ;; resolver invocation. Calling this after validation ensures an observer
+  ;; never reports dependency use for a malformed relation result.
+  (when on-context (on-context relation-context))
   (apply-relation-envelope relation result))
 
 ;; resolve-relation-path-reveal-visual : relation-path-reveal-visual?

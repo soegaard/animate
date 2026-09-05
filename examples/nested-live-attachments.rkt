@@ -10,7 +10,7 @@
 
 (require racket/math
          racket/runtime-path
-         "../main.rkt"
+         animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)
@@ -31,7 +31,7 @@
   (define window-path
     '(launch rocket-diagram rocket window))
   (define badge
-    (attach-to
+    (follow-anchor
      (circle #:id 'window-badge
              #:center origin
              #:radius 11/20

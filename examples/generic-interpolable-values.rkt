@@ -1,6 +1,7 @@
 #lang racket/base
+(require animate/experimental)
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define (make-demo-scene)

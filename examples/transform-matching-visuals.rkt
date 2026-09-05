@@ -9,7 +9,7 @@
 ;; their `input`, `process`, `edge`, and `caption` leaves remain semantically
 ;; addressable through the transition.
 
-(require "../main.rkt" "private/run-demo.rkt")
+(require animate "private/run-demo.rkt")
 (provide make-demo-scene)
 
 (define (make-demo-scene)

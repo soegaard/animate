@@ -17,7 +17,9 @@
 ;; Imports
 (require racket/list
          racket/path
-         racket/system)
+         racket/string
+         racket/system
+         "encoder-profile.rkt")
 
 ;; Exports
 (provide encode-mp4!)
@@ -31,11 +33,17 @@
 ;               [#:fps exact-positive-integer?]
 ;               [#:width (or/c false/c exact-positive-integer?)]
 ;               [#:height (or/c false/c exact-positive-integer?)]
+;               [#:codec symbol?] [#:pixel-format symbol?]
+;               [#:options immutable-hash?] [#:fast-start? boolean?]
 ;               -> path-string?
-;;   Encodes numbered PNG frames as an H.264 MP4 file using FFmpeg. Supplying
-;;   both width and height resizes the source with Lanczos filtering.
+;;   Encodes numbered PNG frames using an explicit FFmpeg video profile.
+;;   Supplying both width and height resizes the source with Lanczos filtering.
 (define (encode-mp4! frames-directory output-file #:fps [fps 30]
-                     #:width [width #f] #:height [height #f])
+                     #:width [width #f] #:height [height #f]
+                     #:codec [codec 'h264]
+                     #:pixel-format [pixel-format 'yuv420p]
+                     #:options [options #hasheq()]
+                     #:fast-start? [fast-start? #t])
   (unless (path-string? frames-directory)
     (raise-argument-error
      'encode-mp4!
@@ -56,6 +64,14 @@
      "both #:width and #:height must be positive exact integers, or both omitted"
      "width" width
      "height" height))
+  (unless (symbol? codec)
+    (raise-argument-error 'encode-mp4! "symbol?" codec))
+  (unless (symbol? pixel-format)
+    (raise-argument-error 'encode-mp4! "symbol?" pixel-format))
+  (unless (hash? options)
+    (raise-argument-error 'encode-mp4! "hash?" options))
+  (unless (boolean? fast-start?)
+    (raise-argument-error 'encode-mp4! "boolean?" fast-start?))
   (define ffmpeg
     (find-executable-path "ffmpeg"))
   (unless ffmpeg
@@ -77,8 +93,11 @@
                   "-framerate" (number->string fps)
                   "-i" input-pattern)
             scale-arguments
-            (list "-c:v" "libx264"
-                  "-pix_fmt" "yuv420p"
+            (list "-c:v" (encoder-codec-name codec)
+                  "-pix_fmt" (symbol->string pixel-format))
+            (encoder-option-arguments options)
+            (if fast-start? (list "-movflags" "+faststart") '())
+            (list
                   (path->string
                    (if (path? output-file)
                        output-file
@@ -90,3 +109,21 @@
      "frames-directory" frames-directory
      "output-file" output-file))
   output-file)
+
+(define (encoder-option-arguments options)
+  (apply append
+         (for/list ([entry
+                     (in-list
+                      (sort (hash->list options)
+                            string<?
+                            #:key (lambda (entry)
+                                    (format "~a" (car entry)))))])
+           (define key (car entry))
+           (define value (cdr entry))
+           (unless (symbol? key)
+             (raise-argument-error 'encode-mp4! "symbol option key" key))
+           (unless (or (string? value) (number? value) (symbol? value))
+             (raise-argument-error
+              'encode-mp4! "string?, number?, or symbol option value" value))
+           (list (string-append "-" (symbol->string key))
+                 (format "~a" value)))))

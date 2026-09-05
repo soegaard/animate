@@ -8,7 +8,8 @@
 ;; child starts half one child-duration after the previous child starts.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

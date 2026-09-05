@@ -15,7 +15,8 @@
 (require racket/file
          rackunit
          (only-in pict filled-rectangle)
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 
 (module+ test

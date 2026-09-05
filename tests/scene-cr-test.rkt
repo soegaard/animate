@@ -103,7 +103,7 @@
   (define moved
     (scene-play
      (scene-add (make-scene) moving-source)
-     (transform-matching-formula moving-source moving-destination)
+     (transform-matching-parts moving-source moving-destination)
      #:duration 2))
   (define interior
     (part-formula

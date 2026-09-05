@@ -8,7 +8,7 @@
 ;; animations therefore select a matrix row and one vector entry by nested path
 ;; instead of requiring a separate matrix animation API.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

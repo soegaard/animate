@@ -10,7 +10,8 @@
 
 (require racket/cmdline
          racket/runtime-path
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 

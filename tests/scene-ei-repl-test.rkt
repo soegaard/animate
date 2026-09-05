@@ -30,7 +30,7 @@
       (define session
         (open-program-preview-controller
          source-path 'repl-program #:fps 2 #:prefetch 0
-         #:producer (lambda (_document _sample _spec) 'bitmap)
+         #:producer (lambda (_document _sample _spec _cancellation-token) 'bitmap)
          #:byte-size (lambda (_bitmap) 1)))
       (define repl (open-preview-repl! session))
       (check-true (preview-repl-open? repl))

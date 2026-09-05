@@ -32,7 +32,7 @@
     (rectangle #:id 'target #:center origin #:width 2 #:height 1
                #:fill "aliceblue" #:stroke #f #:stroke-width 0))
   (define attached-marker
-    (attach-to
+    (follow-anchor
      (circle #:id 'marker #:center origin #:radius 1/5
              #:fill "crimson" #:stroke #f #:stroke-width 0)
      'target
@@ -43,7 +43,7 @@
   ;; Centre-to-centre following is a semantic relation; an edge/corner choice
   ;; is the renderer-aware layout form. Both expose normal relation metadata.
   (define centre-marker
-    (attach-to
+    (follow-anchor
      (circle #:id 'centre-marker #:radius 1/5)
      'target))
   (check-true (relation-visual? centre-marker))
@@ -108,11 +108,11 @@
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (attach-to target 'target #:target-anchor 'right)))
+     (follow-anchor target 'target #:target-anchor 'right)))
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (attach-to
+     (follow-anchor
       (circle #:id 'bad-anchor #:radius 1/5)
       'target
       #:target-anchor 'diagonal)))
@@ -124,7 +124,7 @@
        (scene-add
         (make-scene #:camera camera)
         target
-        (attach-to
+        (follow-anchor
          (circle #:id 'bad-frame-target #:radius 1/5)
          (fixed-in-frame (plain-text "fixed" #:id 'overlay) #:camera camera)
          #:target-anchor 'top)))
@@ -133,7 +133,7 @@
   ;; first marker is centred at 13/10, so its right edge is 3/2 and the second
   ;; marker's left edge begins there, putting its centre at 17/10.
   (define chained-marker
-    (keep-right-of
+    (follow-right-of
      (circle #:id 'chained-marker #:radius 1/5
              #:fill "forestgreen" #:stroke #f #:stroke-width 0)
      'marker))
@@ -157,9 +157,9 @@
   ;; Cycles are a deterministic authoring error rather than recursive renderer
   ;; placement or a stale previous-frame result.
   (define cycle-a
-    (keep-right-of (circle #:id 'a #:radius 1/5) 'b))
+    (follow-right-of (circle #:id 'a #:radius 1/5) 'b))
   (define cycle-b
-    (keep-right-of (circle #:id 'b #:radius 1/5) 'a))
+    (follow-right-of (circle #:id 'b #:radius 1/5) 'a))
   (check-exn
    exn:fail:contract?
    (lambda ()

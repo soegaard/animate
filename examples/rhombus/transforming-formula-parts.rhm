@@ -3,7 +3,8 @@
 // The SCENE-O formula-part transformation API is an ordinary Racket value and
 // function interface that Rhombus can import directly.
 import:
-  "../main.rkt" open
+  "animate" open
+  "animate/render" open
 
 module main:
   fun make_part(name, source, x):

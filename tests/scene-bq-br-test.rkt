@@ -6,7 +6,8 @@
 
 (require racket/file
          rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../render.rkt")
 
 (module+ test
   (define viewport
@@ -44,6 +45,8 @@
       (check-equal? (render-diagnostics-cache-misses report) 1)
       (check-equal? (render-diagnostics-cache-hits report) 3)
       (check-equal? (render-diagnostics-cache-evictions report) 0)
+      (check-equal? (render-diagnostics-release-version report) "1.8.0")
+      (check-eq? (render-diagnostics-release-stage report) 'SCENE-EM)
       (define sequential-paths
         (render-frames! animation sequential-directory #:fps 2 #:workers 1))
       ;; Concurrent writing does not change file names, ordering, or pixels.
@@ -52,6 +55,31 @@
          (file->bytes path))
        (for/list ([path (in-list sequential-paths)])
          (file->bytes path)))
+      ;; Rendering order is deliberately not semantic state.  A release gate
+      ;; must therefore compare the same global frames requested ascending,
+      ;; descending, and in a fixed permutation; each selected-output path is
+      ;; locally numbered, so pair the returned paths with their requested
+      ;; global index before comparing bytes.
+      (define indices '(0 1 2 3))
+      (define (index-bytes requested paths)
+        (for/hash ([index (in-list requested)] [path (in-list paths)])
+          (values index (file->bytes path))))
+      (define baseline (index-bytes indices sequential-paths))
+      (define descending-paths
+        (render-frame-indices! animation
+                               (reverse indices)
+                               (build-path root "descending")
+                               #:fps 2
+                               #:workers 1))
+      (define permuted-indices '(2 0 3 1))
+      (define permuted-paths
+        (render-frame-indices! animation
+                               permuted-indices
+                               (build-path root "permuted")
+                               #:fps 2
+                               #:workers 3))
+      (check-equal? (index-bytes (reverse indices) descending-paths) baseline)
+      (check-equal? (index-bytes permuted-indices permuted-paths) baseline)
       (define empty-report
         (render-frames/report! (make-scene) (build-path root "empty") #:workers 4))
       (check-equal? (render-diagnostics-paths empty-report) '())

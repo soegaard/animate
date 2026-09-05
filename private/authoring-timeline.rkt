@@ -13,17 +13,9 @@
 ;;; Imports and Exports
 ;;;
 
-(require racket/file
-         racket/format
-         racket/list
-         racket/path
-         file/sha1
-         "camera.rkt"
-         "frame-renderer.rkt"
+(require racket/list
          "geometry.rkt"
-         "pict-renderer.rkt"
-         "png-renderer.rkt"
-         "shape-pict-renderers.rkt"
+         "scene-frame-grid.rkt"
          "scene.rkt")
 
 (provide section
@@ -61,12 +53,7 @@
          timeline-section-frame-indices
          timeline-section-frame-count
          timeline-section-cues
-         authored-timeline-metadata
-         write-subtitles!
-         automatic-section-cache-key
-         render-timeline-section!
-         render-timeline-section/report!
-         (struct-out section-render-report))
+         authored-timeline-metadata)
 
 
 ;;;
@@ -113,13 +100,6 @@
 
 ;; authored-timeline decorates an ordinary immutable scene with authoring
 ;; metadata. It never changes scene sampling, clips, or renderer behavior.
-
-(struct section-render-report
-  (paths source-frame-indices cache-hit? diagnostics)
-  #:transparent)
-
-;; section-render-report records one selected-section render. diagnostics is a
-;; render-diagnostics value on a fresh render and #f for a validated cache hit.
 
 ;; The public constructors deliberately validate their inputs. Keep the
 ;; transparent representation private so a caller cannot bypass that validation
@@ -444,6 +424,11 @@
 ;;;
 ;;; Subtitle Output
 
+;; The effectful implementation now lives in section-renderer.rkt. Keeping this
+;; historical source block disabled temporarily makes the extraction easy to
+;; audit while this module remains strictly metadata-only at run time.
+#;(begin
+
 ;; write-subtitles! : authored-timeline? path-string?
 ;;                    [#:format (or/c 'srt 'webvtt)] -> path-string?
 ;; Writes portable subtitles for a later FFmpeg mux step. Text is stored
@@ -705,6 +690,7 @@
 
 ;;;
 ;;; Validation Helpers
+)
 ;;;
 
 (define (check-symbol who value)

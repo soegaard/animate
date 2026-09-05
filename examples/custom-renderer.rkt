@@ -12,7 +12,8 @@
 ;;;
 
 (require (only-in pict cc-superimpose filled-rectangle)
-         "../main.rkt")
+         animate
+         animate/render)
 
 
 ;;;

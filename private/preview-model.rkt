@@ -13,6 +13,7 @@
          "authoring-timeline.rkt"
          "camera.rkt"
          "frame-renderer.rkt"
+         "scene-frame-grid.rkt"
          "geometry.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers)
          "pict-renderer.rkt"

@@ -2,7 +2,7 @@
 
 ;; SCENE-AV named scalar-value example.
 
-(require "../main.rkt")
+(require animate)
 
 (provide make-demo-scene)
 

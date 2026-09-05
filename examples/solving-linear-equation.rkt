@@ -7,7 +7,7 @@
 ;; A staged tagged-formula example. `rewrite-formula` lays out each endpoint
 ;; with TeX, then anchors the equals sign at the current scene position.
 
-(require "../main.rkt"
+(require animate
          "private/run-demo.rkt")
 
 (provide make-demo-scene)

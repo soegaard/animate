@@ -33,13 +33,17 @@
       (define session
         (open-program-preview-controller
          source-path 'preview-program #:fps 2 #:prefetch 0
-         #:producer (lambda (document sample _spec)
+         #:producer (lambda (document sample _spec _cancellation-token)
                       (list (preview-document-generation document) sample))
          #:byte-size (lambda (_value) 1)))
       (check-true (program-preview-session? session))
       (check-equal? (preview-program-generation session) 0)
       (check-equal? (map scene-block-spec-id (preview-program-blocks session))
                     '(first second))
+      ;; The semantic timeline consumes these compiled half-open ranges. They
+      ;; must change with the program rather than being guessed from labels.
+      (check-equal? (preview-program-block-ranges session)
+                    '((first 0 1) (second 1 3)))
       (void (preview-jump-to-block! session 'second))
       (check-equal? (preview-current-time session) 1)
       (check-equal? (preview-current-block session) 'second)
@@ -74,6 +78,8 @@
       (void (preview-reload! session))
       (check-equal? (preview-program-generation session) 1)
       (check-equal? (scene-duration (preview-source session)) 4)
+      (check-equal? (preview-program-block-ranges session)
+                    '((first 0 1) (second 1 4)))
       (check-true (preview-open? session))
       (preview-close! session))
     (lambda ()

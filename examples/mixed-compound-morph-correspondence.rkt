@@ -8,7 +8,8 @@
 ;; pairing for one compound path that interleaves open curves and closed loops.
 
 (require racket/cmdline
-         "../main.rkt")
+         animate
+         animate/render)
 
 (provide make-demo-scene)
 
