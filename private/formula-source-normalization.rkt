@@ -20,6 +20,7 @@
 
 (provide (struct-out formula-source-unit)
          normalize-formula-source
+         formula-source-boundary-rendering-key
          formula-source-units)
 
 
@@ -70,6 +71,33 @@
   (for/list ([token (in-list (tex-source-scan-tokens scan))]
              #:unless (memq (tex-source-token-kind token)
                             '(whitespace comment)))
+    (list (tex-source-token-kind token)
+          (string->immutable-string
+           (substring source
+                      (tex-source-token-start token)
+                      (tex-source-token-end token))))))
+
+;; formula-source-boundary-rendering-key : string? -> (listof immutable token datum)
+;; Returns a TeX-aware appearance key that ignores only non-ink source at the
+;; *edges* of one independently rendered fragment.  In particular, whitespace
+;; inside `\\text{...}` remains significant, and a control symbol such as
+;; `\\ ` remains one intact lexical token.  This is deliberately narrower than
+;; `normalize-formula-source`: it answers whether two physical fragments have
+;; the same visible formula content after the source mapper has attached an
+;; adjacent gap to one of them.
+(define (formula-source-boundary-rendering-key source)
+  (unless (string? source)
+    (raise-argument-error
+     'formula-source-boundary-rendering-key
+     "string?"
+     source))
+  (define tokens (tex-source-scan-tokens (scan-tex-source source)))
+  (define (invisible-token? token)
+    (memq (tex-source-token-kind token) '(whitespace comment)))
+  (define visible-tokens
+    (dropf (reverse (dropf (reverse tokens) invisible-token?))
+           invisible-token?))
+  (for/list ([token (in-list visible-tokens)])
     (list (tex-source-token-kind token)
           (string->immutable-string
            (substring source

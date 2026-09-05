@@ -4,7 +4,7 @@
                      animate
                      animate/preview))
 
-@section{Formula Source Maps}
+@title[#:tag "concept-formula-source-maps"]{Formula Source Maps}
 
 Formula parts and source selections deliberately answer different questions.
 Use @racket[formula-select] for a part the author explicitly named; use

@@ -39,7 +39,7 @@ exactly synchronized with the gallery and example requirements.
 - [Adaptive function plot](examples/function-graphs.rkt) — plotting, adaptive; requires core.
 - [Adaptive ODE trajectory](examples/adaptive-ode-trajectory.rkt) — ode, flow; requires core.
 - [Source-block hot reload](examples/source-block-hot-reload.rkt) — authoring, preview; requires core, gui.
-- [Preview REPL and inspector](examples/source-block-hot-reload.rkt) — preview, repl, inspector; requires core, gui.
+- [Semantic inspector](examples/semantic-inspector.rkt) — preview, inspector, formula, relations; requires core, latex, dvisvgm, gui.
 - [Authored audio and video](examples/authored-media-assembly.rkt) — rendering, audio, subtitles; requires core, ffmpeg.
 <!-- END GENERATED: canonical examples -->
 

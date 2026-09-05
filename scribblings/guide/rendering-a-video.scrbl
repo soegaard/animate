@@ -4,7 +4,7 @@
                      animate
                      animate/render))
 
-@section{Rendering a Video}
+@title[#:tag "guide-rendering-a-video"]{Rendering a Video}
 
 Frame files, encoders, cache manifests, subtitles, and media assembly are
 effectful operations from @racketmodname[animate/render]. The semantic Scene

@@ -528,6 +528,7 @@
  formula-part-path-source-name
  formula-part-path-destination-name
  formula-part-path-route
+ (struct-out formula-part-appearance-trigger)
  formula-part-copy
  formula-part-copy?
  formula-part-copy-source-name
@@ -574,6 +575,8 @@
  string-match-destination-selector
  string-match-route
  string-match-mode
+ string-match-appearance-complete-at-x
+ string-match-appearance-duration
  string-path
  string-copy
  string-copy?

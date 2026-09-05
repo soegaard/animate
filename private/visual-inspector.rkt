@@ -131,10 +131,10 @@
    drawing-index
    (visual-position visual)
    (and (affine-visual? visual) (visual-transform visual))
-   (and (opacity-visual? visual) (visual-opacity visual))
-   (and (fill-color-visual? visual) (visual-fill-color visual))
-   (and (stroke-color-visual? visual) (visual-stroke-color visual))
-   (and (stroke-width-visual? visual) (visual-stroke-width visual))
+   (inspection-optional-style visual opacity-visual? visual-opacity)
+   (inspection-optional-style visual fill-color-visual? visual-fill-color)
+   (inspection-optional-style visual stroke-color-visual? visual-stroke-color)
+   (inspection-optional-style visual stroke-width-visual? visual-stroke-width)
    box
    (and box
         (for/hash ([anchor (in-list '(bottom-left bottom bottom-right
@@ -143,6 +143,16 @@
    source-block
    (hash 'container? (visual-container? visual)
          'drawing-index drawing-index)))
+
+;; A relation advertises the generic fill/stroke protocols so that an author
+;; can apply a supported outer style later. Its particular template may still
+;; lack that style. Inspection is descriptive, so an unsupported optional
+;; getter means "no style to report", not a reason to abandon the whole tree
+;; and make an unrelated Visual unclickable.
+(define (inspection-optional-style visual supports? getter)
+  (and (supports? visual)
+       (with-handlers ([exn:fail? (lambda (_error) #f)])
+         (getter visual))))
 
 (define (visual-kind visual)
   (cond

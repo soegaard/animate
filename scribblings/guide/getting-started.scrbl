@@ -3,7 +3,7 @@
 @(require (for-label (except-in racket/base angle string-copy)
                      animate))
 
-@section{Getting Started}
+@title[#:tag "guide-getting-started"]{Getting Started}
 
 @racketmodname[animate] is the headless semantic language: it constructs
 immutable Scenes and samples them at arbitrary times. A minimal executable

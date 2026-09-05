@@ -6,7 +6,7 @@
                      animate/project
                      animate/preview))
 
-@section{Interactive Preview and Inspection}
+@title[#:tag "reference-preview"]{Interactive Preview and Inspection}
 
 @declare-exporting[animate/preview]
 

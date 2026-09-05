@@ -30,6 +30,8 @@
          "derived-visual.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
+         "formula-source-normalization.rkt"
+         "formula-visual.rkt"
          "frame-space.rkt"
          "geometry.rkt"
          "group-visual.rkt"
@@ -468,13 +470,15 @@
 ;; fade-transforms when mismatch-mode selects that policy.
 
 (struct transform-formula-parts-request
-  (correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary inspection)
+  (correspondence path-arc part-paths appearance-triggers copies mismatch-mode
+                  outline-morphs anchor stationary inspection)
   #:transparent)
 
 ;; transform-formula-parts-request represents an uncompiled matched-part change.
 ;;  - correspondence  formula-correspondence?  explicit source-to-destination map.
 ;;  - path-arc        finite-real?            default matched-part arc angle.
 ;;  - part-paths      (listof formula-part-path?) per-match route overrides.
+;;  - appearance-triggers (listof formula-part-appearance-trigger?) per-match deadlines.
 ;;  - copies          (listof formula-part-copy?) source-preserving copies.
 ;;  - mismatch-mode   (or/c 'fade 'fade-transform) handling of unmatched parts.
 ;;  - outline-morphs  (listof formula-part-outline-morph?) optional interiors.
@@ -1850,6 +1854,8 @@
 ; transform-formula-parts : formula-correspondence?
 ;                         [#:path-arc finite-real?]
 ;                         [#:part-paths (listof formula-part-path?)]
+;                         [#:appearance-triggers
+;                          (listof formula-part-appearance-trigger?)]
 ;                         [#:copies (listof formula-part-copy?)]
 ;                         [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                         [#:outline-morphs (listof formula-part-outline-morph?)]
@@ -1862,16 +1868,20 @@
 (define (transform-formula-parts correspondence
                                  #:path-arc [path-arc 0]
                                  #:part-paths [part-paths '()]
+                                 #:appearance-triggers [appearance-triggers '()]
                                  #:copies [copies '()]
                                  #:mismatch-mode [mismatch-mode 'fade]
                                  #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'transform-formula-parts
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs #f '() #f))
+   correspondence path-arc part-paths appearance-triggers copies mismatch-mode
+   outline-morphs #f '() #f))
 
 ; transform-formula-parts/anchored : formula-correspondence? formula-part-match?
 ;                                    [#:path-arc finite-real?]
 ;                                    [#:part-paths (listof formula-part-path?)]
+;                                    [#:appearance-triggers
+;                                     (listof formula-part-appearance-trigger?)]
 ;                                    [#:copies (listof formula-part-copy?)]
 ;                                    [#:mismatch-mode (or/c 'fade 'fade-transform)]
 ;                                    [#:stationary (listof formula-part-match?)]
@@ -1882,21 +1892,23 @@
 (define (transform-formula-parts/anchored correspondence anchor
                                          #:path-arc [path-arc 0]
                                          #:part-paths [part-paths '()]
+                                         #:appearance-triggers [appearance-triggers '()]
                                          #:copies [copies '()]
                                          #:mismatch-mode [mismatch-mode 'fade]
                                          #:stationary [stationary '()]
                                          #:outline-morphs [outline-morphs '()])
   (make-transform-formula-parts-request
    'rewrite-formula
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary #f))
+   correspondence path-arc part-paths appearance-triggers copies mismatch-mode
+   outline-morphs anchor stationary #f))
 
 ; make-transform-formula-parts-request : symbol? formula-correspondence?
-;                                         finite-real? list? list? list? symbol? list?
+;                                         finite-real? list? list? list? list? symbol? list?
 ;                                         (or/c #f formula-part-match?) list?
 ;                                         -> transform-formula-parts-request?
 ;;   Validates the common ordinary and anchored formula-transition inputs.
 (define (make-transform-formula-parts-request who correspondence path-arc
-                                              part-paths copies mismatch-mode
+                                              part-paths appearance-triggers copies mismatch-mode
                                               outline-morphs anchor stationary inspection)
   (unless (formula-correspondence? correspondence)
     (raise-argument-error
@@ -1913,6 +1925,13 @@
      who
      "(listof formula-part-path?)"
      part-paths))
+  (unless (and (list? appearance-triggers)
+               (andmap formula-part-appearance-trigger? appearance-triggers))
+    (raise-arguments-error
+     who
+     "a list of formula-part-appearance-trigger? values"
+     "appearance-triggers"
+     appearance-triggers))
   (unless (and (list? copies)
                (andmap formula-part-copy? copies))
     (raise-argument-error
@@ -1952,7 +1971,8 @@
      "stationary" match
       "correspondence" correspondence)))
   (transform-formula-parts-request
-   correspondence path-arc part-paths copies mismatch-mode outline-morphs anchor stationary inspection))
+   correspondence path-arc part-paths appearance-triggers copies mismatch-mode
+   outline-morphs anchor stationary inspection))
 
 ; with-animation-inspection : transform-formula-parts-request?
 ;                             animation-inspection? -> transform-formula-parts-request?
@@ -2811,6 +2831,8 @@
         correspondence
         #:path-arc (transform-formula-parts-request-path-arc request)
         #:part-paths (transform-formula-parts-request-part-paths request)
+        #:appearance-triggers
+        (transform-formula-parts-request-appearance-triggers request)
         #:copies (transform-formula-parts-request-copies request)
         #:mismatch-mode
         (transform-formula-parts-request-mismatch-mode request)
@@ -6109,7 +6131,10 @@
 ;;   rewrite reliable after earlier transitions have repositioned the formula.
 ;;   Explicit stationary pairs then retain their own current transforms, which
 ;;   lets more than one formula part remain fixed when the target layout calls
-;;   for a different local spacing.
+;;   for a different local spacing. A source fragment whose only change is
+;;   attached boundary whitespace is also held when its anchored destination
+;;   lies within one TeX Pict unit; this removes crop-padding measurement noise
+;;   without suppressing meaningful formula motion.
 (define (anchor-formula-correspondence current-source correspondence anchor stationary)
   (define anchored-correspondence
     (cond
@@ -6145,12 +6170,26 @@
         (formula-correspondence-source correspondence)
         anchored-destination
         (formula-correspondence-matches correspondence))]))
-  (if (null? stationary)
+  (define automatic-stationary
+    (if anchor
+        (for/list ([match (in-list (formula-correspondence-matches
+                                    anchored-correspondence))]
+                   #:unless (equal? match anchor)
+                   #:when
+                   (formula-fragment-boundary-whitespace-nearby?
+                    current-source
+                    (formula-correspondence-destination anchored-correspondence)
+                    match))
+          match)
+        '()))
+  (define fixed-matches
+    (remove-duplicates (append stationary automatic-stationary) equal?))
+  (if (null? fixed-matches)
       anchored-correspondence
       (let* ([destination
               (formula-correspondence-destination anchored-correspondence)]
              [stationary-by-destination
-              (for/hash ([match (in-list stationary)])
+              (for/hash ([match (in-list fixed-matches)])
                 (values (formula-part-match-destination-name match) match))]
              [fixed-destination
               (formula-assembly-visual-with-parts
@@ -6176,6 +6215,43 @@
          (formula-correspondence-source anchored-correspondence)
          fixed-destination
          (formula-correspondence-matches anchored-correspondence)))))
+
+;; A source-addressed token can own invisible boundary whitespace in one
+;; formula but not another. The test intentionally retains internal TeX
+;; whitespace, so `\\text{a b}` cannot become equivalent to `\\text{ab}`.
+(define (formula-fragment-boundary-whitespace-nearby?
+         current-source destination match)
+  (define source-formula
+    (formula-part-formula
+     (formula-assembly-visual-ref
+      current-source
+      (formula-part-match-source-name match))))
+  (define destination-formula
+    (formula-part-formula
+     (formula-assembly-visual-ref
+      destination
+      (formula-part-match-destination-name match))))
+  (and
+   (equal?
+    (formula-source-boundary-rendering-key
+     (formula-visual-source source-formula))
+    (formula-source-boundary-rendering-key
+     (formula-visual-source destination-formula)))
+   (let* ([source-position (visual-position source-formula)]
+          [destination-position (visual-position destination-formula)]
+          [tolerance
+           (max (formula-fragment-layout-unit source-formula)
+                (formula-fragment-layout-unit destination-formula))])
+     (and (<= (abs (- (vec2-x source-position)
+                       (vec2-x destination-position)))
+              tolerance)
+          (<= (abs (- (vec2-y source-position)
+                       (vec2-y destination-position)))
+              tolerance)))))
+
+(define (formula-fragment-layout-unit formula)
+  (/ (formula-visual-font-size formula)
+     (formula-visual-document-font-points formula)))
 
 ; check-path-morph-request-arguments : symbol? any/c any/c -> void?
 ;;   Validates one public path-morph request constructor call.

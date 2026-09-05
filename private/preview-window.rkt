@@ -52,14 +52,22 @@
 ;; and, in particular, prevents a character hit from being inferred from a
 ;; rendered formula glyph.
 (define (inspector-document-formula document)
-  (and (inspector-document? document)
-       (let ([value (inspector-subject-value
-                     (inspector-document-subject document))])
-         (cond
-           [(formula-assembly-visual? value) value]
-           [(and (pair? value) (formula-assembly-visual? (car value)))
-            (car value)]
-           [else #f]))))
+  (define candidate
+    (and (inspector-document? document)
+         (let ([value (inspector-subject-value
+                       (inspector-document-subject document))])
+           (cond
+             [(formula-assembly-visual? value) value]
+             [(and (pair? value) (formula-assembly-visual? (car value)))
+              (car value)]
+             [else #f]))))
+  ;; Interior formula-transition layers are formula assemblies solely so the
+  ;; renderer can cross-fade their glyphs. They deliberately carry no durable
+  ;; source map. The source panel must not treat such a temporary layer as a
+  ;; source-addressable formula during a repaint.
+  (and candidate
+       (with-handlers ([exn:fail? (lambda (_error) #f)])
+         (and (formula-source-map candidate) candidate))))
 
 (define (inspector-document-selected-source-match document)
   (and (inspector-document? document)
@@ -120,6 +128,25 @@
              index)
             (else
              (loop (add1 index) (+ cursor-x character-width) cursor-y)))))))))
+
+;; Racket GUI accepts at most 200 characters for a list-box label. Inspector
+;; values can legitimately be richer than that (for example, a compiled
+;; string-match route). The complete immutable row remains in
+;; `inspector-rows-box` for actions such as Copy; this helper constrains only
+;; the one-line presentation required by the native control.
+(define list-control-label-maximum-length 200)
+
+(define (list-control-label text)
+  (define single-line
+    (string-trim
+     (string-replace
+      (string-replace text "\n" " ")
+      "\r" " ")))
+  (if (<= (string-length single-line) list-control-label-maximum-length)
+      single-line
+      (string-append
+       (substring single-line 0 (sub1 list-control-label-maximum-length))
+       "…")))
 
 (define (configure-preview-block-navigation! session)
   (unless (preview-session? session)
@@ -537,7 +564,29 @@
                (preview-select! session (and selected (visual-inspection-path selected)))
                (update-selection-message!)
                (send canvas refresh))))))))
-  (define controls (new horizontal-panel% [parent outer] [alignment '(center center)]))
+  ;; Keep everyday transport controls close to the canvas. Range review and
+  ;; saved A/B comparisons are useful but much less frequent, so they occupy
+  ;; separate rows. This keeps each strip short enough that the primary block,
+  ;; section, and cue selectors stay visible in a narrow window.
+  (define control-rows
+    (new vertical-panel% [parent outer] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  (define controls
+    (new horizontal-panel% [parent control-rows] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  (define range-controls
+    (new horizontal-panel% [parent control-rows] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  (define comparison-controls
+    (new horizontal-panel% [parent control-rows] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  ;; Construct this holder before the inspector. Its canvas is installed
+  ;; below, after the inspector callbacks have been defined, but the holder
+  ;; reserves the timeline's visual position directly below the controls.
+  ;; That keeps the scrubber visible when an inspector section grows tall.
+  (define timeline-holder
+    (new vertical-panel% [parent outer] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
   (define backward
     (new button% [parent controls] [label "◀"]
          [callback (lambda (_button _event)
@@ -556,7 +605,7 @@
   (define frame-message (new message% [parent controls] [label "frame 0000"]))
   (define time-message (new message% [parent controls] [label "0.000 s"]))
   (define status-message (new message% [parent controls] [label "rendering"]))
-  (define range-message (new message% [parent controls] [label "range: none"]))
+  (define range-message (new message% [parent range-controls] [label "range: none"]))
   (define speed-options (list (cons "0.5×" 1/2)
                               (cons "1×" 1)
                               (cons "1.5×" 3/2)
@@ -606,7 +655,7 @@
               "range: none")))
   (define play-range
     (new button%
-         [parent controls]
+         [parent range-controls]
          [label "Play range"]
          [callback
           (lambda (_button _event)
@@ -618,7 +667,7 @@
                                    (timeline-range-end range))))]))
   (define loop-range
     (new button%
-         [parent controls]
+         [parent range-controls]
          [label "Loop range"]
          [callback
           (lambda (_button _event)
@@ -633,7 +682,7 @@
               (preview-play! session)))]))
   (define clear-loop
     (new button%
-         [parent controls]
+         [parent range-controls]
          [label "Clear loop"]
          [callback
           (lambda (_button _event)
@@ -662,20 +711,20 @@
                            (timeline-range-start range)
                            (timeline-range-end range))))
   (define save-a
-    (new button% [parent controls] [label "Save A"]
+    (new button% [parent comparison-controls] [label "Save A"]
          [callback (lambda (_button _event) (save-comparison-range! 'a))]))
   (define play-a
-    (new button% [parent controls] [label "Play A"]
+    (new button% [parent comparison-controls] [label "Play A"]
          [callback (lambda (_button _event) (play-comparison-range! 'a))]))
   (define save-b
-    (new button% [parent controls] [label "Save B"]
+    (new button% [parent comparison-controls] [label "Save B"]
          [callback (lambda (_button _event) (save-comparison-range! 'b))]))
   (define play-b
-    (new button% [parent controls] [label "Play B"]
+    (new button% [parent comparison-controls] [label "Play B"]
          [callback (lambda (_button _event) (play-comparison-range! 'b))]))
   (define show-diagnostics
     (new check-box%
-         [parent controls]
+         [parent comparison-controls]
          [label "Diagnostics"]
          [value #f]
          [callback
@@ -689,7 +738,7 @@
   ;; the affordance visible but correctly disabled.
   (define mute-audio
     (new check-box%
-         [parent controls]
+         [parent comparison-controls]
          [label "Mute"]
          [value (and (audio-mute-available?) (audio-muted?))]
          [callback
@@ -813,11 +862,12 @@
                           (inspector-action-label action))
                         ", "))))
          (send inspector-rows append
-               (format "~a~a: ~s~a"
-                       severity-prefix
-                       (inspector-row-label row)
-                       (inspector-row-value row)
-                       action-suffix)))
+               (list-control-label
+                (format "~a~a: ~s~a"
+                        severity-prefix
+                        (inspector-row-label row)
+                        (inspector-row-value row)
+                        action-suffix))))
        (when (null? (inspector-section-rows section))
          (send inspector-rows append "No rows in this inspector section."))]
       [else
@@ -864,6 +914,7 @@
       (send canvas refresh)))
   (set! inspector-section-choice
         (new choice% [parent inspector-panel] [label "Inspector section"] [choices '()]
+             [min-width 220]
              [callback
               (lambda (choice _event)
                 (display-inspector-section! (send choice get-selection)))]))
@@ -997,6 +1048,7 @@
   (send section-choice show #f)
   (define block-choice
     (new choice% [parent controls] [label "block"] [choices '()]
+         [min-width 180]
          [callback
           (lambda (choice _event)
             (define session (unbox controller-box))
@@ -1029,7 +1081,7 @@
   (define timeline-canvas
     (new
      (class canvas%
-       (super-new [parent outer]
+       (super-new [parent timeline-holder]
                   [min-width 640]
                   [min-height 130]
                   [stretchable-width #t]
@@ -1236,7 +1288,8 @@
               (install-inspector-document! #f)
               (send inspector-rows clear)
               (send inspector-rows append
-                    (format "Inspector unavailable: ~a" (exn-message error))))])
+                    (list-control-label
+                     (format "Inspector unavailable: ~a" (exn-message error)))))])
         (define source (preview-source-scene (preview-source session)))
         (define time (preview-current-time session))
         (define source-selection (unbox inspector-source-selection-box))

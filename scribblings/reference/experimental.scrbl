@@ -4,7 +4,7 @@
                      animate
                      animate/experimental))
 
-@section[#:tag "derived-visuals"]{Experimental Derived Visuals}
+@title[#:tag "derived-visuals"]{Experimental Derived Visuals}
 
 @declare-exporting[animate/experimental #:use-sources (animate/experimental)]
 

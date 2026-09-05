@@ -3,7 +3,7 @@
 @(require (for-label (except-in racket/base angle string-copy)
                      animate/preview))
 
-@section{Interactive Preview}
+@title[#:tag "guide-interactive-preview"]{Interactive Preview}
 
 @racketmodname[animate/preview] is the optional GUI surface. It uses exactly
 the normal scene sampling and Pict rendering semantics, at a lower pixel scale

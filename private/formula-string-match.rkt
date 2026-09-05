@@ -11,6 +11,7 @@
 ;; geometric shape fallback.
 
 (require racket/list
+         (only-in racket/math nan? infinite?)
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
          "formula-source-map.rkt"
@@ -27,6 +28,8 @@
          string-match-destination-selector
          string-match-route
          string-match-mode
+         string-match-appearance-complete-at-x
+         string-match-appearance-duration
          string-path
          string-copy
          string-copy?
@@ -49,10 +52,12 @@
 ;; `mode` is an author preference for the eventual motion compiler.  The
 ;; planner's `auto` policy selects rigid movement for an equal normalized
 ;; source block and cross-fade for deliberately changed source such as + -> -.
-(struct string-match-data (source-selector destination-selector route mode)
+(struct string-match-data
+  (source-selector destination-selector route mode appearance-complete-at-x appearance-duration)
   #:transparent
   #:guard
-  (lambda (source-selector destination-selector route mode who)
+  (lambda (source-selector destination-selector route mode
+                           appearance-complete-at-x appearance-duration who)
     (unless (source-selector? source-selector)
       (raise-argument-error who "source-selector?" source-selector))
     (unless (source-selector? destination-selector)
@@ -61,16 +66,37 @@
       (raise-argument-error who "#f or formula-route?" route))
     (unless (string-movement-mode? mode)
       (raise-argument-error who "string-movement-mode?" mode))
-    (values source-selector destination-selector route mode)))
+    (unless (or (not appearance-complete-at-x)
+                (source-selector? appearance-complete-at-x))
+      (raise-argument-error who "#f or source-selector?" appearance-complete-at-x))
+    (unless (or (not appearance-duration)
+                (and (finite-progress? appearance-duration)
+                     (positive? appearance-duration)
+                     (<= appearance-duration 1)))
+      (raise-argument-error who "#f or positive finite real in [0, 1]"
+                            appearance-duration))
+    (unless (eq? (not appearance-complete-at-x) (not appearance-duration))
+      (raise-arguments-error
+       who
+       "both an appearance deadline and duration, or neither"
+       "appearance-complete-at-x" appearance-complete-at-x
+       "appearance-duration" appearance-duration))
+    (values source-selector destination-selector route mode
+            appearance-complete-at-x appearance-duration)))
 
 ;; string-match : source-selector? source-selector?
 ;;                [#:route (or/c #f formula-route?)]
 ;;                [#:mode string-movement-mode?]
+;;                [#:appearance-complete-at-x (or/c #f source-selector?)]
+;;                [#:appearance-duration (or/c #f positive finite real in [0,1])]
 ;;                -> string-match?
 (define (string-match source-selector destination-selector
                       #:route [route #f]
-                      #:mode [mode 'auto])
-  (string-match-data source-selector destination-selector route mode))
+                      #:mode [mode 'auto]
+                      #:appearance-complete-at-x [appearance-complete-at-x #f]
+                      #:appearance-duration [appearance-duration #f])
+  (string-match-data source-selector destination-selector route mode
+                     appearance-complete-at-x appearance-duration))
 
 ;; `string-match` is intentionally a keyword constructor.  The transparent
 ;; structure still supplies the usual predicate and accessors.
@@ -79,13 +105,22 @@
 (define string-match-destination-selector string-match-data-destination-selector)
 (define string-match-route string-match-data-route)
 (define string-match-mode string-match-data-mode)
+(define string-match-appearance-complete-at-x
+  string-match-data-appearance-complete-at-x)
+(define string-match-appearance-duration string-match-data-appearance-duration)
 
 ;; string-path : source-selector? source-selector? formula-route?
 ;;               [#:mode string-movement-mode?] -> string-match?
 ;; Concise spelling when an explicit match exists only to select a route.
 (define (string-path source-selector destination-selector route
-                     #:mode [mode 'auto])
-  (string-match source-selector destination-selector #:route route #:mode mode))
+                     #:mode [mode 'auto]
+                     #:appearance-complete-at-x [appearance-complete-at-x #f]
+                     #:appearance-duration [appearance-duration #f])
+  (string-match source-selector destination-selector
+                #:route route
+                #:mode mode
+                #:appearance-complete-at-x appearance-complete-at-x
+                #:appearance-duration appearance-duration))
 
 ;; A source-addressed copy deliberately uses a separate type from a match: it
 ;; does not consume its source material. The destination must instead remain
@@ -130,11 +165,14 @@
    destination-selection
    reason
    movement-mode
-   route)
+   route
+   appearance-complete-at-x
+   appearance-duration)
   #:transparent
   #:guard
   (lambda (source-span destination-span source-selection destination-selection
-                       reason movement-mode route who)
+                       reason movement-mode route appearance-complete-at-x
+                       appearance-duration who)
     (unless (source-span? source-span)
       (raise-argument-error who "source-span?" source-span))
     (unless (source-span? destination-span)
@@ -154,8 +192,24 @@
       (raise-argument-error who "string-movement-mode?" movement-mode))
     (unless (or (not route) (formula-route? route))
       (raise-argument-error who "#f or formula-route?" route))
+    (unless (or (not appearance-complete-at-x)
+                (source-selector? appearance-complete-at-x))
+      (raise-argument-error who "#f or source-selector?" appearance-complete-at-x))
+    (unless (or (not appearance-duration)
+                (and (finite-progress? appearance-duration)
+                     (positive? appearance-duration)
+                     (<= appearance-duration 1)))
+      (raise-argument-error who "#f or positive finite real in [0, 1]"
+                            appearance-duration))
+    (unless (eq? (not appearance-complete-at-x) (not appearance-duration))
+      (raise-arguments-error
+       who
+       "both an appearance deadline and duration, or neither"
+       "appearance-complete-at-x" appearance-complete-at-x
+       "appearance-duration" appearance-duration))
     (values source-span destination-span source-selection destination-selection
-            reason movement-mode route)))
+            reason movement-mode route appearance-complete-at-x
+            appearance-duration)))
 
 ;; A plan retains formulas only for diagnostics and later compilation.  All
 ;; decisions themselves are captured by `planned-string-match` values and the
@@ -279,7 +333,11 @@
            'destination-span (span->datum (planned-string-match-destination-span match))
            'reason (planned-string-match-reason match)
            'movement-mode (planned-string-match-movement-mode match)
-           'route (planned-string-match-route match)))
+           'route (planned-string-match-route match)
+           'appearance-complete-at-x
+           (planned-string-match-appearance-complete-at-x match)
+           'appearance-duration
+           (planned-string-match-appearance-duration match)))
    'unmatched-source
    (map unit->datum (string-match-plan-unmatched-source plan))
    'unmatched-destination
@@ -339,14 +397,20 @@
 (define (planned-match-decision match)
   (list (planned-string-match-reason match)
         (planned-string-match-movement-mode match)
-        (planned-string-match-route match)))
+        (planned-string-match-route match)
+        (planned-string-match-appearance-complete-at-x match)
+        (planned-string-match-appearance-duration match)))
 
 (define (planned-match->datum match)
   (hash 'source-span (span->datum (planned-string-match-source-span match))
         'destination-span (span->datum (planned-string-match-destination-span match))
         'reason (planned-string-match-reason match)
         'movement-mode (planned-string-match-movement-mode match)
-        'route (planned-string-match-route match)))
+        'route (planned-string-match-route match)
+        'appearance-complete-at-x
+        (planned-string-match-appearance-complete-at-x match)
+        'appearance-duration
+        (planned-string-match-appearance-duration match)))
 
 
 ;;;
@@ -395,7 +459,9 @@
                             (list source-unit) (list destination-unit)
                             reason
                             (string-match-mode match-value)
-                            (string-match-route match-value))))
+                            (string-match-route match-value)
+                            (string-match-appearance-complete-at-x match-value)
+                            (string-match-appearance-duration match-value))))
     (values
      (append plans new-plans)
      (mark-units source-used source-units)
@@ -459,7 +525,7 @@
        (define plan
          (make-planned-match source destination
                              source-block destination-block
-                             'automatic-source-block 'rigid #f))
+                             'automatic-source-block 'rigid #f #f #f))
        (loop (remove-block remaining-source source-block)
              (remove-block remaining-destination destination-block)
              (append plans (list plan)))])))
@@ -572,7 +638,8 @@
 ;;;
 
 (define (make-planned-match source destination source-units destination-units
-                            reason requested-mode route)
+                            reason requested-mode route
+                            appearance-complete-at-x appearance-duration)
   (planned-string-match
    (span-covering-units source-units)
    (span-covering-units destination-units)
@@ -580,7 +647,9 @@
    (units->selection destination destination-units)
    reason
    (resolve-movement-mode requested-mode source-units destination-units)
-   route))
+   route
+   appearance-complete-at-x
+   appearance-duration))
 
 (define (resolve-movement-mode requested-mode source-units destination-units)
   (if (eq? requested-mode 'auto)
@@ -664,6 +733,9 @@
 
 (define (string-movement-mode? value)
   (and (memq value '(auto rigid glyphwise cross-fade)) #t))
+
+(define (finite-progress? value)
+  (and (real? value) (not (nan? value)) (not (infinite? value))))
 
 (define (check-formula who value)
   (unless (formula-assembly-visual? value)

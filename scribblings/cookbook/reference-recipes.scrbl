@@ -14,7 +14,7 @@
                      animate/experimental)
           "../../version.rkt")
 
-@section[#:tag "number-lines-and-coordinate-decorations"]{
+@title[#:tag "number-lines-and-coordinate-decorations"]{
   Number Lines and Coordinate Decorations}
 
 SCENE-T adds a semantic number-line Visual and constructors that derive grid

@@ -14,7 +14,7 @@
                      animate/experimental)
           "../../version.rkt")
 
-@section[#:tag "quick-start"]{Quick Start}
+@title[#:tag "quick-start"]{Quick Start}
 
 @declare-exporting[animate #:use-sources (animate/main)]
 

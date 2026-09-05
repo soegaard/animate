@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@section{Source Package Hygiene}
+@title[#:tag "guide-package-source"]{Source Package Hygiene}
 
 Animate is distributed as source. Create a clean archive from a checkout with
 @tt{raco pkg create --source .}. The package configuration omits local

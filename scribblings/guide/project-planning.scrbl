@@ -4,7 +4,7 @@
                      animate/project
                      animate/render))
 
-@section{Project Planning}
+@title[#:tag "guide-project-planning"]{Project Planning}
 
 @racketmodname[animate/project] has one immutable declaration for source
 loading, preview settings, raster rendering, output, encoding, assets, and

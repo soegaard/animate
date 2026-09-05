@@ -4,7 +4,7 @@
                      animate
                      animate/authoring))
 
-@section{Source Programs}
+@title[#:tag "guide-source-programs"]{Source Programs}
 
 @racketmodname[animate/authoring] makes source-block metadata an immutable
 declaration. It stays headless, so programs can be loaded and inspected in a

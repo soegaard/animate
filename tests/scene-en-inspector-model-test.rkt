@@ -176,6 +176,29 @@
                           'relation-path)
                 '(follower))
 
+  ;; A relation participates in the generic style protocols so that supported
+  ;; outer styles remain animatable. Its text template has no fill, though.
+  ;; Inspector traversal must report that absent optional style rather than
+  ;; aborting every canvas hit test before it reaches an unrelated dot.
+  (define clickable-dot
+    (circle #:id 'clickable-dot #:center (vec2 1 -1) #:radius 1/4
+            #:fill "tomato"))
+  (define clickable-caption
+    (follow-above
+     (plain-text "follows the dot" #:id 'clickable-caption #:font-size 1/5)
+     'clickable-dot #:gap 1/5))
+  (define clickable-scene
+    (scene-add (make-scene) clickable-dot clickable-caption))
+  (define clickable-camera (scene-camera-at clickable-scene 0))
+  (define-values (clickable-pixel-x clickable-pixel-y)
+    (camera-world->pixel clickable-camera (visual-position clickable-dot)))
+  (define clickable-inspection
+    (scene-hit-test clickable-scene 0 clickable-pixel-x clickable-pixel-y
+                    #:camera clickable-camera))
+  (check-not-false clickable-inspection)
+  (check-equal? (visual-inspection-path clickable-inspection)
+                '(clickable-dot))
+
   ;; Source-character selection remains deterministic and never guesses across
   ;; whitespace.  The reverse query preserves repeated source occurrences.
   (define first-source-match
@@ -265,6 +288,14 @@
    (member 'string-matching
            (map inspector-section-id
                 (inspector-document-sections transition-document))))
+  ;; An interior string-transition layer preserves the formula's renderer
+  ;; shape but deliberately does not pretend to be source-addressable. The
+  ;; preview therefore retains the String matching explanation while hiding
+  ;; its Formula source canvas for this transient value.
+  (define transition-layer
+    (scene-state-ref (scene-sample transition-scene 1/2) '(equation)))
+  (check-true (formula-assembly-visual? transition-layer))
+  (check-false (formula-source-map transition-layer))
   (define matching-section
     (for/first ([section (in-list (inspector-document-sections transition-document))]
                 #:when (eq? (inspector-section-id section) 'string-matching))

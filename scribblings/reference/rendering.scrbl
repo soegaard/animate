@@ -14,7 +14,7 @@
                      animate/experimental)
           "../../version.rkt")
 
-@section[#:tag "pict-renderers"]{Pict Renderer Protocol}
+@title[#:tag "pict-renderers"]{Pict Renderer Protocol}
 
 @declare-exporting[animate #:use-sources (animate/main)]
 
@@ -87,7 +87,7 @@ ordered formula parts. Prepend a custom renderer when it should override a
 built-in leaf or complete composite.
 }
 
-@subsection{Built-in Rendering}
+@section{Built-in Rendering}
 
 The built-in circle renderer multiplies the local diameter by the Visual's x
 and y scale factors. Non-uniform scale therefore produces an ellipse. Rotation
@@ -203,7 +203,7 @@ the deterministic approximation described by @racket[path-subpath-length]. A
 non-uniform Visual scale can therefore change displayed speed along differently
 oriented or curved portions.
 
-@subsection{Defining a Custom Renderer}
+@section{Defining a Custom Renderer}
 
 Here is a complete custom Visual and renderer:
 

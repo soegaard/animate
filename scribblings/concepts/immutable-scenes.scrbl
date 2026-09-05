@@ -2,7 +2,7 @@
 
 @(require (for-label (except-in racket/base angle string-copy) animate))
 
-@section{Immutable Scenes and Arbitrary-Time Sampling}
+@title[#:tag "concept-immutable-scenes"]{Immutable Scenes and Arbitrary-Time Sampling}
 
 Every scene operation returns a new value. A frame is calculated from the same
 Scene and requested time, not from the frame rendered before it. That makes

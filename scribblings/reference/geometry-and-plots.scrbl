@@ -14,7 +14,7 @@
                      animate/experimental)
           "../../version.rkt")
 
-@section[#:tag "geometry"]{Geometry}
+@title[#:tag "geometry"]{Geometry}
 
 @declare-exporting[animate #:use-sources (animate/main)]
 
@@ -77,7 +77,7 @@ value and a progress of @racket[1] returns the original @racket[to] value.
 Mixed kinds and noninterpolable values raise an exception.
 }
 
-@subsection{Scene Parameters}
+@section{Scene Parameters}
 
 @defproc[(parameter [id symbol?] [initial-value any/c]) scene-parameter?]{
 

@@ -14,11 +14,11 @@
                      animate/experimental)
           "../../version.rkt")
 
-@section[#:tag "visuals"]{Visuals}
+@title[#:tag "visuals"]{Visuals}
 
 @declare-exporting[animate/main]
 
-@subsection{The Basic Visual Protocol}
+@section{The Basic Visual Protocol}
 
 @defproc[(visual-path? [value any/c]) boolean?]{
 
@@ -91,7 +91,7 @@ A minimal position-only Visual can be defined as follows:
 Such a Visual can use @racket[move-to], but it cannot use rotation or scale
 animations.
 
-@subsection{Whole-Visual Affine Maps}
+@section{Whole-Visual Affine Maps}
 
 @defproc[(affine-map [content visual?] [map affine2?]) affine-map-visual?]{
 
@@ -123,7 +123,7 @@ complete local-to-parent placement.
 Returns the current outer general affine map.
 }
 
-@subsection{The Affine-Visual Protocol}
+@section{The Affine-Visual Protocol}
 
 @defthing[#:kind "generic interface" gen:affine-visual any/c]{
 
@@ -187,7 +187,7 @@ and y components must be equal. Other built-in affine Visuals, including arrows
 and axes, accept non-uniform scale.
 }
 
-@subsection{The Opacity-Visual Protocol}
+@section{The Opacity-Visual Protocol}
 
 @defproc[(opacity? [value any/c]) boolean?]{
 
@@ -254,7 +254,7 @@ A position-only custom Visual can implement opacity as follows:
      (struct-copy marker value [opacity opacity]))])
 ]
 
-@subsection{The Stroke-Width-Visual Protocol}
+@section{The Stroke-Width-Visual Protocol}
 
 @defproc[(stroke-width? [value any/c]) boolean?]{
 
@@ -333,7 +333,7 @@ opacity:
      (struct-copy width-marker value [stroke-width stroke-width]))])
 ]
 
-@subsection{Fill-Color and Stroke-Color Visual Protocols}
+@section{Fill-Color and Stroke-Color Visual Protocols}
 
 @defthing[#:kind "generic interface" gen:fill-color-visual any/c]{
 
@@ -407,7 +407,7 @@ and is not controlled by @racket[stroke-color-to]. The protocols are independent
 of affine transforms, opacity, and stroke width, so third-party Visuals may opt
 into either one separately.
 
-@subsection{Circle Visuals}
+@section{Circle Visuals}
 
 @defproc[(circle
           [#:id id symbol?]
@@ -467,7 +467,7 @@ Returns the stored stroke style.
 Returns the stored stroke width.
 }
 
-@subsection{Rectangle Visuals}
+@section{Rectangle Visuals}
 
 @defproc[(rectangle
           [#:id id symbol?]
@@ -529,7 +529,7 @@ Returns the stored stroke style.
 Returns the stored stroke width.
 }
 
-@subsection[#:tag "plain-text-visuals"]{Plain, Multiline, and Rich Text Visuals}
+@section[#:tag "plain-text-visuals"]{Plain, Multiline, and Rich Text Visuals}
 
 A text Visual stores immutable Unicode content, inline style runs, and explicit
 font/layout anchors. @racket[plain-text] preserves the original one-line API;
@@ -874,7 +874,7 @@ defaults and all layout/anchor settings are preserved. The content accessor of
 the result is the immutable concatenation of the supplied spans.
 }
 
-@subsection[#:tag "numeric-displays"]{Numeric Displays}
+@section[#:tag "numeric-displays"]{Numeric Displays}
 
 SCENE-EF provides number-shaped text and numerical transitions without
 introducing a mutable value tracker. Static constructors return ordinary
@@ -1191,7 +1191,7 @@ numeric state. Digit advances use a nominal monospaced width, so a font with
 tabular figures gives the best alignment.
 }
 
-@subsection{Matrices and Tables}
+@section{Matrices and Tables}
 
 @racket[matrix] and @racket[table] return ordinary immutable
 @racket[group-visual?] values. Their rows and cells are regular nested groups,
@@ -1339,7 +1339,7 @@ Returns the cell group's stable table path, such as
 @racket['(results row-2 col-3)].
 }
 
-@subsection{Deterministic Traced Paths}
+@section{Deterministic Traced Paths}
 
 @defproc[(traced-path
           [phase (or/c symbol? scene-parameter?)]
@@ -1372,7 +1372,7 @@ tracking of arbitrary Visual motion or adaptive/discontinuity sampling is
 attempted in this stage.
 }
 
-@subsection[#:tag "formula-visuals"]{LaTeX Formula Visuals}
+@section[#:tag "formula-visuals"]{LaTeX Formula Visuals}
 
 A formula Visual stores an immutable LaTeX mathematical snippet and explicit
 typesetting data. It implements @racket[gen:visual],
@@ -1497,7 +1497,7 @@ and their installed versions. Formula source and preamble are trusted input;
 this library does not sandbox the TeX process.
 }
 
-@subsubsection{Making @tt{latex-pict} Available}
+@subsection{Making @tt{latex-pict} Available}
 
 Use the same Racket installation for this library and for @tt{latex-pict}. For
 example, to install the catalog package with Racket 9.3.0.2 on macOS:
@@ -1598,7 +1598,7 @@ unchanged. Multiline and empty source are accepted.
 }
 
 
-@subsection[#:tag "tagged-formulas"]{Tagged Formula Layouts}
+@section[#:tag "tagged-formulas"]{Tagged Formula Layouts}
 
 @defstruct*[formula-fragment ([name symbol?]
                               [source string?])
@@ -1725,7 +1725,7 @@ colours. Generated names are positional, so explicit tagged fragments are
 usually preferable for durable pedagogical styling.
 }
 
-@subsection[#:tag "source-addressable-formulas"]{Source-Addressable Formulas}
+@section[#:tag "source-addressable-formulas"]{Source-Addressable Formulas}
 
 Source selectors address character ranges in the canonical TeX source retained
 by @racket[math-tex]. They complement named formula fragments; they do not
@@ -1823,10 +1823,21 @@ not symbolic algebra or a general TeX parser.
 @defproc[(string-match [source source-selector?]
                        [destination source-selector?]
                        [#:route route (or/c #f formula-route?) #f]
-                       [#:mode mode (or/c 'auto 'rigid 'glyphwise 'cross-fade) 'auto])
+                       [#:mode mode (or/c 'auto 'rigid 'glyphwise 'cross-fade) 'auto]
+                       [#:appearance-complete-at-x appearance-complete-at-x
+                        (or/c #f source-selector?) #f]
+                       [#:appearance-duration appearance-duration
+                        (or/c #f (and/c finite-real? positive? (<=/c 1))) #f])
          string-match?]{
 Declares one source-addressed correspondence. Explicit declarations take
 priority over automatic normalized-source matching.
+
+When both appearance keywords are supplied, the part keeps its ordinary route,
+but its changed appearance completes when that route first reaches the current
+x-coordinate of @racket[appearance-complete-at-x]. The duration is a fraction
+of the enclosing transition: the old and new appearances cross-fade only in
+the interval immediately preceding that deadline. This is useful for a moving
+@tt{+} that should become @tt{-} exactly as it passes an equality sign.
 }
 
 @defproc[(string-copy [source source-selector?]
@@ -2077,7 +2088,7 @@ does not parse TeX, infer operations, prove a derivation, choose matches/routes,
 or automatically lay out the explanation.
 }
 
-@subsection[#:tag "formula-parts"]{Named Formula Parts and Correspondence}
+@section[#:tag "formula-parts"]{Named Formula Parts and Correspondence}
 
 A formula assembly is a composite Visual made from independently typeset LaTeX
 formula parts. Each part has a symbol name. That name is local to one assembly
@@ -2358,7 +2369,7 @@ transition layers. Those layers are compiled when
 operation can use the current formulas, local transforms, and local opacities
 from the scene.
 
-@subsection{Path Visuals}
+@section{Path Visuals}
 
 A path Visual combines local @racket[path-geometry] with identity, affine
 placement, fill, stroke, and cosmetic stroke width. Its geometry may contain
@@ -2503,7 +2514,7 @@ segment before the implicit closing edge. The optional @racket[opacity] value is
 stored as semantic global opacity.
 }
 
-@subsection{Bitmap Images}
+@section{Bitmap Images}
 
 @defproc[(image [source path-string?]
                 [#:id id symbol?]
@@ -2551,7 +2562,7 @@ Returns the unscaled local world width.
 Returns the unscaled local world height.
 }
 
-@subsection{Full-Fidelity SVG Images}
+@section{Full-Fidelity SVG Images}
 
 @defproc[(svg-image [source path-string?]
                     [#:id id symbol?]
@@ -2600,7 +2611,7 @@ Returns the unscaled local world width.
 Returns the unscaled local world height.
 }
 
-@subsection{Semantic SVG Import}
+@section{Semantic SVG Import}
 
 @defproc[(svg->visual [source path-string?]
                       [#:id id symbol?]
@@ -2633,14 +2644,14 @@ elements, arcs, and paint servers are outside this deliberately semantic subset.
 }
 
 
-@subsection[#:tag "arrows-and-axes"]{Arrow and Cartesian Axes Visuals}
+@section[#:tag "arrows-and-axes"]{Arrow and Cartesian Axes Visuals}
 
 Arrow and axes values are semantic affine Visuals. They implement
 @racket[gen:visual], @racket[gen:affine-visual], and
 @racket[gen:opacity-visual]. Their raw structure constructors and internal local
 geometry fields are not public.
 
-@subsubsection{Arrows}
+@subsection{Arrows}
 
 @defproc[(arrow
           [start vec2?]
@@ -2754,7 +2765,7 @@ returns the transformed start, @racket[1] returns the transformed end, and
 only; tip geometry does not affect the result.
 }
 
-@subsubsection{Dynamic Endpoint Geometry}
+@subsection{Dynamic Endpoint Geometry}
 
 SCENE-CN provides deterministic geometry relationships without mutable
 updaters. Each endpoint accepted by the procedures below may be a literal
@@ -2838,7 +2849,7 @@ relations retain their identity, support their ordinary outer movement and
 opacity animation, and can be inspected before rendering. Endpoint geometry
 must still resolve to distinct points at the sampled time.
 
-@subsubsection{Mathematical Annotations}
+@subsection{Mathematical Annotations}
 
 SCENE-CO supplies small semantic, path-backed marks for explanatory diagrams.
 SCENE-ED additionally gives selected marks the same live endpoint protocol as
@@ -3029,7 +3040,7 @@ remain top-level and its box includes renderer padding rather than only visible
 ink.
 }
 
-@subsubsection{Mathematical Shape Catalogue}
+@subsection{Mathematical Shape Catalogue}
 
 SCENE-DJ adds a compact family of path-backed shapes. Except for the two
 convenience groups, each constructor returns an ordinary @racket[path-visual?]
@@ -3208,7 +3219,7 @@ therefore carries both together. Label placement is the explicit local
 @racket[label-offset], not a collision-aware layout operation.
 }
 
-@subsubsection{Axis Ranges}
+@subsection{Axis Ranges}
 
 @defstruct*[axis-range ([minimum finite-real?]
                         [maximum finite-real?]
@@ -3274,7 +3285,7 @@ Returns @racket[#t] for the supported scale symbols @racket['linear] and
 @racket['log].
 }
 
-@subsubsection{Cartesian Axes}
+@subsection{Cartesian Axes}
 
 @defproc[(axes
           [#:id id symbol?]
@@ -3491,7 +3502,7 @@ ordinary numeric precision. A nonzero rotation normally introduces inexact
 trigonometric results.
 }
 
-@subsection[#:tag "linear-algebra-diagrams"]{Linear-Algebra Diagrams}
+@section[#:tag "linear-algebra-diagrams"]{Linear-Algebra Diagrams}
 
 SCENE-CZ adds small, conventional linear-algebra diagrams without adding a
 mutable diagram class. Each constructor below returns an ordinary immutable
@@ -3629,7 +3640,7 @@ fixed outside the mapped group:
 ]
 }
 
-@subsection[#:tag "complex-and-polar"]{Complex and Polar Coordinates}
+@section[#:tag "complex-and-polar"]{Complex and Polar Coordinates}
 
 SCENE-DA uses ordinary Racket complex numbers and converts only at the drawing
 boundary. SCENE-DB follows the same approach for polar coordinate values and
@@ -3814,7 +3825,7 @@ real, but it may be negative. Sampling is uniform in angle, not adaptive or
 arc-length parameterized.
 }
 
-@subsection[#:tag "coordinate-calculus-helpers"]{Coordinate and Calculus Helpers}
+@section[#:tag "coordinate-calculus-helpers"]{Coordinate and Calculus Helpers}
 
 SCENE-CP provides static, axes-aware construction helpers for common teaching
 diagrams. They evaluate numeric procedures during construction and return
@@ -3997,14 +4008,14 @@ logarithmic x axis the rectangles are evenly spaced in log display coordinates,
 not by raw numeric width.
 }
 
-@subsection[#:tag "coordinate-curves"]{Coordinate Curves and Plots}
+@section[#:tag "coordinate-curves"]{Coordinate Curves and Plots}
 
 The procedures in this section convert ordered numeric coordinates to semantic
 path geometry. They use the local coordinate system of an @racket[axes] Visual.
 They do not store a sampling procedure or a caller-owned point list in the
 result.
 
-@subsubsection{Interpolation Modes}
+@subsection{Interpolation Modes}
 
 @defproc[(curve-interpolation? [value any/c]) boolean?]{
 
@@ -4041,7 +4052,7 @@ of its endpoints and controls, so the resulting visible curve stays inside the
 rectangle. Clamping may reduce smoothness where a run touches a boundary.
 }
 
-@subsubsection[#:tag "sampled-function-graphs"]{Sampled Curves and Fields}
+@subsection[#:tag "sampled-function-graphs"]{Sampled Curves and Fields}
 
 @defproc[(sample-implicit-path [axes axes-visual?]
                                [field (procedure-arity-includes/c 2)]
@@ -4093,7 +4104,7 @@ for lookup and animation. Sampling and axes transforms are captured at
 construction time; the group retains no procedure or renderer state.
 }
 
-@subsection[#:tag "ode-flow"]{Deterministic ODE Flow and Streamlines}
+@section[#:tag "ode-flow"]{Deterministic ODE Flow and Streamlines}
 
 SCENE-DC turns a two-dimensional vector field into reproducible integral-curve
 geometry. A two-argument field is autonomous; a three-argument field receives
@@ -4591,7 +4602,7 @@ its source values or dependencies rather than applying a direct Visual animation
 to the derived graph.
 }
 
-@subsubsection{Parametric Curves}
+@subsection{Parametric Curves}
 
 @defstruct*[parameter-range ([start finite-real?]
                              [end finite-real?])
@@ -4692,7 +4703,7 @@ can use every operation available to an ordinary path Visual, including
 and renderer-aware layout.
 }
 
-@subsubsection{Ordered Data Plots}
+@subsection{Ordered Data Plots}
 
 @defproc[(data-series-path
           [axes axes-visual?]
@@ -4749,7 +4760,7 @@ relative layout.
 }
 
 
-@subsection{Group Visuals}
+@section{Group Visuals}
 
 A group is a semantic composite. Its children are stored as ordinary Visual
 values, not as Picts. The child list is significant back-to-front order. Child

@@ -8,7 +8,7 @@
                      animate/project
                      animate/experimental))
 
-@section{Public Module Boundaries}
+@title[#:tag "reference-module-boundaries"]{Public Module Boundaries}
 
 @defmodule[#:multi (animate/authoring
                     animate/preview

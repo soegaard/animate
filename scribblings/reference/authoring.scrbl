@@ -4,7 +4,7 @@
                      animate
                      animate/authoring))
 
-@section{Source Programs and Authored Timelines}
+@title[#:tag "reference-authoring"]{Source Programs and Authored Timelines}
 
 @declare-exporting[animate/authoring]
 
@@ -12,7 +12,7 @@
 to immutable @racket[scene?] values.  It remains headless: compiling a program
 does not open a preview window or render a frame.
 
-@subsection{Named source blocks}
+@section{Named source blocks}
 
 @defform[(define-scene-program program-id
             #:initial initial-scene-expr

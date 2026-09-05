@@ -58,6 +58,19 @@
   (check-equal?
    (normalize-formula-source "\\sin x")
    '((control-word "\\sin") (ordinary "x")))
+  ;; This stricter key is used at the renderer boundary: it ignores a physical
+  ;; fragment's outer gap but retains whitespace within visible TeX material.
+  (check-equal?
+   (formula-source-boundary-rendering-key "7 ")
+   '((ordinary "7")))
+  (check-equal?
+   (formula-source-boundary-rendering-key "\\text{a b}")
+   '((control-word "\\text")
+     (open-brace "{")
+     (ordinary "a")
+     (whitespace " ")
+     (ordinary "b")
+     (close-brace "}")))
   (check-equal?
    (map formula-source-unit-raw-key (formula-source-units before))
    '("x" "+" "3" "=" "7"))
@@ -111,6 +124,22 @@
    (planned-string-match-movement-mode
     (car (string-match-plan-matches keyed)))
    'cross-fade)
+
+  ;; A changed match can retain its ordinary route while scheduling only its
+  ;; appearance replacement against a source-addressed horizontal landmark.
+  (define appearance-timed
+    (plan-matching-strings
+     before after
+     #:key-map
+     (list
+      (string-match "+" "-"
+                    #:appearance-complete-at-x "="
+                    #:appearance-duration 1/8))))
+  (define timed-match (car (string-match-plan-matches appearance-timed)))
+  (check-equal? (planned-string-match-appearance-complete-at-x timed-match)
+                "=")
+  (check-equal? (planned-string-match-appearance-duration timed-match)
+                1/8)
 
   ;; A protected term is still usable by an explicit match but otherwise cannot
   ;; participate in automatic block matching.

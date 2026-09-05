@@ -2,7 +2,7 @@
 
 @(require (for-label (except-in racket/base angle string-copy) animate))
 
-@section{Relation Phases}
+@title[#:tag "concept-relation-phases"]{Relation Phases}
 
 A @racket[relation-visual] is a first-class immutable declaration of a visual
 that depends on scene values, visual identities, or renderer-measured layout.

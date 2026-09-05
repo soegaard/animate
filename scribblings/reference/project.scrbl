@@ -6,7 +6,7 @@
                      animate/project
                      animate/render))
 
-@section{Projects and Final Rendering}
+@title[#:tag "reference-project"]{Projects and Final Rendering}
 
 @declare-exporting[animate/project #:use-sources (animate/project)]
 

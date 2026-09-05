@@ -99,7 +99,54 @@
       before after
       #:key-map (list (string-match "+" "-")))
      #:duration 1))
+  ;; The token matcher has already classified the two `7` fragments as one
+  ;; rigid source match. The physical TeX wrapper happens to leave trailing
+  ;; whitespace on only the destination fragment; that invisible difference
+  ;; must not reintroduce a cross-fade/shadow in the lower transition engine.
+  (define midpoint-parts
+    (formula-assembly-visual-parts
+     (scene-state-ref (scene-sample transition 1/2) 'rewrite)))
+  (define seven-layers
+    (filter
+     (lambda (part)
+       (regexp-match? #px"7" (formula-visual-source (formula-part-formula part))))
+     midpoint-parts))
+  (check-equal? (length seven-layers) 1)
+  (check-equal?
+   (visual-opacity (formula-part-formula (car seven-layers)))
+   1)
   (check-equal?
    (formula-source
     (scene-state-ref (scene-current-state transition) 'rewrite))
-   "x = 7 - 3"))
+   "x = 7 - 3")
+
+  ;; The same semantic `7` has source `"7"` before the rewrite and `"7 "`
+  ;; afterwards. Once `=` anchors the formula, that only changes a cropped SVG
+  ;; fragment's transparent margin; it is not mathematical motion. The token
+  ;; must therefore keep its exact displayed position through the final frame.
+  (define anchored-transition
+    (scene-play
+     (scene-add (make-scene) before)
+     (rewrite-matching-strings
+      before after
+      #:anchor "="
+      #:stationary (list "x")
+      #:key-map (list (string-match "+" "-")))
+     #:duration 1))
+  (define (seven-position scene-value)
+    (define parts
+      (formula-assembly-visual-parts
+       (scene-state-ref scene-value 'rewrite)))
+    (define seven-part
+      (findf (lambda (part)
+               (regexp-match? #px"7"
+                              (formula-visual-source (formula-part-formula part))))
+             parts))
+    (visual-position (formula-part-formula seven-part)))
+  (define anchored-start (scene-sample anchored-transition 0))
+  (define anchored-middle (scene-sample anchored-transition 1/2))
+  (define anchored-end (scene-current-state anchored-transition))
+  (check-equal? (seven-position anchored-start)
+                (seven-position anchored-middle))
+  (check-equal? (seven-position anchored-start)
+                (seven-position anchored-end)))

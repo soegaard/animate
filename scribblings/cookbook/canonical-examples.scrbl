@@ -4,7 +4,7 @@
           racket/string
           "../../private/example-catalog.rkt")
 
-@section{Canonical Examples}
+@title[#:tag "cookbook-canonical-examples"]{Canonical Examples}
 
 The executable catalogue drives the maintained guide links and repository
 checks. Requirements such as @tt{latex}, @tt{ffmpeg}, and @tt{gui} describe

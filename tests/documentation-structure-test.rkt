@@ -45,6 +45,7 @@
                     "reference/experimental.scrbl"
                     "reference/rendering.scrbl"
                     "cookbook/canonical-examples.scrbl"
+                    "guide/package-source.scrbl"
                     "cookbook/reference-recipes.scrbl"))])
     (check-true (regexp-match? (regexp (regexp-quote include)) manual-text)))
   (for ([path (in-list
@@ -66,5 +67,14 @@
                      (chapter reference-root "experimental.scrbl")
                      (chapter reference-root "rendering.scrbl")
                      (chapter cookbook-root "canonical-examples.scrbl")
+                     (chapter guide-root "package-source.scrbl")
                      (chapter cookbook-root "reference-recipes.scrbl")))])
-    (check-true (file-exists? path))))
+    (check-true (file-exists? path))
+    ;; `include-section` turns each included document into a top-level HTML
+    ;; page.  A section fragment has an anonymous parent there, which Scribble
+    ;; renders as `???` in the table of contents.  Stable titled pages also
+    ;; give the generated manual readable, durable URLs.
+    (check-true
+     (regexp-match? #rx"(?m:^@title\\[#:tag \\\"[^\\\"]+\\\"\\])"
+                    (file->string path))
+     (format "included manual chapter needs a tagged @title: ~a" path))))

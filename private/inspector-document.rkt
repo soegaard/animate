@@ -784,6 +784,10 @@
     'reason (planned-string-match-reason match)
     'movement-mode (planned-string-match-movement-mode match)
     'route (planned-string-match-route match)
+    'appearance-complete-at-x
+    (planned-string-match-appearance-complete-at-x match)
+    'appearance-duration
+    (planned-string-match-appearance-duration match)
     'consume? #t)
    'info
    (list
@@ -818,7 +822,11 @@
         (hasheq 'color "goldenrod")
         (hasheq 'reason (planned-string-match-reason match)
                 'movement-mode (planned-string-match-movement-mode match)
-                'route (planned-string-match-route match)))))))
+                'route (planned-string-match-route match)
+                'appearance-complete-at-x
+                (planned-string-match-appearance-complete-at-x match)
+                'appearance-duration
+                (planned-string-match-appearance-duration match)))))))
 
 ;; The source map records local formula part paths. String matching presently
 ;; requires whole declared fragments, so preserving only one-symbol paths is

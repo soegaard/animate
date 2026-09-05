@@ -898,10 +898,12 @@
     (string-match-plan->formula-correspondence plan))
   (with-animation-inspection
    (transform-formula-parts
-    correspondence
-    #:path-arc path-arc
-    #:part-paths (string-match-plan->formula-part-paths plan)
-    #:copies (string-copies->formula-part-copies
+   correspondence
+   #:path-arc path-arc
+   #:part-paths (string-match-plan->formula-part-paths plan)
+   #:appearance-triggers
+   (string-match-plan->formula-part-appearance-triggers plan)
+   #:copies (string-copies->formula-part-copies
               source destination correspondence copies path-arc)
     #:mismatch-mode mismatch-mode)
    (string-transition-inspection
@@ -974,6 +976,8 @@
     anchor-match
     #:path-arc path-arc
     #:part-paths (string-match-plan->formula-part-paths plan)
+    #:appearance-triggers
+    (string-match-plan->formula-part-appearance-triggers plan)
     #:copies (string-copies->formula-part-copies
               source destination correspondence copies path-arc)
     #:stationary stationary-matches
@@ -1044,6 +1048,31 @@
      (formula-part-match-destination-name part-match)
      (planned-string-match-route match))))
 
+;; Appearance deadlines are declared at the source-string level, then expanded
+;; to the one-to-one formula part matches selected by that declaration. The
+;; reference selector is deliberately resolved against the source layout: clip
+;; compilation later measures its current world-space x-coordinate.
+(define (string-match-plan->formula-part-appearance-triggers plan)
+  (define source (string-match-plan-source plan))
+  (define destination (string-match-plan-destination plan))
+  (append*
+   (for/list ([match (in-list (string-match-plan-matches plan))]
+              #:when (planned-string-match-appearance-complete-at-x match))
+     (define reference-name
+       (selector->single-source-part-name
+        source
+        (planned-string-match-appearance-complete-at-x match)
+        'transform-matching-strings))
+     (for/list ([part-match
+                 (in-list
+                  (planned-string-match->formula-part-matches
+                   source destination match))])
+       (formula-part-appearance-trigger
+        (formula-part-match-source-name part-match)
+        (formula-part-match-destination-name part-match)
+        reference-name
+        (planned-string-match-appearance-duration match))))))
+
 (define (selection->declared-part-names formula selection)
   (unless (and (visual-selection? selection)
                (equal? (visual-selection-root selection)
@@ -1086,6 +1115,19 @@
      "source-count" (length source-names)
      "destination-count" (length destination-names)))
   (formula-part-match (car source-names) (car destination-names)))
+
+(define (selector->single-source-part-name source selector who)
+  (define source-names
+    (selection->declared-part-names
+     source
+     (formula-source-select-one source selector)))
+  (unless (= (length source-names) 1)
+    (raise-arguments-error
+     who
+     "an appearance reference selector resolving to one declared source part"
+     "selector" selector
+     "source-count" (length source-names)))
+  (car source-names))
 
 (define (string-copies->formula-part-copies source destination correspondence
                                              copies path-arc)

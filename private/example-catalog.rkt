@@ -75,9 +75,9 @@
     "examples/source-block-hot-reload.rkt" 'hot-reload-demo
     '(authoring preview) '(core gui) 1 4)
    (example-entry
-    'preview-inspector "Preview REPL and inspector"
-    "examples/source-block-hot-reload.rkt" 'hot-reload-demo
-    '(preview repl inspector) '(core gui) 2 4)
+    'semantic-inspector "Semantic inspector"
+    "examples/semantic-inspector.rkt" 'semantic-inspector-demo
+    '(preview inspector formula relations) '(core latex dvisvgm gui) 2 5)
    (example-entry
     'authored-media "Authored audio and video"
     "examples/authored-media-assembly.rkt" 'make-demo-scene

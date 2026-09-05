@@ -19,6 +19,7 @@
 (require (only-in racket/math pi)
          "affine-transform.rkt"
          "formula-parts-visual.rkt"
+         "formula-source-normalization.rkt"
          "formula-visual.rkt"
          "geometry.rkt"
          "glyph-outline-morph-visual.rkt"
@@ -40,6 +41,7 @@
          formula-part-path-source-name
          formula-part-path-destination-name
          formula-part-path-route
+         (struct-out formula-part-appearance-trigger)
          formula-part-copy
          formula-part-copy?
          formula-part-copy-source-name
@@ -150,6 +152,24 @@
       (raise-argument-error who "formula-route?" route))
     (values source-name destination-name route)))
 
+;; Keeps a changed fragment on its ordinary motion route while making its
+;; replacement fully visible when that route first reaches a reference part's
+;; x-coordinate. `duration` is the short normalized-progress lead-in.
+(struct formula-part-appearance-trigger
+  (source-name destination-name reference-source-name duration)
+  #:transparent
+  #:guard
+  (lambda (source-name destination-name reference-source-name duration who)
+    (unless (symbol? source-name)
+      (raise-argument-error who "symbol?" source-name))
+    (unless (symbol? destination-name)
+      (raise-argument-error who "symbol?" destination-name))
+    (unless (symbol? reference-source-name)
+      (raise-argument-error who "symbol?" reference-source-name))
+    (unless (and (finite-real? duration) (positive? duration) (<= duration 1))
+      (raise-argument-error who "positive finite real in [0, 1]" duration))
+    (values source-name destination-name reference-source-name duration)))
+
 ;; formula-part-copy directs one existing source part to an otherwise unmatched
 ;; destination part while leaving the source part in place.  It is the
 ;; formula-aware counterpart of TransformFromCopy.
@@ -194,7 +214,8 @@
 (define straight-formula-route (formula-arc #:angle 0))
 
 (struct formula-transition-layer
-  (name template from-transform to-transform route from-opacity to-opacity)
+  (name template from-transform to-transform route from-opacity to-opacity
+        appearance-start appearance-end)
   #:transparent)
 
 ;; formula-transition-layer represents one independently rendered interior layer.
@@ -205,6 +226,7 @@
 ;;  - route           formula-route?      local translation trajectory.
 ;;  - from-opacity    opacity?            local opacity at progress zero.
 ;;  - to-opacity      opacity?            local opacity at progress one.
+;;  - appearance-start/end finite-real?   replacement's local timing window.
 
 (struct formula-transition-route
   (source-name destination-name from-transform to-transform route)
@@ -234,7 +256,8 @@
 ;; followed by a destination layer.
 
 (struct formula-transition-spec
-  (template from-transform to-transform route from-opacity to-opacity)
+  (template from-transform to-transform route from-opacity to-opacity
+            appearance-start appearance-end)
   #:transparent)
 
 ;; formula-transition-spec is one layer before a temporary name is allocated.
@@ -244,6 +267,7 @@
 ;;  - route           formula-route?     local translation trajectory.
 ;;  - from-opacity    opacity?           local opacity at progress zero.
 ;;  - to-opacity      opacity?           local opacity at progress one.
+;;  - appearance-start/end finite-real?  replacement's local timing window.
 
 
 ;;;
@@ -254,6 +278,8 @@
 ;                                formula-correspondence?
 ;                                [#:path-arc finite-real?]
 ;                                [#:part-paths (listof formula-part-path?)]
+;                                [#:appearance-triggers
+;                                 (listof formula-part-appearance-trigger?)]
 ;                                [#:copies (listof formula-part-copy?)]
 ;                                [#:mismatch-mode formula-mismatch-mode?]
 ;                                [#:outline-morphs (listof formula-part-outline-morph?)]
@@ -262,6 +288,7 @@
 (define (make-formula-transition-plan current-source correspondence
                                       #:path-arc [path-arc 0]
                                       #:part-paths [part-paths '()]
+                                      #:appearance-triggers [appearance-triggers '()]
                                       #:copies [copies '()]
                                       #:mismatch-mode [mismatch-mode 'fade]
                                       #:outline-morphs [outline-morphs '()])
@@ -288,22 +315,24 @@
   (define default-route (formula-arc #:angle path-arc))
   (define part-paths-by-match
     (make-part-paths-by-match correspondence part-paths))
+  (define appearance-windows-by-match
+    (make-appearance-windows-by-match
+     current-source correspondence default-route part-paths-by-match
+     appearance-triggers))
   (define copies-by-destination
     (make-copies-by-destination current-source correspondence copies))
   (define outline-morphs-by-match
     (make-outline-morphs-by-match correspondence outline-morphs))
   ;; A tagged TeX fragment has a crop from the complete formula in which it
-  ;; was typeset.  Two fragments with equal TeX can consequently have distinct
-  ;; SVG view boxes.  Retain the source artifact for an unchanged fragment at
-  ;; its destination transform: interior and endpoint frames then use the
-  ;; same glyph geometry instead of swapping crops on the final frame.
+  ;; was typeset. Two fragments with equivalent visible TeX can consequently
+  ;; have distinct SVG view boxes. Retain the source artifact for an unchanged
+  ;; fragment at its destination transform: interior and endpoint frames then
+  ;; use the same glyph geometry instead of swapping crops on the final frame.
   (define settled-destination-parts
     (settle-destination-parts
      destination-parts
      (make-endpoint-templates-by-destination
       current-source correspondence copies-by-destination)))
-  ;; Validate that the settled destination parts can occupy the current
-  ;; assembly identity before any timeline is constructed.
   (formula-assembly-visual-with-parts current-source settled-destination-parts)
   (define-values (mismatch-before-specs mismatch-after-specs)
     (make-mismatch-specs current-source
@@ -318,6 +347,7 @@
                          correspondence
                          default-route
                          part-paths-by-match
+                         appearance-windows-by-match
                          outline-morphs-by-match)
      (make-copy-specs current-source
                       correspondence
@@ -452,15 +482,18 @@
      (visual-transform formula)
      straight-formula-route
      (visual-opacity formula)
-     0)))
+     0
+     0
+     1)))
 
 ; make-matched-specs : formula-assembly-visual?
 ;                      formula-correspondence? formula-arc? hash?
-;                      hash?
+;                      hash? hash?
 ;                      -> (listof formula-transition-spec?)
 ;;   Creates moving matched layers in explicit correspondence order.
 (define (make-matched-specs current-source correspondence default-route
-                            part-paths-by-match outline-morphs-by-match)
+                            part-paths-by-match appearance-windows-by-match
+                            outline-morphs-by-match)
   (define destination
     (formula-correspondence-destination correspondence))
   (apply
@@ -484,13 +517,20 @@
         (match-key (formula-part-match-source-name match)
                    (formula-part-match-destination-name match))
         default-route))
+     (define appearance-window
+       (hash-ref
+        appearance-windows-by-match
+        (match-key (formula-part-match-source-name match)
+                   (formula-part-match-destination-name match))
+        #f))
      (define outline-morph
        (hash-ref
         outline-morphs-by-match
         (match-key (formula-part-match-source-name match)
                    (formula-part-match-destination-name match))
         #f))
-     (make-one-match-specs source-formula destination-formula route outline-morph))))
+     (make-one-match-specs source-formula destination-formula route
+                           outline-morph appearance-window))))
 
 ; make-copy-specs : formula-assembly-visual? formula-correspondence? hash?
 ;                   -> (listof formula-transition-spec?)
@@ -522,13 +562,16 @@
 ;                        -> (listof formula-transition-spec?)
 ;;   Creates one moving layer or a moving cross-fade pair for a match.
 (define (make-one-match-specs source-formula destination-formula route
-                              [outline-morph #f])
+                              [outline-morph #f]
+                              [appearance-window #f])
   (define source-transform
     (visual-transform source-formula))
   (define destination-transform
     (visual-transform destination-formula))
+  (define appearance-start (if appearance-window (car appearance-window) 0))
+  (define appearance-end (if appearance-window (cdr appearance-window) 1))
   (cond
-    [(formula-rendering-equivalent? source-formula destination-formula)
+    [(formula-transition-equivalent? source-formula destination-formula)
      (list
       (formula-transition-spec
        source-formula
@@ -536,7 +579,9 @@
        destination-transform
        route
        (visual-opacity source-formula)
-       (visual-opacity destination-formula)))]
+       (visual-opacity destination-formula)
+       appearance-start
+       appearance-end))]
     [outline-morph
      (list
       (formula-transition-spec
@@ -551,7 +596,9 @@
        destination-transform
        route
        (visual-opacity source-formula)
-       (visual-opacity destination-formula)))]
+       (visual-opacity destination-formula)
+       appearance-start
+       appearance-end))]
     [else
      (list
       (formula-transition-spec
@@ -560,20 +607,24 @@
        destination-transform
        route
        (visual-opacity source-formula)
-       0)
+       0
+       appearance-start
+       appearance-end)
      (formula-transition-spec
        destination-formula
        source-transform
        destination-transform
        route
        0
-       (visual-opacity destination-formula)))]))
+       (visual-opacity destination-formula)
+       appearance-start
+       appearance-end))]))
 
 ;; make-endpoint-templates-by-destination : formula-assembly-visual?
 ;;                                              formula-correspondence?
 ;;                                              hash? -> hash?
 ;; Selects the rendering template to retain for every semantically unchanged
-;; matched or copied destination part.  The destination's transform, opacity,
+;; matched or copied destination part. The destination's transform, opacity,
 ;; and identity remain authoritative; only its renderer artifact is carried
 ;; from the source to make the handoff raster-continuous.
 (define (make-endpoint-templates-by-destination current-source
@@ -588,7 +639,7 @@
     (define destination-formula
       (formula-part-formula
        (formula-assembly-visual-ref destination destination-name)))
-    (if (formula-rendering-equivalent? source-formula destination-formula)
+    (if (formula-transition-equivalent? source-formula destination-formula)
         (hash-set result destination-name source-formula)
         result))
   (define matched-templates
@@ -641,7 +692,9 @@
      (visual-transform formula)
      straight-formula-route
      0
-     (visual-opacity formula))))
+     (visual-opacity formula)
+     0
+     1)))
 
 ; make-fade-transform-mismatch-specs : formula-assembly-visual?
 ;                                      formula-correspondence?
@@ -691,6 +744,40 @@
   (equal? (formula-visual-rendering-key source)
           (formula-visual-rendering-key destination)))
 
+; formula-transition-equivalent? : formula-visual? formula-visual? -> boolean?
+;; Identifies formulas that can use one opaque moving layer during an interior
+;; transition.  A source-addressed formula keeps the original TeX source for
+;; its map but may attach an adjacent invisible gap to either physical
+;; fragment.  For example, the same `7` can arrive as `"7"` or `"7 "`.
+;;
+;; This broader predicate applies to endpoint artifact retention as well as
+;; the interior layer. The semantic destination identity and source map remain
+;; authoritative; only an equivalent renderer artifact is retained.
+(define (formula-transition-equivalent? source destination)
+  (or (formula-rendering-equivalent? source destination)
+      (equal?
+       (formula-rendering-key-with-boundary-source source)
+       (formula-rendering-key-with-boundary-source destination))))
+
+(define (formula-rendering-key-with-boundary-source visual)
+  (define source (formula-visual-source visual))
+  (replace-rendering-key-source
+   (formula-visual-rendering-key visual)
+   source
+   (formula-source-boundary-rendering-key source)))
+
+;; The generic rendering key is deliberately opaque: styled formula leaves
+;; nest the base key and add paint, while specialised leaves may contribute
+;; renderer artifacts.  Replacing just the exact source datum retains every
+;; other key component, including style, font options, and glyph outlines.
+(define (replace-rendering-key-source key source replacement)
+  (cond
+    [(equal? key source) replacement]
+    [(pair? key)
+     (cons (replace-rendering-key-source (car key) source replacement)
+           (replace-rendering-key-source (cdr key) source replacement))]
+    [else key]))
+
 ; name-transition-specs : symbol?
 ;                         formula-assembly-visual?
 ;                         formula-assembly-visual?
@@ -722,7 +809,9 @@
          (formula-transition-spec-to-transform spec)
          (formula-transition-spec-route spec)
          (formula-transition-spec-from-opacity spec)
-         (formula-transition-spec-to-opacity spec))
+         (formula-transition-spec-to-opacity spec)
+         (formula-transition-spec-appearance-start spec)
+         (formula-transition-spec-appearance-end spec))
         layers)
        (hash-set used name #t))))
   (reverse reversed-layers))
@@ -802,11 +891,15 @@
 (define (sample-formula-transition-layer layer progress)
   (define name
     (formula-transition-layer-name layer))
+  ;; Motion always uses the clip's original progress. Only the changing
+  ;; renderer and its opacity use the short, per-part appearance interval.
+  (define appearance-progress
+    (formula-transition-appearance-progress-at layer progress))
   (define formula-with-id
    (formula-visual-with-id
      (formula-visual-at-transition-progress
       (formula-transition-layer-template layer)
-      progress)
+      appearance-progress)
      name))
   (define formula-with-transform
     (visual-with-transform
@@ -818,8 +911,16 @@
      (real-lerp
       (formula-transition-layer-from-opacity layer)
       (formula-transition-layer-to-opacity layer)
-      progress)))
+      appearance-progress)))
   (formula-part name sampled-formula))
+
+(define (formula-transition-appearance-progress-at layer progress)
+  (define start (formula-transition-layer-appearance-start layer))
+  (define end (formula-transition-layer-appearance-end layer))
+  (cond
+    [(<= progress start) 0]
+    [(>= progress end) 1]
+    [else (/ (- progress start) (- end start))]))
 
 (define (formula-transition-transform-at layer progress)
   (define from-transform (formula-transition-layer-from-transform layer))
@@ -922,6 +1023,122 @@
        "source-name" (formula-part-path-source-name part-path)
        "destination-name" (formula-part-path-destination-name part-path)))
     (hash-set result key (formula-part-path-route part-path))))
+
+;; Compiles source-addressed appearance deadlines only after anchoring has
+;; installed the destination's current-world transforms. The route itself is
+;; unchanged; the result merely maps global progress to a shorter opacity and
+;; renderer-progress interval for the selected changed fragment.
+(define (make-appearance-windows-by-match current-source correspondence
+                                          default-route part-paths-by-match
+                                          triggers)
+  (unless (and (list? triggers)
+               (andmap formula-part-appearance-trigger? triggers))
+    (raise-argument-error
+     'make-formula-transition-plan
+     "(listof formula-part-appearance-trigger?)"
+     triggers))
+  (define destination (formula-correspondence-destination correspondence))
+  (define valid-matches
+    (for/hash ([match (in-list (formula-correspondence-matches correspondence))])
+      (values
+       (match-key (formula-part-match-source-name match)
+                  (formula-part-match-destination-name match))
+       #t)))
+  (define source-names (formula-assembly-visual-part-names current-source))
+  (for/fold ([result (hash)]) ([trigger (in-list triggers)])
+    (define source-name (formula-part-appearance-trigger-source-name trigger))
+    (define destination-name
+      (formula-part-appearance-trigger-destination-name trigger))
+    (define key (match-key source-name destination-name))
+    (unless (hash-has-key? valid-matches key)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "an appearance trigger for a matched source/destination pair"
+       "source-name" source-name
+       "destination-name" destination-name))
+    (when (hash-has-key? result key)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "at most one appearance trigger for each matched pair"
+       "source-name" source-name
+       "destination-name" destination-name))
+    (define reference-name
+      (formula-part-appearance-trigger-reference-source-name trigger))
+    (unless (member reference-name source-names)
+      (raise-arguments-error
+       'make-formula-transition-plan
+       "an appearance reference part present in the current source formula"
+       "reference-source-name" reference-name))
+    (define source-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref current-source source-name)))
+    (define destination-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref destination destination-name)))
+    (define reference-formula
+      (formula-part-formula
+       (formula-assembly-visual-ref current-source reference-name)))
+    (define route (hash-ref part-paths-by-match key default-route))
+    (define complete-progress
+      (formula-route-first-x-progress
+       route
+       (visual-position source-formula)
+       (visual-position destination-formula)
+       (vec2-x (visual-position reference-formula))
+       source-name
+       destination-name
+       reference-name))
+    (hash-set
+     result
+     key
+     (cons (max 0 (- complete-progress
+                     (formula-part-appearance-trigger-duration trigger)))
+           complete-progress))))
+
+;; Returns the first route progress whose x-coordinate equals `target-x`.
+;; A bounded scan supplies a deterministic bracket for all supported route
+;; types; bisection then makes the deadline accurate enough for raster output.
+(define (formula-route-first-x-progress route start end target-x
+                                        source-name destination-name reference-name)
+  (define (x-offset progress)
+    (- (vec2-x (formula-route-position-at route start end progress)) target-x))
+  (define tolerance 1e-10)
+  (define (zeroish? value) (<= (abs value) tolerance))
+  (define initial (x-offset 0))
+  (cond
+    [(zeroish? initial) 0]
+    [else
+     (let loop ([index 1] [previous-progress 0] [previous-value initial])
+       (cond
+         [(> index 256)
+          (raise-arguments-error
+           'make-formula-transition-plan
+           "a changed-part route that reaches its appearance reference x-coordinate"
+           "source-name" source-name
+           "destination-name" destination-name
+           "reference-source-name" reference-name
+           "target-x" target-x)]
+         [else
+          (define progress (/ index 256))
+          (define value (x-offset progress))
+          (cond
+            [(zeroish? value) progress]
+            [(<= (* previous-value value) 0)
+             (let bisect ([low previous-progress]
+                           [low-value previous-value]
+                           [high progress]
+                           [iterations 0])
+               (if (= iterations 48)
+                   (/ (+ low high) 2)
+                   (let* ([middle (/ (+ low high) 2)]
+                          [middle-value (x-offset middle)])
+                     (cond
+                       [(zeroish? middle-value) middle]
+                       [(<= (* low-value middle-value) 0)
+                        (bisect low low-value middle (add1 iterations))]
+                       [else
+                        (bisect middle middle-value high (add1 iterations))]))))]
+            [else (loop (add1 index) progress value)])]))]))
 
 ; make-outline-morphs-by-match : formula-correspondence? any/c -> hash?
 ;; Validates the glyph adapter's optional interior replacements.  The generic
