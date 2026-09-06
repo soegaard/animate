@@ -18,16 +18,15 @@
          "../geometry.rkt"
          "bounds3.rkt"
          "spatial-visual.rkt"
+         "stroke3d.rkt"
          "transform3.rkt"
+         "tube-style3d.rkt"
          "tube3d.rkt"
          "vec3.rkt")
 
 (provide curve3d?
          curve3d-points
-         curve3d-radius
-         curve3d-sides
-         curve3d-color
-         curve3d-width-mode
+         curve3d-style
          curve3d-closed?
          curve3d-local-bounds
          curve3d-with-color
@@ -45,7 +44,7 @@
 ;;;
 
 (struct curve3d-value
-  (id transform opacity points radius sides color width-mode closed? local-bounds)
+  (id transform opacity points style closed? local-bounds)
   #:transparent
   #:methods gen:spatial-visual
   [(define (spatial-id curve) (curve3d-value-id curve))
@@ -63,16 +62,11 @@
 
 ;; curve3d-value represents one sampled curve centre line.
 ;;  - points      nonempty immutable vector of distinct consecutive vec3 samples.
-;;  - radius      physical world radius used by the tube tessellator.
-;;  - sides       stable tube radial sample count.
-;;  - width-mode  currently `world`; screen widths are intentionally deferred.
+;;  - style       either a screen/world mathematical stroke or physical tube.
 
 (define curve3d? curve3d-value?)
 (define curve3d-points curve3d-value-points)
-(define curve3d-radius curve3d-value-radius)
-(define curve3d-sides curve3d-value-sides)
-(define curve3d-color curve3d-value-color)
-(define curve3d-width-mode curve3d-value-width-mode)
+(define curve3d-style curve3d-value-style)
 (define curve3d-closed? curve3d-value-closed?)
 (define curve3d-local-bounds curve3d-value-local-bounds)
 
@@ -83,7 +77,15 @@
     (raise-argument-error 'curve3d-with-color "curve3d?" curve))
   (unless (color-spec? color)
     (raise-argument-error 'curve3d-with-color "color-spec?" color))
-  (struct-copy curve3d-value curve [color color]))
+  (define style (curve3d-style curve))
+  (define replacement
+    (cond [(stroke3d? style) (stroke3d-with-color style color)]
+          [(tube-style3d? style)
+           (tube-style3d #:radius (tube-style3d-radius style)
+                         #:sides (tube-style3d-sides style)
+                         #:color color)]
+          [else (error 'curve3d-with-color "unknown curve style: ~e" style)]))
+  (struct-copy curve3d-value curve [style replacement]))
 
 ;; `curve3d-with-id` is a small internal composition helper: transient curve
 ;; overlays must have their own sibling identity while retaining all source
@@ -104,33 +106,23 @@
 ;;   Creates a tube-rendered spatial polyline with stable supplied sample order.
 (define (polyline3d points
                     #:id id
-                    #:radius [radius 1/20]
-                    #:sides [sides 8]
+                    #:style [style (stroke3d)]
                     #:closed? [closed? #f]
-                    #:color [color "steelblue"]
                     #:transform [transform identity-transform3]
-                    #:opacity [opacity 1]
-                    #:width-mode [width-mode 'world])
+                    #:opacity [opacity 1])
   (unless (symbol? id) (raise-argument-error 'polyline3d "symbol?" id))
-  (unless (and (finite-real? radius) (positive? radius))
-    (raise-argument-error 'polyline3d "positive finite radius" radius))
-  (unless (and (exact-integer? sides) (>= sides 3))
-    (raise-argument-error 'polyline3d "exact integer at least 3" sides))
+  (unless (or (stroke3d? style) (tube-style3d? style))
+    (raise-argument-error 'polyline3d "(or/c stroke3d? tube-style3d?)" style))
   (unless (boolean? closed?) (raise-argument-error 'polyline3d "boolean?" closed?))
   (unless (transform3? transform) (raise-argument-error 'polyline3d "transform3?" transform))
   (unless (spatial-opacity? opacity)
     (raise-argument-error 'polyline3d "finite real in [0, 1]" opacity))
-  (unless (eq? width-mode 'world)
-    (raise-arguments-error
-     'polyline3d
-     "a physical `world` width; depth-aware screen widths are not implemented"
-     "width-mode" width-mode))
   (define samples (tube3d-sanitize-points points #:closed? closed?))
   (when (< (length samples) 2)
     (raise-arguments-error 'polyline3d "at least two distinct points" "points" points))
   (curve3d-value id transform opacity (vector->immutable-vector (list->vector samples))
-                 radius sides color width-mode closed?
-                 (expanded-bounds samples radius)))
+                 style closed?
+                 (curve-bounds samples style)))
 
 ; parametric-curve3d : (finite-real? -> vec3?) #:range pair-or-two-list?
 ;                      #:samples exact-integer? #:id symbol? ... -> curve3d?
@@ -140,13 +132,10 @@
                             #:range [range (list 0 1)]
                             #:samples [samples 64]
                             #:id id
-                            #:radius [radius 1/20]
-                            #:sides [sides 8]
+                            #:style [style (stroke3d)]
                             #:closed? [closed? #f]
-                            #:color [color "steelblue"]
                             #:transform [transform identity-transform3]
-                            #:opacity [opacity 1]
-                            #:width-mode [width-mode 'world])
+                            #:opacity [opacity 1])
   (unless (procedure? procedure)
     (raise-argument-error 'parametric-curve3d "procedure?" procedure))
   (unless (and (exact-integer? samples) (>= samples 2))
@@ -162,8 +151,8 @@
                               "a procedure returning vec3? at every sample"
                               "parameter" parameter "result" point))
      point)
-   #:id id #:radius radius #:sides sides #:closed? closed? #:color color
-   #:transform transform #:opacity opacity #:width-mode width-mode))
+   #:id id #:style style #:closed? closed?
+   #:transform transform #:opacity opacity))
 
 
 ;;;
@@ -175,10 +164,15 @@
 (define (curve3d->mesh3d curve)
   (unless (curve3d? curve)
     (raise-argument-error 'curve3d->mesh3d "curve3d?" curve))
+  (define style (curve3d-style curve))
+  (unless (tube-style3d? style)
+    (raise-arguments-error 'curve3d->mesh3d
+                           "a curve with tube-style3d?"
+                           "style" style))
   (tube3d-mesh (curve3d-points curve)
-               #:id (spatial-id curve) #:radius (curve3d-radius curve)
-               #:sides (curve3d-sides curve) #:closed? (curve3d-closed? curve)
-               #:color (curve3d-color curve) #:transform (spatial-transform curve)
+               #:id (spatial-id curve) #:radius (tube-style3d-radius style)
+               #:sides (tube-style3d-sides style) #:closed? (curve3d-closed? curve)
+               #:color (tube-style3d-color style) #:transform (spatial-transform curve)
                #:opacity (spatial-opacity curve)))
 
 ; curve3d-partial : curve3d? unit-real? unit-real? -> curve3d?
@@ -200,12 +194,9 @@
   (if (< (length partial-points) 2)
       (struct-copy curve3d-value curve [opacity 0])
       (polyline3d partial-points
-                  #:id (spatial-id curve) #:radius (curve3d-radius curve)
-                  #:sides (curve3d-sides curve) #:closed? #f
-                  #:color (curve3d-color curve)
+                  #:id (spatial-id curve) #:style (curve3d-style curve) #:closed? #f
                   #:transform (spatial-transform curve)
-                  #:opacity (spatial-opacity curve)
-                  #:width-mode (curve3d-width-mode curve))))
+                  #:opacity (spatial-opacity curve))))
 
 ; curve3d-point-at : curve3d? unit-real? -> vec3?
 ;;   Returns the deterministic centre-line point at an arc-length fraction.
@@ -235,6 +226,13 @@
 ;;;
 ;;; Local Helpers
 ;;;
+
+(define (curve-bounds points style)
+  (cond [(tube-style3d? style) (expanded-bounds points (tube-style3d-radius style))]
+        ;; A screen stroke has no camera-independent physical width.  Its
+        ;; centreline bounds are conservative for layout and picking; render
+        ;; preparation expands it by the requested pixel width later.
+        [else (aabb3-from-points points)]))
 
 (define (expanded-bounds points radius)
   (define bounds (aabb3-from-points points))

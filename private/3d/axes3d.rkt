@@ -17,8 +17,10 @@
          "../geometry.rkt"
          "material3d.rkt"
          "mesh3d.rkt"
+         "marker3d.rkt"
          "point-line-arrow3d.rkt"
          "spatial-group.rkt"
+         "stroke3d.rkt"
          "transform3.rkt"
          "vec3.rkt")
 
@@ -43,9 +45,8 @@
                 #:z-range [z-range (list -3 3)]
                 #:tick-step [tick-step 1]
                 #:tick-size [tick-size 1/12]
-                #:radius [radius 1/40]
-                #:tip-length [tip-length (* 6 radius)]
-                #:color [color "midnightblue"]
+                #:stroke-style [stroke-style (stroke3d #:color "midnightblue" #:width 2)]
+                #:arrow-style [arrow-style (arrow-style3d #:color "midnightblue")]
                 #:transform [transform identity-transform3]
                 #:opacity [opacity 1])
   (unless (symbol? id) (raise-argument-error 'axes3d "symbol?" id))
@@ -56,23 +57,27 @@
     (raise-argument-error 'axes3d "positive finite tick step" tick-step))
   (unless (and (finite-real? tick-size) (positive? tick-size))
     (raise-argument-error 'axes3d "positive finite tick size" tick-size))
+  (unless (stroke3d? stroke-style)
+    (raise-argument-error 'axes3d "stroke3d? as #:stroke-style" stroke-style))
+  (unless (arrow-style3d? arrow-style)
+    (raise-argument-error 'axes3d "arrow-style3d? as #:arrow-style" arrow-style))
   (define x-axis (arrow3d (vec3 x-min 0 0) (vec3 x-max 0 0)
-                          #:id 'x-axis #:radius radius #:tip-length tip-length #:color color))
+                          #:id 'x-axis #:shaft-style stroke-style #:tip-style arrow-style))
   (define y-axis (arrow3d (vec3 0 y-min 0) (vec3 0 y-max 0)
-                          #:id 'y-axis #:radius radius #:tip-length tip-length #:color color))
+                          #:id 'y-axis #:shaft-style stroke-style #:tip-style arrow-style))
   (define z-axis (arrow3d (vec3 0 0 z-min) (vec3 0 0 z-max)
-                          #:id 'z-axis #:radius radius #:tip-length tip-length #:color color))
+                          #:id 'z-axis #:shaft-style stroke-style #:tip-style arrow-style))
   (define labels
     (group3d
-     (list (anchor3d 'x (vec3 (+ x-max (* 2 tip-length)) 0 0))
-           (anchor3d 'y (vec3 0 (+ y-max (* 2 tip-length)) 0))
-           (anchor3d 'z (vec3 0 0 (+ z-max (* 2 tip-length)))))
+     (list (anchor3d 'x (vec3 (+ x-max 1/3) 0 0))
+           (anchor3d 'y (vec3 0 (+ y-max 1/3) 0))
+           (anchor3d 'z (vec3 0 0 (+ z-max 1/3))))
      #:id 'labels))
   (group3d
    (list x-axis y-axis z-axis
-         (ticks3d 'x-ticks 'x x-min x-max tick-step tick-size radius color)
-         (ticks3d 'y-ticks 'y y-min y-max tick-step tick-size radius color)
-         (ticks3d 'z-ticks 'z z-min z-max tick-step tick-size radius color)
+         (ticks3d 'x-ticks 'x x-min x-max tick-step tick-size stroke-style)
+         (ticks3d 'y-ticks 'y y-min y-max tick-step tick-size stroke-style)
+         (ticks3d 'z-ticks 'z z-min z-max tick-step tick-size stroke-style)
          labels)
    #:id id #:transform transform #:opacity opacity))
 
@@ -106,14 +111,13 @@
    #:wireframe-color color #:wireframe-width 1))
 
 ; grid-plane3d : (or/c 'xy 'xz 'yz) #:id symbol? ... -> group3d?
-;;   Creates finite physical-width grid curves at deterministic step locations.
+;;   Creates finite screen-stroke grid curves at deterministic step locations.
 (define (grid-plane3d plane
                       #:id id
                       #:u-range [u-range (list -3 3)]
                       #:v-range [v-range (list -3 3)]
                       #:step [step 1]
-                      #:radius [radius 1/80]
-                      #:color [color "lightsteelblue"]
+                      #:style [style (stroke3d #:color "lightsteelblue" #:width 1)]
                       #:transform [transform identity-transform3]
                       #:opacity [opacity 1])
   (check-plane 'grid-plane3d plane)
@@ -122,14 +126,16 @@
   (define-values (v-min v-max) (two-real-range 'grid-plane3d v-range))
   (unless (and (finite-real? step) (positive? step))
     (raise-argument-error 'grid-plane3d "positive finite step" step))
+  (unless (stroke3d? style)
+    (raise-argument-error 'grid-plane3d "stroke3d? as #:style" style))
   (define u-lines
     (for/list ([value (in-list (tick-values u-min u-max step))] [index (in-naturals)])
       (line3d (plane-point plane value v-min) (plane-point plane value v-max)
-              #:id (string->symbol (format "u~a" index)) #:radius radius #:color color)))
+              #:id (string->symbol (format "u~a" index)) #:style style)))
   (define v-lines
     (for/list ([value (in-list (tick-values v-min v-max step))] [index (in-naturals)])
       (line3d (plane-point plane u-min value) (plane-point plane u-max value)
-              #:id (string->symbol (format "v~a" index)) #:radius radius #:color color)))
+              #:id (string->symbol (format "v~a" index)) #:style style)))
   (group3d (append u-lines v-lines) #:id id #:transform transform #:opacity opacity))
 
 
@@ -141,16 +147,21 @@
 ;;   Creates the conventional unit vector arrows at stable paths i, j, and k.
 (define (basis-vectors3d #:id id
                          #:length [length 1]
-                         #:radius [radius 1/24]
                          #:transform [transform identity-transform3]
                          #:opacity [opacity 1])
   (unless (symbol? id) (raise-argument-error 'basis-vectors3d "symbol?" id))
   (unless (and (finite-real? length) (positive? length))
     (raise-argument-error 'basis-vectors3d "positive finite length" length))
   (group3d
-   (list (arrow3d origin3 (vec3 length 0 0) #:id 'i #:radius radius #:color "red")
-         (arrow3d origin3 (vec3 0 length 0) #:id 'j #:radius radius #:color "forestgreen")
-         (arrow3d origin3 (vec3 0 0 length) #:id 'k #:radius radius #:color "royalblue"))
+   (list (arrow3d origin3 (vec3 length 0 0) #:id 'i
+                  #:shaft-style (stroke3d #:color "red")
+                  #:tip-style (arrow-style3d #:color "red"))
+         (arrow3d origin3 (vec3 0 length 0) #:id 'j
+                  #:shaft-style (stroke3d #:color "forestgreen")
+                  #:tip-style (arrow-style3d #:color "forestgreen"))
+         (arrow3d origin3 (vec3 0 0 length) #:id 'k
+                  #:shaft-style (stroke3d #:color "royalblue")
+                  #:tip-style (arrow-style3d #:color "royalblue")))
    #:id id #:transform transform #:opacity opacity))
 
 ; vector-arrow3d : vec3? #:id symbol? ... -> group3d?
@@ -158,13 +169,13 @@
 (define (vector-arrow3d vector
                         #:id id
                         #:origin [origin origin3]
-                        #:radius [radius 1/20]
-                        #:color [color "tomato"]
+                        #:shaft-style [shaft-style (stroke3d #:color "tomato")]
+                        #:tip-style [tip-style (arrow-style3d #:color "tomato")]
                         #:transform [transform identity-transform3]
                         #:opacity [opacity 1])
   (unless (vec3? vector) (raise-argument-error 'vector-arrow3d "vec3?" vector))
   (unless (vec3? origin) (raise-argument-error 'vector-arrow3d "vec3?" origin))
-  (arrow3d origin (vec3+ origin vector) #:id id #:radius radius #:color color
+  (arrow3d origin (vec3+ origin vector) #:id id #:shaft-style shaft-style #:tip-style tip-style
            #:transform transform #:opacity opacity))
 
 ; vector-components3d : vec3? #:id symbol? ... -> group3d?
@@ -172,7 +183,6 @@
 (define (vector-components3d vector
                              #:id id
                              #:origin [origin origin3]
-                             #:radius [radius 1/28]
                              #:transform [transform identity-transform3]
                              #:opacity [opacity 1])
   (unless (vec3? vector) (raise-argument-error 'vector-components3d "vec3?" vector))
@@ -183,15 +193,23 @@
   (define components
     (filter values
             (list (and (not (zero? (vec3-x vector)))
-                       (arrow3d origin x-end #:id 'x-component #:radius radius #:color "red"))
+                       (arrow3d origin x-end #:id 'x-component
+                                #:shaft-style (stroke3d #:color "red")
+                                #:tip-style (arrow-style3d #:color "red")))
                   (and (not (zero? (vec3-y vector)))
-                       (arrow3d x-end y-end #:id 'y-component #:radius radius #:color "forestgreen"))
+                       (arrow3d x-end y-end #:id 'y-component
+                                #:shaft-style (stroke3d #:color "forestgreen")
+                                #:tip-style (arrow-style3d #:color "forestgreen")))
                   (and (not (zero? (vec3-z vector)))
-                       (arrow3d y-end end #:id 'z-component #:radius radius #:color "royalblue")))))
+                       (arrow3d y-end end #:id 'z-component
+                                #:shaft-style (stroke3d #:color "royalblue")
+                                #:tip-style (arrow-style3d #:color "royalblue"))))))
   (when (zero? (vec3-length vector))
     (raise-arguments-error 'vector-components3d "a nonzero vector" "vector" vector))
   (group3d (append components
-                  (list (arrow3d origin end #:id 'resultant #:radius radius #:color "darkorange")))
+                  (list (arrow3d origin end #:id 'resultant
+                                 #:shaft-style (stroke3d #:color "darkorange")
+                                 #:tip-style (arrow-style3d #:color "darkorange"))))
            #:id id #:transform transform #:opacity opacity))
 
 
@@ -203,7 +221,7 @@
   (mesh3d #:id id #:vertices (vector origin3)
           #:transform (make-transform3 #:translation position)))
 
-(define (ticks3d id axis minimum maximum step size radius color)
+(define (ticks3d id axis minimum maximum step size style)
   (group3d
    (for/list ([value (in-list (tick-values minimum maximum step))] [index (in-naturals)])
      (define endpoints
@@ -212,7 +230,7 @@
          [(y) (list (vec3 (- size) value 0) (vec3 size value 0))]
          [(z) (list (vec3 (- size) 0 value) (vec3 size 0 value))]))
      (line3d (first endpoints) (second endpoints)
-             #:id (string->symbol (format "t~a" index)) #:radius radius #:color color))
+             #:id (string->symbol (format "t~a" index)) #:style style))
    #:id id))
 
 (define (two-real-range who range)

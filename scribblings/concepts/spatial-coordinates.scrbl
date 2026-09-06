@@ -2,7 +2,8 @@
 
 @(require (for-label (except-in racket/base angle string-copy)
                      racket/math
-                     animate/3d))
+                     animate/3d
+                     animate/3d/opengl))
 
 @title[#:tag "spatial-coordinates"]{Spatial Coordinates}
 
@@ -20,8 +21,17 @@ static vector-field, streamline, and particle geometry. SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].
 SCENE-3D-M adds an effectful retained-renderer protocol behind that immutable
-model; renderer resources stay outside the spatial tree and the deterministic
-software path remains the conformance reference.
+model. SCENE-3D-N adds explicit indexed-mesh topology diagnostics, orientation
+repair, and camera-independent compiled geometry resources; renderer caches and
+metrics remain outside the spatial tree and the deterministic software path
+remains the conformance reference. SCENE-3D-O adds renderer-independent
+mathematical strokes, screen-sized points and arrowheads, and camera-dependent
+feature/silhouette outlines. These marks prepare from immutable centrelines at
+the requested frame; they do not become camera-dependent author values.
+SCENE-3D-P adds an optional Racket/OpenGL implementation behind the same
+renderer protocol. It owns retained GPU resources and an offscreen framebuffer,
+then reads copied ARGB pixels back into the ordinary 2D composition; the
+software renderer remains the default reference.
 It still does not add a
 second scene timeline: @racket[view3d] is an ordinary two-dimensional Visual
 inside the existing immutable scene, with a separate immutable spatial tree.
@@ -66,8 +76,8 @@ around positive @racket[z-axis3], then translates it. A general composition of
 nonuniform decomposed transforms can create shear, so @racket[transform3-compose]
 returns an exact @racket[affine3] map rather than silently discarding it.
 
-@bold{Current limitation:} a @racket[view3d] can draw either declaration-ordered
-wireframe edges or depth-tested filled triangles. Opaque triangles are clipped
+@bold{Current limitation:} a @racket[view3d] can draw depth-tested filled
+triangles plus mathematical screen/world strokes. Opaque triangles are clipped
 against all six camera-frustum planes, back-face culled by default,
 unlit/flat/smooth shaded, and resolved by a deterministic z-buffer. A
 render-only @racket[clip3d] adds local half-space clipping, while
@@ -79,15 +89,20 @@ L picking operates on indexed mesh triangles (including generated curve and
 surface meshes), not analytic implicit shapes, UVs, or a GPU selection pass;
 its preview overlays are diagnostic-only and never enter a rendered frame.
 The default retained backend caches reference camera-space preparation but is
-not GPU accelerated, and no Pict3D package is bundled. A future native backend
-will use the same protocol and need tolerant, rather than bit-exact, pixel
-conformance checks.
-Stage F diagrams have
-deterministic physical-radius tubes and direct-time curve animation; Stage G
-surfaces use fixed rectangular topology, deterministic normal fallbacks, and
-direct-time reveal/morph. A requested screen-space width is rejected until it
-can be made depth-aware. Adaptive/implicit surfaces and general solids remain
-later work. Projected labels are 2D overlays with fixed pixel offsets—not
+not GPU accelerated. The optional OpenGL backend requires an explicit
+@racketmodname[animate/3d/opengl] choice in a GUI-capable Racket process and
+uses one serialized context, FBO readback, and tolerance-based rather than
+bit-exact software conformance. It has no direct GL presentation, GPU picking,
+textures, shadows, specular/roughness shading, or order-independent
+transparency.
+Stage F diagrams have deterministic physical-radius tubes and direct-time curve
+animation; Stage O adds screen-space widths, caps, joins, dashes, visible and
+hidden depth modes, and screen-sized marker primitives. The software coverage
+is deterministic rather than analytically antialiased, and hidden-line
+classification deliberately ignores transparent surfaces. Stage G surfaces use
+fixed rectangular topology, deterministic normal fallbacks, and direct-time
+reveal/morph. Adaptive/implicit surfaces and general solids remain later work.
+Projected labels are 2D overlays with fixed pixel offsets—not
 occlusion-aware 3D billboards—but may opt into opaque-depth @racket['hide] or
 @racket['fade] behaviour and can overlap. `move3d-*`,
 `rotate3d-*`, `scale3d-*`,

@@ -130,6 +130,7 @@
                  '("lexers-lib"
                    "parsers-lib"
                    "svg"
+                   "opengl"
                    "poppler-aarch64-macosx-2"
                    "poppler-x86_64-macosx-2"
                    "poppler-win32-arm64-2"

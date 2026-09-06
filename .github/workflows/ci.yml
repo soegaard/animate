@@ -80,3 +80,26 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y xvfb
       - run: raco pkg install --auto --name animate .
       - run: xvfb-run -a gracket -l raco/main -- test tests/scene-ep-gui-smoke-test.rkt
+
+  opengl-integration-ubuntu:
+    name: OpenGL integration / Ubuntu Mesa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri mesa-utils
+      - run: raco pkg install --auto --name animate .
+      - run: xvfb-run -a env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt
+
+  opengl-integration-macos:
+    name: OpenGL integration / macOS
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Bogdanp/setup-racket@v1.11
+        with:
+          version: "9.3"
+      - run: raco pkg install --auto --name animate .
+      - run: env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt

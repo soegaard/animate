@@ -8,8 +8,9 @@
 
 (define curve
   (polyline3d (list origin3 (vec3 1 0 0) (vec3 1 1 0))
-              #:id 'curve #:radius 1/10 #:color "tomato"))
-(define marker (point3d origin3 #:id 'marker #:radius 1/10 #:color "gold"))
+              #:id 'curve #:style (stroke3d #:width 3 #:color "tomato")))
+(define marker (point3d origin3 #:id 'marker
+                        #:style (point-style3d #:size 10 #:color "gold")))
 (define world
   (view3d (list curve marker) #:id 'world #:render-mode 'opaque
           #:camera (perspective-camera3d #:position (vec3 2 2 6) #:look-at origin3)))
@@ -44,8 +45,10 @@
                 #:duration 1))
   (define flash-view (sampled-view flashed 1/2))
   ;; A passing flash is an overlay, never a replacement for its source curve.
-  (check-equal? (curve3d-color (view3d-spatial-ref flash-view '(world curve))) "tomato")
+  (check-equal? (stroke3d-color
+                 (curve3d-style (view3d-spatial-ref flash-view '(world curve))))
+                "tomato")
   (check-equal?
-   (curve3d-color
-    (view3d-spatial-ref flash-view '(world curve--passing-flash)))
+   (stroke3d-color
+    (curve3d-style (view3d-spatial-ref flash-view '(world curve--passing-flash))))
    "gold"))

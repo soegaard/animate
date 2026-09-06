@@ -16,12 +16,14 @@
 (require racket/list
          "../geometry.rkt"
          "curve3d.rkt"
+         "marker3d.rkt"
          "material3d.rkt"
          "mesh3d.rkt"
          "parametric-surface3d.rkt"
          "point-line-arrow3d.rkt"
          "spatial-group.rkt"
          "surface-grid.rkt"
+         "stroke3d.rkt"
          "transform3.rkt"
          "vec3.rkt")
 
@@ -39,31 +41,34 @@
 ;;; Pointwise Geometry
 ;;;
 
-; surface-point : surface3d? finite-real? finite-real? #:id symbol? ... -> mesh3d?
+; surface-point : surface3d? finite-real? finite-real? #:id symbol? ... -> point3d?
 ;;   Creates a labelled-by-path point at an exact surface parameter position.
-(define (surface-point surface u v #:id id #:radius [radius 1/10]
-                       #:color [color "gold"])
-  (point3d (surface3d-position-at surface u v) #:id id #:radius radius #:color color))
+(define (surface-point surface u v #:id id
+                       #:style [style (point-style3d #:size 10 #:color "gold")])
+  (point3d (surface3d-position-at surface u v) #:id id #:style style))
 
 ; surface-tangent-u : surface3d? finite-real? finite-real? #:id symbol? ... -> group3d?
 ;;   Draws an arrow from the surface point in its u tangent direction.
 (define (surface-tangent-u surface u v #:id id #:length [length 1]
-                           #:radius [radius 1/28] #:color [color "tomato"])
-  (tangent-arrow 'surface-tangent-u surface u v id length radius color
+                           #:shaft-style [shaft-style (stroke3d #:color "tomato")]
+                           #:tip-style [tip-style (arrow-style3d #:color "tomato")])
+  (tangent-arrow 'surface-tangent-u surface u v id length shaft-style tip-style
                  (surface3d-tangent-u-at surface u v)))
 
 ; surface-tangent-v : surface3d? finite-real? finite-real? #:id symbol? ... -> group3d?
 ;;   Draws an arrow from the surface point in its v tangent direction.
 (define (surface-tangent-v surface u v #:id id #:length [length 1]
-                           #:radius [radius 1/28] #:color [color "forestgreen"])
-  (tangent-arrow 'surface-tangent-v surface u v id length radius color
+                           #:shaft-style [shaft-style (stroke3d #:color "forestgreen")]
+                           #:tip-style [tip-style (arrow-style3d #:color "forestgreen")])
+  (tangent-arrow 'surface-tangent-v surface u v id length shaft-style tip-style
                  (surface3d-tangent-v-at surface u v)))
 
 ; surface-normal : surface3d? finite-real? finite-real? #:id symbol? ... -> group3d?
 ;;   Draws an arrow in the direct u-cross-v normal direction.
 (define (surface-normal surface u v #:id id #:length [length 1]
-                        #:radius [radius 1/28] #:color [color "midnightblue"])
-  (tangent-arrow 'surface-normal surface u v id length radius color
+                        #:shaft-style [shaft-style (stroke3d #:color "midnightblue")]
+                        #:tip-style [tip-style (arrow-style3d #:color "midnightblue")])
+  (tangent-arrow 'surface-normal surface u v id length shaft-style tip-style
                  (surface3d-normal-at surface u v)))
 
 ; surface-tangent-plane : surface3d? finite-real? finite-real? #:id symbol? ... -> mesh3d?
@@ -101,8 +106,7 @@
                                   #:v [fixed-v #f]
                                   #:id id
                                   #:samples [samples 64]
-                                  #:radius [radius 1/35]
-                                  #:color [color "gold"])
+                                  #:style [style (stroke3d #:color "gold" #:width 2)])
   (unless (surface3d? surface)
     (raise-argument-error 'surface-coordinate-curve "surface3d?" surface))
   (unless (not (eq? (not fixed-u) (not fixed-v)))
@@ -118,12 +122,13 @@
                                            (- (second range) (first range)))))
      (if fixed-u (surface3d-position-at surface fixed-u parameter)
          (surface3d-position-at surface parameter fixed-v)))
-   #:id id #:radius radius #:color color))
+   #:id id #:style style))
 
 ; surface-gradient-arrow : surface3d? finite-real? finite-real? #:id symbol? ... -> group3d?
 ;;   Draws the xy gradient of a declared function surface at one (x,y) point.
 (define (surface-gradient-arrow surface x y #:id id #:length [length 1]
-                                #:radius [radius 1/28] #:color [color "purple"])
+                                #:shaft-style [shaft-style (stroke3d #:color "purple")]
+                                #:tip-style [tip-style (arrow-style3d #:color "purple")])
   (define function (surface3d-scalar-function surface))
   (unless function
     (raise-arguments-error 'surface-gradient-arrow "a function-surface3d value"
@@ -136,12 +141,12 @@
           (if derivative-y (derivative-y x y)
               (scalar-finite-derivative surface x y 'y))
           0))
-  (tangent-arrow 'surface-gradient-arrow surface x y id length radius color gradient))
+  (tangent-arrow 'surface-gradient-arrow surface x y id length shaft-style tip-style gradient))
 
 ; surface-level-curve : surface3d? finite-real? #:id symbol? ... -> group3d?
 ;;   Produces deterministic triangle-wise level-set segments for a function surface.
-(define (surface-level-curve surface level #:id id #:radius [radius 1/35]
-                             #:color [color "purple"])
+(define (surface-level-curve surface level #:id id
+                             #:style [style (stroke3d #:color "purple" #:width 2)])
   (unless (surface3d? surface) (raise-argument-error 'surface-level-curve "surface3d?" surface))
   (unless (finite-real? level) (raise-argument-error 'surface-level-curve "finite-real?" level))
   (define height (surface3d-scalar-function surface))
@@ -167,7 +172,7 @@
    (for/list ([segment (in-list segments)] [index (in-naturals)])
      (line3d (first segment) (second segment)
              #:id (string->symbol (format "segment~a" index))
-             #:radius radius #:color color))
+             #:style style))
    #:id id))
 
 
@@ -175,14 +180,14 @@
 ;;; Local Helpers
 ;;;
 
-(define (tangent-arrow who surface u v id length radius color direction)
+(define (tangent-arrow who surface u v id length shaft-style tip-style direction)
   (unless (symbol? id) (raise-argument-error who "symbol?" id))
   (unless (and (finite-real? length) (positive? length))
     (raise-argument-error who "positive finite length" length))
   (define unit (safe-unit who direction))
   (define point (surface3d-position-at surface u v))
   (arrow3d point (vec3+ point (vec3-scale length unit))
-           #:id id #:radius radius #:color color))
+           #:id id #:shaft-style shaft-style #:tip-style tip-style))
 
 (define (safe-unit who vector)
   (unless (and (vec3? vector) (not (zero? (vec3-length vector))))

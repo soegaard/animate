@@ -1,5 +1,94 @@
 # Changes
 
+## 1.22.0 — SCENE-3D-P
+
+- Added the explicit `animate/3d/opengl` backend. `animate`, `animate/3d`,
+  and `animate/3d/render` remain headless and do not load the OpenGL binding or
+  create a GUI context. `opengl-renderer3d` owns a hidden Racket GUI canvas,
+  serializes every GL call on its owner, and returns copied top-down
+  straight-alpha ARGB bytes to the existing ordinary 2D/Pict compositor.
+- Added a Racket `opengl`-package implementation with capability diagnostics,
+  GL-resource lifetime wrappers, GLSL 1.50 shaders, matrix/float packing,
+  VBO/EBO/VAO geometry retention, a byte-bounded LRU cache, owned RGBA8/depth
+  framebuffer targets, optional multisample resolve, and tested RGBA readback
+  row conversion. No native handle is stored in a Scene, `view3d`, mesh, or
+  other authored value.
+- Added OpenGL opaque, flat/smooth, clip-plane, transparent, depth-only, and
+  SCENE-3D-O stroke/point/arrow rendering passes. The software renderer remains
+  the default and conformance reference. OpenGL is opt-in through
+  `current-view3d-renderer3d` or a project's
+  `(render-spec #:renderer3d (opengl-renderer3d-spec ...))` declaration.
+- Project final rendering and project preview now accept that declaration.
+  Explicit OpenGL needs the Racket 9.3 `gracket` executable; a plain `racket`
+  process reports this configuration requirement rather than silently switching
+  to software. `#:fallback 'software` is the only deliberate fallback policy.
+- Added the OpenGL context, direct rendering, project-selection, cache,
+  readback, and context-restart tests; `tools/run-3d-probes.rkt` now has ten P
+  probes and `--compare-renderers software,opengl`, which writes separate trees
+  plus quantitative absolute-difference PNGs. `tools/benchmark-3d.rkt` runs
+  the same canonical workloads through software or explicit OpenGL and records
+  warm-frame/cache/FBO/readback evidence without a timing CI threshold. Added
+  the retained cube, project, and two-viewport examples.
+
+Known boundary: this first optional backend requires a compatible OpenGL 3.2 /
+GLSL 1.50 context and is tested on macOS plus an optional Xvfb lane. It uses
+one serialized context with `#:workers 1`; it does not offer threaded GPU
+parallelism, direct OpenGL preview-canvas composition, GPU picking, textures,
+shadows, specular/roughness shading, or order-independent transparency. The
+software renderer remains the portable default. GPU and software images are
+compared by documented tolerance—especially at antialiased and transparent
+edges—not by bit identity.
+
+## 1.21.0 — SCENE-3D-O
+
+- Replaced the ambiguous curve-radius interface with immutable `stroke3d` and
+  `tube-style3d` values. Mathematical curves, axes, grids, and vector shafts
+  now default to camera-resolved screen strokes; explicit `tube-style3d`
+  retains physical tubular geometry.
+- Added deterministic screen/world widths, butt/square/round caps,
+  miter/bevel/round joins, validated dashes with stable source phase, and
+  depth modes for visible, hidden, and always-visible mathematical marks.
+  Stroke preparation preserves author clipping and source progress for picking.
+- Added screen/world point and arrow-marker styles, along with screen-sized
+  default points and arrowheads. They participate in the same clip, depth, and
+  picking semantics as strokes.
+- Added path-transparent `with-edges3d` overlays with explicit, all, boundary,
+  crease, silhouette, and feature-edge selection plus visible, depth-only, and
+  omitted surface policies. Feature classification uses the current transformed
+  geometry and camera; the renderer has ordered opaque, depth-only, hidden,
+  visible, transparent, and always-overlay passes.
+- Added eight SCENE-3D-O probe scenes, including hidden lines, edge modes,
+  screen/world widths, a cap/join/dash gallery, a dolly arrow, near-plane
+  clipping, and picking, plus focused tiny-raster and random-access tests.
+
+Known boundary: hidden-line classification intentionally considers opaque and
+depth-only surfaces only; transparent surfaces are not reliable hidden-line
+occluders. Strokes use deterministic software coverage rather than analytic
+antialiasing, and sampled curves remain limited by their authored samples.
+
+## 1.20.0 — SCENE-3D-N
+
+- Added pure, deterministic `mesh3d` topology diagnostics: scale-aware
+  degenerate-face detection, duplicate-face reports, boundary chains/loops,
+  non-manifold and inconsistent-winding edges, stable face components,
+  isolated vertices, signed component volumes, and broad-phase
+  self-intersection candidates.
+- Added explicit `mesh3d-orient-consistently` and `mesh3d-orient-outward`
+  repair operations. They return replacement immutable meshes plus reports and
+  reject ambiguous topology rather than silently guessing an outside.
+- `animate/3d/render` now compiles a `view3d` into camera-independent shared
+  geometry and ordered instances. Render requests pair that compiled view with
+  a `frame3d-spec`; the retained software backend separately caches geometry
+  resources and camera-space preparation, exposes immutable metric snapshots,
+  and preserves the existing software pixels.
+- Added `examples/3d/mesh-diagnostics.rkt`, SCENE-3D-N visual probes, cache and
+  topology tests, and geometry-key/count fields in probe manifests.
+
+Known boundary: self-intersection reporting is broad phase only. Topology
+repair neither heals holes nor rebuilds authored vertex normals. The retained
+software geometry cache is an implementation resource, not GPU storage;
+OpenGL remains a later roadmap stage.
+
 ## 1.19.0 — SCENE-3D-M
 
 - Added `animate/3d/render`, a backend-neutral renderer protocol with stable

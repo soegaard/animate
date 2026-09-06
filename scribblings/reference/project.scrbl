@@ -4,7 +4,9 @@
                      animate
                      animate/authoring
                      animate/project
-                     animate/render))
+                     animate/render
+                     animate/3d/render
+                     animate/3d/opengl))
 
 @title[#:tag "reference-project"]{Projects and Final Rendering}
 
@@ -61,11 +63,17 @@ Declares an in-memory source-program source.
 @defproc[(render-spec [#:fps fps exact-positive-integer? 30]
                       [#:width width exact-positive-integer? 1280]
                       [#:height height exact-positive-integer? 720]
+                      [#:renderer3d renderer3d any/c 'software]
                       [#:supersample supersample exact-positive-integer? 1]
                       [#:workers workers exact-positive-integer? 1])
          render-spec?]{
 Describes final raster quality.  Renderer and camera fields have defaults too;
 see @racket[render-spec] in the contract reference for the complete set.
+@racket[#:renderer3d] is @racket['software] by default. Passing an explicit
+@racket[opengl-renderer3d-spec] selects the optional Racket/OpenGL backend for
+final project rendering; it requires Racket 9.3 @exec{gracket} and
+@racket[#:workers 1]. OpenGL is not loaded merely by constructing this immutable
+project declaration.}
 }
 
 @defproc[(render-spec? [value any/c]) boolean?]{Recognizes a final-render configuration.}

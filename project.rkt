@@ -17,6 +17,7 @@
          racket/list
          racket/match
          racket/path
+         racket/runtime-path
          racket/string
          "authoring.rkt"
          "main.rkt"
@@ -24,6 +25,11 @@
          "private/doctor.rkt"
          "private/ffmpeg-capabilities.rkt"
          "version.rkt")
+
+;; This path is used only after a project explicitly selects a non-software
+;; renderer.  It is deliberately not a static `require`: `(require
+;; animate/project)` must stay free of OpenGL and GUI initialization.
+(define-runtime-path opengl-renderer-module "3d/opengl.rkt")
 
 (provide animate-project
          animate-project?
@@ -57,6 +63,7 @@
          render-spec-camera
          render-spec-renderers
          render-spec-renderer-options
+         render-spec-renderer3d
          render-spec-supersample
          render-spec-workers
          render-spec-quality
@@ -114,7 +121,6 @@
          (struct-out project-plan)
          (struct-out project-tool-identities)
          (struct-out prepared-project)
-         (struct-out renderer3d-capability-set)
          (struct-out renderer-capabilities)
          (struct-out project-check-report)
          normalize-project
@@ -176,7 +182,7 @@
 (define scene-program-source-program scene-program-source-value-value)
 
 (struct render-spec-value
-  (fps width height camera renderers renderer-options supersample workers quality)
+  (fps width height camera renderers renderer-options renderer3d supersample workers quality)
   #:transparent
   #:constructor-name make-render-spec)
 
@@ -187,6 +193,7 @@
 (define render-spec-camera render-spec-value-camera)
 (define render-spec-renderers render-spec-value-renderers)
 (define render-spec-renderer-options render-spec-value-renderer-options)
+(define render-spec-renderer3d render-spec-value-renderer3d)
 (define render-spec-supersample render-spec-value-supersample)
 (define render-spec-workers render-spec-value-workers)
 (define render-spec-quality render-spec-value-quality)
@@ -332,6 +339,7 @@
                      #:camera [camera #f]
                      #:renderers [renderers 'default]
                      #:renderer-options [renderer-options #hasheq()]
+                     #:renderer3d [renderer3d 'software]
                      #:supersample [supersample 1]
                      #:workers [workers 1]
                      #:quality [quality 'final])
@@ -344,11 +352,23 @@
     (raise-argument-error 'render-spec "'default or list?" renderers))
   (unless (hash? renderer-options)
     (raise-argument-error 'render-spec "hash?" renderer-options))
+  ;; `animate/project` deliberately does not import the optional OpenGL
+  ;; backend.  It preserves an explicit backend declaration as immutable
+  ;; project data; preparation/execution validates an OpenGL declaration only
+  ;; when that backend is selected.  This keeps planning and ordinary headless
+  ;; project checks free of GL package and GUI side effects.
+  (unless (or (eq? renderer3d 'software)
+              (struct? renderer3d))
+    (raise-argument-error
+     'render-spec
+     "'software or an explicit renderer3d backend specification"
+     renderer3d))
   (unless (memq quality '(draft final))
     (raise-argument-error 'render-spec "'draft or 'final" quality))
   (make-render-spec fps width height camera
                     (if (list? renderers) (append renderers '()) renderers)
                     (immutable-hash-snapshot renderer-options)
+                    renderer3d
                     supersample workers quality))
 
 ; preview-spec : ... -> preview-spec?
@@ -728,6 +748,9 @@
                (if (eq? (output-spec-format (animate-project-output project)) 'mp4)
                    '(ffmpeg)
                    '()))]
+             [renderer-check
+              (check-project-renderer3d
+               (animate-project-render project))]
              [missing
               (for/list ([requirement (in-list requirements)]
                          #:unless (doctor-has-capability? doctor requirement))
@@ -778,6 +801,7 @@
                            (cache-spec-root (animate-project-cache project)))))]
              [warnings
               (append
+               (hash-ref renderer-check 'warnings '())
                (if (eq? (cacheability-mode
                           (prepared-project-cache-identities preparation))
                          'persistent)
@@ -792,9 +816,78 @@
                         (not (doctor-has-capability? doctor 'ffplay)))
                    '("ffplay is unavailable; audio playback is disabled but the visual preview remains usable")
                    '()))]
-             [failures (append missing asset-failures encoder-failures
+             [failures (append missing
+                               (hash-ref renderer-check 'failures '())
+                               asset-failures encoder-failures
                                output-failures cache-failures)])
         (project-check-report (null? failures) requirements warnings failures doctor))))
+
+;; `check-project!` normally has no reason to load a GUI library.  An explicit
+;; OpenGL choice is different: we first make the launcher requirement clear,
+;; then probe the requested backend in GRacket.  This gives a project author a
+;; useful diagnostic before any output directory or cache is touched.
+(define (check-project-renderer3d render)
+  (define declaration (render-spec-renderer3d render))
+  (cond
+    [(eq? declaration 'software)
+     (hasheq 'warnings '() 'failures '())]
+    [(not (current-process-is-gracket?))
+     (hasheq
+      'warnings '()
+      'failures
+      (list
+       "OpenGL renderer requested, but this project check is running in Racket rather than GRacket; run it with the Racket 9.3 gracket executable so the owned GL context can be probed"))]
+    [else
+     (with-handlers
+         ([exn:fail?
+           (lambda (error)
+             (hasheq 'warnings '()
+                     'failures
+                     (list
+                      (format "OpenGL renderer configuration is unavailable: ~a"
+                              (exn-message error)))))])
+       (define spec? (dynamic-require opengl-renderer-module
+                                      'opengl-renderer3d-spec?))
+       (unless (spec? declaration)
+         (raise-arguments-error
+          'check-project!
+          "an opengl-renderer3d-spec as #:renderer3d"
+          "renderer3d" declaration))
+       (define available?
+         (dynamic-require opengl-renderer-module 'opengl-renderer3d-available?))
+       (if (available?)
+           (hasheq 'warnings '() 'failures '())
+           (if (eq? (opengl-spec-fallback declaration) 'software)
+               (hasheq
+                'warnings
+                (list
+                 "OpenGL renderer is unavailable; the explicit #:fallback 'software policy will be used")
+                'failures '())
+               (hasheq
+                'warnings '()
+                'failures
+                (list
+                 "OpenGL renderer requested but no compatible OpenGL 3.2 / GLSL 1.50 context is available; select #:fallback 'software explicitly to allow the reference renderer")))))]))
+
+;; The OpenGL spec intentionally has no public field accessors: it is an
+;; opaque backend declaration from the point of view of headless project
+;; planning.  Its transparent representation is nevertheless safe to inspect
+;; here solely to distinguish the two documented fallback policies.  A future
+;; backend declaration with a different shape simply follows the strict error
+;; path rather than becoming a silent fallback.
+(define (opengl-spec-fallback value)
+  (with-handlers ([exn:fail? (lambda (_error) 'error)])
+    (define fields (struct->vector value))
+    (if (and (vector? fields)
+             (= (vector-length fields) 4)
+             (eq? (vector-ref fields 0) 'struct:opengl-renderer3d-spec-value)
+             (memq (vector-ref fields 3) '(error software)))
+        (vector-ref fields 3)
+        'error)))
+
+(define (current-process-is-gracket?)
+  (regexp-match? #rx"(?i:gracket)"
+                 (path->string (find-system-path 'exec-file))))
 
 
 ;;;

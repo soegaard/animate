@@ -32,7 +32,7 @@
   ;; Random-access order is deliberately nonmonotonic.  Conformance must not
   ;; depend on prior camera frames or a backend's retained cache history.
   (for ([phase (in-list '(1/2 0 1 1/4 3/4 0))])
-    (define request (render3d-request (world-at phase) 96 72 #f))
+    (define request (view3d->render3d-request (world-at phase) 96 72))
     (define expected (render reference request))
     (define actual (render retained request))
     (check-equal? (renderer3d-render-result-width actual) 96)

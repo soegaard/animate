@@ -15,7 +15,7 @@
                                      #:shading 'smooth #:double-sided? #t)))
   (define cut (clip3d sphere (plane3 origin3 x-axis3) #:id 'half-sphere))
   (define section (section-curve3d sphere (plane3 origin3 x-axis3) #:id 'section
-                                   #:color "gold" #:radius 1/30))
+                                   #:style (tube-style3d #:color "gold" #:radius 1/30)))
   (define world
     (view3d (list cut section) #:id 'world #:render-mode 'opaque
             #:camera (perspective-camera3d #:position (vec3 4 3 5)

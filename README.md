@@ -1,10 +1,10 @@
-# animate — SCENE-3D-M
+# animate — SCENE-3D-P
 
 > **Current prototype:** when the API improves, Animate updates its own
 > implementation, examples, tests, README, and manual together. Obsolete
 > spellings are removed instead of retained as compatibility shims.
 
-**Prototype version 1.19.0.**
+**Prototype version 1.22.0.**
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
@@ -70,6 +70,21 @@ deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and
 always produces a fresh colour/depth target. Backend instances and their
 resources never enter an authored `view3d` or Scene.
+SCENE-3D-N adds pure indexed-mesh topology diagnostics and explicit orientation
+repair. Its compiler separates canonical local geometry from ordered instances
+and frame state, so camera changes and instance transforms can reuse retained
+geometry resources. Renderer statistics are snapshots of backend-owned work,
+not semantic scene data.
+SCENE-3D-O adds renderer-independent mathematical strokes: constant-pixel or
+explicit world widths, caps, joins, dashes, depth-aware visible and hidden
+segments, feature/silhouette mesh outlines, screen-sized points and arrowheads,
+and stroke/marker picking. The software renderer remains the semantic reference
+for these prepared primitives. SCENE-3D-P adds an explicit optional
+`animate/3d/opengl` backend written in Racket: an owned hidden GL context,
+retained VBO/EBO/VAO geometry, GLSL shaders, FBO rendering, and RGBA readback
+back into the ordinary 2D/Pict composition. The software renderer remains the
+portable default; OpenGL is never loaded by `animate`, `animate/3d`, or
+`animate/3d/render` unless it is explicitly selected.
 
 Before a release, run `raco animate check-repo`. It checks the current metadata
 and public boundaries, compiles the Racket sources and examples, runs the test
@@ -107,6 +122,17 @@ exactly synchronized with the gallery and example requirements.
 - [Prepared Lorenz flow](examples/3d/prepared-lorenz-flow.rkt) — 3d, ode, vector-fields, trajectories, camera, animation; requires core.
 - [Exact spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, bvh, camera; requires core, gui.
 - [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
+- [Compiled mesh diagnostics](examples/3d/mesh-diagnostics.rkt) — 3d, topology, diagnostics, compilation, cache, camera; requires core.
+- [Depth-aware tetrahedron outline](examples/3d/hidden-line-tetrahedron.rkt) — 3d, strokes, hidden-lines, feature-edges, silhouettes; requires core.
+- [Screen-space mathematical axes](examples/3d/screen-space-axes.rkt) — 3d, strokes, axes, arrowheads, screen-space, camera; requires core.
+- [Feature and silhouette edge modes](examples/3d/feature-edge-modes.rkt) — 3d, strokes, feature-edges, silhouettes, hidden-lines, camera; requires core.
+- [Screen and world stroke width](examples/3d/screen-world-strokes.rkt) — 3d, strokes, screen-space, world-space, camera; requires core.
+- [Cap, join, and dash gallery](examples/3d/stroke-gallery.rkt) — 3d, strokes, caps, joins, dashes; requires core.
+- [Screen-space arrowhead during dolly](examples/3d/arrow-dolly.rkt) — 3d, strokes, arrowheads, screen-space, camera; requires core.
+- [Near-plane stroke clipping](examples/3d/near-plane-stroke.rkt) — 3d, strokes, clipping, near-plane; requires core.
+- [Stroke, point, and arrow picking](examples/3d/stroke-picking.rkt) — 3d, strokes, markers, picking, preview; requires core, gui.
+- [Retained Racket/OpenGL cube](examples/3d/opengl-opaque-cube.rkt) — 3d, opengl, retained, framebuffer, cache; requires core, gui, opengl.
+- [OpenGL two spatial viewports](examples/3d/opengl-two-viewports.rkt) — 3d, opengl, viewports, perspective, orthographic; requires core, gui, opengl.
 <!-- END GENERATED: canonical examples -->
 
 The first inspector deliberately uses sampled layout boxes rather than painted
@@ -591,7 +617,7 @@ styling, renderer-measured multiline rich text, addressable matrices/tables,
 deterministic traced loci, composable camera timing, reproducible
 section-oriented rendering metadata, and live endpoint-derived network edges.
 
-The current public package version is `1.19.0` (`SCENE-3D-M`). The public modules'
+The current public package version is `1.22.0` (`SCENE-3D-P`). The public modules'
 bindings are covered by the registered Scribble manual.
 
 ## Documentation source
@@ -626,19 +652,58 @@ raco pkg install --auto --name animate https://github.com/soegaard/animate.git
 The documentation source can still be rendered manually when needed:
 
 ```sh
-scribble --htmls --dest html scribblings/animate.scrbl
+scribble +m --htmls --dest html scribblings/animate.scrbl
 ```
 
 Generate small, reviewable 3D visual probes for one implementation stage:
 
 ```sh
-racket tools/run-3d-probes.rkt --stage 3D-M --output rendered-examples/3d-m
+gracket tools/run-3d-probes.rkt --stage 3D-P --renderer opengl --output rendered-examples/3d-p-opengl
+```
+
+To retain software and OpenGL trees beside absolute-difference images:
+
+```sh
+gracket tools/run-3d-probes.rkt --stage 3D-P --compare-renderers software,opengl --output rendered-examples/3d-p-compare
+```
+
+Measure the ten retained-renderer workloads, including screen-space strokes
+(without timing assertions):
+
+```sh
+racket tools/benchmark-3d.rkt --renderer software --width 320 --height 180
+
+# Explicit GPU timing/counter evidence (requires Racket 9.3 GRacket)
+gracket tools/benchmark-3d.rkt --renderer opengl --width 320 --height 180
 ```
 
 The ignored output directory contains a manifest with the Animate/Racket
 versions, renderer identity, sample times, camera values, frame hashes, and
 per-frame diagnostics. These images complement the semantic and raster tests;
 they do not replace them.
+
+### Optional OpenGL backend
+
+Require `animate/3d/opengl` only when selecting the backend. It needs a
+compatible OpenGL 3.2 / GLSL 1.50 context and must run through Racket 9.3
+`gracket`; no fallback occurs unless the declaration explicitly says so.
+
+```racket
+(require animate/3d/opengl
+         animate/project)
+
+(render-spec
+ #:renderer3d
+ (opengl-renderer3d-spec #:samples 4 #:cache-megabytes 512 #:fallback 'error))
+```
+
+The first backend serializes one GL context and therefore requires
+`#:workers 1`. It renders only the spatial viewport to an FBO and lets the
+existing Pict compositor place the copied ARGB bitmap into the normal frame.
+It does not yet provide direct preview-canvas presentation, GPU picking,
+textures, shadows, specular/roughness shading, or order-independent
+transparency. Use the software backend when portability or bit-exact reference
+pixels are required.
 
 ### Optional Rhombus examples
 

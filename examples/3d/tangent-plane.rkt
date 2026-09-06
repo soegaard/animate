@@ -33,25 +33,36 @@
 (define (make-world)
   (define curve-u
     (surface-coordinate-curve saddle #:u calculus-u #:id 'u-curve
-                              #:samples 65 #:radius 1/42 #:color "tomato"))
+                              #:samples 65
+                              #:style (stroke3d #:width 2 #:color "tomato")))
   (define curve-v
     (surface-coordinate-curve saddle #:v calculus-v #:id 'v-curve
-                              #:samples 65 #:radius 1/42 #:color "forestgreen"))
+                              #:samples 65
+                              #:style (stroke3d #:width 2 #:color "forestgreen")))
   (view3d
    (list
     (grid-plane3d 'xy #:id 'ground #:u-range (list -3/2 3/2) #:v-range (list -3/2 3/2)
-                  #:step 1 #:radius 1/110 #:color "lightsteelblue")
+                  #:step 1 #:style (stroke3d #:width 1 #:color "lightsteelblue"))
     (axes3d #:id 'axes #:x-range (list -3/2 3/2) #:y-range (list -3/2 3/2) #:z-range (list -2 2)
-            #:radius 1/48 #:color "midnightblue")
+            #:stroke-style (stroke3d #:width 2 #:color "midnightblue")
+            #:arrow-style (arrow-style3d #:color "midnightblue"))
     saddle
     (surface-tangent-plane saddle calculus-u calculus-v #:id 'tangent-plane
                            #:size 2/3 #:color "lavender")
     curve-u curve-v
-    (surface-point saddle calculus-u calculus-v #:id 'contact #:radius 1/10 #:color "gold")
-    (surface-tangent-u saddle calculus-u calculus-v #:id 'tangent-u #:length 4/5 #:color "tomato")
-    (surface-tangent-v saddle calculus-u calculus-v #:id 'tangent-v #:length 4/5 #:color "forestgreen")
-    (surface-normal saddle calculus-u calculus-v #:id 'normal #:length 1 #:color "midnightblue")
-    (surface-point saddle -3/2 calculus-v #:id 'traveller #:radius 1/12 #:color "white"))
+    (surface-point saddle calculus-u calculus-v #:id 'contact
+                   #:style (point-style3d #:size 10 #:color "gold"))
+    (surface-tangent-u saddle calculus-u calculus-v #:id 'tangent-u #:length 4/5
+                       #:shaft-style (stroke3d #:color "tomato")
+                       #:tip-style (arrow-style3d #:color "tomato"))
+    (surface-tangent-v saddle calculus-u calculus-v #:id 'tangent-v #:length 4/5
+                       #:shaft-style (stroke3d #:color "forestgreen")
+                       #:tip-style (arrow-style3d #:color "forestgreen"))
+    (surface-normal saddle calculus-u calculus-v #:id 'normal #:length 1
+                    #:shaft-style (stroke3d #:color "midnightblue")
+                    #:tip-style (arrow-style3d #:color "midnightblue"))
+    (surface-point saddle -3/2 calculus-v #:id 'traveller
+                   #:style (point-style3d #:size 8 #:color "white")))
    #:id 'world #:center (vec2 0 -1/4) #:width 7 #:height 9/2
    #:camera (perspective-camera3d #:position (vec3 7 6 10)
                                  #:look-at (vec3 0 0 0)

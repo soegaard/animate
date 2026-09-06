@@ -35,6 +35,7 @@
          "private/preview-diagnostics.rkt"
          "private/preview-worker-protocol.rkt"
          "private/preview-worker-process.rkt"
+         "private/3d/renderer3d.rkt"
          "private/scene-program.rkt")
 
 (provide (all-from-out "private/preview-model.rkt"
@@ -124,6 +125,7 @@
                      (path->string (find-system-path 'exec-file)))))
 
 (define-runtime-path preview-window-path "private/preview-window.rkt")
+(define-runtime-path opengl-renderer-module "3d/opengl.rkt")
 
 (define (ensure-preview-gui who)
   ;; Keeping this non-initializing check avoids a headless worker crashing while
@@ -189,12 +191,19 @@
      'open-project-preview "a project whose required capabilities are available"
      "failures" (project-check-report-failures report)))
   (define preview-specification (animate-project-preview (project-plan-project plan)))
+  (define render-specification (animate-project-render (project-plan-project plan)))
   (define source-specification (animate-project-source (project-plan-project plan)))
   (define project-title
     (or title (format "Animate: ~a" (animate-project-id (project-plan-project plan)))))
   (define requested-start
     (project-preview-target-start plan))
   (define prepared (prepare-project! plan))
+  ;; The backend declaration is immutable project data.  Only this explicit
+  ;; project-preview path loads the opt-in module and creates a retained
+  ;; renderer; `animate/preview` itself remains headless-loadable.
+  (define project-opengl-renderer
+    (make-project-preview-opengl-renderer
+     (render-spec-renderer3d render-specification)))
   ;; Audio preparation is deliberately best-effort for an interactive
   ;; preview.  A missing file, FFmpeg, or optional ffplay backend must not
   ;; prevent the project from opening visually; the returned immutable
@@ -205,7 +214,12 @@
                                    (prepared-project-timeline prepared)
                                    preview-specification))
   (define worker-producer
-    (and (module-binding-source? source-specification)
+    ;; A module-backed source normally uses the restartable software worker.
+    ;; An explicitly selected OpenGL project instead uses the in-process
+    ;; producer below, so the window owns exactly one serialized GL context
+    ;; and can release it deterministically on close.
+    (and (not project-opengl-renderer)
+         (module-binding-source? source-specification)
          (make-project-worker-producer
           (module-binding-source-module-path source-specification)
           (module-binding-source-binding source-specification)
@@ -252,10 +266,16 @@
      (project-preview-audio-event-synchronizer
       (project-preview-audio-runtime-monitor audio-runtime))
      #:producer
-     (and worker-producer
-          (lambda (document sample render-spec cancellation-token)
-            (project-worker-producer-produce
-             worker-producer document sample render-spec cancellation-token)))
+     (cond
+       [project-opengl-renderer
+        (lambda (document sample render-spec cancellation-token)
+          (parameterize ([current-view3d-renderer3d project-opengl-renderer])
+            (default-frame-producer document sample render-spec cancellation-token)))]
+       [worker-producer
+        (lambda (document sample render-spec cancellation-token)
+          (project-worker-producer-produce
+           worker-producer document sample render-spec cancellation-token))]
+       [else #f])
      #:title project-title))
   (set-box! session-box session)
   (when worker-producer
@@ -264,6 +284,15 @@
     (preview-add-close-hook!
      session
      (lambda () (project-worker-producer-close! worker-producer))))
+  (when project-opengl-renderer
+    ;; The preview session owns the retained backend, just as it owns an
+    ;; optional project subprocess.  A normal close deletes VBOs, FBOs and
+    ;; shader programs while the hidden context is still current.
+    (define release!
+      (dynamic-require opengl-renderer-module 'opengl-renderer3d-release!))
+    (preview-add-close-hook!
+     session
+     (lambda () (release! project-opengl-renderer))))
   (define audio-monitor (project-preview-audio-runtime-monitor audio-runtime))
   (when audio-monitor
     (hash-set! session-audio-monitors session audio-monitor)
@@ -278,6 +307,20 @@
      (lambda ()
        (audio-backend-close (project-preview-audio-runtime-backend audio-runtime)))))
   session)
+
+(define (make-project-preview-opengl-renderer declaration)
+  (cond
+    [(eq? declaration 'software) #f]
+    [else
+     (define spec? (dynamic-require opengl-renderer-module
+                                    'opengl-renderer3d-spec?))
+     (unless (spec? declaration)
+       (raise-arguments-error
+        'open-project-preview
+        "an opengl-renderer3d-spec as the project's #:renderer3d declaration"
+        "renderer3d" declaration))
+     ((dynamic-require opengl-renderer-module 'opengl-renderer3d)
+      declaration)]))
 
 ;; A production project may request audio monitoring, while a direct Scene or
 ;; Timeline preview stays completely effect-free until an author supplies an

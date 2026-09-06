@@ -81,6 +81,7 @@
          preview-session-diagnostics
          preview-write-session-trace!
          preview-add-close-hook!
+         default-frame-producer
          preview-close!)
 
 

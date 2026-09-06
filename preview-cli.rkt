@@ -193,13 +193,12 @@
          (open-project-preview value #:target (requested-target))
          (open-program-preview source-path binding #:auto-reload? auto-reload? #:fps fps)))
    (when (and block (not (animate-project? value))) (preview-jump-to-block! session block))
-   ;; A GUI frame is displayed asynchronously. Keep the command's main thread
-   ;; alive until the author closes that frame, then all registered resources
-   ;; (watcher, REPL, renderer) are cleaned up by preview-close!.
-   (let loop ()
-     (when (preview-open? session)
-       (sleep 1/10)
-       (loop)))]
+   ;; Do not wait here.  In GRacket this module's top-level evaluation runs in
+   ;; the GUI eventspace; a `sleep` loop starves painting, callbacks and the
+   ;; queued preview-controller events.  The live top-level frame keeps the
+   ;; GRacket process alive, and its close hook owns watcher, REPL and renderer
+   ;; cleanup.
+   (void session)]
   [else
    (raise-user-error
    'raco-animate

@@ -4,7 +4,7 @@
 
 ;; The red, green, and blue arrows are the orthogonal components of
 ;; v = (2, 1, 3); the gold arrow is their resultant.  Curves, tips, axes, and
-;; grid lines are all finite physical 3D geometry, while x/y/z stay crisp 2D
+;; grid lines are camera-aware screen-space marks, while x/y/z stay crisp 2D
 ;; projected labels tied to the stable spatial label-anchor paths.
 
 (require racket/cmdline
@@ -23,11 +23,12 @@
     (coordinate-plane3d 'xy #:id 'xy-plane #:u-range (list -3 4) #:v-range (list -2 3)
                         #:color "aliceblue")
     (grid-plane3d 'xy #:id 'xy-grid #:u-range (list -3 4) #:v-range (list -2 3)
-                  #:step 1 #:radius 1/90 #:color "lightsteelblue")
+                  #:step 1 #:style (stroke3d #:width 1 #:color "lightsteelblue"))
     (axes3d #:id 'axes #:x-range (list -3 4) #:y-range (list -2 3) #:z-range (list -2 4)
-            #:radius 1/36 #:color "midnightblue")
-    (vector-components3d vector-v #:id 'components #:radius 1/24)
-    (point3d vector-v #:id 'v-tip #:radius 1/12 #:color "gold"))
+            #:stroke-style (stroke3d #:width 2 #:color "midnightblue")
+            #:arrow-style (arrow-style3d #:color "midnightblue"))
+    (vector-components3d vector-v #:id 'components)
+    (point3d vector-v #:id 'v-tip #:style (point-style3d #:size 10 #:color "gold")))
    #:id 'world #:center (vec2 0 -1/4) #:width 7 #:height 9/2
    #:camera (perspective-camera3d #:position (vec3 7 5 9) #:look-at (vec3 1 1/2 1)
                                  #:vertical-field-of-view (/ pi 5))
@@ -45,7 +46,7 @@
                 #:id 'title #:center (vec2 0 15/4)
                 #:font-size 1/3 #:font-family 'swiss #:font-weight 'bold #:color "navy"))
   (define caption
-    (plain-text "v = (2, 1, 3): physical tubes orbit with the camera; x, y, z remain projected labels."
+    (plain-text "v = (2, 1, 3): screen-space marks orbit with the camera; x, y, z remain projected labels."
                 #:id 'caption #:center (vec2 0 -29/10)
                 #:font-size 1/4 #:font-family 'swiss #:color "darkslategray"))
   (scene-play

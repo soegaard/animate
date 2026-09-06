@@ -63,7 +63,7 @@
 ;; new immutable frame result.  The scene value itself never changes.
 (define (retained-renderer-summary)
   (define renderer (retained-software-renderer3d #:capacity 2))
-  (define request (render3d-request (make-world) 320 180 #f))
+  (define request (view3d->render3d-request (make-world) 320 180))
   (define first (renderer3d-prepare renderer request))
   (define second (renderer3d-prepare renderer request))
   (define result (renderer3d-render renderer second request))

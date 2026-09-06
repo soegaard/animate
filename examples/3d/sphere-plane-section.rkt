@@ -29,7 +29,8 @@
     ;; This wrapper leaves `sphere` semantically intact; only the viewport
     ;; clips it to the normal-facing side of the current plane.
     (clip3d sphere plane #:id 'remaining-sphere)
-    (section-curve3d sphere plane #:id 'section #:color "gold" #:radius 1/32)
+    (section-curve3d sphere plane #:id 'section
+                     #:style (tube-style3d #:color "gold" #:radius 1/32))
     ;; A translucent slab makes the moving cutting plane visible.  It is a
     ;; separate visual, so its transparency policy remains explicit.
     (box3d 1/40 4 4 #:id 'cutting-plane #:color "#f4b94266"
@@ -38,7 +39,8 @@
 
 (define (make-world)
   (define driver
-    (point3d origin3 #:id 'plane-driver #:radius 1/100 #:color "white" #:opacity 0
+    (point3d origin3 #:id 'plane-driver
+             #:style (point-style3d #:size 4 #:color "white") #:opacity 0
              #:transform (make-transform3 #:translation (vec3 -5/4 0 0))))
   (define dynamic-section
     (spatial-relation

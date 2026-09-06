@@ -20,6 +20,7 @@
          "mesh3d.rkt"
          "ray-plane.rkt"
          "spatial-group.rkt"
+         "tube-style3d.rkt"
          "spatial-visual.rkt"
          "transform3.rkt"
          "vec3.rkt")
@@ -211,14 +212,12 @@
   (section3d loops chains))
 
 ; section-curve3d : mesh3d? (or/c plane3? clip-plane3d?) ... -> group3d?
-;; Converts all sections to independently addressable tube curves.  A group is
+;; Converts all sections to independently addressable physical tube curves. A group is
 ;; returned even for one loop, because a nonmanifold input may truthfully yield
 ;; more than one component.
 (define (section-curve3d mesh clip
                          #:id [id 'section]
-                         #:color [color "gold"]
-                         #:radius [radius 1/24]
-                         #:sides [sides 8])
+                         #:style [style (tube-style3d #:radius 1/24 #:sides 8 #:color "gold")])
   (unless (symbol? id) (raise-argument-error 'section-curve3d "symbol? as #:id" id))
   (define section (section-by-plane3d mesh clip))
   (define loops (section3d-loops section))
@@ -227,10 +226,10 @@
     (append
      (for/list ([loop (in-list loops)] [index (in-naturals)])
        (polyline3d loop #:id (string->symbol (format "~a-loop-~a" id index))
-                   #:radius radius #:sides sides #:closed? #t #:color color))
+                   #:style style #:closed? #t))
      (for/list ([chain (in-list chains)] [index (in-naturals)])
        (polyline3d chain #:id (string->symbol (format "~a-chain-~a" id index))
-                   #:radius radius #:sides sides #:closed? #f #:color color))))
+                   #:style style #:closed? #f))))
   ;; Section points live in the source mesh's local coordinates, so preserve
   ;; its authored envelope on the returned group rather than silently drawing
   ;; the curve at the world origin.

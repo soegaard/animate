@@ -43,7 +43,7 @@
    (for/list ([index (in-range 1201)])
      (ode-trajectory3d-position
       trajectory (+ start (* (/ index 1200) (- end start)))))
-   #:id 'trace #:radius 1/10 #:sides 8 #:color "royalblue"))
+   #:id 'trace #:style (stroke3d #:width 2 #:color "royalblue")))
 
 (define (make-demo-scene)
   (define phase (parameter 'time 0))
@@ -60,12 +60,13 @@
                       #:x-range '(-16 16) #:y-range '(-16 16) #:z-range '(8 42)
                       #:x-count 3 #:y-count 3 #:z-count 3
                       #:normalize? #t #:length-range '(3/5 6/5)
-                      #:color-by-magnitude? #t #:radius 1/12 #:opacity 3/4)
+                      #:color-by-magnitude? #t #:opacity 3/4)
       (lorenz-trace prepared-lorenz)
       (flow-particle3d prepared-lorenz phase #:id 'particle
-                       #:radius 4/5 #:color "gold"
-                       #:tangent-length 4 #:tangent-radius 1/10
-                       #:tangent-color "tomato"))
+                       #:style (point-style3d #:size 12 #:color "gold")
+                       #:tangent-length 4
+                       #:tangent-shaft-style (stroke3d #:width 2 #:color "tomato")
+                       #:tangent-tip-style (arrow-style3d #:color "tomato")))
      #:id 'world #:center (vec2 0 -1/4) #:width 8 #:height 5
      #:camera camera #:background "aliceblue" #:render-mode 'opaque))
   (define title

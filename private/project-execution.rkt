@@ -17,12 +17,14 @@
          racket/format
          racket/list
          racket/path
+         racket/runtime-path
          racket/system
          file/sha1
          "../main.rkt"
          "../authoring.rkt"
          "../project.rkt"
          "../version.rkt"
+         "3d/renderer3d.rkt"
          "png-renderer.rkt"
          "section-renderer.rkt"
          "doctor.rkt"
@@ -37,6 +39,12 @@
          execute-prepared-project!
          current-project-artifact-opener
          (struct-out project-execution-report))
+
+;; This is a runtime path rather than a `require`: ordinary project rendering
+;; remains able to run on the software backend without loading racket/gui or
+;; the optional `opengl` package.  The selected backend is loaded only in the
+;; dynamic extent that owns an explicit OpenGL render.
+(define-runtime-path opengl-renderer-module "../3d/opengl.rkt")
 
 
 ;;;
@@ -356,30 +364,80 @@
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define render (animate-project-render project))
-  (if (eq? (render-spec-renderers render) 'default)
-      (keyword-apply
-       render-frame-indices/report!
-       '(#:camera #:clean? #:fps #:supersample #:workers)
-       (list (project-render-camera prepared)
-             #t
-             (render-spec-fps render)
-             (render-spec-supersample render)
-             (render-spec-workers render))
-       (list (prepared-project-scene prepared)
-             (prepared-project-target-frame-indices prepared)
-             frame-root))
-      (keyword-apply
-       render-frame-indices/report!
-       '(#:camera #:clean? #:fps #:renderers #:supersample #:workers)
-       (list (project-render-camera prepared)
-             #t
-             (render-spec-fps render)
-             (render-spec-renderers render)
-             (render-spec-supersample render)
-             (render-spec-workers render))
-       (list (prepared-project-scene prepared)
-             (prepared-project-target-frame-indices prepared)
-             frame-root))))
+  (call-with-project-renderer3d
+   render
+   (lambda ()
+     (if (eq? (render-spec-renderers render) 'default)
+         (keyword-apply
+          render-frame-indices/report!
+          '(#:camera #:clean? #:fps #:supersample #:workers)
+          (list (project-render-camera prepared)
+                #t
+                (render-spec-fps render)
+                (render-spec-supersample render)
+                (render-spec-workers render))
+          (list (prepared-project-scene prepared)
+                (prepared-project-target-frame-indices prepared)
+                frame-root))
+         (keyword-apply
+          render-frame-indices/report!
+          '(#:camera #:clean? #:fps #:renderers #:supersample #:workers)
+          (list (project-render-camera prepared)
+                #t
+                (render-spec-fps render)
+                (render-spec-renderers render)
+                (render-spec-supersample render)
+                (render-spec-workers render))
+          (list (prepared-project-scene prepared)
+                (prepared-project-target-frame-indices prepared)
+                frame-root))))))
+
+;; A renderer selection belongs to the project declaration, whereas the
+;; retained renderer instance belongs to one render operation.  In particular,
+;; do not put the live OpenGL owner, context, or GLuints in `render-spec`.
+;; Frame workers inherit this parameterization when they are created, and the
+;; renderer's own context host serializes every OpenGL call.
+(define (call-with-project-renderer3d render thunk)
+  (define declaration (render-spec-renderer3d render))
+  (cond
+    [(eq? declaration 'software) (thunk)]
+    [else
+     (unless (current-process-is-gracket?)
+       (raise-arguments-error
+        'render-project!
+        "a GRacket-capable renderer process for an explicitly selected OpenGL backend"
+        "renderer3d" declaration
+        "hint"
+        "run the project with the Racket 9.3 gracket executable; the software backend remains the default"))
+     (define renderer-predicate
+       (dynamic-require opengl-renderer-module 'opengl-renderer3d-spec?))
+     (unless (renderer-predicate declaration)
+       (raise-arguments-error
+        'render-project!
+        "an opengl-renderer3d-spec declaration"
+        "renderer3d" declaration))
+     (when (> (render-spec-workers render) 1)
+       (raise-arguments-error
+        'render-project!
+        "#:workers 1 for the first serialized OpenGL project backend"
+        "workers" (render-spec-workers render)
+        "hint"
+        "OpenGL calls for one context are serialized; use one renderer process"))
+     (define make-renderer
+       (dynamic-require opengl-renderer-module 'opengl-renderer3d))
+     (define release-renderer!
+       (dynamic-require opengl-renderer-module 'opengl-renderer3d-release!))
+     (define renderer (make-renderer declaration))
+     (dynamic-wind
+      void
+      (lambda ()
+        (parameterize ([current-view3d-renderer3d renderer])
+          (thunk)))
+      (lambda () (release-renderer! renderer)))]))
+
+(define (current-process-is-gracket?)
+  (regexp-match? #rx"(?i:gracket)"
+                 (path->string (find-system-path 'exec-file))))
 
 (define (project-frame-cache-key prepared)
   (define plan (prepared-project-plan prepared))
@@ -422,7 +480,14 @@
    ;; backend from SCENE-3D-C.  Name it explicitly: a cached frame is never
    ;; reused across an implementation whose depth/culling semantics changed.
    'renderer (hasheq 'selection (stable-cache-datum (render-spec-renderers render))
-                     'software-3d "opaque-triangle-zbuffer-v1")
+                     'software-3d "opaque-triangle-zbuffer-v1"
+                     ;; An OpenGL declaration is an explicit part of the
+                     ;; raster identity.  Its live vendor/context fingerprint
+                     ;; is intentionally not available during pure planning;
+                     ;; static selection still prevents an accidental reuse of
+                     ;; software PNGs for an OpenGL render (or vice versa).
+                     'three-dimensional
+                     (stable-cache-datum (render-spec-renderer3d render)))
    'renderer-options (stable-cache-datum (render-spec-renderer-options render))
    'semantic-render-schema 'scene-to-pict-to-bitmap-v2))
 

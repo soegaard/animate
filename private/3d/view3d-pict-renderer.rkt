@@ -83,8 +83,9 @@
       [(opaque)
        (define renderer (current-view3d-renderer3d))
        (define request
-         (render3d-request view width height
-                           (current-software-render-cancellation-token)))
+         (view3d->render3d-request
+          view width height
+          #:cancellation-token (current-software-render-cancellation-token)))
        (bitmap
         (renderer3d-render-result->bitmap
          (renderer3d-render renderer

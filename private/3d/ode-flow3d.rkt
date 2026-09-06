@@ -23,12 +23,14 @@
          "../scene-state.rkt"
          "../visual-model.rkt"
          "curve3d.rkt"
+         "marker3d.rkt"
          "point-line-arrow3d.rkt"
          "spatial-dependency.rkt"
          "spatial-group.rkt"
          "spatial-relation.rkt"
          "spatial-relation-context.rkt"
          "spatial-visual.rkt"
+         "stroke3d.rkt"
          "vec3.rkt"
          "view3d-visual.rkt")
 
@@ -351,9 +353,7 @@
                       #:direction [direction 'both]
                       #:step-size [step-size 1/20]
                       #:steps [steps 120]
-                      #:radius [radius 1/30]
-                      #:sides [sides 8]
-                      #:color [color "royalblue"]
+                      #:style [style (stroke3d #:color "royalblue" #:width 2)]
                       #:opacity [opacity 1])
   (check-field3d 'streamline3d field)
   (check-vec3 'streamline3d seed)
@@ -373,16 +373,14 @@
      [(backward) (for/list ([index (in-range steps -1 -1)]) (at (- index)))]
      [else (append (for/list ([index (in-range steps 0 -1)]) (at (- index)))
                    (for/list ([index (in-range 0 (add1 steps))]) (at index)))])
-   #:id id #:radius radius #:sides sides #:color color #:opacity opacity))
+   #:id id #:style style #:opacity opacity))
 
 (define (streamlines3d field seeds
                        #:id id
                        #:direction [direction 'both]
                        #:step-size [step-size 1/20]
                        #:steps [steps 120]
-                       #:radius [radius 1/30]
-                       #:sides [sides 8]
-                       #:color [color "royalblue"]
+                       #:style [style (stroke3d #:color "royalblue" #:width 2)]
                        #:opacity [opacity 1])
   (check-field3d 'streamlines3d field)
   (unless (list? seeds) (raise-argument-error 'streamlines3d "list?" seeds))
@@ -392,7 +390,7 @@
    (for/list ([seed (in-list seeds)] [index (in-naturals)])
      (streamline3d field seed #:id (child-id3d id index)
                    #:direction direction #:step-size step-size #:steps steps
-                   #:radius radius #:sides sides #:color color #:opacity opacity))
+                   #:style style #:opacity opacity))
    #:id id))
 
 ; vector-field3d : procedure? ... -> group3d?
@@ -412,8 +410,8 @@
                         #:color-by-magnitude? [color-by-magnitude? #f]
                         #:seed-order [seed-order 'xyz]
                         #:scale [scale 1/4]
-                        #:radius [radius 1/50]
-                        #:color [color "royalblue"]
+                        #:shaft-style [shaft-style (stroke3d #:color "royalblue" #:width 2)]
+                        #:tip-style [tip-style (arrow-style3d #:color "royalblue")]
                         #:opacity [opacity 1])
   (check-field3d 'vector-field3d field)
   (check-symbol 'vector-field3d id)
@@ -431,9 +429,10 @@
   (define checked-length-range
     (normalize-length-range 'vector-field3d length-range))
   (check-positive 'vector-field3d "scale" scale)
-  (check-positive 'vector-field3d "radius" radius)
-  (unless (color-spec? color)
-    (raise-argument-error 'vector-field3d "color-spec?" color))
+  (unless (stroke3d? shaft-style)
+    (raise-argument-error 'vector-field3d "stroke3d? as #:shaft-style" shaft-style))
+  (unless (arrow-style3d? tip-style)
+    (raise-argument-error 'vector-field3d "arrow-style3d? as #:tip-style" tip-style))
   (unless (and (finite-real? opacity) (<= 0 opacity 1))
     (raise-argument-error 'vector-field3d "finite real in [0, 1]" opacity))
   (define seeds
@@ -468,7 +467,7 @@
         (rgba-color-lerp (color-spec->rgba-color "deepskyblue")
                          (color-spec->rgba-color "tomato")
                          (magnitude-progress magnitude))
-        color))
+        #f))
   (group3d
    (for/list ([entry (in-list nonzero)] [index (in-naturals)]
               #:do [(define seed (car entry))
@@ -477,11 +476,12 @@
                     (define length (display-length magnitude))]
               #:when (positive? length))
      (define direction (vec3-normalize derivative))
+     (define color (display-color magnitude))
      (arrow3d seed (vec3+ seed (vec3-scale length direction))
               #:id (child-id3d id index)
-              #:radius radius #:tip-length (/ length 4)
-              #:tip-radius (* 3/2 radius)
-              #:color (display-color magnitude) #:opacity opacity))
+              #:shaft-style (if color (stroke3d-with-color shaft-style color) shaft-style)
+              #:tip-style (if color (arrow-style3d-with-color tip-style color) tip-style)
+              #:opacity opacity))
    #:id id))
 
 
@@ -496,23 +496,27 @@
 
 (define (flow-particle3d trajectory phase
                          #:id id
-                         #:radius [radius 1/10]
-                         #:color [color "tomato"]
+                         #:style [style (point-style3d #:size 10 #:color "tomato")]
                          #:opacity [opacity 1]
                          #:tangent-length [tangent-length #f]
-                         #:tangent-color [tangent-color "darkorange"]
-                         #:tangent-radius [tangent-radius 1/35])
+                         #:tangent-shaft-style
+                         [tangent-shaft-style (stroke3d #:color "darkorange" #:width 2)]
+                         #:tangent-tip-style
+                         [tangent-tip-style (arrow-style3d #:color "darkorange")])
   (check-trajectory3d 'flow-particle3d trajectory)
   (check-symbol 'flow-particle3d id)
-  (check-positive 'flow-particle3d "radius" radius)
-  (unless (color-spec? color) (raise-argument-error 'flow-particle3d "color-spec?" color))
+  (unless (point-style3d? style)
+    (raise-argument-error 'flow-particle3d "point-style3d? as #:style" style))
   (unless (and (finite-real? opacity) (<= 0 opacity 1))
     (raise-argument-error 'flow-particle3d "finite real in [0, 1]" opacity))
   (when tangent-length (check-positive 'flow-particle3d "tangent-length" tangent-length))
-  (when tangent-length (check-positive 'flow-particle3d "tangent-radius" tangent-radius))
   (when tangent-length
-    (unless (color-spec? tangent-color)
-      (raise-argument-error 'flow-particle3d "color-spec? tangent-color" tangent-color)))
+    (unless (stroke3d? tangent-shaft-style)
+      (raise-argument-error 'flow-particle3d "stroke3d? as #:tangent-shaft-style"
+                            tangent-shaft-style))
+    (unless (arrow-style3d? tangent-tip-style)
+      (raise-argument-error 'flow-particle3d "arrow-style3d? as #:tangent-tip-style"
+                            tangent-tip-style)))
   (define phase-id (parameter-target-id phase 'flow-particle3d))
   (define metadata (ode-flow-particle3d-metadata trajectory phase-id tangent-length))
   (define template-time (car (ode-trajectory3d-time-range trajectory)))
@@ -523,7 +527,7 @@
           (ode-trajectory3d-position trajectory time)))
     (cond
       [(not tangent-length)
-       (point3d position #:id id #:radius radius #:color color #:opacity opacity)]
+       (point3d position #:id id #:style style #:opacity opacity)]
       [else
        (define derivative
          (or (and sample (ode3d-frame-sample-derivative sample))
@@ -535,13 +539,12 @@
          ;; invisible instead of falsely depicting an arbitrary +x tangent.
          (if has-tangent? (vec3-normalize derivative) x-axis3))
        (group3d
-        (list (point3d position #:id 'marker #:radius radius #:color color #:opacity opacity)
+        (list (point3d position #:id 'marker #:style style #:opacity opacity)
               (arrow3d position
                        (vec3+ position (vec3-scale tangent-length direction))
-                       #:id 'tangent #:radius tangent-radius
-                       #:tip-length (/ tangent-length 4)
-                       #:tip-radius (* 3/2 tangent-radius)
-                       #:color tangent-color
+                       #:id 'tangent
+                       #:shaft-style tangent-shaft-style
+                       #:tip-style tangent-tip-style
                        #:opacity (if has-tangent? opacity 0)))
         #:id id)]))
   (spatial-relation
@@ -562,8 +565,7 @@
 ;; same preparation pass handles both a one-particle and a cloud rendering.
 (define (flow-cloud3d trajectories phase
                       #:id id
-                      #:radius [radius 1/10]
-                      #:color [color "tomato"]
+                      #:style [style (point-style3d #:size 10 #:color "tomato")]
                       #:opacity [opacity 1])
   (unless (list? trajectories)
     (raise-argument-error 'flow-cloud3d "list?" trajectories))
@@ -573,7 +575,7 @@
   (group3d
    (for/list ([trajectory (in-list trajectories)] [index (in-naturals)])
      (flow-particle3d trajectory phase #:id (child-id3d id index)
-                      #:radius radius #:color color #:opacity opacity))
+                      #:style style #:opacity opacity))
    #:id id))
 
 

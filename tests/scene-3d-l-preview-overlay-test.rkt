@@ -7,7 +7,7 @@
 
 (module+ test
   (define view
-    (view3d (list (point3d origin3 #:id 'dot #:radius 1/2))
+    (view3d (list (point3d origin3 #:id 'dot #:style (point-style3d #:size 12)))
             #:id 'world #:width 4 #:height 4 #:render-mode 'opaque
             #:camera (perspective-camera3d #:position (vec3 0 0 4) #:look-at origin3)))
   (define before (view3d-children view))

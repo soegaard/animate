@@ -3,7 +3,8 @@
 ;;; SCENE-3D-C Capability Declaration Tests
 
 (require rackunit
-         "../project.rkt")
+         "../project.rkt"
+         "../3d/render.rkt")
 
 (module+ test
   (define spatial

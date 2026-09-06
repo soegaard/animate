@@ -9,7 +9,8 @@
   (define curve
     (parametric-curve3d
      (lambda (t) (vec3 t (* t t) 0))
-     #:range (list -1 1) #:samples 5 #:id 'parabola #:radius 1/10))
+     #:range (list -1 1) #:samples 5 #:id 'parabola
+     #:style (stroke3d #:width 3)))
   ;; Deterministic endpoint-inclusive samples are the curve's authored data.
   (check-equal? (vector-ref (curve3d-points curve) 0) (vec3 -1 1 0))
   (check-equal? (vector-ref (curve3d-points curve) 4) (vec3 1 1 0))

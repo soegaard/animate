@@ -20,13 +20,15 @@
 
 ; raster-triangle3d! : raster-target3d? (vector/c raster-vertex3d? ...)
 ;                       material3d? (listof light3d?) exact-nonnegative-integer?
-;                       [#:write-depth? boolean?] [#:blend? boolean?]
+;                       [#:write-depth? boolean?] [#:write-color? boolean?]
+;                       [#:blend? boolean?]
 ;                       [#:cancellation-token (or/c #f cancellation-token?)]
 ;                       -> exact-nonnegative-integer?
 ;; Returns how many pixels were replaced.  Equal depths resolve to the later
 ;; larger owner, making co-planar declared draw order independently reproducible.
 (define (raster-triangle3d! target triangle material lights owner
                             #:write-depth? [write-depth? #t]
+                            #:write-color? [write-color? #t]
                             #:blend? [blend? #f]
                             #:cancellation-token [cancellation-token #f])
   (unless (raster-target3d? target)
@@ -42,6 +44,8 @@
     (raise-argument-error 'raster-triangle3d! "exact-nonnegative-integer?" owner))
   (unless (boolean? write-depth?)
     (raise-argument-error 'raster-triangle3d! "boolean? as #:write-depth?" write-depth?))
+  (unless (boolean? write-color?)
+    (raise-argument-error 'raster-triangle3d! "boolean? as #:write-color?" write-color?))
   (unless (boolean? blend?)
     (raise-argument-error 'raster-triangle3d! "boolean? as #:blend?" blend?))
   (when cancellation-token (check-cancellation cancellation-token))
@@ -62,7 +66,7 @@
      (define area (signed-area-screen vertices))
      (if (zero? area)
          0
-         (rasterize! target vertices area material lights owner write-depth? blend?
+         (rasterize! target vertices area material lights owner write-depth? write-color? blend?
                      cancellation-token))]))
 
 (struct screen-vertex (x y raster) #:transparent)
@@ -89,7 +93,7 @@
 (define (cross2 ax ay bx by cx cy)
   (- (* (- bx ax) (- cy ay)) (* (- by ay) (- cx ax))))
 
-(define (rasterize! target vertices area material lights owner write-depth? blend? cancellation-token)
+(define (rasterize! target vertices area material lights owner write-depth? write-color? blend? cancellation-token)
   (define first-vertex (first vertices))
   (define second-vertex (second vertices))
   (define third-vertex (third vertices))
@@ -167,7 +171,8 @@
                      (when write-depth?
                        (vector-set! (raster-target3d-depth-values target) index depth)
                        (vector-set! (raster-target3d-owner-values target) index owner))
-                     (write-pixel! target index (shade color normal material lights) #:blend? blend?)
+                     (when write-color?
+                       (write-pixel! target index (shade color normal material lights) #:blend? blend?))
                      (add1 written))
                    written))
              written)))]))

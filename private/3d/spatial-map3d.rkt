@@ -18,10 +18,12 @@
          "linear3.rkt"
          "material3d.rkt"
          "mesh3d.rkt"
+         "marker3d.rkt"
          "solids3d.rkt"
          "spatial-group.rkt"
          "spatial-path.rkt"
          "spatial-visual.rkt"
+         "stroke3d.rkt"
          "transform3.rkt"
          "vec3.rkt"
          "vector-diagram3d.rkt")
@@ -257,8 +259,10 @@
                         #:v-range (list (- half) half) #:color "#88d49840")
     (box3d cube-side cube-side cube-side #:id 'unit-cube #:color "#f7d35b80"
            #:transform (make-transform3 #:translation cube-offset))
-    (basis-vectors3d #:id 'basis #:length 1 #:radius 1/32)
-    (vector-arrow3d vector #:id 'vector #:radius 1/24 #:color "darkmagenta"))
+    (basis-vectors3d #:id 'basis #:length 1)
+    (vector-arrow3d vector #:id 'vector
+                    #:shaft-style (stroke3d #:color "darkmagenta" #:width 2)
+                    #:tip-style (arrow-style3d #:color "darkmagenta")))
    #:id id #:transform transform #:opacity opacity))
 
 

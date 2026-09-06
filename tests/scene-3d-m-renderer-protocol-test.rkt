@@ -20,7 +20,7 @@
     #:rotation (rotation3-look-at (vec3 -3 -2 -4)))))
 
 (module+ test
-  (define request (render3d-request world 80 60 #f))
+  (define request (view3d->render3d-request world 80 60))
   (define reference (software-renderer3d))
   (define retained (retained-software-renderer3d #:capacity 2))
 

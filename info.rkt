@@ -22,7 +22,7 @@
 ; deps : (listof string?)
 ;;   Lists runtime package dependencies.
 (define deps
-  '("base" "draw-lib" "gui-lib" "latex-pict" "pict-lib" ("svg" #:version "0.3")))
+  '("base" "draw-lib" "gui-lib" "latex-pict" "opengl" "pict-lib" ("svg" #:version "0.3")))
 
 ; raco-commands : (listof raco-command-spec?)
 ;; GUI code stays out of main.rkt; this command loads preview.rkt only when an
@@ -62,12 +62,12 @@
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "1.19.0")
+(define version "1.22.0")
 
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-3D-M: immutable Racket animation toolkit with retained 3D rendering")
+  "SCENE-3D-P: immutable Racket animation toolkit with an optional retained OpenGL 3D backend")
 
 ; license : symbol?
 ;;   Declares the package license.

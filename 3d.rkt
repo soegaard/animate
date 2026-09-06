@@ -27,8 +27,16 @@
          "private/3d/spatial-group.rkt"
          "private/3d/spatial-path.rkt"
          "private/3d/mesh3d.rkt"
+         "private/3d/edge-adjacency3d.rkt"
+         "private/3d/mesh-analysis3d.rkt"
+         "private/3d/mesh-orientation3d.rkt"
          "private/3d/tube3d.rkt"
+         "private/3d/tube-style3d.rkt"
          "private/3d/curve3d.rkt"
+         "private/3d/stroke3d.rkt"
+         "private/3d/marker3d.rkt"
+         "private/3d/edge-style3d.rkt"
+         "private/3d/edge-overlay3d.rkt"
          "private/3d/curve-animation3d.rkt"
          "private/3d/function-surface3d.rkt"
          "private/3d/parametric-surface3d.rkt"
@@ -229,15 +237,75 @@
  mesh3d-wireframe-color
  mesh3d-wireframe-width
  mesh3d-local-bounds
+ (struct-out mesh3d-duplicate-triangle)
+ (struct-out mesh3d-analysis)
+ analyze-mesh3d
+ mesh3d-validate
+ (struct-out mesh3d-orientation-report)
+ mesh3d-orient-consistently
+ mesh3d-orient-outward
+ mesh3d-self-intersection-candidates
+ (struct-out edge-incidence3d)
+ (struct-out edge-adjacency3d)
 
  ;; Curves, tubes, and diagrams
  tube3d
+ tube-style3d
+ tube-style3d?
+ tube-style3d-radius
+ tube-style3d-sides
+ tube-style3d-color
+ stroke3d
+ stroke3d?
+ stroke3d-color
+ stroke3d-width
+ stroke3d-width-mode
+ stroke3d-cap
+ stroke3d-join
+ stroke3d-miter-limit
+ stroke3d-dash
+ stroke3d-dash-offset
+ stroke3d-dash-space
+ stroke3d-opacity
+ stroke3d-depth-mode
+ stroke3d-depth-bias
+ stroke3d-with-color
+ stroke3d-with-opacity
+ point-style3d
+ point-style3d?
+ point-style3d-size
+ point-style3d-size-mode
+ point-style3d-color
+ point-style3d-opacity
+ point-style3d-depth-mode
+ point-style3d-depth-bias
+ point-style3d-with-color
+ point-style3d-with-opacity
+ arrow-style3d
+ arrow-style3d?
+ arrow-style3d-length
+ arrow-style3d-length-mode
+ arrow-style3d-width
+ arrow-style3d-color
+ arrow-style3d-opacity
+ arrow-style3d-depth-mode
+ arrow-style3d-depth-bias
+ arrow-style3d-with-color
+ arrow-style3d-with-opacity
+ edge-style3d
+ edge-style3d?
+ edge-style3d-edges
+ edge-style3d-visible
+ edge-style3d-hidden
+ edge-style3d-crease-angle
+ edge-style3d-surface
+ with-edges3d
+ edge-overlay3d?
+ edge-overlay3d-content
+ edge-overlay3d-style
  curve3d?
  curve3d-points
- curve3d-radius
- curve3d-sides
- curve3d-color
- curve3d-width-mode
+ curve3d-style
  curve3d-closed?
  curve3d-local-bounds
  curve3d-with-color
@@ -377,6 +445,7 @@
  ;; Spatial inspection and exact picking
  (struct-out spatial-inspection)
  (struct-out spatial-pick)
+ spatial-pick-kind
  view3d-spatial-inspections
  view3d-spatial-inspection-tree
  view3d-spatial-inspection-at

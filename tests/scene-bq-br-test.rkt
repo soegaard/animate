@@ -45,8 +45,8 @@
       (check-equal? (render-diagnostics-cache-misses report) 1)
       (check-equal? (render-diagnostics-cache-hits report) 3)
       (check-equal? (render-diagnostics-cache-evictions report) 0)
-      (check-equal? (render-diagnostics-release-version report) "1.19.0")
-      (check-eq? (render-diagnostics-release-stage report) 'SCENE-3D-M)
+      (check-equal? (render-diagnostics-release-version report) "1.22.0")
+      (check-eq? (render-diagnostics-release-stage report) 'SCENE-3D-P)
       (define sequential-paths
         (render-frames! animation sequential-directory #:fps 2 #:workers 1))
       ;; Concurrent writing does not change file names, ordering, or pixels.
