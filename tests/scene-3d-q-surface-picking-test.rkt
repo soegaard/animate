@@ -71,6 +71,21 @@
   (check-false (surface-pick3d-parameter implicit-hit))
   (check-equal? (hash-ref (surface-pick3d-source-cell implicit-hit) 'kind)
                 'implicit-tetrahedron)
+  ;; A surface-pick anchor keeps the exact immutable pick provenance while
+  ;; resolving its current point/normal from the retained surface mesh.  This
+  ;; is the truthful anchor form for an implicit surface: there is no invented
+  ;; UV tangent frame, but the interpolated normal remains available.
+  (define implicit-anchor (surface-pick-anchor3d implicit-hit))
+  (define implicit-resolved (anchor3d-resolve implicit-anchor implicit-view))
+  (check-eq? (resolved-anchor3d-source-kind implicit-resolved) 'surface-pick)
+  (check-true (vec3? (resolved-anchor3d-world-point implicit-resolved)))
+  (check-= (vec3-length (resolved-anchor3d-normal implicit-resolved)) 1 1e-10)
+  (check-false (resolved-anchor3d-tangent implicit-resolved))
+  ;; Parametric picks use their retained UV coordinate and can additionally
+  ;; expose a tangent in the current transformed surface frame.
+  (define patch-anchor (surface-pick-anchor3d patch-hit))
+  (check-true (vec3? (anchor3d-normal patch-anchor patch-view)))
+  (check-true (vec3? (anchor3d-tangent patch-anchor patch-view)))
   (check-false
    (view3d-surface-pick patch-view
                         (camera3d-pixel-ray (view3d-camera patch-view) 0 0

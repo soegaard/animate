@@ -133,7 +133,8 @@ exactly synchronized with the gallery and example requirements.
 - [Stroke, point, and arrow picking](examples/3d/stroke-picking.rkt) — 3d, strokes, markers, picking, preview; requires core, gui.
 - [Adaptive, trimmed, and implicit surfaces](examples/3d/adaptive-trimmed-implicit-surfaces.rkt) — 3d, surfaces, adaptive, trimmed, implicit, provenance; requires core.
 - [Capped cube cutaway](examples/3d/capped-cube-cutaway.rkt) — 3d, cutaway, sections, caps, hatching, volume, clipping; requires core.
-- [Anchor-aware projected labels](examples/3d/anchor-aware-labels.rkt) — 3d, anchors, projected-labels, layout, camera; requires core.
+- [Anchor-aware projected labels](examples/3d/anchor-aware-labels.rkt) — 3d, anchors, projected-labels, layout, prepared-layout, camera; requires core.
+- [Fixed spatial annotations](examples/3d/spatial-annotations.rkt) — 3d, annotations, dimensions, angles, normals, axes, camera; requires core.
 - [Retained Racket/OpenGL cube](examples/3d/opengl-opaque-cube.rkt) — 3d, opengl, retained, framebuffer, cache; requires core, gui, opengl.
 - [OpenGL two spatial viewports](examples/3d/opengl-two-viewports.rkt) — 3d, opengl, viewports, perspective, orthographic; requires core, gui, opengl.
 <!-- END GENERATED: canonical examples -->
@@ -2994,10 +2995,16 @@ lose the follow-on idea that led to the work.
   with fixed pixel offsets. The final compositor batches direct-mode projected
   labels to choose deterministic overlap-aware candidates. It minimizes
   overlap but cannot guarantee a disjoint result; labels are not
-  3D billboards; prepared trajectories are still pending. Top-level labels can
+  3D billboards. Prepared label trajectories are explicit immutable render
+  inputs, made with `prepare-scene-label-layout3d` or
+  `prepare-project-label-layout3d`; ordinary rendering retains direct layout
+  until one is supplied. Top-level labels can
   use fixed-style crisp 2D leaders, and their visibility policy can require an
   in-frustum or visible anchor. Their hide/fade policy considers opaque depth
-  only. Spatial
+  only. Core 3D dimensions, planar and dihedral angle markers, normal markers,
+  and coordinate tripods are fixed-structure spatial relations; they currently
+  use explicit world dimensions rather than automatic formula labels or
+  camera-facing screen sizing. Spatial
   transforms and finite camera motions are deterministic scene requests;
   preview navigation layers an inspection-only camera above an authored view
   and does not edit source. Spatial descendants use rooted `view3d` paths such

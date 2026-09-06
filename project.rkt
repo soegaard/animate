@@ -21,6 +21,7 @@
          racket/string
          "authoring.rkt"
          "main.rkt"
+         "private/3d/label-layout-preparation3d.rkt"
          "private/3d/renderer3d.rkt"
          "private/doctor.rkt"
          "private/ffmpeg-capabilities.rkt"
@@ -126,6 +127,7 @@
          normalize-project
          plan-project
          prepare-project!
+         prepare-project-label-layout3d
          check-project!
          project-plan->datum
          prepared-project->datum
@@ -707,6 +709,70 @@
                     (hasheq 'release-version animate-version
                             'release-stage animate-stage
                             'frame-count (length target-indices))))
+
+;; prepare-project-label-layout3d : animate-project? #:view symbol? ...
+;;                                      -> prepared-label-layout3d?
+;; Prepares one view's projected-label trajectory against the same selected
+;; source-frame grid, outer camera, raster size, renderer list, and
+;; supersampling policy that project execution will use.  It is deliberately a
+;; separate explicit preparation value: callers can inspect, persist, or share
+;; it between workers without adding mutable renderer state to `animate-project`.
+;; Pass the result as `#:prepared-label-layout` to the project render functions
+;; (or to `render-frame-indices!`) to make the final compositor consume it.
+(define (prepare-project-label-layout3d project
+                                        #:view view-id
+                                        #:frames [frames #f]
+                                        #:target [target (project-target-all)]
+                                        #:directory [directory (current-directory)]
+                                        #:switch-penalty [switch-penalty 0]
+                                        #:movement-penalty [movement-penalty 0])
+  (unless (animate-project? project)
+    (raise-argument-error 'prepare-project-label-layout3d "animate-project?" project))
+  (unless (symbol? view-id)
+    (raise-argument-error 'prepare-project-label-layout3d "symbol? as #:view" view-id))
+  (unless (or (not frames)
+              (and (list? frames) (andmap exact-nonnegative-integer? frames)))
+    (raise-argument-error
+     'prepare-project-label-layout3d
+     "#f or list of exact nonnegative frame indices as #:frames"
+     frames))
+  (unless (project-target? target)
+    (raise-argument-error 'prepare-project-label-layout3d "project-target? as #:target" target))
+  (define prepared
+    (prepare-project!
+     (plan-project project #:target target #:directory directory)))
+  (define render (animate-project-render project))
+  (define selected-frames
+    (or frames (prepared-project-target-frame-indices prepared)))
+  (prepare-scene-label-layout3d
+   (prepared-project-scene prepared)
+   #:frames selected-frames
+   #:view view-id
+   #:fps (render-spec-fps render)
+   #:camera (project-label-layout-camera prepared)
+   #:renderers (if (eq? (render-spec-renderers render) 'default)
+                   default-pict-renderers
+                   (render-spec-renderers render))
+   #:supersample (render-spec-supersample render)
+   #:switch-penalty switch-penalty
+   #:movement-penalty movement-penalty))
+
+;; Keep the preparation camera exactly in sync with project rendering without
+;; importing effectful project execution.  A project camera override is static;
+;; otherwise project rendering fixes the current scene camera's world framing
+;; at the declared output raster dimensions.
+(define (project-label-layout-camera prepared)
+  (define render
+    (animate-project-render
+     (project-plan-project (prepared-project-plan prepared))))
+  (or (render-spec-camera render)
+      (let ([scene-camera (scene-current-camera (prepared-project-scene prepared))])
+        (make-camera
+         #:width (render-spec-width render)
+         #:height (render-spec-height render)
+         #:world-width (camera-world-width scene-camera)
+         #:center (camera-center scene-camera)
+         #:background (camera-background scene-camera)))))
 
 ;; renderer3d-capability-set comes from the backend-neutral spatial renderer
 ;; protocol.  Keeping project validation on that exact type prevents a project

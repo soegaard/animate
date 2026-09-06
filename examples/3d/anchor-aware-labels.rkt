@@ -49,5 +49,15 @@
   (define output-directory "frames") (define output-video #f)
   (command-line #:program "anchor-aware-labels.rkt" #:args ([directory "frames"] [video #f])
                 (set! output-directory directory) (set! output-video video))
-  (render-frames! (make-demo-scene) output-directory #:fps 30)
+  ;; Prepare the finite render grid before workers start.  The immutable table
+  ;; makes the label's direction choice independent of preview/playback order.
+  (define scene (make-demo-scene))
+  (define prepared-layout
+    (prepare-scene-label-layout3d
+     scene
+     #:view 'world
+     #:frames (build-list (scene-frame-count scene #:fps 30) values)
+     #:fps 30 #:switch-penalty 80 #:movement-penalty 1))
+  (render-frames! scene output-directory #:fps 30
+                  #:prepared-label-layout prepared-layout)
   (when output-video (encode-mp4! output-directory output-video #:fps 30)))

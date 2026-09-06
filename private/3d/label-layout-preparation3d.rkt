@@ -4,10 +4,17 @@
 ;;; Immutable Prepared Label Layout Tables
 ;;;
 
-(require racket/list "label-layout3d.rkt")
+(require racket/list
+         "../camera.rkt"
+         "../pict-adapter.rkt"
+         "../pict-renderer.rkt"
+         "../scene-frame-grid.rkt"
+         "../scene.rkt"
+         "label-layout3d.rkt")
 
 (provide (struct-out prepared-label-layout3d)
          prepare-label-layout3d
+         prepare-scene-label-layout3d
          prepared-label-layout3d-ref)
 
 (struct prepared-label-layout3d (frames layouts switch-penalty movement-penalty) #:transparent)
@@ -80,6 +87,100 @@
     (raise-argument-error 'prepared-label-layout3d-ref "prepared-label-layout3d?" prepared))
   (define index (index-of (vector->list (prepared-label-layout3d-frames prepared)) frame))
   (and index (vector-ref (prepared-label-layout3d-layouts prepared) index)))
+
+;; prepare-scene-label-layout3d : scene? #:frames (listof exact-nonnegative-integer?)
+;;                                [#:view (or/c #f symbol?)] ...
+;;                                -> prepared-label-layout3d?
+;; Samples a declared frame grid, resolves projected anchors, and measures the
+;; concrete 2D templates before renderer workers start.  The result is an
+;; immutable source-frame table: rendering frame 90 never depends on whether
+;; frame 89 was rendered or previewed.  `#:view` prepares only one viewport's
+;; stable label slots; labels in other viewports retain direct layout.
+;;
+;; The baseline used for measurement intentionally makes no occlusion or
+;; visibility query.  Project preparation therefore does not create a renderer
+;; frame artifact or require a live OpenGL context.  Final composition still
+;; performs visibility from the exact artifact it renders for that frame.
+(define (prepare-scene-label-layout3d scn
+                                      #:frames frames
+                                      #:view [view-id #f]
+                                      #:fps [fps 30]
+                                      #:camera [camera #f]
+                                      #:renderers [renderers default-pict-renderers]
+                                      #:supersample [supersample 1]
+                                      #:switch-penalty [switch-penalty 0]
+                                      #:movement-penalty [movement-penalty 0])
+  (unless (scene? scn)
+    (raise-argument-error 'prepare-scene-label-layout3d "scene?" scn))
+  (unless (and (list? frames) (andmap exact-nonnegative-integer? frames))
+    (raise-argument-error
+     'prepare-scene-label-layout3d
+     "list of exact nonnegative frame indices"
+     frames))
+  (unless (or (not view-id) (symbol? view-id))
+    (raise-argument-error 'prepare-scene-label-layout3d "#f or symbol? as #:view" view-id))
+  (unless (exact-positive-integer? fps)
+    (raise-argument-error 'prepare-scene-label-layout3d "exact-positive-integer? as #:fps" fps))
+  (unless (or (not camera) (camera? camera))
+    (raise-argument-error 'prepare-scene-label-layout3d "#f or camera? as #:camera" camera))
+  (check-pict-renderer-list 'prepare-scene-label-layout3d renderers)
+  (unless (exact-positive-integer? supersample)
+    (raise-argument-error
+     'prepare-scene-label-layout3d
+     "exact-positive-integer? as #:supersample"
+     supersample))
+  (define available (scene-frame-count scn #:fps fps))
+  (unless (andmap (lambda (frame) (< frame available)) frames)
+    (raise-arguments-error
+     'prepare-scene-label-layout3d
+     "frame indices within the scene"
+     "frames" frames
+     "frame-count" available))
+  (define measurements
+    (for/list ([frame (in-list frames)])
+      (define time (frame-index->time frame #:fps fps))
+      (define-values (state sampled-camera)
+        (if camera
+            (values (scene-sample scn time) camera)
+            (scene-sample-with-camera scn time)))
+      (define render-camera
+        (camera-with-supersampling sampled-camera supersample))
+      (list frame
+            (scene-projected-label-layout-items3d
+             state render-camera renderers #:view view-id)
+            render-camera)))
+  ;; Direction choices live in screen space.  A trajectory can only be reused
+  ;; with one viewport size, so reject a camera timeline that changes it rather
+  ;; than silently mixing incompatible pixel boxes in one prepared table.
+  (define layout-camera
+    (if (null? measurements)
+        (camera-with-supersampling (or camera (scene-current-camera scn)) supersample)
+        (caddr (car measurements))))
+  (unless (for/and ([measurement (in-list measurements)])
+            (and (= (camera-width layout-camera) (camera-width (caddr measurement)))
+                 (= (camera-height layout-camera) (camera-height (caddr measurement)))))
+    (raise-arguments-error
+     'prepare-scene-label-layout3d
+     "one fixed output viewport across prepared frames"
+     "frames" frames))
+  (prepare-label-layout3d
+   (for/list ([measurement (in-list measurements)])
+     (cons (car measurement) (cadr measurement)))
+   #:width (camera-width layout-camera)
+   #:height (camera-height layout-camera)
+   #:switch-penalty switch-penalty
+   #:movement-penalty movement-penalty))
+
+;; Same contract as the frame renderer: increase raster dimensions only.  The
+;; world camera, authored transforms, and label offsets remain unchanged.
+(define (camera-with-supersampling camera supersample)
+  (if (= supersample 1)
+      camera
+      (make-camera #:width (* supersample (camera-width camera))
+                   #:height (* supersample (camera-height camera))
+                   #:world-width (camera-world-width camera)
+                   #:center (camera-center camera)
+                   #:background (camera-background camera))))
 
 ;; Returns one candidate for each frame. Candidate vectors remain in the
 ;; source order emitted by `layout-labels3d`, so equal-cost choices resolve

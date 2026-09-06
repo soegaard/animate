@@ -175,9 +175,13 @@
     "examples/3d/capped-cube-cutaway.rkt" 'make-demo-scene
     '(3d cutaway sections caps hatching volume clipping) '(core) 2 4)
    (example-entry
-    'anchor-aware-labels "Anchor-aware projected labels"
+   'anchor-aware-labels "Anchor-aware projected labels"
     "examples/3d/anchor-aware-labels.rkt" 'make-demo-scene
-    '(3d anchors projected-labels layout camera) '(core) 2 4)
+    '(3d anchors projected-labels layout prepared-layout camera) '(core) 2 4)
+   (example-entry
+    'spatial-annotations "Fixed spatial annotations"
+    "examples/3d/spatial-annotations.rkt" 'make-demo-scene
+    '(3d annotations dimensions angles normals axes camera) '(core) 2 4)
    (example-entry
     'opengl-opaque-cube "Retained Racket/OpenGL cube"
     "examples/3d/opengl-opaque-cube.rkt" 'make-demo-scene

@@ -80,7 +80,8 @@
                         #:renderers [renderers default-pict-renderers]
                         #:clean? [clean? #t]
                         #:workers [workers 1]
-                        #:supersample [supersample 1])
+                        #:supersample [supersample 1]
+                        #:prepared-label-layout [prepared-label-layout #f])
   (render-diagnostics-paths
    (render-frames/report! scene
                           output-directory
@@ -89,7 +90,8 @@
                           #:renderers renderers
                           #:clean? clean?
                           #:workers workers
-                          #:supersample supersample)))
+                          #:supersample supersample
+                          #:prepared-label-layout prepared-label-layout)))
 
 ;; render-diagnostics contains the deterministic output paths, actual worker
 ;; count, wall time, per-frame render/write durations in frame-index order, and
@@ -122,7 +124,8 @@
                                #:renderers [renderers default-pict-renderers]
                                #:clean? [clean? #t]
                                #:workers [workers 1]
-                               #:supersample [supersample 1])
+                               #:supersample [supersample 1]
+                               #:prepared-label-layout [prepared-label-layout #f])
   (define frame-count
     (scene-frame-count scene #:fps fps))
   (unless (path-string? output-directory)
@@ -150,7 +153,8 @@
    #:renderers renderers
    #:clean? clean?
    #:workers workers
-   #:supersample supersample))
+   #:supersample supersample
+   #:prepared-label-layout prepared-label-layout))
 
 ; render-frame-indices! : scene? (listof exact-nonnegative-integer?) path-string?
 ;                         [#:fps exact-positive-integer?]
@@ -169,7 +173,8 @@
                                #:renderers [renderers default-pict-renderers]
                                #:clean? [clean? #t]
                                #:workers [workers 1]
-                               #:supersample [supersample 1])
+                               #:supersample [supersample 1]
+                               #:prepared-label-layout [prepared-label-layout #f])
   (render-diagnostics-paths
    (render-frame-indices/report!
     scene frame-indices output-directory
@@ -178,7 +183,8 @@
     #:renderers renderers
     #:clean? clean?
     #:workers workers
-    #:supersample supersample)))
+    #:supersample supersample
+    #:prepared-label-layout prepared-label-layout)))
 
 ; render-frame-indices/report! : scene? (listof exact-nonnegative-integer?)
 ;                                path-string? ... -> render-diagnostics?
@@ -190,7 +196,8 @@
                                       #:renderers [renderers default-pict-renderers]
                                       #:clean? [clean? #t]
                                       #:workers [workers 1]
-                                      #:supersample [supersample 1])
+                                      #:supersample [supersample 1]
+                                      #:prepared-label-layout [prepared-label-layout #f])
   (define available-frame-count
     (scene-frame-count scene #:fps fps))
   (unless (and (list? frame-indices)
@@ -249,7 +256,8 @@
                               workers
                               supersample
                               ode-frame-samples
-                              ode3d-frame-samples))
+                              ode3d-frame-samples
+                              prepared-label-layout))
   (define after-counters
     (default-pict-renderer-cache-counters renderers))
   (render-diagnostics
@@ -281,7 +289,8 @@
 ;; parallel thread. Each job owns a unique local output filename, while returned
 ;; lists are rebuilt in the requested global-frame order after all work ends.
 (define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers
-                                  supersample ode-frame-samples ode3d-frame-samples)
+                                  supersample ode-frame-samples ode3d-frame-samples
+                                  prepared-label-layout)
   (define frame-count
     (length frame-indices))
   (define active-workers
@@ -326,7 +335,8 @@
                                  #:fps fps
                                  #:camera camera
                                  #:renderers renderers
-                                 #:supersample supersample))))))
+                                 #:supersample supersample
+                                 #:prepared-label-layout prepared-label-layout))))))
     (pending-frame local-index path bitmap started-at))
   (define (save-pending-frame! pending)
     (define path (pending-frame-path pending))

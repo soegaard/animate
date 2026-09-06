@@ -22,6 +22,7 @@
          "pict-adapter.rkt"
          "scene-frame-grid.rkt"
          "scene.rkt"
+         "3d/label-layout-preparation3d.rkt"
          "3d/ode-flow3d.rkt")
 
 ;; Exports
@@ -52,12 +53,12 @@
      (scene-state->prepared-pict
       state
       (camera-with-supersampling sampled-camera supersample)
-      renderers)]
+      renderers #f)]
     [(camera? camera)
      (scene-state->prepared-pict
       (scene-sample scene time)
       (camera-with-supersampling camera supersample)
-      renderers)]
+      renderers #f)]
     [else
      (raise-argument-error
       'scene->pict
@@ -67,14 +68,16 @@
 ;; Prepares every semantic ODE particle in this one immutable scene state
 ;; before adapters resolve visual relations.  This is the direct single-frame
 ;; counterpart of the batch preparation used by the PNG renderer.
-(define (scene-state->prepared-pict state camera renderers)
+(define (scene-state->prepared-pict state camera renderers prepared-layout)
   (define (render-with-3d-samples)
     (if (ode3d-frame-samples-active?)
-        (scene-state->pict state #:camera camera #:renderers renderers)
+        (scene-state->pict state #:camera camera #:renderers renderers
+                            #:prepared-label-layout prepared-layout)
         (call-with-ode3d-frame-samples
          (prepare-ode3d-frame-samples (list state))
          (lambda ()
-           (scene-state->pict state #:camera camera #:renderers renderers)))))
+           (scene-state->pict state #:camera camera #:renderers renderers
+                               #:prepared-label-layout prepared-layout)))))
   (if (ode-frame-samples-active?)
       (render-with-3d-samples)
       (call-with-ode-frame-samples
@@ -92,7 +95,14 @@
                              #:fps [fps 30]
                              #:camera [camera #f]
                              #:renderers [renderers default-pict-renderers]
-                             #:supersample [supersample 1])
+                             #:supersample [supersample 1]
+                             #:prepared-label-layout [prepared-layout #f])
+  (check-supersample 'scene-frame->bitmap supersample)
+  (unless (or (not camera) (camera? camera))
+    (raise-argument-error
+     'scene-frame->bitmap
+     "(or/c camera? false/c) as #:camera"
+     camera))
   (define frame-count
     (scene-frame-count scene #:fps fps))
   (unless (and (exact-nonnegative-integer? frame-index)
@@ -101,13 +111,24 @@
      'scene-frame->bitmap
      "frame index is outside the scene"
      "frame-index" frame-index
-     "frame-count" frame-count))
+    "frame-count" frame-count))
+  (unless (or (not prepared-layout) (prepared-label-layout3d? prepared-layout))
+    (raise-argument-error
+     'scene-frame->bitmap
+     "#f or prepared-label-layout3d? as #:prepared-label-layout"
+     prepared-layout))
+  (define time (frame-index->time frame-index #:fps fps))
+  (define-values (state sampled-camera)
+    (if camera
+        (values (scene-sample scene time) camera)
+        (scene-sample-with-camera scene time)))
   (pict->bitmap
-   (scene->pict scene
-                (frame-index->time frame-index #:fps fps)
-                #:camera camera
-                #:renderers renderers
-                #:supersample supersample)
+   (scene-state->prepared-pict
+    state
+    (camera-with-supersampling sampled-camera supersample)
+    renderers
+    (and prepared-layout
+         (prepared-label-layout3d-ref prepared-layout frame-index)))
    ;; Unlike 'aligned, 'smoothed does not adjust an animated Visual's
    ;; fractional pixel position to the device grid.  Cairo still antialiases
    ;; vector edges, while motion remains spatially continuous.

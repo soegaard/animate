@@ -37,6 +37,7 @@
          projected-label-placement
          projected-label-leader
          projected-label-visibility
+         projected-label-layout-baseline
          current-projected-label-layout-candidates
          current-projected-label-layout-anchors
          follow-projected-point
@@ -207,6 +208,55 @@
   (projected-label template #:view view-id #:target target #:offset offset
                    #:occlusion occlusion #:placement placement
                    #:leader leader #:visibility visibility))
+
+;; projected-label-layout-baseline deliberately stops before the visibility
+;; and occlusion queries used for final painting.  Preparing a project label
+;; table needs the same transformed concrete template and screen anchor as the
+;; compositor, but it must not create a renderer artifact merely to measure
+;; text.  In particular, project preparation remains usable before a live
+;; OpenGL renderer has been constructed.
+(define (projected-label-layout-baseline label view outer-camera)
+  (unless (projected-label? label)
+    (raise-argument-error 'projected-label-layout-baseline "projected-label?" label))
+  (unless (view3d? view)
+    (raise-argument-error 'projected-label-layout-baseline "view3d?" view))
+  (unless (camera? outer-camera)
+    (raise-argument-error 'projected-label-layout-baseline "camera?" outer-camera))
+  (unless (eq? (projected-label-value-view-id label) (visual-id view))
+    (raise-arguments-error
+     'projected-label-layout-baseline
+     "a view3d matching the label's #:view identity"
+     "label-view-id" (projected-label-value-view-id label)
+     "view3d-id" (visual-id view)))
+  (define spatial-point
+    (target->world-point label view))
+  (define anchor
+    (project-spatial-point-to-view3d-world view spatial-point))
+  ;; `offset` is in screen pixels, represented in the outer world's units.
+  (define screen-offset
+    (vec2 (/ (vec2-x (projected-label-value-offset label))
+             (camera-scale outer-camera))
+          (/ (vec2-y (projected-label-value-offset label))
+             (camera-scale outer-camera))))
+  (define outer (projected-label-value-outer-transform label))
+  (define local (visual-transform (projected-label-value-template label)))
+  (visual-with-transform
+   (projected-label-value-template label)
+   (make-affine-transform
+    #:translation
+    (vec2+
+     (vec2+ anchor screen-offset)
+     (vec2+
+      (affine-transform-translation outer)
+      (affine-transform-apply-vector
+       outer
+       (affine-transform-translation local))))
+    #:rotation
+    (+ (affine-transform-rotation outer)
+       (affine-transform-rotation local))
+    #:scale
+    (vec2* (affine-transform-scale outer)
+           (affine-transform-scale local)))))
 
 ; resolve-projected-label : projected-label? view3d? camera? -> visual?
 ;; Produces a concrete ordinary 2D Visual positioned in the same world plane

@@ -5,6 +5,7 @@
                      animate/authoring
                      animate/project
                      animate/render
+                     animate/3d
                      animate/3d/render
                      animate/3d/opengl))
 
@@ -150,6 +151,26 @@ Loads the declared source, validates its type and selected target, fingerprints
 inputs/tools, and determines frame indices.  Preparation may read files and
 tools but does not render frames or create final artifacts.
 }
+
+@defproc[(prepare-project-label-layout3d
+          [project animate-project?]
+          [#:view view-id symbol?]
+          [#:frames frames (or/c #f (listof exact-nonnegative-integer?)) #f]
+          [#:target target project-target? (project-target-all)]
+          [#:switch-penalty switch-penalty nonnegative-real? 0]
+          [#:movement-penalty movement-penalty nonnegative-real? 0])
+         prepared-label-layout3d?]{
+Prepares one @racket[view3d]'s projected-label trajectory using the project
+target's source-frame grid, output camera, raster dimensions, renderer list,
+and supersampling policy.  With @racket[#:frames #f], it uses the selected
+target's frames.  The immutable result is safe to share read-only with render
+workers.  Pass it to a project render operation as
+@racket[#:prepared-label-layout]; its selected placement boxes become part of
+the frame-cache identity.
+
+This is an explicit preparation operation: ordinary project rendering keeps
+direct per-frame layout unless the author supplies a table.  Preparation
+measures 2D templates without constructing an optional live OpenGL renderer.}
 
 @defproc[(prepared-project? [value any/c]) boolean?]{Recognizes an effectfully prepared but unrendered project.}
 

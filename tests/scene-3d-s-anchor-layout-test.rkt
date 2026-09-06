@@ -2,8 +2,12 @@
 
 ;;; SCENE-3D-S Anchor and Direct Layout Determinism
 
-(require rackunit
-         "../3d.rkt")
+(require racket/class
+         racket/draw
+         rackunit
+         "../3d.rkt"
+         "../main.rkt"
+         "../project.rkt")
 
 (module+ test
   (define world (view3d (list (cube3d 2 #:id 'cube)) #:id 'world))
@@ -61,4 +65,87 @@
   (check-equal? (hash-ref (label-layout3d-diagnostics
                            (prepared-label-layout3d-ref prepared 0))
                           'mode)
-                'prepared))
+                'prepared)
+
+  ;; A higher-level scene preparation samples the same stable label slots that
+  ;; the final compositor will use.  It needs neither a previous displayed
+  ;; frame nor a live 3D renderer while it measures the concrete templates.
+  (define label-world
+    (view3d (list (cube3d 1 #:id 'shape))
+            #:id 'label-world #:width 6 #:height 4
+            #:camera (perspective-camera3d #:position (vec3 3 2 6)
+                                            #:look-at origin3)
+            #:render-mode 'opaque))
+  (define label-a
+    (follow-projected-point
+     (plain-text "A" #:id 'label-a #:font-size 1/3)
+     #:view 'label-world #:point (vec3 -1/2 0 0)
+     #:placement (label-placement3d '(north east) 18 2 #t #t '() 1 6)))
+  (define label-b
+    (follow-projected-point
+     (plain-text "B" #:id 'label-b #:font-size 1/3)
+     #:view 'label-world #:point (vec3 1/2 0 0)
+     #:placement (label-placement3d '(north east) 18 2 #t #t '() 1 6)))
+  (define label-scene
+    (scene-play
+     (scene-add (make-scene) label-world label-a label-b)
+     (camera3d-orbit-by 'label-world #:azimuth 1/2)
+     #:duration 1))
+  (define scene-prepared
+    (prepare-scene-label-layout3d
+     label-scene #:frames '(0 1) #:view 'label-world #:fps 2
+     #:switch-penalty 80 #:movement-penalty 1))
+  (check-equal? (prepared-label-layout3d-frames scene-prepared) #(0 1))
+  (check-equal?
+   (length (label-layout3d-placements
+            (prepared-label-layout3d-ref scene-prepared 0)))
+   2)
+  ;; Workers consume the prepared data only by exact source-frame lookup.  A
+  ;; successful bitmap proves the table reaches final composition without an
+  ;; order-dependent mutable cache.
+  (check-not-exn
+   (lambda ()
+     (scene-frame->bitmap label-scene 1 #:fps 2
+                          #:prepared-label-layout scene-prepared)))
+  ;; This deliberately altered immutable table proves the final compositor
+  ;; reads the prepared slot, not merely that the worker API accepts it.
+  (define direct-layout (prepared-label-layout3d-ref scene-prepared 1))
+  (define shifted-layout
+    (label-layout3d
+     (for/list ([candidate (in-list (label-layout3d-placements direct-layout))])
+       (if (eq? (label-layout-candidate3d-item-id candidate) 'label-a-layout-0)
+           (struct-copy label-layout-candidate3d candidate
+                        [box (vector 40 280
+                                     (vector-ref (label-layout-candidate3d-box candidate) 2)
+                                     (vector-ref (label-layout-candidate3d-box candidate) 3))])
+           candidate))
+     (label-layout3d-candidates direct-layout)
+     (label-layout3d-diagnostics direct-layout)))
+  (define shifted-prepared
+    (prepared-label-layout3d
+     #(1) (vector->immutable-vector (vector shifted-layout)) 0 0))
+  (define (bitmap-argb bitmap)
+    (define bytes (make-bytes (* 4 (send bitmap get-width) (send bitmap get-height))))
+    (send bitmap get-argb-pixels 0 0 (send bitmap get-width) (send bitmap get-height) bytes)
+    bytes)
+  (check-false
+   (bytes=?
+    (bitmap-argb (scene-frame->bitmap label-scene 1 #:fps 2))
+    (bitmap-argb
+     (scene-frame->bitmap label-scene 1 #:fps 2
+                          #:prepared-label-layout shifted-prepared))))
+
+  ;; The project-level API chooses the project's FPS, output camera, raster
+  ;; size, renderer list, and supersampling policy before it delegates to the
+  ;; same scene preparation operation.
+  (define label-project
+    (animate-project
+     #:id 'prepared-label-layout
+     #:source (scene-source label-scene)
+     #:render (render-spec #:fps 2 #:width 640 #:height 360)
+     #:output (output-spec #:root "media" #:name "prepared-label-layout")))
+  (define project-prepared
+    (prepare-project-label-layout3d
+     label-project #:view 'label-world #:frames '(0 1)
+     #:switch-penalty 80 #:movement-penalty 1))
+  (check-equal? (prepared-label-layout3d-frames project-prepared) #(0 1)))

@@ -72,7 +72,8 @@
 ;; Exports
 (provide default-pict-renderers
          visual->pict
-         scene-state->pict)
+         scene-state->pict
+         scene-projected-label-layout-items3d)
 
 ;; A single scene-state traversal may resolve a view3d more than once while
 ;; handling layout relations. This adapter-local parameter preserves the exact
@@ -769,12 +770,22 @@
 ;;   Converts state to a fixed-size pict in drawing order.
 (define (scene-state->pict state
                            #:camera [camera default-camera]
-                           #:renderers [renderers default-pict-renderers])
+                           #:renderers [renderers default-pict-renderers]
+                           ;; A prepared layout is for this exact sampled
+                           ;; frame.  Its stable item slots may cover one
+                           ;; viewport while labels in every other viewport
+                           ;; retain their direct layout fallback.
+                           #:prepared-label-layout [prepared-layout #f])
   (unless (scene-state? state)
     (raise-argument-error 'scene-state->pict "scene-state?" state))
   (unless (camera? camera)
     (raise-argument-error 'scene-state->pict "camera?" camera))
   (check-pict-renderer-list 'scene-state->pict renderers)
+  (unless (or (not prepared-layout) (label-layout3d? prepared-layout))
+    (raise-argument-error
+     'scene-state->pict
+     "#f or label-layout3d? as #:prepared-label-layout"
+     prepared-layout))
   (define background
     (filled-rectangle (camera-width camera)
                       (camera-height camera)
@@ -806,7 +817,8 @@
     ;; and measure labels inside this frame's shared artifact scope before any
     ;; label is positioned or any viewport is painted.
     (define-values (label-candidates label-anchors)
-      (scene-projected-label-layout-candidates state resolved-visuals camera renderers))
+      (scene-projected-label-layout-candidates
+       state resolved-visuals camera renderers #:prepared-layout prepared-layout))
     (parameterize ([current-projected-label-layout-candidates label-candidates]
                    [current-projected-label-layout-anchors label-anchors])
       (for/fold ([frame background])
@@ -826,42 +838,13 @@
 ;; rather than the label's public symbol, keys the returned table so an invalid
 ;; duplicate symbol cannot accidentally make two independently authored labels
 ;; share one candidate.
-(define (scene-projected-label-layout-candidates state visuals camera renderers)
+(define (scene-projected-label-layout-candidates state visuals camera renderers
+                                                 #:prepared-layout [prepared-layout #f])
   (define labels (flatten-projected-labels visuals))
   (cond [(null? labels) (values #hasheq() #hasheq())]
         [else
          (define entries
-           (for/list ([label (in-list labels)] [index (in-naturals)])
-             (define view
-               (hash-ref (current-resolved-view3d-by-id)
-                         (projected-label-view label)
-                         (lambda ()
-                           (scene-state-resolved-ref state (projected-label-view label)))))
-             (unless (view3d? view)
-               (raise-arguments-error
-                'scene-state->pict
-                "a #:view identity resolving to view3d"
-                "projected-label-id" (visual-id label)
-                "view-id" (projected-label-view label)
-                "resolved-visual" view))
-             ;; No candidate is bound yet, so this is the authored direct
-             ;; placement. Its centre includes ordinary transform and offset
-             ;; choices, while its box measures the concrete Formula/Pict.
-             (define baseline (resolve-projected-label label view camera))
-             (define bounds (concrete-visual-layout-box baseline camera renderers))
-             (define-values (anchor-x anchor-y)
-               (camera-world->pixel camera (visual-position baseline)))
-             (define item-id
-               (string->symbol (format "~a-layout-~a" (visual-id label) index)))
-             (cons label
-                   (label-layout-item3d
-                    item-id (vector anchor-x anchor-y)
-                    (max 1 (* (camera-scale camera) (layout-box-width bounds)))
-                    (max 1 (* (camera-scale camera) (layout-box-height bounds)))
-                    ;; Current label-placement3d has no priority field; source
-                    ;; order is therefore its declared and deterministic order.
-                    0
-                    (projected-label-placement label)))))
+           (projected-label-layout-entries state labels camera renderers))
          (define layout
            (layout-labels3d (map cdr entries)
                               #:width (camera-width camera)
@@ -869,6 +852,14 @@
          (define candidate-by-id (make-hasheq))
          (for ([candidate (in-list (label-layout3d-placements layout))])
            (hash-set! candidate-by-id (label-layout-candidate3d-item-id candidate) candidate))
+         ;; A prepared table was computed from the same stable item slots.
+         ;; It wins only for its own slots, so preparing one view cannot make
+         ;; labels in another view disappear or share an unrelated placement.
+         (when prepared-layout
+           (for ([candidate (in-list (label-layout3d-placements prepared-layout))])
+             (hash-set! candidate-by-id
+                        (label-layout-candidate3d-item-id candidate)
+                        candidate)))
          (define candidate-by-label (make-hasheq))
          (define anchor-by-label (make-hasheq))
          (for ([entry (in-list entries)])
@@ -879,6 +870,71 @@
            (hash-set! anchor-by-label label (label-layout-item3d-anchor item)))
          (values (make-immutable-hasheq (hash->list candidate-by-label))
                  (make-immutable-hasheq (hash->list anchor-by-label)))]))
+
+;; scene-projected-label-layout-items3d : scene-state? camera?
+;;                                           (listof pict-renderer?)
+;;                                           [#:view (or/c #f symbol?)]
+;;                                           -> (listof label-layout-item3d?)
+;; Produces exactly the immutable items used by the final compositor, without
+;; doing its direct placement pass.  Project preparation uses this operation
+;; across a declared frame grid.  Baseline resolution deliberately avoids
+;; occlusion/visibility rendering: measuring a label must not create a live
+;; renderer artifact or depend on the preceding displayed frame.
+(define (scene-projected-label-layout-items3d state camera renderers
+                                              #:view [view-id #f])
+  (unless (scene-state? state)
+    (raise-argument-error 'scene-projected-label-layout-items3d "scene-state?" state))
+  (unless (camera? camera)
+    (raise-argument-error 'scene-projected-label-layout-items3d "camera?" camera))
+  (check-pict-renderer-list 'scene-projected-label-layout-items3d renderers)
+  (unless (or (not view-id) (symbol? view-id))
+    (raise-argument-error 'scene-projected-label-layout-items3d "#f or symbol? as #:view" view-id))
+  (define visuals (scene-state-resolved-visuals-in-drawing-order state))
+  (define resolved-views
+    (for/hasheq ([visual (in-list visuals)] #:when (view3d? visual))
+      (values (visual-id visual) visual)))
+  (parameterize
+      ([current-resolved-view3d-by-id resolved-views]
+       [current-frame-artifact-cache (make-frame-artifact-cache)])
+    (for/list ([entry (in-list
+                       (projected-label-layout-entries
+                        state (flatten-projected-labels visuals) camera renderers))]
+               #:when (or (not view-id)
+                          (eq? (projected-label-view (car entry)) view-id)))
+      (cdr entry))))
+
+;; `labels` is the complete flattened list.  Its index is the stable source
+;; slot, rather than an index local to a selected view, so a label in another
+;; viewport cannot perturb a prepared item's identity.
+(define (projected-label-layout-entries state labels camera renderers)
+  (for/list ([label (in-list labels)] [index (in-naturals)])
+    (define view
+      (hash-ref (current-resolved-view3d-by-id)
+                (projected-label-view label)
+                (lambda ()
+                  (scene-state-resolved-ref state (projected-label-view label)))))
+    (unless (view3d? view)
+      (raise-arguments-error
+       'scene-state->pict
+       "a #:view identity resolving to view3d"
+       "projected-label-id" (visual-id label)
+       "view-id" (projected-label-view label)
+       "resolved-visual" view))
+    (define baseline (projected-label-layout-baseline label view camera))
+    (define bounds (concrete-visual-layout-box baseline camera renderers))
+    (define-values (anchor-x anchor-y)
+      (camera-world->pixel camera (visual-position baseline)))
+    (define item-id
+      (string->symbol (format "~a-layout-~a" (visual-id label) index)))
+    (cons label
+          (label-layout-item3d
+           item-id (vector anchor-x anchor-y)
+           (max 1 (* (camera-scale camera) (layout-box-width bounds)))
+           (max 1 (* (camera-scale camera) (layout-box-height bounds)))
+           ;; Current label-placement3d has no priority field; source order is
+           ;; its declared deterministic priority tie-break.
+           0
+           (projected-label-placement label)))))
 
 (define (flatten-projected-labels visuals)
   (define (walk visual)

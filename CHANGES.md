@@ -25,8 +25,21 @@
   edges/faces, curves, and retained parametric surface coordinates. Added pure
   direct-mode label placement records/layout values, immutable prepared
   minimum-cost label trajectories, and the anchor-aware `label3d` spelling for
-  projected labels. Equal-priority labels retain declaration order and
-  equal-cost candidates retain declared preference order.
+  projected labels. `prepare-scene-label-layout3d` and
+  `prepare-project-label-layout3d` now sample and measure stable slots before
+  workers start; an explicitly supplied table is consumed by final composition
+  and participates in the project frame-cache identity. Equal-priority labels
+  retain declaration order and equal-cost candidates retain declared preference
+  order.
+- Added `surface-pick-anchor3d`, which converts immutable exact surface-pick
+  provenance into a current anchor. Parametric picks retain their UV frame;
+  implicit picks retain a current barycentric point and interpolated normal
+  without fabricating a UV tangent.
+- Added fixed-structure world-space annotation relations:
+  `distance-dimension3d`, `angle-marker3d`, `right-angle-marker3d`,
+  `dihedral-angle3d`, `normal-marker3d`, and `coordinate-tripod3d`. Their
+  named children are derived anew from declared spatial targets at every scene
+  sample, and lower through the existing software/OpenGL geometry paths.
 - The outer Pict compositor now gathers, measures, and consumes one direct
   projected-label layout for each sampled frame, so direct-mode labels share
   deterministic, overlap-aware candidate selection and the same negotiated
@@ -58,10 +71,12 @@
 Known boundaries: adaptive implicit extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
 IDs), touching/self-intersecting section validation, repeated capped
-multi-plane geometry cuts, general polygon section fills, final-compositor
-consumption of prepared label trajectories, mathematical annotation primitives,
-and billboard texture rendering are not complete in this change. Leaders are
-currently top-level 2D compositor overlays, with intentionally fixed styling.
+multi-plane geometry cuts, general polygon section fills, automatic default
+use of prepared label trajectories, and billboard texture rendering are not
+complete in this change. Core mathematical annotations are world-space
+relations; they do not yet provide automatic formula labels or camera-facing
+screen sizing. Leaders are currently top-level 2D compositor overlays, with
+intentionally fixed styling.
 The OpenGL paths are compiled and
 the explicit integration test remains separate from ordinary headless runs.
 

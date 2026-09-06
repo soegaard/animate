@@ -14,6 +14,8 @@
          "linear3.rkt"
          "mesh3d.rkt"
          "parametric-surface3d.rkt"
+         "spatial-inspection.rkt"
+         "surface-picking3d.rkt"
          "spatial-visual.rkt"
          "spatial-path.rkt"
          "transform3.rkt"
@@ -34,7 +36,8 @@
          edge-anchor3d
          face-anchor3d
          curve-anchor3d
-         surface-anchor3d)
+         surface-anchor3d
+         surface-pick-anchor3d)
 
 (struct resolved-anchor3d (world-point normal tangent source-path source-kind provenance)
   #:transparent)
@@ -216,6 +219,103 @@
   (unless (and (finite-real? u) (finite-real? v))
     (raise-argument-error 'surface-anchor3d "finite u and v parameters" (vector u v)))
   (surface-anchor3d-value path u v))
+
+;; surface-pick-anchor3d preserves the immutable provenance of one exact
+;; `view3d-surface-pick` result.  Parametric picks retain their UV coordinate;
+;; implicit picks retain their lowered triangle and barycentric point.  In both
+;; cases the anchor is resolved against the current view, so a later spatial
+;; transform changes the point and normal without making the pick itself
+;; mutable.  It deliberately does not invent a tangent for an implicit mesh.
+(struct surface-pick-anchor3d-value (pick path parameter triangle-index barycentric)
+  #:transparent
+  #:methods gen:anchor3d
+  [(define (anchor3d-resolve anchor view)
+     (define-values (path object map)
+       (resolve-object 'surface-pick-anchor3d view
+                       (surface-pick-anchor3d-value-path anchor)))
+     (unless (surface3d? object)
+       (raise-arguments-error 'surface-pick-anchor3d "a surface3d at the picked path"
+                              "path" path))
+     (define parameter (surface-pick-anchor3d-value-parameter anchor))
+     (define-values (local-point local-normal local-tangent provenance)
+       (if parameter
+           (let* ([u (vector-ref parameter 0)]
+                  [v (vector-ref parameter 1)]
+                  [point (surface3d-position-at? object u v)])
+             (unless point
+               (raise-arguments-error
+                'surface-pick-anchor3d
+                "the picked parametric coordinate to remain in the current surface domain"
+                "path" path "parameter" parameter))
+             (values point
+                     (with-handlers ([exn:fail? (lambda (_exception) #f)])
+                       (surface3d-normal-at object u v))
+                     (with-handlers ([exn:fail? (lambda (_exception) #f)])
+                       (surface3d-tangent-u-at object u v))
+                     (vector 'surface-pick 'parameter u v)))
+           (let* ([mesh (surface3d->mesh3d object)]
+                  [triangle-index (surface-pick-anchor3d-value-triangle-index anchor)]
+                  [barycentric (surface-pick-anchor3d-value-barycentric anchor)])
+             (unless (and (exact-nonnegative-integer? triangle-index)
+                          (< triangle-index (vector-length (mesh3d-triangles mesh))))
+               (raise-arguments-error
+                'surface-pick-anchor3d
+                "a current surface mesh retaining the picked triangle index"
+                "path" path "triangle-index" triangle-index))
+             (define triangle (vector-ref (mesh3d-triangles mesh) triangle-index))
+             (define vertices
+               (for/list ([index (in-vector triangle)])
+                 (vector-ref (mesh3d-vertices mesh) index)))
+             (define weights
+               (list (vec3-x barycentric) (vec3-y barycentric) (vec3-z barycentric)))
+             (define point
+               (for/fold ([sum origin3]) ([vertex (in-list vertices)] [weight (in-list weights)])
+                 (vec3+ sum (vec3-scale weight vertex))))
+             (define normal
+               (let ([normals (mesh3d-normals mesh)])
+                 (if normals
+                     (safe-normal
+                      (for/fold ([sum origin3]) ([index (in-vector triangle)]
+                                                  [weight (in-list weights)])
+                        (vec3+ sum (vec3-scale weight (vector-ref normals index)))))
+                     (safe-normal
+                      (vec3-cross (vec3- (second vertices) (first vertices))
+                                  (vec3- (third vertices) (first vertices)))))))
+             (values point normal #f
+                     (vector 'surface-pick 'triangle triangle-index barycentric)))))
+     (resolved-anchor3d
+      (affine3-apply-point map local-point)
+      (world-normal map local-normal)
+      (and local-tangent (safe-normal (affine3-apply-vector map local-tangent)))
+      path 'surface-pick provenance))
+   (define (anchor3d-normal anchor view)
+     (resolved-anchor3d-normal (anchor3d-resolve anchor view)))
+   (define (anchor3d-tangent anchor view)
+     (resolved-anchor3d-tangent (anchor3d-resolve anchor view)))
+   (define (anchor3d-identity anchor)
+     (vector 'surface-pick
+             (surface-pick-anchor3d-value-path anchor)
+             (surface-pick-anchor3d-value-parameter anchor)
+             (surface-pick-anchor3d-value-triangle-index anchor)
+             (surface-pick-anchor3d-value-barycentric anchor)))])
+
+(define (surface-pick-anchor3d pick)
+  (unless (surface-pick3d? pick)
+    (raise-argument-error 'surface-pick-anchor3d "surface-pick3d?" pick))
+  (define spatial-pick (surface-pick3d-spatial-pick pick))
+  (define path (spatial-pick-path spatial-pick))
+  (define parameter (surface-pick3d-parameter pick))
+  (unless (or (not parameter)
+              (and (vector? parameter)
+                   (= (vector-length parameter) 2)
+                   (finite-real? (vector-ref parameter 0))
+                   (finite-real? (vector-ref parameter 1))))
+    (raise-arguments-error 'surface-pick-anchor3d
+                           "#f or a two-element finite parameter vector"
+                           "parameter" parameter))
+  (surface-pick-anchor3d-value pick path parameter
+                                (spatial-pick-triangle-index spatial-pick)
+                                (spatial-pick-barycentric spatial-pick)))
 
 (define (check-view who view) (unless (view3d? view) (raise-argument-error who "view3d?" view)))
 (define (check-path who path) (unless (spatial-path? path) (raise-argument-error who "spatial path" path)))

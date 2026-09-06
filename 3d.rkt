@@ -238,6 +238,12 @@
  plane-through3d
  normal-at3d
  distance-segment3d
+ distance-dimension3d
+ angle-marker3d
+ right-angle-marker3d
+ dihedral-angle3d
+ normal-marker3d
+ coordinate-tripod3d
  projected-label
  projected-label?
  projected-label-view
@@ -262,6 +268,7 @@
  face-anchor3d
  curve-anchor3d
  surface-anchor3d
+ surface-pick-anchor3d
  (struct-out label-placement3d)
  (struct-out leader-style3d)
  default-label-placement3d
@@ -271,6 +278,7 @@
  layout-labels3d
  (struct-out prepared-label-layout3d)
  prepare-label-layout3d
+ prepare-scene-label-layout3d
  prepared-label-layout3d-ref
 
  ;; Section fills and hatching

@@ -732,6 +732,67 @@ current origin.}
          spatial-relation?]{Produces a semantically named finite distance
 segment.}
 
+@defproc[(distance-dimension3d [from spatial-path?] [to spatial-path?]
+                                [#:id id symbol?]
+                                [#:offset offset vec3? (vec3 0 1/3 0)]
+                                [#:color color any/c "darkgoldenrod"]
+                                [#:width width positive-real? 2]
+                                [#:tip-size tip-size positive-real? 1/6]
+                                [#:opacity opacity real? 1])
+         spatial-relation?]{Produces extension segments and a two-ended
+dimension line. The offset is an explicit world-space vector, so the mark
+retains mathematical meaning under camera motion.}
+@defproc[(angle-marker3d [first spatial-path?] [vertex spatial-path?]
+                          [second spatial-path?] [#:id id symbol?]
+                          [#:radius radius positive-real? 1/3]
+                          [#:samples samples exact-integer? 12]
+                          [#:color color any/c "darkorange"]
+                          [#:width width positive-real? 2]
+                          [#:opacity opacity real? 1])
+         spatial-relation?]{Produces the smaller arc from @racket[first]
+through @racket[vertex] to @racket[second]. The three current points must
+remain non-collinear.}
+@defproc[(right-angle-marker3d [first spatial-path?] [vertex spatial-path?]
+                                [second spatial-path?] [#:id id symbol?]
+                                [#:size size positive-real? 1/3]
+                                [#:color color any/c "darkorange"]
+                                [#:width width positive-real? 2]
+                                [#:opacity opacity real? 1])
+         spatial-relation?]{Produces a three-segment corner following the
+two current rays. It is square when the rays are perpendicular; it deliberately
+does not silently assert that an animated non-right configuration is right.}
+@defproc[(dihedral-angle3d [axis-from spatial-path?] [axis-to spatial-path?]
+                            [first-face-point spatial-path?]
+                            [second-face-point spatial-path?]
+                            [#:id id symbol?]
+                            [#:radius radius positive-real? 1/3]
+                            [#:samples samples exact-integer? 12]
+                            [#:color color any/c "darkorange"]
+                            [#:width width positive-real? 2]
+                            [#:opacity opacity real? 1])
+         spatial-relation?]{Produces a signed smaller arc around the ordered
+hinge, using one off-axis point from each incident face. Face points on the
+hinge and coincident face directions are rejected when the relation resolves.}
+@defproc[(normal-marker3d [target spatial-path?] [normal vec3?]
+                           [#:id id symbol?]
+                           [#:length length positive-real? 1]
+                           [#:color color any/c "darkmagenta"]
+                           [#:width width positive-real? 2]
+                           [#:tip-size tip-size positive-real? 1/4]
+                           [#:opacity opacity real? 1])
+         spatial-relation?]{The fixed-child-tree annotation spelling of
+@racket[normal-at3d]. The supplied normal is a world direction.}
+@defproc[(coordinate-tripod3d [target spatial-path?] [#:id id symbol?]
+                               [#:length length positive-real? 1]
+                               [#:width width positive-real? 2]
+                               [#:tip-size tip-size positive-real? 1/4]
+                               [#:x-color x-color any/c "firebrick"]
+                               [#:y-color y-color any/c "forestgreen"]
+                               [#:z-color z-color any/c "royalblue"]
+                               [#:opacity opacity real? 1])
+         spatial-relation?]{Produces three current-origin arrows for the
+fixed world x, y, and z directions.}
+
 @defproc[(projected-label [template visual?] [#:view view-id symbol?]
                           [#:target target (or/c vec3? spatial-path?)]
                           [#:offset offset vec2? origin]
@@ -1114,9 +1175,10 @@ implicit intersection solver.
 Adaptive and trimmed parametric surfaces retain their evaluator and parameter
 domain as well as their lowered mesh. Therefore @racket[surface-anchor3d] can
 provide a deterministic local finite-difference tangent/normal frame for those
-surfaces. An implicit surface has no invented UV frame: its anchor resolves a
-truthful point while its normal/tangent remain unavailable until the implicit
-frame/picking extension is implemented.
+surfaces. An implicit surface has no invented UV coordinate. Instead,
+@racket[surface-pick-anchor3d] converts one immutable @racket[surface-pick3d]
+into an anchor: it resolves the current barycentric mesh point and interpolated
+normal, while truthfully leaving the tangent unavailable.
 
 The focused executable probe is
 @filepath{examples/3d/adaptive-trimmed-implicit-surfaces.rkt}.
@@ -1314,10 +1376,18 @@ descriptors. @racket[vertex-anchor3d], @racket[edge-anchor3d],
 @racket[face-anchor3d], @racket[curve-anchor3d], @racket[surface-anchor3d],
 and bounds/origin anchors resolve after every spatial transformation into a
 @racket[resolved-anchor3d] world point, normal/tangent when available, source
-path, and stable provenance identity. A regular parametric surface anchor also
-exposes its evaluated normal and @racket[u]-tangent after its complete world
-transform. Generated adaptive/trimmed frames remain a separately documented
-provenance-boundary limitation.
+path, and stable provenance identity. Parametric surface anchors—including
+generated adaptive and trimmed surfaces—expose evaluated normals and
+@racket[u]-tangents after their complete world transform. A
+@racket[surface-pick-anchor3d] carries an immutable exact pick provenance;
+this makes an implicit surface's interpolated normal available without
+pretending it owns a UV tangent frame.
+
+@defproc[(surface-pick-anchor3d [pick surface-pick3d?]) anchor3d?]{Creates an
+immutable anchor from one exact surface-picking result. Parametric picks retain
+their UV coordinate. Implicit picks retain the lowered triangle index and
+barycentric point, so later spatial transforms affect the resolved world point
+and normal without mutating the original pick.}
 
 @racket[label3d] uses such an anchor while retaining its content as a crisp
 ordinary 2D Visual. @racket[label-placement3d] and
@@ -1331,11 +1401,33 @@ grid, applying explicit movement and switching penalties without relying on
 the previously displayed frame. Equal-priority labels retain declaration order,
 and equal-cost candidates retain the declared preferred-direction order.
 
-Current limitations: prepared tables are not yet consumed by the final
-compositor; mathematical dimensions and textured/camera-facing billboards
-remain later work. Leaders are fixed one-pixel grey 2D paths and are attached
-for top-level projected labels; they intentionally do not claim 3D occlusion
-or textured styling. The executable anchor probe is
+@defproc[(prepare-scene-label-layout3d
+          [scene scene?]
+          [#:frames frames (listof exact-nonnegative-integer?)]
+          [#:view view-id (or/c #f symbol?) #f]
+          [#:fps fps exact-positive-integer? 30]
+          [#:camera camera (or/c #f camera?) #f]
+          [#:supersample supersample exact-positive-integer? 1]
+          [#:switch-penalty switch-penalty nonnegative-real? 0]
+          [#:movement-penalty movement-penalty nonnegative-real? 0])
+         prepared-label-layout3d?]{Samples the declared source-frame grid,
+resolves and measures the same stable projected-label slots used by final
+composition, and returns an immutable table.  A @racket[#:view] selection
+prepares one @racket[view3d] while labels in other viewports keep their direct
+layout.  The function has no previous-frame dependency and does not create a
+3D renderer artifact while it measures labels.  Supply its result through the
+@racket[#:prepared-label-layout] option of @racket[scene-frame->bitmap],
+@racket[render-frame-indices!], or the project render operations.}
+
+Current limitations: prepared tables are explicit render inputs rather than a
+default project-render policy, and a table applies only to the source-frame
+grid and viewport raster for which it was measured. Textured/camera-facing
+billboards remain later work. Core
+world-space dimensions, angle markers, normal markers, and coordinate tripods
+are fixed-structure spatial relations, but they do not yet supply automatic
+formula labels or camera-facing screen sizing. Leaders are fixed one-pixel grey
+2D paths and are attached for top-level projected labels; they intentionally do
+not claim 3D occlusion or textured styling. The executable anchor probe is
 @filepath{examples/3d/anchor-aware-labels.rkt}.
 
 The canonical acceptance scene is

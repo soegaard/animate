@@ -24,6 +24,8 @@
          "../authoring.rkt"
          "../project.rkt"
          "../version.rkt"
+         "3d/label-layout3d.rkt"
+         "3d/label-layout-preparation3d.rkt"
          "3d/renderer3d.rkt"
          "png-renderer.rkt"
          "section-renderer.rkt"
@@ -83,43 +85,53 @@
 ;;   Plans, prepares, and renders one declared project target.
 (define (render-project! project
                          #:target [target (project-target-all)]
-                         #:directory [directory (current-directory)])
+                         #:directory [directory (current-directory)]
+                         #:prepared-label-layout [prepared-label-layout #f])
   (execute-prepared-project!
    (prepare-project!
-    (plan-project project #:target target #:directory directory))))
+    (plan-project project #:target target #:directory directory))
+   #:prepared-label-layout prepared-label-layout))
 
 ; render-project-section! : animate-project? symbol? ... -> project-execution-report?
 ;;   Renders one named authored-timeline section through the project plan.
 (define (render-project-section! project section-name
-                                 #:directory [directory (current-directory)])
+                                 #:directory [directory (current-directory)]
+                                 #:prepared-label-layout [prepared-label-layout #f])
   (render-project! project
                    #:target (project-target-section section-name)
-                   #:directory directory))
+                   #:directory directory
+                   #:prepared-label-layout prepared-label-layout))
 
 ; render-project-block! : animate-project? symbol? ... -> project-execution-report?
 ;;   Renders one named source-program block through the project plan.
 (define (render-project-block! project block-name
-                               #:directory [directory (current-directory)])
+                               #:directory [directory (current-directory)]
+                               #:prepared-label-layout [prepared-label-layout #f])
   (render-project! project
                    #:target (project-target-block block-name)
-                   #:directory directory))
+                   #:directory directory
+                   #:prepared-label-layout prepared-label-layout))
 
 ; render-project-range! : animate-project? real? real? ... -> project-execution-report?
 ;;   Renders a half-open scene-time range through the project plan.
 (define (render-project-range! project start end
-                               #:directory [directory (current-directory)])
+                               #:directory [directory (current-directory)]
+                               #:prepared-label-layout [prepared-label-layout #f])
   (render-project! project
                    #:target (project-target-range start end)
-                   #:directory directory))
+                   #:directory directory
+                   #:prepared-label-layout prepared-label-layout))
 
 ; render-project-frame! : animate-project? exact-nonnegative-integer? ...
 ;;                 -> project-execution-report?
 ;;   Renders one zero-based source frame through the project plan.
 (define (render-project-frame! project frame-index
-                               #:directory [directory (current-directory)])
+                               #:directory [directory (current-directory)]
+                               #:prepared-label-layout [prepared-label-layout #f])
   (render-project! project
                    #:target (project-target-frame frame-index)
-                   #:directory directory))
+                   #:directory directory
+                   #:prepared-label-layout prepared-label-layout))
 
 ; execute-prepared-project! : prepared-project?
 ;;                            [#:protected-frame-roots (listof path?)]
@@ -129,7 +141,8 @@
 ;; locally numbered PNGs, and atomically installs the final video when needed.
 (define (execute-prepared-project! prepared
                                    #:protected-frame-roots [protected-frame-roots '()]
-                                   #:open-after? [open-after? #t])
+                                   #:open-after? [open-after? #t]
+                                   #:prepared-label-layout [prepared-label-layout #f])
   (unless (prepared-project? prepared)
     (raise-argument-error
      'execute-prepared-project! "prepared-project?" prepared))
@@ -139,6 +152,12 @@
      'execute-prepared-project! "(listof path?)" protected-frame-roots))
   (unless (boolean? open-after?)
     (raise-argument-error 'execute-prepared-project! "boolean?" open-after?))
+  (unless (or (not prepared-label-layout)
+              (prepared-label-layout3d? prepared-label-layout))
+    (raise-argument-error
+     'execute-prepared-project!
+     "#f or prepared-label-layout3d? as #:prepared-label-layout"
+     prepared-label-layout))
   (define started (current-inexact-monotonic-milliseconds))
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
@@ -163,7 +182,7 @@
     (check-overwrite-policy output (project-path-plan-frame-sequence paths)))
   (make-directory* frame-root)
   (define-values (diagnostics reused-frames?)
-    (render-or-reuse-prepared-frames prepared frame-root))
+    (render-or-reuse-prepared-frames prepared frame-root prepared-label-layout))
   (define frame-paths
     (render-diagnostics-paths diagnostics))
   (define-values (artifact audio-rebuilt? subtitle-path
@@ -173,7 +192,7 @@
        (values primary #f #f 0 0
                (hasheq 'domain 'segments 'event 'not-applicable))]
       [(mp4)
-       (install-project-mp4! prepared frame-root primary)]
+       (install-project-mp4! prepared frame-root primary prepared-label-layout)]
       [else (error 'execute-prepared-project! "unreachable output format")]))
   (define exported-frame-sequence
     (and export-frames?
@@ -183,7 +202,8 @@
              (eq? (project-target-kind (project-plan-target plan)) 'all))
         (render-declared-project-sections!
          prepared
-         #:protected-frame-roots (cons frame-root protected-frame-roots))
+         #:protected-frame-roots (cons frame-root protected-frame-roots)
+         #:prepared-label-layout prepared-label-layout)
         '()))
   (define open-warning
     (and open-after?
@@ -229,7 +249,8 @@
 ;; prevents a small cache budget from invalidating the report that initiated the
 ;; section export.
 (define (render-declared-project-sections! prepared
-                                            #:protected-frame-roots protected-frame-roots)
+                                            #:protected-frame-roots protected-frame-roots
+                                            #:prepared-label-layout [prepared-label-layout #f])
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define timeline (prepared-project-timeline prepared))
@@ -240,6 +261,7 @@
       (execute-prepared-project!
        (prepare-project! section-plan)
        #:protected-frame-roots protected-frame-roots
+       #:prepared-label-layout prepared-label-layout
        ;; One request to render an all-target project should open its primary
        ;; result once, not launch every independently written section.
        #:open-after? #f))
@@ -336,13 +358,13 @@
 ;; changing CRF or a preset must rebuild an encoded segment without needlessly
 ;; rasterizing the same PNG frames again. Direct scene values remain memory-only
 ;; because an arbitrary closure cannot be fingerprinted honestly.
-(define (render-or-reuse-prepared-frames prepared frame-root)
+(define (render-or-reuse-prepared-frames prepared frame-root prepared-label-layout)
   (define project (project-plan-project (prepared-project-plan prepared)))
   (define cache (animate-project-cache project))
   (define policy (cache-spec-policy cache))
   (define key
     (and (cache-domain-enabled? cache 'frames)
-         (project-frame-cache-key prepared)))
+         (project-frame-cache-key prepared prepared-label-layout)))
   (define expected-paths
     (project-local-frame-paths frame-root
                                (length (prepared-project-target-frame-indices prepared))))
@@ -355,12 +377,13 @@
                                  0 0 0 animate-version animate-stage)
              #t)]
     [else
-     (define diagnostics (render-prepared-frames prepared frame-root))
+     (define diagnostics
+       (render-prepared-frames prepared frame-root prepared-label-layout))
      (when (and key (memq policy '(read-write refresh)))
        (write-frame-cache! cache-path key))
      (values diagnostics #f)]))
 
-(define (render-prepared-frames prepared frame-root)
+(define (render-prepared-frames prepared frame-root prepared-label-layout)
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define render (animate-project-render project))
@@ -370,10 +393,11 @@
      (if (eq? (render-spec-renderers render) 'default)
          (keyword-apply
           render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:supersample #:workers)
+          '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:workers)
           (list (project-render-camera prepared)
                 #t
                 (render-spec-fps render)
+                prepared-label-layout
                 (render-spec-supersample render)
                 (render-spec-workers render))
           (list (prepared-project-scene prepared)
@@ -381,10 +405,11 @@
                 frame-root))
          (keyword-apply
           render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:renderers #:supersample #:workers)
+          '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:workers)
           (list (project-render-camera prepared)
                 #t
                 (render-spec-fps render)
+                prepared-label-layout
                 (render-spec-renderers render)
                 (render-spec-supersample render)
                 (render-spec-workers render))
@@ -439,17 +464,17 @@
   (regexp-match? #rx"(?i:gracket)"
                  (path->string (find-system-path 'exec-file))))
 
-(define (project-frame-cache-key prepared)
+(define (project-frame-cache-key prepared prepared-label-layout)
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define source (animate-project-source project))
   (and (module-binding-source? source)
        (let ([module-path (module-binding-source-module-path source)])
          (and (file-exists? module-path)
-              (list 'animate-project-frame-cache-v2
+              (list 'animate-project-frame-cache-v3
                     animate-version animate-stage
                     (call-with-input-file module-path sha1)
-                    (project-frame-render-identity prepared)
+                    (project-frame-render-identity prepared prepared-label-layout)
                     ;; Audio belongs to the later mix/mux stage. Its source
                     ;; bytes must not turn a semantically identical scene
                     ;; frame into a cache miss; visual and formula assets do.
@@ -463,7 +488,7 @@
 ;; intentionally distinct from the project plan and encoder identity: output
 ;; names, MP4 options, audio options, and cache-directory paths must not turn a
 ;; valid PNG sequence into a cache miss.
-(define (project-frame-render-identity prepared)
+(define (project-frame-render-identity prepared prepared-label-layout)
   (define plan (prepared-project-plan prepared))
   (define render (animate-project-render (project-plan-project plan)))
   (hasheq
@@ -489,7 +514,29 @@
                      'three-dimensional
                      (stable-cache-datum (render-spec-renderer3d render)))
    'renderer-options (stable-cache-datum (render-spec-renderer-options render))
+   ;; A prepared table changes selected placement boxes, so it is part of the
+   ;; PNG identity even though its computation happens before worker creation.
+   ;; Convert only its immutable primitive contents to a readable datum; cache
+   ;; validation compares this data but never reconstructs the table.
+   'prepared-label-layout
+   (prepared-label-layout-cache-datum prepared-label-layout)
    'semantic-render-schema 'scene-to-pict-to-bitmap-v2))
+
+(define (prepared-label-layout-cache-datum prepared-layout)
+  (and prepared-layout
+       (hasheq
+        'frames (vector->list (prepared-label-layout3d-frames prepared-layout))
+        'switch-penalty (prepared-label-layout3d-switch-penalty prepared-layout)
+        'movement-penalty (prepared-label-layout3d-movement-penalty prepared-layout)
+        'placements
+        (for/list ([layout (in-vector (prepared-label-layout3d-layouts prepared-layout))])
+          (for/list ([candidate (in-list (label-layout3d-placements layout))])
+            (hasheq
+             'item-id (label-layout-candidate3d-item-id candidate)
+             'direction (label-layout-candidate3d-direction candidate)
+             'box (vector->list (label-layout-candidate3d-box candidate))
+             'leader? (label-layout-candidate3d-leader? candidate)
+             'cost (label-layout-candidate3d-cost candidate)))))))
 
 ;; Convert user-provided renderer configuration into a read/write-safe cache
 ;; datum. Procedures deliberately print with their process identity, which can
@@ -548,11 +595,11 @@
 ;; every video-encoder choice that can change the compressed byte stream.
 ;; Audio and subtitle settings do not appear: they are remuxed after a visual
 ;; segment is obtained, so narration edits never invalidate visual encoding.
-(define (project-segment-cache-key prepared)
+(define (project-segment-cache-key prepared prepared-label-layout)
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define encoder (animate-project-encoder project))
-  (define frame-key (project-frame-cache-key prepared))
+  (define frame-key (project-frame-cache-key prepared prepared-label-layout))
   (and frame-key
        (list 'animate-project-segment-cache-v1
              animate-version animate-stage
@@ -602,7 +649,7 @@
 ;; cache accounting. The temporary copy is always distinct from a persistent
 ;; cache segment: final assembly may freely move or delete it without harming
 ;; later renders.
-(define (obtain-project-visual-segment! prepared frame-root visual-temporary)
+(define (obtain-project-visual-segment! prepared frame-root visual-temporary prepared-label-layout)
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define cache (animate-project-cache project))
@@ -610,7 +657,7 @@
   (define paths (project-plan-path-plan plan))
   (define key
     (and (cache-domain-enabled? cache 'segments)
-         (project-segment-cache-key prepared)))
+         (project-segment-cache-key prepared prepared-label-layout)))
   (define segments-root (project-path-plan-segments-root paths))
   (define segment-root
     (and key (build-path segments-root (cache-key-directory-name key))))
@@ -653,7 +700,7 @@
          #:center (camera-center scene-camera)
          #:background (camera-background scene-camera)))))
 
-(define (install-project-mp4! prepared frame-root primary)
+(define (install-project-mp4! prepared frame-root primary prepared-label-layout)
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define render (animate-project-render project))
@@ -671,7 +718,8 @@
   (when (file-exists? visual-temporary)
     (delete-file visual-temporary))
   (define-values (visual-input encoded-segments reused-segments segment-cache-event)
-    (obtain-project-visual-segment! prepared frame-root visual-temporary))
+    (obtain-project-visual-segment!
+     prepared frame-root visual-temporary prepared-label-layout))
   (define subtitle-path
     (and timeline full-timeline?
          (pair? (authored-timeline-subtitles timeline))

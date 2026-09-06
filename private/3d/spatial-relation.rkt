@@ -10,15 +10,21 @@
 ;; frame-by-frame mutable updater.
 
 (require "../geometry.rkt"
+         racket/list
+         racket/math
          "affine3.rkt"
          "bounds3.rkt"
+         "curve3d.rkt"
          "material3d.rkt"
          "mesh3d.rkt"
+         "marker3d.rkt"
+         "point-line-arrow3d.rkt"
          "rotation3.rkt"
          "spatial-dependency.rkt"
          "spatial-group.rkt"
          "spatial-relation-context.rkt"
          "spatial-visual.rkt"
+         "stroke3d.rkt"
          "transform3.rkt"
          "vec3.rkt")
 
@@ -34,7 +40,13 @@
          arrow-between3d
          plane-through3d
          normal-at3d
-         distance-segment3d)
+         distance-segment3d
+         distance-dimension3d
+         angle-marker3d
+         right-angle-marker3d
+         dihedral-angle3d
+         normal-marker3d
+         coordinate-tripod3d)
 
 ;; Preserve generic protocol bindings before the generated struct methods use
 ;; the same names. Without these aliases a method body would recursively apply
@@ -419,6 +431,7 @@
   (spatial-relation
    template
    #:depends-on (list (spatial-visual-dependency target))
+   #:structure 'fixed
    (lambda (context _template)
      (define start (spatial-relation-context-spatial-position context target))
      (define end (vec3+ start (vec3-scale length direction)))
@@ -426,6 +439,334 @@
       (list (segment-mesh (child-id id "shaft") start end color width 1)
             (arrow-head-mesh (child-id id "head") start end color tip-size))
       #:id id))))
+
+
+;;;
+;;; Fixed-Structure Spatial Annotations
+;;;
+
+;; These annotation relations lower to existing screen-stroke and marker
+;; primitives. Their semantic promise is their stable child tree and current
+;; target-derived geometry, not a new renderer primitive. Consequently both
+;; the software and OpenGL renderers receive the same geometry without a
+;; second annotation-specific rendering path.
+
+; distance-dimension3d : spatial-path? spatial-path? #:id symbol? ...
+;                         -> spatial-relation?
+;; Draws extension segments and a double-ended measurement line displaced by a
+;; fixed world-space offset.  The relation children are `extension-from`,
+;; `extension-to`, `dimension`, `from-tip`, and `to-tip`.
+(define (distance-dimension3d from to
+                              #:id id
+                              #:offset [offset (vec3 0 1/3 0)]
+                              #:color [color "darkgoldenrod"]
+                              #:width [width 2]
+                              #:tip-size [tip-size 1/6]
+                              #:opacity [opacity 1])
+  (check-spatial-target 'distance-dimension3d from)
+  (check-spatial-target 'distance-dimension3d to)
+  (check-symbol 'distance-dimension3d id)
+  (check-vector 'distance-dimension3d "offset" offset)
+  (check-width 'distance-dimension3d width)
+  (check-positive-finite 'distance-dimension3d "tip-size" tip-size)
+  (check-opacity 'distance-dimension3d opacity)
+  (define (children start end)
+    (define marked-start (vec3+ start offset))
+    (define marked-end (vec3+ end offset))
+    (list (annotation-line (child-id id "extension-from") start marked-start color width)
+          (annotation-line (child-id id "extension-to") end marked-end color width)
+          (annotation-line (child-id id "dimension") marked-start marked-end color width)
+          (annotation-tip (child-id id "from-tip") marked-end marked-start color tip-size)
+          (annotation-tip (child-id id "to-tip") marked-start marked-end color tip-size)))
+  (fixed-two-target-relation
+   'distance-dimension3d from to id opacity children))
+
+; angle-marker3d : spatial-path? spatial-path? spatial-path? #:id symbol? ...
+;                  -> spatial-relation?
+;; Draws the smaller angle from `first` through `vertex` toward `second`.
+;; Children `first-radius`, `arc`, and `second-radius` remain stable.
+(define (angle-marker3d first vertex second
+                        #:id id
+                        #:radius [radius 1/3]
+                        #:samples [samples 12]
+                        #:color [color "darkorange"]
+                        #:width [width 2]
+                        #:opacity [opacity 1])
+  (for ([target (in-list (list first vertex second))])
+    (check-spatial-target 'angle-marker3d target))
+  (check-symbol 'angle-marker3d id)
+  (check-positive-finite 'angle-marker3d "radius" radius)
+  (check-samples 'angle-marker3d samples)
+  (check-width 'angle-marker3d width)
+  (check-opacity 'angle-marker3d opacity)
+  (define (children first-point vertex-point second-point)
+    (define-values (first-direction second-direction _normal arc-points)
+      (angle-frame 'angle-marker3d first-point vertex-point second-point radius samples))
+    (list (annotation-line (child-id id "first-radius") vertex-point
+                           (vec3+ vertex-point (vec3-scale radius first-direction)) color width)
+          (polyline-mesh (child-id id "arc") arc-points color width)
+          (annotation-line (child-id id "second-radius") vertex-point
+                           (vec3+ vertex-point (vec3-scale radius second-direction)) color width)))
+  (fixed-three-target-relation
+   'angle-marker3d first vertex second id opacity children))
+
+; right-angle-marker3d : spatial-path? spatial-path? spatial-path? #:id symbol? ...
+;                        -> spatial-relation?
+;; Draws the conventional three-segment corner following the two current rays.
+;; It does not assert that animated targets remain perpendicular: for a
+;; non-right angle its `corner` is the corresponding parallelogram corner.
+(define (right-angle-marker3d first vertex second
+                              #:id id
+                              #:size [size 1/3]
+                              #:color [color "darkorange"]
+                              #:width [width 2]
+                              #:opacity [opacity 1])
+  (for ([target (in-list (list first vertex second))])
+    (check-spatial-target 'right-angle-marker3d target))
+  (check-symbol 'right-angle-marker3d id)
+  (check-positive-finite 'right-angle-marker3d "size" size)
+  (check-width 'right-angle-marker3d width)
+  (check-opacity 'right-angle-marker3d opacity)
+  (define (children first-point vertex-point second-point)
+    (define first-direction (distinct-direction 'right-angle-marker3d vertex-point first-point))
+    (define second-direction (distinct-direction 'right-angle-marker3d vertex-point second-point))
+    (define first-corner (vec3+ vertex-point (vec3-scale size first-direction)))
+    (define second-corner (vec3+ vertex-point (vec3-scale size second-direction)))
+    (define outer-corner (vec3+ first-corner (vec3-scale size second-direction)))
+    (list (annotation-line (child-id id "first-leg") first-corner outer-corner color width)
+          (annotation-line (child-id id "corner") outer-corner second-corner color width)
+          (annotation-line (child-id id "second-leg") second-corner vertex-point color width)))
+  (fixed-three-target-relation
+   'right-angle-marker3d first vertex second id opacity children))
+
+; dihedral-angle3d : spatial-path? spatial-path? spatial-path? spatial-path?
+;                    #:id symbol? ... -> spatial-relation?
+;; Uses an ordered hinge (`axis-from`, `axis-to`) and one point from each face.
+;; The stable children are `axis`, `first-radius`, `arc`, and `second-radius`.
+(define (dihedral-angle3d axis-from axis-to first-face-point second-face-point
+                          #:id id
+                          #:radius [radius 1/3]
+                          #:samples [samples 12]
+                          #:color [color "darkorange"]
+                          #:width [width 2]
+                          #:opacity [opacity 1])
+  (for ([target (in-list (list axis-from axis-to first-face-point second-face-point))])
+    (check-spatial-target 'dihedral-angle3d target))
+  (check-symbol 'dihedral-angle3d id)
+  (check-positive-finite 'dihedral-angle3d "radius" radius)
+  (check-samples 'dihedral-angle3d samples)
+  (check-width 'dihedral-angle3d width)
+  (check-opacity 'dihedral-angle3d opacity)
+  (define (children first-axis second-axis first-face second-face)
+    (define axis (distinct-direction 'dihedral-angle3d first-axis second-axis))
+    (define centre (vec3-lerp first-axis second-axis 1/2))
+    (define first-direction
+      (perpendicular-direction 'dihedral-angle3d centre axis first-face "first-face-point"))
+    (define second-direction
+      (perpendicular-direction 'dihedral-angle3d centre axis second-face "second-face-point"))
+    (define normal (vec3-cross axis first-direction))
+    (define cosine (clamp-unit (vec3-dot first-direction second-direction)))
+    (define angle (* (if (negative? (vec3-dot axis (vec3-cross first-direction second-direction))) -1 1)
+                     (acos cosine)))
+    (when (zero? angle)
+      (raise-arguments-error 'dihedral-angle3d "distinct face directions about the hinge"
+                             "first-face-point" first-face "second-face-point" second-face))
+    (define arc-points
+      (for/list ([index (in-range (add1 samples))])
+        (define theta (* angle (/ index samples)))
+        (vec3+ centre
+               (vec3-scale radius
+                           (vec3+ (vec3-scale (cos theta) first-direction)
+                                  (vec3-scale (sin theta) normal))))))
+    (list (annotation-line (child-id id "axis") first-axis second-axis color width)
+          (annotation-line (child-id id "first-radius") centre (car arc-points) color width)
+          (polyline-mesh (child-id id "arc") arc-points color width)
+          (annotation-line (child-id id "second-radius") centre (last arc-points) color width)))
+  (fixed-four-target-relation
+   'dihedral-angle3d axis-from axis-to first-face-point second-face-point id opacity children))
+
+; normal-marker3d : spatial-path? vec3? #:id symbol? ... -> spatial-relation?
+;; Fixed-structure spelling of `normal-at3d` for annotation diagrams.
+(define (normal-marker3d target normal
+                         #:id id
+                         #:length [length 1]
+                         #:color [color "darkmagenta"]
+                         #:width [width 2]
+                         #:tip-size [tip-size 1/4]
+                         #:opacity [opacity 1])
+  (check-spatial-target 'normal-marker3d target)
+  (unless (vec3? normal)
+    (raise-argument-error 'normal-marker3d "vec3?" normal))
+  (check-symbol 'normal-marker3d id)
+  (check-positive-finite 'normal-marker3d "length" length)
+  (check-width 'normal-marker3d width)
+  (check-positive-finite 'normal-marker3d "tip-size" tip-size)
+  (check-opacity 'normal-marker3d opacity)
+  (define direction
+    (with-handlers ([exn:fail?
+                     (lambda (_failure)
+                       (raise-arguments-error
+                        'normal-marker3d "a nonzero normal vector" "normal" normal))])
+      (vec3-normalize normal)))
+  (define (children start)
+    (define end (vec3+ start (vec3-scale length direction)))
+    (list (annotation-line (child-id id "shaft") start end color width)
+          (annotation-tip (child-id id "head") start end color tip-size)))
+  (define template (group3d (children origin3) #:id id #:opacity opacity))
+  (spatial-relation
+   template
+   #:depends-on (list (spatial-visual-dependency target))
+   #:structure 'fixed
+   (lambda (context _template)
+     (group3d (children (spatial-relation-context-spatial-position context target))
+              #:id id))))
+
+; coordinate-tripod3d : spatial-path? #:id symbol? ... -> spatial-relation?
+;; Draws named x/y/z arrows from a target's current origin.  The six child
+;; paths (`x-shaft`, `x-tip`, ..., `z-tip`) never depend on the camera.
+(define (coordinate-tripod3d target
+                             #:id id
+                             #:length [length 1]
+                             #:width [width 2]
+                             #:tip-size [tip-size 1/4]
+                             #:x-color [x-color "firebrick"]
+                             #:y-color [y-color "forestgreen"]
+                             #:z-color [z-color "royalblue"]
+                             #:opacity [opacity 1])
+  (check-spatial-target 'coordinate-tripod3d target)
+  (check-symbol 'coordinate-tripod3d id)
+  (check-positive-finite 'coordinate-tripod3d "length" length)
+  (check-width 'coordinate-tripod3d width)
+  (check-positive-finite 'coordinate-tripod3d "tip-size" tip-size)
+  (check-opacity 'coordinate-tripod3d opacity)
+  (define (children start)
+    (append
+     (tripod-axis-children id "x" start x-axis3 length x-color width tip-size)
+     (tripod-axis-children id "y" start y-axis3 length y-color width tip-size)
+     (tripod-axis-children id "z" start z-axis3 length z-color width tip-size)))
+  (define template (group3d (children origin3) #:id id #:opacity opacity))
+  (spatial-relation
+   template
+   #:depends-on (list (spatial-visual-dependency target))
+   #:structure 'fixed
+   (lambda (context _template)
+     (group3d (children (spatial-relation-context-spatial-position context target))
+              #:id id))))
+
+(define (fixed-two-target-relation who from to id opacity children)
+  (define template (group3d (children origin3 x-axis3) #:id id #:opacity opacity))
+  (spatial-relation
+   template
+   #:depends-on (list (spatial-visual-dependency from)
+                      (spatial-visual-dependency to))
+   #:structure 'fixed
+   (lambda (context _template)
+     (group3d
+      (children (spatial-relation-context-spatial-position context from)
+                (spatial-relation-context-spatial-position context to))
+      #:id id))))
+
+(define (fixed-three-target-relation who first second third id opacity children)
+  (define template (group3d (children x-axis3 origin3 y-axis3) #:id id #:opacity opacity))
+  (spatial-relation
+   template
+   #:depends-on (list (spatial-visual-dependency first)
+                      (spatial-visual-dependency second)
+                      (spatial-visual-dependency third))
+   #:structure 'fixed
+   (lambda (context _template)
+     (group3d
+      (children (spatial-relation-context-spatial-position context first)
+                (spatial-relation-context-spatial-position context second)
+                (spatial-relation-context-spatial-position context third))
+      #:id id))))
+
+(define (fixed-four-target-relation who first second third fourth id opacity children)
+  (define template (group3d (children origin3 z-axis3 x-axis3 y-axis3) #:id id #:opacity opacity))
+  (spatial-relation
+   template
+   #:depends-on (list (spatial-visual-dependency first)
+                      (spatial-visual-dependency second)
+                      (spatial-visual-dependency third)
+                      (spatial-visual-dependency fourth))
+   #:structure 'fixed
+   (lambda (context _template)
+     (group3d
+      (children (spatial-relation-context-spatial-position context first)
+                (spatial-relation-context-spatial-position context second)
+                (spatial-relation-context-spatial-position context third)
+                (spatial-relation-context-spatial-position context fourth))
+      #:id id))))
+
+(define (angle-frame who first-point vertex-point second-point radius samples)
+  (define first-direction (distinct-direction who vertex-point first-point))
+  (define second-direction (distinct-direction who vertex-point second-point))
+  (define normal
+    (with-handlers ([exn:fail?
+                     (lambda (_exception)
+                       (raise-arguments-error
+                        who "two non-collinear rays from the vertex"
+                        "first" first-point "vertex" vertex-point "second" second-point))])
+      (vec3-normalize (vec3-cross first-direction second-direction))))
+  (define angle (acos (clamp-unit (vec3-dot first-direction second-direction))))
+  (when (zero? angle)
+    (raise-arguments-error who "two distinct angle directions"
+                           "first" first-point "vertex" vertex-point "second" second-point))
+  (define perpendicular (vec3-normalize (vec3-cross normal first-direction)))
+  (values
+   first-direction second-direction normal
+   (for/list ([index (in-range (add1 samples))])
+     (define theta (* angle (/ index samples)))
+     (vec3+ vertex-point
+            (vec3-scale radius
+                        (vec3+ (vec3-scale (cos theta) first-direction)
+                               (vec3-scale (sin theta) perpendicular)))))))
+
+(define (perpendicular-direction who centre axis point name)
+  (define delta (vec3- point centre))
+  (define perpendicular
+    (vec3- delta (vec3-scale (vec3-dot delta axis) axis)))
+  (with-handlers ([exn:fail?
+                   (lambda (_exception)
+                     (raise-arguments-error
+                      who "a face point off the hinge axis"
+                      name point "axis-centre" centre))])
+    (vec3-normalize perpendicular)))
+
+(define (polyline-mesh id points color width)
+  (unless (>= (length points) 2)
+    (raise-arguments-error 'polyline-mesh "at least two points" "points" points))
+  (polyline3d points #:id id #:style (stroke3d #:color color #:width width)))
+
+(define (tripod-axis-children id axis-name start direction length color width tip-size)
+  (define end (vec3+ start (vec3-scale length direction)))
+  (list (annotation-line (child-id id (string-append axis-name "-shaft"))
+                         start end color width)
+        (annotation-tip (child-id id (string-append axis-name "-tip"))
+                        start end color tip-size)))
+
+(define (annotation-line id start end color width)
+  (if (zero? (vec3-distance start end))
+      ;; A zero extension is legal for an inline dimension.  Retain the child
+      ;; identity as an invisible point rather than fabricating a nonzero line.
+      (point3d start #:id id #:style (point-style3d #:size 1 #:color color #:opacity 0))
+      (line3d start end #:id id #:style (stroke3d #:color color #:width width))))
+
+(define (annotation-tip id start end color tip-size)
+  (arrow-marker3d
+   start end #:id id
+   #:style (arrow-style3d #:length (max 6 (* 60 tip-size))
+                          #:color color)))
+
+(define (clamp-unit value) (max -1 (min 1 value)))
+
+(define (check-vector who label value)
+  (unless (vec3? value)
+    (raise-arguments-error who "vec3?" label value)))
+
+(define (check-samples who value)
+  (unless (and (exact-integer? value) (>= value 2))
+    (raise-arguments-error who "an exact integer at least 2" "samples" value)))
 
 (define (make-between-relation who from to id color width opacity endpoints)
   (check-spatial-target who from)

@@ -28,6 +28,7 @@
   (for ([name (in-list '(render-frames! encode-mp4!))])
     (check-not-eq? (public-binding "../render.rkt" name) absent))
   (for ([name (in-list '(animate-project? plan-project prepare-project!
+                         prepare-project-label-layout3d
                          project-target-section project-plan->datum))])
     (check-not-eq? (public-binding "../project.rkt" name) absent))
   (for ([name (in-list '(vec3 linear3 axis-angle affine3 make-transform3
@@ -92,8 +93,11 @@
                          spatial-relation-context-camera
                          line-between3d segment-between3d arrow-between3d
                          plane-through3d normal-at3d distance-segment3d
+                         distance-dimension3d angle-marker3d right-angle-marker3d
+                         dihedral-angle3d normal-marker3d coordinate-tripod3d
                          projected-label follow-projected-point
                          follow-projected-spatial projected-label-occlusion
+                         prepare-scene-label-layout3d
                          move3d-to move3d-by rotate3d-to rotate3d-by
                          scale3d-to scale3d-by transform3d-to
                          camera3d-move-to camera3d-look-at-to camera3d-orbit-by
@@ -109,6 +113,7 @@
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?
+                         surface-pick-anchor3d
                          view3d-spatial-inspections view3d-spatial-inspection-tree
                          view3d-spatial-inspection-at view3d-pick view3d-surface-pick view3d-pixel-pick
                          mesh3d-bvh mesh3d-bvh? bvh3d-node? bvh3d-leaf?

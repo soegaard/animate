@@ -11,6 +11,7 @@
                      animate/preview
                      animate/render
                      animate/project
+                     animate/3d
                      animate/experimental)
           "../../version.rkt")
 
@@ -933,7 +934,10 @@ pixels.
           [#:camera camera (or/c camera? false/c) #f]
           [#:renderers renderers
                        pict-renderer-list?
-                       default-pict-renderers])
+                       default-pict-renderers]
+          [#:prepared-label-layout prepared-label-layout
+                                    (or/c false/c prepared-label-layout3d?)
+                                    #f])
          pict?]{
 
 Samples @racket[scene] at @racket[time] and converts the resulting scene state
@@ -979,6 +983,8 @@ out-of-range index raises an exception.
 
 When @racket[camera] is @racket[#f], the camera is sampled from the scene at the
 frame time. A supplied camera is used as one fixed override for the frame.
+A prepared layout is selected by the frame's source index; labels without a
+slot in that table retain direct layout.
 }
 
 @section[#:tag "output"]{PNG and MP4 Output}
@@ -997,7 +1003,10 @@ The procedures in this section perform external effects. Their names end in
                        pict-renderer-list?
                        default-pict-renderers]
           [#:clean? clean? boolean? #t]
-          [#:workers workers exact-positive-integer? 1])
+          [#:workers workers exact-positive-integer? 1]
+          [#:prepared-label-layout prepared-label-layout
+                                    (or/c false/c prepared-label-layout3d?)
+                                    #f])
          (listof path?)]{
 
 Creates @racket[output-directory] when needed and writes every sampled frame as
@@ -1247,7 +1256,10 @@ subtitle stream rather than drawing it into the video pixels.
           [#:camera camera (or/c camera? false/c) #f]
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:clean? clean? boolean? #t]
-          [#:workers workers exact-positive-integer? 1])
+          [#:workers workers exact-positive-integer? 1]
+          [#:prepared-label-layout prepared-label-layout
+                                    (or/c false/c prepared-label-layout3d?)
+                                    #f])
          (listof path?)]{
 
 Renders selected global frame indices in the supplied order. The output files
@@ -1265,7 +1277,10 @@ diagnostic behavior is otherwise the same as @racket[render-frames!].
           [#:camera camera (or/c camera? false/c) #f]
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:clean? clean? boolean? #t]
-          [#:workers workers exact-positive-integer? 1])
+          [#:workers workers exact-positive-integer? 1]
+          [#:prepared-label-layout prepared-label-layout
+                                    (or/c false/c prepared-label-layout3d?)
+                                    #f])
          render-diagnostics?]{
 
 Like @racket[render-frame-indices!], returning normal rendering diagnostics.
