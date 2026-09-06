@@ -20,13 +20,18 @@
 
 (struct gl-framebuffer-target
   (width height samples framebuffer color depth resolve-framebuffer resolve-color
-         byte-size generation)
+         byte-size context-identity last-used)
   #:transparent)
 
-(struct gl-framebuffer-cache (entries allocations) #:mutable #:transparent)
+(struct gl-framebuffer-cache (entries allocations max-bytes bytes tick) #:mutable #:transparent)
 
-(define (make-gl-framebuffer-cache)
-  (gl-framebuffer-cache (make-hash) 0))
+; make-gl-framebuffer-cache : [#:max-bytes exact-positive-integer?] -> gl-framebuffer-cache?
+;; Keeps a bounded LRU of backend-owned targets rather than retaining every
+;; preview size and MSAA tier seen during a long authoring session.
+(define (make-gl-framebuffer-cache #:max-bytes [max-bytes (* 64 1024 1024)])
+  (unless (exact-positive-integer? max-bytes)
+    (raise-argument-error 'make-gl-framebuffer-cache "exact-positive-integer?" max-bytes))
+  (gl-framebuffer-cache (make-hash) 0 max-bytes 0 0))
 
 (define (one vector) (u32vector-ref vector 0))
 
@@ -34,19 +39,19 @@
   (delete 1 (u32vector id)))
 
 (define (make-framebuffer-resource host id label)
-  (gl-framebuffer (gl-context-host-generation host) id 0 #f label
+  (gl-framebuffer (gl-context-host-identity host) id 0 #f label
                   (lambda (value) (delete-buffer-object glDeleteFramebuffers value))))
 
 (define (make-texture-resource host id bytes label)
-  (gl-texture (gl-context-host-generation host) id bytes #f label
+  (gl-texture (gl-context-host-identity host) id bytes #f label
               (lambda (value) (delete-buffer-object glDeleteTextures value))))
 
 (define (make-renderbuffer-resource host id bytes label)
-  (gl-renderbuffer (gl-context-host-generation host) id bytes #f label
+  (gl-renderbuffer (gl-context-host-identity host) id bytes #f label
                    (lambda (value) (delete-buffer-object glDeleteRenderbuffers value))))
 
-(define (target-key width height samples generation)
-  (vector width height samples generation))
+(define (target-key width height samples identity)
+  (vector width height samples identity))
 
 (define (requested-samples->actual requested maximum)
   (cond [(<= requested 1) 1]
@@ -67,15 +72,31 @@
   (unless (exact-nonnegative-integer? maximum-samples)
     (raise-argument-error 'gl-framebuffer-cache-ensure! "exact-nonnegative-integer?" maximum-samples))
   (define samples (requested-samples->actual requested-samples maximum-samples))
-  (define key (target-key width height samples (gl-context-host-generation host)))
-  (or (hash-ref (gl-framebuffer-cache-entries cache) key #f)
+  (define key (target-key width height samples (gl-context-host-identity host)))
+  (define existing (hash-ref (gl-framebuffer-cache-entries cache) key #f))
+  (or (and existing
+           (let ()
+             (set-gl-framebuffer-cache-tick! cache (add1 (gl-framebuffer-cache-tick cache)))
+             (define touched
+               (struct-copy gl-framebuffer-target existing
+                            [last-used (gl-framebuffer-cache-tick cache)]))
+             (hash-set! (gl-framebuffer-cache-entries cache) key touched)
+             touched))
       (let ([target (gl-context-host-call
                      host
                      (lambda () (make-framebuffer-target/current! host width height samples)))])
-        (hash-set! (gl-framebuffer-cache-entries cache) key target)
+        (set-gl-framebuffer-cache-tick! cache (add1 (gl-framebuffer-cache-tick cache)))
+        (define touched
+          (struct-copy gl-framebuffer-target target
+                       [last-used (gl-framebuffer-cache-tick cache)]))
+        (hash-set! (gl-framebuffer-cache-entries cache) key touched)
         (set-gl-framebuffer-cache-allocations! cache
                                                (add1 (gl-framebuffer-cache-allocations cache)))
-        target)))
+        (set-gl-framebuffer-cache-bytes!
+         cache (+ (gl-framebuffer-cache-bytes cache)
+                  (gl-framebuffer-target-byte-size touched)))
+        (gl-framebuffer-cache-evict! cache host key)
+        touched)))
 
 (define (check-complete who)
   (unless (= (glCheckFramebufferStatus GL_FRAMEBUFFER) GL_FRAMEBUFFER_COMPLETE)
@@ -145,16 +166,20 @@
                                (gl-resource-id resolve-color) 0)
        (check-complete 'make-framebuffer-target/current!)])
     (glBindFramebuffer GL_FRAMEBUFFER 0)
+    ;; A multisampled target has two MSAA attachments plus one resolve colour.
+    ;; Framebuffer handles are negligible compared with attachments.
     (gl-framebuffer-target width height samples framebuffer color depth resolve-framebuffer resolve-color
-                           (* byte-size (if (= samples 1) 2 4))
-                           (gl-context-host-generation host))))
+                           (+ (* byte-size samples 2) (if (> samples 1) byte-size 0))
+                           (gl-context-host-identity host)
+                           0)))
 
 (define (check-target-current! target host who)
   (unless (gl-framebuffer-target? target)
     (raise-argument-error who "gl-framebuffer-target?" target))
-  (unless (= (gl-framebuffer-target-generation target) (gl-context-host-generation host))
+  (unless (equal? (gl-framebuffer-target-context-identity target)
+                  (gl-context-host-identity host))
     (raise-arguments-error who "a framebuffer from the current context generation"
-                           "target-generation" (gl-framebuffer-target-generation target)
+                           "target-identity" (gl-framebuffer-target-context-identity target)
                            "context-generation" (gl-context-host-generation host))))
 
 ;; The next three functions must be invoked while `host` is current, normally
@@ -207,13 +232,42 @@
    host
    (lambda ()
      (for ([target (in-hash-values (gl-framebuffer-cache-entries cache))])
-       (when (= (gl-framebuffer-target-generation target) (gl-context-host-generation host))
+       (when (equal? (gl-framebuffer-target-context-identity target)
+                     (gl-context-host-identity host))
          (destroy-target/current! target host)))
-     (hash-clear! (gl-framebuffer-cache-entries cache))))
+     (hash-clear! (gl-framebuffer-cache-entries cache))
+     (set-gl-framebuffer-cache-bytes! cache 0)))
   (void))
 
 (define (gl-framebuffer-cache-statistics cache)
   (unless (gl-framebuffer-cache? cache)
     (raise-argument-error 'gl-framebuffer-cache-statistics "gl-framebuffer-cache?" cache))
   (hasheq 'entries (hash-count (gl-framebuffer-cache-entries cache))
-          'allocations (gl-framebuffer-cache-allocations cache)))
+          'allocations (gl-framebuffer-cache-allocations cache)
+          'bytes (gl-framebuffer-cache-bytes cache)
+          'max-bytes (gl-framebuffer-cache-max-bytes cache)))
+
+;; Eviction runs only after a just-created target has been installed. The
+;; current key is protected, so a too-small byte budget retains one usable
+;; target instead of creating and immediately deleting it.
+(define (gl-framebuffer-cache-evict! cache host protected-key)
+  (let loop ()
+    (when (and (> (gl-framebuffer-cache-bytes cache)
+                  (gl-framebuffer-cache-max-bytes cache))
+               (> (hash-count (gl-framebuffer-cache-entries cache)) 1))
+      (define candidate
+        (for/fold ([best #f]) ([(key target) (in-hash (gl-framebuffer-cache-entries cache))])
+          (cond [(equal? key protected-key) best]
+                [(not best) (cons key target)]
+                [(< (gl-framebuffer-target-last-used target)
+                    (gl-framebuffer-target-last-used (cdr best)))
+                 (cons key target)]
+                [else best])))
+      (when candidate
+        (gl-context-host-call host
+          (lambda () (destroy-target/current! (cdr candidate) host)))
+        (hash-remove! (gl-framebuffer-cache-entries cache) (car candidate))
+        (set-gl-framebuffer-cache-bytes!
+         cache (- (gl-framebuffer-cache-bytes cache)
+                  (gl-framebuffer-target-byte-size (cdr candidate))))
+        (loop)))))

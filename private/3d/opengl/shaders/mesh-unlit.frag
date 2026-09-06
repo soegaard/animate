@@ -18,5 +18,5 @@ void main() {
   }
   vec4 base = (useVertexColor != 0) ? vertexColor : materialColor;
   base.a *= objectOpacity;
-  fragment = base;
+  fragment = vec4(base.rgb * base.a, base.a);
 }

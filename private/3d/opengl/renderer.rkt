@@ -299,16 +299,16 @@
             (gl-resource-delete-current! resource host))
           (raise exception))])
     (set! vao
-          (gl-vertex-array (gl-context-host-generation host)
+          (gl-vertex-array (gl-context-host-identity host)
                            (one-id (glGenVertexArrays 1)) 0 #f "geometry-vao" delete-vertex-array))
     (set! vertex-buffer
-          (gl-buffer (gl-context-host-generation host)
+          (gl-buffer (gl-context-host-identity host)
                      (one-id (glGenBuffers 1))
                      (* 4 (f32vector-length (gl-packed-geometry-vertices packed)))
                      #f "geometry-vbo" delete-buffer))
     (when (positive? (gl-packed-geometry-index-count packed))
       (set! index-buffer
-            (gl-buffer (gl-context-host-generation host)
+            (gl-buffer (gl-context-host-identity host)
                        (one-id (glGenBuffers 1))
                        (* 4 (u32vector-length (gl-packed-geometry-indices packed)))
                        #f "geometry-ebo" delete-buffer)))
@@ -332,7 +332,7 @@
      (compiled-geometry3d-key geometry) variant vao vertex-buffer index-buffer
      (if index-buffer (gl-packed-geometry-index-count packed)
          (gl-packed-geometry-vertex-count packed))
-     (gl-packed-geometry-byte-size packed) 0 (gl-context-host-generation host)
+     (gl-packed-geometry-byte-size packed) 0 (gl-context-host-identity host)
      (lambda ()
        (for ([resource (in-list (filter values (list index-buffer vertex-buffer vao)))])
          (gl-resource-delete-current! resource host))))))
@@ -433,10 +433,13 @@
   (glCullFace GL_BACK)
   (glFrontFace GL_CCW)
   (glColorMask #t #t #t #t)
-  (glClearColor (/ (rgba-color-red background) 255.0)
-                (/ (rgba-color-green background) 255.0)
-                (/ (rgba-color-blue background) 255.0)
-                (exact->inexact (rgba-color-alpha background)))
+  ;; Framebuffer colour is premultiplied RGBA.  This makes the transparent pass
+  ;; well-defined even when an author deliberately chooses a transparent view.
+  (define background-alpha (exact->inexact (rgba-color-alpha background)))
+  (glClearColor (* background-alpha (/ (rgba-color-red background) 255.0))
+                (* background-alpha (/ (rgba-color-green background) 255.0))
+                (* background-alpha (/ (rgba-color-blue background) 255.0))
+                background-alpha)
   (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT GL_STENCIL_BUFFER_BIT)))
 
 (define (ensure-geometry-resources/current! renderer compiled)
@@ -493,10 +496,11 @@
 (define (draw-transparent/current! renderer compiled frame-spec transparent)
   (when (pair? transparent)
     (glEnable GL_BLEND)
-    ;; Straight-alpha source colors are the shader contract, so this blend
-    ;; equation exactly implements the existing reference target semantics on
-    ;; the normal opaque viewport background.
-    (glBlendFunc GL_SRC_ALPHA GL_ONE_MINUS_SRC_ALPHA)
+    ;; Fragment shaders emit premultiplied colour. Separate factors preserve
+    ;; destination alpha, unlike glBlendFunc(SRC_ALPHA, ONE_MINUS_SRC_ALPHA).
+    (glBlendEquationSeparate GL_FUNC_ADD GL_FUNC_ADD)
+    (glBlendFuncSeparate GL_ONE GL_ONE_MINUS_SRC_ALPHA
+                         GL_ONE GL_ONE_MINUS_SRC_ALPHA)
     (glDepthMask #f)
     (define ordered
       (sort transparent > #:key (lambda (instance)
@@ -552,7 +556,8 @@
   (define entry
     (hash-ref (gl-geometry-cache-entries (opengl-renderer3d-value-geometry-cache renderer))
               (cons (compiled-geometry3d-key geometry) variant)))
-  (unless (= (gl-geometry-entry-context-generation entry) (gl-context-host-generation host))
+  (unless (equal? (gl-geometry-entry-context-identity entry)
+                  (gl-context-host-identity host))
     (raise-arguments-error 'draw-instance/current! "geometry from the current GL context"
                            "entry" entry))
   (define program

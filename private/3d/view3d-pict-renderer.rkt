@@ -22,6 +22,7 @@
          "../pict-renderer.rkt"
          "../visual-model.rkt"
          "renderer3d.rkt"
+         "frame-artifact-cache3d.rkt"
          "software-renderer3d.rkt"
          "view3d-visual.rkt"
          "wireframe-renderer.rkt")
@@ -82,15 +83,16 @@
         (spatial-tree->wireframe-segments view (view3d-camera view) aspect))]
       [(opaque)
        (define renderer (current-view3d-renderer3d))
-       (define request
-         (view3d->render3d-request
-          view width height
+        (define artifact
+         (render-view3d-frame-artifact
+          view width height renderer
+          #:attachments '(color depth)
           #:cancellation-token (current-software-render-cancellation-token)))
        (bitmap
         (renderer3d-render-result->bitmap
-         (renderer3d-render renderer
-                            (renderer3d-prepare renderer request)
-                            request))) ]
+         (renderer3d-render-result
+          width height (renderer3d-frame-artifact-straight-argb artifact)
+          (renderer3d-frame-artifact-diagnostics artifact)))) ]
       [else (error 'view3d->pict "unsupported render mode: ~e"
                    (view3d-render-mode view))]))
   (if (zero? (visual-rotation view))

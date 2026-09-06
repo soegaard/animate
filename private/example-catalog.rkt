@@ -167,6 +167,18 @@
     "examples/3d/stroke-picking.rkt" 'make-demo-scene
     '(3d strokes markers picking preview) '(core gui) 0 1)
    (example-entry
+    'adaptive-trimmed-implicit-surfaces "Adaptive, trimmed, and implicit surfaces"
+    "examples/3d/adaptive-trimmed-implicit-surfaces.rkt" 'make-demo-scene
+    '(3d surfaces adaptive trimmed implicit provenance) '(core) 2 4)
+   (example-entry
+   'capped-cube-cutaway "Capped cube cutaway"
+    "examples/3d/capped-cube-cutaway.rkt" 'make-demo-scene
+    '(3d cutaway sections caps hatching volume clipping) '(core) 2 4)
+   (example-entry
+    'anchor-aware-labels "Anchor-aware projected labels"
+    "examples/3d/anchor-aware-labels.rkt" 'make-demo-scene
+    '(3d anchors projected-labels layout camera) '(core) 2 4)
+   (example-entry
     'opengl-opaque-cube "Retained Racket/OpenGL cube"
     "examples/3d/opengl-opaque-cube.rkt" 'make-demo-scene
     '(3d opengl retained framebuffer cache) '(core gui opengl) 5/2 5)

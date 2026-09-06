@@ -20,15 +20,24 @@
     (raise-argument-error 'gl-rgba-bottom-up->argb-top-down
                           "RGBA bytes matching the declared dimensions" rgba))
   (define argb (make-bytes (bytes-length rgba)))
-  (for* ([top-y (in-range height)] [x (in-range width)])
-    (define source (+ x (* (- height 1 top-y) width)))
-    (define destination (+ x (* top-y width)))
-    (define source-byte (* 4 source))
-    (define destination-byte (* 4 destination))
-    ;; Keep alpha straight: premultiplication belongs neither here nor in the
-    ;; protocol result.  The existing Pict adapter makes the same assumption.
-    (bytes-set! argb destination-byte (bytes-ref rgba (+ source-byte 3)))
-    (bytes-set! argb (+ destination-byte 1) (bytes-ref rgba source-byte))
-    (bytes-set! argb (+ destination-byte 2) (bytes-ref rgba (+ source-byte 1)))
-    (bytes-set! argb (+ destination-byte 3) (bytes-ref rgba (+ source-byte 2))))
+  (define row-bytes (* 4 width))
+  ;; First flip rows as blocks. Channel conversion and unpremultiplication then
+  ;; happen in one linear pass rather than repeatedly calculating pixel rows.
+  (for ([top-y (in-range height)])
+    (bytes-copy! argb (* top-y row-bytes) rgba (* (- height 1 top-y) row-bytes)
+                 (* (- height top-y) row-bytes)))
+  (for ([index (in-range 0 (bytes-length argb) 4)])
+    (define red (bytes-ref argb index))
+    (define green (bytes-ref argb (+ index 1)))
+    (define blue (bytes-ref argb (+ index 2)))
+    (define alpha (bytes-ref argb (+ index 3)))
+    ;; OpenGL's internal target is premultiplied RGBA; the public protocol is
+    ;; straight top-down ARGB. Zero-alpha pixels deliberately canonicalise RGB.
+    (define (straight channel)
+      (if (zero? alpha) 0
+          (min 255 (inexact->exact (round (* 255 (/ channel alpha)))))))
+    (bytes-set! argb index alpha)
+    (bytes-set! argb (+ index 1) (straight red))
+    (bytes-set! argb (+ index 2) (straight green))
+    (bytes-set! argb (+ index 3) (straight blue)))
   (bytes->immutable-bytes argb))

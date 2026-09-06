@@ -4,10 +4,13 @@
 ;;; Context-Generation-Aware GL Resource Wrappers
 ;;;
 
-(require racket/runtime-path)
+(require racket/runtime-path
+         "context-identity.rkt")
 
 (provide (struct-out gl-resource)
          (struct-out gl-resource-context)
+         (struct-out gl-context-identity)
+         make-gl-resource-context
          (struct-out gl-buffer)
          (struct-out gl-vertex-array)
          (struct-out gl-shader)
@@ -23,30 +26,40 @@
 ;; The resource state machine is deliberately independent of racket/gui/base.
 ;; This lightweight token is used by fake-GL unit tests; production calls pass
 ;; the real context host, which is resolved lazily below only after an explicit
-;; OpenGL renderer has been selected under GRacket.
-(struct gl-resource-context (generation)
+;; OpenGL renderer has been selected under GRacket.  `token` is compared by
+;; identity so generation zero from two distinct hosts can never validate.
+
+(struct gl-resource-context (current-identity)
   #:transparent
   #:guard
-  (lambda (generation who)
-    (unless (exact-nonnegative-integer? generation)
-      (raise-argument-error who "exact-nonnegative-integer?" generation))
-    generation))
+  (lambda (current-identity who)
+    (unless (gl-context-identity? current-identity)
+      (raise-argument-error who "gl-context-identity?" current-identity))
+    current-identity))
+
+; make-gl-resource-context : exact-nonnegative-integer? -> gl-resource-context?
+;; Creates a unique fake context used by headless lifecycle tests.
+(define (make-gl-resource-context generation)
+  (unless (exact-nonnegative-integer? generation)
+    (raise-argument-error 'make-gl-resource-context "exact-nonnegative-integer?" generation))
+  (gl-resource-context (gl-context-identity (gensym 'animate-fake-gl-context)
+                                             generation)))
 
 (define-runtime-path context-host-module "context-host.rkt")
 
 (define (context-host-procedure name)
   (dynamic-require context-host-module name))
 
-(define (context-generation who context)
+(define (context-identity who context)
   (cond [(gl-resource-context? context)
-         (gl-resource-context-generation context)]
+         (gl-resource-context-current-identity context)]
         [else
          (define host? (context-host-procedure 'gl-context-host?))
          (unless (host? context)
            (raise-argument-error who
                                  "gl-resource-context? or gl-context-host?"
                                  context))
-         ((context-host-procedure 'gl-context-host-generation) context)]))
+         ((context-host-procedure 'gl-context-host-identity) context)]))
 
 (define (context-call who context thunk)
   (cond [(gl-resource-context? context)
@@ -62,13 +75,13 @@
 
 ;; `delete` is a backend-private function of one GLuint.  It is not exposed by
 ;; an authoring value and is deliberately supplied by the central GL API layer.
-(struct gl-resource (generation id byte-size deleted? label delete)
+(struct gl-resource (context-identity id byte-size deleted? label delete)
   #:mutable
   #:transparent
   #:guard
-  (lambda (generation id byte-size deleted? label delete who)
-    (unless (exact-nonnegative-integer? generation)
-      (raise-argument-error who "exact-nonnegative-integer?" generation))
+  (lambda (context-identity id byte-size deleted? label delete who)
+    (unless (gl-context-identity? context-identity)
+      (raise-argument-error who "gl-context-identity?" context-identity))
     (unless (exact-nonnegative-integer? id)
       (raise-argument-error who "exact-nonnegative-integer?" id))
     (unless (exact-nonnegative-integer? byte-size)
@@ -79,7 +92,7 @@
       (raise-argument-error who "string?" label))
     (unless (procedure? delete)
       (raise-argument-error who "procedure?" delete))
-    (values generation id byte-size deleted? (string->immutable-string label) delete)))
+    (values context-identity id byte-size deleted? (string->immutable-string label) delete)))
 
 (struct gl-buffer gl-resource () #:transparent)
 (struct gl-vertex-array gl-resource () #:transparent)
@@ -88,6 +101,13 @@
 (struct gl-texture gl-resource () #:transparent)
 (struct gl-renderbuffer gl-resource () #:transparent)
 (struct gl-framebuffer gl-resource () #:transparent)
+
+; gl-resource-generation : gl-resource? -> exact-nonnegative-integer?
+;; Kept as a compact diagnostic accessor; ownership checks use the full token.
+(define (gl-resource-generation resource)
+  (unless (gl-resource? resource)
+    (raise-argument-error 'gl-resource-generation "gl-resource?" resource))
+  (gl-context-identity-generation (gl-resource-context-identity resource)))
 
 (define (gl-resource-live? resource)
   (unless (gl-resource? resource)
@@ -101,12 +121,15 @@
   (when (gl-resource-deleted? resource)
     (raise-arguments-error 'gl-resource-check-current! "a live OpenGL resource"
                            "resource" resource))
-  (define generation (context-generation 'gl-resource-check-current! context))
-  (unless (= (gl-resource-generation resource) generation)
+  (define identity (context-identity 'gl-resource-check-current! context))
+  (unless (and (eq? (gl-context-identity-token (gl-resource-context-identity resource))
+                   (gl-context-identity-token identity))
+               (= (gl-context-identity-generation (gl-resource-context-identity resource))
+                  (gl-context-identity-generation identity)))
     (raise-arguments-error 'gl-resource-check-current!
-                           "a resource from the current OpenGL context generation"
+                           "a resource from the current OpenGL context identity"
                            "resource-generation" (gl-resource-generation resource)
-                           "context-generation" generation
+                           "context-generation" (gl-context-identity-generation identity)
                            "resource-label" (gl-resource-label resource)))
   (void))
 

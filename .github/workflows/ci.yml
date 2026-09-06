@@ -17,7 +17,11 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: ${{ matrix.racket }}
-      - run: raco pkg install --auto --name animate .
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
       - run: raco make animate animate/authoring animate/preview animate/project animate/render
       - run: raco test tests/version-coherence-test.rkt tests/documentation-structure-test.rkt tests/public-module-boundaries-test.rkt tests/example-public-imports-test.rkt tests/example-catalog-test.rkt tests/documented-bindings-exist-test.rkt
 
@@ -29,7 +33,11 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
-      - run: raco pkg install --auto --name animate .
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
       - run: raco test tests
       - run: raco test tests/scene-bq-br-test.rkt
 
@@ -41,7 +49,11 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
-      - run: raco pkg install --auto --name animate .
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
       - run: raco setup --pkgs animate
       - run: raco test tests/all-examples-compile-test.rkt
 
@@ -54,7 +66,16 @@ jobs:
         with:
           version: "9.3"
       - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-base
-      - run: raco pkg install --auto --name animate .
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
+      - run: |
+          raco pkg create --source --dest /tmp/animate-package "$GITHUB_WORKSPACE"
+          raco pkg remove --auto animate
+          raco pkg install --auto /tmp/animate-package/animate.zip
+          raco setup --pkgs animate
       - run: raco animate check-repo
 
   latex-and-media:
@@ -66,7 +87,11 @@ jobs:
         with:
           version: "9.3"
       - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-base
-      - run: raco pkg install --auto --name animate .
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
       - run: raco test tests/scene-ej-token-formula-test.rkt tests/scene-ek-match-plan-test.rkt tests/scene-dg-test.rkt tests/scene-dh-test.rkt
 
   gui-smoke:
@@ -78,7 +103,11 @@ jobs:
         with:
           version: "9.3"
       - run: sudo apt-get update && sudo apt-get install -y xvfb
-      - run: raco pkg install --auto --name animate .
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
       - run: xvfb-run -a gracket -l raco/main -- test tests/scene-ep-gui-smoke-test.rkt
 
   opengl-integration-ubuntu:
@@ -90,8 +119,12 @@ jobs:
         with:
           version: "9.3"
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri mesa-utils
-      - run: raco pkg install --auto --name animate .
-      - run: xvfb-run -a env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
+      - run: xvfb-run -a env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt tests/scene-3d-p-opengl-project-integration-test.rkt
 
   opengl-integration-macos:
     name: OpenGL integration / macOS
@@ -101,5 +134,9 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
-      - run: raco pkg install --auto --name animate .
-      - run: env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt
+      - run: |
+          pwd
+          printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
+          raco pkg show animate
+      - run: env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt tests/scene-3d-p-opengl-project-integration-test.rkt

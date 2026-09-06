@@ -75,6 +75,7 @@
                          mesh3d-reverse-winding mesh3d-flat-normals
                          mesh3d-smooth-normals mesh3d-boundary-edges
                          mesh3d-wireframe mesh3d-merge
+                         riemann-volume3d washer-sum3d shell-sum3d
                          clip-plane3d clip3d slice-mesh3d section-by-plane3d
                          section-curve3d view3d-transparency-mode
                          perspective-camera3d orthographic-camera3d
@@ -107,9 +108,9 @@
                          prepare-ode-trajectory3d ode-trajectory3d-position
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
-                         spatial-inspection? spatial-pick?
+                         spatial-inspection? spatial-pick? surface-pick3d?
                          view3d-spatial-inspections view3d-spatial-inspection-tree
-                         view3d-spatial-inspection-at view3d-pick view3d-pixel-pick
+                         view3d-spatial-inspection-at view3d-pick view3d-surface-pick view3d-pixel-pick
                          mesh3d-bvh mesh3d-bvh? bvh3d-node? bvh3d-leaf?
                          bvh3d-bounds bvh3d-triangle-indices bvh3d-ray-candidates
                          analyze-mesh3d mesh3d-validate mesh3d-orient-consistently

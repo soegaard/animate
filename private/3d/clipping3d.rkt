@@ -20,6 +20,8 @@
          "mesh3d.rkt"
          "ray-plane.rkt"
          "spatial-group.rkt"
+         "plane-basis3d.rkt"
+         "section-settings3d.rkt"
          "tube-style3d.rkt"
          "spatial-visual.rkt"
          "transform3.rkt"
@@ -36,6 +38,11 @@
          clip3d-plane
          slice-mesh3d
          section3d?
+         section3d-plane
+         section3d-basis
+         section3d-components
+         section3d-diagnostics
+         (struct-out section-component3d)
          section3d-loops
          section3d-chains
          section-by-plane3d
@@ -132,12 +139,26 @@
 ;;; Actual Geometry Slicing
 ;;;
 
-;; `section3d` deliberately exposes topology rather than pretending a section
-;; is always one closed curve.  Loops and chains are ordered deterministically
-;; in the plane's coordinate system.
-(struct section3d (loops chains) #:transparent)
+;; A section retains its plane and a deterministic local basis.  Convenience
+;; queries below preserve the former loop/chain surface while components carry
+;; the richer topology necessary for caps and measurements.
+(struct section-component3d (points closed? orientation signed-area source-segments)
+  #:transparent)
+(struct section3d (plane basis components diagnostics) #:transparent)
 
-(define epsilon 1e-8)
+(define current-section-distance-tolerance
+  (make-parameter (section3d-settings-distance-tolerance default-section3d-settings)))
+
+(define (section3d-loops section)
+  (unless (section3d? section) (raise-argument-error 'section3d-loops "section3d?" section))
+  (for/list ([component (in-list (section3d-components section))]
+             #:when (section-component3d-closed? component))
+    (section-component3d-points component)))
+(define (section3d-chains section)
+  (unless (section3d? section) (raise-argument-error 'section3d-chains "section3d?" section))
+  (for/list ([component (in-list (section3d-components section))]
+             #:unless (section-component3d-closed? component))
+    (section-component3d-points component)))
 
 ; plane-signed-distance : plane3? vec3? -> finite-real?
 ;; Positive values lie on the normal-facing side of the plane.
@@ -153,63 +174,195 @@
     (raise-argument-error 'clip-triangle-by-plane3d "list of three vec3?" triangle))
   (unless (clip-plane3d? clip)
     (raise-argument-error 'clip-triangle-by-plane3d "clip-plane3d?" clip))
-  (clip-polygon-by-plane triangle clip))
+  (parameterize ([current-section-distance-tolerance
+                  (section3d-settings-distance-tolerance default-section3d-settings)])
+    (clip-polygon-by-plane triangle clip)))
 
 ; slice-mesh3d : mesh3d? (or/c plane3? clip-plane3d?) ... -> mesh3d?
 ;; Produces the requested local half of a mesh.  It does not manufacture a cap;
 ;; call `section-by-plane3d` for the truthful intersection geometry.
 (define (slice-mesh3d mesh clip
                       #:id [id (spatial-id mesh)]
-                      #:keep [keep #f])
+                      #:keep [keep #f]
+                      #:settings [settings (section3d-settings-for-bounds (mesh3d-local-bounds mesh))])
   (unless (mesh3d? mesh) (raise-argument-error 'slice-mesh3d "mesh3d?" mesh))
   (unless (symbol? id) (raise-argument-error 'slice-mesh3d "symbol? as #:id" id))
+  (unless (section3d-settings? settings)
+    (raise-argument-error 'slice-mesh3d "section3d-settings?" settings))
   (define actual-clip
     (if keep
         (begin (check-keep 'slice-mesh3d keep)
                (clip-plane3d (->plane 'slice-mesh3d clip) #:keep keep))
         (->clip-plane 'slice-mesh3d clip)))
-  (define output-vertices '())
-  (define output-triangles '())
-  (for ([triangle (in-vector (mesh3d-triangles mesh))])
-    (define polygon
-      (clip-polygon-by-plane
-       (for/list ([index (in-vector triangle)])
-         (vector-ref (mesh3d-vertices mesh) index))
-       actual-clip))
-    (when (>= (length polygon) 3)
-      (define start (length output-vertices))
-      (set! output-vertices (append output-vertices polygon))
-      (for ([index (in-range 1 (sub1 (length polygon)))])
-        (set! output-triangles
-              (append output-triangles
-                      (list (vector start (+ start index) (+ start index 1))))))))
-  (define result
-    (mesh3d #:id id
-            #:vertices (list->vector output-vertices)
-            #:triangles (list->vector output-triangles)
-            #:material (mesh3d-material mesh)
-            #:transform (spatial-transform mesh)
-            #:opacity (spatial-opacity mesh)
-            #:wireframe-color (mesh3d-wireframe-color mesh)
-            #:wireframe-width (mesh3d-wireframe-width mesh)))
-  (with-flat-normals result))
+  ;; The original implementation appended a new copy of every polygon corner
+  ;; for every source triangle.  Besides being quadratic, that destroyed mesh
+  ;; adjacency at a cut.  A canonical source-vertex/source-edge registry keeps
+  ;; ordinary retained vertices and plane intersections shared.
+  (define vertex-indices (make-hash))
+  (define output-vertices-reversed '())
+  (define output-normals-reversed '())
+  (define output-triangles-reversed '())
+  (define next-index 0)
+  (define source-has-normals? (and (mesh3d-normals mesh) #t))
+  (define (register! point)
+    (define key (slice-point3d-key point))
+    (cond [(hash-ref vertex-indices key #f) => values]
+          [else
+           (define index next-index)
+           (set! next-index (add1 next-index))
+           (hash-set! vertex-indices key index)
+           (set! output-vertices-reversed
+                 (cons (slice-point3d-position point) output-vertices-reversed))
+           (when source-has-normals?
+             (set! output-normals-reversed
+                   (cons (slice-point3d-normal point) output-normals-reversed)))
+           index]))
+  (parameterize ([current-section-distance-tolerance
+                  (section3d-settings-distance-tolerance settings)])
+    (for ([triangle (in-vector (mesh3d-triangles mesh))])
+      (define polygon
+        (clip-indexed-triangle-by-plane mesh triangle actual-clip))
+      (when (>= (length polygon) 3)
+        (define indices (map register! polygon))
+        (for ([index (in-range 1 (sub1 (length polygon)))])
+          (define triangle-indices
+            (vector (first indices) (list-ref indices index) (list-ref indices (add1 index))))
+          (when (= (length (remove-duplicates (vector->list triangle-indices))) 3)
+            (set! output-triangles-reversed
+                  (cons triangle-indices output-triangles-reversed)))))))
+  (mesh3d #:id id
+          #:vertices (list->vector (reverse output-vertices-reversed))
+          #:triangles (list->vector (reverse output-triangles-reversed))
+          #:normals (and source-has-normals?
+                         (list->vector (reverse output-normals-reversed)))
+          #:material (mesh3d-material mesh)
+          #:transform (spatial-transform mesh)
+          #:opacity (spatial-opacity mesh)
+          #:wireframe-color (mesh3d-wireframe-color mesh)
+          #:wireframe-width (mesh3d-wireframe-width mesh)))
+
+;; One output point remembers whether it is an original vertex or the unique
+;; intersection of one original mesh edge with this one clipping plane.  The
+;; key does not depend on floating-point coordinates, so neighbouring source
+;; triangles agree even if they enumerate their shared edge in opposite order.
+(struct slice-key3d (kind low high) #:transparent)
+(struct slice-point3d (position normal key) #:transparent)
+
+(define (clip-indexed-triangle-by-plane mesh triangle clip)
+  (define source-normals (mesh3d-normals mesh))
+  (define polygon
+    (for/list ([index (in-vector triangle)])
+      (slice-point3d
+       (vector-ref (mesh3d-vertices mesh) index)
+       (and source-normals (vector-ref source-normals index))
+       (slice-key3d 'vertex index index))))
+  (define plane (clip-plane3d-plane clip))
+  (define sign (if (eq? (clip-plane3d-keep clip) 'positive) 1 -1))
+  (cond [(null? polygon) '()]
+        [else
+         (define reversed '())
+         (define previous (last polygon))
+         (define previous-distance
+           (* sign (plane-signed-distance plane (slice-point3d-position previous))))
+         (for ([current (in-list polygon)])
+           (define current-distance
+             (* sign (plane-signed-distance plane (slice-point3d-position current))))
+           (define previous-inside?
+             (>= previous-distance (- (current-section-distance-tolerance))))
+           (define current-inside?
+             (>= current-distance (- (current-section-distance-tolerance))))
+           (cond [(and previous-inside? current-inside?)
+                  (set! reversed (cons current reversed))]
+                 [(and previous-inside? (not current-inside?))
+                  (set! reversed
+                        (cons (slice-edge-intersection previous current
+                                                       previous-distance current-distance)
+                              reversed))]
+                 [(and (not previous-inside?) current-inside?)
+                  (set! reversed
+                        (cons current
+                              (cons (slice-edge-intersection previous current
+                                                             previous-distance current-distance)
+                                    reversed)))])
+           (set! previous current)
+           (set! previous-distance current-distance))
+         (reverse (deduplicate-slice-points (reverse reversed)))]))
+
+(define (slice-edge-intersection first second first-distance second-distance)
+  (define denominator (- first-distance second-distance))
+  (define amount (if (zero? denominator) 0 (/ first-distance denominator)))
+  (cond [(<= (abs first-distance) (current-section-distance-tolerance)) first]
+        [(<= (abs second-distance) (current-section-distance-tolerance)) second]
+        [else
+  (define first-key (slice-point3d-key first))
+  (define second-key (slice-point3d-key second))
+  ;; An intersection is always calculated from original triangle vertices.
+  ;; Keeping this assertion explicit makes future repeated multi-plane slicing
+  ;; add a distinct key policy instead of accidentally aliasing edge points.
+  (unless (and (eq? (slice-key3d-kind first-key) 'vertex)
+               (eq? (slice-key3d-kind second-key) 'vertex))
+    (error 'slice-mesh3d "expected a source-edge intersection"))
+  (define low (min (slice-key3d-low first-key) (slice-key3d-low second-key)))
+  (define high (max (slice-key3d-low first-key) (slice-key3d-low second-key)))
+  (slice-point3d
+   (vec3-lerp (slice-point3d-position first) (slice-point3d-position second) amount)
+   (interpolate-normal (slice-point3d-normal first) (slice-point3d-normal second) amount)
+   (slice-key3d 'edge low high))]))
+
+(define (interpolate-normal first second amount)
+  (cond [(and first second)
+         (define raw (vec3-lerp first second amount))
+         (if (positive? (vec3-length raw)) (vec3-normalize raw) first)]
+        [first first]
+        [else second]))
+
+(define (deduplicate-slice-points points)
+  (cond [(null? points) '()]
+        [else
+         (define reversed (list (car points)))
+         (for ([point (in-list (cdr points))])
+           (unless (equal? (slice-point3d-key point)
+                            (slice-point3d-key (car reversed)))
+             (set! reversed (cons point reversed))))
+         (define result (reverse reversed))
+         (if (and (> (length result) 1)
+                  (equal? (slice-point3d-key (car result))
+                          (slice-point3d-key (last result))))
+             (drop-right result 1)
+             result)]))
 
 ; section-by-plane3d : mesh3d? (or/c plane3? clip-plane3d?) -> section3d?
 ;; Returns deterministically joined plane/mesh section loops and open chains.
-(define (section-by-plane3d mesh clip)
+(define (section-by-plane3d mesh clip
+                            #:settings [settings (section3d-settings-for-bounds (mesh3d-local-bounds mesh))])
   (unless (mesh3d? mesh)
     (raise-argument-error 'section-by-plane3d "mesh3d?" mesh))
+  (unless (section3d-settings? settings)
+    (raise-argument-error 'section-by-plane3d "section3d-settings?" settings))
   (define plane (->plane 'section-by-plane3d clip))
-  (define segments
-    (for/fold ([segments '()]) ([triangle (in-vector (mesh3d-triangles mesh))])
-      (define points
-        (for/list ([index (in-vector triangle)])
-          (vector-ref (mesh3d-vertices mesh) index)))
-      (define intersection (triangle-section-segment points plane))
-      (if intersection (cons intersection segments) segments)))
-  (define-values (loops chains) (join-section-segments (reverse segments) plane))
-  ;; Racket pairs are immutable, and these lists are freshly allocated above.
-  (section3d loops chains))
+  (parameterize ([current-section-distance-tolerance
+                  (section3d-settings-distance-tolerance settings)])
+    (define segments
+      (for/fold ([segments '()]) ([triangle (in-vector (mesh3d-triangles mesh))])
+        (define points
+          (for/list ([index (in-vector triangle)])
+            (vector-ref (mesh3d-vertices mesh) index)))
+        (define intersection (triangle-section-segment points plane))
+        (if intersection (cons intersection segments) segments)))
+    (define-values (loops chains) (join-section-segments (reverse segments) plane))
+    (define basis (plane3d-basis plane))
+    (define components
+      (append
+       (for/list ([loop (in-list loops)])
+         (define area (plane-basis3d-signed-area basis loop))
+         (section-component3d loop #t (if (negative? area) 'clockwise 'counterclockwise)
+                              area '()))
+       (for/list ([chain (in-list chains)])
+         (section-component3d chain #f 'open 0 '()))))
+    (section3d plane basis components
+               (hasheq 'settings settings
+                       'loop-count (length loops)
+                       'chain-count (length chains)))))
 
 ; section-curve3d : mesh3d? (or/c plane3? clip-plane3d?) ... -> group3d?
 ;; Converts all sections to independently addressable physical tube curves. A group is
@@ -265,8 +418,8 @@
          (define previous-distance (* sign (plane-signed-distance plane previous)))
          (for ([current (in-list polygon)])
            (define current-distance (* sign (plane-signed-distance plane current)))
-           (define previous-inside? (>= previous-distance (- epsilon)))
-           (define current-inside? (>= current-distance (- epsilon)))
+         (define previous-inside? (>= previous-distance (- (current-section-distance-tolerance))))
+         (define current-inside? (>= current-distance (- (current-section-distance-tolerance))))
            (cond
              [(and previous-inside? current-inside?)
               (set! reversed (cons current reversed))]
@@ -296,7 +449,7 @@
     (define first-distance (plane-signed-distance plane first-point))
     (define second-distance (plane-signed-distance plane second-point))
     (cond
-      [(<= (abs first-distance) epsilon)
+      [(<= (abs first-distance) (current-section-distance-tolerance))
        (set! intersections (cons first-point intersections))]
       [(< (* first-distance second-distance) 0)
        (set! intersections
@@ -326,12 +479,13 @@
         (append result (list point)))))
 
 (define (point≈? first-point second-point)
-  (<= (vec3-distance first-point second-point) epsilon))
+  (<= (vec3-distance first-point second-point) (current-section-distance-tolerance)))
 
 (define (point-key point)
-  (list (inexact->exact (round (/ (vec3-x point) epsilon)))
-        (inexact->exact (round (/ (vec3-y point) epsilon)))
-        (inexact->exact (round (/ (vec3-z point) epsilon)))))
+  (define tolerance (current-section-distance-tolerance))
+  (list (inexact->exact (round (/ (vec3-x point) tolerance)))
+        (inexact->exact (round (/ (vec3-y point) tolerance)))
+        (inexact->exact (round (/ (vec3-z point) tolerance)))))
 
 (define (key<? first-key second-key)
   (cond [(< (first first-key) (first second-key)) #t]

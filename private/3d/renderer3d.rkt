@@ -13,6 +13,8 @@
          racket/generic
          "../preview-cancellation.rkt"
          "compiled-view3d.rkt"
+         "compiled-view-cache3d.rkt"
+         "frame-artifact3d.rkt"
          "geometry-fingerprint3d.rkt"
          "raster-target3d.rkt"
          "renderer3d-statistics.rkt"
@@ -28,10 +30,23 @@
          renderer3d-prepare
          renderer3d-render
          renderer3d-release
+         (struct-out compiled-view3d-cache-statistics-value)
+         compiled-view3d-cache?
+         make-compiled-view3d-cache
+         compile-view3d/cached
+         compiled-view3d-cache-clear!
+         compiled-view3d-cache-statistics
+         current-compiled-view3d-cache
+         (struct-out renderer3d-frame-artifact)
+         renderer3d-frame-depth-at
+         renderer3d-frame-object-at
+         renderer3d-frame-project
          (struct-out renderer3d-capability-set)
          (struct-out render3d-request)
          view3d->render3d-request
          (struct-out renderer3d-render-result)
+         renderer3d-render-result-with-artifact
+         renderer3d-render-result-artifact
          renderer3d-render-result->bitmap
          (struct-out renderer3d-statistics)
          renderer3d-statistics-reset!
@@ -82,11 +97,18 @@
 
 ; view3d->render3d-request : view3d? exact-positive-integer? exact-positive-integer?
 ;                            [#:cancellation-token (or/c #f cancellation-token?)]
+;                            [#:attachments (listof (or/c 'color 'depth 'object-id))]
 ;                            -> render3d-request?
-(define (view3d->render3d-request view width height #:cancellation-token [cancellation-token #f])
+(define (view3d->render3d-request view width height #:cancellation-token [cancellation-token #f]
+                                  #:attachments [attachments '(color)])
   (unless (view3d? view)
     (raise-argument-error 'view3d->render3d-request "view3d?" view))
-  (render3d-request (compile-view3d view)
+  ;; Current backends produce depth as a shared artifact attachment. Keep the
+  ;; request's established three-field shape while attachment negotiation is
+  ;; expanded in a later backend protocol revision.
+  (unless (and (list? attachments) (memq 'color attachments))
+    (raise-argument-error 'view3d->render3d-request "attachment list including 'color" attachments))
+  (render3d-request (compile-view3d/cached view)
                     (view3d->frame3d-spec view width height)
                     cancellation-token))
 
@@ -101,6 +123,27 @@
     (unless (and (bytes? argb-bytes) (= (bytes-length argb-bytes) (* 4 width height)))
       (raise-argument-error who "ARGB bytes for the declared dimensions" argb-bytes))
     (values width height (bytes->immutable-bytes argb-bytes) diagnostics)))
+
+;; Frame artifacts are intentionally adapter-owned side data. This weak map
+;; preserves the public renderer-result representation while allowing one
+;; rendered frame to carry richer depth/object attachments when available.
+(define renderer-result-artifacts (make-weak-hasheq))
+
+(define (renderer3d-render-result-with-artifact result artifact)
+  (unless (renderer3d-render-result? result)
+    (raise-argument-error 'renderer3d-render-result-with-artifact
+                          "renderer3d-render-result?" result))
+  (unless (renderer3d-frame-artifact? artifact)
+    (raise-argument-error 'renderer3d-render-result-with-artifact
+                          "renderer3d-frame-artifact?" artifact))
+  (hash-set! renderer-result-artifacts result artifact)
+  result)
+
+(define (renderer3d-render-result-artifact result)
+  (unless (renderer3d-render-result? result)
+    (raise-argument-error 'renderer3d-render-result-artifact
+                          "renderer3d-render-result?" result))
+  (hash-ref renderer-result-artifacts result #f))
 
 (define-generics renderer3d
   (renderer3d-id renderer3d)
@@ -156,11 +199,23 @@
       statistics 'raster-milliseconds (- raster-finished raster-start))
      (renderer3d-statistics-state-add!
       statistics 'readback-milliseconds (- readback-finished readback-start))))
-  (renderer3d-render-result
-   (raster-target3d-width target)
-   (raster-target3d-height target)
-   bytes
-   diagnostics))
+  (define artifact
+    (renderer3d-frame-artifact
+     (raster-target3d-width target)
+     (raster-target3d-height target)
+     bytes
+     (vector->immutable-vector
+      (for/vector ([depth (in-vector (raster-target3d-depth-values target))]) depth))
+     #f
+     (frame3d-spec-camera (render3d-request-frame-spec request))
+     diagnostics))
+  (renderer3d-render-result-with-artifact
+   (renderer3d-render-result
+    (raster-target3d-width target)
+    (raster-target3d-height target)
+    bytes
+    diagnostics)
+   artifact))
 
 (define (record-preparation! statistics statistics-lock request preparation elapsed)
   (define diagnostics (software-render-preparation-diagnostics preparation))

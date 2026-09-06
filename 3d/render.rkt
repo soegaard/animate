@@ -10,6 +10,7 @@
 
 (require "../private/3d/compiled-view3d.rkt"
          "../private/3d/geometry-fingerprint3d.rkt"
+         "../private/3d/frame-artifact-cache3d.rkt"
          "../private/3d/renderer3d.rkt")
 
 (provide gen:renderer3d
@@ -30,12 +31,31 @@
          (struct-out compiled-view3d)
          (struct-out frame3d-spec)
          compile-view3d
+         (struct-out compiled-view3d-cache-statistics-value)
+         compiled-view3d-cache?
+         make-compiled-view3d-cache
+         compile-view3d/cached
+         compiled-view3d-cache-clear!
+         compiled-view3d-cache-statistics
+         current-compiled-view3d-cache
+         (struct-out renderer3d-frame-artifact)
+         renderer3d-frame-depth-at
+         renderer3d-frame-object-at
+         renderer3d-frame-project
+         frame-artifact-cache?
+         make-frame-artifact-cache
+         current-frame-artifact-cache
+         frame-artifact-cache-clear!
+         frame-artifact-cache-render-count
+         render-view3d-frame-artifact
          compiled-view3d-primitives
          view3d->frame3d-spec
          (struct-out renderer3d-capability-set)
          (struct-out render3d-request)
          view3d->render3d-request
          (struct-out renderer3d-render-result)
+         renderer3d-render-result-with-artifact
+         renderer3d-render-result-artifact
          renderer3d-render-result->bitmap
          (struct-out renderer3d-statistics)
          renderer3d-statistics-reset!

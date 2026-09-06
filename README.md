@@ -131,6 +131,9 @@ exactly synchronized with the gallery and example requirements.
 - [Screen-space arrowhead during dolly](examples/3d/arrow-dolly.rkt) — 3d, strokes, arrowheads, screen-space, camera; requires core.
 - [Near-plane stroke clipping](examples/3d/near-plane-stroke.rkt) — 3d, strokes, clipping, near-plane; requires core.
 - [Stroke, point, and arrow picking](examples/3d/stroke-picking.rkt) — 3d, strokes, markers, picking, preview; requires core, gui.
+- [Adaptive, trimmed, and implicit surfaces](examples/3d/adaptive-trimmed-implicit-surfaces.rkt) — 3d, surfaces, adaptive, trimmed, implicit, provenance; requires core.
+- [Capped cube cutaway](examples/3d/capped-cube-cutaway.rkt) — 3d, cutaway, sections, caps, hatching, volume, clipping; requires core.
+- [Anchor-aware projected labels](examples/3d/anchor-aware-labels.rkt) — 3d, anchors, projected-labels, layout, camera; requires core.
 - [Retained Racket/OpenGL cube](examples/3d/opengl-opaque-cube.rkt) — 3d, opengl, retained, framebuffer, cache; requires core, gui, opengl.
 - [OpenGL two spatial viewports](examples/3d/opengl-two-viewports.rkt) — 3d, opengl, viewports, perspective, orthographic; requires core, gui, opengl.
 <!-- END GENERATED: canonical examples -->

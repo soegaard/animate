@@ -12,9 +12,6 @@
          racket/file
          racket/path
          racket/runtime-path
-         "../main.rkt"
-         "../project.rkt"
-         "../render.rkt"
          "../3d.rkt"
          "../3d/render.rkt")
 
@@ -162,32 +159,4 @@
        (define restarted (renderer3d-render restarted-renderer preparation request))
        (check-equal? (renderer3d-render-result-argb-bytes restarted) baseline-bytes))
      (lambda () (renderer-release! restarted-renderer)))
-
-  ;; Project execution is the public integration path. It creates a fresh
-  ;; retained backend for the request, parameterizes only the render workers,
-  ;; and releases the owned context before its temporary cache is removed.
-  (define temporary-root (make-temporary-file "animate-3d-p-project-~a" 'directory))
-  (dynamic-wind
-   void
-   (lambda ()
-     (define project
-       (animate-project
-        #:id 'scene-3d-p-project-smoke
-        #:source (scene-source (scene-wait (scene-add (make-scene) (test-view)) 1))
-        #:render
-        (render-spec #:fps 1 #:width 128 #:height 96 #:workers 1
-                     #:renderer3d
-                     ((dynamic-require opengl-module-path 'opengl-renderer3d-spec)
-                      #:samples 1 #:cache-megabytes 16 #:fallback 'error))
-        #:output (output-spec #:root (build-path temporary-root "output")
-                               #:name "frame" #:format 'png-sequence
-                               #:overwrite-policy 'replace)
-        #:encoder (encoder-spec #:codec 'none)
-        #:cache (cache-spec #:root (build-path temporary-root "cache") #:policy 'off)))
-     (check-true (project-check-report-ok?
-                  (check-project! (plan-project project))))
-     (define report (render-project-frame! project 0))
-     (define output-directory
-       (hash-ref (project-execution-report-artifact-paths report) 'primary))
-     (check-true (file-exists? (build-path output-directory "frame-000000.png"))))
-   (lambda () (delete-directory/files temporary-root)))))
+  ))

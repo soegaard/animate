@@ -1,5 +1,42 @@
 # Changes
 
+## Unreleased — 3D Q/R/S foundations
+
+- Added a common immutable surface-lowering record and deterministic producers
+  for adaptive parametric, signed-trimmed parametric, and fixed-resolution
+  implicit surfaces. Their mesh/provenance and diagnostics remain pure; the
+  renderer receives ordinary indexed meshes.
+- Added scale-aware section settings, deterministic plane-local coordinates,
+  rich section components, two-sided mesh cuts, separate simple-concave cap meshes,
+  ordered multi-plane clipping helpers, and pure section measurements. The
+  existing one-plane clip and section APIs continue to expose convenient loops
+  and chains.
+- Added immutable spatial anchors for points, paths, bounds, mesh vertices,
+  edges/faces, curves, and retained parametric surface coordinates. Added pure
+  direct-mode label placement records/layout values, immutable prepared
+  minimum-cost label trajectories, and the anchor-aware `label3d` spelling for
+  projected labels. Equal-priority labels retain declaration order and
+  equal-cost candidates retain declared preference order.
+- Added independently addressable section fills, deterministic even/odd hatch
+  strokes, indexed mesh slicing with shared cut vertices and interpolated
+  normals, immutable slice-stack/cross-section/volume-estimate helpers, and
+  stable midpoint Riemann-volume columns, washer slabs, and cylindrical shells.
+- Added CPU surface-pick refinement with retained parametric or implicit source
+  provenance. Regular parametric surface anchors now retain their resolved
+  world normal and u-tangent.
+- Hardened the P backend locally: absolute-source CI package installation,
+  unique GL context identities, owned context custodians, premultiplied GL
+  compositing/readback conversion, byte-bounded FBOs, and shared software
+  frame artifacts for projected-label depth queries.
+
+Known boundaries: adaptive implicit extraction, analytic implicit picking,
+trim Boolean regions, holed cap triangulation, general polygon section fills,
+final-compositor integration for
+prepared label trajectories, annotation primitives, and billboard texture
+rendering are not complete in this change. The OpenGL paths are compiled but
+not executed here because they require a GUI-capable OpenGL context; no GUI or
+permission-requiring command was used.
+
 ## 1.22.0 — SCENE-3D-P
 
 - Added the explicit `animate/3d/opengl` backend. `animate`, `animate/3d`,

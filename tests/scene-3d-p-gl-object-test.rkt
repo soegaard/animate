@@ -9,10 +9,10 @@
   ;; No GUI or OpenGL binding is involved here.  The wrapper receives a fake
   ;; deletion procedure, which makes its lifecycle state machine portable.
   (define host
-    (gl-resource-context 7))
+    (make-gl-resource-context 7))
   (define deleted '())
   (define buffer
-    (gl-buffer 7 41 128 #f "fake-vbo"
+    (gl-buffer (gl-resource-context-current-identity host) 41 128 #f "fake-vbo"
                (lambda (id) (set! deleted (cons id deleted)))))
 
   (check-true (gl-resource-live? buffer))
@@ -25,8 +25,14 @@
   (check-equal? deleted '(41))
 
   (define stale
-    (gl-buffer 7 42 0 #f "stale-vbo" void))
-  (define restarted-host (gl-resource-context 8))
+    (gl-buffer (gl-resource-context-current-identity host) 42 0 #f "stale-vbo" void))
+  (define restarted-host (make-gl-resource-context 8))
   ;; A context restart invalidates every old GLuint before it can be used.
   (check-exn exn:fail:contract?
-             (lambda () (gl-resource-check-current! stale restarted-host))))
+             (lambda () (gl-resource-check-current! stale restarted-host)))
+
+  ;; Same generation is not enough: independent hosts never share native GL
+  ;; ownership merely because both begin at zero.
+  (define other-host (make-gl-resource-context 7))
+  (check-exn exn:fail:contract?
+             (lambda () (gl-resource-check-current! stale other-host))))

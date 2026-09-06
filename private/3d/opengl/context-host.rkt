@@ -13,21 +13,26 @@
          racket/class
          racket/match
          racket/gui/base
-         "context-config.rkt")
+         "context-config.rkt"
+         "context-identity.rkt")
 
 (provide (struct-out gl-context-host)
+         (struct-out gl-context-identity)
          make-gl-context-host
          gl-context-host-call
          gl-context-host-close!
          gl-context-host-open?
          gl-context-host-generation
+         gl-context-host-identity
          gl-context-host-context-ok?)
 
 (struct host-success (values) #:transparent)
 (struct host-failure (exception) #:transparent)
 
+;; A token is intentionally compared with `eq?`; two context hosts can both
+;; begin at generation zero, but their native handles are never interchangeable.
 (struct gl-context-host
-  (eventspace frame canvas context lock generation closed?)
+  (custodian eventspace frame canvas context identity lock closed?)
   #:mutable
   #:transparent)
 
@@ -51,7 +56,10 @@
 ;; The tiny frame is intentionally not a presentation surface.  It exists only
 ;; because Racket's portable OpenGL support creates contexts from canvases.
 (define (make-gl-context-host)
-  (define eventspace (make-eventspace))
+  (define custodian (make-custodian))
+  (define eventspace
+    (parameterize ([current-custodian custodian])
+      (make-eventspace)))
   (define-values (frame canvas context)
     (call-in-eventspace
      eventspace
@@ -78,7 +86,16 @@
          (error 'make-gl-context-host
                 "Racket could not create an OpenGL context from the hidden canvas"))
        (values frame canvas context))))
-  (gl-context-host eventspace frame canvas context (make-semaphore 1) 0 #f))
+  (gl-context-host custodian eventspace frame canvas context
+                   (gl-context-identity (gensym 'animate-gl-context) 0)
+                   (make-semaphore 1) #f))
+
+; gl-context-host-generation : gl-context-host? -> exact-nonnegative-integer?
+;; Gives the restart generation within this unique host identity.
+(define (gl-context-host-generation host)
+  (unless (gl-context-host? host)
+    (raise-argument-error 'gl-context-host-generation "gl-context-host?" host))
+  (gl-context-identity-generation (gl-context-host-identity host)))
 
 (define (gl-context-host-open? host)
   (unless (gl-context-host? host)
@@ -115,10 +132,12 @@
 
 ; gl-context-host-close! : gl-context-host? -> void?
 ;; Resource owners must delete their GL resources through gl-context-host-call
-;; before closing.  Closing hides the frame and invalidates every generation.
+;; before closing.  Closing hides the frame, invalidates the identity, and
+;; releases the host-owned eventspace via its dedicated custodian.
 (define (gl-context-host-close! host)
   (unless (gl-context-host? host)
     (raise-argument-error 'gl-context-host-close! "gl-context-host?" host))
+  (define shutdown? #f)
   (call-with-semaphore
    (gl-context-host-lock host)
    (lambda ()
@@ -127,6 +146,15 @@
         (gl-context-host-eventspace host)
         (lambda () (send (gl-context-host-frame host) show #f)))
        (set-gl-context-host-closed?! host #t)
-       (set-gl-context-host-generation! host
-                                        (add1 (gl-context-host-generation host))))))
+       (define identity (gl-context-host-identity host))
+       (set-gl-context-host-identity!
+        host
+        (gl-context-identity (gl-context-identity-token identity)
+                             (add1 (gl-context-identity-generation identity))))
+       (set! shutdown? #t))))
+  ;; This must happen only after the synchronous eventspace callback above has
+  ;; returned.  Shutting down the custodian while that callback waits would
+  ;; deadlock closing a renderer during partial construction failure.
+  (when shutdown?
+    (custodian-shutdown-all (gl-context-host-custodian host)))
   (void))

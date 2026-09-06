@@ -16,19 +16,26 @@
          "../visual-model.rkt"
          "affine3.rkt"
          "camera3d.rkt"
+         "anchor3d.rkt"
+         "frame-artifact-cache3d.rkt"
+         "frame-artifact3d.rkt"
+         "label-placement3d.rkt"
          "projected-anchor.rkt"
-         "raster-target3d.rkt"
-         "software-renderer3d.rkt"
+         "renderer3d.rkt"
          "spatial-path.rkt"
          "vec3.rkt"
          "view3d-visual.rkt")
 
 (provide projected-label
+         label3d
          projected-label?
          projected-label-view
          projected-label-target
          projected-label-offset
          projected-label-occlusion
+         projected-label-placement
+         projected-label-leader
+         projected-label-visibility
          follow-projected-point
          follow-projected-spatial
          resolve-projected-label)
@@ -39,7 +46,7 @@
 (define template-visual-id visual-id)
 
 (struct projected-label-value
-  (template outer-transform outer-opacity view-id target offset occlusion)
+  (template outer-transform outer-opacity view-id target offset occlusion placement leader visibility)
   #:transparent
   #:methods gen:visual
   [(define (visual-id label)
@@ -76,6 +83,9 @@
 (define projected-label-target projected-label-value-target)
 (define projected-label-offset projected-label-value-offset)
 (define projected-label-occlusion projected-label-value-occlusion)
+(define projected-label-placement projected-label-value-placement)
+(define projected-label-leader projected-label-value-leader)
+(define projected-label-visibility projected-label-value-visibility)
 
 ; projected-label : visual? #:view symbol? #:target (or/c vec3? spatial-path?)
 ;                   [#:offset vec2?]
@@ -87,7 +97,10 @@
                          #:view view-id
                          #:target target
                          #:offset [offset origin]
-                         #:occlusion [occlusion 'always-visible])
+                         #:occlusion [occlusion 'always-visible]
+                         #:placement [placement default-label-placement3d]
+                         #:leader [leader #f]
+                         #:visibility [visibility 'always])
   (unless (visual? template)
     (raise-argument-error 'projected-label "visual?" template))
   (when (resolvable-visual? template)
@@ -113,6 +126,12 @@
   (unless (memq occlusion '(always-visible hide fade))
     (raise-argument-error 'projected-label
                           "(or/c 'always-visible 'hide 'fade) as #:occlusion" occlusion))
+  (unless (label-placement3d? placement)
+    (raise-argument-error 'projected-label "label-placement3d? as #:placement" placement))
+  (unless (or (not leader) (leader-style3d? leader))
+    (raise-argument-error 'projected-label "#f or leader-style3d? as #:leader" leader))
+  (unless (memq visibility '(always inside-frustum anchor-visible))
+    (raise-argument-error 'projected-label "supported visibility policy" visibility))
   (define outer-transform (visual-transform template))
   (define outer-opacity (visual-opacity template))
   (define local-template
@@ -120,7 +139,26 @@
      (visual-with-transform template identity-affine-transform)
      1))
   (projected-label-value local-template outer-transform outer-opacity
-                         view-id target offset occlusion))
+                         view-id target offset occlusion placement leader visibility))
+
+; label3d : visual? #:view symbol? #:anchor anchor3d? ... -> projected-label?
+;; Coherent author-facing spelling for anchor-aware projected labels. The Pict
+;; adapter owns final text measurement; placement and leader policy remain
+;; immutable metadata until the layout pass consumes them.
+(define (label3d template #:view view-id #:anchor anchor
+                 #:placement [placement default-label-placement3d]
+                 #:leader [leader #f]
+                 #:occlusion [occlusion 'always-visible]
+                 #:visibility [visibility 'always]
+                 #:offset [offset origin]
+                 #:id [id #f])
+  (unless (anchor3d? anchor) (raise-argument-error 'label3d "anchor3d?" anchor))
+  (when (and id (not (symbol? id))) (raise-argument-error 'label3d "#f or symbol?" id))
+  (when (and id (not (eq? id (visual-id template))))
+    (raise-arguments-error 'label3d "an #:id matching the immutable template Visual ID"
+                           "id" id "template-id" (visual-id template)))
+  (projected-label template #:view view-id #:target anchor #:offset offset
+                   #:occlusion occlusion #:placement placement #:leader leader #:visibility visibility))
 
 ; follow-projected-point : visual? #:view symbol? #:point vec3?
 ;                          [#:offset vec2?] -> projected-label?
@@ -214,10 +252,9 @@
      "result" opaque))
   opaque)
 
-;; The viewport itself is rendered first in the ordinary scene drawing order.
-;; Recreating its opaque depth target here is intentionally conservative: a
-;; label is never hidden by transparent geometry, whose lack of a stable depth
-;; write is central to the transparency contract.
+;; The viewport and every label consume one shared renderer frame artifact.
+;; Label resolution never imports or invokes the software renderer directly;
+;; this keeps backend selection and the visible depth buffer coherent.
 (define (label-occlusion-factor label view outer-camera world-point)
   (case (projected-label-value-occlusion label)
     [(always-visible) 1]
@@ -232,12 +269,15 @@
                            (max 0 (inexact->exact (floor (* width (/ (+ (vec2-x projected) 1) 2)))))))
             (define y (min (sub1 height)
                            (max 0 (inexact->exact (floor (* height (/ (- 1 (vec2-y projected)) 2)))))))
-            (define target
-              (software-render-result-target (render-view3d-opaque view width height)))
-            (define index (+ x (* y width)))
+            (define artifact
+              (render-view3d-frame-artifact
+               view width height (current-view3d-renderer3d)
+               #:attachments '(color depth)))
+            (define depth (renderer3d-frame-depth-at artifact x y))
             (define occluded?
-              (< (+ (vector-ref (raster-target3d-depth-values target) index) 1e-6)
-                 (camera3d-view-depth camera3 world-point)))
+              (and depth
+                   (< (+ depth 1e-6)
+                      (camera3d-view-depth camera3 world-point))))
             (if occluded?
                 (if (eq? (projected-label-value-occlusion label) 'hide) 0 1/4)
                 1)])]))
@@ -255,6 +295,7 @@
 (define (target->world-point label view)
   (define target (projected-label-value-target label))
   (cond [(vec3? target) target]
+        [(anchor3d? target) (resolved-anchor3d-world-point (anchor3d-resolve target view))]
         [else
          (define path (normalize-spatial-target (visual-id view) target))
          (affine3-translation (view3d-spatial-world-transform view path))]))
@@ -265,5 +306,5 @@
       (cons view-id target)))
 
 (define (check-target who target)
-  (unless (or (vec3? target) (spatial-path? target))
-    (raise-argument-error who "(or/c vec3? spatial-path?)" target)))
+  (unless (or (vec3? target) (spatial-path? target) (anchor3d? target))
+    (raise-argument-error who "(or/c vec3? spatial-path? anchor3d?)" target)))

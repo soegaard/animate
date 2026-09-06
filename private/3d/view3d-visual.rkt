@@ -40,6 +40,7 @@
          view3d-background
          view3d-render-mode
          view3d-transparency-mode
+         view3d-content-key
          view3d-spatial-ref
          view3d-spatial-has?
          view3d-spatial-replace
@@ -64,24 +65,30 @@
    (define (visual-with-position view position)
      (unless (vec2? position)
        (raise-argument-error 'visual-with-position "vec2?" position))
-     (struct-copy view3d-value view
-                  [transform
-                   (affine-transform-with-translation
-                    (view3d-value-transform view) position)]))]
+     (retain-view3d-content-key!
+      (struct-copy view3d-value view
+                   [transform
+                    (affine-transform-with-translation
+                     (view3d-value-transform view) position)])
+      view))]
   #:methods gen:affine-visual
   [(define (visual-transform view)
      (view3d-value-transform view))
    (define (visual-with-transform view transform)
      (unless (affine-transform? transform)
        (raise-argument-error 'visual-with-transform "affine-transform?" transform))
-     (struct-copy view3d-value view [transform transform]))]
+     (retain-view3d-content-key!
+      (struct-copy view3d-value view [transform transform])
+      view))]
   #:methods gen:opacity-visual
   [(define (visual-opacity view)
      (view3d-value-opacity view))
    (define (visual-with-opacity view opacity)
      (unless (opacity? opacity)
        (raise-argument-error 'visual-with-opacity "finite real in [0, 1]" opacity))
-     (struct-copy view3d-value view [opacity opacity]))]
+     (retain-view3d-content-key!
+      (struct-copy view3d-value view [opacity opacity])
+      view))]
   #:methods gen:spatial-container
   [(define (spatial-child-entries view)
      (for/list ([child (in-list (view3d-value-children view))])
@@ -110,6 +117,25 @@
 (define view3d-background view3d-value-background)
 (define view3d-render-mode view3d-value-render-mode)
 (define view3d-transparency-mode view3d-value-transparency-mode)
+
+;; A content key belongs to the adapter cache, rather than to the transparent
+;; immutable scene value.  Keeping it here preserves structural equality of
+;; independently constructed but equal scene samples and avoids exposing cache
+;; state through scene serialization or diagnostics.
+(define view3d-content-keys (make-weak-hasheq))
+
+(define (view3d-content-key view)
+  (unless (view3d? view)
+    (raise-argument-error 'view3d-content-key "view3d?" view))
+  (hash-ref! view3d-content-keys view (lambda () (gensym 'view3d-content))))
+
+(define (fresh-view3d-content-key! view)
+  (hash-set! view3d-content-keys view (gensym 'view3d-content))
+  view)
+
+(define (retain-view3d-content-key! replacement original)
+  (hash-set! view3d-content-keys replacement (view3d-content-key original))
+  replacement)
 
 
 ;;;
@@ -162,22 +188,27 @@
     (raise-argument-error
      'view3d "(or/c 'object-sorted 'triangle-sorted) as #:transparency-mode"
      transparency-mode))
-  (view3d-value
-   id
-   (make-affine-transform #:translation center #:rotation rotation #:scale scale)
-   opacity
-   (check-children 'view3d id children)
-   width height camera (for/list ([light (in-list lights)]) light)
-   background render-mode transparency-mode))
+  (fresh-view3d-content-key!
+   (view3d-value
+    id
+    (make-affine-transform #:translation center #:rotation rotation #:scale scale)
+    opacity
+    (check-children 'view3d id children)
+    width height camera (for/list ([light (in-list lights)]) light)
+    background render-mode transparency-mode)))
 
 (define (view3d-with-children view children)
   (unless (view3d? view)
     (raise-argument-error 'view3d-with-children "view3d?" view))
-  (struct-copy view3d-value view
-               [children
-                (check-children 'view3d-with-children
-                                (view3d-value-id view)
-                                children)]))
+  ;; Replacing descendants changes spatial content, hence receives a fresh
+  ;; adapter-local key.  It deliberately remains structurally equal when the
+  ;; resulting immutable values are otherwise equal.
+  (fresh-view3d-content-key!
+   (struct-copy view3d-value view
+                [children
+                 (check-children 'view3d-with-children
+                                 (view3d-value-id view)
+                                 children)])))
 
 ; view3d-with-camera : view3d? camera3d? -> view3d?
 ;;   Returns view with its internal authored camera replaced immutably.
@@ -186,7 +217,9 @@
     (raise-argument-error 'view3d-with-camera "view3d?" view))
   (unless (camera3d? camera)
     (raise-argument-error 'view3d-with-camera "camera3d?" camera))
-  (struct-copy view3d-value view [camera camera]))
+  (retain-view3d-content-key!
+   (struct-copy view3d-value view [camera camera])
+   view))
 
 
 ;;;

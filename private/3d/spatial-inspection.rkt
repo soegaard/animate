@@ -31,6 +31,9 @@
          "spatial-visual.rkt"
          "stroke-raster3d.rkt"
          "stroke3d.rkt"
+         "surface-mesh3d.rkt"
+         "surface-picking3d.rkt"
+         "surface-provenance3d.rkt"
          "transform3.rkt"
          "tube-style3d.rkt"
          "vec3.rkt"
@@ -43,6 +46,7 @@
          view3d-spatial-inspection-tree
          view3d-spatial-inspection-at
          view3d-pick
+         view3d-surface-pick
          view3d-pixel-pick)
 
 ;; All positions are in semantic world coordinates except `view-position`,
@@ -113,6 +117,24 @@
              [projected-position
               (and anchor (camera3d-project camera anchor #:aspect aspect))]
              [view-depth (and anchor (camera3d-view-depth camera anchor))]
+             [metadata
+              (let ([base
+                     (hasheq 'id (spatial-id object)
+                             'opacity (spatial-opacity object)
+                             'container? (spatial-container? object)
+                             'mesh? (and mesh #t))])
+                ;; Keep the surface's immutable source-topology record next
+                ;; to the inspector result.  A preview can therefore explain
+                ;; an adaptive or implicit mesh without rerunning its author
+                ;; procedure or reverse engineering a renderer cache key.
+                (if (surface3d? object)
+                    (hash-set
+                     (hash-set
+                      (hash-set base 'surface-kind (surface3d-kind object))
+                      'surface-topology-key
+                      (surface-mesh3d-topology-key (surface3d-mesh object)))
+                     'surface-diagnostics (surface3d-diagnostics object))
+                    base))]
              [inspection
               (spatial-inspection
                path (spatial-kind object) (spatial-transform object) world-transform
@@ -121,10 +143,7 @@
                (if mesh (vector-length (mesh3d-triangles mesh)) 0)
                (if mesh (vector-length (mesh3d-vertices mesh)) 0)
                (camera3d-position camera) view-position projected-position view-depth
-               (hasheq 'id (spatial-id object)
-                       'opacity (spatial-opacity object)
-                       'container? (spatial-container? object)
-                       'mesh? (and mesh #t)))])
+               metadata)])
         (cons inspection
               (if (spatial-container? object)
                   (append-map
@@ -183,6 +202,117 @@
       view #:root-path (list (visual-id view)))))
   (and (pair? hits)
        (car (sort hits pick-before?))))
+
+;; view3d-surface-pick : view3d? ray3? -> (or/c #f surface-pick3d?)
+;; Refines an exact generic mesh hit with immutable lowering provenance.  It
+;; deliberately uses the same CPU BVH hit as `view3d-pick`; no display image
+;; or backend-specific object-ID buffer participates in the result.
+(define (view3d-surface-pick view ray)
+  (unless (view3d? view)
+    (raise-argument-error 'view3d-surface-pick "view3d?" view))
+  (unless (ray3? ray)
+    (raise-argument-error 'view3d-surface-pick "ray3?" ray))
+  (define hit (view3d-pick view ray))
+  (and hit
+       (let ([object
+              (with-handlers ([exn:fail? (lambda (_exception) #f)])
+                (view3d-spatial-ref view (spatial-pick-path hit)))])
+         ;; `affine-map3d` intentionally preserves the content's path.  Draw
+         ;; traversal already unwraps it, so picking must use the same
+         ;; path-transparent source value when retrieving provenance.
+         (define surface (surface-object object))
+         (and surface (surface-pick-from-hit surface hit)))))
+
+(define (surface-object object)
+  (cond [(surface3d? object) object]
+        [(affine-map3d? object) (surface-object (affine-map3d-content object))]
+        [else #f]))
+
+(define (surface-pick-from-hit surface hit)
+  (define triangle-index (spatial-pick-triangle-index hit))
+  (define lowered (surface3d-mesh surface))
+  (define mesh (surface-mesh3d-mesh lowered))
+  (and (exact-nonnegative-integer? triangle-index)
+       (< triangle-index (vector-length (mesh3d-triangles mesh)))
+       (let* ([triangle (vector-ref (mesh3d-triangles mesh) triangle-index)]
+              [vertex-provenance (surface-mesh3d-vertex-provenance lowered)]
+              [samples
+               (for/list ([index (in-vector triangle)])
+                 (vector-ref vertex-provenance index))]
+              [triangle-provenance
+               (vector-ref (surface-mesh3d-triangle-provenance lowered) triangle-index)])
+         (surface-pick3d
+          hit
+          (surface3d-kind surface)
+          (interpolate-surface-parameter surface samples (spatial-pick-barycentric hit))
+          (surface-trim-boundary samples triangle-provenance)
+          triangle-provenance
+          (interpolate-surface-normal mesh triangle (spatial-pick-barycentric hit)
+                                      (spatial-pick-inspection hit))))))
+
+;; Vertex provenance is intentionally permissive here: regular surfaces store
+;; literal u/v values, adaptive surfaces store exact uv keys, and trimmed
+;; vertices store boundary-interpolated values.  If a future producer has no
+;; parameter domain (for example an implicit surface), the answer is #f.
+(define (interpolate-surface-parameter surface samples barycentric)
+  (define parameters
+    (for/list ([sample (in-list samples)])
+      (surface-provenance-parameter surface sample)))
+  (and (andmap vector? parameters)
+       (= (length parameters) 3)
+       (let ([weights (list (vec3-x barycentric)
+                            (vec3-y barycentric)
+                            (vec3-z barycentric))])
+         (vector (for/sum ([parameter (in-list parameters)] [weight (in-list weights)])
+                   (* weight (vector-ref parameter 0)))
+                 (for/sum ([parameter (in-list parameters)] [weight (in-list weights)])
+                   (* weight (vector-ref parameter 1)))))))
+
+(define (surface-provenance-parameter surface provenance)
+  (cond [(and (hash? provenance)
+              (finite-real? (hash-ref provenance 'u #f))
+              (finite-real? (hash-ref provenance 'v #f)))
+         (vector (hash-ref provenance 'u) (hash-ref provenance 'v))]
+        [(parametric-sample3d? provenance)
+         (define uv (parametric-sample3d-uv provenance))
+         (define u-range (surface3d-u-range surface))
+         (define v-range (surface3d-v-range surface))
+         (vector (interpolate-range u-range (dyadic-coordinate->real (uv-key-u uv)))
+                 (interpolate-range v-range (dyadic-coordinate->real (uv-key-v uv))))]
+        [else #f]))
+
+(define (interpolate-range range fraction)
+  (+ (first range) (* fraction (- (second range) (first range)))))
+
+(define (dyadic-coordinate->real coordinate)
+  (/ (dyadic-coordinate-numerator coordinate)
+     (expt 2 (dyadic-coordinate-level coordinate))))
+
+(define (surface-trim-boundary samples triangle-provenance)
+  (define from-vertices
+    (remove-duplicates
+     (for/list ([sample (in-list samples)]
+                #:when (and (hash? sample) (hash-ref sample 'trim-boundary #f)))
+       (hash-ref sample 'trim-boundary))))
+  (cond [(pair? from-vertices) from-vertices]
+        [(and (hash? triangle-provenance)
+              (hash-ref triangle-provenance 'trim-boundaries #f))
+         (hash-ref triangle-provenance 'trim-boundaries)]
+        [else #f]))
+
+(define (interpolate-surface-normal mesh triangle barycentric inspection)
+  (define normals (mesh3d-normals mesh))
+  (and normals
+       (let* ([weights (list (vec3-x barycentric) (vec3-y barycentric) (vec3-z barycentric))]
+              [local
+               (for/fold ([sum origin3]) ([index (in-vector triangle)] [weight (in-list weights)])
+                 (vec3+ sum (vec3-scale weight (vector-ref normals index))))])
+         (and (positive? (vec3-length local))
+              (with-handlers ([exn:fail? (lambda (_exception) #f)])
+                (vec3-normalize
+                 (linear3-apply-vector
+                  (affine3-normal-transform (spatial-inspection-world-transform inspection))
+                  local)))))))
 
 ;; view3d-pixel-pick : view3d? pixel pixel #:width positive-int #:height positive-int
 ;;                       -> (or/c #f spatial-pick?)

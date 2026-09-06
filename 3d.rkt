@@ -40,11 +40,29 @@
          "private/3d/curve-animation3d.rkt"
          "private/3d/function-surface3d.rkt"
          "private/3d/parametric-surface3d.rkt"
+         "private/3d/adaptive-surface3d.rkt"
+         "private/3d/trimmed-surface3d.rkt"
+         "private/3d/implicit-surface3d.rkt"
+         "private/3d/surface-mesh3d.rkt"
+         "private/3d/surface-provenance3d.rkt"
+         "private/3d/surface-picking3d.rkt"
          "private/3d/surface-animation.rkt"
          "private/3d/surface-calculus.rkt"
          "private/3d/surface-color.rkt"
          "private/3d/solids3d.rkt"
          "private/3d/clipping3d.rkt"
+         "private/3d/section-settings3d.rkt"
+         "private/3d/plane-basis3d.rkt"
+         "private/3d/cap-style3d.rkt"
+         "private/3d/mesh-cut3d.rkt"
+         "private/3d/cutaway3d.rkt"
+         "private/3d/multi-clip3d.rkt"
+         "private/3d/section-measure3d.rkt"
+         "private/3d/section-fill3d.rkt"
+         "private/3d/section-hatch3d.rkt"
+         "private/3d/slice-stack3d.rkt"
+         "private/3d/volume-estimate3d.rkt"
+         "private/3d/riemann-volume3d.rkt"
          "private/3d/point-line-arrow3d.rkt"
          (only-in "private/3d/axes3d.rkt"
                   axes3d
@@ -56,6 +74,10 @@
          "private/3d/spatial-dependency.rkt"
          "private/3d/spatial-relation-context.rkt"
          "private/3d/spatial-relation.rkt"
+         "private/3d/anchor3d.rkt"
+         "private/3d/label-placement3d.rkt"
+         "private/3d/label-layout3d.rkt"
+         "private/3d/label-layout-preparation3d.rkt"
          "private/3d/projected-label.rkt"
          "private/3d/spatial-animation.rkt"
          "private/3d/spatial-map3d.rkt"
@@ -224,6 +246,42 @@
  projected-label-occlusion
  follow-projected-point
  follow-projected-spatial
+ label3d
+ (struct-out resolved-anchor3d)
+ gen:anchor3d
+ anchor3d?
+ anchor3d-resolve
+ anchor3d-normal
+ anchor3d-tangent
+ anchor3d-identity
+ point-anchor3d
+ spatial-origin-anchor3d
+ bounds-anchor3d
+ vertex-anchor3d
+ edge-anchor3d
+ face-anchor3d
+ curve-anchor3d
+ surface-anchor3d
+ (struct-out label-placement3d)
+ (struct-out leader-style3d)
+ default-label-placement3d
+ (struct-out label-layout-item3d)
+ (struct-out label-layout-candidate3d)
+ (struct-out label-layout3d)
+ layout-labels3d
+ (struct-out prepared-label-layout3d)
+ prepare-label-layout3d
+ prepared-label-layout3d-ref
+
+ ;; Section fills and hatching
+ section-fill3d
+ section-hatch3d
+ slice-stack3d
+ (struct-out cross-section-sample3d)
+ (struct-out prepared-cross-section-function3d)
+ (struct-out volume-estimate3d)
+ prepare-cross-section-function3d
+ volume-by-slices3d
 
  ;; Meshes
  mesh3d
@@ -247,6 +305,32 @@
  mesh3d-self-intersection-candidates
  (struct-out edge-incidence3d)
  (struct-out edge-adjacency3d)
+
+ ;; Surface protocol and adaptive sampling
+ surface3d-kind
+ surface3d-mesh
+ surface3d->mesh3d
+ surface3d-local-bounds
+ surface3d-diagnostics
+ surface3d-provenance
+ (struct-out surface-mesh3d)
+ (struct-out dyadic-coordinate)
+ (struct-out uv-key)
+ (struct-out parametric-sample3d)
+ (struct-out adaptive-surface-diagnostics)
+ adaptive-parametric-surface3d
+ adaptive-function-surface3d
+ surface-trim
+ surface-trim?
+ surface-trim-field
+ surface-trim-keep
+ surface-trim-id
+ surface-trim-tolerance
+ trimmed-parametric-surface3d
+ (struct-out implicit-surface-diagnostics)
+ implicit-surface3d
+ surface3d-domain-contains?
+ surface3d-position-at?
 
  ;; Curves, tubes, and diagrams
  tube3d
@@ -380,6 +464,9 @@
  mesh3d-boundary-edges
  mesh3d-wireframe
  mesh3d-merge
+ riemann-volume3d
+ washer-sum3d
+ shell-sum3d
 
  ;; Clipping, semantic slicing, and section curves
  clip-plane3d
@@ -396,6 +483,32 @@
  section3d-chains
  section-by-plane3d
  section-curve3d
+ (struct-out section3d-settings)
+ default-section3d-settings
+ section3d-settings-for-bounds
+ (struct-out plane-basis3d)
+ plane3d-basis
+ plane-basis3d-project
+ plane-basis3d-unproject
+ plane-basis3d-signed-area
+ plane-basis3d-centroid
+ (struct-out section-component3d)
+ section3d-plane
+ section3d-basis
+ section3d-components
+ section3d-diagnostics
+ (struct-out cap-style3d)
+ default-cap-style3d
+ (struct-out mesh-cut3d-result)
+ cut-mesh3d
+ cap-section3d
+ cutaway3d
+ clip-planes3d
+ clip-box3d
+ section3d-area
+ section3d-centroid
+ section3d-perimeter
+ section3d-second-moments
 
  ;; Curve-animation requests
  move-along-curve3d
@@ -445,11 +558,13 @@
  ;; Spatial inspection and exact picking
  (struct-out spatial-inspection)
  (struct-out spatial-pick)
+ (struct-out surface-pick3d)
  spatial-pick-kind
  view3d-spatial-inspections
  view3d-spatial-inspection-tree
  view3d-spatial-inspection-at
  view3d-pick
+ view3d-surface-pick
  view3d-pixel-pick
  mesh3d-bvh
  mesh3d-bvh?

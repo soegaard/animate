@@ -97,7 +97,7 @@
        (glDeleteShader vertex)
        (glDeleteShader fragment)
        (gl-shader-program
-        (gl-program (gl-context-host-generation host) program 0 #f
+        (gl-program (gl-context-host-identity host) program 0 #f
                     (format "program:~a+~a" vertex-path fragment-path)
                     glDeleteProgram)
         (make-hash)

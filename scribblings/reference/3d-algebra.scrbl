@@ -1005,6 +1005,39 @@ curve.}
 @defproc[(surface-gradient-arrow [surface surface3d?] [x finite-real?]
                                   [y finite-real?] [#:id id symbol?]) group3d?]{
 Creates the xy gradient arrow for a declared @racket[function-surface3d].}
+
+@section{Adaptive, trimmed, and implicit surfaces}
+
+SCENE-3D-Q adds three producers which all lower to the same immutable indexed
+surface record returned by @racket[surface3d-mesh].  The record preserves
+vertex and triangle provenance as well as a topology key, while renderer
+caches remain outside authored values.
+
+@racket[adaptive-parametric-surface3d] accepts the same parameterization shape
+as @racket[parametric-surface3d], but samples it on a deterministic dyadic
+quadtree.  Its position, normal-angle, and maximum-edge-length tolerances are
+camera independent.  Neighbouring cells are conformed before lowering, so
+their shared edge vertices are identical rather than merely close.
+
+@racket[trimmed-parametric-surface3d] accepts signed @racket[surface-trim]
+fields in parameter space.  It clips the retained adaptive triangles and
+shares edge/trim intersections by canonical keys.  Consequently
+@racket[surface3d-domain-contains?] and @racket[surface3d-position-at?] can
+distinguish a point in the original parameter box from one outside its trim.
+
+@racket[implicit-surface3d] samples a finite scalar field within a declared
+axis-aligned box and extracts one level set with deterministic marching
+tetrahedra.  It shares lattice-edge intersections, estimates normals from
+central field differences, and records whether the surface touches the box
+boundary.  The initial extractor is a fixed-resolution algorithm; it does not
+yet adapt its 3D cells. @racket[view3d-surface-pick] uses the ordinary CPU BVH
+hit and attaches the retained triangle provenance: barycentrically interpolated
+@racket[(vector u v)] parameters for parametric surfaces and the source cube/
+tetrahedron record for implicit ones. It does not claim a separate analytic
+implicit intersection solver.
+
+The focused executable probe is
+@filepath{examples/3d/adaptive-trimmed-implicit-surfaces.rkt}.
 @defproc[(reveal-surface-u [target spatial-path?]) any/c]{Reveals an existing
 surface directly from its minimum-u boundary without changing its grid size.}
 @defproc[(reveal-surface-v [target spatial-path?]) any/c]{The analogous
@@ -1098,6 +1131,87 @@ depth-test against opaque geometry but do not write depth. A
 @racket[projected-label] accepts @racket[#:occlusion 'always-visible],
 @racket['hide], or @racket['fade]; its occlusion test uses that opaque depth
 target, preserving the label as a crisp 2D Visual.
+
+@section{Cuts, caps, and section measurements}
+
+SCENE-3D-R extends a plane section with an explicit local numerical policy,
+plane basis, and component records. @racket[cut-mesh3d] returns both clipped
+halves plus their shared @racket[section3d] and optional separate cap meshes;
+it does not mutate the source mesh. @racket[section3d-area],
+@racket[section3d-centroid], and @racket[section3d-perimeter] operate on the
+same preserved section topology. @racket[clip-planes3d] and @racket[clip-box3d]
+build ordered render-only half-space sequences.
+
+@racket[section-fill3d] exposes a separate cap-style mesh for a section;
+@racket[section-hatch3d] creates deterministic even/odd stroke intervals in
+the plane-local basis, including empty intervals for nested holes.
+@racket[slice-stack3d] retains stable section-group paths as planes advance
+along a normal. @racket[prepare-cross-section-function3d] makes an immutable
+table of sections, areas, centroids, and diagnostics, which
+@racket[volume-by-slices3d] evaluates with a declared midpoint, trapezoid, or
+Simpson rule. The sampling convention is part of the table and is checked by
+the chosen numerical rule. @racket[riemann-volume3d] provides a separate
+midpoint-column construction for graph-volume explanations; each row and cell
+is an ordinary stable spatial child. @racket[washer-sum3d] creates stable
+midpoint annular slabs about the x axis, and @racket[shell-sum3d] creates
+stable midpoint cylindrical shells about the z axis. These are explanatory
+geometry groups; numerical volume estimation remains explicit.
+
+The cap triangulator handles simple concave, hole-free section loops with
+deterministic ear clipping. Nested loops (cap holes) remain explicitly
+rejected rather than silently filling the wrong region.
+Multi-plane render clipping is semantic and ordered, but the optional OpenGL
+backend has not yet received its corresponding multi-plane uniform path.
+See @filepath{examples/3d/capped-cube-cutaway.rkt}.
+
+@defproc[(riemann-volume3d [function procedure?]
+                            [#:x-range x-range list? (list -1 1)]
+                            [#:y-range y-range list? (list -1 1)]
+                            [#:resolution resolution list? (list 8 8)]
+                            [#:base base finite-real? 0]
+                            [#:id id symbol?]) group3d?]{Builds midpoint
+columns between @racket[base] and @racket[(function x y)].  Children have
+stable @racket['row-n] then @racket['cell-n] identifiers. A zero-height
+sample is a stable empty cell group, not an invented nonzero solid.}
+@defproc[(washer-sum3d [outer procedure?] [inner procedure?]
+                        [#:x-range x-range list? (list -1 1)]
+                        [#:count count exact-positive-integer? 8]
+                        [#:id id symbol?]) group3d?]{Builds midpoint annular
+washer slabs about the x axis. @racket[outer] and @racket[inner] must return
+nonnegative radii with @racket[inner] no larger than @racket[outer]. Children
+are stably named @racket['washer-n].}
+@defproc[(shell-sum3d [height procedure?]
+                       [#:radius-range radius-range list? (list 0 1)]
+                       [#:count count exact-positive-integer? 8]
+                       [#:base base finite-real? 0]
+                       [#:id id symbol?]) group3d?]{Builds midpoint annular
+cylindrical shells about the z axis between @racket[base] and
+@racket[(height radius)]. Children are stably named @racket['shell-n].}
+
+@section{Spatial anchors and label layout}
+
+SCENE-3D-S begins the annotation layer with immutable @racket[anchor3d?]
+descriptors. @racket[vertex-anchor3d], @racket[edge-anchor3d],
+@racket[face-anchor3d], @racket[curve-anchor3d], @racket[surface-anchor3d],
+and bounds/origin anchors resolve after every spatial transformation into a
+@racket[resolved-anchor3d] world point, normal/tangent when available, source
+path, and stable provenance identity. A regular parametric surface anchor also
+exposes its evaluated normal and @racket[u]-tangent after its complete world
+transform. Generated adaptive/trimmed frames remain a separately documented
+provenance-boundary limitation.
+
+@racket[label3d] uses such an anchor while retaining its content as a crisp
+ordinary 2D Visual. @racket[label-placement3d] and
+@racket[layout-labels3d] provide a deterministic, pure direct-mode candidate
+layout in output pixels. @racket[prepare-label-layout3d] optionally computes
+an immutable dynamic-programming candidate table for a declared finite frame
+grid, applying explicit movement and switching penalties without relying on
+the previously displayed frame. Equal-priority labels retain declaration order,
+and equal-cost candidates retain the declared preferred-direction order. 2D
+leader rendering, mathematical dimensions,
+and textured/camera-facing billboards remain later work; they are intentionally
+not simulated by mutable callbacks. The executable anchor probe is
+@filepath{examples/3d/anchor-aware-labels.rkt}.
 
 The canonical acceptance scene is
 @filepath{examples/3d/sphere-plane-section.rkt}.
@@ -1313,6 +1427,16 @@ renderer. Stroke metadata includes source segment index/progress, world point,
 view depth, pixel distance, and style. Ties are resolved by depth, drawing
 index, then authored triangle or source segment index.
 }
+@defstruct*[surface-pick3d
+            ([spatial-pick spatial-pick?]
+             [surface-kind symbol?]
+             [parameter (or/c #f vector?)]
+             [trim-boundary any/c]
+             [source-cell any/c]
+             [interpolated-normal (or/c #f vec3?)]) #:transparent]{
+A refinement of an exact mesh @racket[spatial-pick] for a @racket[surface3d].
+The source cell is immutable triangle provenance, not an implementation cache.
+}
 @defproc[(spatial-pick-kind [pick spatial-pick?])
          (or/c 'mesh-triangle 'stroke-segment 'point-marker 'arrow-marker)]{
 Returns the selected primitive kind.}
@@ -1333,6 +1457,12 @@ Picks a spatial object with world ray @racket[ray]. It first culls world AABBs,
 transforms the candidate ray to mesh-local coordinates, traverses a local BVH,
 and finishes with exact triangle and barycentric testing.
 }
+@defproc[(view3d-surface-pick [view view3d?] [ray ray3?])
+         (or/c #f surface-pick3d?)]{
+Uses the same CPU path as @racket[view3d-pick], returning @racket[#f] unless
+the nearest hit is a surface. Parametric parameters are interpolated from
+retained vertex provenance; an implicit result retains its source grid/tetrahedron
+record instead.}
 @defproc[(view3d-pixel-pick [view view3d?] [pixel-x finite-real?]
                              [pixel-y finite-real?]
                              [#:width width exact-positive-integer?]

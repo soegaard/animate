@@ -32,6 +32,6 @@ void main() {
     illumination += directionalColors[index]
                     * (directionalIntensities[index] * materialDiffuse * facing);
   }
-  fragment = vec4(clamp(base.rgb * illumination, 0.0, 1.0),
-                  base.a * objectOpacity);
+  float alpha = base.a * objectOpacity;
+  fragment = vec4(clamp(base.rgb * illumination, 0.0, 1.0) * alpha, alpha);
 }

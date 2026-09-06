@@ -15,7 +15,7 @@
 
 (struct gl-geometry-entry
   (key variant vao vertex-buffer index-buffer index-count byte-size last-used
-       context-generation destroy)
+       context-identity destroy)
   #:mutable
   #:transparent)
 
