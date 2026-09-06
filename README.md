@@ -2994,8 +2994,10 @@ lose the follow-on idea that led to the work.
   with fixed pixel offsets. The final compositor batches direct-mode projected
   labels to choose deterministic overlap-aware candidates. It minimizes
   overlap but cannot guarantee a disjoint result; labels are not
-  3D billboards; prepared trajectories, leaders, and visibility policies are
-  still pending. Their hide/fade policy considers opaque depth only. Spatial
+  3D billboards; prepared trajectories are still pending. Top-level labels can
+  use fixed-style crisp 2D leaders, and their visibility policy can require an
+  in-frustum or visible anchor. Their hide/fade policy considers opaque depth
+  only. Spatial
   transforms and finite camera motions are deterministic scene requests;
   preview navigation layers an inspection-only camera above an authored view
   and does not edit source. Spatial descendants use rooted `view3d` paths such

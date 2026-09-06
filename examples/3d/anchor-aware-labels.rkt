@@ -25,18 +25,22 @@
             #:background "aliceblue" #:render-mode 'opaque
             #:camera (perspective-camera3d #:position (vec3 4 3 7) #:look-at origin3
                                            #:vertical-field-of-view (/ pi 5))))
-  (define placement (label-placement3d '(north-east east north) 14 3 #t #t '() 1 10))
+  ;; Deliberately leave enough room for the leader to be visible in a compact
+  ;; video frame; it is measured in output pixels, not world units.
+  (define placement (label-placement3d '(north-east east north) 32 3 #t #t '() 1 10))
   (define label
     (label3d (plain-text "vertex 0" #:id 'vertex-label #:font-size 1/4
                          #:font-family 'swiss #:color "firebrick")
              #:view 'world #:anchor (vertex-anchor3d '(world tetra) 0)
-             #:placement placement #:offset (vec2 14 14) #:occlusion 'fade))
+             #:placement placement #:offset origin #:occlusion 'fade
+             #:visibility 'anchor-visible
+             #:leader (leader-style3d 'nearest #t 3)))
   (scene-play
    (scene-add (make-scene) world label
               (plain-text "SCENE-3D-S: resolved anchors and label policy"
                           #:id 'title #:center (vec2 0 15/4) #:font-size 1/3
                           #:font-family 'swiss #:font-weight 'bold #:color "navy")
-              (plain-text "The label remains ordinary 2D text; its target is an immutable vertex anchor."
+              (plain-text "The leader and label remain crisp 2D; the vertex anchor controls both."
                           #:id 'caption #:center (vec2 0 -29/10) #:font-size 1/4
                           #:font-family 'swiss #:color "darkslategray"))
    (camera3d-orbit-by 'world #:azimuth (/ pi 2) #:elevation (/ pi 16)) #:duration 4))

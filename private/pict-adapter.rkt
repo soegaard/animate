@@ -62,6 +62,7 @@
          "scene-state.rkt"
          "3d/frame-artifact-cache3d.rkt"
          "3d/label-layout3d.rkt"
+         "3d/label-placement3d.rkt"
          "3d/projected-label.rkt"
          "3d/view3d-visual.rkt"
          "shape-pict-renderers.rkt"
@@ -804,19 +805,22 @@
     ;; A baseline label resolution can perform an occlusion query, so collect
     ;; and measure labels inside this frame's shared artifact scope before any
     ;; label is positioned or any viewport is painted.
-    (define label-candidates
+    (define-values (label-candidates label-anchors)
       (scene-projected-label-layout-candidates state resolved-visuals camera renderers))
-    (parameterize ([current-projected-label-layout-candidates label-candidates])
+    (parameterize ([current-projected-label-layout-candidates label-candidates]
+                   [current-projected-label-layout-anchors label-anchors])
       (for/fold ([frame background])
                 ([visual (in-list resolved-visuals)])
         (define resolved-for-layout
           (resolve-layout-relations-in-visual
            state visual (list (visual-id visual)) camera renderers layout-cache
            active-layout-paths))
-        (place-scene-visual-on-pict frame state resolved-for-layout camera renderers)))))
+        (place-scene-visual-on-pict frame state resolved-for-layout camera renderers
+                                    #:authored visual)))))
 
 ;; scene-projected-label-layout-candidates : scene-state? (listof visual?) camera?
-;;                                            (listof pict-renderer?) -> immutable-hasheq?
+;;                                            (listof pict-renderer?)
+;;                                            -> (values immutable-hasheq? immutable-hasheq?)
 ;; Resolves each label once for its anchor/template measurement, then computes
 ;; one deterministic placement set for the complete outer frame.  Identity,
 ;; rather than the label's public symbol, keys the returned table so an invalid
@@ -824,7 +828,7 @@
 ;; share one candidate.
 (define (scene-projected-label-layout-candidates state visuals camera renderers)
   (define labels (flatten-projected-labels visuals))
-  (cond [(null? labels) #hasheq()]
+  (cond [(null? labels) (values #hasheq() #hasheq())]
         [else
          (define entries
            (for/list ([label (in-list labels)] [index (in-naturals)])
@@ -866,12 +870,15 @@
          (for ([candidate (in-list (label-layout3d-placements layout))])
            (hash-set! candidate-by-id (label-layout-candidate3d-item-id candidate) candidate))
          (define candidate-by-label (make-hasheq))
+         (define anchor-by-label (make-hasheq))
          (for ([entry (in-list entries)])
            (define label (car entry))
            (define item (cdr entry))
            (hash-set! candidate-by-label label
-                      (hash-ref candidate-by-id (label-layout-item3d-id item))))
-         (make-immutable-hasheq (hash->list candidate-by-label))]))
+                      (hash-ref candidate-by-id (label-layout-item3d-id item)))
+           (hash-set! anchor-by-label label (label-layout-item3d-anchor item)))
+         (values (make-immutable-hasheq (hash->list candidate-by-label))
+                 (make-immutable-hasheq (hash->list anchor-by-label)))]))
 
 (define (flatten-projected-labels visuals)
   (define (walk visual)
@@ -899,7 +906,8 @@
   (define (walk visual)
     (cond
       [(projected-label? visual)
-       (when (memq (projected-label-occlusion visual) '(hide fade))
+       (when (or (memq (projected-label-occlusion visual) '(hide fade))
+                 (eq? (projected-label-visibility visual) 'anchor-visible))
          (add-demand! (projected-label-view visual) 'linear-depth))]
       [(group-visual? visual)
        (for ([child (in-list (group-visual-children visual))])
@@ -1090,8 +1098,12 @@
 ; place-scene-visual-on-pict : pict? scene-state? visual? camera?
 ;                              (listof pict-renderer?) -> pict?
 ;;   Places one world-space Visual, frame overlay, or hybrid callout on frame.
-(define (place-scene-visual-on-pict frame state visual camera renderers)
+(define (place-scene-visual-on-pict frame state visual camera renderers
+                                    #:authored [authored #f])
   (cond
+    [(and (projected-label? authored)
+          (not (zero? (visual-opacity visual))))
+     (place-projected-label-on-pict frame state authored visual camera renderers)]
     [(callout-visual? visual)
      (place-callout-on-pict frame state visual camera renderers)]
     [(camera-view-visual? visual)
@@ -1100,6 +1112,75 @@
      (place-frame-space-visual-on-pict frame visual camera renderers)]
     [else
      (place-world-visual-on-pict frame visual camera renderers)]))
+
+;; `projected-label` resolves to an ordinary concrete Visual, so it remains
+;; usable outside scene composition.  At the final compositor boundary we
+;; still have the authored relation and can paint its requested leader behind
+;; that concrete label without changing its identity or making it a 3D mesh.
+(define (place-projected-label-on-pict frame state authored concrete camera renderers)
+  (define label-pict (visual->pict concrete camera #:renderers renderers))
+  (define-values (label-x label-y)
+    (camera-world->pixel camera (visual-position concrete)))
+  (define anchor
+    (hash-ref (current-projected-label-layout-anchors) authored #f))
+  (define with-leader
+    (if (and anchor (projected-label-leader authored))
+        (place-projected-label-leader-on-pict
+         frame label-pict label-x label-y
+         (vector-ref anchor 0) (vector-ref anchor 1)
+         (projected-label-leader authored)
+         (visual-opacity concrete))
+        frame))
+  (pin-centered-pict with-leader label-x label-y label-pict))
+
+(define (place-projected-label-leader-on-pict frame label-pict label-x label-y
+                                               anchor-x anchor-y style opacity)
+  (define minimum (leader-style3d-minimum-length style))
+  (define-values (start-x start-y)
+    (case (leader-style3d-attachment style)
+      [(center) (values label-x label-y)]
+      [else
+       (annotation-edge-toward-target
+        label-x label-y (pict-width label-pict) (pict-height label-pict)
+        anchor-x anchor-y)]))
+  (define dx (- anchor-x start-x))
+  (define dy (- anchor-y start-y))
+  (if (< (sqrt (+ (* dx dx) (* dy dy))) minimum)
+      frame
+      (pin-over
+       frame 0 0
+       (cellophane
+        (projected-label-leader-pict
+         (pict-width frame) (pict-height frame)
+         start-x start-y anchor-x anchor-y (leader-style3d-elbow? style))
+        opacity))))
+
+(define (projected-label-leader-pict frame-width frame-height
+                                     start-x start-y anchor-x anchor-y elbow?)
+  (dc
+   (lambda (drawing-context x y)
+     (define old-pen (send drawing-context get-pen))
+     (dynamic-wind
+       void
+       (lambda ()
+         (send drawing-context set-pen
+               (make-pen #:color "gray" #:width 1 #:style 'solid
+                         #:cap 'round #:join 'round))
+         (cond [elbow?
+                ;; A horizontal-first elbow is deterministic and leaves the
+                ;; final vertical segment aimed at the spatial anchor.
+                (send drawing-context draw-line
+                      (+ x start-x) (+ y start-y)
+                      (+ x anchor-x) (+ y start-y))
+                (send drawing-context draw-line
+                      (+ x anchor-x) (+ y start-y)
+                      (+ x anchor-x) (+ y anchor-y))]
+               [else
+                (send drawing-context draw-line
+                      (+ x start-x) (+ y start-y)
+                      (+ x anchor-x) (+ y anchor-y))]))
+       (lambda () (send drawing-context set-pen old-pen))))
+   frame-width frame-height))
 
 ; place-camera-view-on-pict : pict? scene-state? camera-view-visual? camera?
 ;                             (listof pict-renderer?) -> pict?

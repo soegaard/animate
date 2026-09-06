@@ -32,6 +32,11 @@
   deterministic, overlap-aware candidate selection and the same negotiated
   viewport artifact. It minimizes overlap where a collision-free placement is
   not possible; it does not promise that every label set is disjoint.
+- Projected-label visibility now has executable `inside-frustum` and
+  `anchor-visible` policies. Top-level labels can request a deterministic
+  one-pixel grey straight or horizontal-first-elbow leader through
+  `leader-style3d`; the leader is a crisp 2D compositor overlay, not a 3D
+  mesh.
 - Added independently addressable section fills, deterministic even/odd hatch
   strokes, indexed mesh slicing with shared cut vertices and interpolated
   normals/RGBA colours, exact-coordinate welded capped halves, immutable
@@ -54,9 +59,10 @@ Known boundaries: adaptive implicit extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
 IDs), touching/self-intersecting section validation, repeated capped
 multi-plane geometry cuts, general polygon section fills, final-compositor
-consumption of prepared label trajectories/leaders/visibility policy,
-annotation primitives, and billboard texture rendering are not complete in
-this change. The OpenGL paths are compiled and
+consumption of prepared label trajectories, mathematical annotation primitives,
+and billboard texture rendering are not complete in this change. Leaders are
+currently top-level 2D compositor overlays, with intentionally fixed styling.
+The OpenGL paths are compiled and
 the explicit integration test remains separate from ordinary headless runs.
 
 ## 1.22.0 — SCENE-3D-P

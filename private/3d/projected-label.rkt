@@ -38,6 +38,7 @@
          projected-label-leader
          projected-label-visibility
          current-projected-label-layout-candidates
+         current-projected-label-layout-anchors
          follow-projected-point
          follow-projected-spatial
          resolve-projected-label)
@@ -46,6 +47,12 @@
 ;; frame.  It is adapter state, never author data: a label still has a direct
 ;; resolution path when used outside a full scene composition.
 (define current-projected-label-layout-candidates (make-parameter #hasheq()))
+
+;; As with candidate placement, this table belongs to one adapter frame.  It
+;; records the unplaced projected anchor in output pixels, which lets the
+;; final compositor attach a requested leader to the actual spatial point
+;; without re-measuring or re-rendering the viewport.
+(define current-projected-label-layout-anchors (make-parameter #hasheq()))
 
 ;; Keep generic operations distinct from the struct methods below.  A method
 ;; must delegate to its ordinary concrete template rather than recursively
@@ -270,6 +277,7 @@
     (visual-with-opacity
      concrete
      (* (projected-label-value-outer-opacity label)
+        (label-visibility-factor label view outer-camera spatial-point)
         (label-occlusion-factor label view outer-camera spatial-point)
         (visual-opacity concrete))))
   (unless (and (visual? opaque)
@@ -289,28 +297,71 @@
   (case (projected-label-value-occlusion label)
     [(always-visible) 1]
     [else
-     (define width (view-pixel-width view outer-camera))
-     (define height (view-pixel-height view outer-camera))
-     (define camera3 (view3d-camera view))
-     (define projected (camera3d-project camera3 world-point #:aspect (/ width height)))
-     (cond [(not projected) 1]
-           [else
-            (define x (min (sub1 width)
-                           (max 0 (inexact->exact (floor (* width (/ (+ (vec2-x projected) 1) 2)))))))
-            (define y (min (sub1 height)
-                           (max 0 (inexact->exact (floor (* height (/ (- 1 (vec2-y projected)) 2)))))))
-            (define artifact
-              (render-view3d-frame-artifact
-               view width height (current-view3d-renderer3d)
-               #:attachments '(color linear-depth)))
-            (define depth (renderer3d-frame-linear-depth-at artifact x y))
-            (define occluded?
-              (and depth
-                   (< (+ depth 1e-6)
-                      (camera3d-view-depth camera3 world-point))))
-            (if occluded?
-                (if (eq? (projected-label-value-occlusion label) 'hide) 0 1/4)
-                1)])]))
+     (if (label-anchor-occluded? view outer-camera world-point)
+         (if (eq? (projected-label-value-occlusion label) 'hide) 0 1/4)
+         1)]))
+
+;; Visibility is deliberately separate from the author-facing occlusion
+;; treatment.  `inside-frustum` has no render dependency.  `anchor-visible`
+;; additionally asks whether geometry is in front of the anchor, while a
+;; `hide`/`fade` occlusion setting can still be used with an always-visible
+;; layout anchor.
+(define (label-visibility-factor label view outer-camera world-point)
+  (case (projected-label-value-visibility label)
+    [(always) 1]
+    [(inside-frustum)
+     (if (label-anchor-inside-frustum? view outer-camera world-point) 1 0)]
+    [(anchor-visible)
+     (if (and (label-anchor-inside-frustum? view outer-camera world-point)
+              (not (label-anchor-occluded? view outer-camera world-point)))
+         1
+         0)]
+    [else (error 'resolve-projected-label "unknown label visibility policy")]))
+
+(define (label-anchor-inside-frustum? view outer-camera world-point)
+  (define width (view-pixel-width view outer-camera))
+  (define height (view-pixel-height view outer-camera))
+  (define projected
+    (camera3d-project (view3d-camera view) world-point #:aspect (/ width height)))
+  (and projected
+       (<= -1 (vec2-x projected) 1)
+       (<= -1 (vec2-y projected) 1)))
+
+;; A missing depth value means the pixel contains only the viewport background
+;; and is therefore not occluded.  The compositor has requested linear depth
+;; whenever this predicate is needed; the explicit fallback preserves the
+;; standalone `resolve-projected-label` operation for a backend that returns a
+;; background-only sample.
+(define (label-anchor-occluded? view outer-camera world-point)
+  (define width (view-pixel-width view outer-camera))
+  (define height (view-pixel-height view outer-camera))
+  (define camera3 (view3d-camera view))
+  (define projected (camera3d-project camera3 world-point #:aspect (/ width height)))
+  (and projected
+       (<= -1 (vec2-x projected) 1)
+       (<= -1 (vec2-y projected) 1)
+       (let* ([x (normalized-x->pixel projected width)]
+              [y (normalized-y->pixel projected height)]
+              [artifact
+               (render-view3d-frame-artifact
+                view width height (current-view3d-renderer3d)
+                #:attachments '(color linear-depth))]
+              [depth (renderer3d-frame-linear-depth-at artifact x y)])
+         (and depth
+              (< (+ depth 1e-6)
+                 (camera3d-view-depth camera3 world-point))))))
+
+(define (normalized-x->pixel projected width)
+  (min (sub1 width)
+       (max 0
+            (inexact->exact
+             (floor (* width (/ (+ (vec2-x projected) 1) 2)))))))
+
+(define (normalized-y->pixel projected height)
+  (min (sub1 height)
+       (max 0
+            (inexact->exact
+             (floor (* height (/ (- 1 (vec2-y projected)) 2)))))))
 
 (define (view-pixel-width view outer-camera)
   (max 1 (inexact->exact

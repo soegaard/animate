@@ -94,4 +94,58 @@
      #:view 'world
      #:point origin3
      #:placement (label-placement3d '(south) 14 1 #t #t '() 1 4)
-     #:visibility 'inside-frustum))))
+     #:visibility 'inside-frustum)))
+
+  ;; Visibility is a compositor policy, not merely retained declaration data:
+  ;; an in-depth but off-screen target is suppressed by `inside-frustum`.
+  (define outside-label
+    (follow-projected-point
+     (plain-text "outside" #:id 'outside-label #:font-size 1/3)
+     #:view 'world
+     #:point (vec3 100 0 0)
+     #:visibility 'inside-frustum))
+  (check-equal?
+   (visual-opacity (resolve-projected-label outside-label world outer-camera))
+   0)
+
+  ;; `anchor-visible` is stronger: it performs the shared depth comparison and
+  ;; suppresses an otherwise in-frustum anchor behind an opaque triangle.
+  (define occluding-world
+    (view3d
+     (list
+      (mesh3d #:id 'screen
+              #:vertices (vector (vec3 -2 -2 1) (vec3 2 -2 1) (vec3 0 2 1))
+              #:triangles (vector (vector 0 1 2))))
+     #:id 'occluding-world
+     #:center (vec2 1 2)
+     #:width 8
+     #:height 4
+     #:camera initial-camera
+     #:render-mode 'opaque))
+  (define hidden-label
+    (follow-projected-point
+     (plain-text "hidden" #:id 'hidden-label #:font-size 1/3)
+     #:view 'occluding-world
+     #:point origin3
+     #:visibility 'anchor-visible))
+  (check-equal?
+   (visual-opacity (resolve-projected-label hidden-label occluding-world outer-camera))
+   0)
+
+  ;; A requested leader is composed below its crisp 2D label by the final
+  ;; scene adapter.  Its source remains an ordinary projected-label, rather
+  ;; than a synthetic 3D line or a mutable renderer callback.
+  (define leader-label
+    (follow-projected-point
+     (plain-text "leader" #:id 'leader-label #:font-size 1/3)
+     #:view 'world
+     #:point origin3
+     #:leader (leader-style3d 'nearest #t 1)))
+  (check-true
+   (pict?
+    (scene->pict
+     (scene-add (scene-add (make-scene) world) leader-label)
+     0
+     #:camera outer-camera)))
+  (check-exn exn:fail:contract?
+             (lambda () (leader-style3d 'top #f 0))))
