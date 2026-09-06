@@ -38,15 +38,21 @@
          compiled-view3d-cache-statistics
          current-compiled-view3d-cache
          (struct-out renderer3d-frame-artifact)
-         renderer3d-frame-depth-at
+         renderer3d-attachment-symbols
+         renderer3d-canonical-attachments
+         renderer3d-attachment-set-satisfies?
+         renderer3d-frame-artifact-attachments
+         renderer3d-frame-linear-depth-at
          renderer3d-frame-object-at
          renderer3d-frame-project
          (struct-out renderer3d-capability-set)
          (struct-out render3d-request)
          view3d->render3d-request
          (struct-out renderer3d-render-result)
-         renderer3d-render-result-with-artifact
-         renderer3d-render-result-artifact
+         renderer3d-render-result-width
+         renderer3d-render-result-height
+         renderer3d-render-result-argb-bytes
+         renderer3d-render-result-diagnostics
          renderer3d-render-result->bitmap
          (struct-out renderer3d-statistics)
          renderer3d-statistics-reset!
@@ -83,67 +89,51 @@
 
 ;; The request excludes a raw view3d. Compilation captures camera-independent
 ;; data first, so a camera orbit affects only frame preparation.
-(struct render3d-request (compiled-view frame-spec cancellation-token)
+(struct render3d-request (compiled-view frame-spec attachments cancellation-token)
   #:transparent
   #:guard
-  (lambda (compiled-view frame-spec cancellation-token who)
+  (lambda (compiled-view frame-spec attachments cancellation-token who)
     (unless (compiled-view3d? compiled-view)
       (raise-argument-error who "compiled-view3d?" compiled-view))
     (unless (frame3d-spec? frame-spec)
       (raise-argument-error who "frame3d-spec?" frame-spec))
     (unless (or (not cancellation-token) (cancellation-token? cancellation-token))
       (raise-argument-error who "(or/c #f cancellation-token?)" cancellation-token))
-    (values compiled-view frame-spec cancellation-token)))
+    (values compiled-view frame-spec (renderer3d-canonical-attachments attachments)
+            cancellation-token)))
 
 ; view3d->render3d-request : view3d? exact-positive-integer? exact-positive-integer?
 ;                            [#:cancellation-token (or/c #f cancellation-token?)]
-;                            [#:attachments (listof (or/c 'color 'depth 'object-id))]
+;                            [#:attachments (listof (or/c 'color 'linear-depth 'object-id 'normal))]
 ;                            -> render3d-request?
 (define (view3d->render3d-request view width height #:cancellation-token [cancellation-token #f]
                                   #:attachments [attachments '(color)])
   (unless (view3d? view)
     (raise-argument-error 'view3d->render3d-request "view3d?" view))
-  ;; Current backends produce depth as a shared artifact attachment. Keep the
-  ;; request's established three-field shape while attachment negotiation is
-  ;; expanded in a later backend protocol revision.
-  (unless (and (list? attachments) (memq 'color attachments))
-    (raise-argument-error 'view3d->render3d-request "attachment list including 'color" attachments))
   (render3d-request (compile-view3d/cached view)
                     (view3d->frame3d-spec view width height)
+                    attachments
                     cancellation-token))
 
-(struct renderer3d-render-result (width height argb-bytes diagnostics)
+(struct renderer3d-render-result (artifact)
   #:transparent
   #:guard
-  (lambda (width height argb-bytes diagnostics who)
-    (unless (exact-positive-integer? width)
-      (raise-argument-error who "exact-positive-integer?" width))
-    (unless (exact-positive-integer? height)
-      (raise-argument-error who "exact-positive-integer?" height))
-    (unless (and (bytes? argb-bytes) (= (bytes-length argb-bytes) (* 4 width height)))
-      (raise-argument-error who "ARGB bytes for the declared dimensions" argb-bytes))
-    (values width height (bytes->immutable-bytes argb-bytes) diagnostics)))
+  (lambda (artifact who)
+    (unless (renderer3d-frame-artifact? artifact)
+      (raise-argument-error who "renderer3d-frame-artifact?" artifact))
+    (values artifact)))
 
-;; Frame artifacts are intentionally adapter-owned side data. This weak map
-;; preserves the public renderer-result representation while allowing one
-;; rendered frame to carry richer depth/object attachments when available.
-(define renderer-result-artifacts (make-weak-hasheq))
-
-(define (renderer3d-render-result-with-artifact result artifact)
-  (unless (renderer3d-render-result? result)
-    (raise-argument-error 'renderer3d-render-result-with-artifact
-                          "renderer3d-render-result?" result))
-  (unless (renderer3d-frame-artifact? artifact)
-    (raise-argument-error 'renderer3d-render-result-with-artifact
-                          "renderer3d-frame-artifact?" artifact))
-  (hash-set! renderer-result-artifacts result artifact)
-  result)
-
-(define (renderer3d-render-result-artifact result)
-  (unless (renderer3d-render-result? result)
-    (raise-argument-error 'renderer3d-render-result-artifact
-                          "renderer3d-render-result?" result))
-  (hash-ref renderer-result-artifacts result #f))
+;; These convenience queries keep callers focused on the semantic result while
+;; the artifact remains the single owner of all attachments. They are not a
+;; second result representation and never consult global side state.
+(define (renderer3d-render-result-width result)
+  (renderer3d-frame-artifact-width (renderer3d-render-result-artifact result)))
+(define (renderer3d-render-result-height result)
+  (renderer3d-frame-artifact-height (renderer3d-render-result-artifact result)))
+(define (renderer3d-render-result-argb-bytes result)
+  (renderer3d-frame-artifact-straight-argb (renderer3d-render-result-artifact result)))
+(define (renderer3d-render-result-diagnostics result)
+  (renderer3d-frame-artifact-diagnostics (renderer3d-render-result-artifact result)))
 
 (define-generics renderer3d
   (renderer3d-id renderer3d)
@@ -199,23 +189,33 @@
       statistics 'raster-milliseconds (- raster-finished raster-start))
      (renderer3d-statistics-state-add!
       statistics 'readback-milliseconds (- readback-finished readback-start))))
+  (define requested (render3d-request-attachments request))
+  (when (member 'normal requested)
+    (raise-arguments-error 'renderer3d-render
+                           "a renderer that supports every requested attachment"
+                           "unsupported-attachment" 'normal
+                           "renderer" 'software-reference))
   (define artifact
     (renderer3d-frame-artifact
      (raster-target3d-width target)
      (raster-target3d-height target)
-     bytes
-     (vector->immutable-vector
-      (for/vector ([depth (in-vector (raster-target3d-depth-values target))]) depth))
+     (and (member 'color requested) bytes)
+     (and (member 'linear-depth requested)
+          (vector->immutable-vector
+           (for/vector ([depth (in-vector (raster-target3d-depth-values target))]) depth)))
+     (and (member 'object-id requested)
+          (vector->immutable-vector
+           (for/vector ([owner (in-vector (raster-target3d-owner-values target))]) owner)))
      #f
      (frame3d-spec-camera (render3d-request-frame-spec request))
      diagnostics))
-  (renderer3d-render-result-with-artifact
-   (renderer3d-render-result
-    (raster-target3d-width target)
-    (raster-target3d-height target)
-    bytes
-    diagnostics)
-   artifact))
+  (unless (renderer3d-attachment-set-satisfies?
+           (renderer3d-frame-artifact-attachments artifact) requested)
+    (raise-arguments-error 'renderer3d-render
+                           "a renderer artifact satisfying every requested attachment"
+                           "requested" requested
+                           "available" (renderer3d-frame-artifact-attachments artifact)))
+  (renderer3d-render-result artifact))
 
 (define (record-preparation! statistics statistics-lock request preparation elapsed)
   (define diagnostics (software-render-preparation-diagnostics preparation))
@@ -422,6 +422,7 @@
     (compiled-view3d-render-mode compiled)
     (compiled-view3d-transparency-mode compiled))
    (render3d-request-frame-spec request)
+   (render3d-request-attachments request)
    (render3d-request-cancellation-token request)))
 
 (define (record-preparation-under-held-lock! statistics request preparation elapsed)
@@ -542,14 +543,21 @@
   (unless (renderer3d-render-result? result)
     (raise-argument-error 'renderer3d-render-result->bitmap
                           "renderer3d-render-result?" result))
+  (define artifact (renderer3d-render-result-artifact result))
+  (define bytes (renderer3d-frame-artifact-straight-argb artifact))
+  (unless bytes
+    (raise-arguments-error 'renderer3d-render-result->bitmap
+                           "a render result with the 'color attachment"
+                           "available-attachments"
+                           (renderer3d-frame-artifact-attachments artifact)))
   (define bitmap
     (make-object bitmap%
-                 (renderer3d-render-result-width result)
-                 (renderer3d-render-result-height result)
+                 (renderer3d-frame-artifact-width artifact)
+                 (renderer3d-frame-artifact-height artifact)
                  #f #t))
   (send bitmap set-argb-pixels
         0 0
-        (renderer3d-render-result-width result)
-        (renderer3d-render-result-height result)
-        (renderer3d-render-result-argb-bytes result))
+        (renderer3d-frame-artifact-width artifact)
+        (renderer3d-frame-artifact-height artifact)
+        bytes)
   bitmap)

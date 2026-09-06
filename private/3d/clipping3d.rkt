@@ -12,6 +12,7 @@
 
 (require racket/list
          racket/match
+         "../color-style.rkt"
          "../geometry.rkt"
          "affine3.rkt"
          "bounds3.rkt"
@@ -37,6 +38,7 @@
          clip3d-content
          clip3d-plane
          slice-mesh3d
+         slice-mesh-by-planes3d
          section3d?
          section3d-plane
          section3d-basis
@@ -201,9 +203,11 @@
   (define vertex-indices (make-hash))
   (define output-vertices-reversed '())
   (define output-normals-reversed '())
+  (define output-colors-reversed '())
   (define output-triangles-reversed '())
   (define next-index 0)
   (define source-has-normals? (and (mesh3d-normals mesh) #t))
+  (define source-has-colors? (and (mesh3d-colors mesh) #t))
   (define (register! point)
     (define key (slice-point3d-key point))
     (cond [(hash-ref vertex-indices key #f) => values]
@@ -216,6 +220,9 @@
            (when source-has-normals?
              (set! output-normals-reversed
                    (cons (slice-point3d-normal point) output-normals-reversed)))
+           (when source-has-colors?
+             (set! output-colors-reversed
+                   (cons (slice-point3d-color point) output-colors-reversed)))
            index]))
   (parameterize ([current-section-distance-tolerance
                   (section3d-settings-distance-tolerance settings)])
@@ -235,26 +242,54 @@
           #:triangles (list->vector (reverse output-triangles-reversed))
           #:normals (and source-has-normals?
                          (list->vector (reverse output-normals-reversed)))
+          #:colors (and source-has-colors?
+                       (list->vector (reverse output-colors-reversed)))
           #:material (mesh3d-material mesh)
           #:transform (spatial-transform mesh)
           #:opacity (spatial-opacity mesh)
           #:wireframe-color (mesh3d-wireframe-color mesh)
           #:wireframe-width (mesh3d-wireframe-width mesh)))
 
+; slice-mesh-by-planes3d : mesh3d? (listof (or/c plane3? clip-plane3d?)) ... -> mesh3d?
+;; Applies authored clipping planes in declaration order, creating geometry at
+;; every step.  This is intentionally separate from `clip-planes3d`, whose
+;; nested wrappers are a render instruction only.  Each intermediate mesh is
+;; immutable and becomes the indexed source for the next plane, so subsequent
+;; intersections have a real semantic vertex registry rather than relying on
+;; an approximate post-hoc weld.
+(define (slice-mesh-by-planes3d mesh clips
+                                #:id [id (spatial-id mesh)]
+                                #:settings [settings (section3d-settings-for-bounds
+                                                    (mesh3d-local-bounds mesh))])
+  (unless (mesh3d? mesh)
+    (raise-argument-error 'slice-mesh-by-planes3d "mesh3d?" mesh))
+  (unless (and (list? clips)
+               (andmap (lambda (clip) (or (plane3? clip) (clip-plane3d? clip))) clips))
+    (raise-argument-error 'slice-mesh-by-planes3d
+                          "list of plane3? or clip-plane3d?" clips))
+  (unless (symbol? id)
+    (raise-argument-error 'slice-mesh-by-planes3d "symbol? as #:id" id))
+  (unless (section3d-settings? settings)
+    (raise-argument-error 'slice-mesh-by-planes3d "section3d-settings?" settings))
+  (for/fold ([current mesh]) ([clip (in-list clips)])
+    (slice-mesh3d current clip #:id id #:settings settings)))
+
 ;; One output point remembers whether it is an original vertex or the unique
 ;; intersection of one original mesh edge with this one clipping plane.  The
 ;; key does not depend on floating-point coordinates, so neighbouring source
 ;; triangles agree even if they enumerate their shared edge in opposite order.
 (struct slice-key3d (kind low high) #:transparent)
-(struct slice-point3d (position normal key) #:transparent)
+(struct slice-point3d (position normal color key) #:transparent)
 
 (define (clip-indexed-triangle-by-plane mesh triangle clip)
   (define source-normals (mesh3d-normals mesh))
+  (define source-colors (mesh3d-colors mesh))
   (define polygon
     (for/list ([index (in-vector triangle)])
       (slice-point3d
        (vector-ref (mesh3d-vertices mesh) index)
        (and source-normals (vector-ref source-normals index))
+       (and source-colors (vector-ref source-colors index))
        (slice-key3d 'vertex index index))))
   (define plane (clip-plane3d-plane clip))
   (define sign (if (eq? (clip-plane3d-keep clip) 'positive) 1 -1))
@@ -307,12 +342,26 @@
   (slice-point3d
    (vec3-lerp (slice-point3d-position first) (slice-point3d-position second) amount)
    (interpolate-normal (slice-point3d-normal first) (slice-point3d-normal second) amount)
+   (interpolate-color (slice-point3d-color first) (slice-point3d-color second) amount)
    (slice-key3d 'edge low high))]))
 
 (define (interpolate-normal first second amount)
   (cond [(and first second)
          (define raw (vec3-lerp first second amount))
          (if (positive? (vec3-length raw)) (vec3-normalize raw) first)]
+        [first first]
+        [else second]))
+
+;; Keep colour in the same edge-derived vertex record as position and normal.
+;; `mesh3d` accepts colour names for authored vertices, but interpolation has
+;; to resolve those names to a numerical value first.  `rgba-color-lerp`
+;; preserves exact source endpoints, so an intersection that collapses onto a
+;; source vertex remains author-identical through the earlier endpoint cases.
+(define (interpolate-color first second amount)
+  (cond [(and first second)
+         (rgba-color-lerp (color-spec->rgba-color first 'slice-mesh3d)
+                          (color-spec->rgba-color second 'slice-mesh3d)
+                          amount)]
         [first first]
         [else second]))
 

@@ -2980,16 +2980,22 @@ lose the follow-on idea that led to the work.
   on the opaque depth target.
   Surface topology is rectangular and fixed: adaptive/implicit/trimmed
   surfaces and topology-changing morphs are not available. There are no
-  textures, specular highlights, shadows, general cap generation for sliced
-  meshes, or 3D label geometry. Curves use deterministic, author-selected samples and a
+  textures, specular highlights, shadows, general UV/scalar/semantic mesh
+  attributes, repeated capped multi-plane geometry cuts, or 3D label
+  geometry. Single-plane caps support concave and nested-hole sections, while
+  their welded solid form deliberately uses exact cut-boundary vertices.
+  Curves use deterministic, author-selected samples and a
   physical world-space tube radius. Screen-space width is intentionally
   unavailable: it cannot be treated as a world radius without a depth-aware
   policy. SCENE-3D-E
   spatial relations resolve as concrete mesh edges and simple triangular arrowheads; their declared spatial/value/camera
   inputs make resolution deterministic and cycle checked. Projected labels are
   normal 2D Visuals that follow an unclipped 3D projection and remain visible
-  with fixed pixel offsets, but they are not 3D billboards and may overlap one
-  another. Their hide/fade policy considers opaque depth only. Spatial
+  with fixed pixel offsets. The final compositor batches direct-mode projected
+  labels to choose deterministic overlap-aware candidates. It minimizes
+  overlap but cannot guarantee a disjoint result; labels are not
+  3D billboards; prepared trajectories, leaders, and visibility policies are
+  still pending. Their hide/fade policy considers opaque depth only. Spatial
   transforms and finite camera motions are deterministic scene requests;
   preview navigation layers an inspection-only camera above an authored view
   and does not edit source. Spatial descendants use rooted `view3d` paths such

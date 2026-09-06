@@ -16,6 +16,7 @@
          gl-framebuffer-target-bind-draw!
          gl-framebuffer-target-resolve!
          gl-framebuffer-target-read-rgba!
+         gl-framebuffer-target-read-depth!
          gl-framebuffer-cache-statistics)
 
 (struct gl-framebuffer-target
@@ -213,6 +214,31 @@
   (glReadPixels 0 0 (gl-framebuffer-target-width target) (gl-framebuffer-target-height target)
                 GL_RGBA GL_UNSIGNED_BYTE rgba)
   rgba)
+
+; gl-framebuffer-target-read-depth! : gl-framebuffer-target? gl-context-host?
+;                                      -> immutable-vectorof flonum?
+;; Returns bottom-up hardware depth values. The renderer owns conversion to
+;; positive linear view depth because only it has the semantic camera. MSAA
+;; depth is deliberately rejected for now: averaging is incorrect for
+;; visibility and this FBO has no single-sample depth resolve attachment yet.
+(define (gl-framebuffer-target-read-depth! target host)
+  (check-target-current! target host 'gl-framebuffer-target-read-depth!)
+  (when (> (gl-framebuffer-target-samples target) 1)
+    (raise-arguments-error
+     'gl-framebuffer-target-read-depth!
+     "a non-MSAA framebuffer for a requested linear-depth attachment"
+     "samples" (gl-framebuffer-target-samples target)
+     "hint" "request #:samples 1 until nearest-sample depth resolve is available"))
+  (glBindFramebuffer GL_FRAMEBUFFER
+                     (gl-resource-id (gl-framebuffer-target-framebuffer target)))
+  (define count (* (gl-framebuffer-target-width target)
+                   (gl-framebuffer-target-height target)))
+  (define raw (make-f32vector count))
+  (glReadPixels 0 0 (gl-framebuffer-target-width target) (gl-framebuffer-target-height target)
+                GL_DEPTH_COMPONENT GL_FLOAT raw)
+  (vector->immutable-vector
+   (for/vector ([index (in-range count)])
+     (f32vector-ref raw index))))
 
 (define (destroy-target/current! target host)
   (for ([resource (in-list (filter values

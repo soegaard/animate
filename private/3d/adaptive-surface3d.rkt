@@ -5,8 +5,10 @@
 ;;;
 
 ;; Sampling is camera-independent. Exact dyadic coordinates, fixed traversal,
-;; and edge-conforming refinement make repeated construction produce the same
-;; indexed mesh and provenance regardless of hash iteration order.
+;; 2:1-balanced leaves, and transition triangulation make repeated construction
+;; produce the same indexed mesh and provenance regardless of hash iteration
+;; order.  In particular, one detailed area no longer forces an entire connected
+;; surface to its maximum depth merely to remove T-junctions.
 
 (require racket/list
          racket/math
@@ -45,6 +47,7 @@
                                        #:maximum-edge-length [maximum-edge-length +inf.0]
                                        #:minimum-depth [minimum-depth 0]
                                        #:maximum-depth [maximum-depth 8]
+                                       #:refine-cell? [refine-cell? #f]
                                        #:on-invalid [on-invalid 'split]
                                        #:material [material (material3d #:color "steelblue" #:shading 'smooth)]
                                        #:transform [transform identity-transform3]
@@ -54,7 +57,7 @@
   (check-constructor-inputs 'adaptive-parametric-surface3d procedure u-range v-range id
                             derivative-u derivative-v position-tolerance
                             normal-angle-tolerance maximum-edge-length
-                            minimum-depth maximum-depth on-invalid material transform opacity)
+                            minimum-depth maximum-depth refine-cell? on-invalid material transform opacity)
   (define samples (make-hash))
   (define sample-count 0)
   (define cache-hits 0)
@@ -160,6 +163,27 @@
           (adaptive-cell um (adaptive-cell-u1 cell) (adaptive-cell-v0 cell) vm depth)
           (adaptive-cell (adaptive-cell-u0 cell) um vm (adaptive-cell-v1 cell) depth)
           (adaptive-cell um (adaptive-cell-u1 cell) vm (adaptive-cell-v1 cell) depth)))
+  ;; A producer with topology constraints (currently the trim producer) may
+  ;; request a split from its own camera-independent cell samples.  Keeping
+  ;; this hook here lets that producer share the exact dyadic tree, balancing,
+  ;; and transition-triangle machinery instead of growing a second lattice.
+  ;; Its five arguments are the real parameter bounds and the current depth.
+  (define (requested-refinement? cell)
+    (and refine-cell?
+         (let ([answer
+                (refine-cell?
+                 (parameter (adaptive-cell-u0 cell) u-range)
+                 (parameter (adaptive-cell-u1 cell) u-range)
+                 (parameter (adaptive-cell-v0 cell) v-range)
+                 (parameter (adaptive-cell-v1 cell) v-range)
+                 (adaptive-cell-depth cell))])
+           (unless (boolean? answer)
+             (raise-arguments-error
+              'adaptive-parametric-surface3d
+              "a boolean from #:refine-cell?"
+              "cell" cell
+              "result" answer))
+           answer)))
   (define omitted '())
   (define (refine cell)
     (set! max-depth-reached (max max-depth-reached (adaptive-cell-depth cell)))
@@ -183,26 +207,21 @@
                   (append-map refine (children cell))
                   (begin (set! omitted (cons cell omitted)) '()))])]
           [(or (< (adaptive-cell-depth cell) minimum-depth)
-               (and (< (adaptive-cell-depth cell) maximum-depth) (cell-error? cell)))
+               (and (< (adaptive-cell-depth cell) maximum-depth)
+                    (or (cell-error? cell) (requested-refinement? cell))))
            (append-map refine (children cell))]
           [else (list cell)]))
   (define root
     (adaptive-cell (dyadic-coordinate 0 0) (dyadic-coordinate 1 0)
                    (dyadic-coordinate 0 0) (dyadic-coordinate 1 0) 0))
   (define initial-leaves (refine root))
-  (define conformity-refinements 0)
-  (define leaves
-    (let conform ([current initial-leaves])
-      (define pair (first-unconforming-pair current))
-      (if (not pair)
-          current
-          (let* ([first (car pair)] [second (cdr pair)]
-                 [coarser (if (< (adaptive-cell-depth first) (adaptive-cell-depth second))
-                              first second)])
-            (set! conformity-refinements (add1 conformity-refinements))
-            (conform
-             (append-map (lambda (cell) (if (equal? cell coarser) (children cell) (list cell)))
-                         current))))))
+  ;; Balance only violations greater than one level.  A side-indexed lookup
+  ;; avoids the old all-leaf-pairs scan, and the later transition fan fills the
+  ;; resulting one-level T-junctions without globally over-refining.
+  (define-values (leaves conformity-refinements)
+    (balance-2:1-leaves initial-leaves children))
+  (for ([leaf (in-list leaves)])
+    (set! max-depth-reached (max max-depth-reached (adaptive-cell-depth leaf))))
   (define-values (vertices triangles vertex-provenance triangle-provenance)
     (leaves->mesh-data leaves sample-at))
   (define mesh-without-normals
@@ -243,6 +262,7 @@
                                      #:maximum-edge-length [maximum-edge-length +inf.0]
                                      #:minimum-depth [minimum-depth 0]
                                      #:maximum-depth [maximum-depth 8]
+                                     #:refine-cell? [refine-cell? #f]
                                      #:on-invalid [on-invalid 'split]
                                      #:material [material (material3d #:color "steelblue" #:shading 'smooth)]
                                      #:transform [transform identity-transform3]
@@ -265,12 +285,13 @@
    #:normal-angle-tolerance normal-angle-tolerance
    #:maximum-edge-length maximum-edge-length
    #:minimum-depth minimum-depth #:maximum-depth maximum-depth
+   #:refine-cell? refine-cell?
    #:on-invalid on-invalid #:material material #:transform transform #:opacity opacity
    #:wireframe-color wireframe-color #:wireframe-width wireframe-width))
 
 (define (check-constructor-inputs who procedure u-range v-range id derivative-u derivative-v
                                   position-tolerance normal-angle-tolerance maximum-edge-length
-                                  minimum-depth maximum-depth on-invalid material transform opacity)
+                                  minimum-depth maximum-depth refine-cell? on-invalid material transform opacity)
   (unless (procedure? procedure) (raise-argument-error who "procedure?" procedure))
   (unless (symbol? id) (raise-argument-error who "symbol?" id))
   (for ([range (in-list (list u-range v-range))])
@@ -291,6 +312,8 @@
                (<= minimum-depth maximum-depth))
     (raise-argument-error who "ordered exact nonnegative depths"
                           (list minimum-depth maximum-depth)))
+  (unless (or (not refine-cell?) (procedure-arity-includes? refine-cell? 5))
+    (raise-argument-error who "(or/c #f (procedure-arity-includes/c 5))" refine-cell?))
   (unless (memq on-invalid '(error omit split))
     (raise-argument-error who "(or/c 'error 'omit 'split)" on-invalid))
   (unless (material3d? material) (raise-argument-error who "material3d?" material))
@@ -298,13 +321,72 @@
   (unless (and (finite-real? opacity) (<= 0 opacity 1))
     (raise-argument-error who "finite opacity in [0, 1]" opacity)))
 
-(define (first-unconforming-pair cells)
-  (for*/first ([first (in-list cells)] [second (in-list cells)]
-               #:when (and (not (eq? first second))
-                            (not (= (adaptive-cell-depth first)
-                                    (adaptive-cell-depth second)))
-                            (cells-share-side? first second)))
-    (cons first second)))
+;; The side index is deliberately keyed by exact dyadic line coordinates.  A
+;; lookup inspects only leaves meeting one line, not every leaf in the surface.
+(define (cells->side-index cells)
+  (define index (make-hash))
+  (define (add! orientation coordinate cell)
+    (hash-update! index
+                  (list orientation (dyadic-coordinate->real coordinate))
+                  (lambda (previous) (cons cell previous))
+                  '()))
+  (for ([cell (in-list cells)])
+    (add! 'vertical (adaptive-cell-u0 cell) cell)
+    (add! 'vertical (adaptive-cell-u1 cell) cell)
+    (add! 'horizontal (adaptive-cell-v0 cell) cell)
+    (add! 'horizontal (adaptive-cell-v1 cell) cell))
+  index)
+
+(define (cell-side-neighbours cell orientation coordinate side-index)
+  (filter (lambda (candidate)
+            (and (not (eq? cell candidate))
+                 (cells-share-side? cell candidate)))
+          (hash-ref side-index
+                    (list orientation (dyadic-coordinate->real coordinate))
+                    '())))
+
+(define (first-unbalanced-pair cells side-index)
+  (for*/first
+      ([cell (in-list cells)]
+       [candidate (in-list
+                   (append
+                    (cell-side-neighbours cell 'vertical (adaptive-cell-u0 cell) side-index)
+                    (cell-side-neighbours cell 'vertical (adaptive-cell-u1 cell) side-index)
+                    (cell-side-neighbours cell 'horizontal (adaptive-cell-v0 cell) side-index)
+                    (cell-side-neighbours cell 'horizontal (adaptive-cell-v1 cell) side-index)))]
+       #:when (> (abs (- (adaptive-cell-depth cell) (adaptive-cell-depth candidate))) 1))
+    (cons cell candidate)))
+
+(define (balance-2:1-leaves cells children)
+  ;; Split every currently-visible coarse violation in one deterministic
+  ;; round. The earlier one-pair-at-a-time loop was correct but made a long
+  ;; trim boundary rebuild the side index hundreds of times at depth 8.
+  ;; A round may reveal the next one-ring violation, so repeat to a fixed
+  ;; point; each round still preserves source traversal order.
+  (let loop ([current cells] [refinements 0])
+    (define side-index (cells->side-index current))
+    (define coarser-set (make-hash))
+    (for ([cell (in-list current)])
+      (for ([candidate (in-list
+                       (append
+                        (cell-side-neighbours cell 'vertical (adaptive-cell-u0 cell) side-index)
+                        (cell-side-neighbours cell 'vertical (adaptive-cell-u1 cell) side-index)
+                        (cell-side-neighbours cell 'horizontal (adaptive-cell-v0 cell) side-index)
+                        (cell-side-neighbours cell 'horizontal (adaptive-cell-v1 cell) side-index)))])
+        (when (> (abs (- (adaptive-cell-depth cell) (adaptive-cell-depth candidate))) 1)
+          (hash-set! coarser-set
+                     (if (< (adaptive-cell-depth cell) (adaptive-cell-depth candidate))
+                         cell candidate)
+                     #t))))
+    (if (zero? (hash-count coarser-set))
+        (values current refinements)
+        (loop
+         (append-map (lambda (cell)
+                       (if (hash-has-key? coarser-set cell)
+                           (children cell)
+                           (list cell)))
+                     current)
+         (+ refinements (hash-count coarser-set))))))
 
 (define (cells-share-side? first second)
   (define (same coordinate-a coordinate-b)
@@ -322,6 +404,7 @@
                      (adaptive-cell-u0 second) (adaptive-cell-u1 second)))))
 
 (define (leaves->mesh-data leaves sample-at)
+  (define side-index (cells->side-index leaves))
   (define ids (make-hash))
   (define vertices '())
   (define provenance '())
@@ -345,25 +428,63 @@
     (define u1 (adaptive-cell-u1 cell))
     (define v0 (adaptive-cell-v0 cell))
     (define v1 (adaptive-cell-v1 cell))
-    (define indices
-      (map vertex-id (list (uv-key u0 v0) (uv-key u1 v0)
-                           (uv-key u1 v1) (uv-key u0 v1))))
-    (define parity
-      (modulo (+ (dyadic-coordinate-numerator u0)
-                 (dyadic-coordinate-numerator v0)
-                 (adaptive-cell-depth cell))
-              2))
-    (define local-triangles
-      (if (zero? parity)
-          (list (vector (first indices) (second indices) (third indices))
-                (vector (first indices) (third indices) (fourth indices)))
-          (list (vector (first indices) (second indices) (fourth indices))
-                (vector (second indices) (third indices) (fourth indices)))))
-    (for ([triangle (in-list local-triangles)] [diagonal-index (in-naturals)])
-      (set! triangles (cons triangle triangles))
-      (set! triangle-provenance
-            (cons (hasheq 'cell cell 'diagonal parity 'triangle-in-cell diagonal-index)
-                  triangle-provenance))))
+    (define um (dyadic-coordinate-midpoint u0 u1))
+    (define vm (dyadic-coordinate-midpoint v0 v1))
+    (define (finer? orientation coordinate)
+      (for/or ([neighbour (in-list (cell-side-neighbours
+                                    cell orientation coordinate side-index))])
+        (> (adaptive-cell-depth neighbour) (adaptive-cell-depth cell))))
+    (define split-bottom? (finer? 'horizontal v0))
+    (define split-right? (finer? 'vertical u1))
+    (define split-top? (finer? 'horizontal v1))
+    (define split-left? (finer? 'vertical u0))
+    (define corner-keys
+      (list (uv-key u0 v0) (uv-key u1 v0) (uv-key u1 v1) (uv-key u0 v1)))
+    (define indices (map vertex-id corner-keys))
+    (cond
+      [(or split-bottom? split-right? split-top? split-left?)
+       ;; Traverse the cell boundary counter-clockwise. A one-level-finer
+       ;; neighbour contributes exactly the dyadic midpoint on the shared
+       ;; side; a centre fan is a small deterministic transition template for
+       ;; every possible subset of split sides.
+       (define boundary-keys
+         (append (list (first corner-keys))
+                 (if split-bottom? (list (uv-key um v0)) '())
+                 (list (second corner-keys))
+                 (if split-right? (list (uv-key u1 vm)) '())
+                 (list (third corner-keys))
+                 (if split-top? (list (uv-key um v1)) '())
+                 (list (fourth corner-keys))
+                 (if split-left? (list (uv-key u0 vm)) '())))
+       (define boundary (map vertex-id boundary-keys))
+       (define centre (vertex-id (uv-key um vm)))
+       (for ([first (in-list boundary)]
+             [second (in-list (append (rest boundary) (list (first boundary))))]
+             [fan-index (in-naturals)])
+         (set! triangles (cons (vector centre first second) triangles))
+         (set! triangle-provenance
+               (cons (hasheq 'cell cell
+                             'transition-sides
+                             (list split-bottom? split-right? split-top? split-left?)
+                             'triangle-in-cell fan-index)
+                     triangle-provenance)))]
+      [else
+       (define parity
+         (modulo (+ (dyadic-coordinate-numerator u0)
+                    (dyadic-coordinate-numerator v0)
+                    (adaptive-cell-depth cell))
+                 2))
+       (define local-triangles
+         (if (zero? parity)
+             (list (vector (first indices) (second indices) (third indices))
+                   (vector (first indices) (third indices) (fourth indices)))
+             (list (vector (first indices) (second indices) (fourth indices))
+                   (vector (second indices) (third indices) (fourth indices)))))
+       (for ([triangle (in-list local-triangles)] [diagonal-index (in-naturals)])
+         (set! triangles (cons triangle triangles))
+         (set! triangle-provenance
+               (cons (hasheq 'cell cell 'diagonal parity 'triangle-in-cell diagonal-index)
+                     triangle-provenance)))]))
   (values (vector->immutable-vector (list->vector (reverse vertices)))
           (vector->immutable-vector (list->vector (reverse triangles)))
           (vector->immutable-vector (list->vector (reverse provenance)))

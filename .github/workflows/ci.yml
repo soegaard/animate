@@ -20,6 +20,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: raco make animate animate/authoring animate/preview animate/project animate/render
@@ -36,6 +37,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: raco test tests
@@ -52,6 +54,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: raco setup --pkgs animate
@@ -69,6 +72,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: |
@@ -90,6 +94,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: raco test tests/scene-ej-token-formula-test.rkt tests/scene-ek-match-plan-test.rkt tests/scene-dg-test.rkt tests/scene-dh-test.rkt
@@ -106,6 +111,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: xvfb-run -a gracket -l raco/main -- test tests/scene-ep-gui-smoke-test.rkt
@@ -122,6 +128,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: xvfb-run -a env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt tests/scene-3d-p-opengl-project-integration-test.rkt
@@ -137,6 +144,7 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
+          ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: env ANIMATE_OPENGL_INTEGRATION=1 gracket -l raco/main -- test tests/scene-3d-p-opengl-integration-test.rkt tests/scene-3d-p-opengl-project-integration-test.rkt

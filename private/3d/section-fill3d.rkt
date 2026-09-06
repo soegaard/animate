@@ -5,8 +5,9 @@
 ;;;
 
 ;; A section fill is intentionally just separately addressable cap geometry.
-;; It does not claim to repair or close its source mesh, and it shares the cap
-;; triangulator's explicit current limitation for concave or holed loops.
+;; It does not claim to repair or close its source mesh.  Its cap triangulator
+;; supports concave loops and nested holes, but still rejects touching or
+;; self-intersecting section contours.
 
 (require "../geometry.rkt"
          "cap-style3d.rkt"

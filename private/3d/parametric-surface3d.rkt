@@ -302,38 +302,48 @@
 ; surface3d-tangent-u-at : surface3d? finite-real? finite-real? -> vec3?
 ;;   Returns a finite nonzero u tangent using analytic data or fixed finite differences.
 (define (surface3d-tangent-u-at surface u v)
-  (when (generated-surface3d-value? surface)
-    (raise-arguments-error 'surface3d-tangent-u-at "a regular surface with tangent data"
-                           "surface-kind" (surface3d-kind surface)))
-  (check-surface-parameter 'surface3d-tangent-u-at surface u v)
-  (or (and (surface3d-value-derivative-u surface)
-           (checked-evaluate 'surface3d-tangent-u-at
-                             (surface3d-value-derivative-u surface) u v))
-      (surface-finite-tangent surface u v 'u)))
+  (cond [(generated-surface3d-value? surface)
+         (unless (generated-surface3d-value-evaluator surface)
+           (raise-arguments-error 'surface3d-tangent-u-at "a generated parametric surface"
+                                  "surface-kind" (surface3d-kind surface)))
+         (check-generated-parameter 'surface3d-tangent-u-at surface u v)
+         (surface-finite-tangent surface u v 'u)]
+        [else
+         (check-surface-parameter 'surface3d-tangent-u-at surface u v)
+         (or (and (surface3d-value-derivative-u surface)
+                  (checked-evaluate 'surface3d-tangent-u-at
+                                    (surface3d-value-derivative-u surface) u v))
+             (surface-finite-tangent surface u v 'u))]))
 
 ; surface3d-tangent-v-at : surface3d? finite-real? finite-real? -> vec3?
 ;;   Returns a finite nonzero v tangent using analytic data or fixed finite differences.
 (define (surface3d-tangent-v-at surface u v)
-  (when (generated-surface3d-value? surface)
-    (raise-arguments-error 'surface3d-tangent-v-at "a regular surface with tangent data"
-                           "surface-kind" (surface3d-kind surface)))
-  (check-surface-parameter 'surface3d-tangent-v-at surface u v)
-  (or (and (surface3d-value-derivative-v surface)
-           (checked-evaluate 'surface3d-tangent-v-at
-                             (surface3d-value-derivative-v surface) u v))
-      (surface-finite-tangent surface u v 'v)))
+  (cond [(generated-surface3d-value? surface)
+         (unless (generated-surface3d-value-evaluator surface)
+           (raise-arguments-error 'surface3d-tangent-v-at "a generated parametric surface"
+                                  "surface-kind" (surface3d-kind surface)))
+         (check-generated-parameter 'surface3d-tangent-v-at surface u v)
+         (surface-finite-tangent surface u v 'v)]
+        [else
+         (check-surface-parameter 'surface3d-tangent-v-at surface u v)
+         (or (and (surface3d-value-derivative-v surface)
+                  (checked-evaluate 'surface3d-tangent-v-at
+                                    (surface3d-value-derivative-v surface) u v))
+             (surface-finite-tangent surface u v 'v))]))
 
 ; surface3d-normal-at : surface3d? finite-real? finite-real? -> vec3?
 ;;   Returns the normalized u-cross-v normal, falling back to a sampled normal.
 (define (surface3d-normal-at surface u v)
-  (when (generated-surface3d-value? surface)
-    (raise-arguments-error 'surface3d-normal-at "a regular surface with tangent data"
-                           "surface-kind" (surface3d-kind surface)))
   (define candidate
     (vec3-cross (surface3d-tangent-u-at surface u v)
                 (surface3d-tangent-v-at surface u v)))
   (if (zero? (vec3-length candidate))
-      (nearest-grid-normal surface u v)
+      (if (generated-surface3d-value? surface)
+          (raise-arguments-error 'surface3d-normal-at
+                                 "a generated parameterization with a non-degenerate local frame"
+                                 "surface-kind" (surface3d-kind surface)
+                                 "u" u "v" v)
+          (nearest-grid-normal surface u v))
       (vec3-normalize candidate)))
 
 ; surface3d-scalar-function : surface3d? -> (or/c #f procedure?)
@@ -673,8 +683,14 @@
 
 (define (surface-finite-tangent surface u v axis)
   (define range (if (eq? axis 'u) (surface3d-u-range surface) (surface3d-v-range surface)))
-  (define count (if (eq? axis 'u) (first (surface3d-resolution surface))
-                    (second (surface3d-resolution surface))))
+  ;; Generated adaptive/trimmed surfaces retain their evaluator and parameter
+  ;; ranges but intentionally do not pretend to have a rectangular grid.  A
+  ;; fixed local probe count gives their anchors a deterministic differential
+  ;; frame without reintroducing a grid-shaped public topology.
+  (define resolution (surface3d-resolution surface))
+  (define count (if resolution
+                    (if (eq? axis 'u) (first resolution) (second resolution))
+                    65))
   (define step (/ (- (second range) (first range)) (sub1 count)))
   (define low (max (first range) (- (if (eq? axis 'u) u v) step)))
   (define high (min (second range) (+ (if (eq? axis 'u) u v) step)))

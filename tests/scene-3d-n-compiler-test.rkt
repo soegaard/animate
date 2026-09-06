@@ -58,11 +58,11 @@
     (renderer3d-render renderer (renderer3d-prepare renderer request) request))
   (renderer3d-statistics-reset! renderer)
   (define first-request
-    (render3d-request first-compiled (view3d->frame3d-spec first-view 96 64) #f))
+    (render3d-request first-compiled (view3d->frame3d-spec first-view 96 64) '(color) #f))
   (define orbit-request
-    (render3d-request second-compiled (view3d->frame3d-spec second-view 96 64) #f))
+    (render3d-request second-compiled (view3d->frame3d-spec second-view 96 64) '(color) #f))
   (define moving-request
-    (render3d-request moved-compiled (view3d->frame3d-spec moved-view 96 64) #f))
+    (render3d-request moved-compiled (view3d->frame3d-spec moved-view 96 64) '(color) #f))
   (define _first-result (render first-request))
   (define _orbit-result (render orbit-request))
   (define _moving-result (render moving-request))

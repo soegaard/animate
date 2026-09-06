@@ -22,6 +22,7 @@
          "../light3d.rkt"
          "../material3d.rkt"
          "../mesh3d.rkt"
+         "../projection3d.rkt"
          "../ray-plane.rkt"
          "../renderer3d.rkt"
          "../renderer3d-statistics.rkt"
@@ -358,6 +359,14 @@
           (opengl-renderer3d-value-lock renderer)
           (lambda ()
             (ensure-live-renderer 'renderer3d-render renderer)
+            (define requested (render3d-request-attachments request))
+            (for ([attachment (in-list requested)]
+                  #:when (memq attachment '(object-id normal)))
+              (raise-arguments-error
+               'renderer3d-render
+               "an OpenGL renderer supporting every requested attachment"
+               "unsupported-attachment" attachment
+               "renderer" 'opengl-racket))
             (define compiled (opengl-preparation-compiled preparation))
             (define frame-spec (opengl-preparation-frame-spec preparation))
             (define host (opengl-renderer3d-value-host renderer))
@@ -372,7 +381,7 @@
             (define stroke-batches
               (prepare-opengl-stroke-batches compiled frame-spec))
             (define start (current-inexact-milliseconds))
-            (define-values (rgba instance-count triangle-count)
+            (define-values (rgba raw-depth instance-count triangle-count)
               (gl-context-host-call
                host
                (lambda ()
@@ -389,6 +398,8 @@
                  (draw-transparent/current! renderer compiled frame-spec transparent)
                  (draw-stroke-batches/current! renderer stroke-batches 'always)
                  (values (gl-framebuffer-target-read-rgba! target host)
+                         (and (member 'linear-depth requested)
+                              (gl-framebuffer-target-read-depth! target host))
                          (length (vector->list (compiled-view3d-instances compiled)))
                          (for/sum ([instance (in-vector (compiled-view3d-instances compiled))])
                            (triangle-count-for compiled instance))))))
@@ -397,6 +408,11 @@
             (define argb
               (gl-rgba-bottom-up->argb-top-down
                (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec) rgba))
+            (define linear-depth
+              (and raw-depth
+                   (gl-depth-bottom-up->linear-top-down
+                    raw-depth (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec)
+                    (frame3d-spec-camera frame-spec))))
             (define finished (current-inexact-milliseconds))
             (statistics-add! renderer 'instance-count instance-count)
             (statistics-add! renderer 'source-triangle-count triangle-count)
@@ -412,13 +428,24 @@
             (statistics-add! renderer 'readback-milliseconds (- finished argb-start))
             (set-opengl-renderer3d-value-frames! renderer
                                                   (add1 (opengl-renderer3d-value-frames renderer)))
-            (renderer3d-render-result
-             (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec) argb
-             (hasheq 'backend 'opengl-racket
-                     'samples (gl-framebuffer-target-samples target)
-                     'renderer-info (opengl3d-info->datum (opengl-renderer3d-value-info renderer))
-                     'geometry-cache (gl-geometry-cache-statistics
-                                      (opengl-renderer3d-value-geometry-cache renderer))))))]))
+            (define artifact
+              (renderer3d-frame-artifact
+               (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec)
+               (and (member 'color requested) argb)
+               linear-depth #f #f (frame3d-spec-camera frame-spec)
+               (hasheq 'backend 'opengl-racket
+                       'samples (gl-framebuffer-target-samples target)
+                       'attachments requested
+                       'renderer-info (opengl3d-info->datum (opengl-renderer3d-value-info renderer))
+                       'geometry-cache (gl-geometry-cache-statistics
+                                        (opengl-renderer3d-value-geometry-cache renderer)))))
+            (unless (renderer3d-attachment-set-satisfies?
+                     (renderer3d-frame-artifact-attachments artifact) requested)
+              (raise-arguments-error 'renderer3d-render
+                                     "an artifact satisfying requested OpenGL attachments"
+                                     "requested" requested
+                                     "available" (renderer3d-frame-artifact-attachments artifact)))
+            (renderer3d-render-result artifact)))]))
 
 (define (initialize-frame/current! target host compiled)
   (define background (color-spec->rgba-color (compiled-view3d-background compiled)
@@ -441,6 +468,32 @@
                 (* background-alpha (/ (rgba-color-blue background) 255.0))
                 background-alpha)
   (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT GL_STENCIL_BUFFER_BIT)))
+
+;; Hardware depth is non-linear for perspective cameras and arrives in
+;; bottom-up framebuffer order. Convert it once at the renderer boundary so
+;; projected labels and inspection compare the same positive view-space depth
+;; that the software renderer records.
+(define (gl-depth-bottom-up->linear-top-down raw width height camera)
+  (unless (= (vector-length raw) (* width height))
+    (raise-arguments-error 'gl-depth-bottom-up->linear-top-down
+                           "depth data matching dimensions"
+                           "depth-count" (vector-length raw)
+                           "dimensions" (vector width height)))
+  (define near (exact->inexact (camera3d-near camera)))
+  (define far (exact->inexact (camera3d-far camera)))
+  (define perspective?
+    (perspective-projection3d? (camera3d-projection camera)))
+  (vector->immutable-vector
+   (for/vector ([index (in-range (* width height))])
+     (define x (remainder index width))
+     (define y (quotient index width))
+     (define raw-index (+ x (* (- (sub1 height) y) width)))
+     (define depth (vector-ref raw raw-index))
+     ;; Clear depth is one. Keep it as +inf.0 so it cannot occlude a label.
+     (cond [(>= depth 1.0) +inf.0]
+           [perspective?
+            (/ (* near far) (- far (* depth (- far near))))]
+           [else (+ near (* depth (- far near)))]))))
 
 (define (ensure-geometry-resources/current! renderer compiled)
   (define cache (opengl-renderer3d-value-geometry-cache renderer))

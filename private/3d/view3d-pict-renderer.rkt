@@ -83,16 +83,19 @@
         (spatial-tree->wireframe-segments view (view3d-camera view) aspect))]
       [(opaque)
        (define renderer (current-view3d-renderer3d))
+       (define attachments
+         (hash-ref (current-view3d-attachment-demands) (visual-id view) '(color)))
         (define artifact
          (render-view3d-frame-artifact
           view width height renderer
-          #:attachments '(color depth)
+          ;; The outer scene compositor has already unioned demands from
+          ;; labels/inspection for this view. A bare viewport remains colour
+          ;; only and therefore does not allocate a depth snapshot.
+          #:attachments attachments
           #:cancellation-token (current-software-render-cancellation-token)))
        (bitmap
-        (renderer3d-render-result->bitmap
-         (renderer3d-render-result
-          width height (renderer3d-frame-artifact-straight-argb artifact)
-          (renderer3d-frame-artifact-diagnostics artifact)))) ]
+       (renderer3d-render-result->bitmap
+        (renderer3d-render-result artifact))) ]
       [else (error 'view3d->pict "unsupported render mode: ~e"
                    (view3d-render-mode view))]))
   (if (zero? (visual-rotation view))

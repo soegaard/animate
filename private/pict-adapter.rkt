@@ -60,6 +60,8 @@
          "point-marker-visual.rkt"
          "path-geometry.rkt"
          "scene-state.rkt"
+         "3d/frame-artifact-cache3d.rkt"
+         "3d/label-layout3d.rkt"
          "3d/projected-label.rkt"
          "3d/view3d-visual.rkt"
          "shape-pict-renderers.rkt"
@@ -70,6 +72,12 @@
 (provide default-pict-renderers
          visual->pict
          scene-state->pict)
+
+;; A single scene-state traversal may resolve a view3d more than once while
+;; handling layout relations. This adapter-local parameter preserves the exact
+;; first resolved object for projected-label lookup, so all consumers share the
+;; same frame-artifact cache identity without storing renderer state in scenes.
+(define current-resolved-view3d-by-id (make-parameter (hasheq)))
 
 
 ;;;
@@ -773,15 +781,134 @@
                       #:color (camera-background camera)))
   (define layout-cache (make-hash))
   (define active-layout-paths (box '()))
-  (for/fold ([frame background])
-            ([visual
-              (in-list
-               (scene-state-resolved-visuals-in-drawing-order state))])
-    (define resolved-for-layout
-      (resolve-layout-relations-in-visual
-       state visual (list (visual-id visual)) camera renderers layout-cache
-       active-layout-paths))
-    (place-scene-visual-on-pict frame state resolved-for-layout camera renderers)))
+  (define resolved-visuals (scene-state-resolved-visuals-in-drawing-order state))
+  ;; Reuse the exact resolved viewport object while resolving sibling labels.
+  ;; A fresh scene-state resolver would rebuild a view's spatial-relation tree,
+  ;; giving its adapter cache a distinct identity despite identical semantics.
+  (define resolved-views
+    (for/hasheq ([visual (in-list resolved-visuals)]
+                 #:when (view3d? visual))
+      (values (visual-id visual) visual)))
+  ;; Determine each viewport's complete attachment demand before drawing any
+  ;; viewport. This ensures several hiding/fading labels share one colour+depth
+  ;; artifact instead of causing an upgrade after the visible colour pass.
+  (parameterize
+      ([current-view3d-attachment-demands
+        (scene-view3d-attachment-demands resolved-visuals)]
+       [current-resolved-view3d-by-id resolved-views]
+       ;; A cache is scoped to this outer frame unless a caller has explicitly
+       ;; installed one for inspection. Completed artifacts therefore cannot
+       ;; accumulate across unrelated sampled frames.
+       [current-frame-artifact-cache
+        (or (current-frame-artifact-cache) (make-frame-artifact-cache))])
+    ;; A baseline label resolution can perform an occlusion query, so collect
+    ;; and measure labels inside this frame's shared artifact scope before any
+    ;; label is positioned or any viewport is painted.
+    (define label-candidates
+      (scene-projected-label-layout-candidates state resolved-visuals camera renderers))
+    (parameterize ([current-projected-label-layout-candidates label-candidates])
+      (for/fold ([frame background])
+                ([visual (in-list resolved-visuals)])
+        (define resolved-for-layout
+          (resolve-layout-relations-in-visual
+           state visual (list (visual-id visual)) camera renderers layout-cache
+           active-layout-paths))
+        (place-scene-visual-on-pict frame state resolved-for-layout camera renderers)))))
+
+;; scene-projected-label-layout-candidates : scene-state? (listof visual?) camera?
+;;                                            (listof pict-renderer?) -> immutable-hasheq?
+;; Resolves each label once for its anchor/template measurement, then computes
+;; one deterministic placement set for the complete outer frame.  Identity,
+;; rather than the label's public symbol, keys the returned table so an invalid
+;; duplicate symbol cannot accidentally make two independently authored labels
+;; share one candidate.
+(define (scene-projected-label-layout-candidates state visuals camera renderers)
+  (define labels (flatten-projected-labels visuals))
+  (cond [(null? labels) #hasheq()]
+        [else
+         (define entries
+           (for/list ([label (in-list labels)] [index (in-naturals)])
+             (define view
+               (hash-ref (current-resolved-view3d-by-id)
+                         (projected-label-view label)
+                         (lambda ()
+                           (scene-state-resolved-ref state (projected-label-view label)))))
+             (unless (view3d? view)
+               (raise-arguments-error
+                'scene-state->pict
+                "a #:view identity resolving to view3d"
+                "projected-label-id" (visual-id label)
+                "view-id" (projected-label-view label)
+                "resolved-visual" view))
+             ;; No candidate is bound yet, so this is the authored direct
+             ;; placement. Its centre includes ordinary transform and offset
+             ;; choices, while its box measures the concrete Formula/Pict.
+             (define baseline (resolve-projected-label label view camera))
+             (define bounds (concrete-visual-layout-box baseline camera renderers))
+             (define-values (anchor-x anchor-y)
+               (camera-world->pixel camera (visual-position baseline)))
+             (define item-id
+               (string->symbol (format "~a-layout-~a" (visual-id label) index)))
+             (cons label
+                   (label-layout-item3d
+                    item-id (vector anchor-x anchor-y)
+                    (max 1 (* (camera-scale camera) (layout-box-width bounds)))
+                    (max 1 (* (camera-scale camera) (layout-box-height bounds)))
+                    ;; Current label-placement3d has no priority field; source
+                    ;; order is therefore its declared and deterministic order.
+                    0
+                    (projected-label-placement label)))))
+         (define layout
+           (layout-labels3d (map cdr entries)
+                              #:width (camera-width camera)
+                              #:height (camera-height camera)))
+         (define candidate-by-id (make-hasheq))
+         (for ([candidate (in-list (label-layout3d-placements layout))])
+           (hash-set! candidate-by-id (label-layout-candidate3d-item-id candidate) candidate))
+         (define candidate-by-label (make-hasheq))
+         (for ([entry (in-list entries)])
+           (define label (car entry))
+           (define item (cdr entry))
+           (hash-set! candidate-by-label label
+                      (hash-ref candidate-by-id (label-layout-item3d-id item))))
+         (make-immutable-hasheq (hash->list candidate-by-label))]))
+
+(define (flatten-projected-labels visuals)
+  (define (walk visual)
+    (cond [(projected-label? visual) (list visual)]
+          [(group-visual? visual)
+           (apply append (map walk (group-visual-children visual)))]
+          [(affine-map-visual? visual)
+           (walk (affine-map-visual-content visual))]
+          [else '()]))
+  (apply append (map walk visuals)))
+
+;; scene-view3d-attachment-demands : (listof visual?) -> immutable-hasheq?
+;; The scan intentionally sees authored projected-labels before their layout
+;; relation is resolved. Their occlusion policies are semantic, while the
+;; resulting frame artifact is an adapter resource.
+(define (scene-view3d-attachment-demands visuals)
+  (define demands (make-hasheq))
+  (define (add-demand! view-id attachment)
+    (hash-update! demands view-id
+                  (lambda (existing)
+                    (if (memq attachment existing)
+                        existing
+                        (cons attachment existing)))
+                  '(color)))
+  (define (walk visual)
+    (cond
+      [(projected-label? visual)
+       (when (memq (projected-label-occlusion visual) '(hide fade))
+         (add-demand! (projected-label-view visual) 'linear-depth))]
+      [(group-visual? visual)
+       (for ([child (in-list (group-visual-children visual))])
+         (walk child))]
+      [(affine-map-visual? visual)
+       (walk (affine-map-visual-content visual))]
+      [else (void)]))
+  (for ([visual (in-list visuals)]) (walk visual))
+  (make-immutable-hasheq (hash->list demands)))
 
 ;; resolve-layout-relations-in-visual : scene-state? visual? visual-path? ...
 ;;                                      -> visual?
@@ -820,7 +947,13 @@
   (cond [(hash-has-key? cache key) (hash-ref cache key)]
         [else
          (define view
-           (scene-state-resolved-ref state (projected-label-view label)))
+           (hash-ref (current-resolved-view3d-by-id)
+                     (projected-label-view label)
+                     (lambda ()
+                       ;; A view buried in an unsupported custom composite is
+                       ;; still resolved correctly, though it cannot share a
+                       ;; sibling's viewport artifact by identity.
+                       (scene-state-resolved-ref state (projected-label-view label)))))
          (unless (view3d? view)
            (raise-arguments-error
             'scene-state->pict

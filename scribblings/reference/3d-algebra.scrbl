@@ -1020,10 +1020,44 @@ camera independent.  Neighbouring cells are conformed before lowering, so
 their shared edge vertices are identical rather than merely close.
 
 @racket[trimmed-parametric-surface3d] accepts signed @racket[surface-trim]
-fields in parameter space.  It clips the retained adaptive triangles and
+fields in parameter space, or an explicit Boolean field made with
+@racket[trim-field3d], @racket[trim-and3d], @racket[trim-or3d], and
+@racket[trim-not3d].  A list remains conjunction for the simple case.  Its
+trim classifier samples each adaptive cell's corners, side midpoints, and
+centre before requesting a split, rather than imposing a fixed global lattice
+on every planar trimmed surface. It clips the retained adaptive triangles and
 shares edge/trim intersections by canonical keys.  Consequently
 @racket[surface3d-domain-contains?] and @racket[surface3d-position-at?] can
 distinguish a point in the original parameter box from one outside its trim.
+Root refinement uses deterministic bisection for true sign crossings.
+
+@defproc[(trim-expression3d? [value any/c]) boolean?]{Recognizes an immutable
+signed trim field or Boolean trim expression.}
+@defproc[(trim-field3d [field procedure?]
+                        [#:keep keep (or/c 'positive 'negative) 'positive]
+                        [#:id id symbol?]
+                        [#:tolerance tolerance positive?])
+         trim-expression3d?]{Creates one retained signed trim field. Its
+non-negative side is retained; @racket['negative] reverses the source field.}
+@defproc[(surface-trim [field procedure?]
+                         [#:keep keep (or/c 'positive 'negative) 'positive]
+                         [#:id id symbol?]
+                         [#:tolerance tolerance positive?])
+         trim-expression3d?]{The established spelling for @racket[trim-field3d].}
+@defproc[(trim-and3d [first trim-expression3d?]
+                      [rest trim-expression3d?] ...)
+         trim-expression3d?]{Intersects nonempty signed trim expressions.}
+@defproc[(trim-or3d [first trim-expression3d?]
+                     [rest trim-expression3d?] ...)
+         trim-expression3d?]{Unites nonempty signed trim expressions.}
+@defproc[(trim-not3d [expression trim-expression3d?]) trim-expression3d?]{Complements
+one signed trim expression.}
+
+@bold{Current trim limitations:} Nine samples are a conservative local
+discovery rule, not a proof that an arbitrarily tiny component between all
+sample positions will be found.  Compound trim provenance identifies its
+source field deterministically, but reconstructed named boundary loops are not
+yet exposed as a separate surface value.
 
 @racket[implicit-surface3d] samples a finite scalar field within a declared
 axis-aligned box and extracts one level set with deterministic marching
@@ -1035,6 +1069,13 @@ hit and attaches the retained triangle provenance: barycentrically interpolated
 @racket[(vector u v)] parameters for parametric surfaces and the source cube/
 tetrahedron record for implicit ones. It does not claim a separate analytic
 implicit intersection solver.
+
+Adaptive and trimmed parametric surfaces retain their evaluator and parameter
+domain as well as their lowered mesh. Therefore @racket[surface-anchor3d] can
+provide a deterministic local finite-difference tangent/normal frame for those
+surfaces. An implicit surface has no invented UV frame: its anchor resolves a
+truthful point while its normal/tangent remain unavailable until the implicit
+frame/picking extension is implemented.
 
 The focused executable probe is
 @filepath{examples/3d/adaptive-trimmed-implicit-surfaces.rkt}.
@@ -1105,7 +1146,13 @@ description.}
 @defproc[(slice-mesh3d [mesh mesh3d?]
                         [clip (or/c plane3? clip-plane3d?)])
          mesh3d?]{Returns actual, deterministically triangulated clipped mesh
-geometry in the source mesh's local coordinates.}
+geometry in the source mesh's local coordinates. Generated cut vertices reuse
+one source-edge registry and therefore interpolate the supported per-vertex
+normal and RGBA colour attributes consistently across neighbouring triangles.}
+@defproc[(slice-mesh-by-planes3d [mesh mesh3d?]
+                                  [clips (listof (or/c plane3? clip-plane3d?))])
+         mesh3d?]{Applies plane cuts in declaration order to produce actual
+geometry. This is not @racket[clip-planes3d], which remains render-only.}
 @defproc[(section-by-plane3d [mesh mesh3d?]
                               [clip (or/c plane3? clip-plane3d?)])
          section3d?]{Returns deterministic @racket[section3d] topology. Its
@@ -1136,10 +1183,16 @@ target, preserving the label as a crisp 2D Visual.
 
 SCENE-3D-R extends a plane section with an explicit local numerical policy,
 plane basis, and component records. @racket[cut-mesh3d] returns both clipped
-halves plus their shared @racket[section3d] and optional separate cap meshes;
-it does not mutate the source mesh. @racket[section3d-area],
+halves plus their shared @racket[section3d], optional separate cap meshes, and
+when capped, exact-coordinate welded solid halves through
+@tt{mesh-cut3d-result-positive-solid} and
+@tt{mesh-cut3d-result-negative-solid}. It does not mutate the source mesh.
+@racket[section3d-area],
 @racket[section3d-centroid], and @racket[section3d-perimeter] operate on the
-same preserved section topology. @racket[clip-planes3d] and @racket[clip-box3d]
+same preserved section topology.  Measurements reject an open/branch
+component, repeated vertex, zero-area loop, self-intersection, and a touching
+or intersecting pair of loops rather than silently treating it as an even/odd
+region. @racket[clip-planes3d] and @racket[clip-box3d]
 build ordered render-only half-space sequences.
 
 @racket[section-fill3d] exposes a separate cap-style mesh for a section;
@@ -1157,9 +1210,34 @@ midpoint annular slabs about the x axis, and @racket[shell-sum3d] creates
 stable midpoint cylindrical shells about the z axis. These are explanatory
 geometry groups; numerical volume estimation remains explicit.
 
-The cap triangulator handles simple concave, hole-free section loops with
-deterministic ear clipping. Nested loops (cap holes) remain explicitly
-rejected rather than silently filling the wrong region.
+The cap triangulator handles simple concave loops and a deterministic
+containment forest of nested holes. It bridges each immediate hole into its
+outer loop with a visible, source-order tie-broken bridge, then verifies that
+the cap triangle area equals outer area minus holes. @racket[mesh3d-weld]
+performs exact-coordinate (never tolerance-based) boundary reuse for derived
+cut solids; it intentionally omits per-vertex normals because the current
+mesh representation has no per-corner normal channel.
+
+Current limitations: cuts presently preserve positions, normals, and RGBA
+colours, but do not yet offer general UV/scalar/semantic attribute descriptors;
+cap construction for self-intersecting or touching contours does not yet have
+robust recovery (measurements reject those contours); and repeated semantic
+multi-plane cutting currently produces uncapped geometry.
+
+@defproc[(cut-mesh-by-box3d [mesh mesh3d?] [bounds aabb3?]
+                             [#:id id symbol?]
+                             [#:settings settings section3d-settings?])
+         mesh3d?]{Materializes the six inclusive local-axis box half-spaces as
+ordered indexed geometry. This is the geometry counterpart to
+@racket[clip-box3d], which remains render-only. The result is deliberately
+uncapped; it does not claim to be a closed box-cut solid.}
+
+@defproc[(mesh3d-weld [meshes (listof mesh3d?)]
+                       [#:id id symbol?]
+                       [#:material material material3d?])
+         mesh3d?]{Combines meshes that share exact local boundary vertices
+into one indexed mesh. It rejects mismatched transforms, opacity, or a missing
+colour at a newly introduced vertex; it never performs tolerance-based welding.}
 Multi-plane render clipping is semantic and ordered, but the optional OpenGL
 backend has not yet received its corresponding multi-plane uniform path.
 See @filepath{examples/3d/capped-cube-cutaway.rkt}.
@@ -1203,12 +1281,17 @@ provenance-boundary limitation.
 @racket[label3d] uses such an anchor while retaining its content as a crisp
 ordinary 2D Visual. @racket[label-placement3d] and
 @racket[layout-labels3d] provide a deterministic, pure direct-mode candidate
-layout in output pixels. @racket[prepare-label-layout3d] optionally computes
+layout in output pixels. The outer scene compositor resolves and measures all
+projected labels for a sampled frame before it positions any one label, then
+consumes that one batched direct layout without re-rendering the viewport.
+@racket[prepare-label-layout3d] optionally computes
 an immutable dynamic-programming candidate table for a declared finite frame
 grid, applying explicit movement and switching penalties without relying on
 the previously displayed frame. Equal-priority labels retain declaration order,
-and equal-cost candidates retain the declared preferred-direction order. 2D
-leader rendering, mathematical dimensions,
+and equal-cost candidates retain the declared preferred-direction order.
+
+Current limitations: prepared tables are not yet consumed by the final
+compositor; leader/visibility policies, mathematical dimensions,
 and textured/camera-facing billboards remain later work; they are intentionally
 not simulated by mutable callbacks. The executable anchor probe is
 @filepath{examples/3d/anchor-aware-labels.rkt}.
@@ -1503,11 +1586,11 @@ SCENE-3D-N keeps @racket[animate/3d] pure and places effectful implementation
 choice in @racketmodname[animate/3d/render]. SCENE-3D-O extends that compiled
 view with ordered, renderer-neutral centreline strokes and screen markers. A
 backend receives an immutable @racket[render3d-request] containing a
-camera-independent compiled view plus a
-frame specification, may retain geometry and preparation resources that it
-owns, and returns copied ARGB bytes. Thus changing a backend, releasing its
+camera-independent compiled view, a frame specification, and a canonical
+attachment demand.  It returns one immutable @racket[renderer3d-frame-artifact]
+which owns every delivered attachment. Thus changing a backend, releasing its
 cache, or recovering from a failed optional native renderer cannot mutate a
-@racket[view3d] or any of its spatial children.
+@racket[view3d], any of its spatial children, or a completed frame.
 
 @defmodule[animate/3d/render]
 
@@ -1613,25 +1696,50 @@ Extracts frame-varying camera, light, and viewport state.}
 @defproc[(view3d->render3d-request [view view3d?]
                                    [width exact-positive-integer?]
                                    [height exact-positive-integer?]
-                                   [#:cancellation-token cancellation-token any/c #f])
+                                   [#:cancellation-token cancellation-token any/c #f]
+                                   [#:attachments attachments (listof symbol?) '(color)])
          render3d-request?]{Conveniently compiles @racket[view] and packages
-the resulting compiled view and frame specification.}
+the resulting compiled view, frame specification, and requested attachments.
+The canonical attachment names are @racket['color], @racket['linear-depth],
+@racket['object-id], and @racket['normal]. A renderer may return a superset,
+but cannot omit a requested attachment.}
 @defstruct*[render3d-request
             ([compiled-view compiled-view3d?]
              [frame-spec frame3d-spec?]
+             [attachments (listof symbol?)]
              [cancellation-token any/c]) #:transparent]{
 One backend-local request. The cancellation field is either @racket[#f] or the
 preview's cooperative cancellation token; it is not serialised into scene
 state.
 }
 @defstruct*[renderer3d-render-result
+            ([artifact renderer3d-frame-artifact?]) #:transparent]{
+A completed backend-independent frame. The artifact is its only frame payload
+and may outlive the backend that produced it.
+}
+@defstruct*[renderer3d-frame-artifact
             ([width exact-positive-integer?]
              [height exact-positive-integer?]
-             [argb-bytes bytes?]
+             [straight-argb (or/c #f bytes?)]
+             [linear-depth-snapshot (or/c #f vector?)]
+             [object-id-snapshot (or/c #f vector?)]
+             [normal-snapshot (or/c #f vector?)]
+             [camera camera3d?]
              [diagnostics any/c]) #:transparent]{
-A completed backend-independent frame. Its ARGB byte vector is immutable and
-may outlive the backend that produced it.
-}
+The immutable attachment owner for a completed frame. Pixel snapshots are
+top-left-origin. Linear depth is positive camera-space depth; an uncovered
+pixel is @racket[+inf.0].}
+@defproc[(renderer3d-frame-artifact-attachments
+          [artifact renderer3d-frame-artifact?])
+         (listof symbol?)]{Returns the canonical set of attachments actually
+present in @racket[artifact].}
+@defproc[(renderer3d-frame-linear-depth-at
+          [artifact renderer3d-frame-artifact?]
+          [x exact-nonnegative-integer?]
+          [y exact-nonnegative-integer?])
+         (or/c #f real?)]{Returns the positive linear depth at a top-left
+pixel, or @racket[#f] when the artifact has no depth attachment or the pixel is
+outside the viewport.}
 @defproc[(renderer3d-render-result->bitmap [result renderer3d-render-result?])
          bitmap?]{Converts the copied ARGB frame to a Racket bitmap for the
 ordinary @racket[view3d] Pict boundary.}
@@ -1783,8 +1891,11 @@ There is no adaptive tessellation, trimmed domain, texture mapping, arbitrary
 implicit surface, or cap generation for arbitrary sliced meshes.
 Transparent intersections are not order-independent: triangle sorting is a
 useful deterministic approximation, not OIT. Section joining does not repair
-pathological nonmanifold meshes. Projected labels are crisp 2D overlays and
-may overlap; only opaque depth is considered for their hide/fade policy.
+pathological nonmanifold meshes. Projected labels are crisp 2D overlays; the
+final compositor now uses overlap-aware candidate selection among direct-mode
+projected labels (it minimizes overlap but cannot guarantee a disjoint result), but
+prepared trajectories, leaders, and visibility policies are not yet consumed.
+Only opaque depth is considered for their hide/fade policy.
 Linear and affine map requests do not resample geometry; singular maps use a
 deterministic authored-normal shading fallback. Pointwise and homotopy maps
 currently accept only an unwrapped @racket[mesh3d], not curves, surfaces, or

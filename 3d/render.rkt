@@ -39,7 +39,11 @@
          compiled-view3d-cache-statistics
          current-compiled-view3d-cache
          (struct-out renderer3d-frame-artifact)
-         renderer3d-frame-depth-at
+         renderer3d-attachment-symbols
+         renderer3d-canonical-attachments
+         renderer3d-attachment-set-satisfies?
+         renderer3d-frame-artifact-attachments
+         renderer3d-frame-linear-depth-at
          renderer3d-frame-object-at
          renderer3d-frame-project
          frame-artifact-cache?
@@ -54,8 +58,10 @@
          (struct-out render3d-request)
          view3d->render3d-request
          (struct-out renderer3d-render-result)
-         renderer3d-render-result-with-artifact
-         renderer3d-render-result-artifact
+         renderer3d-render-result-width
+         renderer3d-render-result-height
+         renderer3d-render-result-argb-bytes
+         renderer3d-render-result-diagnostics
          renderer3d-render-result->bitmap
          (struct-out renderer3d-statistics)
          renderer3d-statistics-reset!

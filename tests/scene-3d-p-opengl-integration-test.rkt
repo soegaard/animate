@@ -93,6 +93,7 @@
     (define make-renderer (dynamic-require opengl-module-path 'opengl-renderer3d))
     (define renderer? (dynamic-require opengl-module-path 'opengl-renderer3d?))
     (define available? (dynamic-require opengl-module-path 'opengl-renderer3d-available?))
+    (define make-renderer-spec (dynamic-require opengl-module-path 'opengl-renderer3d-spec))
     (define renderer-info (dynamic-require opengl-module-path 'opengl-renderer3d-info))
     (define renderer-statistics (dynamic-require opengl-module-path 'opengl-renderer3d-statistics))
     (define renderer-release! (dynamic-require opengl-module-path 'opengl-renderer3d-release!))
@@ -117,6 +118,17 @@
        (check-equal? (renderer3d-render-result-argb-bytes second)
                      (renderer3d-render-result-argb-bytes first))
        (set! baseline-bytes (renderer3d-render-result-argb-bytes first))
+       ;; C-1: default MSAA deliberately refuses depth readback until a
+       ;; nearest-sample resolve exists; silently averaging depth would make
+       ;; picking and label occlusion incorrect at geometry edges.
+       (define depth-request
+         (view3d->render3d-request (test-view) 128 96
+                                   #:attachments '(color linear-depth)))
+       (check-exn exn:fail?
+                  (lambda ()
+                    (renderer3d-render renderer
+                                       (renderer3d-prepare renderer depth-request)
+                                       depth-request)))
        (define software (software-renderer3d))
        (check-conform-to-software
         'opaque-strokes-and-markers
@@ -146,6 +158,31 @@
                      first-uploads)
        (check-equal? (hash-ref (hash-ref warm-statistics 'framebuffer-cache) 'allocations) 1))
      (lambda () (renderer-release! renderer)))
+
+    ;; A one-sample target takes the documented depth readback path. The
+    ;; result is top-down positive linear camera depth, owned by its frame
+    ;; artifact just like colour.
+    (define depth-renderer (make-renderer (make-renderer-spec #:samples 1)))
+    (dynamic-wind
+     void
+     (lambda ()
+       (define request
+         (view3d->render3d-request (test-view) 128 96
+                                   #:attachments '(color linear-depth)))
+       (define result
+         (renderer3d-render depth-renderer
+                            (renderer3d-prepare depth-renderer request)
+                            request))
+       (define artifact (renderer3d-render-result-artifact result))
+       (check-equal? (renderer3d-frame-artifact-attachments artifact)
+                     '(color linear-depth))
+       (define linear-depth
+         (renderer3d-frame-artifact-linear-depth-snapshot artifact))
+       (check-equal? (vector-length linear-depth) (* 128 96))
+       (check-true
+        (for/or ([depth (in-vector linear-depth)])
+          (and (real? depth) (not (= depth +inf.0)) (positive? depth)))))
+     (lambda () (renderer-release! depth-renderer)))
 
     ;; A restart gives every resource a new context generation. Recreating the
     ;; renderer must still produce the same random-access result; no GLuint or

@@ -19,6 +19,7 @@
          "anchor3d.rkt"
          "frame-artifact-cache3d.rkt"
          "frame-artifact3d.rkt"
+         "label-layout3d.rkt"
          "label-placement3d.rkt"
          "projected-anchor.rkt"
          "renderer3d.rkt"
@@ -36,9 +37,15 @@
          projected-label-placement
          projected-label-leader
          projected-label-visibility
+         current-projected-label-layout-candidates
          follow-projected-point
          follow-projected-spatial
          resolve-projected-label)
+
+;; The scene compositor binds this immutable identity map for one sampled
+;; frame.  It is adapter state, never author data: a label still has a direct
+;; resolution path when used outside a full scene composition.
+(define current-projected-label-layout-candidates (make-parameter #hasheq()))
 
 ;; Keep generic operations distinct from the struct methods below.  A method
 ;; must delegate to its ordinary concrete template rather than recursively
@@ -167,11 +174,15 @@
                                 #:view view-id
                                 #:point point
                                 #:offset [offset origin]
-                                #:occlusion [occlusion 'always-visible])
+                                #:occlusion [occlusion 'always-visible]
+                                #:placement [placement default-label-placement3d]
+                                #:leader [leader #f]
+                                #:visibility [visibility 'always])
   (unless (vec3? point)
     (raise-argument-error 'follow-projected-point "vec3?" point))
   (projected-label template #:view view-id #:target point #:offset offset
-                   #:occlusion occlusion))
+                   #:occlusion occlusion #:placement placement
+                   #:leader leader #:visibility visibility))
 
 ; follow-projected-spatial : visual? #:view symbol? #:target spatial-path?
 ;                            [#:offset vec2?] -> projected-label?
@@ -180,11 +191,15 @@
                                   #:view view-id
                                   #:target target
                                   #:offset [offset origin]
-                                  #:occlusion [occlusion 'always-visible])
+                                  #:occlusion [occlusion 'always-visible]
+                                  #:placement [placement default-label-placement3d]
+                                  #:leader [leader #f]
+                                  #:visibility [visibility 'always])
   (unless (spatial-path? target)
     (raise-argument-error 'follow-projected-spatial "spatial-path?" target))
   (projected-label template #:view view-id #:target target #:offset offset
-                   #:occlusion occlusion))
+                   #:occlusion occlusion #:placement placement
+                   #:leader leader #:visibility visibility))
 
 ; resolve-projected-label : projected-label? view3d? camera? -> visual?
 ;; Produces a concrete ordinary 2D Visual positioned in the same world plane
@@ -217,16 +232,31 @@
              (camera-scale outer-camera))))
   (define outer (projected-label-value-outer-transform label))
   (define local (visual-transform (projected-label-value-template label)))
+  (define layout-candidate
+    (hash-ref (current-projected-label-layout-candidates) label #f))
+  (when (and layout-candidate (not (label-layout-candidate3d? layout-candidate)))
+    (raise-arguments-error 'resolve-projected-label
+                           "a label-layout-candidate3d? compositor candidate"
+                           "label" label
+                           "candidate" layout-candidate))
+  (define layout-position
+    (and layout-candidate
+         (let ([box (label-layout-candidate3d-box layout-candidate)])
+           (camera-pixel->world
+            outer-camera
+            (+ (vector-ref box 0) (/ (vector-ref box 2) 2))
+            (+ (vector-ref box 1) (/ (vector-ref box 3) 2))))))
   (define resulting-transform
     (make-affine-transform
      #:translation
-     (vec2+
-      (vec2+ anchor screen-offset)
-      (vec2+
-       (affine-transform-translation outer)
-       (affine-transform-apply-vector
-        outer
-        (affine-transform-translation local))))
+     (or layout-position
+         (vec2+
+          (vec2+ anchor screen-offset)
+          (vec2+
+           (affine-transform-translation outer)
+           (affine-transform-apply-vector
+            outer
+            (affine-transform-translation local)))))
      #:rotation
      (+ (affine-transform-rotation outer)
         (affine-transform-rotation local))
@@ -272,8 +302,8 @@
             (define artifact
               (render-view3d-frame-artifact
                view width height (current-view3d-renderer3d)
-               #:attachments '(color depth)))
-            (define depth (renderer3d-frame-depth-at artifact x y))
+               #:attachments '(color linear-depth)))
+            (define depth (renderer3d-frame-linear-depth-at artifact x y))
             (define occluded?
               (and depth
                    (< (+ depth 1e-6)

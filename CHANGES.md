@@ -6,8 +6,18 @@
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution
   implicit surfaces. Their mesh/provenance and diagnostics remain pure; the
   renderer receives ordinary indexed meshes.
+- Trim fields now drive the same adaptive dyadic refinement tree through
+  corner, side-midpoint, and centre classification rather than forcing a
+  global minimum lattice. `trim-field3d`, `trim-and3d`, `trim-or3d`, and
+  `trim-not3d` define signed Boolean trim expressions with deterministic root
+  refinement. Finite sampling still cannot guarantee discovery of an
+  arbitrarily small off-sample feature, and named boundary-loop reconstruction
+  remains unfinished.
+- Adaptive and trimmed parametric surface anchors now obtain deterministic
+  local frames from their retained evaluator and parameter range; an implicit
+  surface still does not pretend to have UV tangents.
 - Added scale-aware section settings, deterministic plane-local coordinates,
-  rich section components, two-sided mesh cuts, separate simple-concave cap meshes,
+  rich section components, two-sided mesh cuts, separate concave and holed cap meshes,
   ordered multi-plane clipping helpers, and pure section measurements. The
   existing one-plane clip and section APIs continue to expose convenient loops
   and chains.
@@ -17,10 +27,21 @@
   minimum-cost label trajectories, and the anchor-aware `label3d` spelling for
   projected labels. Equal-priority labels retain declaration order and
   equal-cost candidates retain declared preference order.
+- The outer Pict compositor now gathers, measures, and consumes one direct
+  projected-label layout for each sampled frame, so direct-mode labels share
+  deterministic, overlap-aware candidate selection and the same negotiated
+  viewport artifact. It minimizes overlap where a collision-free placement is
+  not possible; it does not promise that every label set is disjoint.
 - Added independently addressable section fills, deterministic even/odd hatch
   strokes, indexed mesh slicing with shared cut vertices and interpolated
-  normals, immutable slice-stack/cross-section/volume-estimate helpers, and
+  normals/RGBA colours, exact-coordinate welded capped halves, immutable
+  slice-stack/cross-section/volume-estimate helpers, and
   stable midpoint Riemann-volume columns, washer slabs, and cylindrical shells.
+- Section measurements now reject open/branch components, repeated vertices,
+  zero-area loops, and touching or crossing loop arrangements instead of
+  silently assigning them an even/odd area.
+- Added `cut-mesh-by-box3d`, an explicit uncapped geometry operation matching
+  the ordered six local-axis half-spaces of render-only `clip-box3d`.
 - Added CPU surface-pick refinement with retained parametric or implicit source
   provenance. Regular parametric surface anchors now retain their resolved
   world normal and u-tangent.
@@ -30,12 +51,13 @@
   frame artifacts for projected-label depth queries.
 
 Known boundaries: adaptive implicit extraction, analytic implicit picking,
-trim Boolean regions, holed cap triangulation, general polygon section fills,
-final-compositor integration for
-prepared label trajectories, annotation primitives, and billboard texture
-rendering are not complete in this change. The OpenGL paths are compiled but
-not executed here because they require a GUI-capable OpenGL context; no GUI or
-permission-requiring command was used.
+trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
+IDs), touching/self-intersecting section validation, repeated capped
+multi-plane geometry cuts, general polygon section fills, final-compositor
+consumption of prepared label trajectories/leaders/visibility policy,
+annotation primitives, and billboard texture rendering are not complete in
+this change. The OpenGL paths are compiled and
+the explicit integration test remains separate from ordinary headless runs.
 
 ## 1.22.0 — SCENE-3D-P
 

@@ -165,11 +165,11 @@
      (unless point
        (raise-arguments-error 'surface-anchor3d "a point inside the retained surface domain"
                               "u" (surface-anchor3d-value-u anchor) "v" (surface-anchor3d-value-v anchor)))
-     ;; Fixed-grid surfaces expose analytic-or-finite-difference tangent data.
-     ;; Generated surfaces that cannot yet provide a parameter frame still
-     ;; resolve their point truthfully, rather than pretending a face normal is
-     ;; an evaluator normal.  Their frame provenance is added with the Q
-     ;; surface-picking path until adaptive frame interpolation is introduced.
+     ;; Fixed-grid and generated parametric surfaces both expose a local frame:
+     ;; generated adaptive/trimmed producers use their retained evaluator and
+     ;; parameter range for a deterministic bounded finite difference. An
+     ;; implicit source deliberately has no fabricated UV frame, so its point
+     ;; still resolves while the guarded queries below leave normal/tangent #f.
      (define u (surface-anchor3d-value-u anchor))
      (define v (surface-anchor3d-value-v anchor))
      (define local-tangent

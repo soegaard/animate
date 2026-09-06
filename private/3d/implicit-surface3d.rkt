@@ -22,7 +22,8 @@
          (struct-out implicit-surface-diagnostics))
 
 (struct implicit-surface-diagnostics
-  (resolution cube-count vertex-count triangle-count boundary-contact? warnings)
+  (resolution cube-count vertex-count triangle-count boundary-contact?
+              invalid-sample-count warnings)
   #:transparent)
 
 ; implicit-surface3d : (vec3? -> finite-real?) -> surface3d?
@@ -39,7 +40,10 @@
                             #:opacity [opacity 1]
                             #:wireframe-color [wireframe-color "mediumpurple"]
                             #:wireframe-width [wireframe-width 1]
-                            #:normal-step [normal-step #f])
+                            #:normal-step [normal-step #f]
+                            #:gradient [gradient #f]
+                            #:iso-tolerance [iso-tolerance 1e-12]
+                            #:on-invalid [on-invalid 'error])
   (unless (procedure? field)
     (raise-argument-error 'implicit-surface3d "procedure?" field))
   (unless (symbol? id)
@@ -64,6 +68,12 @@
     (raise-argument-error 'implicit-surface3d "finite real in [0, 1]" opacity))
   (unless (and (finite-real? wireframe-width) (positive? wireframe-width))
     (raise-argument-error 'implicit-surface3d "positive finite real?" wireframe-width))
+  (unless (or (not gradient) (procedure? gradient))
+    (raise-argument-error 'implicit-surface3d "(or/c #f procedure?) as #:gradient" gradient))
+  (unless (and (finite-real? iso-tolerance) (positive? iso-tolerance))
+    (raise-argument-error 'implicit-surface3d "positive finite #:iso-tolerance" iso-tolerance))
+  (unless (memq on-invalid '(error skip-cell))
+    (raise-argument-error 'implicit-surface3d "(or/c 'error 'skip-cell) as #:on-invalid" on-invalid))
   (define xmin (first bounds)) (define xmax (second bounds))
   (define ymin (third bounds)) (define ymax (fourth bounds))
   (define zmin (fifth bounds)) (define zmax (sixth bounds))
@@ -73,6 +83,17 @@
   (unless (and (finite-real? h) (positive? h))
     (raise-argument-error 'implicit-surface3d "positive finite #:normal-step" h))
   (define cache (make-hash))
+  (define invalid-sample-count 0)
+  (define invalid-warning? #f)
+  (define (invalid-sample point reason)
+    (case on-invalid
+      [(error)
+       (raise-arguments-error 'implicit-surface3d "a total finite scalar field"
+                              "point" point "reason" reason)]
+      [else
+       (set! invalid-sample-count (add1 invalid-sample-count))
+       (set! invalid-warning? #t)
+       (implicit-sample point #f)]))
   (define (sample i j k)
     (hash-ref! cache (vector i j k)
                (lambda ()
@@ -83,46 +104,115 @@
                  (define value
                    (with-handlers ([exn:fail?
                                     (lambda (exception)
-                                      (raise-arguments-error
-                                       'implicit-surface3d "a total finite scalar field"
-                                       "point" point "exception" (exn-message exception)))])
+                                      (invalid-sample point (exn-message exception)))])
                      (field point)))
-                 (unless (finite-real? value)
-                   (raise-arguments-error 'implicit-surface3d
-                                          "a finite scalar field result"
-                                          "point" point "result" value))
-                 (implicit-sample point (- value level)))))
+                 (cond [(implicit-sample? value) value]
+                       [(finite-real? value) (implicit-sample point (- value level))]
+                       [else (invalid-sample point value)]))))
   (define vertices '())
   (define normals '())
+  ;; O(1) lookup tables used while ordering one tetrahedron's intersections.
+  ;; The output builders below remain append-only lists frozen at the end.
+  (define point-by-id (make-hash))
+  (define normal-by-id (make-hash))
   (define vertex-provenance '())
   (define triangles '())
   (define triangle-provenance '())
   (define vertex-ids (make-hash))
   (define next-id 0)
-  (define (gradient point)
-    (define (value-at delta)
-      (define result (field (vec3+ point delta)))
-      (if (finite-real? result) result level))
+  (define boundary-contact? #f)
+  (define (valid-sample? entry) (finite-real? (implicit-sample-value entry)))
+  (define (exact-iso? entry)
+    (and (valid-sample? entry)
+         (<= (abs (implicit-sample-value entry)) iso-tolerance)))
+  ;; A zero lattice sample belongs deterministically to one sign class. The
+  ;; parity rule is independent of tetrahedron order and removes ambiguous
+  ;; exact-iso cases without perturbing the reported field value.
+  (define (sample-negative? entry index)
+    (cond [(not (valid-sample? entry)) #f]
+          [(exact-iso? entry)
+           (even? (+ (vector-ref index 0) (vector-ref index 1) (vector-ref index 2)))]
+          [else (negative? (implicit-sample-value entry))]))
+  (define (boundary-grid-edge? first-index second-index)
+    (or (and (= (vector-ref first-index 0) 0) (= (vector-ref second-index 0) 0))
+        (and (= (vector-ref first-index 0) resolution)
+             (= (vector-ref second-index 0) resolution))
+        (and (= (vector-ref first-index 1) 0) (= (vector-ref second-index 1) 0))
+        (and (= (vector-ref first-index 1) resolution)
+             (= (vector-ref second-index 1) resolution))
+        (and (= (vector-ref first-index 2) 0) (= (vector-ref second-index 2) 0))
+        (and (= (vector-ref first-index 2) resolution)
+             (= (vector-ref second-index 2) resolution))))
+  (define (checked-field-value point)
+    (define result
+      (with-handlers ([exn:fail? (lambda (_exception) #f)]) (field point)))
+    (if (finite-real? result)
+        result
+        (case on-invalid
+          [(error)
+           (raise-arguments-error 'implicit-surface3d "a finite field value while computing a normal"
+                                  "point" point "result" result)]
+          [else #f])))
+  (define (normal-at-point point)
     (define candidate
-      (vec3 (- (value-at (vec3 h 0 0)) (value-at (vec3 (- h) 0 0)))
-            (- (value-at (vec3 0 h 0)) (value-at (vec3 0 (- h) 0)))
-            (- (value-at (vec3 0 0 h)) (value-at (vec3 0 0 (- h))))))
+      (cond [gradient
+             (define supplied
+               (with-handlers ([exn:fail? (lambda (_exception) #f)])
+                 (gradient point)))
+             (unless (and (vec3? supplied) (vec3-finite? supplied))
+               (raise-arguments-error 'implicit-surface3d
+                                      "a finite vec3 result from #:gradient"
+                                      "point" point "result" supplied))
+             supplied]
+            [else
+             ;; Use central differences in the interior and bounded one-sided
+             ;; differences at a box face. No normal probe may escape the
+             ;; declared extraction bounds.
+             (define centre (checked-field-value point))
+             (define (axis-difference coordinate low high delta)
+               (define forward (min h (- high coordinate)))
+               (define backward (min h (- coordinate low)))
+               (define (at amount) (checked-field-value (vec3+ point (vec3-scale amount delta))))
+               (cond [(and (positive? forward) (positive? backward))
+                      (define plus (at forward))
+                      (define minus (at (- backward)))
+                      (and plus minus (/ (- plus minus) (+ forward backward)))]
+                     [(positive? forward)
+                      (define plus (at forward))
+                      (and centre plus (/ (- plus centre) forward))]
+                     [(positive? backward)
+                      (define minus (at (- backward)))
+                      (and centre minus (/ (- centre minus) backward))]
+                     [else 0]))
+             (vec3 (or (axis-difference (vec3-x point) xmin xmax x-axis3) 0)
+                   (or (axis-difference (vec3-y point) ymin ymax y-axis3) 0)
+                   (or (axis-difference (vec3-z point) zmin zmax z-axis3) 0))]))
     (if (zero? (vec3-length candidate)) z-axis3 (vec3-normalize candidate)))
   (define (add-intersection first-index first second-index second cube-index tetra-index)
-    (define edge-key (ordered-index-edge first-index second-index))
+    (define edge-key
+      (cond [(exact-iso? first) (vector 'grid-vertex first-index)]
+            [(exact-iso? second) (vector 'grid-vertex second-index)]
+            [else (ordered-index-edge first-index second-index)]))
     (hash-ref! vertex-ids edge-key
                (lambda ()
                  (define a (implicit-sample-value first))
                  (define b (implicit-sample-value second))
                  (define fraction
-                   (let ([denominator (- a b)])
-                     (if (zero? denominator) 1/2 (max 0 (min 1 (/ a denominator))))))
+                   (cond [(exact-iso? first) 0]
+                         [(exact-iso? second) 1]
+                         [else
+                          (let ([denominator (- a b)])
+                            (if (zero? denominator) 1/2
+                                (max 0 (min 1 (/ a denominator)))))]))
                  (define point (vec3-lerp (implicit-sample-point first)
                                           (implicit-sample-point second) fraction))
                  (define index next-id)
                  (set! next-id (add1 next-id))
+                 (define normal (normal-at-point point))
                  (set! vertices (cons point vertices))
-                 (set! normals (cons (gradient point) normals))
+                 (set! normals (cons normal normals))
+                 (hash-set! point-by-id index point)
+                 (hash-set! normal-by-id index normal)
                  (set! vertex-provenance
                        (cons (hasheq 'kind 'implicit-edge
                                      'grid-edge edge-key
@@ -130,8 +220,9 @@
                                      'cube cube-index
                                      'tetrahedron tetra-index)
                              vertex-provenance))
+                 (when (boundary-grid-edge? first-index second-index)
+                   (set! boundary-contact? #t))
                  index)))
-  (define boundary-contact? #f)
   (for* ([i (in-range resolution)] [j (in-range resolution)] [k (in-range resolution)])
     (define cube-indices
       (vector (vector i j k) (vector (add1 i) j k)
@@ -141,21 +232,22 @@
     (define cube-samples
       (for/vector ([index (in-vector cube-indices)])
         (sample (vector-ref index 0) (vector-ref index 1) (vector-ref index 2))))
-    (for ([tetra (in-list marching-tetrahedra)] [tetra-index (in-naturals)])
-      (define local-indices (for/list ([corner (in-list tetra)])
-                              (vector-ref cube-indices corner)))
-      (define local-samples (for/list ([corner (in-list tetra)])
-                              (vector-ref cube-samples corner)))
-      (define signs (map (lambda (entry) (<= (implicit-sample-value entry) 0)) local-samples))
-      (unless (or (andmap values signs) (andmap not signs))
+    (when (andmap valid-sample? (vector->list cube-samples))
+      (for ([tetra (in-list marching-tetrahedra)] [tetra-index (in-naturals)])
+        (define local-indices (for/list ([corner (in-list tetra)])
+                                (vector-ref cube-indices corner)))
+        (define local-samples (for/list ([corner (in-list tetra)])
+                                (vector-ref cube-samples corner)))
+        (define signs (map sample-negative? local-samples local-indices))
+        (unless (or (andmap values signs) (andmap not signs))
         (define intersections '())
         (for ([pair (in-list tetra-edges)])
           (define first-local (first pair))
           (define second-local (second pair))
           (define first-sample (list-ref local-samples first-local))
           (define second-sample (list-ref local-samples second-local))
-          (unless (eq? (<= (implicit-sample-value first-sample) 0)
-                       (<= (implicit-sample-value second-sample) 0))
+          (unless (eq? (sample-negative? first-sample (list-ref local-indices first-local))
+                       (sample-negative? second-sample (list-ref local-indices second-local)))
             (set! intersections
                   (cons (add-intersection (list-ref local-indices first-local) first-sample
                                           (list-ref local-indices second-local) second-sample
@@ -163,25 +255,19 @@
                         intersections))))
         (define polygon (sort (remove-duplicates intersections) <))
         (when (>= (length polygon) 3)
-          (define ordered (order-polygon polygon vertices normals))
+          (define ordered (order-polygon polygon point-by-id normal-by-id))
           (for ([second (in-list (drop-right (rest ordered) 1))]
                 [third (in-list (drop (rest ordered) 1))]
                 [fan-index (in-naturals)])
-            (define triangle (orient-triangle (vector (first ordered) second third) vertices normals))
-            (unless (degenerate-triangle? triangle vertices)
+            (define triangle (orient-triangle (vector (first ordered) second third)
+                                             point-by-id normal-by-id))
+            (unless (degenerate-triangle? triangle point-by-id)
               (set! triangles (cons triangle triangles))
               (set! triangle-provenance
                     (cons (hasheq 'kind 'implicit-tetrahedron
                                   'cube (vector i j k) 'tetrahedron tetra-index
                                   'fan-index fan-index)
-                          triangle-provenance))))))))
-  (for ([entry (in-hash-values cache)])
-    (define point (implicit-sample-point entry))
-    (when (and (or (= (vec3-x point) xmin) (= (vec3-x point) xmax)
-                   (= (vec3-y point) ymin) (= (vec3-y point) ymax)
-                   (= (vec3-z point) zmin) (= (vec3-z point) zmax))
-               (<= (abs (implicit-sample-value entry)) 1e-9))
-      (set! boundary-contact? #t)))
+                          triangle-provenance)))))))))
   (define final-vertices (vector->immutable-vector (list->vector (reverse vertices))))
   (define final-normals (vector->immutable-vector (list->vector (reverse normals))))
   (define final-triangles (vector->immutable-vector (list->vector (reverse triangles))))
@@ -194,13 +280,20 @@
                                   (vector-length final-vertices)
                                   (vector-length final-triangles)
                                   boundary-contact?
-                                  (if boundary-contact?
-                                      '(surface touches extraction boundary)
-                                      '())))
+                                  invalid-sample-count
+                                  (append (if boundary-contact?
+                                              '(surface touches extraction boundary)
+                                              '())
+                                          (if invalid-warning?
+                                              '(invalid field samples skipped)
+                                              '()))))
   (define diagnostics
     (hasheq 'kind 'implicit
             'implicit diagnostics-value
-            'boundary-contact? boundary-contact?))
+            'boundary-contact? boundary-contact?
+            'invalid-sample-count invalid-sample-count
+            'on-invalid on-invalid
+            'iso-tolerance iso-tolerance))
   (define mesh
     (mesh3d #:id id #:vertices final-vertices #:triangles final-triangles
             #:normals final-normals #:material material
@@ -230,22 +323,18 @@
                (and (= (vector-ref first 1) (vector-ref second 1))
                     (< (vector-ref first 2) (vector-ref second 2)))))))
 
-(define (vertex-at vertices index)
-  ;; vertices are accumulated in reverse ID order.
-  (list-ref vertices (- (length vertices) 1 index)))
-(define (normal-at normals index)
-  (list-ref normals (- (length normals) 1 index)))
-
 ;; Orders an intersection polygon around its centre using the averaged gradient
 ;; as a stable local normal.  The tetrahedron contains at most four points.
-(define (order-polygon indices vertices normals)
-  (define points (map (lambda (index) (vertex-at vertices index)) indices))
+(define (order-polygon indices point-by-id normal-by-id)
+  (define (point-at index) (hash-ref point-by-id index))
+  (define (normal-at index) (hash-ref normal-by-id index))
+  (define points (map point-at indices))
   (define centre (vec3-scale (/ 1 (length points))
                              (for/fold ([sum origin3]) ([point (in-list points)])
                                (vec3+ sum point))))
   (define normal
     (let ([sum (for/fold ([value origin3]) ([index (in-list indices)])
-                 (vec3+ value (normal-at normals index)))])
+                 (vec3+ value (normal-at index)))])
       (if (zero? (vec3-length sum)) z-axis3 (vec3-normalize sum))))
   (define axis
     (let ([candidate (vec3-cross normal x-axis3)])
@@ -255,7 +344,7 @@
   (define perpendicular (vec3-cross normal axis))
   (sort indices < #:key
         (lambda (index)
-          (define offset (vec3- (vertex-at vertices index) centre))
+          (define offset (vec3- (point-at index) centre))
           (define y (vec3-dot offset perpendicular))
           (define x (vec3-dot offset axis))
           ;; A field passing exactly through a grid vertex can make two edge
@@ -263,21 +352,23 @@
           ;; triangle later; give its angular sort a deterministic value here.
           (if (and (zero? x) (zero? y)) 0 (atan y x)))))
 
-(define (orient-triangle triangle vertices normals)
-  (define first (vertex-at vertices (vector-ref triangle 0)))
-  (define second (vertex-at vertices (vector-ref triangle 1)))
-  (define third (vertex-at vertices (vector-ref triangle 2)))
+(define (orient-triangle triangle point-by-id normal-by-id)
+  (define (point-at index) (hash-ref point-by-id index))
+  (define (normal-at index) (hash-ref normal-by-id index))
+  (define first (point-at (vector-ref triangle 0)))
+  (define second (point-at (vector-ref triangle 1)))
+  (define third (point-at (vector-ref triangle 2)))
   (define face (vec3-cross (vec3- second first) (vec3- third first)))
   (define average
-    (vec3+ (normal-at normals (vector-ref triangle 0))
-           (vec3+ (normal-at normals (vector-ref triangle 1))
-                  (normal-at normals (vector-ref triangle 2)))))
+    (vec3+ (normal-at (vector-ref triangle 0))
+           (vec3+ (normal-at (vector-ref triangle 1))
+                  (normal-at (vector-ref triangle 2)))))
   (if (negative? (vec3-dot face average))
       (vector (vector-ref triangle 0) (vector-ref triangle 2) (vector-ref triangle 1))
       triangle))
 
-(define (degenerate-triangle? triangle vertices)
-  (define first (vertex-at vertices (vector-ref triangle 0)))
-  (define second (vertex-at vertices (vector-ref triangle 1)))
-  (define third (vertex-at vertices (vector-ref triangle 2)))
+(define (degenerate-triangle? triangle point-by-id)
+  (define first (hash-ref point-by-id (vector-ref triangle 0)))
+  (define second (hash-ref point-by-id (vector-ref triangle 1)))
+  (define third (hash-ref point-by-id (vector-ref triangle 2)))
   (< (vec3-length (vec3-cross (vec3- second first) (vec3- third first))) 1e-10))

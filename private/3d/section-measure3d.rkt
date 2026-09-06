@@ -11,7 +11,13 @@
 
 (define (closed-components who section)
   (unless (section3d? section) (raise-argument-error who "section3d?" section))
-  (define components (filter section-component3d-closed? (section3d-components section)))
+  (define all-components (section3d-components section))
+  (unless (andmap section-component3d-closed? all-components)
+    (raise-arguments-error
+     who
+     "a section made solely of simple closed loops (not open or branch components)"
+     "components" all-components))
+  (define components all-components)
   (unless (pair? components)
     (raise-arguments-error who "a section with at least one closed component" "section" section))
   components)
@@ -26,9 +32,12 @@
   (define basis (section3d-basis section))
   (define loops
     (map section-component3d-points (closed-components who section)))
-  (for/list ([points (in-list loops)])
-    (define coordinates
-      (for/list ([point (in-list points)]) (plane-basis3d-project basis point)))
+  (define all-coordinates
+    (for/list ([points (in-list loops)])
+      (for/list ([point (in-list points)]) (plane-basis3d-project basis point))))
+  (validate-measurement-loops! who all-coordinates)
+  (for/list ([points (in-list loops)]
+             [coordinates (in-list all-coordinates)])
     (define raw-area (signed-area2 coordinates))
     (define probe (car coordinates))
     (define depth
@@ -92,6 +101,83 @@
               (+ ivv (* factor loop-ivv))
               (+ iuv (* factor loop-iuv)))))
   (vector iuu ivv iuv))
+
+;; Measurement is meaningful only for a planar arrangement of simple,
+;; pairwise-disjoint loops.  The section extractor also exposes open chains;
+;; treating those as if they were holes or ignoring them produces a plausible
+;; but false area, so reject them in `closed-components` above.  The checks
+;; here deliberately use the plane's exact projected coordinates and no
+;; tolerance: the section settings have already made the geometric tolerance
+;; decision when building the section.
+(define (validate-measurement-loops! who coordinate-loops)
+  (for ([coordinates (in-list coordinate-loops)] [loop-index (in-naturals)])
+    (unless (>= (length coordinates) 3)
+      (raise-arguments-error who "closed loops with at least three vertices"
+                             "loop-index" loop-index "loop" coordinates))
+    (when (< (length (remove-duplicates coordinates equal?)) (length coordinates))
+      (raise-arguments-error who "loops without repeated/touching vertices"
+                             "loop-index" loop-index "loop" coordinates))
+    (when (zero? (signed-area2 coordinates))
+      (raise-arguments-error who "non-zero-area section loops"
+                             "loop-index" loop-index "loop" coordinates))
+    (define segments (polygon-segments coordinates))
+    (for* ([first-index (in-range (length segments))]
+           [second-index (in-range (add1 first-index) (length segments))]
+           #:unless (adjacent-polygon-edges? first-index second-index (length segments)))
+      (when (segments-intersect? (list-ref segments first-index)
+                                 (list-ref segments second-index))
+        (raise-arguments-error who "simple non-self-intersecting section loops"
+                               "loop-index" loop-index
+                               "edge-indices" (list first-index second-index)))))
+  (for ([first-loop (in-list coordinate-loops)] [first-index (in-naturals)])
+    (for ([second-loop (in-list (drop coordinate-loops (add1 first-index)))]
+          [second-index (in-naturals (add1 first-index))])
+      (for* ([first-segment (in-list (polygon-segments first-loop))]
+             [second-segment (in-list (polygon-segments second-loop))])
+        (when (segments-intersect? first-segment second-segment)
+          (raise-arguments-error who "pairwise-disjoint non-touching section loops"
+                                 "loop-indices" (list first-index second-index)))))))
+
+(define (polygon-segments coordinates)
+  (for/list ([point (in-list coordinates)]
+             [next (in-list (append (cdr coordinates) (list (car coordinates))))])
+    (cons point next)))
+
+(define (adjacent-polygon-edges? first second count)
+  (or (= (add1 first) second)
+      (and (= first 0) (= second (sub1 count)))))
+
+(define (cross2 origin first second)
+  (- (* (- (vector-ref first 0) (vector-ref origin 0))
+        (- (vector-ref second 1) (vector-ref origin 1)))
+     (* (- (vector-ref first 1) (vector-ref origin 1))
+        (- (vector-ref second 0) (vector-ref origin 0)))))
+
+(define (between-inclusive? low value high)
+  (and (<= (min low high) value) (<= value (max low high))))
+
+(define (point-on-segment2? point first second)
+  (and (zero? (cross2 first second point))
+       (between-inclusive? (vector-ref first 0) (vector-ref point 0) (vector-ref second 0))
+       (between-inclusive? (vector-ref first 1) (vector-ref point 1) (vector-ref second 1))))
+
+;; Inclusive intersection deliberately counts a tangent/endpoint contact as
+;; ambiguous.  Such contours have no unambiguous containment depth for the
+;; even/odd measurement convention.
+(define (segments-intersect? first-segment second-segment)
+  (define a (car first-segment))
+  (define b (cdr first-segment))
+  (define c (car second-segment))
+  (define d (cdr second-segment))
+  (define ab-c (cross2 a b c))
+  (define ab-d (cross2 a b d))
+  (define cd-a (cross2 c d a))
+  (define cd-b (cross2 c d b))
+  (or (and (<= (* ab-c ab-d) 0) (<= (* cd-a cd-b) 0))
+      (and (zero? ab-c) (point-on-segment2? c a b))
+      (and (zero? ab-d) (point-on-segment2? d a b))
+      (and (zero? cd-a) (point-on-segment2? a c d))
+      (and (zero? cd-b) (point-on-segment2? b c d))))
 
 (define (signed-area2 coordinates)
   (/ (for/sum ([point (in-list coordinates)]

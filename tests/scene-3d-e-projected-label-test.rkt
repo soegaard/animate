@@ -69,6 +69,19 @@
    (expected-label-position sampled-view (vec3 3/2 1/2 0)))
   (check-equal? (visual-scale sampled-label) (vec2 1 1))
 
+  ;; The final compositor may supply a batched layout candidate for this one
+  ;; sampled frame.  Its pixel box centre replaces only placement; the label
+  ;; remains the same crisp 2D Visual and retains its authored identity.
+  (define selected-candidate
+    (label-layout-candidate3d 'a-layout 'east (vector 320 180 40 20) #t 0))
+  (define laid-out
+    (parameterize ([current-projected-label-layout-candidates
+                    (hasheq label selected-candidate)])
+      (resolve-projected-label label world outer-camera)))
+  (check-equal? (visual-position laid-out)
+                (camera-pixel->world outer-camera 340 190))
+  (check-eq? (visual-id laid-out) 'a-label)
+
   ;; The scene adapter resolves this custom definition before ordinary Pict
   ;; dispatch, yielding a normal paintable 2D visual above the 3D viewport.
   (check-true (pict? (scene->pict animated 1 #:camera outer-camera)))
@@ -79,4 +92,6 @@
     (follow-projected-point
      (plain-text "O" #:id 'origin-label)
      #:view 'world
-     #:point origin3))))
+     #:point origin3
+     #:placement (label-placement3d '(south) 14 1 #t #t '() 1 4)
+     #:visibility 'inside-frustum))))

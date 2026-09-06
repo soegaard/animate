@@ -320,6 +320,12 @@
  (struct-out adaptive-surface-diagnostics)
  adaptive-parametric-surface3d
  adaptive-function-surface3d
+ trim-expression3d?
+ trim-field3d
+ trim-field3d?
+ trim-and3d
+ trim-or3d
+ trim-not3d
  surface-trim
  surface-trim?
  surface-trim-field
@@ -475,10 +481,11 @@
  clip-plane3d-keep
  clip3d
  clip3d?
- clip3d-content
- clip3d-plane
- slice-mesh3d
- section3d?
+clip3d-content
+clip3d-plane
+slice-mesh3d
+slice-mesh-by-planes3d
+section3d?
  section3d-loops
  section3d-chains
  section-by-plane3d
@@ -499,12 +506,14 @@
  section3d-diagnostics
  (struct-out cap-style3d)
  default-cap-style3d
- (struct-out mesh-cut3d-result)
- cut-mesh3d
- cap-section3d
- cutaway3d
+(struct-out mesh-cut3d-result)
+cut-mesh3d
+cap-section3d
+mesh3d-weld
+cutaway3d
  clip-planes3d
  clip-box3d
+ cut-mesh-by-box3d
  section3d-area
  section3d-centroid
  section3d-perimeter
