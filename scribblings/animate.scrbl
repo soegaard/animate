@@ -12,7 +12,9 @@
                      animate/preview
                      animate/render
                      animate/project
-                     animate/experimental)
+                     animate/experimental
+                     animate/3d
+                     animate/3d/render)
           "../version.rkt")
 
 @(define release-label
@@ -40,6 +42,7 @@ spellings are removed rather than retained as compatibility aliases.
 @include-section["concepts/immutable-scenes.scrbl"]
 @include-section["concepts/formula-source-maps.scrbl"]
 @include-section["concepts/relation-phases.scrbl"]
+@include-section["concepts/spatial-coordinates.scrbl"]
 @include-section["reference/module-boundaries.scrbl"]
 @include-section["reference/authoring.scrbl"]
 @include-section["reference/preview.scrbl"]
@@ -50,6 +53,7 @@ spellings are removed rather than retained as compatibility aliases.
 @include-section["guide/package-source.scrbl"]
 @include-section["reference/scene.scrbl"]
 @include-section["reference/geometry-and-plots.scrbl"]
+@include-section["reference/3d-algebra.scrbl"]
 @include-section["reference/visuals-and-relations.scrbl"]
 @include-section["reference/experimental.scrbl"]
 @include-section["reference/rendering.scrbl"]

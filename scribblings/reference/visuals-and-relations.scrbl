@@ -4122,6 +4122,35 @@ time-dependent fields, can stop at one scalar sign-crossing event, and records
 immutable diagnostics. Once an adaptive trajectory is prepared, dense lookup
 and frame rendering never invoke the author field.
 
+SCENE-3D-K factors the numerical operations behind both trajectory families
+into an immutable @racket[ode-state-space]. The built-in
+@racket[real-ode-state-space], @racket[vec2-ode-state-space], and
+@racket[vec3-ode-state-space] values make the shared RK4 and RK45 algorithms
+explicit; @racket[(numeric-vector-ode-state-space n)] creates a fixed-length
+immutable numeric-vector state space. These values are useful when building a
+numerical extension, while the ordinary two-dimensional and spatial trajectory
+constructors remain the author-facing API.
+
+@defstruct*[ode-state-space ([dimension exact-positive-integer?]
+                             [add procedure?]
+                             [subtract procedure?]
+                             [scale procedure?]
+                             [norm procedure?]
+                             [interpolate procedure?]
+                             [finite? procedure?])
+  #:transparent]{
+Describes finite vector-space operations for the shared solver kernel. Its
+procedures must consistently operate on the declared dimension; @racket[finite?]
+recognizes the immutable state representation. Prepared numeric-vector states
+are immutable to prevent a retained mutable input from changing a trajectory.
+}
+@defthing[real-ode-state-space ode-state-space?]{The one-dimensional real state space.}
+@defthing[vec2-ode-state-space ode-state-space?]{The two-dimensional @racket[vec2] state space.}
+@defthing[vec3-ode-state-space ode-state-space?]{The three-dimensional @racket[vec3] state space.}
+@defproc[(numeric-vector-ode-state-space [dimension exact-positive-integer?])
+         ode-state-space?]{Creates a space whose states are immutable vectors
+of exactly @racket[dimension] finite reals.}
+
 @defproc[(ode-flow-position
           [field (or/c (procedure-arity-includes/c 2)
                        (procedure-arity-includes/c 3))]

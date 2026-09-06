@@ -20,6 +20,7 @@
          racket/string
          "authoring.rkt"
          "main.rkt"
+         "private/3d/renderer3d.rkt"
          "private/doctor.rkt"
          "private/ffmpeg-capabilities.rkt"
          "version.rkt")
@@ -113,6 +114,7 @@
          (struct-out project-plan)
          (struct-out project-tool-identities)
          (struct-out prepared-project)
+         (struct-out renderer3d-capability-set)
          (struct-out renderer-capabilities)
          (struct-out project-check-report)
          normalize-project
@@ -686,12 +688,18 @@
                             'release-stage animate-stage
                             'frame-count (length target-indices))))
 
+;; renderer3d-capability-set comes from the backend-neutral spatial renderer
+;; protocol.  Keeping project validation on that exact type prevents a project
+;; declaration from claiming a facility which its selected renderer cannot
+;; report through `renderer3d-capabilities`.
+
 (struct renderer-capabilities
-  (paths text gradients clipping secondary-camera visible-ink-bounds perspective depth-buffer)
+  (paths text gradients clipping secondary-camera visible-ink-bounds perspective depth-buffer three-dimensional)
   #:transparent)
 
 ;; renderer-capabilities lets validation ask for semantic facilities rather
-;; than inspect a concrete Pict renderer class.
+;; than inspect a concrete Pict renderer class.  `three-dimensional` is the
+;; nested renderer3d-capability-set declaration above.
 
 (struct project-check-report (ok? requirements warnings failures tools)
   #:transparent)

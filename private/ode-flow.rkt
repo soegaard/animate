@@ -18,6 +18,7 @@
          "derived-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
+         "ode-state-space.rkt"
          "parameter.rkt"
          "path-geometry.rkt"
          "point-marker-visual.rkt"
@@ -58,7 +59,8 @@
          streamlines
          flow-particle
          prepare-ode-frame-samples
-         call-with-ode-frame-samples)
+         call-with-ode-frame-samples
+         ode-frame-samples-active?)
 
 
 ;;;
@@ -509,53 +511,24 @@
                 reverse-nodes accepted (add1 rejected) next-maximum-error)]))]))
 
 ;; Dormand--Prince 5(4), returned as the 5th-order endpoint, its derivative,
-;; and the maximum componentwise scaled embedded error.
+;; and a deterministic norm-relative embedded error.  The arithmetic lives in
+;; ode-state-space.rkt, shared with the spatial vec3 implementation.
 (define (dormand-prince-step field time point step solver)
-  (define (at offset terms)
-    (call-field field (+ time (* offset step))
-                (vec2+ point
-                       (vec2-scale step (weighted-sum terms)))))
-  (define k1 (call-field field time point))
-  (define k2 (at 1/5 (list (cons 1/5 k1))))
-  (define k3 (at 3/10 (list (cons 3/40 k1) (cons 9/40 k2))))
-  (define k4 (at 4/5 (list (cons 44/45 k1) (cons -56/15 k2)
-                            (cons 32/9 k3))))
-  (define k5 (at 8/9 (list (cons 19372/6561 k1) (cons -25360/2187 k2)
-                            (cons 64448/6561 k3) (cons -212/729 k4))))
-  (define k6 (at 1 (list (cons 9017/3168 k1) (cons -355/33 k2)
-                          (cons 46732/5247 k3) (cons 49/176 k4)
-                          (cons -5103/18656 k5))))
-  (define fifth-order
-    (vec2+ point
-           (vec2-scale
-            step
-            (weighted-sum (list (cons 35/384 k1) (cons 500/1113 k3)
-                                (cons 125/192 k4) (cons -2187/6784 k5)
-                                (cons 11/84 k6))))))
-  (define k7 (call-field field (+ time step) fifth-order))
-  (define fourth-order
-    (vec2+ point
-           (vec2-scale
-            step
-            (weighted-sum
-             (list (cons 5179/57600 k1) (cons 7571/16695 k3)
-                   (cons 393/640 k4) (cons -92097/339200 k5)
-                   (cons 187/2100 k6) (cons 1/40 k7))))))
-  (values fifth-order k7
-          (embedded-error-ratio point fifth-order fourth-order solver)))
+  (ode-state-space-dormand-prince-step
+   vec2-ode-state-space
+   (lambda (field-time field-point) (call-field field field-time field-point))
+   time point step
+   (adaptive-rk45-value-relative-tolerance solver)
+   (adaptive-rk45-value-absolute-tolerance solver)))
 
 (define (weighted-sum terms)
-  (for/fold ([sum origin]) ([term (in-list terms)])
-    (vec2+ sum (vec2-scale (car term) (cdr term)))))
+  (ode-state-space-weighted-sum vec2-ode-state-space terms))
 
 (define (embedded-error-ratio previous fifth fourth solver)
-  (define (component-error before after estimate)
-    (/ (abs (- after estimate))
-       (+ (adaptive-rk45-value-absolute-tolerance solver)
-          (* (adaptive-rk45-value-relative-tolerance solver)
-             (max (abs before) (abs after))))))
-  (max (component-error (vec2-x previous) (vec2-x fifth) (vec2-x fourth))
-       (component-error (vec2-y previous) (vec2-y fifth) (vec2-y fourth))))
+  (ode-state-space-embedded-error-ratio
+   vec2-ode-state-space previous fifth fourth
+   (adaptive-rk45-value-relative-tolerance solver)
+   (adaptive-rk45-value-absolute-tolerance solver)))
 
 (define (adaptive-next-step-magnitude solver old-step error)
   (min (adaptive-rk45-value-maximum-step solver)
@@ -648,21 +621,14 @@
   (cond
     [(zero? step) (adaptive-ode-node-position first)]
     [else
-     (define progress (/ (- time start-time) step))
-     (define complement (- 1 progress))
-     (define h00 (+ (* 2 progress progress progress)
-                     (* -3 progress progress) 1))
-     (define h10 (+ (* progress progress progress)
-                     (* -2 progress progress) progress))
-     (define h01 (+ (* -2 progress progress progress)
-                     (* 3 progress progress)))
-     (define h11 (+ (* progress progress progress)
-                     (* -1 progress progress)))
-     (vec2+
-      (vec2+ (vec2-scale h00 (adaptive-ode-node-position first))
-             (vec2-scale (* h10 step) (adaptive-ode-node-derivative first)))
-      (vec2+ (vec2-scale h01 (adaptive-ode-node-position second))
-             (vec2-scale (* h11 step) (adaptive-ode-node-derivative second))))]))
+     (ode-state-space-hermite-interpolate
+      vec2-ode-state-space
+      (adaptive-ode-node-position first)
+      (adaptive-ode-node-derivative first)
+      (adaptive-ode-node-position second)
+      (adaptive-ode-node-derivative second)
+      step
+      (/ (- time start-time) step))]))
 
 ;; streamline-points : field vec2? #:direction flow-direction?
 ;;                     #:step-size positive-finite-real? #:steps positive-integer?
@@ -828,6 +794,12 @@
 ;; by the PNG renderer around one frame job, never mutated by frame workers.
 (define current-ode-frame-samples
   (make-parameter #f))
+
+;; Reports whether an enclosing renderer has already installed the immutable
+;; table.  Direct single-frame rendering uses it to avoid preparing the same
+;; state again inside a PNG worker.
+(define (ode-frame-samples-active?)
+  (and (current-ode-frame-samples) #t))
 
 ;; call-with-ode-frame-samples : immutable-hasheq? (-> any) -> any
 ;; Makes a prepared frame-sample table visible while one frame is resolved.
@@ -999,21 +971,10 @@
    #:stroke stroke #:stroke-width stroke-width))
 
 (define (rk4-step field time point step)
-  (define half-step (/ step 2))
-  (define k1 (call-field field time point))
-  (define k2 (call-field field (+ time half-step)
-                         (vec2+ point (vec2-scale half-step k1))))
-  (define k3 (call-field field (+ time half-step)
-                         (vec2+ point (vec2-scale half-step k2))))
-  (define k4 (call-field field (+ time step)
-                         (vec2+ point (vec2-scale step k3))))
-  (vec2+
-   point
-   (vec2-scale
-    (/ step 6)
-    (vec2+ k1
-           (vec2+ (vec2-scale 2 k2)
-                  (vec2+ (vec2-scale 2 k3) k4))))))
+  (ode-state-space-rk4-step
+   vec2-ode-state-space
+   (lambda (field-time field-point) (call-field field field-time field-point))
+   time point step))
 
 (define (call-field field time point)
   (define result

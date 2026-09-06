@@ -1,5 +1,196 @@
 # Changes
 
+## 1.19.0 — SCENE-3D-M
+
+- Added `animate/3d/render`, a backend-neutral renderer protocol with stable
+  backend IDs, explicit capability sets, immutable render requests/results,
+  preparation fingerprints, and release hooks. `view3d` remains an immutable
+  semantic value; it never stores a renderer cache, bitmap, native handle, or
+  GPU resource.
+- The existing deterministic software rasterizer is now the stateless
+  conformance reference and can separately prepare camera-space triangles and
+  rasterize them into a fresh depth target. The default opaque `view3d` path
+  uses a bounded, thread-safe retained backend that reuses identical immutable
+  preparations without changing pixels, depth ordering, or random-access frame
+  semantics.
+- Added reference/retained output conformance tests and
+  `examples/3d/retained-renderer.rkt`, including a small REPL cache probe.
+- Replaced the one-off wireframe snapshot script with
+  `tools/run-3d-probes.rkt`, a stage-aware visual-probe runner for SCENE-3D-B
+  through SCENE-3D-M. Each run records rendered frames, sampled cameras,
+  renderer-fingerprint digests, frame hashes, and a release manifest.
+
+Known boundary: no Pict3D package or GPU adapter is bundled. The retained
+backend caches the reference renderer's fully camera-prepared triangles, so a
+camera or viewport change is intentionally a miss. Any future GPU adapter will
+remain optional, use the same protocol, and compare pixels with tolerance rather
+than require bit-identical software output.
+
+## 1.18.0 — SCENE-3D-L
+
+- `animate/3d` now provides immutable `spatial-inspection` records for a
+  sampled `view3d`, exact double-sided ray/triangle hits with barycentric
+  coordinates, and deterministic `view3d-pick` / `view3d-pixel-pick` queries.
+  A query first culls world AABBs, then transforms to a cached local BVH before
+  its exact triangle test; tie-breaking is stable by drawing and triangle index.
+- The interactive preview keeps spatial selection out of the authored scene.
+  Clicking a 3D facet retains a preview-only selection and draws its world AABB,
+  exact triangle, normal, local frame, and ray-pixel marker above the cached
+  viewport. The new `Animate → 3D selection` menu copies path/point/normal,
+  focuses only the inspection camera, and supplies scratch REPL values,
+  including a clipping plane.
+- Added `examples/3d/spatial-inspector-picking.rkt`, an asymmetric mesh probe
+  for the new click inspection workflow.
+
+Known boundary: picking currently operates on indexed mesh triangles (including
+generated curves and surfaces). It has no analytic implicit-shape, UV,
+interpolated-vertex-normal, or GPU-picking path; overlays stay preview-only and
+never affect a normal frame/video render.
+
+## 1.17.0 — SCENE-3D-K
+
+- Added a generic immutable `ode-state-space` numerical kernel with real,
+  `vec2`, `vec3`, and fixed-length numeric-vector state spaces. The existing
+  two-dimensional RK4/RK45 API now uses that kernel without changing its
+  public call shape.
+- `animate/3d` now provides prepared fixed-RK4 and adaptive-RK45 trajectories,
+  deterministic static vector fields and streamlines, and parameter-driven
+  spatial particles/clouds. PNG and preview renderers prepare particle
+  positions before resolving spatial relations, so their workers do not call
+  an author ODE field.
+- Added `examples/3d/prepared-lorenz-flow.rkt`, a camera-orbiting Lorenz
+  attractor probe with a prepared particle and tangent.
+
+Known boundary: 3D vector fields use an author-chosen finite rectangular grid;
+there is no adaptive streamline integration, event handling, streamline
+topology analysis, or 3D picking/inspection yet.
+
+## 1.16.0 — SCENE-3D-J
+
+- `animate/3d` now provides world-coordinate `apply-linear3` and
+  `apply-affine3` requests. They preserve an indexed mesh's topology exactly
+  and also map whole named spatial subtrees, including coordinate diagrams.
+- `apply-pointwise3` samples the currently authored vertices through a spatial
+  point map. `apply-homotopy3` evaluates `H(point, phase)` directly at every
+  sample time. Both default to explicit failure; their opt-in `'drop-triangle`
+  policy deterministically removes incident triangles without repairing holes.
+- Added `linear-transformation-diagram3d` and the canonical
+  `examples/3d/spatial-maps-and-homotopies.rkt` scene. It contrasts an exact
+  affine shear, an authored-vertex ellipsoid deformation, and a direct twist
+  homotopy.
+
+## 1.15.0 — SCENE-3D-I
+
+- `animate/3d` now separates render-only half-space `clip3d` wrappers from
+  `slice-mesh3d`, which creates actual clipped mesh geometry. `section-by-plane3d`
+  preserves deterministic loops/open chains, and `section-curve3d` makes them
+  visible as ordinary tube curves.
+- Materials now preserve semantic alpha. The software renderer performs an
+  opaque depth-writing pass followed by explicit `'object-sorted` or
+  `'triangle-sorted` transparent passes; transparent triangles depth-test
+  against opaque geometry but do not write depth.
+- Projected labels support `#:occlusion 'always-visible`, `'hide`, or `'fade`
+  against the opaque depth target. Added the
+  `examples/3d/sphere-plane-section.rkt` moving-section probe.
+
+## 1.14.0 — SCENE-3D-H
+
+- `animate/3d` now provides standard indexed solids, deterministic simple-contour
+  `extrude3d`, axis-safe `revolve3d`, parallel-transport `sweep3d`, and mesh
+  normal, winding, boundary, transform, wireframe, and merge utilities.
+- Added the `examples/3d/solid-of-revolution.rkt` mathematical video probe.
+
+## 1.13.0 — SCENE-3D-G
+
+- `animate/3d` now provides deterministic fixed-grid `parametric-surface3d`
+  and `function-surface3d` values. Analytic derivatives are used when supplied;
+  otherwise normals use explicit finite differences, adjacent-face fallback,
+  and recorded unresolved sites rather than producing NaNs.
+- Surface colour fields, coordinate curves, tangent vectors/planes, normals,
+  gradients, and level-curve segments are ordinary spatial geometry. The
+  opaque reference renderer now interpolates vertex colours and `'smooth`
+  normals perspective-correctly.
+- `reveal-surface-u`, `reveal-surface-v`, and `transform-surface3d` derive each
+  frame directly from captured immutable grids. Surface morphs require equal
+  domains/resolution and compatible material structure.
+- `examples/3d/tangent-plane.rkt` is the canonical saddle-surface demo.
+
+Known boundary: surface topology is fixed to a rectangular grid. There is no
+adaptive/trimmed/implicit surface, topology-changing morph, texture mapping,
+solid/extrusion API, clipping plane, transparency, picking, or occlusion-aware
+3D label.
+
+## 1.12.0 — SCENE-3D-F
+
+- `animate/3d` now provides finite `point3d`, `line3d`, `segment3d`,
+  `polyline3d`, `arrow3d`, `double-arrow3d`, `parametric-curve3d`, and
+  `tube3d` geometry. Curve samples are deterministic, adjacent repeated points
+  are removed before framing, and tubes use a transported frame rather than
+  independent unstable cross-sections.
+- `axes3d`, `coordinate-plane3d`, `grid-plane3d`, `basis-vectors3d`,
+  `vector-arrow3d`, and `vector-components3d` provide stable spatial paths for
+  vector diagrams. Axis label anchors work with Stage E projected 2D labels.
+- Existing curve paths support `create`, `uncreate`, and `show-passing-flash`;
+  `move-along-curve3d` and `orient-along-curve3d` sample exact curve data at
+  the requested timeline time, with no updater or frame-order dependency.
+- `examples/3d/vector-components.rkt` is the canonical vector demo.
+
+Known boundary: widths are physical `world` radii. A requested `'screen` width
+is rejected rather than pretending to be equivalent; depth-aware screen-space
+strokes, smooth curve joins, arbitrary surfaces/solids, picking, transparency,
+and occlusion-aware 3D labels remain later work.
+
+## 1.11.0 — SCENE-3D-E
+
+- `animate/3d` now has immutable `spatial-relation` Visuals. A relation
+  explicitly declares spatial-path, scene-value, and camera dependencies; it
+  resolves lazily against one sampled `view3d`, reports dependency cycles with
+  full rooted paths, and never writes into a Scene.
+- Built-in `line-between3d`, `segment-between3d`, `arrow-between3d`,
+  `plane-through3d`, `normal-at3d`, and `distance-segment3d` establish a
+  semantic relation vocabulary while retaining the existing deterministic mesh
+  renderer.
+- `projected-label`, `follow-projected-point`, and
+  `follow-projected-spatial` keep ordinary 2D text or formula Visuals crisp at
+  fixed pixel size while their anchors follow the sampled spatial camera.
+- `examples/3d/projected-labels.rkt` is the canonical moving-tetrahedron
+  example: its A–D TeX labels follow projected vertex anchors while both the
+  tetrahedron and camera move.
+
+Known boundary: relation strokes and arrowheads are temporary mesh geometry;
+there are no points/tubes/curves, curve labels, surfaces/solids, spatial
+occlusion or picking, clipping planes, or transparency. Projected labels are
+always-visible 2D overlays rather than occlusion-aware 3D billboards.
+
+## 1.10.0 — SCENE-3D-D
+
+- `animate/3d` now adds finite immutable requests for local spatial position,
+  rotation, scale, full transforms, camera pose/lens motions, orbiting,
+  dollying, framing, and following a spatial target.
+- Every 3D request is compiled against an exact clip-start state and sampled
+  directly at the requested time. It works in timed, sequential, parallel, and
+  lagged compositions without a mutable updater or frame-order dependency.
+- Preview supports an inspection-only immutable `camera3d` override. It is
+  part of the preview render specification and subprocess worker protocol, and
+  clearing it restores the authored camera without changing the Scene.
+- `examples/3d/camera-orbit.rkt` demonstrates a rotating cube, camera orbit,
+  and a fixed source-addressable 2D matrix formula.
+
+Known boundary: 3D camera navigation and authored camera animation are present,
+but spatial relations, projected labels, 3D picking, curves, surfaces, solids,
+clipping planes, and transparency remain later stages.
+
+## 1.9.0 — SCENE-3D-C
+
+- `animate/3d` now supports immutable opaque materials and ambient/directional
+  lights, plus `view3d`'s `'opaque` render mode.
+- The first software triangle backend performs deterministic six-plane
+  clipping, CCW back-face culling, pixel-centre rasterization, perspective
+  depth testing, stable equal-depth ties, and flat or unlit shading.
+- `examples/3d/opaque-cube.rkt` and `examples/3d/depth-test.rkt` demonstrate
+  the renderer. Transparency, smooth shading, texture mapping, shadows,
+  picking, and spatial animation remain later work.
+
 ## 1.8.0 — SCENE-EM
 
 This is an intentional API cleanup release, not a compatibility release.

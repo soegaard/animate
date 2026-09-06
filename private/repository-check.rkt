@@ -82,7 +82,7 @@
                    "compile public modules, tests, and Racket examples"
                    raco-path root-path
                    (append
-                    (list "make" "main.rkt" "authoring.rkt" "preview.rkt"
+                    (list "make" "main.rkt" "3d.rkt" "authoring.rkt" "preview.rkt"
                           "render.rkt" "project.rkt")
                     (relative-racket-files root-path "examples")
                     (relative-racket-files root-path "tests")))

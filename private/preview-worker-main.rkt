@@ -16,9 +16,12 @@
          "../main.rkt"
          "../authoring.rkt"
          "camera.rkt"
-         "pict-adapter.rkt"
+         "ode-flow.rkt"
+         (only-in "pict-adapter.rkt" default-pict-renderers scene-state->pict)
          "preview-model.rkt"
          "preview-worker-protocol.rkt"
+         "3d/preview-camera3d-override.rkt"
+         "3d/ode-flow3d.rkt"
          "scene-program.rkt")
 
 (define loaded-scene #f)
@@ -83,12 +86,31 @@
      #:world-width (camera-world-width camera)
      #:center (camera-center camera)
      #:background (camera-background camera)))
+  (define rendered-state
+    (for/fold ([state (scene-sample loaded-scene time)])
+              ([override-datum
+                (in-list (worker-render-frame-camera3d-overrides request))])
+      (preview-camera3d-override-apply
+       state
+       (datum->preview-camera3d-override override-datum))))
   (define bitmap
-    (pict->bitmap
-     (scene->pict loaded-scene time #:camera scaled-camera
-                  #:renderers default-pict-renderers
-                  #:supersample (worker-render-frame-supersample request))
-     'smoothed))
+    ;; Freeze both ordinary and spatial flow positions before the renderer
+    ;; resolves visual relations.  The renderer then sees only immutable
+    ;; samples, never an author ODE callback.
+    (call-with-ode-frame-samples
+     (prepare-ode-frame-samples (list rendered-state))
+     (lambda ()
+       (call-with-ode3d-frame-samples
+        (prepare-ode3d-frame-samples (list rendered-state))
+        (lambda ()
+          (pict->bitmap
+           (scene-state->pict
+            rendered-state
+            #:camera
+            (camera-with-supersampling
+             scaled-camera (worker-render-frame-supersample request))
+            #:renderers default-pict-renderers)
+           'smoothed))))))
   (define output (string->path (worker-render-frame-output-path request)))
   (define parent (path-only output))
   (when parent (make-directory* parent))
@@ -117,6 +139,15 @@
     [else
      (raise-arguments-error 'preview-worker
                             "a serialized preview sample" "sample" value)]))
+
+(define (camera-with-supersampling camera supersample)
+  (if (= supersample 1)
+      camera
+      (make-camera #:width (* supersample (camera-width camera))
+                   #:height (* supersample (camera-height camera))
+                   #:world-width (camera-world-width camera)
+                   #:center (camera-center camera)
+                   #:background (camera-background camera))))
 
 (let loop ()
   (define request (read))

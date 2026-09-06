@@ -28,6 +28,7 @@
          "geometry.rkt"
          "pict-adapter.rkt"
          "preview-controller.rkt"
+         "preview-repl.rkt"
          "preview-timeline-model.rkt"
          "waveform.rkt"
          "inspector-document.rkt"
@@ -36,7 +37,19 @@
          "program-preview.rkt"
          "relative-layout.rkt"
          "scene-program.rkt"
+         "3d/affine3.rkt"
+         "3d/camera3d.rkt"
+         "3d/bounds3.rkt"
+         "3d/clipping3d.rkt"
+         "3d/preview-camera3d-override.rkt"
+         "3d/projection3d.rkt"
+         "3d/ray-plane.rkt"
+         "3d/rotation3.rkt"
+         "3d/spatial-inspection.rkt"
+         "3d/vec3.rkt"
+         "3d/view3d-visual.rkt"
          "visual-inspector.rkt"
+         "visual-model.rkt"
          "scene.rkt")
 
 (provide open-preview-window
@@ -274,9 +287,369 @@
                        (set-preview-pixel-scale! (cdr option)))])))
   (set-box! pixel-scale-items-box pixel-scale-items)
   (update-pixel-scale-checkmarks!)
+  ;; Inspection navigation is intentionally a separate preview layer.  These
+  ;; actions do not change the source scene, its authored camera, or its
+  ;; ordinary two-dimensional render camera.
+  (define inspection-camera-menu
+    (new menu% [parent animate-menu] [label "3D inspection camera"]))
+  (new menu-item%
+       [parent inspection-camera-menu]
+       [label "Reset inspection camera"]
+       [callback (lambda (_item _event) (reset-inspection-camera!))])
+  (new menu-item%
+       [parent inspection-camera-menu]
+       [label "Copy camera expression"]
+       [callback (lambda (_item _event) (copy-inspection-camera-expression!))])
+  (new menu-item%
+       [parent inspection-camera-menu]
+       [label "Copy camera animation from authored camera"]
+       [callback (lambda (_item _event) (copy-inspection-camera-animation!))])
+  (new menu-item%
+       [parent inspection-camera-menu]
+       [label "Use inspection camera as REPL scratch camera"]
+       [callback (lambda (_item _event) (install-inspection-camera-in-repl!))])
+  ;; Spatial selection is similarly preview-only.  These actions operate on
+  ;; the exact ray/triangle pick retained in `spatial-pick-box`, never on a
+  ;; colour sampled from the rendered bitmap and never on authored scene data.
+  (define spatial-selection-menu
+    (new menu% [parent animate-menu] [label "3D selection"] ))
+  (new menu-item%
+       [parent spatial-selection-menu]
+       [label "Copy spatial path"]
+       [callback (lambda (_item _event) (copy-spatial-path!))])
+  (new menu-item%
+       [parent spatial-selection-menu]
+       [label "Copy hit position"]
+       [callback (lambda (_item _event) (copy-spatial-point!))])
+  (new menu-item%
+       [parent spatial-selection-menu]
+       [label "Copy surface normal"]
+       [callback (lambda (_item _event) (copy-spatial-normal!))])
+  (new menu-item%
+       [parent spatial-selection-menu]
+       [label "Focus inspection camera on selection"]
+       [callback (lambda (_item _event) (focus-inspection-camera-on-selection!))])
+  (new menu-item%
+       [parent spatial-selection-menu]
+       [label "Use selection as REPL scratch values"]
+       [callback (lambda (_item _event) (install-spatial-selection-in-repl!))])
   (define outer (new vertical-panel% [parent frame] [alignment '(center center)]))
   (define bitmap-box (box #f))
+  ;; The active view is selected by the most recent drag/wheel gesture. It is
+  ;; not a semantic scene selection and therefore never competes with the
+  ;; existing Visual-inspector path state.
+  (define inspection-view-id-box (box #f))
+  (define inspection-drag-box (box #f))
+  ;; This is deliberately separate from `preview-selection`: the latter is an
+  ;; authored 2D Visual path, while a spatial pick names an object inside a
+  ;; view3d and is valid only as preview inspection state.
+  (define spatial-pick-box (box #f))
   (define white (make-object color% 255 255 255))
+  ;; Convert a pointer position through the same letterbox and immutable 2D
+  ;; preview camera used for ordinary semantic hit testing.  The returned
+  ;; coordinates locate a viewport; they do not sample a rendered bitmap.
+  (define (canvas-event->semantic-point canvas event)
+    (define session (unbox controller-box))
+    (define bitmap (unbox bitmap-box))
+    (and session bitmap (preview-transaction-session? session)
+         (with-handlers ([exn:fail? (lambda (_error) #f)])
+           (define-values (width height) (send canvas get-client-size))
+           (define bitmap-width (send bitmap get-width))
+           (define bitmap-height (send bitmap get-height))
+           (define scale (min (/ width bitmap-width) (/ height bitmap-height)))
+           (define drawn-width (* bitmap-width scale))
+           (define drawn-height (* bitmap-height scale))
+           (define offset-x (/ (- width drawn-width) 2))
+           (define offset-y (/ (- height drawn-height) 2))
+           (define local-x (- (send event get-x) offset-x))
+           (define local-y (- (send event get-y) offset-y))
+           (and (<= 0 local-x drawn-width) (<= 0 local-y drawn-height)
+                (let* ([source (preview-source-scene (preview-source session))]
+                       [time (preview-current-time session)]
+                       [preview-camera (or camera (scene-camera-at source time))])
+                  (list source time preview-camera
+                        (* (/ local-x drawn-width) (camera-width preview-camera))
+                        (* (/ local-y drawn-height) (camera-height preview-camera))))))))
+  ;; Returns the top-level view3d identity beneath a canvas event. A regular
+  ;; 2D Visual remains selectable by the existing click path; only an actual
+  ;; viewport starts an inspection-camera gesture.
+  (define (view3d-id-at-canvas-event canvas event)
+    (define location (canvas-event->semantic-point canvas event))
+    (and location
+         (match location
+           [(list source time preview-camera semantic-x semantic-y)
+            (define hit
+              (scene-hit-test source time semantic-x semantic-y
+                              #:camera preview-camera))
+            (define path (and hit (visual-inspection-path hit)))
+            (and path
+                 (let ([visual (scene-state-ref (scene-sample source time) path)])
+                   (and (view3d? visual) (visual-id visual))))])))
+  (define (authored-view3d session view-id)
+    (define source (preview-source-scene (preview-source session)))
+    (define view (scene-state-ref (scene-sample source (preview-current-time session))
+                                  view-id))
+    (and (view3d? view) view))
+  (define (current-inspection-override session view-id)
+    (define authored (authored-view3d session view-id))
+    (and authored
+         (hash-ref (preview-camera3d-overrides session) view-id
+                   (lambda ()
+                     (make-preview-camera3d-override
+                      view-id (view3d-camera authored))))))
+  (define (set-inspection-override! session override)
+    (set-box! inspection-view-id-box (preview-camera3d-override-view-id override))
+    (preview-set-camera3d-override! session override))
+  (define (navigate-inspection-camera! view-id dx dy shift?)
+    (define session (unbox controller-box))
+    (when session
+      (define override (current-inspection-override session view-id))
+      (when override
+        (define camera3d (preview-camera3d-override-camera override))
+        (define next
+          (if shift?
+              ;; Pan in the camera's screen axes; the scale follows the current
+              ;; inspection distance rather than canvas pixel history.
+              (let* ([distance (max 1/10
+                                    (vec3-distance (camera3d-position camera3d)
+                                                   (preview-camera3d-override-target override)))]
+                     [unit (/ distance 300)]
+                     [delta (vec3+
+                             (vec3-scale (* -1 dx unit) (camera3d-right camera3d))
+                             (vec3-scale (* dy unit) (camera3d-up camera3d)))])
+                (preview-camera3d-override-pan override delta))
+              (preview-camera3d-override-orbit override
+                                                (* -1/100 dx)
+                                                (* -1/100 dy))))
+        (set-inspection-override! session next))))
+  (define (dolly-inspection-camera! view-id amount)
+    (define session (unbox controller-box))
+    (when session
+      (define override (current-inspection-override session view-id))
+      (when override
+        (set-inspection-override!
+         session
+         (preview-camera3d-override-dolly override (* 1/4 amount))))))
+  (define (active-inspection-view-id)
+    (define session (unbox controller-box))
+    (or (unbox inspection-view-id-box)
+        (and session
+             (= (hash-count (preview-camera3d-overrides session)) 1)
+             (car (hash-keys (preview-camera3d-overrides session))))))
+  (define (reset-inspection-camera!)
+    (define session (unbox controller-box))
+    (when session
+      (define selected (active-inspection-view-id))
+      (if selected
+          (preview-clear-camera3d-override! session selected)
+          (for ([view-id (in-list (hash-keys (preview-camera3d-overrides session)))])
+            (preview-clear-camera3d-override! session view-id)))
+      (set-box! inspection-view-id-box #f)))
+  (define (vec3-expression value)
+    (format "(vec3 ~s ~s ~s)" (vec3-x value) (vec3-y value) (vec3-z value)))
+  (define (rotation3-expression value)
+    (define components (rotation3-components value))
+    (define w (vector-ref components 0))
+    (define x (vector-ref components 1))
+    (define y (vector-ref components 2))
+    (define z (vector-ref components 3))
+    (define axis-length (sqrt (+ (* x x) (* y y) (* z z))))
+    (if (zero? axis-length)
+        "identity-rotation3"
+        (format "(axis-angle (vec3 ~s ~s ~s) ~s)"
+                (/ x axis-length) (/ y axis-length) (/ z axis-length)
+                (* 2 (acos (max -1 (min 1 w)))))))
+  (define (camera3d-expression camera3d)
+    (define projection (camera3d-projection camera3d))
+    (define lens
+      (if (perspective-projection3d? projection)
+          (format "#:vertical-field-of-view ~s"
+                  (perspective-projection3d-vertical-field-of-view projection))
+          (format "#:vertical-size ~s"
+                  (orthographic-projection3d-vertical-size projection))))
+    (format "(~a #:position ~a #:rotation ~a #:near ~s #:far ~s ~a)"
+            (if (perspective-projection3d? projection)
+                "perspective-camera3d"
+                "orthographic-camera3d")
+            (vec3-expression (camera3d-position camera3d))
+            (rotation3-expression (camera3d-rotation camera3d))
+            (camera3d-near camera3d)
+            (camera3d-far camera3d)
+            lens))
+  (define (active-inspection-camera)
+    (define session (unbox controller-box))
+    (define view-id (and session (active-inspection-view-id)))
+    (and session view-id
+         (let ([override (current-inspection-override session view-id)])
+           (and override (cons view-id (preview-camera3d-override-camera override))))))
+  (define (copy-inspection-camera-expression!)
+    (define active (active-inspection-camera))
+    (when active
+      (send the-clipboard set-clipboard-string
+            (camera3d-expression (cdr active)) 0)))
+  (define (copy-inspection-camera-animation!)
+    (define active (active-inspection-camera))
+    (when active
+      (define view-id (car active))
+      (define target-camera (cdr active))
+      (define target
+        (vec3+ (camera3d-position target-camera)
+               (camera3d-forward target-camera)))
+      (define lens
+        (if (perspective-projection3d? (camera3d-projection target-camera))
+            (format "\n  (camera3d-field-of-view-to '~a ~s)"
+                    view-id
+                    (perspective-projection3d-vertical-field-of-view
+                     (camera3d-projection target-camera)))
+            (format "\n  (camera3d-orthographic-height-to '~a ~s)"
+                    view-id
+                    (orthographic-projection3d-vertical-size
+                     (camera3d-projection target-camera)))))
+      (send the-clipboard set-clipboard-string
+            (format "(animation-group\n  (camera3d-move-to '~a ~a)\n  (camera3d-look-at-to '~a ~a #:up ~a)~a)"
+                    view-id (vec3-expression (camera3d-position target-camera))
+                    view-id (vec3-expression target)
+                    (vec3-expression (camera3d-up target-camera)) lens)
+            0)))
+  (define (install-inspection-camera-in-repl!)
+    (define active (active-inspection-camera))
+    (when active
+      (define session (unbox controller-box))
+      (preview-repls-set-scratch-binding! session 'inspection-camera (cdr active))
+      (send the-clipboard set-clipboard-string
+            (format "(define inspection-camera ~a)"
+                    (camera3d-expression (cdr active)))
+            0)))
+  ;; A `view3d` uses its active inspection camera for picking as well as for
+  ;; drawing.  Applying that immutable override here keeps click rays and the
+  ;; preview bitmap in the same coordinate system.
+  (define (resolved-inspection-view session view-id)
+    (and session
+         (let* ([source (preview-source-scene (preview-source session))]
+                [time (preview-current-time session)]
+                [sampled (scene-sample source time)]
+                [override (current-inspection-override session view-id)]
+                [state (if override
+                           (preview-camera3d-override-apply sampled override)
+                           sampled)]
+                [view (scene-state-resolved-ref state view-id)])
+           (and (view3d? view) view))))
+  ;; The measured outer visual retains its complete 2D transform.  Spatial
+  ;; picking must invert that transform before mapping the local viewport
+  ;; coordinates to a camera ray: an axis-aligned layout box would make a
+  ;; rotated or non-uniformly scaled `view3d` pick the wrong 3D pixel.
+  (define (view3d-layout-inspection session view-id)
+    (define source (preview-source-scene (preview-source session)))
+    (define time (preview-current-time session))
+    (define preview-camera (or camera (scene-camera-at source time)))
+    (scene-inspect-path source (list view-id) time #:camera preview-camera))
+  (define (view3d-world->local-point layout-inspection world-point)
+    (define transform
+      (and layout-inspection
+           (visual-inspection-composed-transform layout-inspection)))
+    (define inverse
+      (and transform
+           (affine2-invert (affine-transform->affine2 transform))))
+    (and inverse
+         (affine2-apply-point inverse world-point)))
+  (define (spatial-pick-at-canvas-event canvas event)
+    (define session (unbox controller-box))
+    (define view-id (view3d-id-at-canvas-event canvas event))
+    (define location (canvas-event->semantic-point canvas event))
+    (and session view-id location
+         (match location
+           [(list source time preview-camera semantic-x semantic-y)
+            (define layout-inspection
+              (view3d-layout-inspection session view-id))
+            (define view (resolved-inspection-view session view-id))
+            (and view
+                 (let ([local-point
+                        (view3d-world->local-point
+                         layout-inspection
+                         (camera-pixel->world
+                          preview-camera semantic-x semantic-y))])
+                   (and local-point
+                        (let* ([horizontal (view3d-width view)]
+                               [vertical (view3d-height view)]
+                               [pixel-x
+                                (* 1000
+                                   (max 0 (min 1
+                                               (/ (+ (vec2-x local-point)
+                                                     (/ horizontal 2))
+                                                  horizontal))))]
+                               [pixel-y
+                                (* 1000
+                                   (max 0 (min 1
+                                               (/ (- (/ vertical 2)
+                                                     (vec2-y local-point))
+                                                  vertical))))]
+                               [pick (view3d-pixel-pick view pixel-x pixel-y
+                                                        #:width 1000 #:height 1000)])
+                          (and pick (cons view-id pick))))))]
+           [_ #f])))
+  (define (select-spatial-at-canvas-point canvas event)
+    (define picked (spatial-pick-at-canvas-event canvas event))
+    (set-box! spatial-pick-box picked)
+    (when picked
+      (set-box! inspection-view-id-box (car picked)))
+    (update-selection-message!)
+    picked)
+  (define (active-spatial-pick)
+    (define value (unbox spatial-pick-box))
+    (and value (cdr value)))
+  (define (active-spatial-view-id)
+    (define value (unbox spatial-pick-box))
+    (and value (car value)))
+  (define (copy-spatial-path!)
+    (define pick (active-spatial-pick))
+    (when pick
+      (send the-clipboard set-clipboard-string
+            (format "'~s" (spatial-pick-path pick)) 0)))
+  (define (copy-spatial-point!)
+    (define pick (active-spatial-pick))
+    (when pick
+      (send the-clipboard set-clipboard-string
+            (vec3-expression (spatial-pick-point pick)) 0)))
+  (define (copy-spatial-normal!)
+    (define pick (active-spatial-pick))
+    (when pick
+      (send the-clipboard set-clipboard-string
+            (vec3-expression (spatial-pick-normal pick)) 0)))
+  (define (focus-inspection-camera-on-selection!)
+    (define session (unbox controller-box))
+    (define view-id (active-spatial-view-id))
+    (define pick (active-spatial-pick))
+    (when (and session view-id pick)
+      (define override (current-inspection-override session view-id))
+      (when override
+        (define target (spatial-pick-point pick))
+        (define focused
+          (camera3d-look-at (preview-camera3d-override-camera override) target))
+        (set-inspection-override!
+         session
+         (make-preview-camera3d-override view-id focused #:target target)))))
+  (define (install-spatial-selection-in-repl!)
+    (define session (unbox controller-box))
+    (define view-id (active-spatial-view-id))
+    (define pick (active-spatial-pick))
+    (when (and session view-id pick)
+      ;; These are normal immutable values.  They are intentionally scratch
+      ;; bindings rather than edits to a scene program: an author can inspect
+      ;; the point, create a projected label, or use the plane in a clipping
+      ;; experiment without creating a hidden preview-only scene mutation.
+      (define point (spatial-pick-point pick))
+      (define normal (spatial-pick-normal pick))
+      (preview-repls-set-scratch-binding! session 'spatial-selection pick)
+      (preview-repls-set-scratch-binding! session 'spatial-path (spatial-pick-path pick))
+      (preview-repls-set-scratch-binding! session 'spatial-point point)
+      (preview-repls-set-scratch-binding! session 'spatial-normal normal)
+      (preview-repls-set-scratch-binding! session 'spatial-clipping-plane
+                                          (clip-plane3d (plane3 point normal)))
+      (send the-clipboard set-clipboard-string
+            (format ";; selected ~s in view '~a\n(define spatial-point ~a)\n(define spatial-normal ~a)\n(define spatial-clipping-plane\n  (clip-plane3d (plane3 spatial-point spatial-normal)))"
+                    (spatial-pick-path pick) view-id
+                    (vec3-expression point) (vec3-expression normal))
+            0)))
   (define canvas
     (new
      (class canvas%
@@ -309,8 +682,55 @@
            (send dc set-scale 1 1)
            (draw-selection-overlay dc x y draw-width draw-height bitmap)))
        (define/override (on-event event)
-         (when (eq? (send event get-event-type) 'left-down)
-           (select-at-canvas-point this event))
+         (case (send event get-event-type)
+           [(left-down)
+            (define view-id (view3d-id-at-canvas-event this event))
+            (if view-id
+                (begin
+                  (set-box! inspection-view-id-box view-id)
+                  ;; Store only the most recent device point and a movement
+                  ;; flag. The camera itself remains an immutable controller
+                  ;; value, never drag-session state.
+                  (set-box! inspection-drag-box
+                            (vector view-id (send event get-x) (send event get-y) #f)))
+                (begin
+                  ;; A normal 2D click begins a different inspection session;
+                  ;; do not leave a stale spatial overlay floating over it.
+                  (set-box! spatial-pick-box #f)
+                  (select-at-canvas-point this event)))]
+           [(motion)
+            (define drag (unbox inspection-drag-box))
+            (cond
+              [drag
+               (define x (send event get-x))
+               (define y (send event get-y))
+               (define dx (- x (vector-ref drag 1)))
+               (define dy (- y (vector-ref drag 2)))
+               (when (or (not (zero? dx)) (not (zero? dy)))
+                 (navigate-inspection-camera! (vector-ref drag 0) dx dy
+                                               (send event get-shift-down))
+                 (vector-set! drag 1 x)
+                 (vector-set! drag 2 y)
+                 (vector-set! drag 3 #t))]
+              [else
+               ;; Wheel events are key events in racket/gui and therefore
+               ;; carry no pointer position.  Remember the viewport currently
+               ;; under the pointer so a subsequent wheel event controls it.
+               (define view-id (view3d-id-at-canvas-event this event))
+               (when view-id
+                 (set-box! inspection-view-id-box view-id))])]
+           [(left-up)
+           ;; A click in a viewport retains ordinary selection behavior. A
+           ;; real drag is reserved for the non-authoring inspection camera.
+            (define drag (unbox inspection-drag-box))
+            (when (and drag (not (vector-ref drag 3)))
+              ;; Exact spatial selection is an additional preview inspection
+              ;; layer. The ordinary outer `view3d` Visual is still selected
+              ;; below for the existing 2D inspector and keyboard workflow.
+              (select-spatial-at-canvas-point this event)
+              (select-at-canvas-point this event))
+            (set-box! inspection-drag-box #f)]
+           [else (void)])
          (super on-event event))
        (define/override (on-char event)
          (define session (unbox controller-box))
@@ -332,7 +752,17 @@
                            (preview-previous-section! session))]
                  [(#\]) (when (pair? (unbox section-names-box))
                            (preview-next-section! session))]
-                 [(#\r #\R) (preview-refresh! session)]
+                 [(wheel-up)
+                  (define view-id (active-inspection-view-id))
+                  (when view-id
+                    (dolly-inspection-camera! view-id
+                                                (- (send event get-wheel-steps))))]
+                 [(wheel-down)
+                  (define view-id (active-inspection-view-id))
+                  (when view-id
+                    (dolly-inspection-camera! view-id
+                                                (send event get-wheel-steps)))]
+                 [(#\r #\R) (reset-inspection-camera!)]
                  [(escape) (preview-pause! session)]
                  [else (void)])))
          (super on-char event))
@@ -364,6 +794,112 @@
                  (+ y (* top factor-y))
                  (* (- right left) factor-x)
                  (* (- bottom top) factor-y))))
+       ;; A selected spatial item is overlaid after the rasterized viewport.
+       ;; All of these marks are derived from immutable inspection data: they
+       ;; are never appended to `view3d-children`, do not affect depth sorting,
+       ;; and are absent from a rendered movie frame.
+       (define (draw-spatial-selection-overlay dc source time preview-camera
+                                               x y width height)
+         (define selection (unbox spatial-pick-box))
+         (when selection
+           (define view-id (car selection))
+           (define prior-pick (cdr selection))
+           (define layout-inspection
+             (scene-inspect-path source (list view-id) time #:camera preview-camera))
+           (define outer-transform
+             (and layout-inspection
+                  (visual-inspection-composed-transform layout-inspection)))
+           (define session (unbox controller-box))
+           (define view (and session (resolved-inspection-view session view-id)))
+           (when (and outer-transform view)
+             (define inspection
+               (or (view3d-spatial-inspection-at view (spatial-pick-path prior-pick))
+                   (spatial-pick-inspection prior-pick)))
+             (define bounds (spatial-inspection-world-bounds inspection))
+             (define camera3d (view3d-camera view))
+             (define aspect (/ (view3d-width view) (view3d-height view)))
+             (define factor-x (/ width (camera-width preview-camera)))
+             (define factor-y (/ height (camera-height preview-camera)))
+             (define (project point)
+               (define ndc (camera3d-project camera3d point #:aspect aspect))
+               (and ndc
+                    (let* ([local-point
+                            (vec2 (* (/ (view3d-width view) 2) (vec2-x ndc))
+                                  (* (/ (view3d-height view) 2) (vec2-y ndc)))]
+                           [world-point
+                            (affine2-apply-point
+                             (affine-transform->affine2 outer-transform)
+                             local-point)])
+                      (define-values (pixel-x pixel-y)
+                        (camera-world->pixel preview-camera world-point))
+                      (cons (+ x (* pixel-x factor-x))
+                            (+ y (* pixel-y factor-y))))))
+             (define (draw-line-between first second)
+               (when (and first second)
+                 (send dc draw-line (car first) (cdr first) (car second) (cdr second))))
+             (define (bounds-corners box)
+               (define lo (aabb3-minimum box))
+               (define hi (aabb3-maximum box))
+               (for*/list ([px (in-list (list (vec3-x lo) (vec3-x hi)))]
+                           [py (in-list (list (vec3-y lo) (vec3-y hi)))]
+                           [pz (in-list (list (vec3-z lo) (vec3-z hi)))])
+                 (vec3 px py pz)))
+             ;; The world-space AABB is an honest bound even after local
+             ;; rotation or shear.  Its twelve projected edges make selection
+             ;; legible without creating a hidden wireframe object.
+             (when (not (aabb3-empty? bounds))
+               (define corners (map project (bounds-corners bounds)))
+               (send dc set-smoothing 'smoothed)
+               (send dc set-pen (make-pen #:color "goldenrod" #:width 2))
+               (for ([edge (in-list '((0 1) (0 2) (0 4) (1 3) (1 5) (2 3)
+                                      (2 6) (3 7) (4 5) (4 6) (5 7) (6 7)))])
+                 (draw-line-between (list-ref corners (car edge))
+                                    (list-ref corners (cadr edge)))))
+             ;; The exact tested triangle is retained as inspector metadata.
+             ;; Its cyan stroke distinguishes geometric picking from an AABB
+             ;; candidate that happened merely to be under the pointer.
+             (define triangle
+               (hash-ref (spatial-pick-metadata prior-pick) 'world-triangle #f))
+             (when (and (list? triangle) (= (length triangle) 3)
+                        (andmap vec3? triangle))
+               (define points (map project triangle))
+               (send dc set-pen (make-pen #:color "deepskyblue" #:width 2))
+               (draw-line-between (car points) (cadr points))
+               (draw-line-between (cadr points) (caddr points))
+               (draw-line-between (caddr points) (car points)))
+             ;; A camera ray always collapses to its chosen screen pixel under
+             ;; its own projection.  Mark that exact ray pixel rather than
+             ;; drawing a misleading two-dimensional diagonal.
+             (define hit-point (project (spatial-pick-point prior-pick)))
+             (when hit-point
+               (send dc set-pen (make-pen #:color "magenta" #:width 2))
+               (send dc set-brush (make-brush #:style 'transparent))
+               (send dc draw-ellipse (- (car hit-point) 5) (- (cdr hit-point) 5) 10 10))
+             ;; The world-space normal and local frame help distinguish a
+             ;; hit point from its containing object.  They are diagnostic
+             ;; vectors only, never semantic arrows in the scene.
+             (define frame-origin
+               (affine3-apply-point (spatial-inspection-world-transform inspection) origin3))
+             (define (draw-frame-axis local-point color)
+               (define first (project frame-origin))
+               (define second
+                 (project
+                  (affine3-apply-point (spatial-inspection-world-transform inspection)
+                                       local-point)))
+               (send dc set-pen (make-pen #:color color #:width 1))
+               (draw-line-between first second))
+             (draw-frame-axis (vec3 1/4 0 0) "crimson")
+             (draw-frame-axis (vec3 0 1/4 0) "limegreen")
+             (draw-frame-axis (vec3 0 0 1/4) "royalblue")
+             (define normal-scale
+               (if (aabb3-empty? bounds)
+                   1/2
+                   (max 1/5 (/ (vec3-length (aabb3-size bounds)) 4))))
+             (define normal-end
+               (vec3+ (spatial-pick-point prior-pick)
+                      (vec3-scale normal-scale (spatial-pick-normal prior-pick))))
+             (send dc set-pen (make-pen #:color "orange" #:width 2))
+             (draw-line-between hit-point (project normal-end)))))
        ;; Formula source-map boxes are deliberately painted here rather than
        ;; turned into scene Visuals. They therefore describe the already
        ;; sampled bitmap and cannot perturb normal renderer, cache, or drawing
@@ -527,6 +1063,8 @@
              ;; here on every paint lets the string-match inspector remain
              ;; visible while playback has no selected Visual at all.
              (draw-inspector-overlays
+              dc source time preview-camera x y width height)
+             (draw-spatial-selection-overlay
               dc source time preview-camera x y width height)
              (when path
                (draw-visual-box-overlay
@@ -835,12 +1373,47 @@
          (super on-event event)))))
   (send formula-source-label show #f)
   (send formula-source-canvas show #f)
+  ;; A spatial hierarchy belongs below its owning view3d, not in the ordinary
+  ;; Visual tree. Keep it a preview section assembled from immutable inspection
+  ;; records so choosing it cannot change scene selection or trigger a render.
+  (define (spatial-hierarchy-section)
+    (define session (unbox controller-box))
+    (define view-id (active-spatial-view-id))
+    (define selected (active-spatial-pick))
+    (define view (and session view-id (resolved-inspection-view session view-id)))
+    (and view
+         (inspector-section
+          'spatial-hierarchy "3D spatial hierarchy"
+          (for/list ([entry (in-list (view3d-spatial-inspections view))])
+            (define path (spatial-inspection-path entry))
+            (define depth (max 0 (sub1 (length path))))
+            (define selected? (and selected
+                                   (equal? path (spatial-pick-path selected))))
+            (inspector-row
+             (format "~a~a~a"
+                     (make-string (* 2 depth) #\space)
+                     (if selected? "▶ " "")
+                     (list-ref path (sub1 (length path))))
+             (format "~a; ~a triangles; ~a vertices; depth ~a"
+                     (spatial-inspection-kind entry)
+                     (spatial-inspection-triangle-count entry)
+                     (spatial-inspection-vertex-count entry)
+                     (or (spatial-inspection-view-depth entry) "n/a"))
+             'info
+             (list
+              (inspector-action
+               'copy-spatial-path "Copy spatial path"
+               `(copy-spatial-path ,path) #t))))
+          #f)))
+  (define (available-inspector-sections document)
+    (append (if (inspector-document? document)
+                (inspector-document-sections document)
+                '())
+            (let ([spatial (spatial-hierarchy-section)])
+              (if spatial (list spatial) '()))))
   (define (display-inspector-section! index)
     (define document (unbox inspector-document-box))
-    (define sections
-      (if (inspector-document? document)
-          (inspector-document-sections document)
-          '()))
+    (define sections (available-inspector-sections document))
     (send inspector-rows clear)
     (set-box! inspector-rows-box '())
     (cond
@@ -880,10 +1453,7 @@
     (send formula-source-canvas show (and formula #t))
     (when formula
       (send formula-source-canvas refresh))
-    (define sections
-      (if (inspector-document? document)
-          (inspector-document-sections document)
-          '()))
+    (define sections (available-inspector-sections document))
     (send inspector-section-choice clear)
     (for ([section (in-list sections)])
       (send inspector-section-choice append (inspector-section-title section)))
@@ -1328,7 +1898,7 @@
               (string-append
                (cond
                  [source-selection
-                  (format "source selection: ~s at character ~a~a"
+                 (format "source selection: ~s at character ~a~a"
                           (car source-selection)
                           (cdr source-selection)
                           (if (and source-subject
@@ -1336,6 +1906,11 @@
                                              'formula-source-match)))
                               " — no mapped visible ink"
                               ""))]
+                 [(active-spatial-pick)
+                  (define pick (active-spatial-pick))
+                  (format "3D selection: ~s, triangle ~a"
+                          (spatial-pick-path pick)
+                          (spatial-pick-triangle-index pick))]
                  [selection (format "selection: ~s" selection)]
                  [else "selection: none"])
                (if reload-diagnostic

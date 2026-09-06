@@ -54,6 +54,7 @@
          "private/matrix-table.rkt"
          "private/numeric-display.rkt"
          "private/ode-flow.rkt"
+         "private/ode-state-space.rkt"
          "private/path-boolean.rkt"
          "private/path-geometry.rkt"
          "private/parameter.rkt"
@@ -132,6 +133,13 @@
  ode-event-function
  ode-event-direction
  ode-event-name
+
+ ;; General finite ODE state spaces (SCENE-3D-K)
+ (struct-out ode-state-space)
+ real-ode-state-space
+ vec2-ode-state-space
+ vec3-ode-state-space
+ numeric-vector-ode-state-space
 
  ;; Scene value parameters
  parameter

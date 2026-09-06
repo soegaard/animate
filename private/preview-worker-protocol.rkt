@@ -31,12 +31,13 @@
   (plan-fingerprint module-path binding document-generation)
   #:prefab)
 
-;; sample is either '(frame INDEX FPS) or '(time SECONDS). output-path names a
+;; sample is either '(frame INDEX FPS) or '(time SECONDS). camera3d-overrides
+;; is a reader-safe list of preview-camera3d-override data. output-path names a
 ;; parent-owned temporary PNG. Generations and request id are echoed in every
 ;; render response, allowing a controller to reject obsolete results.
 (struct worker-render-frame
   (plan-fingerprint document-generation render-generation request-id
-                    sample pixel-scale supersample output-path)
+                    sample pixel-scale supersample camera3d-overrides output-path)
   #:prefab)
 
 (struct worker-cancel

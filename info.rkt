@@ -62,12 +62,12 @@
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "1.8.0")
+(define version "1.19.0")
 
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-EM: immutable Racket animation authoring toolkit")
+  "SCENE-3D-M: immutable Racket animation toolkit with retained 3D rendering")
 
 ; license : symbol?
 ;;   Declares the package license.

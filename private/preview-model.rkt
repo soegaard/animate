@@ -15,6 +15,7 @@
          "frame-renderer.rkt"
          "scene-frame-grid.rkt"
          "geometry.rkt"
+         "3d/preview-camera3d-override.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers)
          "pict-renderer.rkt"
          "scene.rkt")
@@ -49,7 +50,8 @@
 ;; The renderer list is intentionally retained as a value rather than converted
 ;; to a lossy hash.  A document/render generation establishes the cache
 ;; namespace whenever callers replace arbitrary custom renderers.
-(struct preview-render-spec (fps camera renderers pixel-scale supersample)
+(struct preview-render-spec (fps camera renderers pixel-scale supersample
+                                 camera3d-overrides)
   #:transparent)
 
 ;; frame-sample is the authoritative playback identity.  Its time is always
@@ -83,7 +85,9 @@
                                   #:camera [camera #f]
                                   #:renderers [renderers default-pict-renderers]
                                   #:pixel-scale [pixel-scale 1]
-                                  #:supersample [supersample 1])
+                                  #:supersample [supersample 1]
+                                  #:camera3d-overrides
+                                  [camera3d-overrides #hasheq()])
   (check-fps 'make-preview-render-spec fps)
   (unless (or (not camera) (camera? camera))
     (raise-argument-error 'make-preview-render-spec "(or/c camera? #f)" camera))
@@ -98,7 +102,30 @@
      'make-preview-render-spec
      "exact-positive-integer?"
      supersample))
-  (preview-render-spec fps camera renderers pixel-scale supersample))
+  (unless (and (hash? camera3d-overrides) (immutable? camera3d-overrides))
+    (raise-argument-error
+     'make-preview-render-spec
+     "immutable hash mapping view3d IDs to preview-camera3d-override values"
+     camera3d-overrides))
+  (for ([(view-id override) (in-hash camera3d-overrides)])
+    (unless (symbol? view-id)
+      (raise-argument-error
+       'make-preview-render-spec
+       "hash with symbol? view3d IDs"
+       camera3d-overrides))
+    (unless (preview-camera3d-override? override)
+      (raise-argument-error
+       'make-preview-render-spec
+       "hash with preview-camera3d-override? values"
+       camera3d-overrides))
+    (unless (eq? view-id (preview-camera3d-override-view-id override))
+      (raise-arguments-error
+       'make-preview-render-spec
+       "an override whose view ID matches its hash key"
+       "key" view-id
+       "override" override)))
+  (preview-render-spec fps camera renderers pixel-scale supersample
+                       camera3d-overrides))
 
 (define (make-preview-document source #:generation [generation 0] #:label [label #f])
   (unless (preview-source? source)

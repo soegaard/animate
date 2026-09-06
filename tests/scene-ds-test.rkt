@@ -43,6 +43,18 @@
     (check-equal? (scene-state-count (scene-sample animated 1)) 2)
     (check-not-false (scene-frame->bitmap animated 1 #:fps 2)))
 
+  ;; A nested ordinary path has the same list representation as a rooted 3D
+  ;; spatial path.  It must still compile as the 2D passing-flash effect.
+  (define nested-trail
+    (group (list (line (vec2 -1 0) (vec2 1 0) #:id 'median
+                       #:stroke "darkred" #:stroke-width 2))
+           #:id 'spread))
+  (check-not-exn
+   (lambda ()
+     (scene-play (scene-add (make-scene) nested-trail)
+                 (show-passing-flash '(spread median))
+                 #:duration 1)))
+
   ;; Wiggle is a normal sequential rotation composition and returns exactly to
   ;; the same orientation.
   (define wiggled (scene-play initial (wiggle 'marker #:angle 1/10 #:cycles 2)

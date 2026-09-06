@@ -81,7 +81,55 @@
    (example-entry
     'authored-media "Authored audio and video"
     "examples/authored-media-assembly.rkt" 'make-demo-scene
-    '(rendering audio subtitles) '(core ffmpeg) 1 4)))
+    '(rendering audio subtitles) '(core ffmpeg) 1 4)
+   (example-entry
+   'wireframe-cube "Perspective wireframe cube"
+    "examples/3d/wireframe-cube.rkt" 'make-demo-scene
+    '(3d wireframe camera) '(core latex dvisvgm) 1 4)
+   (example-entry
+   'opaque-cube "Opaque depth-tested cube"
+    "examples/3d/opaque-cube.rkt" 'make-demo-scene
+    '(3d opaque depth lighting) '(core) 1 4)
+   (example-entry
+   'camera-orbit "Spatial cube and camera orbit"
+    "examples/3d/camera-orbit.rkt" 'make-demo-scene
+    '(3d animation camera source-selection) '(core latex dvisvgm) 5/2 5)
+   (example-entry
+    'projected-labels "Spatial relations and projected labels"
+    "examples/3d/projected-labels.rkt" 'make-demo-scene
+    '(3d relations projected-labels camera animation) '(core latex dvisvgm) 3 6)
+   (example-entry
+   'vector-components "Spatial vector components"
+    "examples/3d/vector-components.rkt" 'make-demo-scene
+    '(3d curves tubes axes vectors camera animation) '(core) 5/2 5)
+   (example-entry
+   'tangent-plane "Saddle surface and tangent plane"
+    "examples/3d/tangent-plane.rkt" 'make-demo-scene
+    '(3d surfaces calculus normals color camera animation) '(core) 3 5)
+   (example-entry
+   'solid-of-revolution "Solid of revolution"
+    "examples/3d/solid-of-revolution.rkt" 'make-demo-scene
+    '(3d solids revolution calculus camera animation) '(core) 3 5)
+   (example-entry
+   'sphere-plane-section "Sphere cut by a moving plane"
+    "examples/3d/sphere-plane-section.rkt" 'make-demo-scene
+    '(3d clipping sections transparency occlusion animation) '(core) 5/2 5)
+   (example-entry
+    'spatial-maps-and-homotopies "Spatial maps and homotopies"
+    "examples/3d/spatial-maps-and-homotopies.rkt" 'make-demo-scene
+    '(3d affine pointwise homotopy animation) '(core) 5/2 5)
+   (example-entry
+   'prepared-lorenz-flow "Prepared Lorenz flow"
+    "examples/3d/prepared-lorenz-flow.rkt" 'make-demo-scene
+    '(3d ode vector-fields trajectories camera animation) '(core) 3 6)
+   (example-entry
+   'spatial-inspector-picking "Exact spatial picking"
+    "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene
+    '(3d preview inspection picking bvh camera) '(core gui) 5/2 5)
+   (example-entry
+    'retained-renderer "Retained 3D renderer protocol"
+    "examples/3d/retained-renderer.rkt" 'make-demo-scene
+    '(3d rendering retained conformance camera) '(core) 5/2 5)))
 
 
 ;;;

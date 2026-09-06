@@ -1,21 +1,75 @@
-# animate — SCENE-EM
+# animate — SCENE-3D-M
 
 > **Current prototype:** when the API improves, Animate updates its own
 > implementation, examples, tests, README, and manual together. Obsolete
 > spellings are removed instead of retained as compatibility shims.
 
-**Prototype version 1.8.0.**
+**Prototype version 1.19.0.**
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
-SCENE-EM begins the repository-coherence pass after the source-addressable
+SCENE-EM began the repository-coherence pass after the source-addressable
 formula and relation foundations in SCENE-EJ–EL. The central API stays
 headless: `require animate` constructs immutable scenes, formulas, relations,
 geometry, and sampled timelines without opening a GUI or writing files.
 `animate/authoring` adds source blocks and reloadable programs; the optional
 `animate/preview` module adds interactive inspection. Rendering and media
 output are being collected behind a deliberate render boundary.
+
+SCENE-3D-A provides an immutable, right-handed spatial algebra in `animate/3d`:
+`vec3` coordinates, linear and affine maps, normalized-quaternion rotations,
+decomposed transforms, bounds, rays, and planes. SCENE-3D-B builds the first
+visible layer on it: immutable spatial Visual trees of indexed meshes in an
+ordinary `view3d`, immutable perspective or orthographic cameras, and a clipped
+Pict wireframe adapter. SCENE-3D-C adds opaque filled triangles: deterministic
+six-plane frustum clipping, perspective-correct depth tests, CCW back-face
+culling, flat/unlit materials, directional lighting, and a software z-buffer.
+`view3d` embeds in the existing `scene`; there is no competing `scene3d`
+timeline. SCENE-3D-D adds deterministic spatial and camera requests to the
+same timeline: `move3d-to`, `rotate3d-by`, `scale3d-to`, and the
+`camera3d-*` family. Preview inspection uses a separate, serializable camera
+override, so navigation never writes into the authored Scene.
+SCENE-3D-E adds semantic spatial relations and projected labels: a relation
+declares the spatial paths, scene values, and camera it reads, resolves from one
+sampled `view3d`, and then reaches the renderer as concrete geometry. Ordinary
+2D formula and text Visuals can follow a projected 3D point while staying crisp
+and fixed in pixel size.
+SCENE-3D-F adds finite points, physical-radius tubes and curves, arrowheads,
+axes, coordinate grids, vector diagrams, and direct-time curve reveal/follow
+animation. A curve is sampled deterministically and its partial rendering is
+derived from that complete sample sequence at the requested timeline time.
+SCENE-3D-G adds fixed-topology parametric and function surfaces, deterministic
+normal fallbacks, per-vertex scalar colour fields, calculus geometry, and
+direct-time surface reveal/morph requests. Smooth surface normals and colours
+are interpolated perspective-correctly by the opaque reference renderer.
+SCENE-3D-H adds deterministic indexed standard solids, simple-contour extrusion,
+solids of revolution, parallel-transport sweeps, and mesh-normal/winding/
+boundary utilities.
+SCENE-3D-I separates render-only clipping from semantic mesh slicing and
+deterministic plane-section topology. Its software renderer uses an opaque
+depth-writing pass followed by explicit object- or triangle-sorted transparent
+passes; projected labels can stay visible, hide, or fade behind opaque geometry.
+SCENE-3D-J adds world-coordinate linear, affine, pointwise, and homotopy maps.
+Linear and affine maps retain exact existing topology—including a complete
+coordinate diagram—while nonlinear maps intentionally sample only the authored
+mesh vertices at each requested scene time.
+SCENE-3D-K generalizes the numerical trajectory kernel across real, `vec2`,
+`vec3`, and fixed-length vector states. `animate/3d` now supplies immutable
+prepared RK4/RK45 trajectories, static vector fields and streamlines, and
+parameter-driven particles/tangents. Renderer workers consume precomputed
+particle samples rather than call author ODE fields.
+SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
+turns a viewport pixel into a camera ray, culls object bounds, traverses a
+deterministic local BVH, and finishes with a double-sided triangle/barycentric
+test. In the interactive preview, a 3D click stays separate from authored
+selection and paints preview-only diagnostics above the cached viewport;
+copy/focus/scratch actions never change the source Scene or authored camera.
+SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
+deterministic software rasterizer remains the conformance reference, while its
+default bounded retained instance reuses immutable camera-space preparation and
+always produces a fresh colour/depth target. Backend instances and their
+resources never enter an authored `view3d` or Scene.
 
 Before a release, run `raco animate check-repo`. It checks the current metadata
 and public boundaries, compiles the Racket sources and examples, runs the test
@@ -41,6 +95,18 @@ exactly synchronized with the gallery and example requirements.
 - [Source-block hot reload](examples/source-block-hot-reload.rkt) — authoring, preview; requires core, gui.
 - [Semantic inspector](examples/semantic-inspector.rkt) — preview, inspector, formula, relations; requires core, latex, dvisvgm, gui.
 - [Authored audio and video](examples/authored-media-assembly.rkt) — rendering, audio, subtitles; requires core, ffmpeg.
+- [Perspective wireframe cube](examples/3d/wireframe-cube.rkt) — 3d, wireframe, camera; requires core, latex, dvisvgm.
+- [Opaque depth-tested cube](examples/3d/opaque-cube.rkt) — 3d, opaque, depth, lighting; requires core.
+- [Spatial cube and camera orbit](examples/3d/camera-orbit.rkt) — 3d, animation, camera, source-selection; requires core, latex, dvisvgm.
+- [Spatial relations and projected labels](examples/3d/projected-labels.rkt) — 3d, relations, projected-labels, camera, animation; requires core, latex, dvisvgm.
+- [Spatial vector components](examples/3d/vector-components.rkt) — 3d, curves, tubes, axes, vectors, camera, animation; requires core.
+- [Saddle surface and tangent plane](examples/3d/tangent-plane.rkt) — 3d, surfaces, calculus, normals, color, camera, animation; requires core.
+- [Solid of revolution](examples/3d/solid-of-revolution.rkt) — 3d, solids, revolution, calculus, camera, animation; requires core.
+- [Sphere cut by a moving plane](examples/3d/sphere-plane-section.rkt) — 3d, clipping, sections, transparency, occlusion, animation; requires core.
+- [Spatial maps and homotopies](examples/3d/spatial-maps-and-homotopies.rkt) — 3d, affine, pointwise, homotopy, animation; requires core.
+- [Prepared Lorenz flow](examples/3d/prepared-lorenz-flow.rkt) — 3d, ode, vector-fields, trajectories, camera, animation; requires core.
+- [Exact spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, bvh, camera; requires core, gui.
+- [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
 <!-- END GENERATED: canonical examples -->
 
 The first inspector deliberately uses sampled layout boxes rather than painted
@@ -525,7 +591,7 @@ styling, renderer-measured multiline rich text, addressable matrices/tables,
 deterministic traced loci, composable camera timing, reproducible
 section-oriented rendering metadata, and live endpoint-derived network edges.
 
-The current public package version is `1.8.0` (`SCENE-EM`). The public modules'
+The current public package version is `1.19.0` (`SCENE-3D-M`). The public modules'
 bindings are covered by the registered Scribble manual.
 
 ## Documentation source
@@ -560,8 +626,19 @@ raco pkg install --auto --name animate https://github.com/soegaard/animate.git
 The documentation source can still be rendered manually when needed:
 
 ```sh
-scribble --htmls --dest doc scribblings/animate.scrbl
+scribble --htmls --dest html scribblings/animate.scrbl
 ```
+
+Generate small, reviewable 3D visual probes for one implementation stage:
+
+```sh
+racket tools/run-3d-probes.rkt --stage 3D-M --output rendered-examples/3d-m
+```
+
+The ignored output directory contains a manifest with the Animate/Racket
+versions, renderer identity, sample times, camera values, frame hashes, and
+per-frame diagnostics. These images complement the semantic and raster tests;
+they do not replace them.
 
 ### Optional Rhombus examples
 
@@ -2811,6 +2888,78 @@ stage updates them with the edge cases and useful next steps it reveals. When a
 later stage delivers an item, retain its history in that stage's notes and
 revise this list to state the remaining boundary precisely; do not silently
 lose the follow-on idea that led to the work.
+
+### Spatial algebra and future 3D work
+
+- SCENE-3D-M makes immutable indexed standard solids, simple-contour extrusion,
+  solids of revolution, parallel-transport sweeps, fixed-grid parametric/function
+  surfaces, finite points, tubes, sampled curves, arrows, axes, grids, vector
+  diagrams, and basic calculus geometry visible as perspective or orthographic
+  wireframes or depth-tested filled triangles inside an ordinary `view3d`. Its coordinates are
+  right-handed (`+x` right, `+y` up, `+z` toward the viewer), while a camera
+  looks along its local negative z axis; `(vec3 x y 0)` embeds a 2D point. The
+  wireframe renderer clips only the camera near/far range and the viewport
+  rectangle. The opaque software renderer clips all six frustum planes,
+  performs deterministic pixel-centre depth testing and CCW back-face culling,
+  and provides unlit/flat/smooth materials with ambient and directional light.
+  Smooth normals and per-vertex colours interpolate deterministically. A
+  `clip3d` wrapper is render-only; `slice-mesh3d` returns actual clipped mesh
+  geometry, and section loops/chains are explicit semantic data. Opaque
+  geometry writes depth first; translucent triangles are sorted either by
+  object or triangle, depth-test against opaque geometry, and do not write
+  depth. This is deterministic alpha compositing, not order-independent
+  transparency. Projected labels can be always visible, hidden, or faded based
+  on the opaque depth target.
+  Surface topology is rectangular and fixed: adaptive/implicit/trimmed
+  surfaces and topology-changing morphs are not available. There are no
+  textures, specular highlights, shadows, general cap generation for sliced
+  meshes, or 3D label geometry. Curves use deterministic, author-selected samples and a
+  physical world-space tube radius. Screen-space width is intentionally
+  unavailable: it cannot be treated as a world radius without a depth-aware
+  policy. SCENE-3D-E
+  spatial relations resolve as concrete mesh edges and simple triangular arrowheads; their declared spatial/value/camera
+  inputs make resolution deterministic and cycle checked. Projected labels are
+  normal 2D Visuals that follow an unclipped 3D projection and remain visible
+  with fixed pixel offsets, but they are not 3D billboards and may overlap one
+  another. Their hide/fade policy considers opaque depth only. Spatial
+  transforms and finite camera motions are deterministic scene requests;
+  preview navigation layers an inspection-only camera above an authored view
+  and does not edit source. Spatial descendants use rooted `view3d` paths such
+  as `(world cube)`, rather than ordinary 2D scene paths.
+  `apply-linear3` and `apply-affine3` preserve existing spatial geometry under
+  full affine maps, including shears and singular maps. `apply-pointwise3` and
+  `apply-homotopy3` currently accept only an unwrapped `mesh3d`, use its
+  authored vertices without adaptive remeshing, and can create degenerate or
+  self-intersecting triangles under a non-injective map. Their default failure
+  policy reports the bad vertex. `'drop-triangle` is explicit and leaves holes;
+  it neither caps nor repairs the mesh. Recomputed normals describe the sampled
+  result, while retaining source normals can make nonlinear shading misleading.
+  Prepared 3D ODE trajectories have finite `vec3` fields and deterministic
+  random-access lookup. Fixed RK4 may integrate the bounded suffix after a
+  checkpoint during an ordinary lookup; adaptive RK45 interpolates stored
+  accepted nodes. The renderer prepares requested particle positions before
+  workers begin, but an author querying a fixed trajectory directly still pays
+  that bounded lookup cost. Vector-field and streamline samples are explicit
+  finite author grids/seeds, not adaptive field-line topology. There is no
+  event detection, adaptive streamline termination, or 3D ODE source inspection.
+  Spatial picking now uses object AABBs plus deterministic local BVHs to find
+  an exact indexed mesh triangle from a camera ray. It includes generated curve
+  and surface meshes, but not analytic implicit shapes, texture UVs,
+  interpolated vertex normals, or a GPU selection pass. The inspector's AABB,
+  triangle, normal, frame, and ray-pixel marks are preview-only overlays and
+  deliberately do not enter authored scenes or video renders.
+  The default 3D backend is a bounded retained form of the deterministic
+  software reference renderer: it can reuse prepared camera-space triangles,
+  but it is not a GPU implementation. No Pict3D package is bundled; a native
+  Pict3D/GPU adapter remains a future optional backend behind the same protocol.
+  Camera or viewport changes currently miss the retained preparation cache, and
+  any future GPU comparison must use geometry/depth checks plus pixel
+  tolerances rather than bit-identical output.
+- Decomposed `transform3` values apply scale, rotation, then translation.
+  Arbitrary composition with nonuniform scale can produce shear, so
+  `transform3-compose` returns a general `affine3` rather than approximating a
+  decomposed result. Quaternion rotations use shortest-arc interpolation; scale
+  interpolation that would pass through zero is deliberately rejected.
 
 ### Text, formulas, and layout
 

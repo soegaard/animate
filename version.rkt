@@ -24,9 +24,9 @@
 ; animate-version : string?
 ;;   Gives the current prototype package version.
 (define animate-version
-  "1.8.0")
+  "1.19.0")
 
 ; animate-stage : symbol?
 ;;   Identifies the current implementation stage.
 (define animate-stage
-  'SCENE-EM)
+  'SCENE-3D-M)

@@ -22,6 +22,7 @@
          "frame-renderer.rkt"
          "scene-frame-grid.rkt"
          "ode-flow.rkt"
+         "3d/ode-flow3d.rkt"
          "pict-adapter.rkt"
          "pict-renderer.rkt"
          "scene.rkt"
@@ -233,6 +234,11 @@
      (for/list ([frame-index (in-list frame-indices)])
        (scene-sample scene
                      (frame-index->time frame-index #:fps fps)))))
+  (define ode3d-frame-samples
+    (prepare-ode3d-frame-samples
+     (for/list ([frame-index (in-list frame-indices)])
+       (scene-sample scene
+                     (frame-index->time frame-index #:fps fps)))))
   (define-values (paths frame-milliseconds active-workers)
     (render-frame-index-jobs! scene
                               frame-indices
@@ -242,7 +248,8 @@
                               renderers
                               workers
                               supersample
-                              ode-frame-samples))
+                              ode-frame-samples
+                              ode3d-frame-samples))
   (define after-counters
     (default-pict-renderer-cache-counters renderers))
   (render-diagnostics
@@ -274,7 +281,7 @@
 ;; parallel thread. Each job owns a unique local output filename, while returned
 ;; lists are rebuilt in the requested global-frame order after all work ends.
 (define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers
-                                  supersample ode-frame-samples)
+                                  supersample ode-frame-samples ode3d-frame-samples)
   (define frame-count
     (length frame-indices))
   (define active-workers
@@ -311,12 +318,15 @@
       (call-with-ode-frame-samples
        ode-frame-samples
        (lambda ()
-         (scene-frame->bitmap scene
-                              source-index
-                              #:fps fps
-                              #:camera camera
-                              #:renderers renderers
-                              #:supersample supersample))))
+         (call-with-ode3d-frame-samples
+          ode3d-frame-samples
+          (lambda ()
+            (scene-frame->bitmap scene
+                                 source-index
+                                 #:fps fps
+                                 #:camera camera
+                                 #:renderers renderers
+                                 #:supersample supersample))))))
     (pending-frame local-index path bitmap started-at))
   (define (save-pending-frame! pending)
     (define path (pending-frame-path pending))

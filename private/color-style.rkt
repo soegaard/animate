@@ -87,10 +87,17 @@
     [(= progress 1) to]
     [else
      (rgba-color
-      (real-lerp (rgba-color-red from) (rgba-color-red to) progress)
-      (real-lerp (rgba-color-green from) (rgba-color-green to) progress)
-      (real-lerp (rgba-color-blue from) (rgba-color-blue to) progress)
-      (real-lerp (rgba-color-alpha from) (rgba-color-alpha to) progress))]))
+      ;; Inexact interpolation can overshoot an exact endpoint by one ulp
+      ;; (for example 255.00000000000006).  Colour construction rightly
+      ;; rejects values outside the semantic channel range, so clamp that
+      ;; numerical noise here rather than making every caller special-case it.
+      (clamp-channel (real-lerp (rgba-color-red from) (rgba-color-red to) progress))
+      (clamp-channel (real-lerp (rgba-color-green from) (rgba-color-green to) progress))
+      (clamp-channel (real-lerp (rgba-color-blue from) (rgba-color-blue to) progress))
+      (clamp-unit (real-lerp (rgba-color-alpha from) (rgba-color-alpha to) progress)))]))
+
+(define (clamp-channel value) (min 255 (max 0 value)))
+(define (clamp-unit value) (min 1 (max 0 value)))
 
 ;; X11-style named colors used by Racket drawing backends. Keys are stored
 ;; in normalized lowercase form so spaced/hyphenated spellings share a key.

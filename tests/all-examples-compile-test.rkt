@@ -18,10 +18,18 @@
 
 (define (racket-example-paths)
   (sort
-   (for/list ([path (in-list (directory-list examples-directory #:build? #t))]
-              #:when (and (file-exists? path)
-                          (equal? (path-get-extension path) #".rkt")))
-     path)
+   (append
+    (for/list ([path (in-list (directory-list examples-directory #:build? #t))]
+               #:when (and (file-exists? path)
+                           (equal? (path-get-extension path) #".rkt")))
+      path)
+    ;; Spatial examples live below an intentional topical directory.  Keep
+    ;; those public declarations in the ordinary example compilation gate.
+    (for/list ([path (in-list (directory-list (build-path examples-directory "3d")
+                                              #:build? #t))]
+               #:when (and (file-exists? path)
+                           (equal? (path-get-extension path) #".rkt")))
+      path))
    path<?))
 
 (module+ test

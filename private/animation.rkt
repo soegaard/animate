@@ -44,6 +44,25 @@
          "relation-visual.rkt"
          "resolvable-visual.rkt"
          "scene-state.rkt"
+         "3d/affine3.rkt"
+         "3d/affine-map3d-visual.rkt"
+         "3d/camera3d-animation.rkt"
+         "3d/camera3d-fit.rkt"
+         "3d/camera3d.rkt"
+         "3d/curve-animation3d.rkt"
+         "3d/curve3d.rkt"
+         "3d/mesh3d.rkt"
+         "3d/parametric-surface3d.rkt"
+         "3d/projection3d.rkt"
+         "3d/rotation3.rkt"
+         "3d/spatial-animation.rkt"
+         "3d/spatial-path.rkt"
+         "3d/surface-animation.rkt"
+         "3d/spatial-map3d.rkt"
+         "3d/spatial-visual.rkt"
+         "3d/transform3.rkt"
+         "3d/vec3.rkt"
+         "3d/view3d-visual.rkt"
          "visual-selection.rkt"
          "visual-model.rkt"
          "write-in-adapter.rkt")
@@ -71,6 +90,32 @@
          scale-to-request?
          scale-by
          scale-by-request?
+         move3d-to
+         move3d-to-request?
+         move3d-by
+         move3d-by-request?
+         rotate3d-to
+         rotate3d-to-request?
+         rotate3d-by
+         rotate3d-by-request?
+         scale3d-to
+         scale3d-to-request?
+         scale3d-by
+         scale3d-by-request?
+         transform3d-to
+         transform3d-to-request?
+         move-along-curve3d
+         move-along-curve3d-request?
+         orient-along-curve3d
+         orient-along-curve3d-request?
+         apply-linear3
+         apply-linear3-request?
+         apply-affine3
+         apply-affine3-request?
+         apply-pointwise3
+         apply-pointwise3-request?
+         apply-homotopy3
+         apply-homotopy3-request?
          apply-affine
          apply-affine-request?
          apply-matrix
@@ -102,6 +147,24 @@
          camera-view-follow-request?
          camera-view-fit
          camera-view-fit-request?
+         camera3d-move-to
+         camera3d-move-to-request?
+         camera3d-look-at-to
+         camera3d-look-at-to-request?
+         camera3d-orbit-by
+         camera3d-orbit-by-request?
+         camera3d-roll-to
+         camera3d-roll-to-request?
+         camera3d-field-of-view-to
+         camera3d-field-of-view-to-request?
+         camera3d-orthographic-height-to
+         camera3d-orthographic-height-to-request?
+         camera3d-dolly-by
+         camera3d-dolly-by-request?
+         camera3d-fit
+         camera3d-fit-request?
+         camera3d-follow
+         camera3d-follow-request?
          morph-to
          morph-to-request?
          morph-to-normalized
@@ -1757,6 +1820,11 @@
   (unless (and (finite-real? time-width) (positive? time-width) (<= time-width 1))
     (raise-argument-error
      'show-passing-flash "finite real in (0, 1]" time-width))
+  ;; A two-symbol path is ambiguous: it can denote an ordinary nested Visual
+  ;; such as `(spread median)`, or a spatial path such as `(world curve)`.
+  ;; Keep the public request neutral here and resolve that distinction against
+  ;; the clip's actual top-level scene state during compilation.  Deciding from
+  ;; the list shape alone used to misclassify ordinary nested paths as 3D.
   (make-attention-request
    'show-passing-flash target 0 color stroke-width 'show-passing-flash
    #:parameter time-width))
@@ -2010,28 +2078,34 @@
      (formula-parts-transform-animation-inspection animation)]
     [else #f]))
 
-; create : (or/c path-visual? relation-visual?) -> create-request?
-;;   Creates a request that introduces visual by revealing its path prefix.
-;;   Relation paths are deferred so their moving dependencies are sampled at
-;;   every frame rather than frozen at compilation.
+; create : (or/c path-visual? relation-visual? spatial-path?) -> animation-request?
+;;   Creates a request that introduces a 2D path or reveals an existing 3D
+;;   curve path directly from its immutable sample sequence.
 (define (create visual)
-  (unless (or (path-visual? visual) (relation-visual? visual))
-    (raise-argument-error 'create "(or/c path-visual? relation-visual?)" visual))
-  (create-request visual))
+  (unless (or (path-visual? visual) (relation-visual? visual)
+              (and (spatial-path? visual) (pair? (cdr visual))))
+    (raise-argument-error
+     'create "(or/c path-visual? relation-visual? spatial-path?)" visual))
+  (if (and (spatial-path? visual) (pair? (cdr visual)))
+      (spatial-curve-reveal visual)
+      (create-request visual)))
 
-; uncreate : (or/c path-visual? relation-visual? symbol? visual-path?)
-;;             -> uncreate-request?
-;;   Creates a request that hides and then removes a path Visual.
+; uncreate : (or/c path-visual? relation-visual? symbol? visual-path? spatial-path?)
+;;             -> animation-request?
+;;   Creates a request that hides a 2D path or unreveals an existing 3D curve.
 (define (uncreate target)
   (unless (or (symbol? target)
               (visual-path? target)
               (path-visual? target)
-              (relation-visual? target))
+              (relation-visual? target)
+              (and (spatial-path? target) (pair? (cdr target))))
     (raise-argument-error
      'uncreate
-     "(or/c path-visual? relation-visual? symbol? visual-path?)"
+     "(or/c path-visual? relation-visual? symbol? visual-path? spatial-path?)"
      target))
-  (uncreate-request (visual-target-id target 'uncreate)))
+  (if (and (spatial-path? target) (pair? (cdr target)))
+      (spatial-curve-unreveal target)
+      (uncreate-request (visual-target-id target 'uncreate))))
 
 ; write-in : visual?
 ;            [#:order (or/c 'document 'left-to-right)]
@@ -2420,6 +2494,355 @@
      (raise-argument-error 'compile-camera-view-request
                            "camera-view animation request" request)]))
 
+
+;;;
+;;; SCENE-3D-D Compilation
+;;;
+
+; scene-state-view3d-ref : scene-state? symbol? symbol? -> view3d?
+;;   Resolves one top-level view3d while keeping spatial descendants outside the
+;; ordinary 2D Visual traversal protocol.
+(define (scene-state-view3d-ref state view-id who)
+  (define view (scene-state-ref state view-id))
+  (unless (view3d? view)
+    (raise-arguments-error
+     who
+     "a top-level view3d target"
+     "view-id" view-id
+     "visual" view))
+  view)
+
+; compile-spatial-animation-request : scene-state? spatial-animation-request?
+;;                                      -> spatial-compiled-animation?
+;;   Resolves a view-rooted spatial path and captures exact local endpoints.
+(define (compile-spatial-animation-request state request)
+  (define path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car path) 'scene-play))
+  (define object (view3d-spatial-ref view path))
+  (define transform (spatial-transform object))
+  (cond
+    [(move3d-to-request? request)
+     (spatial-translation-animation
+      path
+      (transform3-translation transform)
+      (move3d-to-request-destination request))]
+    [(move3d-by-request? request)
+     (define from (transform3-translation transform))
+     (spatial-translation-animation
+      path from (vec3+ from (move3d-by-request-delta request)))]
+    [(rotate3d-to-request? request)
+     (spatial-rotation-animation
+      path
+      (transform3-rotation transform)
+      (rotate3d-to-request-rotation request))]
+    [(rotate3d-by-request? request)
+     (define from (transform3-rotation transform))
+     (spatial-rotation-animation
+      path
+      from
+      ;; The requested delta is applied after the existing local orientation.
+      (rotation3-compose (rotate3d-by-request-rotation request) from))]
+    [(scale3d-to-request? request)
+     (define to (scale3d-to-request-scale request))
+     (check-spatial-scale-interpolation transform to)
+     (spatial-scale-animation
+      path
+      (transform3-scale transform)
+      to)]
+    [(scale3d-by-request? request)
+     (define from (transform3-scale transform))
+     (define to (vec3* from (scale3d-by-request-factor request)))
+     (check-spatial-scale-interpolation transform to)
+     (spatial-scale-animation
+      path from to)]
+    [(transform3d-to-request? request)
+     ;; transform3-lerp checks any attempted singular interpolation before a
+     ;; scene clip is admitted, not at a later arbitrary frame sample.
+     (transform3-lerp transform (transform3d-to-request-transform request) 1/2)
+     (spatial-transform-animation
+      path transform (transform3d-to-request-transform request))]
+    [else
+     (raise-argument-error
+      'compile-spatial-animation-request
+      "spatial animation request"
+      request)]))
+
+(define (check-spatial-scale-interpolation transform destination-scale)
+  ;; Delegate the zero-crossing rule to transform3's one authoritative
+  ;; decomposition interpolator.  Component-only requests retain all other
+  ;; source transform fields but must obey the same singularity invariant.
+  (transform3-lerp
+   transform
+   (make-transform3 #:translation (transform3-translation transform)
+                    #:rotation (transform3-rotation transform)
+   #:scale destination-scale)
+   1/2))
+
+; compile-spatial-curve-animation-request : scene-state?
+;                                            spatial-curve-animation-request?
+;                                            -> spatial-curve-compiled-animation?
+;;   Resolves curve paths once at clip start.  Sampling later evaluates those
+;; exact captured samples directly, which keeps scrubbing and random access
+;; independent of any earlier frame.
+(define (compile-spatial-curve-animation-request state request)
+  (define target-path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car target-path) 'scene-play))
+  (cond
+    [(or (spatial-curve-reveal-request? request)
+         (spatial-curve-unreveal-request? request))
+     (define curve (view3d-spatial-ref view target-path))
+     (unless (curve3d? curve)
+       (raise-arguments-error 'scene-play "a curve3d target for create or uncreate"
+                              "spatial-path" target-path "spatial-visual" curve))
+     (spatial-curve-reveal-animation
+      target-path curve (spatial-curve-unreveal-request? request))]
+    [(spatial-curve-flash-request? request)
+     (define curve (view3d-spatial-ref view target-path))
+     (unless (curve3d? curve)
+       (raise-arguments-error 'scene-play "a curve3d target for show-passing-flash"
+                              "spatial-path" target-path "spatial-visual" curve))
+     (spatial-curve-flash-animation
+      target-path curve (spatial-flash-overlay-id target-path)
+      (spatial-curve-flash-request-time-width request)
+      (spatial-curve-flash-request-color request))]
+    [(or (move-along-curve3d-request? request)
+         (orient-along-curve3d-request? request))
+     (define curve-path
+       (if (move-along-curve3d-request? request)
+           (move-along-curve3d-request-curve-path request)
+           (orient-along-curve3d-request-curve-path request)))
+     (unless (eq? (car target-path) (car curve-path))
+       (raise-arguments-error 'scene-play
+                              "target and curve below the same view3d"
+                              "target-path" target-path "curve-path" curve-path))
+     (define curve (view3d-spatial-ref view curve-path))
+     (unless (curve3d? curve)
+       (raise-arguments-error 'scene-play "a curve3d source path"
+                              "curve-path" curve-path "spatial-visual" curve))
+     ;; Validate the target during compilation, including a useful diagnostic
+     ;; for attempts to animate a non-existent nested spatial path.
+     (view3d-spatial-ref view target-path)
+     (define parent-inverse
+       (affine3-invert (spatial-parent-world-transform view target-path)))
+     (define start
+       (if (move-along-curve3d-request? request)
+           (move-along-curve3d-request-start request)
+           (orient-along-curve3d-request-start request)))
+     (define end
+       (if (move-along-curve3d-request? request)
+           (move-along-curve3d-request-end request)
+           (orient-along-curve3d-request-end request)))
+     (if (move-along-curve3d-request? request)
+         (spatial-curve-motion-animation
+          target-path curve-path curve
+          (view3d-spatial-world-transform view curve-path) parent-inverse start end)
+         (spatial-curve-orientation-animation
+          target-path curve-path curve
+          (view3d-spatial-world-transform view curve-path) parent-inverse start end))]
+    [else
+     (raise-argument-error 'compile-spatial-curve-animation-request
+                           "spatial curve animation request" request)]))
+
+; compile-spatial-surface-animation-request : scene-state?
+;                                              spatial-surface-animation-request?
+;                                              -> spatial-surface-compiled-animation?
+;;   Captures source grids at clip admission; each later phase derives directly
+;; from those immutable values and never from a previously sampled mesh.
+(define (compile-spatial-surface-animation-request state request)
+  (define target-path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car target-path) 'scene-play))
+  (define source (view3d-spatial-ref view target-path))
+  (unless (surface3d? source)
+    (raise-arguments-error 'scene-play "a surface3d target"
+                           "spatial-path" target-path "spatial-visual" source))
+  (cond
+    [(or (reveal-surface-u-request? request)
+         (reveal-surface-v-request? request))
+     (reveal-surface-animation target-path source
+                               (reveal-surface-request-axis request))]
+    [(transform-surface3d-request? request)
+     ;; Validate topology and material compatibility before a clip is admitted.
+     (surface3d-interpolate source (transform-surface3d-request-destination request) 1/2)
+     (surface-transform-animation
+      target-path source (transform-surface3d-request-destination request))]
+    [else
+     (raise-argument-error 'compile-spatial-surface-animation-request
+                           "spatial surface animation request" request)]))
+
+; compile-spatial-map-animation-request : scene-state? spatial-map-animation-request?
+;                                          -> spatial-map-compiled-animation?
+;; Captures a spatial target and its enclosing coordinate conversion at clip
+;; admission. Linear maps retain exact affine wrappers; nonlinear maps retain
+;; the original mesh and are evaluated directly at each sampled phase.
+(define (compile-spatial-map-animation-request state request)
+  (define target-path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car target-path) 'scene-play))
+  (define source (view3d-spatial-ref view target-path))
+  (define parent-map (spatial-parent-world-transform view target-path))
+  (define parent-inverse
+    (with-handlers ([exn:fail?
+                     (lambda (_exception)
+                       (raise-arguments-error
+                        'scene-play
+                        "a nonsingular enclosing spatial affine map"
+                        "spatial-path" target-path
+                        "parent-map" parent-map))])
+      (affine3-invert parent-map)))
+  (cond
+    [(or (apply-linear3-request? request) (apply-affine3-request? request))
+     ;; The public request is world-coordinate. Conjugation preserves a
+     ;; target's enclosing spatial map when that target is nested.
+     (define world-map
+       (if (apply-linear3-request? request)
+           (affine3 (apply-linear3-request-map request) origin3)
+           (apply-affine3-request-map request)))
+     (define local-map
+       (affine3-compose parent-inverse (affine3-compose world-map parent-map)))
+     (define-values (content from-map opacity)
+       (affine-map3d-content+map source))
+     (spatial-affine-map-animation target-path content from-map local-map opacity)]
+    [(or (apply-pointwise3-request? request) (apply-homotopy3-request? request))
+     ;; Initial nonlinear support is deliberately mesh-only. Curves,
+     ;; procedural surfaces, and arbitrary tree resampling need their own
+     ;; explicit sampling policy instead of an implicit conversion here.
+     (unless (mesh3d? source)
+       (raise-arguments-error
+        'scene-play
+        "an unwrapped mesh3d target for apply-pointwise3 or apply-homotopy3"
+        "spatial-path" target-path
+        "spatial-visual" source))
+     (define source-world-transform
+       (view3d-spatial-world-transform view target-path))
+     (if (apply-pointwise3-request? request)
+         (spatial-pointwise-map-animation
+          target-path source source-world-transform parent-inverse
+          (apply-pointwise3-request-map-point request)
+          (apply-pointwise3-request-on-failure request)
+          (apply-pointwise3-request-recompute-normals? request))
+         (spatial-homotopy-map-animation
+          target-path source source-world-transform parent-inverse
+          (apply-homotopy3-request-homotopy request)
+          (apply-homotopy3-request-on-failure request)
+          (apply-homotopy3-request-recompute-normals? request)))]
+    [else
+     (raise-argument-error 'compile-spatial-map-animation-request
+                           "spatial map animation request" request)]))
+
+; spatial-parent-world-transform : view3d? spatial-path? -> affine3?
+;;   Returns the world transform of a target's parent, or identity for direct
+;; view children.  The view itself is not a spatial path component below view.
+(define (spatial-parent-world-transform view path)
+  (if (null? (cddr path))
+      identity-affine3
+      (view3d-spatial-world-transform view (drop-right path 1))))
+
+(define (spatial-flash-overlay-id target-path)
+  ;; This is a sibling of the curve, so a suffixed final component is a concise
+  ;; stable identity.  A pre-existing matching sibling is rejected at compile
+  ;; time by the ordinary unique-child-ID validation.
+  (string->symbol (format "~a--passing-flash" (last target-path))))
+
+; compile-camera3d-animation-request : scene-state? camera3d-animation-request?
+;;                                       -> camera3d-compiled-animation?
+;;   Captures camera endpoints from one view3d's immutable authored state.
+(define (compile-camera3d-animation-request state request)
+  (define view-id (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state view-id 'scene-play))
+  (define camera (view3d-camera view))
+  (cond
+    [(camera3d-move-to-request? request)
+     (camera3d-pose-animation
+      view-id camera
+      (camera3d-with-position camera
+                              (camera3d-move-to-request-destination request)))]
+    [(camera3d-look-at-to-request? request)
+     (camera3d-pose-animation
+      view-id camera
+      (camera3d-look-at
+       camera
+       (camera3d-look-at-to-request-target request)
+       #:up (camera3d-look-at-to-request-up request)))]
+    [(camera3d-orbit-by-request? request)
+     (define center (camera3d-orbit-by-request-center request))
+     (define azimuth (camera3d-orbit-by-request-azimuth request))
+     (define elevation (camera3d-orbit-by-request-elevation request))
+     (camera3d-orbit-animation
+      view-id camera center azimuth elevation
+      (camera3d-orbit-sample camera center azimuth elevation 1))]
+    [(camera3d-roll-to-request? request)
+     (camera3d-pose-animation
+      view-id camera
+      (camera3d-roll-camera camera (camera3d-roll-to-request-angle request)))]
+    [(camera3d-field-of-view-to-request? request)
+     (unless (perspective-projection3d? (camera3d-projection camera))
+       (raise-arguments-error
+        'scene-play
+        "a perspective camera for camera3d-field-of-view-to"
+        "view-id" view-id
+        "camera" camera))
+     (camera3d-field-of-view-animation
+      view-id camera (camera3d-field-of-view-to-request-field-of-view request))]
+    [(camera3d-orthographic-height-to-request? request)
+     (unless (orthographic-projection3d? (camera3d-projection camera))
+       (raise-arguments-error
+        'scene-play
+        "an orthographic camera for camera3d-orthographic-height-to"
+        "view-id" view-id
+        "camera" camera))
+     (camera3d-orthographic-height-animation
+      view-id camera
+      (camera3d-orthographic-height-to-request-height request))]
+    [(camera3d-dolly-by-request? request)
+     (define destination
+       (camera3d-with-position
+        camera
+        (vec3+ (camera3d-position camera)
+               (vec3-scale (camera3d-dolly-by-request-distance request)
+                           (camera3d-forward camera)))))
+     (camera3d-pose-animation view-id camera destination)]
+    [(camera3d-fit-request? request)
+     (camera3d-pose-animation
+      view-id
+      camera
+      (camera3d-fit-bounds
+       camera
+       (view3d-spatial-bounds view)
+       #:aspect (/ (view3d-width view) (view3d-height view))
+       #:padding (camera3d-fit-request-padding request)))]
+    [(camera3d-follow-request? request)
+     (define target-path (camera3d-follow-request-target-path request))
+     (define target-position
+       (affine3-translation
+        (view3d-spatial-world-transform view target-path)))
+     (camera3d-follow-animation
+      view-id target-path
+      (vec3- (camera3d-position camera) target-position)
+      camera)]
+    [else
+     (raise-argument-error
+      'compile-camera3d-animation-request
+      "camera3d animation request"
+     request)]))
+
+; attention-request-spatial-passing-flash : scene-state? attention-request?
+;                                            -> (or/c #f spatial-curve-flash-request?)
+;;   Resolves the sole syntactically ambiguous public request against the scene
+;;   rather than guessing from a list of symbols.  Ordinary nested paths and
+;;   spatial paths intentionally use the same representation.
+(define (attention-request-spatial-passing-flash state request)
+  (define target (attention-request-target-id request))
+  (and (show-passing-flash-request? request)
+       (not (visual-selection? target))
+       (visual-path? target)
+       (pair? target)
+       (pair? (cdr target))
+       (scene-state-has? state (car target))
+       (view3d? (scene-state-ref state (car target)))
+       (spatial-curve-flash
+        target
+        #:time-width (attention-request-parameter request)
+        #:color (attention-request-color request))))
+
 (define (compile-animation-request state request)
   (define target-id
     (animation-request-target-id request))
@@ -2431,7 +2854,21 @@
     [(transform-from-copy-request? request)
      (compile-transform-from-copy-request state request)]
     [(attention-request? request)
-     (compile-attention-request state request)]
+     (define spatial-flash
+       (attention-request-spatial-passing-flash state request))
+     (if spatial-flash
+         (compile-spatial-curve-animation-request state spatial-flash)
+         (compile-attention-request state request))]
+    [(spatial-curve-animation-request? request)
+     (compile-spatial-curve-animation-request state request)]
+    [(spatial-surface-animation-request? request)
+     (compile-spatial-surface-animation-request state request)]
+    [(spatial-map-animation-request? request)
+     (compile-spatial-map-animation-request state request)]
+    [(spatial-animation-request? request)
+     (compile-spatial-animation-request state request)]
+    [(camera3d-animation-request? request)
+     (compile-camera3d-animation-request state request)]
     [(apply-affine-request? request)
      (compile-apply-affine-request state request)]
     [(apply-pointwise-request? request)
@@ -3612,6 +4049,10 @@
       (rotate-by-request? value)
       (scale-to-request? value)
       (scale-by-request? value)
+      (spatial-curve-animation-request? value)
+      (spatial-surface-animation-request? value)
+      (spatial-map-animation-request? value)
+      (spatial-animation-request? value)
       (apply-affine-request? value)
       (apply-pointwise-request? value)
       (apply-homotopy-request? value)
@@ -3627,6 +4068,7 @@
       (camera-view-zoom-by-request? value)
       (camera-view-follow-request? value)
       (camera-view-fit-request? value)
+      (camera3d-animation-request? value)
       (morph-to-request? value)
       (morph-to-normalized-request? value)
       (morph-to-aligned-request? value)
@@ -3694,6 +4136,42 @@
      (scale-to-request-target-id request)]
     [(scale-by-request? request)
      (scale-by-request-target-id request)]
+    [(move-along-curve3d-request? request)
+     (move-along-curve3d-request-target-path request)]
+    [(orient-along-curve3d-request? request)
+     (orient-along-curve3d-request-target-path request)]
+    [(or (spatial-curve-reveal-request? request)
+         (spatial-curve-unreveal-request? request))
+     (spatial-curve-reveal-request-target-path request)]
+    [(spatial-curve-flash-request? request)
+     (spatial-curve-flash-request-target-path request)]
+    [(or (reveal-surface-u-request? request)
+         (reveal-surface-v-request? request))
+     (reveal-surface-request-target-path request)]
+    [(transform-surface3d-request? request)
+     (transform-surface3d-request-target-path request)]
+    [(move3d-to-request? request)
+     (move3d-to-request-target-path request)]
+    [(move3d-by-request? request)
+     (move3d-by-request-target-path request)]
+    [(rotate3d-to-request? request)
+     (rotate3d-to-request-target-path request)]
+    [(rotate3d-by-request? request)
+     (rotate3d-by-request-target-path request)]
+    [(scale3d-to-request? request)
+     (scale3d-to-request-target-path request)]
+    [(scale3d-by-request? request)
+     (scale3d-by-request-target-path request)]
+    [(transform3d-to-request? request)
+     (transform3d-to-request-target-path request)]
+    [(apply-linear3-request? request)
+     (apply-linear3-request-target-path request)]
+    [(apply-affine3-request? request)
+     (apply-affine3-request-target-path request)]
+    [(apply-pointwise3-request? request)
+     (apply-pointwise3-request-target-path request)]
+    [(apply-homotopy3-request? request)
+     (apply-homotopy3-request-target-path request)]
     [(apply-affine-request? request)
      (apply-affine-request-target-id request)]
     [(apply-pointwise-request? request)
@@ -3724,6 +4202,24 @@
      (camera-view-follow-request-target-id request)]
     [(camera-view-fit-request? request)
      (camera-view-fit-request-target-id request)]
+    [(camera3d-move-to-request? request)
+     (camera3d-move-to-request-view-id request)]
+    [(camera3d-look-at-to-request? request)
+     (camera3d-look-at-to-request-view-id request)]
+    [(camera3d-orbit-by-request? request)
+     (camera3d-orbit-by-request-view-id request)]
+    [(camera3d-roll-to-request? request)
+     (camera3d-roll-to-request-view-id request)]
+    [(camera3d-field-of-view-to-request? request)
+     (camera3d-field-of-view-to-request-view-id request)]
+    [(camera3d-orthographic-height-to-request? request)
+     (camera3d-orthographic-height-to-request-view-id request)]
+    [(camera3d-dolly-by-request? request)
+     (camera3d-dolly-by-request-view-id request)]
+    [(camera3d-fit-request? request)
+     (camera3d-fit-request-view-id request)]
+    [(camera3d-follow-request? request)
+     (camera3d-follow-request-view-id request)]
     [(morph-to-request? request)
      (morph-to-request-target-id request)]
     [(morph-to-normalized-request? request)
@@ -3794,6 +4290,37 @@
     [(or (scale-to-request? request)
          (scale-by-request? request))
      '(scale)]
+    [(or (move3d-to-request? request)
+         (move3d-by-request? request))
+     '(spatial-translation)]
+    [(move-along-curve3d-request? request)
+     '(spatial-translation)]
+    [(or (rotate3d-to-request? request)
+         (rotate3d-by-request? request))
+     '(spatial-rotation)]
+    [(orient-along-curve3d-request? request)
+     '(spatial-rotation)]
+    [(or (spatial-curve-reveal-request? request)
+         (spatial-curve-unreveal-request? request)
+         (spatial-curve-flash-request? request))
+     '(spatial-curve-geometry)]
+    [(or (reveal-surface-u-request? request)
+         (reveal-surface-v-request? request)
+         (transform-surface3d-request? request))
+     '(spatial-surface-geometry)]
+    [(or (scale3d-to-request? request)
+         (scale3d-by-request? request))
+     '(spatial-scale)]
+    [(transform3d-to-request? request)
+     '(spatial-translation spatial-rotation spatial-scale)]
+    [(or (apply-linear3-request? request)
+         (apply-affine3-request? request)
+         (apply-pointwise3-request? request)
+         (apply-homotopy3-request? request))
+     ;; Each spatial map replaces the target's complete geometric mapping at
+     ;; the sampled phase; it cannot be meaningfully combined with a local
+     ;; spatial transform or another geometry operation in the same clip.
+     '(spatial-translation spatial-rotation spatial-scale spatial-map)]
     [(apply-affine-request? request)
      ;; The map can change every spatial component at once. Rejecting a
      ;; concurrent move/rotation/scale keeps CY-A endpoint semantics explicit.
@@ -3828,6 +4355,21 @@
      '(camera-view-world-width)]
     [(camera-view-fit-request? request)
      '(camera-view-center camera-view-world-width)]
+    [(or (camera3d-move-to-request? request)
+         (camera3d-dolly-by-request? request)
+         (camera3d-follow-request? request))
+     '(camera3d-position)]
+    [(or (camera3d-look-at-to-request? request)
+         (camera3d-roll-to-request? request))
+     '(camera3d-rotation)]
+    [(camera3d-orbit-by-request? request)
+     '(camera3d-position camera3d-rotation)]
+    [(camera3d-field-of-view-to-request? request)
+     '(camera3d-projection)]
+    [(camera3d-orthographic-height-to-request? request)
+     '(camera3d-projection)]
+    [(camera3d-fit-request? request)
+     '(camera3d-position camera3d-rotation camera3d-projection)]
     [(or (morph-to-request? request)
          (morph-to-normalized-request? request)
          (morph-to-aligned-request? request)
@@ -3931,12 +4473,17 @@
     (append
      (filter (lambda (animation)
                (and (not (attention-animation? animation))
-                    (not (camera-view-follow-animation? animation))))
+                    (not (camera-view-follow-animation? animation))
+                    (not (camera3d-follow-animation? animation))))
              animations)
      ;; A secondary-camera follow reads the current sampled world target, so
      ;; sample it after every ordinary world update in this clip. This keeps
      ;; follow a pure function of (clip-start state, time), not a history.
      (filter camera-view-follow-animation? animations)
+     ;; A spatial follow resolves its target after local 3D transforms have
+     ;; sampled, retaining direct random-access evaluation with no mutable
+     ;; camera history.
+     (filter camera3d-follow-animation? animations)
      (filter attention-animation? animations)))
   (for/fold ([sampled-state state])
             ([animation (in-list ordered-animations)])
@@ -3961,6 +4508,10 @@
       (path-orientation-animation? value)
       (rotation-animation? value)
       (scaling-animation? value)
+      (spatial-curve-compiled-animation? value)
+      (spatial-surface-compiled-animation? value)
+      (spatial-map-compiled-animation? value)
+      (spatial-compiled-animation? value)
       (affine-map-animation? value)
       (pointwise-map-animation? value)
       (homotopy-map-animation? value)
@@ -3971,6 +4522,7 @@
       (camera-view-world-width-animation? value)
       (camera-view-follow-animation? value)
       (camera-view-fit-animation? value)
+      (camera3d-compiled-animation? value)
       (opacity-animation? value)
       (path-morph-animation? value)
       (normalized-path-morph-animation? value)
@@ -4003,6 +4555,14 @@
      (apply-rotation-animation state animation progress)]
     [(scaling-animation? animation)
      (apply-scaling-animation state animation progress)]
+    [(spatial-curve-compiled-animation? animation)
+     (apply-spatial-curve-compiled-animation state animation progress)]
+    [(spatial-surface-compiled-animation? animation)
+     (apply-spatial-surface-compiled-animation state animation progress)]
+    [(spatial-map-compiled-animation? animation)
+     (apply-spatial-map-compiled-animation state animation progress)]
+    [(spatial-compiled-animation? animation)
+     (apply-spatial-compiled-animation state animation progress)]
     [(affine-map-animation? animation)
      (apply-affine-map-animation state animation progress)]
     [(pointwise-map-animation? animation)
@@ -4023,6 +4583,8 @@
      (apply-camera-view-follow-animation state animation progress)]
     [(camera-view-fit-animation? animation)
      (apply-camera-view-fit-animation state animation progress)]
+    [(camera3d-compiled-animation? animation)
+     (apply-camera3d-compiled-animation state animation progress)]
     [(opacity-animation? animation)
      (apply-opacity-animation state animation progress)]
     [(path-morph-animation? animation)
@@ -4071,6 +4633,305 @@
    state
    (scalar-value-animation-target-id animation)
    value))
+
+
+;;;
+;;; SCENE-3D-D Sampling
+;;;
+
+; update-spatial-at : scene-state? spatial-path?
+;                      (spatial-visual? -> spatial-visual?) -> scene-state?
+;;   Replaces one view-rooted spatial value while leaving ordinary 2D hierarchy
+;; untouched.  The root view remains the sole 2D Visual update.
+(define (update-spatial-at state path update)
+  (define view-id (car path))
+  (define view (scene-state-view3d-ref state view-id 'apply-spatial-compiled-animation))
+  (scene-state-update
+   state
+   view-id
+   (view3d-spatial-update view path update)))
+
+; apply-spatial-compiled-animation : scene-state? spatial-compiled-animation?
+;                                    finite-real? -> scene-state?
+;;   Samples one local spatial component directly from its clip-start endpoint.
+(define (apply-spatial-compiled-animation state animation progress)
+  (cond
+    [(zero? progress) state]
+    [(spatial-translation-animation? animation)
+     (update-spatial-at
+      state
+      (spatial-translation-animation-target-path animation)
+      (lambda (object)
+        (spatial-with-position
+         object
+         (vec3-lerp (spatial-translation-animation-from animation)
+                    (spatial-translation-animation-to animation)
+                    progress))))]
+    [(spatial-rotation-animation? animation)
+     (update-spatial-at
+      state
+      (spatial-rotation-animation-target-path animation)
+      (lambda (object)
+        (spatial-with-rotation
+         object
+         (rotation3-slerp (spatial-rotation-animation-from animation)
+                          (spatial-rotation-animation-to animation)
+                          progress))))]
+    [(spatial-scale-animation? animation)
+     (update-spatial-at
+      state
+      (spatial-scale-animation-target-path animation)
+      (lambda (object)
+        (spatial-with-scale
+         object
+         (vec3-lerp (spatial-scale-animation-from animation)
+                    (spatial-scale-animation-to animation)
+                    progress))))]
+    [(spatial-transform-animation? animation)
+     (update-spatial-at
+      state
+      (spatial-transform-animation-target-path animation)
+      (lambda (object)
+        (spatial-with-transform
+         object
+         (transform3-lerp (spatial-transform-animation-from animation)
+                          (spatial-transform-animation-to animation)
+                          progress))))]
+    [else
+     (raise-argument-error
+      'apply-spatial-compiled-animation
+      "spatial compiled animation"
+      animation)]))
+
+; apply-spatial-curve-compiled-animation : scene-state?
+;                                           spatial-curve-compiled-animation?
+;                                           unit-real? -> scene-state?
+;;   Evaluates one Stage-F curve operation from its captured source geometry at
+;; the requested phase.  No update reads a previously sampled curve frame.
+(define (apply-spatial-curve-compiled-animation state animation progress)
+  (cond
+    [(spatial-curve-reveal-animation? animation)
+     (define end
+       (if (spatial-curve-reveal-animation-reverse? animation)
+           (- 1 progress)
+           progress))
+     (update-spatial-at
+      state
+      (spatial-curve-reveal-animation-target-path animation)
+      (lambda (_object)
+        (curve3d-partial (spatial-curve-reveal-animation-curve animation)
+                         0 end)))]
+    [(spatial-curve-flash-animation? animation)
+     (cond [(or (zero? progress) (= progress 1)) state]
+           [else
+            (define flash-start
+              (max 0 (- progress (spatial-curve-flash-animation-time-width animation))))
+            (define flash-curve
+              (curve3d-with-id
+               (curve3d-with-color
+                (curve3d-partial (spatial-curve-flash-animation-curve animation)
+                                 flash-start progress)
+                (spatial-curve-flash-animation-color animation))
+               (spatial-curve-flash-animation-overlay-id animation)))
+            (define target-path
+              (spatial-curve-flash-animation-target-path animation))
+            (define view-id (car target-path))
+            (define view (scene-state-view3d-ref state view-id
+                                                  'show-passing-flash))
+            (scene-state-update
+             state view-id
+             (view3d-spatial-insert-after view target-path flash-curve))])]
+    [(spatial-curve-motion-animation? animation)
+     (define phase
+       (+ (spatial-curve-motion-animation-start animation)
+          (* progress
+             (- (spatial-curve-motion-animation-end animation)
+                (spatial-curve-motion-animation-start animation)))))
+     (define point-in-parent
+       (affine3-apply-point
+        (spatial-curve-motion-animation-parent-world-inverse animation)
+        (affine3-apply-point
+         (spatial-curve-motion-animation-curve-world-transform animation)
+         (curve3d-point-at (spatial-curve-motion-animation-curve animation) phase))))
+     (update-spatial-at
+      state (spatial-curve-motion-animation-target-path animation)
+      (lambda (object) (spatial-with-position object point-in-parent)))]
+    [(spatial-curve-orientation-animation? animation)
+     (define phase
+       (+ (spatial-curve-orientation-animation-start animation)
+          (* progress
+             (- (spatial-curve-orientation-animation-end animation)
+                (spatial-curve-orientation-animation-start animation)))))
+     (define tangent-in-parent
+       (vec3-normalize
+        (affine3-apply-vector
+         (spatial-curve-orientation-animation-parent-world-inverse animation)
+         (affine3-apply-vector
+          (spatial-curve-orientation-animation-curve-world-transform animation)
+          (curve3d-tangent-at
+           (spatial-curve-orientation-animation-curve animation) phase)))))
+     (update-spatial-at
+      state (spatial-curve-orientation-animation-target-path animation)
+      (lambda (object)
+        (spatial-with-rotation object (rotation3-from-to x-axis3 tangent-in-parent))))]
+    [else
+     (raise-argument-error 'apply-spatial-curve-compiled-animation
+                           "spatial curve compiled animation" animation)]))
+
+; apply-spatial-surface-compiled-animation : scene-state?
+;                                             spatial-surface-compiled-animation?
+;                                             unit-real? -> scene-state?
+;;   Samples a Stage-G surface directly from its captured grid endpoints.
+(define (apply-spatial-surface-compiled-animation state animation progress)
+  (cond
+    [(reveal-surface-animation? animation)
+     (define source (reveal-surface-animation-surface animation))
+     (define revealed
+       (if (eq? (reveal-surface-animation-axis animation) 'u)
+           (surface3d-partial-u source progress)
+           (surface3d-partial-v source progress)))
+     (update-spatial-at state (reveal-surface-animation-target-path animation)
+                        (lambda (_object) revealed))]
+    [(surface-transform-animation? animation)
+     (update-spatial-at
+      state (surface-transform-animation-target-path animation)
+      (lambda (_object)
+        (surface3d-interpolate (surface-transform-animation-source animation)
+                               (surface-transform-animation-destination animation)
+                               progress)))]
+    [else
+     (raise-argument-error 'apply-spatial-surface-compiled-animation
+                           "spatial surface compiled animation" animation)]))
+
+; apply-spatial-map-compiled-animation : scene-state? spatial-map-compiled-animation?
+;                                         unit-real? -> scene-state?
+;; Samples every map from immutable clip-start inputs. In particular, a
+;; homotopy evaluates H(source-point, progress) directly rather than blending
+;; two precomputed endpoint meshes.
+(define (apply-spatial-map-compiled-animation state animation progress)
+  (cond
+    [(zero? progress) state]
+    [(spatial-affine-map-animation? animation)
+     (define progress-map
+       (affine3-lerp identity-affine3
+                     (spatial-affine-map-animation-map animation)
+                     progress))
+     (define mapped
+       (affine-map3d
+        (spatial-affine-map-animation-content animation)
+        (affine3-compose progress-map
+                         (spatial-affine-map-animation-from-map animation))))
+     (update-spatial-at
+      state (spatial-affine-map-animation-target-path animation)
+      (lambda (_object)
+        (if (= (spatial-affine-map-animation-opacity animation) 1)
+            mapped
+            (spatial-with-opacity
+             mapped (spatial-affine-map-animation-opacity animation)))))]
+    [(spatial-pointwise-map-animation? animation)
+     (update-spatial-at
+      state (spatial-pointwise-map-animation-target-path animation)
+      (lambda (_object)
+        (pointwise-map-mesh3d
+         (spatial-pointwise-map-animation-source animation)
+         (spatial-pointwise-map-animation-source-world-transform animation)
+         (spatial-pointwise-map-animation-parent-inverse animation)
+         (lambda (point)
+           ;; At phase p, linearly blend identity and F in world coordinates.
+           ;; This gives apply-pointwise3 the same identity-at-start semantics
+           ;; as its two-dimensional counterpart without changing its sampled
+           ;; source topology.
+           (vec3-lerp point
+                      ((spatial-pointwise-map-animation-map-point animation) point)
+                      progress))
+         #:on-failure (spatial-pointwise-map-animation-on-failure animation)
+         #:recompute-normals?
+         (spatial-pointwise-map-animation-recompute-normals? animation))))]
+    [(spatial-homotopy-map-animation? animation)
+     (update-spatial-at
+      state (spatial-homotopy-map-animation-target-path animation)
+      (lambda (_object)
+        (pointwise-map-mesh3d
+         (spatial-homotopy-map-animation-source animation)
+         (spatial-homotopy-map-animation-source-world-transform animation)
+         (spatial-homotopy-map-animation-parent-inverse animation)
+         (lambda (point)
+           ((spatial-homotopy-map-animation-homotopy animation) point progress))
+         #:on-failure (spatial-homotopy-map-animation-on-failure animation)
+         #:recompute-normals?
+         (spatial-homotopy-map-animation-recompute-normals? animation))))]
+    [else
+     (raise-argument-error 'apply-spatial-map-compiled-animation
+                           "spatial map compiled animation" animation)]))
+
+; update-camera3d-at : scene-state? symbol? camera3d? -> scene-state?
+;;   Installs one immutable authored camera into its enclosing view3d.
+(define (update-camera3d-at state view-id camera)
+  (define view (scene-state-view3d-ref state view-id 'apply-camera3d-compiled-animation))
+  (scene-state-update state view-id (view3d-with-camera view camera)))
+
+; apply-camera3d-compiled-animation : scene-state? camera3d-compiled-animation?
+;                                      finite-real? -> scene-state?
+;;   Samples one spatial camera directly from immutable clip-start data.
+(define (apply-camera3d-compiled-animation state animation progress)
+  (cond
+    [(zero? progress) state]
+    [(camera3d-pose-animation? animation)
+     (update-camera3d-at
+      state
+      (camera3d-pose-animation-view-id animation)
+      (camera3d-pose-lerp (camera3d-pose-animation-from animation)
+                          (camera3d-pose-animation-to animation)
+                          progress))]
+    [(camera3d-orbit-animation? animation)
+     (update-camera3d-at
+      state
+      (camera3d-orbit-animation-view-id animation)
+      (camera3d-orbit-sample (camera3d-orbit-animation-from animation)
+                             (camera3d-orbit-animation-center animation)
+                             (camera3d-orbit-animation-azimuth animation)
+                             (camera3d-orbit-animation-elevation animation)
+                             progress))]
+    [(camera3d-field-of-view-animation? animation)
+     (update-camera3d-at
+      state
+      (camera3d-field-of-view-animation-view-id animation)
+      (camera3d-field-of-view-sample
+       (camera3d-field-of-view-animation-from animation)
+       (camera3d-field-of-view-animation-to animation)
+       progress))]
+    [(camera3d-orthographic-height-animation? animation)
+     (update-camera3d-at
+      state
+      (camera3d-orthographic-height-animation-view-id animation)
+      (camera3d-orthographic-height-sample
+       (camera3d-orthographic-height-animation-from animation)
+       (camera3d-orthographic-height-animation-to animation)
+       progress))]
+    [(camera3d-follow-animation? animation)
+     (define view-id (camera3d-follow-animation-view-id animation))
+     (define view (scene-state-view3d-ref state view-id 'apply-camera3d-compiled-animation))
+     (define target-position
+       (affine3-translation
+        (view3d-spatial-world-transform
+         view
+         (camera3d-follow-animation-target-path animation))))
+     (define source (camera3d-follow-animation-source animation))
+     ;; Follow is a spatial constraint, not an eased move toward the target.
+     ;; The target has already been sampled for this exact progress, so retain
+     ;; the captured local offset directly.  Interpolating source to this
+     ;; per-frame destination would make a moving target lag quadratically.
+     (define destination
+       (camera3d-with-position
+        source
+        (vec3+ target-position (camera3d-follow-animation-offset animation))))
+     (update-camera3d-at
+      state view-id destination)]
+    [else
+     (raise-argument-error
+      'apply-camera3d-compiled-animation
+      "camera3d compiled animation"
+      animation)]))
 
 ; apply-translation-animation : scene-state? translation-animation?
 ;                               finite-real? -> scene-state?

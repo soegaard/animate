@@ -35,12 +35,14 @@
                     "concepts/immutable-scenes.scrbl"
                     "concepts/formula-source-maps.scrbl"
                     "concepts/relation-phases.scrbl"
+                    "concepts/spatial-coordinates.scrbl"
                     "reference/module-boundaries.scrbl"
                     "reference/authoring.scrbl"
                     "reference/preview.scrbl"
                     "reference/project.scrbl"
                     "reference/scene.scrbl"
                     "reference/geometry-and-plots.scrbl"
+                    "reference/3d-algebra.scrbl"
                     "reference/visuals-and-relations.scrbl"
                     "reference/experimental.scrbl"
                     "reference/rendering.scrbl"
@@ -57,12 +59,14 @@
                      (chapter concepts-root "immutable-scenes.scrbl")
                      (chapter concepts-root "formula-source-maps.scrbl")
                      (chapter concepts-root "relation-phases.scrbl")
+                     (chapter concepts-root "spatial-coordinates.scrbl")
                      (chapter reference-root "module-boundaries.scrbl")
                      (chapter reference-root "authoring.scrbl")
                      (chapter reference-root "preview.scrbl")
                      (chapter reference-root "project.scrbl")
                      (chapter reference-root "scene.scrbl")
                      (chapter reference-root "geometry-and-plots.scrbl")
+                     (chapter reference-root "3d-algebra.scrbl")
                      (chapter reference-root "visuals-and-relations.scrbl")
                      (chapter reference-root "experimental.scrbl")
                      (chapter reference-root "rendering.scrbl")

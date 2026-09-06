@@ -29,5 +29,5 @@
     (check-true (string? (doctor-capability-detail capability))))
   (check-true
    (regexp-match?
-    #rx"animate 1\\.8\\.0 \\(SCENE-EM\\)"
+    #rx"animate 1\\.19\\.0 \\(SCENE-3D-M\\)"
     (car (doctor-report->lines report)))))

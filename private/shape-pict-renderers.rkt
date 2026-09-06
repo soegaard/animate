@@ -60,6 +60,7 @@
          "svg-pict-renderer.rkt"
          "tagged-formula-pict-renderer.rkt"
          "text-visual.rkt"
+         "3d/view3d-pict-renderer.rkt"
          "visual-model.rkt")
 
 ;; Exports
@@ -158,7 +159,8 @@
 ; default-pict-renderers : (listof pict-renderer?)
 ;;   Gives built-in renderers in significant first-match selection order.
 (define default-pict-renderers
-  (list (circle-pict-renderer)
+  (list default-view3d-pict-renderer
+        (circle-pict-renderer)
         (rectangle-pict-renderer)
         (path-pict-renderer)
         (arrow-pict-renderer)

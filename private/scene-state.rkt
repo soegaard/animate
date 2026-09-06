@@ -30,6 +30,8 @@
          "parameter.rkt"
          "relation-visual.rkt"
          "resolvable-visual.rkt"
+         "3d/spatial-relation-resolver.rkt"
+         "3d/view3d-visual.rkt"
          "visual-model.rkt")
 
 ;; Exports
@@ -141,6 +143,12 @@
     (cond
       [(null? descendant-ids)
        parent-map]
+      [(view3d? visual)
+       (raise-arguments-error
+        'scene-state-parent-affine-map
+        "target is a spatial Visual inside view3d; use a 3D animation request"
+        "visual-path" path
+        "view3d-id" (visual-id visual))]
       [(not (composite-visual? visual))
        (raise-arguments-error
         'scene-state-parent-affine-map
@@ -187,6 +195,12 @@
   (cond
     [(null? descendant-ids)
      visual]
+    [(view3d? visual)
+     (raise-arguments-error
+      who
+      "target is a spatial Visual inside view3d; use a 3D animation request"
+      "visual-path" full-path
+      "view3d-id" (visual-id visual))]
     [(not (composite-visual? visual))
      (raise-arguments-error
       who
@@ -352,6 +366,14 @@
        (affine-map-visual-with-content
         visual
         (resolve-visual-tree (affine-map-visual-content visual)))]
+      [(view3d? visual)
+       ;; A view3d is the semantic boundary for its separate spatial tree.
+       ;; Resolve its current spatial relations only after ordinary scene
+       ;; sampling has fixed both the view camera and scene values.
+       (resolve-view3d-spatial-relations
+        visual
+        #:value-has? (lambda (id) (scene-state-value-has? state id))
+        #:value-ref (lambda (id) (scene-state-value-ref state id)))]
       [else
        visual]))
 
@@ -478,6 +500,12 @@
 (define (resolved-world-descendant-ref visual descendant-ids full-path)
   (cond
     [(null? descendant-ids) visual]
+    [(view3d? visual)
+     (raise-arguments-error
+      'scene-state-resolved-world-ref
+      "target is a spatial Visual inside view3d; use a 3D animation request"
+      "visual-path" full-path
+      "view3d-id" (visual-id visual))]
     [(not (composite-visual? visual))
      (raise-arguments-error
       'scene-state-resolved-world-ref

@@ -17,7 +17,8 @@
          "authoring-timeline.rkt"
          "camera.rkt"
          "frame-renderer.rkt"
-         (only-in "pict-adapter.rkt" default-pict-renderers)
+         "ode-flow.rkt"
+         (only-in "pict-adapter.rkt" default-pict-renderers scene-state->pict)
          "preview-cache.rkt"
          "preview-cancellation.rkt"
          "preview-diagnostics.rkt"
@@ -25,6 +26,9 @@
          "preview-quality.rkt"
          "preview-render-request.rkt"
          "preview-worker-process.rkt"
+         "3d/preview-camera3d-override.rkt"
+         "3d/ode-flow3d.rkt"
+         "3d/software-renderer3d.rkt"
          "scene.rkt")
 
 (provide (struct-out preview-event)
@@ -67,6 +71,9 @@
          preview-section-names
          preview-refresh!
          preview-set-render-spec!
+         preview-camera3d-overrides
+         preview-set-camera3d-override!
+         preview-clear-camera3d-override!
          preview-set-source!
          preview-report-error!
          preview-canceled-request-count
@@ -396,6 +403,29 @@
 (define (preview-set-render-spec! session render-spec)
   (send-controller-command 'preview-set-render-spec! session 'set-render-spec (list render-spec)))
 
+; preview-camera3d-overrides : preview-session? -> immutable-hash?
+;;   Returns the preview-only inspection cameras keyed by view3d ID.
+(define (preview-camera3d-overrides session)
+  (send-controller-command 'preview-camera3d-overrides session
+                           'camera3d-overrides '()))
+
+; preview-set-camera3d-override! : preview-session? preview-camera3d-override?
+;;                                  -> preview-status?
+;;   Installs one inspection camera without mutating the authored scene.
+(define (preview-set-camera3d-override! session override)
+  (send-controller-command 'preview-set-camera3d-override!
+                           session
+                           'set-camera3d-override
+                           (list override)))
+
+; preview-clear-camera3d-override! : preview-session? symbol? -> preview-status?
+;;   Removes one inspection camera and returns immediately to the authored view.
+(define (preview-clear-camera3d-override! session view-id)
+  (send-controller-command 'preview-clear-camera3d-override!
+                           session
+                           'clear-camera3d-override
+                           (list view-id)))
+
 (define (preview-set-source! session source)
   (send-controller-command 'preview-set-source! session 'set-source (list source)))
 
@@ -679,6 +709,39 @@
            spec))
          (invalidate-render! state)
          (request-current! state jobs prefetch)
+         (state-status state)]
+        [(camera3d-overrides)
+         (preview-render-spec-camera3d-overrides
+          (controller-state-render-spec state))]
+        [(set-camera3d-override)
+         (match-arguments 'set-camera3d-override
+                          (controller-command-arguments command) 1)
+         (define override (car (controller-command-arguments command)))
+         (unless (preview-camera3d-override? override)
+           (raise-argument-error
+            'preview-set-camera3d-override!
+            "preview-camera3d-override?"
+            override))
+         (define prior (controller-state-render-spec state))
+         (replace-camera3d-overrides!
+          state
+          (hash-set
+           (preview-render-spec-camera3d-overrides prior)
+           (preview-camera3d-override-view-id override)
+           override)
+          jobs prefetch)
+         (state-status state)]
+        [(clear-camera3d-override)
+         (match-arguments 'clear-camera3d-override
+                          (controller-command-arguments command) 1)
+         (define view-id (car (controller-command-arguments command)))
+         (unless (symbol? view-id)
+           (raise-argument-error 'preview-clear-camera3d-override! "symbol?" view-id))
+         (define prior (controller-state-render-spec state))
+         (replace-camera3d-overrides!
+          state
+          (hash-remove (preview-render-spec-camera3d-overrides prior) view-id)
+          jobs prefetch)
          (state-status state)]
         [(set-source)
          (match-arguments 'set-source (controller-command-arguments command) 1)
@@ -1254,13 +1317,35 @@
   (check-cancellation cancellation-token)
   (define preview-camera
     (camera-at-pixel-scale source-camera (preview-render-spec-pixel-scale render-spec)))
+  (define sampled-state (scene-sample scene time))
+  (define rendered-state
+    (for/fold ([state sampled-state])
+              ([view-id
+                (in-list
+                 (sort (hash-keys (preview-render-spec-camera3d-overrides render-spec))
+                       symbol<?))])
+      (preview-camera3d-override-apply
+       state
+       (hash-ref (preview-render-spec-camera3d-overrides render-spec) view-id))))
   (check-cancellation cancellation-token)
-  (pict->bitmap
-   (scene->pict scene time
-                #:camera preview-camera
-                #:renderers (preview-render-spec-renderers render-spec)
-                #:supersample (preview-render-spec-supersample render-spec))
-   'smoothed))
+  (parameterize ([current-software-render-cancellation-token cancellation-token])
+    ;; The interactive in-process worker has the same contract as an isolated
+    ;; renderer: author ODE callbacks run during preparation, not while a
+    ;; spatial relation is resolved by the pict adapter.
+    (call-with-ode-frame-samples
+     (prepare-ode-frame-samples (list rendered-state))
+     (lambda ()
+       (call-with-ode3d-frame-samples
+        (prepare-ode3d-frame-samples (list rendered-state))
+        (lambda ()
+          (pict->bitmap
+           (scene-state->pict rendered-state
+                              #:camera
+                              (preview-camera-with-supersampling
+                               preview-camera
+                               (preview-render-spec-supersample render-spec))
+                              #:renderers (preview-render-spec-renderers render-spec))
+           'smoothed)))))))
 
 (define (camera-at-pixel-scale camera pixel-scale)
   (define (scaled-pixels pixels)
@@ -1269,7 +1354,18 @@
                #:height (scaled-pixels (camera-height camera))
                #:world-width (camera-world-width camera)
                #:center (camera-center camera)
-               #:background (camera-background camera)))
+   #:background (camera-background camera)))
+
+;; preview-camera-with-supersampling multiplies only raster dimensions after
+;; the preview's independent pixel-scale has selected its display resolution.
+(define (preview-camera-with-supersampling camera supersample)
+  (if (= supersample 1)
+      camera
+      (make-camera #:width (* supersample (camera-width camera))
+                   #:height (* supersample (camera-height camera))
+                   #:world-width (camera-world-width camera)
+                   #:center (camera-center camera)
+                   #:background (camera-background camera))))
 
 (define (default-bitmap-bytes bitmap)
   (unless (is-a? bitmap bitmap%)
@@ -1365,7 +1461,27 @@
    #:camera (preview-render-spec-camera base)
    #:renderers (preview-render-spec-renderers base)
    #:pixel-scale (preview-quality-pixel-scale quality)
-   #:supersample (preview-quality-supersample quality)))
+   #:supersample (preview-quality-supersample quality)
+   #:camera3d-overrides (preview-render-spec-camera3d-overrides base)))
+
+;; replace-camera3d-overrides! switches only the inspection layer.  Its own
+;; render generation keeps bitmap-cache and worker results from an earlier
+;; inspection camera out of the currently displayed preview.
+(define (replace-camera3d-overrides! state overrides jobs prefetch)
+  (define prior (controller-state-render-spec state))
+  (define replacement
+    (make-preview-render-spec
+     #:fps (preview-render-spec-fps prior)
+     #:camera (preview-render-spec-camera prior)
+     #:renderers (preview-render-spec-renderers prior)
+     #:pixel-scale (preview-render-spec-pixel-scale prior)
+     #:supersample (preview-render-spec-supersample prior)
+     #:camera3d-overrides overrides))
+  (set-controller-state-render-spec! state replacement)
+  (set-controller-state-current-quality! state (full-quality-for replacement))
+  (set-controller-state-scrubbing?! state #f)
+  (invalidate-render! state)
+  (request-current! state jobs prefetch))
 
 (define (full-quality-for render-spec)
   (preview-quality #:name 'full

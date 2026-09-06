@@ -18,9 +18,11 @@
 ;; Imports
 (require (only-in pict pict->bitmap)
          "camera.rkt"
+         "ode-flow.rkt"
          "pict-adapter.rkt"
          "scene-frame-grid.rkt"
-         "scene.rkt")
+         "scene.rkt"
+         "3d/ode-flow3d.rkt")
 
 ;; Exports
 (provide scene->pict
@@ -47,18 +49,37 @@
     [(not camera)
      (define-values (state sampled-camera)
        (scene-sample-with-camera scene time))
-     (scene-state->pict state
-                        #:camera (camera-with-supersampling sampled-camera supersample)
-                        #:renderers renderers)]
+     (scene-state->prepared-pict
+      state
+      (camera-with-supersampling sampled-camera supersample)
+      renderers)]
     [(camera? camera)
-     (scene-state->pict (scene-sample scene time)
-                        #:camera (camera-with-supersampling camera supersample)
-                        #:renderers renderers)]
+     (scene-state->prepared-pict
+      (scene-sample scene time)
+      (camera-with-supersampling camera supersample)
+      renderers)]
     [else
      (raise-argument-error
       'scene->pict
       "(or/c camera? false/c)"
       camera)]))
+
+;; Prepares every semantic ODE particle in this one immutable scene state
+;; before adapters resolve visual relations.  This is the direct single-frame
+;; counterpart of the batch preparation used by the PNG renderer.
+(define (scene-state->prepared-pict state camera renderers)
+  (define (render-with-3d-samples)
+    (if (ode3d-frame-samples-active?)
+        (scene-state->pict state #:camera camera #:renderers renderers)
+        (call-with-ode3d-frame-samples
+         (prepare-ode3d-frame-samples (list state))
+         (lambda ()
+           (scene-state->pict state #:camera camera #:renderers renderers)))))
+  (if (ode-frame-samples-active?)
+      (render-with-3d-samples)
+      (call-with-ode-frame-samples
+       (prepare-ode-frame-samples (list state))
+       render-with-3d-samples)))
 
 ; scene-frame->bitmap : scene? exact-nonnegative-integer?
 ;                       [#:fps exact-positive-integer?]

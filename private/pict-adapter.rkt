@@ -60,6 +60,8 @@
          "point-marker-visual.rkt"
          "path-geometry.rkt"
          "scene-state.rkt"
+         "3d/projected-label.rkt"
+         "3d/view3d-visual.rkt"
          "shape-pict-renderers.rkt"
          "visual-selection.rkt"
          "visual-model.rkt")
@@ -789,6 +791,8 @@
 (define (resolve-layout-relations-in-visual state visual path camera renderers
                                             cache active-paths)
   (cond
+    [(projected-label? visual)
+     (resolve-projected-label-in-state state visual path camera cache)]
     [(layout-relation-visual? visual)
      (resolve-layout-relation
       state visual path camera renderers cache active-paths)]
@@ -806,6 +810,27 @@
        state (affine-map-visual-content visual) path camera renderers cache
        active-paths))]
     [else visual]))
+
+;; A projected label crosses the view3d-to-2D boundary after semantic spatial
+;; relation resolution but before normal renderer-aware layout.  Its concrete
+;; formula/text Visual is then painted through the ordinary Pict renderer and
+;; stays crisp at every 3D camera distance.
+(define (resolve-projected-label-in-state state label path camera cache)
+  (define key (cons 'projected-label path))
+  (cond [(hash-has-key? cache key) (hash-ref cache key)]
+        [else
+         (define view
+           (scene-state-resolved-ref state (projected-label-view label)))
+         (unless (view3d? view)
+           (raise-arguments-error
+            'scene-state->pict
+            "a #:view identity resolving to view3d"
+            "projected-label-id" (visual-id label)
+            "view-id" (projected-label-view label)
+            "resolved-visual" view))
+         (define resolved (resolve-projected-label label view camera))
+         (hash-set! cache key resolved)
+         resolved]))
 
 ;; A deferred relation create/uncreate remains a relation definition for
 ;; dependency and renderer-layout purposes.  It differs only in the final

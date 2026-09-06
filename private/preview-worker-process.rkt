@@ -12,13 +12,15 @@
          racket/class
          racket/draw
          racket/file
+         racket/list
          racket/path
          racket/runtime-path
          "preview-cancellation.rkt"
          "preview-model.rkt"
          "preview-quality.rkt"
          "preview-render-request.rkt"
-         "preview-worker-protocol.rkt")
+         "preview-worker-protocol.rkt"
+         "3d/preview-camera3d-override.rkt")
 
 (provide preview-worker-process?
          start-project-preview-worker
@@ -179,6 +181,13 @@
      (sample->datum (preview-render-request-sample request))
      (preview-render-spec-pixel-scale render-spec)
      (preview-render-spec-supersample render-spec)
+     (for/list
+         ([view-id
+           (in-list
+            (sort (hash-keys (preview-render-spec-camera3d-overrides render-spec))
+                  symbol<?))])
+       (preview-camera3d-override->datum
+        (hash-ref (preview-render-spec-camera3d-overrides render-spec) view-id)))
      (path->string temporary)))
   (dynamic-wind
    void

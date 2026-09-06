@@ -24,7 +24,8 @@
          preview-repl-evaluate!
          preview-repl-evaluate-string!
          preview-repl-refresh-source!
-         preview-repls-refresh-source!)
+         preview-repls-refresh-source!
+         preview-repls-set-scratch-binding!)
 
 (struct repl-command (kind value reply)
   #:transparent)
@@ -37,6 +38,10 @@
   #:transparent)
 
 (define session-repls (make-weak-hasheq))
+;; A preview-only scratch binding belongs to the session, not to an authored
+;; module or Scene.  It is installed into each live REPL and also retained for
+;; a REPL opened after the user has navigated a 3D inspection camera.
+(define session-scratch-bindings (make-weak-hasheq))
 
 (define (open-preview-repl/internal! session
                                      #:loader [loader #f]
@@ -129,6 +134,29 @@
         (preview-repl-refresh-source! repl loader))))
   (void))
 
+;; preview-repls-set-scratch-binding! : preview-session? symbol? any/c -> void?
+;; Installs a non-authored preview value in every open session REPL.  The
+;; command is evaluated on each REPL's own thread so its namespace remains
+;; single-thread owned.
+(define (preview-repls-set-scratch-binding! session name value)
+  (unless (preview-session? session)
+    (raise-argument-error 'preview-repls-set-scratch-binding! "preview-session?" session))
+  (unless (symbol? name)
+    (raise-argument-error 'preview-repls-set-scratch-binding! "symbol?" name))
+  (hash-set! session-scratch-bindings
+             session
+             (hash-set (hash-ref session-scratch-bindings session #hasheq())
+                       name value))
+  (for ([repl (in-list (hash-ref session-repls session '()))])
+    (when (preview-repl-open? repl)
+      (define reply (make-async-channel))
+      (async-channel-put (preview-repl-commands repl)
+                         (repl-command 'set-scratch-binding (cons name value) reply))
+      (define result (async-channel-get reply))
+      (unless (repl-reply-ok? result)
+        (raise (repl-reply-value result)))))
+  (void))
+
 (define (repl-loop repl)
   (let loop ()
     (define command (async-channel-get (preview-repl-commands repl)))
@@ -148,6 +176,15 @@
        (define result
          (with-handlers ([exn:fail? (lambda (error) (repl-reply #f error))])
            (repl-reply #t (refresh-repl-namespace! repl (repl-command-value command)))))
+       (async-channel-put (repl-command-reply command) result)
+       (loop)]
+      [(set-scratch-binding)
+       (define pair (repl-command-value command))
+       (define result
+         (with-handlers ([exn:fail? (lambda (error) (repl-reply #f error))])
+           (namespace-set-variable-value! (car pair) (cdr pair) #t
+                                          (preview-repl-namespace repl))
+           (repl-reply #t (void))))
        (async-channel-put (repl-command-reply command) result)
        (loop)]
       [else
@@ -212,6 +249,8 @@
                  (scene-inspect-path scene path time)
                  (scene-inspection-tree scene time))))
   (install 'copy-path! (lambda () (preview-selection session)))
+  (for ([(name value) (in-hash (hash-ref session-scratch-bindings session #hasheq()))])
+    (install name value))
   namespace)
 
 (define (unavailable-command name)

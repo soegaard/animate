@@ -5,6 +5,7 @@ compiled/
 *.zo
 *.dep
 /doc/
+/html/
 *~
 *.bak
 \#*

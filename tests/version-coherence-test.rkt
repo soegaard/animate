@@ -7,6 +7,7 @@
 ;; `#lang info` intentionally permits only a small expression language and
 ;; cannot import version.rkt. This test keeps its package literals synchronized
 ;; with the ordinary-module release identity used by tools and documentation.
+;; SCENE-3D-M is the current release identity.
 
 (require rackunit
          racket/file

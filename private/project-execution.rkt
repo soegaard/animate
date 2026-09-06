@@ -418,9 +418,13 @@
            'supersample (render-spec-supersample render)
            'quality (render-spec-quality render))
    'camera (stable-cache-datum (project-render-camera prepared))
-   'renderer (stable-cache-datum (render-spec-renderers render))
+   ;; The default Pict renderer includes the deterministic opaque-triangle
+   ;; backend from SCENE-3D-C.  Name it explicitly: a cached frame is never
+   ;; reused across an implementation whose depth/culling semantics changed.
+   'renderer (hasheq 'selection (stable-cache-datum (render-spec-renderers render))
+                     'software-3d "opaque-triangle-zbuffer-v1")
    'renderer-options (stable-cache-datum (render-spec-renderer-options render))
-   'semantic-render-schema 'scene-to-pict-to-bitmap-v1))
+   'semantic-render-schema 'scene-to-pict-to-bitmap-v2))
 
 ;; Convert user-provided renderer configuration into a read/write-safe cache
 ;; datum. Procedures deliberately print with their process identity, which can
