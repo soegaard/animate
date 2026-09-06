@@ -11,6 +11,7 @@
          (only-in racket/math pi)
          animate
          animate/3d
+         animate/preview
          animate/render)
 
 (provide make-demo-scene
@@ -21,17 +22,21 @@
           (vec3 -2 -1 1) (vec3 2 -1 1) (vec3 2 1 1) (vec3 -2 1 1)
           (vec3 1/2 0 5/2)))
 
-;; The first eight faces make a box; the last four form an offset roof.  The
-;; named object is one immutable indexed mesh, which means the preview picks a
-;; deterministic triangle index rather than a transient renderer primitive.
+;; The first ten triangles form the bottom and four vertical sides of a box;
+;; the top is deliberately absent because the final four triangles replace it
+;; with a closed, offset pyramid roof. Every triangle is CCW when viewed from
+;; outside. The named object is one immutable indexed mesh, so the preview
+;; picks a deterministic triangle index rather than a transient primitive.
 (define roof-triangles
-  (vector (vector 0 1 2) (vector 0 2 3)
-          (vector 4 6 5) (vector 4 7 6)
-          (vector 0 4 5) (vector 0 5 1)
-          (vector 1 5 6) (vector 1 6 2)
-          (vector 2 6 8) (vector 2 8 3)
-          (vector 3 8 7) (vector 3 7 0)
-          (vector 4 8 6) (vector 4 6 7)))
+  (vector (vector 0 2 1) (vector 0 3 2) ; bottom (-z)
+          (vector 0 5 4) (vector 0 1 5) ; front (-y)
+          (vector 1 2 6) (vector 1 6 5) ; right (+x)
+          (vector 2 3 7) (vector 2 7 6) ; back (+y)
+          (vector 3 0 4) (vector 3 4 7) ; left (-x)
+          (vector 4 5 8)                 ; roof at -y
+          (vector 5 6 8)                 ; roof at +x
+          (vector 6 7 8)                 ; roof at +y
+          (vector 7 4 8)))               ; roof at -x
 
 (define roof-colors
   ;; `mesh3d` colours belong to vertices.  Shared base colours and a warm roof
@@ -74,15 +79,34 @@
    #:duration 5))
 
 (module+ main
-  (define output-directory "frames")
+  ;; Running this file from GRacket is the useful first experience: it opens
+  ;; the spatial picker.  Supplying a frames directory retains the batch
+  ;; renderer used by the reproducible-video examples.
+  (define output-directory #f)
   (define output-video #f)
+  (define render? #f)
   (command-line
    #:program "spatial-inspector-picking.rkt"
-   #:args ([frames-directory "frames"] [mp4-file #f])
-   (set! output-directory frames-directory)
-   (set! output-video mp4-file))
-  (define paths (render-frames! (make-demo-scene) output-directory #:fps 30))
-  (printf "Rendered ~a frames to ~a\n" (length paths) output-directory)
-  (when output-video
-    (encode-mp4! output-directory output-video #:fps 30)
-    (printf "Encoded ~a\n" output-video)))
+   #:args arguments
+   (cond
+     [(null? arguments) (void)]
+     [(<= (length arguments) 2)
+      (set! render? #t)
+      (set! output-directory (car arguments))
+      (when (= (length arguments) 2)
+        (set! output-video (cadr arguments)))]
+     [else
+      (raise-user-error
+       'spatial-inspector-picking.rkt
+       "expected no arguments for preview, or FRAMES-DIRECTORY [MP4-FILE] for rendering")]))
+  (if render?
+      (let ([paths (render-frames! (make-demo-scene) output-directory #:fps 30)])
+        (printf "Rendered ~a frames to ~a\n" (length paths) output-directory)
+        (when output-video
+          (encode-mp4! output-directory output-video #:fps 30)
+          (printf "Encoded ~a\n" output-video)))
+      ;; Do not wait in a Racket-level loop here: in GRacket that would occupy
+      ;; the eventspace that must paint and handle the preview controls.
+      (void
+       (open-scene-preview (make-demo-scene)
+                           #:title "Animate: 3D spatial picking"))))

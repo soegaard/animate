@@ -333,7 +333,17 @@
        [parent spatial-selection-menu]
        [label "Use selection as REPL scratch values"]
        [callback (lambda (_item _event) (install-spatial-selection-in-repl!))])
-  (define outer (new vertical-panel% [parent frame] [alignment '(center center)]))
+  ;; The preview has a canvas, three transport rows, a timeline, and optional
+  ;; inspector panels.  Their minimum heights can exceed a laptop-sized frame.
+  ;; A plain panel silently clips its lower children in that case, leaving only
+  ;; part of the transport visible.  Keep the content top-aligned and provide
+  ;; a native scrollbar whenever it overflows, so every control remains
+  ;; reachable without requiring a maximised window.
+  (define outer
+    (new vertical-panel%
+         [parent frame]
+         [style '(auto-vscroll)]
+         [alignment '(center top)]))
   (define bitmap-box (box #f))
   ;; The active view is selected by the most recent drag/wheel gesture. It is
   ;; not a semantic scene selection and therefore never competes with the
@@ -680,7 +690,13 @@
            (send dc set-scale scale scale)
            (send dc draw-bitmap bitmap (/ x scale) (/ y scale))
            (send dc set-scale 1 1)
-           (draw-selection-overlay dc x y draw-width draw-height bitmap)))
+           (draw-selection-overlay dc x y draw-width draw-height bitmap)
+           ;; This is preview chrome, not part of the scene bitmap.  It makes
+           ;; the true letterboxed video rectangle visible when the authored
+           ;; scene itself uses a white background.
+           (send dc set-pen (make-pen #:color "lightsteelblue" #:width 1))
+           (send dc set-brush (make-brush #:style 'transparent))
+           (send dc draw-rectangle x y draw-width draw-height)))
        (define/override (on-event event)
          (case (send event get-event-type)
            [(left-down)
@@ -1482,8 +1498,14 @@
       (preview-select! session #f)
       (update-selection-message!)
       (send canvas refresh)))
+  ;; The section selector and the actions all operate on the current inspector
+  ;; document.  Keep them together in a compact footer instead of leaving the
+  ;; selector alone beneath the rows it controls.
+  (define inspector-footer
+    (new horizontal-panel% [parent outer] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
   (set! inspector-section-choice
-        (new choice% [parent inspector-panel] [label "Inspector section"] [choices '()]
+        (new choice% [parent inspector-footer] [label "Inspector section"] [choices '()]
              [min-width 220]
              [callback
               (lambda (choice _event)
@@ -1491,7 +1513,7 @@
   (send inspector-section-choice show #f)
   (display-inspector-section! #f)
   (define copy-selection
-    (new button% [parent outer] [label "Copy selected path"]
+    (new button% [parent inspector-footer] [label "Copy selected path"]
          [callback
           (lambda (_button _event)
             (define session (unbox controller-box))
@@ -1502,7 +1524,7 @@
                 ;; represents a path only as immutable data.
                 (send the-clipboard set-clipboard-string (format "~s" selection) 0))))]))
   (define copy-inspector-action
-    (new button% [parent outer] [label "Copy inspector action"]
+    (new button% [parent inspector-footer] [label "Copy inspector action"]
          [callback
           (lambda (_button _event)
             (define index (send inspector-rows get-selection))
@@ -1527,7 +1549,7 @@
                       (format "~s" (inspector-action-command action))
                       0))))]))
   (define select-inspector-source-unit
-    (new button% [parent outer] [label "Select mapped source unit"]
+    (new button% [parent inspector-footer] [label "Select mapped source unit"]
          [callback
           (lambda (_button _event)
             (define session (unbox controller-box))
