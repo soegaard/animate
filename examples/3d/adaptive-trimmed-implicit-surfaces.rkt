@@ -47,7 +47,11 @@
               (plain-text "Each lowers to one immutable indexed surface mesh with provenance."
                           #:id 'caption #:center (vec2 0 -29/10) #:font-size 1/4
                           #:font-family 'swiss #:color "darkslategray"))
-   (camera3d-orbit-by 'world #:azimuth (/ pi 3) #:elevation (/ pi 18)) #:duration 4))
+   ;; A 60-degree orbit makes the camera look almost exactly along the
+   ;; subjects' x-axis, hiding the central trimmed disk behind the sphere.
+   ;; A smaller orbit still demonstrates depth while keeping the disk broad
+   ;; and separate from both neighbouring gallery subjects in the final frame.
+   (camera3d-orbit-by 'world #:azimuth (/ pi 6) #:elevation (/ pi 18)) #:duration 4))
 
 (module+ main
   (define output-directory "frames") (define output-video #f)

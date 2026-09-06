@@ -11,7 +11,15 @@
 (provide make-demo-scene)
 
 (define (make-demo-scene)
-  (define tetra (tetrahedron3d 2 #:id 'tetra #:color "steelblue"))
+  ;; The label demo needs all faces to remain readable while the camera orbits.
+  ;; The default ambient fill is intentionally subdued for general scenes;
+  ;; this material raises the unlit-side floor to 50% while leaving a modest
+  ;; directional difference between the tetrahedron's flat faces.
+  (define tetra
+    (tetrahedron3d
+     2 #:id 'tetra
+     #:material (material3d #:color "cornflowerblue" #:shading 'flat
+                            #:ambient 2 #:diffuse 1/2)))
   (define world
     (view3d (list tetra) #:id 'world #:center (vec2 0 -1/4) #:width 6 #:height 9/2
             #:background "aliceblue" #:render-mode 'opaque
