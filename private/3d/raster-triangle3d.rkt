@@ -7,6 +7,7 @@
          "../geometry.rkt"
          "../preview-cancellation.rkt"
          "color-space3d.rkt"
+         "light-attenuation3d.rkt"
          "light3d.rkt"
          "material3d.rkt"
          "raster-target3d.rkt"
@@ -82,6 +83,10 @@
     [(zero? ndc-area) 0]
     [(and (negative? ndc-area) (not (material3d-double-sided? material))) 0]
     [else
+     ;; A clockwise projected face is the camera-facing back side.  Its
+     ;; interpolated normal is flipped below for the explicitly documented
+     ;; double-sided lighting policy.
+     (define back-face? (negative? ndc-area))
      (define screen-vertices (map (lambda (vertex) (to-screen target vertex)) original))
      ;; In screen (+y down) coordinates an NDC-CCW face has negative area.
      ;; Reverse it before applying the top-left rule, preserving all attributes.
@@ -92,7 +97,8 @@
      (define area (signed-area-screen vertices))
      (if (zero? area)
          0
-         (rasterize! target vertices area material lights owner write-depth? write-color? blend?
+         (rasterize! target vertices area material lights owner back-face?
+                     write-depth? write-color? blend?
                      cancellation-token))]))
 
 (struct screen-vertex (x y raster) #:transparent)
@@ -119,7 +125,8 @@
 (define (cross2 ax ay bx by cx cy)
   (- (* (- bx ax) (- cy ay)) (* (- by ay) (- cx ax))))
 
-(define (rasterize! target vertices area material lights owner write-depth? write-color? blend? cancellation-token)
+(define (rasterize! target vertices area material lights owner back-face?
+                    write-depth? write-color? blend? cancellation-token)
   (define first-vertex (first vertices))
   (define second-vertex (second vertices))
   (define third-vertex (third vertices))
@@ -177,7 +184,7 @@
                       (raster-vertex3d-color (screen-vertex-raster second-vertex))
                       (raster-vertex3d-color (screen-vertex-raster third-vertex))
                       perspective-weight0 perspective-weight1 perspective-weight2)]
-                    [normal
+                    [outward-normal
                      (if (eq? (material3d-shading material) 'smooth)
                          (safe-normalize
                           (weighted-vector
@@ -187,6 +194,9 @@
                            perspective-weight0 perspective-weight1 perspective-weight2)
                           (raster-vertex3d-normal (screen-vertex-raster first-vertex)))
                          (raster-vertex3d-normal (screen-vertex-raster first-vertex)))]
+                    [normal (if back-face?
+                                (vec3-scale -1 outward-normal)
+                                outward-normal)]
                     [index (+ pixel-x (* pixel-y (raster-target3d-width target)))]
                     [old-depth (vector-ref (raster-target3d-depth-values target) index)]
                     [old-owner (vector-ref (raster-target3d-owner-values target) index)])
@@ -257,33 +267,34 @@
                                (* (material3d-ambient material)
                                   (ambient-light3d-intensity light))))
             (values red green blue specular-red specular-green specular-blue)]
-           [(directional-light3d? light)
-            (define light-direction (vec3-scale -1 (directional-light3d-direction light)))
+           [(or (directional-light3d? light)
+                (point-light3d? light)
+                (spot-light3d? light))
+            (define-values (light-direction intensity attenuation cone color)
+              (non-ambient-light-sample light view-position normal))
             (define facing (max 0 (vec3-dot normal light-direction)))
+            (define energy (* intensity attenuation cone))
             (define-values (red green blue)
-              (add-light-color light-red light-green light-blue
-                               (directional-light3d-color light)
-                               (* (material3d-diffuse material)
-                                  (directional-light3d-intensity light)
-                                  facing)))
+              (add-light-color light-red light-green light-blue color
+                               (* (material3d-diffuse material) energy facing)))
             (define specular-amount
               (if (and (eq? (material3d-lighting material) 'blinn-phong)
                        (positive? facing))
                   (let ([half-vector (safe-normalize (vec3+ light-direction view-direction)
                                                       normal)])
                     (* (material3d-specular material)
-                       (directional-light3d-intensity light)
+                       energy
                        (expt (max 0 (vec3-dot normal half-vector))
                              (material3d-specular-exponent material))))
                   0))
             (define-values (spec-red spec-green spec-blue)
               (add-light-color specular-red specular-green specular-blue
-                               (directional-light3d-color light) specular-amount))
+                               color specular-amount))
             (values red green blue spec-red spec-green spec-blue)]
            [else
             (raise-arguments-error
              'raster-triangle3d!
-             "ambient or directional light values until finite-light evaluation arrives in V5"
+             "light3d?"
              "light" light)])))
      (define specular-color (material3d-specular-color material))
      (define linear-specular-color (rgba-srgb->linear specular-color))
@@ -294,6 +305,57 @@
          (* (linear-rgba3d-green linear-specular-color) specular-green))
       (+ (* (linear-rgba3d-blue color) light-blue)
          (* (linear-rgba3d-blue linear-specular-color) specular-blue)))]))
+
+;; Returns a camera-space incoming surface-to-light direction plus the scalar
+;; terms shared by diffuse and Blinn--Phong lighting.  Finite lights have
+;; already been transformed into view space by software preparation, so their
+;; per-fragment distance is perspective-correct in the same coordinate system
+;; as `view-position` and `normal`.
+(define (non-ambient-light-sample light view-position normal)
+  (cond
+    [(directional-light3d? light)
+     (values (vec3-scale -1 (directional-light3d-direction light))
+             (directional-light3d-intensity light)
+             1
+             1
+             (directional-light3d-color light))]
+    [(point-light3d? light)
+     (define displacement (vec3- (point-light3d-position light) view-position))
+     (define distance (vec3-length displacement))
+     (values (safe-normalize displacement normal)
+             (point-light3d-intensity light)
+             (finite-light-attenuation (point-light3d-attenuation light)
+                                       (point-light3d-range light)
+                                       distance)
+             1
+             (point-light3d-color light))]
+    [(spot-light3d? light)
+     (define displacement (vec3- (spot-light3d-position light) view-position))
+     (define distance (vec3-length displacement))
+     (define incoming (safe-normalize displacement normal))
+     ;; Spot direction points outward from its source; `incoming` points back
+     ;; to the source, hence negate it before measuring the cone angle.
+     (define outgoing (vec3-scale -1 incoming))
+     (define cosine
+       (max -1 (min 1 (vec3-dot (spot-light3d-direction light) outgoing))))
+     (define angle (if (zero? distance) 0 (acos cosine)))
+     (values incoming
+             (spot-light3d-intensity light)
+             (finite-light-attenuation (spot-light3d-attenuation light)
+                                       (spot-light3d-range light)
+                                       distance)
+             (spot-cone-factor3d (spot-light3d-inner-angle light)
+                                 (spot-light3d-outer-angle light)
+                                 angle)
+             (spot-light3d-color light))]
+    [else
+     (raise-argument-error 'non-ambient-light-sample
+                           "non-ambient light3d?" light)]))
+
+(define (finite-light-attenuation attenuation range distance)
+  (if (and range (> distance range))
+      0
+      (light-attenuation3d-factor attenuation distance)))
 
 (define (add-light-color red green blue color amount)
   (define linear (rgba-srgb->linear color))

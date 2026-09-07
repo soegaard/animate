@@ -166,18 +166,19 @@
           'linear-depth
           'object-id
           'ambient-light
-          'directional-light)
+          'directional-light
+          'point-light
+          'spot-light)
    (hasheq 'maximum-directional-lights maximum-reference-resource-count
-           'maximum-point-lights 0
-           'maximum-spot-lights 0
+           'maximum-point-lights maximum-reference-resource-count
+           'maximum-spot-lights maximum-reference-resource-count
            'maximum-shadow-lights 0
            'maximum-clip-planes maximum-reference-resource-count
            'maximum-shadow-map-size 0
            'maximum-samples 1)
    (hasheq 'backend 'software-reference
            'unsupported-features
-           '(wireframe point-light spot-light specular emission
-                       directional-shadow spot-shadow))))
+           '(wireframe directional-shadow spot-shadow))))
 
 ;;;
 ;;; Request Capability Requirements

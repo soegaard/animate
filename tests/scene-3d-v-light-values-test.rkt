@@ -86,9 +86,9 @@
   (check-exn exn:fail?
              (lambda () (made-view (list ambient (point-light3d origin3 #:id 'fill)))))
 
-  ;; Point and spot values are accepted by the semantic model but preflight
-  ;; rejects them today.  This prevents a pre-V5 renderer from silently
-  ;; treating a finite light as a directional one.
+  ;; V5's reference renderer accepts finite-light requests rather than
+  ;; silently approximating them as directional lights. OpenGL capability
+  ;; support remains an explicit later stage.
   (define finite-request (view3d->render3d-request (made-view (list point spot)) 40 30))
   (check-true (set-member? (renderer3d-request-required-features finite-request) 'point-light))
   (check-true (set-member? (renderer3d-request-required-features finite-request) 'spot-light))
@@ -98,6 +98,6 @@
   (check-equal? (hash-ref (renderer3d-request-required-limits finite-request)
                 'maximum-spot-lights)
                 1)
-  (check-exn exn:fail?
-             (lambda ()
-               (renderer3d-prepare (software-renderer3d) finite-request))))
+  (check-not-exn
+   (lambda ()
+     (renderer3d-prepare (software-renderer3d) finite-request))))

@@ -1054,11 +1054,10 @@ Returns the clamped cubic @math{t^2(3-2t)} used for spotlight falloff.}
                               [angle nonnegative-real?])
          (and/c real? (between/c 0 1))]{Evaluates the fixed spot cone rule.}
 
-@bold{Current limitation.} Point and spot lights are fully validated semantic
-values and participate in renderer capability preflight, but finite-light
-surface lighting arrives in V5. Current software and OpenGL renderers reject
-such a lit frame before preparation rather than approximating it as a
-directional light.
+@bold{Current limitation.} Point and spot lights are fully evaluated by the
+deterministic software reference renderer. The OpenGL backend deliberately
+continues to reject them until V6 supplies matching GPU uniforms and shaders;
+it never approximates a finite light as a directional light.
 
 @subsection{Finite-light animation}
 
@@ -1105,10 +1104,31 @@ deterministic quaternion interpolation avoids the zero-vector singularity.}
 Interpolates a spot's inner and outer cone angles while retaining the required
 @math{0 <= inner <= outer <= pi} invariant.}
 
-@bold{Current limitation.} V4 defines and samples light values only. Point and
-spot lights still deliberately fail renderer capability preflight until V5;
-these requests do not yet make finite illumination visible. Light attenuation,
+@bold{Current limitation.} V4 defines and samples light values only. The V5
+software reference renderer makes finite illumination visible, but the OpenGL
+backend deliberately rejects point and spot lights until V6. Light attenuation,
 range, and the reserved shadow descriptor are not animatable in this stage.
+
+@subsection{Software finite-light evaluation}
+
+SCENE-3D-V5 evaluates point and spot lights per software-rasterized fragment.
+The rasterizer perspective-correctly interpolates camera-space positions and
+normals, transforms authored finite lights into that camera space once per
+prepared frame, and accumulates the authored light list in its declared order.
+For a point source it applies the named attenuation and optional range. For a
+spot it additionally applies the named smoothstep cone from the outward light
+direction. These factors multiply both the Lambert diffuse and the
+Blinn--Phong specular terms; material emission remains independent of lights.
+
+Double-sided materials use their interpolated outward normal for a front face
+and flip that normal toward the viewing side for a back face. This is a fixed
+illustration policy, rather than an inferred rendering accident.
+
+@bold{Current limitation.} This is the deterministic software reference
+implementation. OpenGL finite-light rendering, shadows, and finite-light
+resource caches arrive in later stages. Point/spot attenuation, range, and
+cone values are fixed during a V4 animation clip; only the exposed light
+fields are animated.
 
 @subsection{Colour space and final output}
 

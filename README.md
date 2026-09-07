@@ -155,13 +155,15 @@ SCENE-3D-V3 adds stable symbolic IDs to ambient, directional, point, and spot
 light values, plus immutable viewport lookup/replacement/update operations.
 Finite lights carry named constant, inverse-square, or polynomial attenuation;
 spots add an explicit smoothstep cone. Point and spot values are accepted and
-preflighted, but intentionally rejected by current renderers until V5 adds
-finite-light evaluation—never silently treated as directional lights.
+preflighted. SCENE-3D-V5's deterministic software renderer evaluates their
+per-fragment attenuation, range, spot cone, diffuse, and Blinn--Phong terms in
+linear light. The OpenGL backend intentionally still rejects finite lights
+until its V6 parity stage—never silently treating them as directional lights.
 SCENE-3D-V4 adds immutable timeline requests for named-light intensity,
 linear-light colour, finite-light position, spot aim, and spot cone values.
 Their endpoints are captured at each local clip start, so direct seeking and
 all standard timing compositions remain history-independent. Finite-light
-rendering, attenuation/range animation, and shadows remain later work.
+attenuation/range animation and shadows remain later work.
 SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
 deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and

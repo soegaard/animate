@@ -133,15 +133,10 @@
   (unless (andmap light3d? lights)
     (raise-arguments-error 'prepare-compiled-view3d-opaque "a list of light3d? values"
                            "lights" lights))
-  (when (ormap (lambda (light) (or (point-light3d? light) (spot-light3d? light)))
-               lights)
-    (raise-arguments-error
-     'prepare-compiled-view3d-opaque
-     "ambient and directional lights until finite-light evaluation arrives in V5"
-     "lights" lights))
-  ;; Raster triangles carry camera-local positions.  Rotate normals and
-  ;; directional light travel vectors into that same space once per prepared
-  ;; frame, so Blinn--Phong is invariant under camera motion.
+  ;; Raster triangles carry camera-local positions. Rotate normals/directions
+  ;; and transform finite-light positions into that same space once per
+  ;; prepared frame, so point/spot distance, cones, and Blinn--Phong are
+  ;; invariant under camera motion.
   (define view-lights (lights->view-space camera lights))
   (define-values (prepared source-count clipped-count)
     (prepare-commands commands camera aspect cancellation-token))
@@ -630,8 +625,7 @@
 
 (define (lights->view-space camera lights)
   (for/list ([light (in-list lights)])
-    (cond [(or (ambient-light3d? light) (point-light3d? light) (spot-light3d? light))
-           light]
+    (cond [(ambient-light3d? light) light]
           [(directional-light3d? light)
            (directional-light3d
             (vec3-normalize
@@ -640,6 +634,28 @@
             #:intensity (directional-light3d-intensity light)
             #:color (directional-light3d-color light)
             #:shadow (directional-light3d-shadow light))]
+          [(point-light3d? light)
+           (point-light3d
+            (camera3d-world->view camera (point-light3d-position light))
+            #:id (point-light3d-id light)
+            #:intensity (point-light3d-intensity light)
+            #:color (point-light3d-color light)
+            #:attenuation (point-light3d-attenuation light)
+            #:range (point-light3d-range light)
+            #:shadow (point-light3d-shadow light))]
+          [(spot-light3d? light)
+           (spot-light3d
+            (camera3d-world->view camera (spot-light3d-position light))
+            (vec3-normalize
+             (world-vector->view camera (spot-light3d-direction light)))
+            #:id (spot-light3d-id light)
+            #:intensity (spot-light3d-intensity light)
+            #:color (spot-light3d-color light)
+            #:inner-angle (spot-light3d-inner-angle light)
+            #:outer-angle (spot-light3d-outer-angle light)
+            #:attenuation (spot-light3d-attenuation light)
+            #:range (spot-light3d-range light)
+            #:shadow (spot-light3d-shadow light))]
           [else
            (raise-argument-error 'lights->view-space "light3d?" light)])))
 
