@@ -25,7 +25,9 @@
          "../visual-model.rkt"
          "curve3d.rkt"
          "marker3d.rkt"
+         "plane-basis3d.rkt"
          "point-line-arrow3d.rkt"
+         "ray-plane.rkt"
          "seed-set3d.rkt"
          "spatial-dependency.rkt"
          "spatial-group.rkt"
@@ -179,6 +181,25 @@
          streamline-set-diagnostics3d-parallel-mode
          prepare-streamlines3d
          adaptive-streamline-set3d
+         poincare-hit3d?
+         poincare-hit3d-trajectory-id
+         poincare-hit3d-crossing-index
+         poincare-hit3d-time
+         poincare-hit3d-point
+         poincare-hit3d-direction
+         poincare-hit3d-source-event
+         poincare-section3d
+         poincare-hit3d-plane-coordinates
+         poincare-hits3d
+         prepared-poincare-map3d?
+         prepared-poincare-map3d-plane
+         prepared-poincare-map3d-seeds
+         prepared-poincare-map3d-trajectories
+         prepared-poincare-map3d-first-hits
+         prepared-poincare-map3d-second-hits
+         prepared-poincare-map3d-pairs
+         prepared-poincare-map3d-diagnostics
+         prepare-poincare-map3d
          vector-field3d
          streamline3d
          streamlines3d
@@ -2252,6 +2273,196 @@
      (adaptive-streamline3d line #:id (child-id3d id index)
                             #:style style #:opacity opacity))
    #:id id))
+
+;; A Poincare hit is immutable extracted data.  It keeps the dense event-hit
+;; record that located the crossing but not the plane event procedure itself.
+(struct poincare-hit3d
+  (trajectory-id crossing-index time point direction source-event)
+  #:transparent)
+
+(define (check-poincare-direction3d who value)
+  (unless (memq value '(any positive negative))
+    (raise-argument-error who "'any, 'positive, or 'negative" value)))
+
+(define (check-poincare-tangent-policy3d who value)
+  (unless (memq value '(ignore include))
+    (raise-argument-error who "'ignore or 'include" value)))
+
+(define (check-poincare-tolerance3d who name value)
+  (unless (and (finite-real? value) (positive? value))
+    (raise-arguments-error who "positive finite tolerance" name value)))
+
+(define (poincare-direction3d event-direction)
+  (case event-direction
+    [(increasing) 'positive]
+    [(decreasing) 'negative]
+    [else 'tangent]))
+
+(define (poincare-direction-allowed? requested actual tangent-policy)
+  (cond [(eq? actual 'tangent) (eq? tangent-policy 'include)]
+        [(eq? requested 'any) #t]
+        [else (eq? requested actual)]))
+
+(define (poincare-section3d trajectory plane
+                            #:trajectory-id [trajectory-id 'trajectory]
+                            #:direction [direction 'any]
+                            #:tolerance [tolerance 1e-8]
+                            #:deduplicate-time [deduplicate-time tolerance]
+                            #:tangent-policy [tangent-policy 'ignore])
+  (unless (prepared-trajectory3d? trajectory)
+    (raise-argument-error 'poincare-section3d "prepared-trajectory3d?" trajectory))
+  (unless (plane3? plane)
+    (raise-argument-error 'poincare-section3d "plane3?" plane))
+  (check-symbol 'poincare-section3d trajectory-id)
+  (check-poincare-direction3d 'poincare-section3d direction)
+  (check-poincare-tolerance3d 'poincare-section3d "tolerance" tolerance)
+  (check-poincare-tolerance3d 'poincare-section3d "deduplicate-time" deduplicate-time)
+  (check-poincare-tangent-policy3d 'poincare-section3d tangent-policy)
+  (define plane-event
+    (ode-event3d
+     #:id 'poincare-plane
+     #:function
+     (lambda (point)
+       (vec3-dot (vec3- point (plane3-point plane)) (plane3-normal plane)))
+     #:value-tolerance tolerance #:time-tolerance deduplicate-time))
+  ;; Reuse the T1 dense root evaluator.  It reads only retained nodes and
+  ;; Hermite segments; calling this query cannot invoke the author field.
+  (define raw-hits
+    (dense-event-hits3d
+     (list plane-event)
+     (prepared-trajectory3d-value-nodes trajectory)
+     (prepared-trajectory3d-value-segments trajectory)))
+  ;; Keep the accepted hit list in physical-time order while explicitly
+  ;; suppressing roots shared by neighbouring dense segments.
+  (define accepted-hits
+    (let loop ([remaining raw-hits] [last-time #f] [reversed '()])
+      (cond [(null? remaining) (reverse reversed)]
+            [else
+             (define hit (car remaining))
+             (define actual-direction (poincare-direction3d (ode-event-hit3d-direction hit)))
+             (define duplicate?
+               (and last-time
+                    (<= (abs (- (ode-event-hit3d-time hit) last-time)) deduplicate-time)))
+             (if (or duplicate?
+                     (not (poincare-direction-allowed? direction actual-direction tangent-policy)))
+                 (loop (cdr remaining) last-time reversed)
+                 (loop (cdr remaining) (ode-event-hit3d-time hit) (cons hit reversed)))])))
+  (vector->immutable-vector
+   (list->vector
+    (for/list ([hit (in-list accepted-hits)] [index (in-naturals)])
+      (poincare-hit3d trajectory-id index (ode-event-hit3d-time hit)
+                      (ode-event-hit3d-position hit)
+                      (poincare-direction3d (ode-event-hit3d-direction hit)) hit)))))
+
+(define (poincare-hit3d-plane-coordinates hit plane)
+  (unless (poincare-hit3d? hit)
+    (raise-argument-error 'poincare-hit3d-plane-coordinates "poincare-hit3d?" hit))
+  (unless (plane3? plane)
+    (raise-argument-error 'poincare-hit3d-plane-coordinates "plane3?" plane))
+  (plane-basis3d-project (plane3d-basis plane) (poincare-hit3d-point hit)))
+
+(define (poincare-hits3d hits
+                         #:id id
+                         #:style [style (point-style3d #:size 9 #:color "gold")])
+  (unless (or (list? hits) (vector? hits))
+    (raise-argument-error 'poincare-hits3d "list or vector of poincare-hit3d? values" hits))
+  (define normalized-hits (if (vector? hits) (vector->list hits) hits))
+  (for ([hit (in-list normalized-hits)])
+    (unless (poincare-hit3d? hit)
+      (raise-argument-error 'poincare-hits3d "list or vector of poincare-hit3d? values" hits)))
+  (check-symbol 'poincare-hits3d id)
+  (unless (point-style3d? style)
+    (raise-argument-error 'poincare-hits3d "point-style3d? as #:style" style))
+  (group3d
+   (for/list ([hit (in-list normalized-hits)] [index (in-naturals)])
+     (point3d (poincare-hit3d-point hit) #:id (child-id3d id index) #:style style))
+   #:id id))
+
+;; A return map has no implied global domain: each accepted seed retains its
+;; first/second crossing independently, and a missing crossing stays #f in the
+;; same canonical vector slot rather than being silently removed.
+(struct prepared-poincare-map3d
+  (plane seeds trajectories first-hits second-hits pairs diagnostics)
+  #:transparent)
+
+(define (prepare-poincare-map3d field plane seeds
+                                #:direction [direction 'any]
+                                #:tolerance [tolerance 1e-8]
+                                #:deduplicate-time [deduplicate-time tolerance]
+                                #:tangent-policy [tangent-policy 'ignore]
+                                #:streamline-direction [streamline-direction 'forward]
+                                #:parameterization [parameterization 'time]
+                                #:solver [solver (adaptive-rk45-solver3d)]
+                                #:termination [termination #f]
+                                #:sample-policy [sample-policy (streamline-sample-policy3d)]
+                                #:separation [separation #f]
+                                #:parallel? [parallel? #t])
+  (unless (plane3? plane)
+    (raise-argument-error 'prepare-poincare-map3d "plane3?" plane))
+  (unless (seed-set3d? seeds)
+    (raise-argument-error 'prepare-poincare-map3d "seed-set3d?" seeds))
+  (check-poincare-direction3d 'prepare-poincare-map3d direction)
+  (check-poincare-tolerance3d 'prepare-poincare-map3d "tolerance" tolerance)
+  (check-poincare-tolerance3d 'prepare-poincare-map3d "deduplicate-time" deduplicate-time)
+  (check-poincare-tangent-policy3d 'prepare-poincare-map3d tangent-policy)
+  (check-direction 'prepare-poincare-map3d streamline-direction)
+  (check-streamline-parameterization 'prepare-poincare-map3d parameterization)
+  (check-streamline-sample-policy3d 'prepare-poincare-map3d sample-policy)
+  (check-streamline-set-separation 'prepare-poincare-map3d separation)
+  (unless (boolean? parallel?)
+    (raise-argument-error 'prepare-poincare-map3d "boolean? as #:parallel?" parallel?))
+  ;; A return-map record needs one slot for every declared seed, including an
+  ;; equilibrium or otherwise short trajectory with no first return.  Ordered
+  ;; separation intentionally drops seeds, so it is not a coherent map domain.
+  (when separation
+    (raise-arguments-error 'prepare-poincare-map3d
+                           "Poincare maps retain every declared seed; use #:separation #f"
+                           "separation" separation))
+  (define lines
+    (for/list ([seed (in-vector (seed-set3d-points seeds))])
+      (prepare-streamline3d
+       field seed #:direction streamline-direction #:parameterization parameterization
+       #:solver solver #:termination termination #:sample-policy sample-policy)))
+  (define trajectories
+    (vector->immutable-vector
+     (list->vector
+      (for/list ([line (in-list lines)])
+        (prepared-streamline3d-trajectory line)))))
+  (define hit-vectors
+    (for/list ([trajectory (in-vector trajectories)] [index (in-naturals)])
+      (poincare-section3d
+       trajectory plane #:trajectory-id (string->symbol (format "seed-~a" index))
+       #:direction direction #:tolerance tolerance #:deduplicate-time deduplicate-time
+       #:tangent-policy tangent-policy)))
+  (define first-hits
+    (vector->immutable-vector
+     (list->vector
+      (for/list ([hits (in-list hit-vectors)])
+        (and (positive? (vector-length hits)) (vector-ref hits 0))))))
+  (define second-hits
+    (vector->immutable-vector
+     (list->vector
+      (for/list ([hits (in-list hit-vectors)])
+        (and (> (vector-length hits) 1) (vector-ref hits 1))))))
+  (define pairs
+    (vector->immutable-vector
+     (list->vector
+      (for/list ([first (in-vector first-hits)] [second (in-vector second-hits)])
+        (and first second (cons first second))))))
+  (prepared-poincare-map3d
+   plane seeds trajectories first-hits second-hits pairs
+   (hasheq 'accepted-seed-count (vector-length trajectories)
+           'missing-first-hits
+           (for/sum ([hit (in-vector first-hits)]) (if hit 0 1))
+           'missing-second-hits
+           (for/sum ([hit (in-vector second-hits)]) (if hit 0 1))
+           'complete-pairs
+           (for/sum ([pair (in-vector pairs)]) (if pair 1 0))
+           'parallel-mode (if parallel? 'independent 'serial)
+           'field-evaluations
+           (for/sum ([line (in-list lines)])
+             (streamline-diagnostics3d-field-evaluations
+              (prepared-streamline3d-diagnostics line))))))
 
 ;; The old static spelling now routes through immutable preparation.  Its
 ;; familiar step and count keywords select a fixed solver and finite horizon.

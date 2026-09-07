@@ -17,7 +17,7 @@ adds fixed-grid parametric/function surfaces with direct-time calculus helpers,
 SCENE-3D-I adds clipping, sections, and depth-aware transparency, and
 SCENE-3D-J adds direct-time linear, affine, pointwise, and homotopy maps.
 SCENE-3D-K adds immutable prepared 3D ODE trajectories plus deterministic
-static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1/T2/T3/T4
+static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1/T2/T3/T4/T5
 refines that model into immutable dense trajectory, event-hit, explicit
 termination-policy, and camera-independent streamline sample data: later
 position, tangent, arc-length, terminal-root, stopping-condition, and prepared
@@ -27,7 +27,9 @@ T3's unbounded-streamline fallback is an explicit finite eight-unit horizon.
 T4 adds immutable, canonically ordered seed sets and local-seed Poisson
 sampling plus prepared streamline collections. Their optional separation policy
 is ordered against earlier display samples; independent field procedures are
-not yet run concurrently by this pure layer.
+not yet run concurrently by this pure layer. T5 extracts direction-filtered
+Poincare plane crossings from stored dense trajectory segments, not visual
+curve samples.
 SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].

@@ -1793,6 +1793,35 @@ set was independent, serial, or ordered by separation.}
                                     [#:style style any/c]
                                     [#:opacity opacity real? 1]) group3d?]{Lowers
 all accepted prepared lines to ordinary named curve children.}
+@defproc[(poincare-section3d [trajectory prepared-trajectory3d?] [plane plane3?]
+                             [#:trajectory-id trajectory-id symbol? 'trajectory]
+                             [#:direction direction (or/c 'any 'positive 'negative) 'any]
+                             [#:tolerance tolerance positive? 1e-8]
+                             [#:deduplicate-time deduplicate-time positive? tolerance]
+                             [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore])
+         vector?]{Extracts immutable @racket[poincare-hit3d?] crossings by
+running the event root finder over retained dense trajectory segments. A
+positive/negative direction means increasing/decreasing signed distance along
+increasing physical time. Shared endpoint roots are time-deduplicated; a
+tangent contact is omitted unless explicitly included.}
+@defproc[(poincare-hit3d? [value any/c]) boolean?]{Recognizes an immutable
+crossing record. Its accessors begin with @tt{poincare-hit3d-}; @tt{source-event}
+is the serializable dense root record, not an event procedure.}
+@defproc[(poincare-hit3d-plane-coordinates [hit poincare-hit3d?] [plane plane3?])
+         vector?]{Returns the point's deterministic two-coordinate plane basis
+projection, suitable for an ordinary two-dimensional plot.}
+@defproc[(poincare-hits3d [hits (or/c list? vector?)] [#:id id symbol?]
+                          [#:style style any/c]) group3d?]{Lowers hit values to
+ordinary spatial point markers.}
+@defproc[(prepare-poincare-map3d [field any/c] [plane plane3?] [seeds seed-set3d?]
+                                 [#:direction direction (or/c 'any 'positive 'negative) 'any]
+                                 [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore])
+         prepared-poincare-map3d?]{Prepares per-seed first and second crossings.
+Missing returns remain @racket[#f] in the same seed slot; the result is not a
+claim that an arbitrary flow has a global return map.}
+@defproc[(prepared-poincare-map3d? [value any/c]) boolean?]{Recognizes an
+immutable per-seed return-map record. Its accessors begin with
+@tt{prepared-poincare-map3d-}.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
@@ -1836,7 +1865,7 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T4 limits.} Arc length is a deterministic eight-chord estimate
+@bold{Current T5 limits.} Arc length is a deterministic eight-chord estimate
 per stored dense segment rather than a certified integral, so an arc-length
 endpoint is deterministic but not mathematically certified. The low-speed
 policy observes accepted nodes and one midpoint per segment; it does not yet
@@ -1855,8 +1884,12 @@ blue-noise certificate. Streamline separation uses display-sample segments and
 a cell hash, so it is an explicit finite geometric policy rather than a proof
 about the continuous ODE. Independent sets retain canonical order but this
 pure layer does not concurrently call arbitrary author field procedures.
-Poincare sections, equilibrium/flow-map analysis, and certified arc-length
-integration are later SCENE-3D-T slices.
+Poincare extraction detects endpoint/sign-changing crossings in retained dense
+segments. It does not search inside a same-sign segment for an isolated tangent,
+and an included tangent is only an explicit endpoint contact. Return maps retain
+only first/second crossings, not a proof of a global map. Equilibrium/
+linearization, flow-map analysis, and certified arc-length integration are
+later SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)
@@ -1899,7 +1932,8 @@ The canonical acceptance scenes are
 in @filepath{examples/3d/trajectory-termination.rkt}, while
 @filepath{examples/3d/adaptive-streamlines.rkt} shows T3's world-space
 resampling and @filepath{examples/3d/deterministic-seed-sets.rkt} shows T4
-Poisson seed provenance.
+Poisson seed provenance. @filepath{examples/3d/poincare-section.rkt} shows T5
+dense plane crossings.
 
 @section{Spatial inspection and exact picking}
 

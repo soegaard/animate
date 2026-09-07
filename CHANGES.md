@@ -99,6 +99,10 @@
   lines. Separation intentionally makes preparation ordered; independent sets
   remain canonical but this pure path does not concurrently invoke arbitrary
   author field procedures.
+- Added SCENE-3D-T5 Poincare extraction over retained dense trajectory
+  segments, including physical-time ordering, crossing-direction filters,
+  duplicate-time suppression, explicit tangent-touch policy, marker visuals,
+  and seed-slot-preserving first/second-return map records.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
@@ -109,7 +113,7 @@ roots, but not isolated tangency detection. Arc-length limits use the same
 deterministic eight-chord estimate as general trajectory queries rather than a
 certified integral; low-speed termination checks accepted nodes and one
 midpoint per segment, without a configurable consecutive-check policy. It also
-lacks worker-parallel streamline preparation, Poincare sections,
+lacks worker-parallel streamline preparation, equilibrium/linearization,
 equilibrium/flow-map analysis, and certified arc-length integration. Adaptive implicit
 extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic

@@ -139,6 +139,10 @@
     "examples/3d/deterministic-seed-sets.rkt" 'make-demo-scene
     '(3d ode streamlines seed-sets poisson deterministic camera animation) '(core) 5/2 5)
    (example-entry
+    'poincare-section "Dense Poincare section crossings"
+    "examples/3d/poincare-section.rkt" 'make-demo-scene
+    '(3d ode poincare events trajectories crossings camera animation) '(core) 5/2 5)
+   (example-entry
    'spatial-inspector-picking "Exact spatial picking"
     "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene
     '(3d preview inspection picking bvh camera) '(core gui) 5/2 5)

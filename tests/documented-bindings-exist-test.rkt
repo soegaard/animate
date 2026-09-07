@@ -196,6 +196,16 @@
                          streamline-set-diagnostics3d-discarded-short-lines
                          streamline-set-diagnostics3d-parallel-mode
                          prepare-streamlines3d adaptive-streamline-set3d
+                         poincare-hit3d? poincare-hit3d-trajectory-id
+                         poincare-hit3d-crossing-index poincare-hit3d-time
+                         poincare-hit3d-point poincare-hit3d-direction
+                         poincare-hit3d-source-event poincare-section3d
+                         poincare-hit3d-plane-coordinates poincare-hits3d
+                         prepared-poincare-map3d? prepared-poincare-map3d-plane
+                         prepared-poincare-map3d-seeds prepared-poincare-map3d-trajectories
+                         prepared-poincare-map3d-first-hits prepared-poincare-map3d-second-hits
+                         prepared-poincare-map3d-pairs prepared-poincare-map3d-diagnostics
+                         prepare-poincare-map3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

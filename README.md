@@ -55,15 +55,16 @@ Linear and affine maps retain exact existing topology—including a complete
 coordinate diagram—while nonlinear maps intentionally sample only the authored
 mesh vertices at each requested scene time.
 SCENE-3D-K generalizes the numerical trajectory kernel across real, `vec2`,
-`vec3`, and fixed-length vector states. SCENE-3D-T0/T1/T2/T3/T4 upgrades
+`vec3`, and fixed-length vector states. SCENE-3D-T0/T1/T2/T3/T4/T5 upgrades
 `animate/3d` to explicit ODE-field/solver/event/termination values, immutable
 dense RK4/RK45 trajectory data, display-ready adaptive streamlines, and
-deterministic seed sets. Position, tangent, arc-length, event-hit, and
-curve-sample queries are random-access and never call an author field after
-preparation. Event roots use stored dense segments; terminal hits become
-canonical path endpoints. Poisson sets use a local integer-seeded generator,
-never the process-global random state. Static vector fields/streamlines and
-parameter-driven particles lower from these prepared values.
+deterministic seed sets, and Poincare crossings. Position, tangent, arc-length,
+event-hit, curve-sample, and plane-crossing queries are random-access and never
+call an author field after preparation. Event roots use stored dense segments;
+terminal hits become canonical path endpoints. Poisson sets use a local
+integer-seeded generator, never the process-global random state. Static vector
+fields/streamlines and parameter-driven particles lower from these prepared
+values.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric
@@ -129,6 +130,7 @@ exactly synchronized with the gallery and example requirements.
 - [Trajectory termination policies](examples/3d/trajectory-termination.rkt) — 3d, ode, termination, bounds, arc-length, events, trajectories, camera, animation; requires core.
 - [Prepared adaptive streamlines](examples/3d/adaptive-streamlines.rkt) — 3d, ode, streamlines, adaptive, arc-length, trajectories, camera, animation; requires core.
 - [Deterministic streamline seed sets](examples/3d/deterministic-seed-sets.rkt) — 3d, ode, streamlines, seed-sets, poisson, deterministic, camera, animation; requires core.
+- [Dense Poincare section crossings](examples/3d/poincare-section.rkt) — 3d, ode, poincare, events, trajectories, crossings, camera, animation; requires core.
 - [Exact spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, bvh, camera; requires core, gui.
 - [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
 - [Compiled mesh diagnostics](examples/3d/mesh-diagnostics.rkt) — 3d, topology, diagnostics, compilation, cache, camera; requires core.
@@ -3038,8 +3040,9 @@ lose the follow-on idea that led to the work.
   field-line topology; Poisson sets use a local explicit seed, not global
   random state. Prepared streamline sets retain canonical seed order and can
   use ordered display-sample separation; they do not yet run author fields in
-  parallel. There is still no Poincare section, equilibrium/flow-map analysis,
-  or 3D ODE source inspection.
+  parallel. Poincare sections use retained dense sign-changing/end-point roots;
+  they do not find isolated same-sign tangencies. There is still no
+  equilibrium/flow-map analysis or 3D ODE source inspection.
   Spatial picking now uses object AABBs plus deterministic local BVHs to find
   an exact indexed mesh triangle from a camera ray. It includes generated curve
   and surface meshes, but not analytic implicit shapes, texture UVs,
