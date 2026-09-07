@@ -1550,9 +1550,10 @@ The canonical acceptance scene is
 
 @section{Prepared spatial ODE trajectories and vector fields}
 
-SCENE-3D-T0/T1/T2/T3 turns the earlier direct-time flow support into an
+SCENE-3D-T0/T1/T2/T3/T4 turns the earlier direct-time flow support into an
 immutable trajectory-data model with event-aware preparation, explicit
-stopping policies, and display-ready adaptive streamlines.
+stopping policies, display-ready adaptive streamlines, and deterministic seed
+sets.
 @racket[prepare-ode-trajectory3d] records dense RK4 or Dormand--Prince
 segments once; subsequent position, tangent, arc-length, and event-hit lookup
 accepts any supported time in any order and never calls the author field. A
@@ -1717,6 +1718,54 @@ joined occurrence.}
                                 [#:opacity opacity real? 1]) spatial-visual?]{Converts
 prepared display samples to an ordinary spatial curve. A zero-length prepared
 streamline lowers to an empty named group rather than a fictitious segment.}
+@defproc[(seed-set3d? [value any/c]) boolean?]{Recognizes an immutable,
+canonical ordered collection of streamline seed points. Its accessors begin
+with @tt{seed-set3d-}; @tt{points} is an immutable vector and @tt{count} is its
+length. @tt{provenance}, @tt{diagnostics}, and @tt{cache-key} contain immutable
+numeric/source descriptions rather than random-generator state or procedures.}
+@defproc[(explicit-seeds3d [points (or/c list? vector?)]) seed-set3d?]{Retains
+the declared finite @racket[vec3] point sequence exactly, including intentional
+duplicate seeds.}
+@defproc[(grid-seeds3d
+          [#:x-range x-range list? (list -1 1)]
+          [#:y-range y-range list? (list -1 1)]
+          [#:z-range z-range list? (list -1 1)]
+          [#:counts counts list? (list 3 3 3)]
+          [#:order order symbol? 'xyz]) seed-set3d?]{Makes an endpoint-inclusive
+rectangular seed lattice. A singleton axis is centred in its supplied range.
+The last axis changes fastest; the six @racket['xyz]-style axis orders select
+one visible canonical nesting order.}
+@defproc[(plane-seeds3d [plane plane3?]
+                        [#:u-range u-range list? (list -1 1)]
+                        [#:v-range v-range list? (list -1 1)]
+                        [#:counts counts list? (list 3 3)]) seed-set3d?]{Samples
+the deterministic local plane coordinates of @racket[plane].}
+@defproc[(curve-seeds3d [curve curve3d?]
+                        [#:count count exact-positive-integer? 8]
+                        [#:spacing spacing (or/c 'parameter 'arc-length) 'arc-length])
+         seed-set3d?]{Samples a retained curve. @racket['parameter] means uniform
+progress through the curve's stored sample sequence—not an unavailable source
+procedure parameter—while @racket['arc-length] uses the retained polyline
+arc-length query.}
+@defproc[(surface-seeds3d [surface surface3d?]
+                          [#:u-count u-count exact-positive-integer? 8]
+                          [#:v-count v-count exact-positive-integer? 8]
+                          [#:inside-domain? inside-domain? boolean? #t])
+         seed-set3d?]{Samples a retained parametric surface in u-major order.
+When @racket[inside-domain?] is true, points rejected by a retained domain
+predicate are omitted and the diagnostic reports that omission.}
+@defproc[(sphere-seeds3d [center vec3?] [radius nonnegative-real?]
+                         [#:count count exact-positive-integer? 64]
+                         [#:method method 'fibonacci]) seed-set3d?]{Makes
+deterministic Fibonacci points on a sphere.}
+@defproc[(poisson-seeds3d [bounds aabb3?]
+                          [#:minimum-distance minimum-distance positive? 1]
+                          [#:count-limit count-limit exact-nonnegative-integer? 128]
+                          [#:seed seed exact-integer? 0]) seed-set3d?]{Makes an
+acceptance-ordered deterministic Bridson-style Poisson set. It uses a local
+SplitMix64 generator, FIFO active points, thirty candidates per active point,
+and inclusive box/minimum-distance checks; it neither reads nor mutates the
+process-global pseudo-random generator.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
@@ -1760,7 +1809,7 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T3 limits.} Arc length is a deterministic eight-chord estimate
+@bold{Current T4 limits.} Arc length is a deterministic eight-chord estimate
 per stored dense segment rather than a certified integral, so an arc-length
 endpoint is deterministic but not mathematically certified. The low-speed
 policy observes accepted nodes and one midpoint per segment; it does not yet
@@ -1770,10 +1819,15 @@ an isolated tangency whose sampled event values retain the same sign. AABB
 exits are split at all dense-coordinate extrema and then bisected; numerical
 roots remain tolerance-limited, although an accepted face node is preserved
 exactly. A standalone streamline without a time limit has the documented
-eight-unit safety horizon. T3 has one independent prepared streamline at a
-time; deterministic seed sets, separated/parallel streamline sets, Poincare
-sections, equilibrium/flow-map analysis, and certified arc-length integration
-are later SCENE-3D-T slices.
+eight-unit safety horizon. Seed sets create finite immutable points; they do
+not infer seeding topology from a field. Curve @racket['parameter] spacing is
+the stored polyline sample index rather than a source-function parameter,
+surface sets require a retained parametric evaluator/range, and Poisson's
+floating geometric candidates are repeatable rather than a mathematical
+blue-noise certificate. T4 still has one independent prepared streamline at a
+time: separated/parallel streamline sets, Poincare sections, equilibrium/
+flow-map analysis, and certified arc-length integration are later
+SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)
@@ -1815,7 +1869,8 @@ The canonical acceptance scenes are
 @filepath{examples/3d/event-aware-trajectory.rkt}; explicit policies are shown
 in @filepath{examples/3d/trajectory-termination.rkt}, while
 @filepath{examples/3d/adaptive-streamlines.rkt} shows T3's world-space
-resampling.
+resampling and @filepath{examples/3d/deterministic-seed-sets.rkt} shows T4
+Poisson seed provenance.
 
 @section{Spatial inspection and exact picking}
 

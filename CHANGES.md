@@ -88,6 +88,11 @@
   world-space chord/turn/length resampling, and one canonical seed point for
   bidirectional lines. `streamline3d` now routes through the same preparation
   and resampling path; no later visual construction calls its author field.
+- Added SCENE-3D-T4 immutable deterministic seed sets. Explicit, grid, plane,
+  curve, surface, Fibonacci-sphere, and Poisson constructors retain canonical
+  point order and serializable provenance/diagnostics. Poisson sampling owns a
+  SplitMix64 source seeded by an explicit integer, so it never reads or changes
+  Racket's process-global random generator.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
@@ -98,7 +103,7 @@ roots, but not isolated tangency detection. Arc-length limits use the same
 deterministic eight-chord estimate as general trajectory queries rather than a
 certified integral; low-speed termination checks accepted nodes and one
 midpoint per segment, without a configurable consecutive-check policy. It also
-lacks deterministic/adaptively separated streamline sets, seed values, Poincare sections,
+lacks streamline-set preparation, separation policy, Poincare sections,
 equilibrium/flow-map analysis, and certified arc-length integration. Adaptive implicit
 extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic

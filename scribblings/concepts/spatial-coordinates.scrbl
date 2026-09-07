@@ -17,13 +17,15 @@ adds fixed-grid parametric/function surfaces with direct-time calculus helpers,
 SCENE-3D-I adds clipping, sections, and depth-aware transparency, and
 SCENE-3D-J adds direct-time linear, affine, pointwise, and homotopy maps.
 SCENE-3D-K adds immutable prepared 3D ODE trajectories plus deterministic
-static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1/T2/T3
+static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1/T2/T3/T4
 refines that model into immutable dense trajectory, event-hit, explicit
 termination-policy, and camera-independent streamline sample data: later
 position, tangent, arc-length, terminal-root, stopping-condition, and prepared
 curve lookup never call the author's ODE field. T2's arc-length stopping
 remains a deterministic approximation rather than a certified integral, and
 T3's unbounded-streamline fallback is an explicit finite eight-unit horizon.
+T4 adds immutable, canonically ordered seed sets and local-seed Poisson
+sampling, without field-aware or separated streamline-set preparation.
 SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].
@@ -125,8 +127,11 @@ currently operate on unwrapped @racket[mesh3d] values only; they sample the
   degenerate or self-intersecting triangles. The default invalid-point policy is
   an error; @racket['drop-triangle] deliberately leaves holes and does not cap
   or repair them. Prepared 3D ODE fields must return finite @racket[vec3]
-  values. Their vector-field grids and streamline seeds are explicit finite
-samples, not adaptive field-line topology. Arc length is an eight-chord
+  values. Their vector-field grids and streamline seed sets are explicit finite
+samples, not adaptive field-line topology. Grid, plane, curve, surface,
+Fibonacci-sphere, and Poisson seed sets preserve a canonical immutable point
+order; Poisson sets use an explicit local integer seed rather than Racket's
+global random generator. Arc length is an eight-chord
 per-dense-segment estimate rather than a certified integral; event detection,
-termination policies, adaptive streamline sets, and 3D ODE source inspection
-are still later work.
+termination policies, adaptive streamline set preparation/separation, and 3D
+ODE source inspection are still later work.

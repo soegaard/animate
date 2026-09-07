@@ -135,6 +135,10 @@
     "examples/3d/adaptive-streamlines.rkt" 'make-demo-scene
     '(3d ode streamlines adaptive arc-length trajectories camera animation) '(core) 5/2 5)
    (example-entry
+    'deterministic-seed-sets "Deterministic streamline seed sets"
+    "examples/3d/deterministic-seed-sets.rkt" 'make-demo-scene
+    '(3d ode streamlines seed-sets poisson deterministic camera animation) '(core) 5/2 5)
+   (example-entry
    'spatial-inspector-picking "Exact spatial picking"
     "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene
     '(3d preview inspection picking bvh camera) '(core gui) 5/2 5)

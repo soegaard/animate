@@ -26,6 +26,7 @@
          "curve3d.rkt"
          "marker3d.rkt"
          "point-line-arrow3d.rkt"
+         "seed-set3d.rkt"
          "spatial-dependency.rkt"
          "spatial-group.rkt"
          "spatial-relation.rkt"
@@ -147,6 +148,20 @@
          streamline-branch-diagnostics3d-termination
          prepare-streamline3d
          adaptive-streamline3d
+         seed-set3d?
+         seed-set3d-kind
+         seed-set3d-points
+         seed-set3d-count
+         seed-set3d-provenance
+         seed-set3d-diagnostics
+         seed-set3d-cache-key
+         explicit-seeds3d
+         grid-seeds3d
+         plane-seeds3d
+         curve-seeds3d
+         surface-seeds3d
+         sphere-seeds3d
+         poisson-seeds3d
          vector-field3d
          streamline3d
          streamlines3d
