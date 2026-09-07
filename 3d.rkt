@@ -88,6 +88,7 @@
          "private/3d/eigensystem3d.rkt"
          "private/3d/linearization3d.rkt"
          "private/3d/flow-map3d.rkt"
+         "private/3d/trajectory-visual3d.rkt"
          "private/3d/spatial-inspection.rkt"
          "private/3d/projection3d.rkt"
          "private/3d/camera3d.rkt"
@@ -602,6 +603,8 @@ cutaway3d
  flow-map3d-ref
  flow-map3d-pairs
  flow-map3d-displacement
+ trajectory-samples3d
+ trajectory-tube3d
  fixed-rk4-solver3d
  fixed-rk4-solver3d?
  fixed-rk4-solver3d-step-size

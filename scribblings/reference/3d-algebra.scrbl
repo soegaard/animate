@@ -1914,6 +1914,19 @@ for an absent endpoint.}
 @racket[(cons seed endpoint)] entries for slots with endpoints.}
 @defproc[(flow-map3d-displacement [map prepared-flow-map3d?] [index exact-nonnegative-integer?])
          (or/c false/c vec3?)]{Returns endpoint minus source for one slot.}
+@defproc[(trajectory-samples3d [trajectory prepared-trajectory3d?]
+                                [#:count count exact-integer? 64]) vector?]{Returns
+an immutable uniform-time sequence of positions from retained dense trajectory
+data. It never invokes the author ODE field.}
+@defproc[(trajectory-tube3d [trajectory prepared-trajectory3d?]
+                             [#:id id symbol? 'trajectory-tube]
+                             [#:radius radius positive? 1/20]
+                             [#:sides sides exact-integer? 12]
+                             [#:samples samples exact-integer? 64]
+                             [#:caps? caps? boolean? #t]) mesh3d?]{Lowers retained
+trajectory samples into a deterministic finite tube mesh. It is a display
+choice, not a re-integration, and its world radius and sample count are
+explicit.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]

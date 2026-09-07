@@ -16,6 +16,8 @@
   default rendered extent.
 - Added prepared seed-preserving 3D flow maps with explicit endpoints or
   absences after early termination, plus pair and displacement queries.
+- Added `trajectory-tube3d`, which lowers retained dense trajectory positions
+  to a deterministic tube mesh without calling an author field during display.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution
