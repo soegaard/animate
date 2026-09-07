@@ -68,6 +68,11 @@
   separate `'cross-fade` mode, which retains two independent mesh layers
   instead of inventing unrelated indexed interpolation. General polygonal
   face-part and nested spatial-tree matching are still pending.
+- Extended U7 with `transform-matching-spatial` for explicitly authored direct
+  `group3d` mesh children. It accepts injective named face-part matches (or
+  equal child IDs), morphs only independently compatible mesh pairs, and fades
+  unmatched/incompatible children under interior-only identities. General
+  group splitting and nested-tree retargeting remain intentionally unsupported.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

@@ -111,6 +111,8 @@
          transform3d-to-request?
          transform-matching-mesh3d
          transform-matching-mesh3d-request?
+         transform-matching-spatial
+         transform-matching-spatial-request?
          unfold-polyhedron3d
          unfold-polyhedron3d-request?
          fold-polyhedron3d
@@ -2641,6 +2643,48 @@
    (transform-matching-mesh3d-request-topology request)
    (transform-matching-mesh3d-request-route request)))
 
+; compile-spatial-match-request : scene-state?
+;                                 transform-matching-spatial-request?
+;                                 -> spatial-match-animation3d?
+;; Face parts are intentionally direct mesh children.  This preserves the
+;; relation between a mathematical-face identity and its visible mesh instead
+;; of recursively guessing which arbitrary nested visuals should travel with a
+;; face. Individual child topology safety is rechecked by the pure sampler.
+(define (compile-spatial-match-request state request)
+  (define target-path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car target-path) 'scene-play))
+  (define source (view3d-spatial-ref view target-path))
+  (unless (group3d? source)
+    (raise-arguments-error
+     'transform-matching-spatial
+     "a group3d at the target spatial path"
+     "target-path" target-path
+     "spatial-visual" source))
+  (define destination (transform-matching-spatial-request-destination request))
+  (unless (eq? (spatial-id source) (spatial-id destination))
+    (raise-arguments-error
+     'transform-matching-spatial
+     "a destination group preserving the target's spatial identity"
+     "target-path" target-path
+     "source-id" (spatial-id source)
+     "destination-id" (spatial-id destination)))
+  ;; Fail at admission for an impossible root decomposition rather than after
+  ;; a caller has started playing a clip. Per-face transforms remain valid as
+  ;; supplied by immutable mesh values or safe cross-fade layers.
+  (transform3-lerp (spatial-transform source)
+                   (spatial-transform destination)
+                   1/2)
+  ;; Run one interior probe now. It validates direct mesh children, explicit
+  ;; match identifiers/injectivity and per-match route contracts before the
+  ;; timeline holds a request that could fail on its first painted frame.
+  (group3d-face-parts-matching-sample
+   source destination (transform-matching-spatial-request-matches request)
+   (transform-matching-spatial-request-route request) 1/2)
+  (spatial-match-animation3d
+   target-path source destination
+   (transform-matching-spatial-request-matches request)
+   (transform-matching-spatial-request-route request)))
+
 ; compile-polyhedron-fold-request : scene-state? polyhedron-fold-animation-request?
 ;                                    -> polyhedron-fold-animation?
 ;; Validates the canonical independent face children once at clip admission.
@@ -2989,6 +3033,8 @@
      (compile-spatial-surface-animation-request state request)]
     [(spatial-map-animation-request? request)
      (compile-spatial-map-animation-request state request)]
+    [(transform-matching-spatial-request? request)
+     (compile-spatial-match-request state request)]
     [(transform-matching-mesh3d-request? request)
      (compile-mesh-match-request state request)]
     [(polyhedron-fold-animation-request? request)
@@ -4185,6 +4231,7 @@
       (rotate-by-request? value)
       (scale-to-request? value)
       (scale-by-request? value)
+      (transform-matching-spatial-request? value)
       (transform-matching-mesh3d-request? value)
       (polyhedron-fold-animation-request? value)
       (spatial-curve-animation-request? value)
@@ -4302,6 +4349,8 @@
      (scale3d-by-request-target-path request)]
     [(transform3d-to-request? request)
      (transform3d-to-request-target-path request)]
+    [(transform-matching-spatial-request? request)
+     (transform-matching-spatial-request-target-path request)]
     [(transform-matching-mesh3d-request? request)
      (transform-matching-mesh3d-request-target-path request)]
     [(unfold-polyhedron3d-request? request)
@@ -4457,6 +4506,8 @@
      '(spatial-scale)]
     [(transform3d-to-request? request)
      '(spatial-translation spatial-rotation spatial-scale)]
+    [(transform-matching-spatial-request? request)
+     '(spatial-translation spatial-rotation spatial-scale spatial-face-parts)]
     [(transform-matching-mesh3d-request? request)
      '(spatial-translation spatial-rotation spatial-scale spatial-mesh-geometry)]
     [(polyhedron-fold-animation-request? request)
@@ -4659,6 +4710,7 @@
       (spatial-curve-compiled-animation? value)
       (spatial-surface-compiled-animation? value)
       (spatial-map-compiled-animation? value)
+      (spatial-match-compiled-animation? value)
       (mesh-match-compiled-animation? value)
       (polyhedron-fold-compiled-animation? value)
       (spatial-compiled-animation? value)
@@ -4711,6 +4763,8 @@
      (apply-spatial-surface-compiled-animation state animation progress)]
     [(spatial-map-compiled-animation? animation)
      (apply-spatial-map-compiled-animation state animation progress)]
+    [(spatial-match-compiled-animation? animation)
+     (apply-spatial-match-animation state animation progress)]
     [(mesh-match-compiled-animation? animation)
      (apply-mesh-match-animation state animation progress)]
     [(polyhedron-fold-compiled-animation? animation)
@@ -4830,6 +4884,29 @@
                (mesh3d-cross-fade-sample source destination route progress)))
          (update-spatial-at
           state (mesh-match-animation3d-target-path animation)
+          (lambda (_ignored) sampled))]))
+
+; apply-spatial-match-animation : scene-state? spatial-match-animation3d?
+;                                 unit-real? -> scene-state?
+;; The group sampler returns the captured endpoint groups exactly and generates
+;; temporary identities only at interior progress.  It is therefore safe for
+;; random access, unlike an incremental leave/fade implementation.
+(define (apply-spatial-match-animation state animation progress)
+  (cond [(zero? progress) state]
+        [(= progress 1)
+         (update-spatial-at
+          state (spatial-match-animation3d-target-path animation)
+          (lambda (_ignored) (spatial-match-animation3d-destination animation)))]
+        [else
+         (define sampled
+           (group3d-face-parts-matching-sample
+            (spatial-match-animation3d-source animation)
+            (spatial-match-animation3d-destination animation)
+            (spatial-match-animation3d-matches animation)
+            (spatial-match-animation3d-route animation)
+            progress))
+         (update-spatial-at
+          state (spatial-match-animation3d-target-path animation)
           (lambda (_ignored) sampled))]))
 
 ; apply-polyhedron-fold-animation : scene-state? polyhedron-fold-animation?

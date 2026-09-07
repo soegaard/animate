@@ -937,6 +937,8 @@ cutaway3d
  transform3d-to-request?
  transform-matching-mesh3d
  transform-matching-mesh3d-request?
+ transform-matching-spatial
+ transform-matching-spatial-request?
  spatial-line-route3d
  spatial-line-route3d?
  spatial-arc-route3d
@@ -948,6 +950,7 @@ cutaway3d
  mesh3d-correspondence-compatible?
  mesh3d-matching-sample
  mesh3d-cross-fade-sample
+ group3d-face-parts-matching-sample
  unfold-polyhedron3d
  unfold-polyhedron3d-request?
  fold-polyhedron3d

@@ -99,9 +99,13 @@
     "examples/3d/fold-unfold-polyhedron.rkt" 'make-demo-scene
     '(3d topology polyhedron nets animation) '(core) 3 6)
    (example-entry
-    'topology-safe-mesh-matching "Topology-safe mesh matching"
+   'topology-safe-mesh-matching "Topology-safe mesh matching"
     "examples/3d/transform-matching-polyhedra.rkt" 'make-demo-scene
     '(3d topology correspondence matching animation) '(core) 3 6)
+   (example-entry
+    'explicit-face-part-matching "Explicit spatial face-part matching"
+    "examples/3d/matching-face-parts.rkt" 'make-demo-scene
+    '(3d topology correspondence face-parts animation) '(core) 4 4)
    (example-entry
     'projected-labels "Spatial relations and projected labels"
     "examples/3d/projected-labels.rkt" 'make-demo-scene

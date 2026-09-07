@@ -115,8 +115,10 @@ only a complete compatible plan when it interpolates indexed vertex geometry,
 and samples its reference translation along an explicit line, arc, or Bézier
 route. A topology change must explicitly select `'cross-fade`, which keeps the
 two index arrays in separate transient layers and restores the exact destination
-mesh at the endpoint. Direct polygonal-face group matching, nested spatial-tree
-retargeting, and label/stroke attachment remain later U work.
+mesh at the endpoint. `transform-matching-spatial` additionally matches direct
+`mesh3d` children of an explicitly authored group as face parts; unmatched or
+incompatible parts cross-fade locally. Automatic group splitting, nested
+spatial-tree retargeting, and label/stroke attachment remain later U work.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric
@@ -173,6 +175,7 @@ exactly synchronized with the gallery and example requirements.
 - [Spatial cube and camera orbit](examples/3d/camera-orbit.rkt) — 3d, animation, camera, source-selection; requires core, latex, dvisvgm.
 - [Cube net hinge rotations](examples/3d/fold-unfold-polyhedron.rkt) — 3d, topology, polyhedron, nets, animation; requires core.
 - [Topology-safe mesh matching](examples/3d/transform-matching-polyhedra.rkt) — 3d, topology, correspondence, matching, animation; requires core.
+- [Explicit spatial face-part matching](examples/3d/matching-face-parts.rkt) — 3d, topology, correspondence, face-parts, animation; requires core.
 - [Spatial relations and projected labels](examples/3d/projected-labels.rkt) — 3d, relations, projected-labels, camera, animation; requires core, latex, dvisvgm.
 - [Spatial vector components](examples/3d/vector-components.rkt) — 3d, curves, tubes, axes, vectors, camera, animation; requires core.
 - [Saddle surface and tangent plane](examples/3d/tangent-plane.rkt) — 3d, surfaces, calculus, normals, color, camera, animation; requires core.

@@ -103,4 +103,57 @@
   (check-exn exn:fail:contract?
              (lambda ()
                (spatial-route3d-sample
-                arc origin3 (vec3 0 0 2) 1/2))))
+                arc origin3 (vec3 0 0 2) 1/2)))
+
+  ;; Direct mesh children stand for stable mathematical face parts.  An
+  ;; explicit name-changing pair morphs safely; a disappeared source face and
+  ;; a newly introduced destination face are separate fade layers.
+  (define face-a
+    (mesh3d #:id 'a #:vertices (vector origin3 (vec3 1 0 0) (vec3 0 1 0))
+            #:triangles (vector (vector 0 1 2))
+            #:vertex-ids '#(a0 a1 a2) #:face-ids '#(af)))
+  (define face-b
+    (mesh3d #:id 'b #:vertices (vector origin3 (vec3 -1 0 0) (vec3 0 -1 0))
+            #:triangles (vector (vector 0 1 2))))
+  (define face-x
+    (mesh3d #:id 'x #:vertices (vector (vec3 1 0 0) (vec3 2 0 0) (vec3 1 1 0))
+            #:triangles (vector (vector 0 1 2))
+            #:vertex-ids '#(a0 a1 a2) #:face-ids '#(af)))
+  (define face-y
+    (mesh3d #:id 'y #:vertices (vector origin3 (vec3 0 0 1) (vec3 0 1 0))
+            #:triangles (vector (vector 0 1 2))))
+  (define source-faces (group3d (list face-a face-b) #:id 'faces))
+  (define destination-faces (group3d (list face-x face-y) #:id 'faces))
+  (define face-matches
+    (list (spatial-correspondence3d 'a 'x 'explicit 'face-parts
+                                    (spatial-line-route3d) (hasheq))))
+  (check-eq? (group3d-face-parts-matching-sample
+              source-faces destination-faces face-matches
+              (spatial-line-route3d) 0)
+             source-faces)
+  (check-eq? (group3d-face-parts-matching-sample
+              source-faces destination-faces face-matches
+              (spatial-line-route3d) 1)
+             destination-faces)
+  (define face-middle
+    (group3d-face-parts-matching-sample
+     source-faces destination-faces face-matches (spatial-line-route3d) 1/2))
+  (check-equal? (map spatial-id (group3d-children face-middle))
+                (list 'a 'b '__face-match-faces-to-y-0))
+  (check-= (spatial-opacity (cadr (group3d-children face-middle))) 1/2 1e-12)
+  (check-= (spatial-opacity (caddr (group3d-children face-middle))) 1/2 1e-12)
+  (define faces-scene
+    (scene-add (make-scene) (view3d (list source-faces) #:id 'world)))
+  (define matched-faces-scene
+    (scene-play faces-scene
+                (transform-matching-spatial '(world faces) destination-faces
+                                            #:matches face-matches)
+                #:duration 1))
+  (define (faces-at time)
+    (view3d-spatial-ref
+     (scene-state-ref (scene-sample matched-faces-scene time) 'world)
+     '(world faces)))
+  (check-eq? (faces-at 0) source-faces)
+  (check-equal? (faces-at 1) destination-faces)
+  (check-equal? (map spatial-id (group3d-children (faces-at 1/2)))
+                (list 'a 'b '__face-match-faces-to-y-0)))

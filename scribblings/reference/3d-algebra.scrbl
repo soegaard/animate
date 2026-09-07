@@ -765,6 +765,18 @@ Samples a topology-changing transition as two independently valid temporary
 mesh layers under the stable source identity. It returns the exact endpoints;
 the temporary group appears only at interior progress.}
 
+@defproc[(group3d-face-parts-matching-sample
+          [source group3d?] [destination group3d?]
+          [matches (or/c #f (listof spatial-correspondence3d?))]
+          [route spatial-route3d?] [progress (real-in 0 1)]) group3d?]{Samples
+stable direct @racket[mesh3d] children as mathematical face parts. A supplied
+@racket[spatial-correspondence3d] names source/destination child IDs and may
+override @racket[route]; omitted matches pair equal child IDs. Each matched
+pair independently uses a complete compatible mesh plan or a local safe
+cross-fade. Unmatched source children fade out and unmatched destination
+children fade in beneath generated IDs that exist only at interior samples.
+The outer group endpoint values are exact.}
+
 @defproc[(transform-matching-mesh3d
           [target spatial-path?] [destination mesh3d?]
           [#:correspondence correspondence (or/c #f mesh-correspondence3d?) #f]
@@ -784,12 +796,27 @@ The runnable example is
 @defproc[(transform-matching-mesh3d-request? [value any/c]) boolean?]{Recognizes
 a request created by @racket[transform-matching-mesh3d].}
 
-@bold{Limitations.} This first request targets one direct @racket[mesh3d]
-path. It does not yet split a general group into mathematical polygonal face
-children, retarget arbitrary nested spatial trees, infer a graph isomorphism,
-or attach labels/strokes to matched faces. A route changes the mesh reference
-translation; it does not bend the mesh's internal topology. Use
-@racket['cross-fade] for any topology change, unmatched part, or ambiguity.
+@defproc[(transform-matching-spatial
+          [target spatial-path?] [destination group3d?]
+          [#:matches matches (or/c #f (listof spatial-correspondence3d?)) #f]
+          [#:route route spatial-route3d? (spatial-line-route3d)]) any/c]{
+Creates a @racket[scene-play] direct face-part request. The group currently at
+@racket[target] and @racket[destination] must share their outer spatial
+identity; direct mesh child pairs are given by @racket[matches] or equal child
+IDs. Matching children interpolate only after their own compatible plan is
+proved; unmatched or topology-changing children cross-fade. The final sample
+installs the exact destination group, with no generated child identities.}
+@defproc[(transform-matching-spatial-request? [value any/c]) boolean?]{Recognizes
+a request created by @racket[transform-matching-spatial].}
+
+@bold{Limitations.} Face-part matching currently requires an explicitly
+authored @racket[group3d] with direct @racket[mesh3d] face children, such as
+@racket[polyhedron-net3d-group]. It does not split arbitrary triangle meshes
+into polygonal groups on demand, retarget arbitrary nested spatial trees, infer
+a graph isomorphism, or attach labels/strokes to faces. A route changes a
+part's reference translation; it does not bend internal mesh topology. Use
+@racket['cross-fade] for any whole-mesh topology change, unmatched part, or
+ambiguity.
 @defproc[(mesh3d-normals [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable normals.}
 @defproc[(mesh3d-colors [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable colours.}
 @defproc[(mesh3d-material [mesh mesh3d?]) material3d?]{Returns the surface material.}

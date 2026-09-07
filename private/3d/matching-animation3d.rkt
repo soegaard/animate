@@ -25,7 +25,10 @@
 
 (provide transform-matching-mesh3d
          transform-matching-mesh3d-request?
+         transform-matching-spatial
+         transform-matching-spatial-request?
          mesh-match-compiled-animation?
+         spatial-match-compiled-animation?
          spatial-line-route3d
          spatial-line-route3d?
          spatial-arc-route3d
@@ -37,8 +40,11 @@
          mesh3d-correspondence-compatible?
          mesh3d-matching-sample
          mesh3d-cross-fade-sample
+         group3d-face-parts-matching-sample
          (struct-out transform-matching-mesh3d-request)
          (struct-out mesh-match-animation3d)
+         (struct-out transform-matching-spatial-request)
+         (struct-out spatial-match-animation3d)
          (struct-out spatial-line-route3d-value)
          (struct-out spatial-arc-route3d-value)
          (struct-out spatial-bezier-route3d-value))
@@ -57,6 +63,17 @@
 
 (struct mesh-match-animation3d
   (target-path source destination correspondence topology route)
+  #:transparent)
+
+;; A face-part request operates on an existing direct `group3d` path.  Matches
+;; name source/destination direct child IDs through spatial-correspondence3d;
+;; omitting them means equal child IDs form the explicit stable convention.
+(struct transform-matching-spatial-request
+  (target-path destination matches route)
+  #:transparent)
+
+(struct spatial-match-animation3d
+  (target-path source destination matches route)
   #:transparent)
 
 ; transform-matching-mesh3d : spatial-path? mesh3d?
@@ -88,6 +105,29 @@
   (check-route 'transform-matching-mesh3d route)
   (transform-matching-mesh3d-request
    target-path destination correspondence topology route))
+
+; transform-matching-spatial : spatial-path? group3d?
+;                              [#:matches (or/c #f (listof spatial-correspondence3d?))]
+;                              [#:route spatial-route3d?]
+;                              -> transform-matching-spatial-request?
+;; Creates a direct face-part request.  The source is resolved at `target-path`
+;; during scene compilation, while `destination` supplies the exact endpoint.
+;; Mesh child pairs without complete topology cross-fade locally; they never
+;; cause an unrelated pair of triangle arrays to be interpolated.
+(define (transform-matching-spatial target-path destination
+                                    #:matches [matches #f]
+                                    #:route [route (spatial-line-route3d)])
+  (check-target-path 'transform-matching-spatial target-path)
+  (unless (group3d? destination)
+    (raise-argument-error 'transform-matching-spatial "group3d?" destination))
+  (unless (or (not matches)
+              (and (list? matches) (andmap spatial-correspondence3d? matches)))
+    (raise-argument-error
+     'transform-matching-spatial
+     "#f or a list of spatial-correspondence3d? values"
+     matches))
+  (check-route 'transform-matching-spatial route)
+  (transform-matching-spatial-request target-path destination matches route))
 
 
 ;;;
@@ -339,12 +379,6 @@
     (raise-argument-error 'mesh3d-cross-fade-sample "mesh3d?" source))
   (unless (mesh3d? destination)
     (raise-argument-error 'mesh3d-cross-fade-sample "mesh3d?" destination))
-  (unless (eq? (spatial-id source) (spatial-id destination))
-    (raise-arguments-error
-     'mesh3d-cross-fade-sample
-     "source and destination meshes with one stable spatial identity"
-     "source-id" (spatial-id source)
-     "destination-id" (spatial-id destination)))
   (check-route 'mesh3d-cross-fade-sample route)
   (check-progress 'mesh3d-cross-fade-sample progress)
   (cond [(zero? progress) source]
@@ -393,6 +427,186 @@
           #:wireframe-color (mesh3d-wireframe-color mesh)
           #:wireframe-width (mesh3d-wireframe-width mesh)))
 
+; group3d-face-parts-matching-sample
+; : group3d? group3d? (or/c #f (listof spatial-correspondence3d?))
+;   spatial-route3d? unit-real? -> group3d?
+;; Samples one stable collection of direct mesh face children.  The input
+;; groups must have one identity in common—the enclosing scene path—and exact
+;; endpoints return those values.  At interior times every source child keeps
+;; its identity. A matched child interpolates only after independently proving
+;; mesh compatibility; an unmatched source fades and an unmatched destination
+;; is introduced under a generated, interior-only identity.
+(define (group3d-face-parts-matching-sample source destination matches route progress)
+  (unless (group3d? source)
+    (raise-argument-error 'group3d-face-parts-matching-sample "group3d?" source))
+  (unless (group3d? destination)
+    (raise-argument-error 'group3d-face-parts-matching-sample "group3d?" destination))
+  (unless (eq? (spatial-id source) (spatial-id destination))
+    (raise-arguments-error
+     'group3d-face-parts-matching-sample
+     "source and destination groups with one stable spatial identity"
+     "source-id" (spatial-id source)
+     "destination-id" (spatial-id destination)))
+  (unless (or (not matches)
+              (and (list? matches) (andmap spatial-correspondence3d? matches)))
+    (raise-argument-error
+     'group3d-face-parts-matching-sample
+     "#f or a list of spatial-correspondence3d? values"
+     matches))
+  (check-route 'group3d-face-parts-matching-sample route)
+  (check-progress 'group3d-face-parts-matching-sample progress)
+  (cond [(zero? progress) source]
+        [(= progress 1) destination]
+        [else
+         (define source-entries (spatial-child-entries source))
+         (define destination-entries (spatial-child-entries destination))
+         (check-direct-mesh-entries
+          'group3d-face-parts-matching-sample source-entries 'source)
+         (check-direct-mesh-entries
+          'group3d-face-parts-matching-sample destination-entries 'destination)
+         (define normalized-matches
+           (normalize-face-part-matches source-entries destination-entries matches route))
+         (define matched-source-ids (map face-part-match-source-id normalized-matches))
+         (define matched-destination-ids
+           (map face-part-match-destination-id normalized-matches))
+         (define source-by-id (entries-by-id source-entries))
+         (define destination-by-id (entries-by-id destination-entries))
+         (define source-children
+           (for/list ([entry (in-list source-entries)])
+             (define source-id (spatial-child-id entry))
+             (define source-mesh (spatial-child-visual entry))
+             (define matched
+               (for/first ([candidate (in-list normalized-matches)]
+                           #:when (eq? source-id
+                                       (face-part-match-source-id candidate)))
+                 candidate))
+             (cond
+               [matched
+                (define destination-mesh
+                  (spatial-child-visual
+                   (hash-ref destination-by-id
+                             (face-part-match-destination-id matched))))
+                (define child-route (face-part-match-route matched))
+                (define plan
+                  (prepare-mesh-correspondence3d source-mesh destination-mesh))
+                (if (mesh3d-correspondence-compatible?
+                     source-mesh destination-mesh plan)
+                    (mesh3d-matching-sample source-mesh destination-mesh plan
+                                             child-route progress)
+                    ;; The outer result must retain the source child identity;
+                    ;; cross-fade's interior wrapper does exactly that even if
+                    ;; the destination child bears a different semantic name.
+                    (mesh3d-cross-fade-sample source-mesh destination-mesh
+                                               child-route progress))]
+               [else
+                (spatial-with-opacity
+                 source-mesh (* (- 1 progress) (spatial-opacity source-mesh)))])))
+         (define occupied-ids (map spatial-id source-children))
+         (define introduced-children
+           (for/list ([entry (in-list destination-entries)]
+                      #:unless (member (spatial-child-id entry)
+                                       matched-destination-ids))
+             (define destination-mesh (spatial-child-visual entry))
+             (mesh-copy
+              destination-mesh
+              (temporary-face-part-id
+               (spatial-id source) (spatial-child-id entry) occupied-ids)
+              (spatial-transform destination-mesh)
+              (* progress (spatial-opacity destination-mesh)))))
+         (define root-transform
+           (sample-transform-with-route
+            (spatial-transform source) (spatial-transform destination)
+            route progress))
+         (group3d (append source-children introduced-children)
+                  #:id (spatial-id source)
+                  #:transform root-transform
+                  #:opacity
+                  (real-lerp (spatial-opacity source)
+                             (spatial-opacity destination) progress))]))
+
+(struct face-part-match (source-id destination-id route) #:transparent)
+
+(define (check-direct-mesh-entries who entries side)
+  (for ([entry (in-list entries)])
+    (unless (mesh3d? (spatial-child-visual entry))
+      (raise-arguments-error
+       who
+       "a group whose direct face children are mesh3d values"
+       "side" side
+       "child-id" (spatial-child-id entry)
+       "spatial-visual" (spatial-child-visual entry)))))
+
+(define (entries-by-id entries)
+  (for/hash ([entry (in-list entries)])
+    (values (spatial-child-id entry) entry)))
+
+(define (normalize-face-part-matches source-entries destination-entries matches route)
+  (define source-by-id (entries-by-id source-entries))
+  (define destination-by-id (entries-by-id destination-entries))
+  (define raw
+    (or matches
+        (for/list ([entry (in-list source-entries)]
+                   #:when (hash-has-key? destination-by-id
+                                         (spatial-child-id entry)))
+          (spatial-correspondence3d
+           (spatial-child-id entry) (spatial-child-id entry)
+           'shared-child-id 'face-parts route (hasheq 'automatic? #t)))))
+  (define normalized
+    (for/list ([match (in-list raw)])
+      (define source-id (spatial-correspondence3d-source match))
+      (define destination-id (spatial-correspondence3d-destination match))
+      (unless (and (symbol? source-id) (hash-has-key? source-by-id source-id))
+        (raise-arguments-error
+         'group3d-face-parts-matching-sample
+         "a correspondence source naming one direct source child"
+         "source" source-id
+         "source-child-ids" (hash-keys source-by-id)))
+      (unless (and (symbol? destination-id)
+                   (hash-has-key? destination-by-id destination-id))
+        (raise-arguments-error
+         'group3d-face-parts-matching-sample
+         "a correspondence destination naming one direct destination child"
+         "destination" destination-id
+         "destination-child-ids" (hash-keys destination-by-id)))
+      (define child-route (or (spatial-correspondence3d-route match) route))
+      (check-route 'group3d-face-parts-matching-sample child-route)
+      (face-part-match source-id destination-id child-route)))
+  (define duplicate-source
+    (check-duplicates (map face-part-match-source-id normalized)))
+  (define duplicate-destination
+    (check-duplicates (map face-part-match-destination-id normalized)))
+  (when duplicate-source
+    (raise-arguments-error
+     'group3d-face-parts-matching-sample
+     "an injective direct-face correspondence"
+     "duplicate-source-id" duplicate-source))
+  (when duplicate-destination
+    (raise-arguments-error
+     'group3d-face-parts-matching-sample
+     "an injective direct-face correspondence"
+     "duplicate-destination-id" duplicate-destination))
+  normalized)
+
+(define (temporary-face-part-id group-id destination-id occupied-ids)
+  (let loop ([suffix 0])
+    (define candidate
+      (string->symbol
+       (format "__face-match-~a-to-~a-~a" group-id destination-id suffix)))
+    (if (member candidate occupied-ids)
+        (loop (add1 suffix))
+        candidate)))
+
+(define (sample-transform-with-route from to route progress)
+  (define ordinary (transform3-lerp from to progress))
+  (make-transform3
+   #:translation
+   (spatial-route3d-sample route
+                           (transform3-translation from)
+                           (transform3-translation to)
+                           progress)
+   #:rotation (transform3-rotation ordinary)
+   #:scale (transform3-scale ordinary)))
+
 (define (interpolate-normals source destination vertex-map progress)
   (define from (mesh3d-normals source))
   (define to (mesh3d-normals destination))
@@ -434,6 +648,9 @@
 
 (define (mesh-match-compiled-animation? value)
   (mesh-match-animation3d? value))
+
+(define (spatial-match-compiled-animation? value)
+  (spatial-match-animation3d? value))
 
 (define (check-target-path who value)
   (unless (and (spatial-path? value) (pair? (cdr value)))
