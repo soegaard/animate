@@ -21,6 +21,7 @@
          "../color-space3d.rkt"
          "../clipping3d.rkt"
          "../compiled-view3d.rkt"
+         "../light-attenuation3d.rkt"
          "../light3d.rkt"
          "../material3d.rkt"
          "../mesh3d.rkt"
@@ -148,10 +149,12 @@
           'screen-strokes
           'linear-depth
           'ambient-light
-          'directional-light)
+          'directional-light
+          'point-light
+          'spot-light)
    (hasheq 'maximum-directional-lights 4
-           'maximum-point-lights 0
-           'maximum-spot-lights 0
+           'maximum-point-lights 8
+           'maximum-spot-lights 4
            'maximum-shadow-lights 0
            'maximum-clip-planes 8
            'maximum-shadow-map-size 0
@@ -160,10 +163,13 @@
            'maximum-samples (max 1 (opengl3d-info-maximum-samples info)))
    (hasheq 'backend 'opengl-racket
            'requested-samples (opengl-renderer3d-spec-value-samples spec)
-           'shader-limits (hasheq 'directional-lights 4 'clip-planes 8)
+           'shader-limits (hasheq 'directional-lights 4
+                                  'point-lights 8
+                                  'spot-lights 4
+                                  'non-ambient-lights 16
+                                  'clip-planes 8)
            'unsupported-features
-           '(wireframe object-id point-light spot-light specular emission
-                       directional-shadow spot-shadow))))
+           '(wireframe object-id specular emission directional-shadow spot-shadow))))
 
 ; opengl-renderer3d : [opengl-renderer3d-spec?] -> renderer3d?
 ;; The default `#:fallback 'error` intentionally makes an explicit OpenGL
@@ -515,9 +521,11 @@
   ;; Framebuffer colour is premultiplied RGBA.  This makes the transparent pass
   ;; well-defined even when an author deliberately chooses a transparent view.
   (define background-alpha (exact->inexact (linear-rgba3d-alpha background)))
-  (glClearColor (* background-alpha (linear-rgba3d-red background))
-                (* background-alpha (linear-rgba3d-green background))
-                (* background-alpha (linear-rgba3d-blue background))
+  ;; Racket 9.3's OpenGL FFI contracts require actual flonums.  Exact zero is
+  ;; common for black backgrounds, so normalize the multiplied channels too.
+  (glClearColor (exact->inexact (* background-alpha (linear-rgba3d-red background)))
+                (exact->inexact (* background-alpha (linear-rgba3d-green background)))
+                (exact->inexact (* background-alpha (linear-rgba3d-blue background)))
                 background-alpha)
   (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT GL_STENCIL_BUFFER_BIT)))
 
@@ -770,6 +778,94 @@
                          (* z (vec3-z (plane3-point plane))))))
     (uniform-4f! program (format "clipPlanes[~a]" index) x y z offset)))
 
+(struct gl-light-record
+  (kind direction position color intensity attenuation-mode attenuation-a attenuation-b attenuation-c
+        attenuation-cutoff range inner-angle outer-angle)
+  #:transparent)
+
+(define maximum-gl-directional-lights 4)
+(define maximum-gl-point-lights 8)
+(define maximum-gl-spot-lights 4)
+(define maximum-gl-non-ambient-lights
+  (+ maximum-gl-directional-lights maximum-gl-point-lights maximum-gl-spot-lights))
+
+;; The mesh shader consumes one ordered stream instead of independently packed
+;; arrays for each light kind.  Consequently a frame's non-ambient lights are
+;; accumulated in the author's list order, while the published per-kind limits
+;; still reject a frame before a fixed GPU array can truncate it.
+(define (pack-gl-lights lights)
+  (define-values (ambient-red ambient-green ambient-blue records)
+    (for/fold ([red 0.0] [green 0.0] [blue 0.0] [reversed-records '()])
+              ([light (in-list lights)])
+      (cond
+        [(ambient-light3d? light)
+         (define linear (rgba-srgb->linear (ambient-light3d-color light)))
+         (values (+ red (* (ambient-light3d-intensity light) (linear-rgba3d-red linear)))
+                 (+ green (* (ambient-light3d-intensity light) (linear-rgba3d-green linear)))
+                 (+ blue (* (ambient-light3d-intensity light) (linear-rgba3d-blue linear)))
+                 reversed-records)]
+        [(directional-light3d? light)
+         (values red green blue
+                 (cons (gl-light-record
+                        0 (directional-light3d-direction light) origin3
+                        (directional-light3d-color light) (directional-light3d-intensity light)
+                        0 1 0 0 -1 -1 0 0)
+                       reversed-records))]
+        [(point-light3d? light)
+         (values red green blue
+                 (cons (finite-light->gl-record
+                        1 (point-light3d-position light) origin3
+                        (point-light3d-color light) (point-light3d-intensity light)
+                        (point-light3d-attenuation light) (point-light3d-range light) 0 0)
+                       reversed-records))]
+        [(spot-light3d? light)
+         (values red green blue
+                 (cons (finite-light->gl-record
+                        2 (spot-light3d-position light) (spot-light3d-direction light)
+                        (spot-light3d-color light) (spot-light3d-intensity light)
+                        (spot-light3d-attenuation light) (spot-light3d-range light)
+                        (spot-light3d-inner-angle light) (spot-light3d-outer-angle light))
+                       reversed-records))]
+        [else
+         (raise-argument-error 'opengl-renderer3d "light3d?" light)])))
+  (values ambient-red ambient-green ambient-blue (reverse records)))
+
+(define (finite-light->gl-record kind position direction color intensity attenuation range inner outer)
+  (define parameters (light-attenuation3d-parameters attenuation))
+  (define-values (mode a b c cutoff)
+    (case (light-attenuation3d-mode attenuation)
+      [(constant)
+       (values 0 (hash-ref parameters 'factor) 0 0 -1)]
+      [(inverse-square)
+       (values 1 0 0 (hash-ref parameters 'reference-distance)
+               (or (hash-ref parameters 'cutoff) -1))]
+      [(polynomial)
+       (values 2 (hash-ref parameters 'constant) (hash-ref parameters 'linear)
+               (hash-ref parameters 'quadratic) (or (hash-ref parameters 'cutoff) -1))]))
+  ;; Inverse-square uses the `c` slot as its named reference distance; the
+  ;; shader's polynomial mode uses all of a, b and c.
+  (gl-light-record kind direction position color intensity mode a b c cutoff
+                   (or range -1) inner outer))
+
+(define (check-gl-light-limits records)
+  (define directional-count (count (lambda (record) (= (gl-light-record-kind record) 0)) records))
+  (define point-count (count (lambda (record) (= (gl-light-record-kind record) 1)) records))
+  (define spot-count (count (lambda (record) (= (gl-light-record-kind record) 2)) records))
+  (for ([actual (in-list (list directional-count point-count spot-count))]
+        [maximum (in-list (list maximum-gl-directional-lights
+                                maximum-gl-point-lights
+                                maximum-gl-spot-lights))]
+        [kind (in-list '(directional point spot))])
+    (unless (<= actual maximum)
+      (raise-arguments-error 'opengl-renderer3d
+                             "a light count within the current shader's fixed limit"
+                             "light-kind" kind "count" actual "maximum" maximum)))
+  (unless (<= (length records) maximum-gl-non-ambient-lights)
+    (raise-arguments-error 'opengl-renderer3d
+                           "at most sixteen non-ambient lights for the current shader"
+                           "light-count" (length records)))
+  (void))
+
 (define (upload-light-uniforms/current! program frame-spec material)
   (when (not (eq? (material3d-shading material) 'unlit))
     (uniform-1f! program "materialAmbient" (material3d-ambient material))
@@ -790,49 +886,41 @@
     (define lights (if (null? (frame3d-spec-lights frame-spec))
                        default-lights3d
                        (frame3d-spec-lights frame-spec)))
-    (define-values (ambient-red ambient-green ambient-blue directions)
-      (for/fold ([red 0.0] [green 0.0] [blue 0.0] [directions '()])
-                ([light (in-list lights)])
-        (cond [(ambient-light3d? light)
-               (define color (ambient-light3d-color light))
-               (define linear (rgba-srgb->linear color))
-               (values (+ red (* (ambient-light3d-intensity light)
-                                 (linear-rgba3d-red linear)))
-                       (+ green (* (ambient-light3d-intensity light)
-                                   (linear-rgba3d-green linear)))
-                       (+ blue (* (ambient-light3d-intensity light)
-                                  (linear-rgba3d-blue linear)))
-                       directions)]
-              [(directional-light3d? light)
-               (values red green blue (append directions (list light)))]
-              [else
-               (raise-arguments-error
-                'opengl-renderer3d
-                "ambient or directional light values until finite-light evaluation arrives in V5"
-                "light" light)])))
+    (define-values (ambient-red ambient-green ambient-blue selected)
+      (pack-gl-lights lights))
     (uniform-3f! program "ambientLight" ambient-red ambient-green ambient-blue)
-    (unless (<= (length directions) 4)
-      ;; This should have been rejected by the generic request capability
-      ;; preflight. Retain a local check so a future direct call cannot turn a
-      ;; shader-array bound into silently omitted authored lights.
-      (raise-arguments-error
-       'opengl-renderer3d
-       "at most four directional lights for the current shader"
-       "directional-light-count" (length directions)
-       "maximum-directional-lights" 4))
-    (define selected directions)
-    (uniform-1i! program "directionalCount" (length selected))
+    (check-gl-light-limits selected)
+    (uniform-1i! program "nonAmbientLightCount" (length selected))
     (for ([light (in-list selected)] [index (in-naturals)])
-      (define direction (directional-light3d-direction light))
-      (define color (directional-light3d-color light))
-      (uniform-3f! program (format "directionalDirections[~a]" index)
+      (define direction (gl-light-record-direction light))
+      (define position (gl-light-record-position light))
+      (define color (gl-light-record-color light))
+      (uniform-1i! program (format "nonAmbientLightKinds[~a]" index)
+                   (gl-light-record-kind light))
+      (uniform-3f! program (format "nonAmbientLightDirections[~a]" index)
                    (vec3-x direction) (vec3-y direction) (vec3-z direction))
-      (uniform-3f! program (format "directionalColors[~a]" index)
+      (uniform-3f! program (format "nonAmbientLightPositions[~a]" index)
+                   (vec3-x position) (vec3-y position) (vec3-z position))
+      (uniform-3f! program (format "nonAmbientLightColors[~a]" index)
                    (/ (rgba-color-red color) 255.0)
                    (/ (rgba-color-green color) 255.0)
                    (/ (rgba-color-blue color) 255.0))
-      (uniform-1f! program (format "directionalIntensities[~a]" index)
-                   (directional-light3d-intensity light)))))
+      (uniform-1f! program (format "nonAmbientLightIntensities[~a]" index)
+                   (gl-light-record-intensity light))
+      (uniform-1i! program (format "nonAmbientLightAttenuationModes[~a]" index)
+                   (gl-light-record-attenuation-mode light))
+      (uniform-3f! program (format "nonAmbientLightAttenuationABC[~a]" index)
+                   (gl-light-record-attenuation-a light)
+                   (gl-light-record-attenuation-b light)
+                   (gl-light-record-attenuation-c light))
+      (uniform-1f! program (format "nonAmbientLightCutoffs[~a]" index)
+                   (gl-light-record-attenuation-cutoff light))
+      (uniform-1f! program (format "nonAmbientLightRanges[~a]" index)
+                   (gl-light-record-range light))
+      (uniform-1f! program (format "nonAmbientLightInnerAngles[~a]" index)
+                   (gl-light-record-inner-angle light))
+      (uniform-1f! program (format "nonAmbientLightOuterAngles[~a]" index)
+                   (gl-light-record-outer-angle light)))))
 
 ;;;
 ;;; Local validation and statistics

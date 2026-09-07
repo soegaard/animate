@@ -155,10 +155,12 @@ SCENE-3D-V3 adds stable symbolic IDs to ambient, directional, point, and spot
 light values, plus immutable viewport lookup/replacement/update operations.
 Finite lights carry named constant, inverse-square, or polynomial attenuation;
 spots add an explicit smoothstep cone. Point and spot values are accepted and
-preflighted. SCENE-3D-V5's deterministic software renderer evaluates their
-per-fragment attenuation, range, spot cone, diffuse, and Blinn--Phong terms in
-linear light. The OpenGL backend intentionally still rejects finite lights
-until its V6 parity stage—never silently treating them as directional lights.
+preflighted. SCENE-3D-V5's deterministic software renderer and SCENE-3D-V6's
+optional OpenGL shader evaluate their per-fragment attenuation, range, spot
+cone, diffuse, and Blinn--Phong terms in linear light. The GPU path packs
+authored non-ambient lights in order and rejects frames exceeding four
+directional, eight point, or four spot lights—never silently treating a finite
+light as directional.
 SCENE-3D-V4 adds immutable timeline requests for named-light intensity,
 linear-light colour, finite-light position, spot aim, and spot cone values.
 Their endpoints are captured at each local clip start, so direct seeking and
@@ -248,6 +250,7 @@ exactly synchronized with the gallery and example requirements.
 - [Depth-tested textured billboards](examples/3d/textured-billboards.rkt) — 3d, billboards, textures, alpha, depth, camera; requires core.
 - [Retained Racket/OpenGL cube](examples/3d/opengl-opaque-cube.rkt) — 3d, opengl, retained, framebuffer, cache; requires core, gui, opengl.
 - [OpenGL two spatial viewports](examples/3d/opengl-two-viewports.rkt) — 3d, opengl, viewports, perspective, orthographic; requires core, gui, opengl.
+- [OpenGL finite-light project](examples/3d/opengl-finite-lighting-project.rkt) — 3d, opengl, point-light, spot-light, attenuation; requires core, gui, opengl.
 <!-- END GENERATED: canonical examples -->
 
 The first inspector deliberately uses sampled layout boxes rather than painted

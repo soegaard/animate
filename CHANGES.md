@@ -2,12 +2,19 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V6 OpenGL finite-light evaluation. The retained GPU renderer
+  now supports named point and spot lights with the same attenuation, range,
+  smoothstep-cone, Lambert, and Blinn--Phong rules as the software reference.
+  Its ordered packed uniforms enforce fixed limits of four directional, eight
+  point, and four spot lights before drawing. Light-only frames reuse geometry
+  cache entries. The OpenGL path still has no shadows or persistent finite-light
+  buffer cache.
+
 - Added SCENE-3D-V5's deterministic software point and spot lighting. The
   reference rasterizer now uses perspective-correct camera-space fragment
   positions, named attenuation/range policies, smoothstep spot cones, and the
   authored light order for diffuse and Blinn--Phong accumulation. Double-sided
-  materials flip a back-face normal toward the viewing side. The OpenGL
-  backend still declares finite lights unsupported until V6; shadows and
+  materials flip a back-face normal toward the viewing side. Shadows and
   attenuation/range animation remain later work.
 
 - Added SCENE-3D-V4's immutable finite-light timeline requests: named light

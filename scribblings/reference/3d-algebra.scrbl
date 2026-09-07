@@ -1054,10 +1054,17 @@ Returns the clamped cubic @math{t^2(3-2t)} used for spotlight falloff.}
                               [angle nonnegative-real?])
          (and/c real? (between/c 0 1))]{Evaluates the fixed spot cone rule.}
 
-@bold{Current limitation.} Point and spot lights are fully evaluated by the
-deterministic software reference renderer. The OpenGL backend deliberately
-continues to reject them until V6 supplies matching GPU uniforms and shaders;
-it never approximates a finite light as a directional light.
+Point and spot lights are evaluated by both the deterministic software
+reference renderer and the optional OpenGL backend. They use the same named
+constant, inverse-square, and polynomial attenuation policies, optional range,
+and smoothstep spot-cone rule. OpenGL packs the authored non-ambient light
+sequence into fixed uniform records, so it retains the frame's light order
+rather than approximating finite sources as directional lights.
+
+@bold{Current limitation.} The OpenGL implementation has explicit fixed
+limits of four directional, eight point, and four spot lights per lit view.
+It rejects an over-limit frame before drawing; it has no finite-light shadows
+yet.
 
 @subsection{Finite-light animation}
 
@@ -1104,10 +1111,10 @@ deterministic quaternion interpolation avoids the zero-vector singularity.}
 Interpolates a spot's inner and outer cone angles while retaining the required
 @math{0 <= inner <= outer <= pi} invariant.}
 
-@bold{Current limitation.} V4 defines and samples light values only. The V5
-software reference renderer makes finite illumination visible, but the OpenGL
-backend deliberately rejects point and spot lights until V6. Light attenuation,
-range, and the reserved shadow descriptor are not animatable in this stage.
+@bold{Current limitation.} V4 defines and samples the exposed light values.
+Both V5's software renderer and V6's OpenGL renderer make finite illumination
+visible, but attenuation, range, and the reserved shadow descriptor are not
+animatable in this stage.
 
 @subsection{Software finite-light evaluation}
 
@@ -1124,10 +1131,11 @@ Double-sided materials use their interpolated outward normal for a front face
 and flip that normal toward the viewing side for a back face. This is a fixed
 illustration policy, rather than an inferred rendering accident.
 
-@bold{Current limitation.} This is the deterministic software reference
-implementation. OpenGL finite-light rendering, shadows, and finite-light
-resource caches arrive in later stages. Point/spot attenuation, range, and
-cone values are fixed during a V4 animation clip; only the exposed light
+@bold{Current limitation.} The software path is the deterministic conformance
+reference. The OpenGL path now evaluates matching finite-light records, but it
+has fixed four-directional/eight-point/four-spot limits, no shadows, and no
+separate persistent finite-light buffer cache. Point/spot attenuation, range,
+and cone values are fixed during a V4 animation clip; only the exposed light
 fields are animated.
 
 @subsection{Colour space and final output}
@@ -3210,13 +3218,13 @@ directional-light and clip-plane counts.}
 built-in backend prepares resources. @racket[check-project!] performs this
 comparison across every selected project frame before rendering begins.}
 
-@bold{Current V0 limitation:} Point and spot lights, specular highlights,
-emission, and shadows are capability vocabulary only; no current backend
-advertises them yet. The software backend has no practical fixed directional
-light or clipping bound. The initial OpenGL shaders explicitly support at most
-four directional lights and eight clip planes; an over-limit request raises an
-error rather than silently dropping lights. Its maximum sample count is the
-live GL limit, although a one-sample framebuffer remains available.
+@bold{Current capability limitation:} The software backend has no practical
+fixed directional, point, spot, or clipping bound. The optional OpenGL shaders
+explicitly support at most four directional lights, eight point lights, four
+spot lights, and eight clip planes; an over-limit request raises an error
+rather than silently dropping lights. Its maximum sample count is the live GL
+limit, although a one-sample framebuffer remains available. Shadows remain a
+later stage.
 
 @defstruct*[compiled-geometry3d
             ([key any/c] [mesh mesh3d?] [local-bounds aabb3?]
@@ -3432,12 +3440,14 @@ geometry.
 @bold{OpenGL limitations:} The first backend has one serialized context and
 therefore requires @racket[#:workers 1]; it does not create threaded GPU
 workers. It uses FBO readback rather than direct OpenGL preview-canvas
-composition. There is no GPU picking, general mesh textures, shadows, specular/roughness
-lighting, persistent mapped buffers, PBO pipelining, compute/geometry shaders,
-or order-independent transparency. The software backend remains the portable
-default and conformance reference. Compare GPU/software pixels by tolerance:
-opaque interiors, antialiased edges, and transparent regions need different
-thresholds and must not be expected to be bit-identical.
+composition. It supports Lambert/Blinn--Phong materials and a packed finite
+light stream with fixed limits of four directional, eight point, and four spot
+lights. There is no GPU picking, general mesh textures, shadows, persistent
+mapped buffers, PBO pipelining, compute/geometry shaders, or order-independent
+transparency. The software backend remains the portable default and conformance
+reference. Compare GPU/software pixels by tolerance: opaque interiors,
+antialiased edges, and transparent regions need different thresholds and must
+not be expected to be bit-identical.
 
 The reference/retained conformance tests compare projected output at exact
 endpoints and in nonmonotonic camera-frame order. The canonical probe is
