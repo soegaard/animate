@@ -225,6 +225,11 @@
                          linearization3d-real-directions linearization3d-invariant-planes
                          linearization3d-classification linearization3d-diagnostics
                          linearize3d linearization-diagram3d
+                         prepared-flow-map3d prepared-flow-map3d?
+                         prepared-flow-map3d-start-time prepared-flow-map3d-end-time
+                         prepared-flow-map3d-seeds prepared-flow-map3d-endpoints
+                         prepared-flow-map3d-trajectories prepared-flow-map3d-diagnostics
+                         prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

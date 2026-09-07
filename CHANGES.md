@@ -14,6 +14,8 @@
   classifications, and finite real-eigendirection diagram geometry. Complex
   invariant planes remain explicit data instead of acquiring an arbitrary
   default rendered extent.
+- Added prepared seed-preserving 3D flow maps with explicit endpoints or
+  absences after early termination, plus pair and displacement queries.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

@@ -1894,6 +1894,26 @@ the retained real eigendirections to named finite 3D diagram lines. Stable,
 unstable, and center directions receive separately configurable stroke styles.
 The finite extent is explicitly author-chosen by @racket[scale]; invariant planes
 remain data because no universal plane-patch size is mathematically correct.}
+@defproc[(prepare-flow-map3d [field any/c] [seeds seed-set3d?]
+                             [#:start-time start-time finite-real? 0]
+                             [#:end-time end-time finite-real? 1]
+                             [#:solver solver any/c #f]
+                             [#:termination termination any/c #f]
+                             [#:on-termination policy (or/c 'absent 'use-termination-point) 'absent]
+                             [#:parallel? parallel? boolean? #t]) prepared-flow-map3d?]{Prepares
+one retained trajectory in every declared seed slot. A normally completed slot
+has its endpoint; an early-terminated slot is @racket[#f] by default, or its
+actual stopping point under @racket['use-termination-point]. Thus source,
+endpoint, and termination provenance stay aligned in seed order.}
+@defproc[(prepared-flow-map3d? [value any/c]) boolean?]{Recognizes an immutable
+prepared flow map. Its accessors begin with @tt{prepared-flow-map3d-}.}
+@defproc[(flow-map3d-ref [map prepared-flow-map3d?] [index exact-nonnegative-integer?])
+         (or/c false/c vec3?)]{Returns the endpoint in seed order, or @racket[#f]
+for an absent endpoint.}
+@defproc[(flow-map3d-pairs [map prepared-flow-map3d?]) vector?]{Returns immutable
+@racket[(cons seed endpoint)] entries for slots with endpoints.}
+@defproc[(flow-map3d-displacement [map prepared-flow-map3d?] [index exact-nonnegative-integer?])
+         (or/c false/c vec3?)]{Returns endpoint minus source for one slot.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]

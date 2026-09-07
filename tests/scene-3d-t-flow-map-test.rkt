@@ -1,0 +1,23 @@
+#lang racket/base
+(require rackunit "../3d.rkt")
+(module+ test
+  (define seeds (explicit-seeds3d (list (vec3 0 0 0) (vec3 1 2 3))))
+  (define map
+    (prepare-flow-map3d (lambda (x y z) (vec3 1 0 0)) seeds
+                        #:start-time 0 #:end-time 2
+                        #:solver (fixed-rk4-solver3d #:step-size 1/10)))
+  (check-equal? (flow-map3d-ref map 0) (vec3 2 0 0))
+  (check-equal? (flow-map3d-ref map 1) (vec3 3 2 3))
+  (check-equal? (flow-map3d-displacement map 1) (vec3 2 0 0))
+  (check-equal? (vector-length (flow-map3d-pairs map)) 2)
+  (define bounded (trajectory-termination3d #:time-limit 1/2))
+  (define partial
+    (prepare-flow-map3d (lambda (x y z) (vec3 1 0 0)) seeds
+                        #:start-time 0 #:end-time 2 #:termination bounded))
+  (check-false (flow-map3d-ref partial 0))
+  (check-equal? (hash-ref (prepared-flow-map3d-diagnostics partial) 'missing-endpoint-count) 2)
+  (define use-point
+    (prepare-flow-map3d (lambda (x y z) (vec3 1 0 0)) seeds
+                        #:start-time 0 #:end-time 2 #:termination bounded
+                        #:on-termination 'use-termination-point))
+  (check-equal? (flow-map3d-ref use-point 0) (vec3 1/2 0 0)))
