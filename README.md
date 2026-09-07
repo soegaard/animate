@@ -71,6 +71,10 @@ separate key from retained render geometry, so they support later matching and
 inspection without changing geometry-cache sharing. Identity-preserving mesh
 operations retain their IDs; operations which split parts state their policy
 explicitly rather than assigning a misleading inherited name.
+SCENE-3D-U1 adds immutable deterministic half-edge topology on those indexed
+meshes. It exposes edge-connected components, boundary graphs, adjacency,
+manifold/orientability checks, and explicit Euler/genus reports; malformed
+topology is diagnosed rather than repaired or assigned a guessed genus.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric

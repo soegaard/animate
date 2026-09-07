@@ -9,6 +9,12 @@
   semantic matching never splits GPU geometry sharing. One-to-one mesh
   operations retain IDs; flat-normal expansion explicitly keeps only face IDs,
   and merge rejects mixed or colliding semantic namespaces.
+- Added SCENE-3D-U1's immutable navigable triangle topology: deterministic
+  half-edges, edge/face/vertex and boundary-component records, edge-connected
+  components (including isolated vertices), topology queries, and explicit
+  Euler/boundary/genus reports. The cached structural skeleton is geometry-keyed
+  while each query overlays its own semantic part IDs; nonmanifold or
+  nonorientable inputs produce diagnostics rather than guessed genus values.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

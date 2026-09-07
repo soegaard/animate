@@ -28,6 +28,7 @@
          "private/3d/spatial-path.rkt"
          "private/3d/mesh3d.rkt"
          "private/3d/geometry-fingerprint3d.rkt"
+         "private/3d/mesh-topology3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -322,6 +323,29 @@
  (struct-out mesh3d-semantic-key3d)
  mesh3d-geometry-key
  mesh3d-semantic-key
+ (struct-out mesh-vertex-topology3d)
+ (struct-out mesh-halfedge3d)
+ (struct-out mesh-edge-topology3d)
+ (struct-out mesh-triangle-topology3d)
+ (struct-out mesh-boundary-component3d)
+ (struct-out mesh-component-topology3d)
+ (struct-out mesh-topology3d)
+ (struct-out mesh3d-component-invariants3d)
+ (struct-out mesh3d-genus-report)
+ mesh3d-topology
+ mesh-topology3d-vertex-neighbours
+ mesh-topology3d-incident-edges
+ mesh-topology3d-incident-faces
+ mesh-topology3d-face-neighbours
+ mesh-topology3d-boundary-components
+ mesh-topology3d-connected-components
+ mesh-topology3d-manifold?
+ mesh-topology3d-closed?
+ mesh-topology3d-orientable?
+ mesh3d-euler-characteristic
+ mesh3d-boundary-count
+ mesh3d-component-invariants
+ mesh3d-genus
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d

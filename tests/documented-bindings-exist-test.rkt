@@ -40,7 +40,11 @@
                          spatial-path? spatial-relative-ref spatial-relative-replace
                          mesh3d mesh3d-material mesh3d-vertex-ids mesh3d-edge-ids
                          mesh3d-face-ids mesh3d-vertex-id mesh3d-edge-id mesh3d-face-id
-                         mesh3d-geometry-key mesh3d-semantic-key material3d directional-light3d
+                         mesh3d-geometry-key mesh3d-semantic-key
+                         mesh3d-topology mesh-topology3d-manifold? mesh-topology3d-closed?
+                         mesh-topology3d-orientable? mesh3d-euler-characteristic
+                         mesh3d-boundary-count mesh3d-component-invariants mesh3d-genus
+                         material3d directional-light3d
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color
                          stroke3d stroke3d? stroke3d-color stroke3d-width
