@@ -25,11 +25,11 @@
      (scene-add (scene-set-value (make-scene) phase) world)
      (value-to phase 1) #:duration 1))
   (define state (scene-sample animation 1/2))
-  ;; Preparation executes all required field calls before spatial relation
-  ;; resolution.  The later sampled view reads only the immutable frame table.
+  ;; T-0 stores positions and tangents in dense immutable segments.  Frame
+  ;; sampling and later spatial resolution never invoke the author field.
   (set-box! calls 0)
   (define samples (prepare-ode3d-frame-samples (list state)))
-  (check-true (positive? (unbox calls)))
+  (check-equal? (unbox calls) 0)
   (set-box! calls 0)
   (call-with-ode3d-frame-samples
    samples

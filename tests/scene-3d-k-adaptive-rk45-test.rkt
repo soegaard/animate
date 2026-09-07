@@ -21,7 +21,7 @@
      #:solver (adaptive-rk45 #:relative-tolerance 1e-9
                              #:absolute-tolerance 1e-11
                              #:initial-step 1/10)))
-  (check-true (adaptive-rk45? (ode-trajectory3d-solver trajectory)))
+  (check-true (adaptive-rk45-solver3d? (ode-trajectory3d-solver trajectory)))
   (define diagnostics (ode-trajectory3d-diagnostics trajectory))
   (check-true (ode-trajectory3d-diagnostics? diagnostics))
   (check-true (positive? (ode-trajectory3d-diagnostics-accepted-steps diagnostics)))

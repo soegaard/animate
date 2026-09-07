@@ -19,7 +19,7 @@
   (check-equal? (ode-trajectory3d-time-range trajectory) (cons -2 3))
   (check-equal? (ode-trajectory3d-step-size trajectory) 1/4)
   (check-equal? (ode-trajectory3d-checkpoint-every trajectory) 3)
-  (check-eq? (ode-trajectory3d-solver trajectory) 'fixed-rk4)
+  (check-true (fixed-rk4-solver3d? (ode-trajectory3d-solver trajectory)))
   (for ([time (in-list (list -2 -3/4 0 9/8 3))])
     (check-vec3-close
      (ode-trajectory3d-position trajectory time)

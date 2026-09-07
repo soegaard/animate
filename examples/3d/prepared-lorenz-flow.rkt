@@ -24,14 +24,17 @@
         (- (* x (- rho z)) y)
         (- (* x y) (* beta z))))
 
+(define lorenz-field
+  (ode-field3d lorenz #:cache-key 'lorenz-10-28-8/3 #:autonomous? #t))
+
 (define prepared-lorenz
   (prepare-ode-trajectory3d
-   lorenz (vec3 0 1 21/20)
+   lorenz-field (vec3 0 1 21/20)
    #:time-range (cons 0 20)
-   #:solver (adaptive-rk45 #:relative-tolerance 1e-6
-                           #:absolute-tolerance 1e-8
-                           #:initial-step 1/100
-                           #:maximum-step 1/20)))
+   #:solver (adaptive-rk45-solver3d #:relative-tolerance 1e-6
+                                    #:absolute-tolerance 1e-8
+                                    #:initial-step 1/100
+                                    #:maximum-step 1/20)))
 
 (define (lorenz-trace trajectory)
   (define range (ode-trajectory3d-time-range trajectory))

@@ -1550,50 +1550,69 @@ The canonical acceptance scene is
 
 @section{Prepared spatial ODE trajectories and vector fields}
 
-SCENE-3D-K adds direct-time flow geometry without a mutable per-frame updater.
-@racket[prepare-ode-trajectory3d] records an immutable numerical path once;
-subsequent position lookup accepts any supported time in any order. A field
-accepts either @racket[(field x y z)] or @racket[(field time x y z)] and must
-return exactly one finite @racket[vec3]. The fixed default is checkpointed RK4.
-With @racket[adaptive-rk45], accepted Dormand--Prince nodes and endpoint
-derivatives are stored, so lookup uses cubic Hermite dense output and never
-calls the author field.
+SCENE-3D-T0 turns the earlier direct-time flow support into an immutable
+trajectory-data model. @racket[prepare-ode-trajectory3d] records dense RK4 or
+Dormand--Prince segments once; subsequent position, tangent, and arc-length
+lookup accepts any supported time in any order and never calls the author
+field. A field accepts either @racket[(field x y z)] or
+@racket[(field time x y z)] and must return exactly one finite @racket[vec3].
+Use @racket[ode-field3d] when the field needs an explicit cache identity or
+when its autonomous status matters to later flow analysis.
 
 @racket[flow-particle3d] is a semantic spatial relation. Before an image or
 preview worker resolves it, Animate samples its requested phase values into an
 immutable table. Thus worker rendering reads positions and tangents only; it
-does not evaluate the field procedure. Direct lookup of a fixed RK4 trajectory
-may still take the bounded suffix after its nearest checkpoint.
+does not evaluate the field procedure. The fixed solver's
+@racket[#:checkpoint-every] value remains diagnostic preparation metadata for
+now; it no longer changes lookup cost.
 
 @racketblock[
 (define lorenz-path
   (prepare-ode-trajectory3d
-   (lambda (x y z) (vec3 (* 10 (- y x)) (- (* x (- 28 z)) y)
-                         (- (* x y) (* 8/3 z))))
+   (ode-field3d
+    (lambda (x y z) (vec3 (* 10 (- y x)) (- (* x (- 28 z)) y)
+                          (- (* x y) (* 8/3 z))))
+    #:cache-key 'lorenz-10-28-8/3)
    (vec3 0 1 21/20)
    #:time-range (cons 0 20)
-   #:solver (adaptive-rk45 #:relative-tolerance 1e-6)))
+   #:solver (adaptive-rk45-solver3d #:relative-tolerance 1e-6)))
 
 (define phase (parameter 'time 0))
 (flow-particle3d lorenz-path phase #:id 'particle #:tangent-length 1)
 ]
 
 @defproc[(prepare-ode-trajectory3d
-          [field (or/c (procedure-arity-includes/c 3)
-                       (procedure-arity-includes/c 4))]
+          [field any/c]
           [seed vec3?]
           [#:time-range time-range (cons/c finite-real? finite-real?)]
           [#:step-size step-size (and/c finite-real? positive?) 1/20]
           [#:checkpoint-every checkpoint-every exact-positive-integer? 16]
-          [#:solver solver (or/c false/c adaptive-rk45?) #f])
+          [#:solver solver any/c #f])
          ode-trajectory3d?]{Prepares one immutable spatial trajectory over the
 closed range @racket[(cons start-time end-time)]. The seed is at time zero;
 the range may extend on either side of it.}
+@defproc[(ode-field3d [procedure procedure?]
+                       [#:cache-key cache-key any/c #f]
+                       [#:autonomous? autonomous? boolean? #t]) any/c]{
+Constructs explicit author-time field metadata.  The procedure is used only
+during numerical preparation; a prepared trajectory retains its cache key but
+not this procedure.}
+@defproc[(fixed-rk4-solver3d [#:step-size step-size positive? 1/20])
+         any/c]{Constructs fixed-step RK4 solver settings.}
+@defproc[(adaptive-rk45-solver3d [#:relative-tolerance relative-tolerance positive? 1e-6]
+                                 [#:absolute-tolerance absolute-tolerance positive? 1e-9]
+                                 [#:initial-step initial-step positive? 1/20]
+                                 [#:minimum-step minimum-step positive? 1e-9]
+                                 [#:maximum-step maximum-step positive? 1]
+                                 [#:maximum-steps maximum-steps exact-positive-integer? 100000])
+         any/c]{Constructs immutable adaptive RK45 settings.
+The earlier @racket[adaptive-rk45] setting remains accepted while examples are
+migrated.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
-fixed-RK4 or adaptive-RK45 spatial trajectory.}
+immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
                                      [time finite-real?]) vec3?]{Returns the
-position at a supported time. Adaptive lookup reads only stored data.}
+position at a supported time. Every prepared lookup reads only stored data.}
 @defproc[(ode-trajectory3d-time-range [trajectory ode-trajectory3d?])
          (cons/c finite-real? finite-real?)]{Returns its supported range.}
 @defproc[(ode-trajectory3d-step-size [trajectory ode-trajectory3d?])
@@ -1601,13 +1620,31 @@ position at a supported time. Adaptive lookup reads only stored data.}
 @racket[#f] for an adaptive path.}
 @defproc[(ode-trajectory3d-checkpoint-every [trajectory ode-trajectory3d?])
          (or/c exact-positive-integer? false/c)]{Returns a fixed path's
-checkpoint spacing, or @racket[#f] for an adaptive path.}
+checkpoint preparation metadata, or @racket[#f] for an adaptive path.  It does
+not cause later reintegration.}
 @defproc[(ode-trajectory3d-solver [trajectory ode-trajectory3d?]) any/c]{Returns
-@racket['fixed-rk4] or the immutable @racket[adaptive-rk45?] configuration.}
-@defproc[(ode-trajectory3d-diagnostics [trajectory ode-trajectory3d?]) any/c]{For
-an adaptive path, returns immutable solver name, accepted/rejected step count,
-final time, and maximum norm-relative embedded-error ratio; it returns
-@racket[#f] for fixed RK4.}
+the immutable fixed-RK4 or adaptive-RK45 solver setting.}
+@defproc[(ode-trajectory3d-derivative [trajectory ode-trajectory3d?]
+                                       [time finite-real?]) vec3?]{Returns the
+stored dense-output tangent at a supported time.}
+@defproc[(ode-trajectory3d-speed [trajectory ode-trajectory3d?]
+                                  [time finite-real?]) nonnegative-real?]{Returns
+the tangent magnitude.}
+@defproc[(ode-trajectory3d-arc-length-at [trajectory ode-trajectory3d?]
+                                          [time finite-real?]) nonnegative-real?]{
+Returns accumulated arc length from the prepared range start.}
+@defproc[(ode-trajectory3d-time-at-arc-length [trajectory ode-trajectory3d?]
+                                               [arc-length nonnegative-real?])
+         finite-real?]{Inverts the prepared arc-length table deterministically.}
+@defproc[(ode-trajectory3d-diagnostics [trajectory ode-trajectory3d?]) any/c]{Returns
+immutable solver, field-evaluation, step, dense-segment, termination, and
+arc-length diagnostics for both fixed and adaptive trajectories.}
+
+@bold{Current T0 limits.} Arc length is a deterministic eight-chord estimate
+per stored dense segment rather than a certified integral. Event roots,
+explicit bounds/arc-length/low-speed termination, adaptive streamlines, and
+flow-map preparation are later SCENE-3D-T slices; this stage does not claim
+them yet.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)

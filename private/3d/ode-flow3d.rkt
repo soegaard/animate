@@ -4,10 +4,11 @@
 ;;; Prepared Three-Dimensional ODE Flow
 ;;;
 
-;; A spatial ODE trajectory is immutable numerical data.  Fixed RK4 retains
-;; canonical checkpoints, while adaptive RK45 retains all accepted nodes and
-;; their derivatives for dense lookup.  Both paths use private/ode-state-space
-;; rather than a second hand-written vec3 integrator.
+;; A spatial ODE trajectory is immutable numerical data. Fixed RK4 and
+;; adaptive RK45 both retain dense endpoint/derivative segments for binary
+;; lookup, so completed preparation is independent of its author field. Both
+;; paths use private/ode-state-space rather than a second hand-written vec3
+;; integrator.
 
 
 ;;;
@@ -34,7 +35,29 @@
          "vec3.rkt"
          "view3d-visual.rkt")
 
-(provide ode-trajectory3d?
+(provide ode-field3d
+         ode-field3d?
+         ode-field3d-procedure
+         ode-field3d-arity
+         ode-field3d-cache-key
+         ode-field3d-autonomous?
+         fixed-rk4-solver3d
+         fixed-rk4-solver3d?
+         fixed-rk4-solver3d-step-size
+         adaptive-rk45-solver3d
+         adaptive-rk45-solver3d?
+         adaptive-rk45-solver3d-settings
+         prepared-trajectory3d?
+         trajectory-segment3d?
+         trajectory-segment3d-t0
+         trajectory-segment3d-t1
+         trajectory-segment3d-p0
+         trajectory-segment3d-p1
+         trajectory-segment3d-d0
+         trajectory-segment3d-d1
+         trajectory-segment3d-arc-length
+         trajectory-segment3d-bounds
+         ode-trajectory3d?
          ode-trajectory3d-time-range
          ode-trajectory3d-step-size
          ode-trajectory3d-checkpoint-every
@@ -45,9 +68,18 @@
          ode-trajectory3d-diagnostics-accepted-steps
          ode-trajectory3d-diagnostics-rejected-steps
          ode-trajectory3d-diagnostics-termination-time
+         ode-trajectory3d-diagnostics-termination-reason
          ode-trajectory3d-diagnostics-maximum-error
+         ode-trajectory3d-diagnostics-field-evaluations
+         ode-trajectory3d-diagnostics-dense-segment-count
+         ode-trajectory3d-diagnostics-total-arc-length
          prepare-ode-trajectory3d
          ode-trajectory3d-position
+         ode-trajectory3d-derivative
+         ode-trajectory3d-speed
+         ode-trajectory3d-arc-length-at
+         ode-trajectory3d-time-at-arc-length
+         ode-trajectory3d-segment-index
          vector-field3d
          streamline3d
          streamlines3d
@@ -76,51 +108,169 @@
   (field seed start-time end-time solver nodes diagnostics)
   #:transparent)
 
+;; T-0's public input values distinguish opaque author behaviour from the
+;; numerical trajectory that preparation returns.  Only the former retains a
+;; procedure; `prepared-trajectory3d-value` below never does.
+(struct ode-field3d-value (procedure arity cache-key autonomous?) #:transparent)
+
+(define (ode-field3d procedure #:cache-key [cache-key #f] #:autonomous? [autonomous? #t])
+  (check-field3d 'ode-field3d procedure)
+  (unless (boolean? autonomous?)
+    (raise-argument-error 'ode-field3d "boolean? as #:autonomous?" autonomous?))
+  (ode-field3d-value procedure
+                     (if (procedure-arity-includes? procedure 4) 4 3)
+                     cache-key autonomous?))
+
+(define (ode-field3d? value) (ode-field3d-value? value))
+(define (check-ode-field3d who value)
+  (unless (ode-field3d? value)
+    (raise-argument-error who "ode-field3d?" value)))
+(define (ode-field3d-procedure value)
+  (check-ode-field3d 'ode-field3d-procedure value)
+  (ode-field3d-value-procedure value))
+(define (ode-field3d-arity value)
+  (check-ode-field3d 'ode-field3d-arity value)
+  (ode-field3d-value-arity value))
+(define (ode-field3d-cache-key value)
+  (check-ode-field3d 'ode-field3d-cache-key value)
+  (ode-field3d-value-cache-key value))
+(define (ode-field3d-autonomous? value)
+  (check-ode-field3d 'ode-field3d-autonomous? value)
+  (ode-field3d-value-autonomous? value))
+
+(struct fixed-rk4-solver3d-value (step-size) #:transparent)
+(define (fixed-rk4-solver3d #:step-size [step-size 1/20])
+  (check-positive 'fixed-rk4-solver3d "step-size" step-size)
+  (fixed-rk4-solver3d-value step-size))
+(define (fixed-rk4-solver3d? value) (fixed-rk4-solver3d-value? value))
+(define (fixed-rk4-solver3d-step-size value)
+  (unless (fixed-rk4-solver3d? value)
+    (raise-argument-error 'fixed-rk4-solver3d-step-size "fixed-rk4-solver3d?" value))
+  (fixed-rk4-solver3d-value-step-size value))
+
+(struct adaptive-rk45-solver3d-value (settings) #:transparent)
+(define (adaptive-rk45-solver3d #:relative-tolerance [relative-tolerance 1e-6]
+                                #:absolute-tolerance [absolute-tolerance 1e-9]
+                                #:initial-step [initial-step 1/20]
+                                #:minimum-step [minimum-step 1e-9]
+                                #:maximum-step [maximum-step 1]
+                                #:maximum-steps [maximum-steps 100000])
+  (adaptive-rk45-solver3d-value
+   (adaptive-rk45 #:relative-tolerance relative-tolerance
+                  #:absolute-tolerance absolute-tolerance
+                  #:initial-step initial-step
+                  #:minimum-step minimum-step
+                  #:maximum-step maximum-step
+                  #:maximum-steps maximum-steps)))
+(define (adaptive-rk45-solver3d? value) (adaptive-rk45-solver3d-value? value))
+(define (adaptive-rk45-solver3d-settings value)
+  (unless (adaptive-rk45-solver3d? value)
+    (raise-argument-error 'adaptive-rk45-solver3d-settings "adaptive-rk45-solver3d?" value))
+  (adaptive-rk45-solver3d-value-settings value))
+
+(struct prepared-trajectory-node3d (time position derivative) #:transparent)
+(struct trajectory-segment3d (t0 t1 p0 p1 d0 d1 arc-length bounds) #:transparent)
+(struct prepared-trajectory3d-value
+  (time-range solver nodes segments cumulative-arcs diagnostics source-key checkpoint-every)
+  #:transparent)
+(struct dense-trajectory-diagnostics3d
+  (solver field-evaluations accepted-steps rejected-steps termination-time
+          termination-reason maximum-error dense-segment-count total-arc-length)
+  #:transparent)
+
 (define (ode-trajectory3d? value)
-  (or (fixed-ode-trajectory3d? value)
+  (or (prepared-trajectory3d-value? value)
+      (fixed-ode-trajectory3d? value)
       (adaptive-ode-trajectory3d? value)))
+
+(define (prepared-trajectory3d? value)
+  (prepared-trajectory3d-value? value))
 
 (define (ode-trajectory3d-time-range trajectory)
   (check-trajectory3d 'ode-trajectory3d-time-range trajectory)
-  (if (adaptive-ode-trajectory3d? trajectory)
-      (cons (adaptive-ode-trajectory3d-start-time trajectory)
-            (adaptive-ode-trajectory3d-end-time trajectory))
-      (cons (fixed-ode-trajectory3d-start-time trajectory)
-            (fixed-ode-trajectory3d-end-time trajectory))))
+  (cond [(prepared-trajectory3d? trajectory)
+         (prepared-trajectory3d-value-time-range trajectory)]
+        [(adaptive-ode-trajectory3d? trajectory)
+         (cons (adaptive-ode-trajectory3d-start-time trajectory)
+               (adaptive-ode-trajectory3d-end-time trajectory))]
+        [else
+         (cons (fixed-ode-trajectory3d-start-time trajectory)
+               (fixed-ode-trajectory3d-end-time trajectory))]))
 
 (define (ode-trajectory3d-step-size trajectory)
   (check-trajectory3d 'ode-trajectory3d-step-size trajectory)
-  (and (fixed-ode-trajectory3d? trajectory)
-       (fixed-ode-trajectory3d-step-size trajectory)))
+  (cond [(prepared-trajectory3d? trajectory)
+         (define solver (prepared-trajectory3d-value-solver trajectory))
+         (and (fixed-rk4-solver3d? solver) (fixed-rk4-solver3d-step-size solver))]
+        [(fixed-ode-trajectory3d? trajectory)
+         (fixed-ode-trajectory3d-step-size trajectory)]
+        [else #f]))
 
 (define (ode-trajectory3d-checkpoint-every trajectory)
   (check-trajectory3d 'ode-trajectory3d-checkpoint-every trajectory)
-  (and (fixed-ode-trajectory3d? trajectory)
-       (fixed-ode-trajectory3d-checkpoint-every trajectory)))
+  (cond [(prepared-trajectory3d? trajectory)
+         (prepared-trajectory3d-value-checkpoint-every trajectory)]
+        [(fixed-ode-trajectory3d? trajectory)
+         (fixed-ode-trajectory3d-checkpoint-every trajectory)]
+        [else #f]))
 
 (define (ode-trajectory3d-solver trajectory)
   (check-trajectory3d 'ode-trajectory3d-solver trajectory)
-  (if (adaptive-ode-trajectory3d? trajectory)
-      (adaptive-ode-trajectory3d-solver trajectory)
-      'fixed-rk4))
+  (cond [(prepared-trajectory3d? trajectory)
+         (prepared-trajectory3d-value-solver trajectory)]
+        [(adaptive-ode-trajectory3d? trajectory)
+         (adaptive-ode-trajectory3d-solver trajectory)]
+        [else 'fixed-rk4]))
 
 (define (ode-trajectory3d-diagnostics trajectory)
   (check-trajectory3d 'ode-trajectory3d-diagnostics trajectory)
-  (and (adaptive-ode-trajectory3d? trajectory)
-       (adaptive-ode-trajectory3d-diagnostics trajectory)))
+  (cond [(prepared-trajectory3d? trajectory)
+         (prepared-trajectory3d-value-diagnostics trajectory)]
+        [(adaptive-ode-trajectory3d? trajectory)
+         (adaptive-ode-trajectory3d-diagnostics trajectory)]
+        [else #f]))
 
 (define (ode-trajectory3d-diagnostics? value)
-  (ode-trajectory3d-diagnostics-value? value))
-(define ode-trajectory3d-diagnostics-solver
-  ode-trajectory3d-diagnostics-value-solver)
-(define ode-trajectory3d-diagnostics-accepted-steps
-  ode-trajectory3d-diagnostics-value-accepted-steps)
-(define ode-trajectory3d-diagnostics-rejected-steps
-  ode-trajectory3d-diagnostics-value-rejected-steps)
-(define ode-trajectory3d-diagnostics-termination-time
-  ode-trajectory3d-diagnostics-value-termination-time)
+  (or (ode-trajectory3d-diagnostics-value? value)
+      (dense-trajectory-diagnostics3d? value)))
+(define (ode-trajectory3d-diagnostics-solver value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-solver value)
+      (ode-trajectory3d-diagnostics-value-solver value)))
+(define (ode-trajectory3d-diagnostics-accepted-steps value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-accepted-steps value)
+      (ode-trajectory3d-diagnostics-value-accepted-steps value)))
+(define (ode-trajectory3d-diagnostics-rejected-steps value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-rejected-steps value)
+      (ode-trajectory3d-diagnostics-value-rejected-steps value)))
+(define (ode-trajectory3d-diagnostics-termination-time value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-termination-time value)
+      (ode-trajectory3d-diagnostics-value-termination-time value)))
 (define ode-trajectory3d-diagnostics-maximum-error
-  ode-trajectory3d-diagnostics-value-maximum-error)
+  (lambda (value)
+    (if (dense-trajectory-diagnostics3d? value)
+        (dense-trajectory-diagnostics3d-maximum-error value)
+        (ode-trajectory3d-diagnostics-value-maximum-error value))))
+
+(define (ode-trajectory3d-diagnostics-termination-reason value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-termination-reason value)
+      'time-range))
+(define (ode-trajectory3d-diagnostics-field-evaluations value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-field-evaluations value)
+      #f))
+(define (ode-trajectory3d-diagnostics-dense-segment-count value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-dense-segment-count value)
+      #f))
+(define (ode-trajectory3d-diagnostics-total-arc-length value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-total-arc-length value)
+      #f))
 
 ; prepare-ode-trajectory3d : procedure? vec3?
 ;                            #:time-range (cons/c finite-real? finite-real?)
@@ -136,31 +286,27 @@
                                   #:step-size [step-size 1/20]
                                   #:checkpoint-every [checkpoint-every 16]
                                   #:solver [solver #f])
-  (check-field3d 'prepare-ode-trajectory3d field)
+  (define normalized-field (normalize-ode-field3d 'prepare-ode-trajectory3d field))
   (check-vec3 'prepare-ode-trajectory3d seed)
   (check-positive 'prepare-ode-trajectory3d "step-size" step-size)
   (check-checkpoint-every 'prepare-ode-trajectory3d checkpoint-every)
   (define-values (start-time end-time)
     (check-time-range 'prepare-ode-trajectory3d time-range))
-  (unless (or (not solver) (adaptive-rk45? solver))
-    (raise-argument-error 'prepare-ode-trajectory3d
-                          "(or/c #f adaptive-rk45?)" solver))
-  (if solver
-      (prepare-adaptive-trajectory3d field seed start-time end-time solver)
-      (fixed-ode-trajectory3d
-       field seed start-time end-time step-size checkpoint-every
-       (build-checkpoints3d field seed 1 step-size checkpoint-every (max 0 end-time))
-       (build-checkpoints3d field seed -1 step-size checkpoint-every (max 0 (- start-time))))))
+  (prepare-dense-trajectory3d normalized-field seed start-time end-time
+                              (normalize-solver3d 'prepare-ode-trajectory3d solver step-size)
+                              checkpoint-every))
 
 ; ode-trajectory3d-position : ode-trajectory3d? finite-real? -> vec3?
-;; Fixed lookup continues from one canonical checkpoint.  Adaptive lookup uses
-;; stored-node Hermite interpolation and never invokes the author field.
+;; Every created trajectory resolves this through stored Hermite segments and
+;; never invokes the author field.
 (define (ode-trajectory3d-position trajectory time)
   (check-trajectory3d 'ode-trajectory3d-position trajectory)
   (check-trajectory3d-time 'ode-trajectory3d-position trajectory time)
-  (if (adaptive-ode-trajectory3d? trajectory)
-      (adaptive-trajectory3d-position trajectory time)
-      (fixed-trajectory3d-position trajectory time)))
+  (cond [(prepared-trajectory3d? trajectory)
+         (dense-trajectory-position3d trajectory time)]
+        [(adaptive-ode-trajectory3d? trajectory)
+         (adaptive-trajectory3d-position trajectory time)]
+        [else (fixed-trajectory3d-position trajectory time)]))
 
 (define (fixed-trajectory3d-position trajectory time)
   (define-values (direction full-step checkpoint-index suffix-steps remainder)
@@ -343,6 +489,345 @@
        (adaptive-ode-node3d-position second)
        (adaptive-ode-node3d-derivative second)
        step (/ (- time start-time) step))))
+
+
+;;;
+;;; T-0 Dense Prepared Representation
+
+;; These helpers are intentionally separate from the legacy internal structs
+;; above while the public API transitions.  `prepare-ode-trajectory3d` now
+;; always creates this representation; the older structs are no longer made.
+
+(struct dense-series-report3d (accepted rejected maximum-error steps) #:transparent)
+
+(define (normalize-ode-field3d who value)
+  (cond [(ode-field3d? value) value]
+        [(procedure? value) (ode-field3d value)]
+        [else (raise-argument-error who "procedure? or ode-field3d?" value)]))
+
+(define (normalize-solver3d who value step-size)
+  (cond [(not value) (fixed-rk4-solver3d #:step-size step-size)]
+        [(fixed-rk4-solver3d? value) value]
+        [(adaptive-rk45-solver3d? value) value]
+        [(adaptive-rk45? value) (adaptive-rk45-solver3d-value value)]
+        [else (raise-argument-error
+               who "#f, fixed-rk4-solver3d?, adaptive-rk45-solver3d?, or adaptive-rk45?" value)]))
+
+(define (prepare-dense-trajectory3d field seed start-time end-time solver checkpoint-every)
+  (define evaluations (box 0))
+  (define lower-target (min 0 start-time))
+  (define upper-target (max 0 end-time))
+  (define-values (backward backward-report)
+    (dense-integrate-series3d field seed 0 lower-target solver evaluations))
+  (define-values (forward forward-report)
+    (dense-integrate-series3d field seed 0 upper-target solver evaluations))
+  (define all-nodes (append (reverse (cdr backward)) forward))
+  (define nodes (dense-clip-nodes3d all-nodes start-time end-time))
+  (define segments (dense-make-segments3d nodes))
+  (define cumulative (dense-cumulative-arcs3d segments))
+  (define total (vector-ref cumulative (sub1 (vector-length cumulative))))
+  (define accepted (+ (dense-series-report3d-accepted backward-report)
+                      (dense-series-report3d-accepted forward-report)))
+  (define rejected (+ (dense-series-report3d-rejected backward-report)
+                      (dense-series-report3d-rejected forward-report)))
+  (prepared-trajectory3d-value
+   (cons start-time end-time) solver nodes segments cumulative
+   (dense-trajectory-diagnostics3d
+    solver (unbox evaluations) accepted rejected end-time 'time-range
+    (max (dense-series-report3d-maximum-error backward-report)
+         (dense-series-report3d-maximum-error forward-report))
+    (vector-length segments) total)
+   (ode-field3d-cache-key field) checkpoint-every))
+
+(define (dense-integrate-series3d field seed start-time target-time solver evaluations)
+  (define initial
+    (prepared-trajectory-node3d start-time seed
+                                (call-field3d field start-time seed evaluations)))
+  (cond [(= start-time target-time)
+         (values (list initial) (dense-series-report3d 0 0 0 '()))]
+        [(fixed-rk4-solver3d? solver)
+         (dense-fixed-series3d field initial target-time
+                               (fixed-rk4-solver3d-step-size solver) evaluations)]
+        [else
+         (dense-adaptive-series3d field initial target-time
+                                  (adaptive-rk45-solver3d-settings solver) evaluations)]))
+
+(define (dense-fixed-series3d field initial target-time step-size evaluations)
+  (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
+  (let loop ([current initial] [reversed (list initial)] [steps '()])
+    (define remaining (- target-time (prepared-trajectory-node3d-time current)))
+    (if (zero? remaining)
+        (values (reverse reversed)
+                (dense-series-report3d (length steps) 0 0 (reverse steps)))
+        (let* ([step (* direction (min step-size (abs remaining)))]
+               [next-time (+ (prepared-trajectory-node3d-time current) step)]
+               [next-position (dense-rk4-step3d field
+                                                 (prepared-trajectory-node3d-time current)
+                                                 (prepared-trajectory-node3d-position current)
+                                                 step evaluations)]
+               [next (prepared-trajectory-node3d
+                      next-time next-position
+                      (call-field3d field next-time next-position evaluations))])
+          (loop next (cons next reversed) (cons (abs step) steps))))))
+
+(define (dense-adaptive-series3d field initial target-time solver evaluations)
+  (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
+  (let loop ([current initial]
+             [step (* direction (adaptive-rk45-initial-step solver))]
+             [reversed (list initial)] [accepted 0] [rejected 0]
+             [maximum-error 0] [steps '()])
+    (when (>= (+ accepted rejected) (adaptive-rk45-maximum-steps solver))
+      (raise-arguments-error
+       'prepare-ode-trajectory3d "adaptive solver exceeded maximum-steps"
+       "maximum-steps" (adaptive-rk45-maximum-steps solver)
+       "last-time" (prepared-trajectory-node3d-time current)
+       "target-time" target-time))
+    (define remaining (- target-time (prepared-trajectory-node3d-time current)))
+    (define trial-step
+      (* direction
+         (min (abs remaining) (adaptive-rk45-maximum-step solver)
+              (max (adaptive-rk45-minimum-step solver) (abs step)))))
+    (define-values (candidate endpoint-derivative error)
+      (ode-state-space-dormand-prince-step
+       vec3-ode-state-space
+       (lambda (field-time field-point)
+         (call-field3d field field-time field-point evaluations))
+       (prepared-trajectory-node3d-time current)
+       (prepared-trajectory-node3d-position current)
+       trial-step
+       (adaptive-rk45-relative-tolerance solver)
+       (adaptive-rk45-absolute-tolerance solver)))
+    (define next-maximum-error (max maximum-error error))
+    (cond
+      [(<= error 1)
+       (define next
+         (prepared-trajectory-node3d
+          (+ (prepared-trajectory-node3d-time current) trial-step)
+          candidate endpoint-derivative))
+       (if (= (prepared-trajectory-node3d-time next) target-time)
+           (values (reverse (cons next reversed))
+                   (dense-series-report3d (add1 accepted) rejected next-maximum-error
+                                          (reverse (cons (abs trial-step) steps))))
+           (loop next
+                 (* direction (adaptive-next-step-magnitude3d solver (abs trial-step) error))
+                 (cons next reversed) (add1 accepted) rejected next-maximum-error
+                 (cons (abs trial-step) steps)))]
+      [else
+       (when (<= (abs trial-step) (adaptive-rk45-minimum-step solver))
+         (raise-arguments-error
+          'prepare-ode-trajectory3d
+          "adaptive solver reached minimum-step before satisfying tolerance"
+          "minimum-step" (adaptive-rk45-minimum-step solver)
+          "error-ratio" error "time" (prepared-trajectory-node3d-time current)))
+       (loop current
+             (* direction (adaptive-rejected-step-magnitude3d solver (abs trial-step) error))
+             reversed accepted (add1 rejected) next-maximum-error steps)])))
+
+(define (dense-rk4-step3d field time point step evaluations)
+  (ode-state-space-rk4-step
+   vec3-ode-state-space
+   (lambda (field-time field-point) (call-field3d field field-time field-point evaluations))
+   time point step))
+
+(define (dense-clip-nodes3d all-nodes start-time end-time)
+  (define all (vector->immutable-vector (list->vector all-nodes)))
+  (define all-segments (dense-make-segments3d all))
+  (define (node-at time)
+    (prepared-trajectory-node3d time
+                                (dense-position-from3d all all-segments time)
+                                (dense-derivative-from3d all all-segments time)))
+  (vector->immutable-vector
+   (list->vector
+    (append (list (node-at start-time))
+            (for/list ([node (in-vector all)]
+                       #:when (< start-time (prepared-trajectory-node3d-time node) end-time))
+              node)
+            (if (= start-time end-time) '() (list (node-at end-time)))))))
+
+(define (dense-make-segments3d nodes)
+  (vector->immutable-vector
+   (list->vector
+    (for/list ([index (in-range (max 0 (sub1 (vector-length nodes))))])
+      (define first (vector-ref nodes index))
+      (define second (vector-ref nodes (add1 index)))
+      (define segment
+        (trajectory-segment3d
+         (prepared-trajectory-node3d-time first) (prepared-trajectory-node3d-time second)
+         (prepared-trajectory-node3d-position first) (prepared-trajectory-node3d-position second)
+         (prepared-trajectory-node3d-derivative first) (prepared-trajectory-node3d-derivative second)
+         0 (dense-segment-bounds3d (prepared-trajectory-node3d-position first)
+                                    (prepared-trajectory-node3d-position second))))
+      (struct-copy trajectory-segment3d segment
+                   [arc-length (dense-segment-arc-length-to3d segment
+                                                               (trajectory-segment3d-t1 segment))])))))
+
+(define (dense-cumulative-arcs3d segments)
+  (vector->immutable-vector
+   (list->vector
+    (let loop ([index 0] [total 0] [reversed (list 0)])
+      (if (= index (vector-length segments))
+          (reverse reversed)
+          (let ([next (+ total (trajectory-segment3d-arc-length
+                                (vector-ref segments index)))])
+            (loop (add1 index) next (cons next reversed))))))))
+
+(define (dense-trajectory-position3d trajectory time)
+  (dense-position-from3d (prepared-trajectory3d-value-nodes trajectory)
+                         (prepared-trajectory3d-value-segments trajectory) time))
+
+(define (dense-trajectory-derivative3d trajectory time)
+  (dense-derivative-from3d (prepared-trajectory3d-value-nodes trajectory)
+                           (prepared-trajectory3d-value-segments trajectory) time))
+
+(define (dense-position-from3d nodes segments time)
+  (if (zero? (vector-length segments))
+      (prepared-trajectory-node3d-position (vector-ref nodes 0))
+      (dense-segment-position3d
+       (vector-ref segments (dense-segment-index-for-time3d segments time)) time)))
+
+(define (dense-derivative-from3d nodes segments time)
+  (if (zero? (vector-length segments))
+      (prepared-trajectory-node3d-derivative (vector-ref nodes 0))
+      (dense-segment-derivative3d
+       (vector-ref segments (dense-segment-index-for-time3d segments time)) time)))
+
+(define (dense-segment-index-for-time3d segments time)
+  (let loop ([low 0] [high (sub1 (vector-length segments))])
+    (if (= low high)
+        low
+        (let* ([middle (quotient (+ low high 1) 2)]
+               [segment (vector-ref segments middle)])
+          (if (<= (trajectory-segment3d-t0 segment) time)
+              (loop middle high)
+              (loop low (sub1 middle)))))))
+
+(define (dense-segment-progress3d segment time)
+  (define duration (- (trajectory-segment3d-t1 segment) (trajectory-segment3d-t0 segment)))
+  (if (zero? duration) 0 (/ (- time (trajectory-segment3d-t0 segment)) duration)))
+
+(define (dense-segment-position3d segment time)
+  (define s (dense-segment-progress3d segment time))
+  (define h (- (trajectory-segment3d-t1 segment) (trajectory-segment3d-t0 segment)))
+  (define s2 (* s s))
+  (define s3 (* s2 s))
+  (vec3+ (vec3+ (vec3-scale (+ (* 2 s3) (* -3 s2) 1) (trajectory-segment3d-p0 segment))
+               (vec3-scale (* h (+ s3 (* -2 s2) s)) (trajectory-segment3d-d0 segment)))
+         (vec3+ (vec3-scale (+ (* -2 s3) (* 3 s2)) (trajectory-segment3d-p1 segment))
+                (vec3-scale (* h (+ s3 (- s2))) (trajectory-segment3d-d1 segment)))))
+
+(define (dense-segment-derivative3d segment time)
+  (define s (dense-segment-progress3d segment time))
+  (define h (- (trajectory-segment3d-t1 segment) (trajectory-segment3d-t0 segment)))
+  (if (zero? h)
+      (trajectory-segment3d-d0 segment)
+      (let ([s2 (* s s)])
+        (vec3+ (vec3+ (vec3-scale (/ (+ (* 6 s2) (* -6 s)) h)
+                                      (trajectory-segment3d-p0 segment))
+                     (vec3-scale (+ (* 3 s2) (* -4 s) 1) (trajectory-segment3d-d0 segment)))
+               (vec3+ (vec3-scale (/ (+ (* -6 s2) (* 6 s)) h)
+                                      (trajectory-segment3d-p1 segment))
+                      (vec3-scale (+ (* 3 s2) (* -2 s)) (trajectory-segment3d-d1 segment)))))))
+
+(define (dense-segment-arc-length-to3d segment time)
+  (define target (max (trajectory-segment3d-t0 segment)
+                      (min time (trajectory-segment3d-t1 segment))))
+  (let loop ([index 1] [previous (trajectory-segment3d-p0 segment)] [total 0])
+    (if (> index 8)
+        total
+        (let ([next (dense-segment-position3d
+                     segment
+                     (+ (trajectory-segment3d-t0 segment)
+                        (* (/ index 8) (- target (trajectory-segment3d-t0 segment)))) )])
+          (loop (add1 index) next (+ total (vec3-distance previous next)))))))
+
+(define (dense-segment-bounds3d first second)
+  (cons (vec3 (min (vec3-x first) (vec3-x second))
+              (min (vec3-y first) (vec3-y second))
+              (min (vec3-z first) (vec3-z second)))
+        (vec3 (max (vec3-x first) (vec3-x second))
+              (max (vec3-y first) (vec3-y second))
+              (max (vec3-z first) (vec3-z second)))))
+
+(define (ode-trajectory3d-segment-index trajectory time)
+  (check-trajectory3d 'ode-trajectory3d-segment-index trajectory)
+  (check-trajectory3d-time 'ode-trajectory3d-segment-index trajectory time)
+  (cond [(prepared-trajectory3d? trajectory)
+         (define segments (prepared-trajectory3d-value-segments trajectory))
+         (if (zero? (vector-length segments)) 0
+             (dense-segment-index-for-time3d segments time))]
+        [else
+         (raise-arguments-error 'ode-trajectory3d-segment-index
+                                "legacy trajectory has no immutable dense segments"
+                                "trajectory" trajectory)]))
+
+(define (ode-trajectory3d-derivative trajectory time)
+  (check-trajectory3d 'ode-trajectory3d-derivative trajectory)
+  (check-trajectory3d-time 'ode-trajectory3d-derivative trajectory time)
+  (cond [(prepared-trajectory3d? trajectory)
+         (dense-trajectory-derivative3d trajectory time)]
+        [else
+         (call-trajectory-field3d trajectory time
+                                  (ode-trajectory3d-position trajectory time))]))
+
+(define (ode-trajectory3d-speed trajectory time)
+  (vec3-length (ode-trajectory3d-derivative trajectory time)))
+
+(define (ode-trajectory3d-arc-length-at trajectory time)
+  (check-trajectory3d 'ode-trajectory3d-arc-length-at trajectory)
+  (check-trajectory3d-time 'ode-trajectory3d-arc-length-at trajectory time)
+  (unless (prepared-trajectory3d? trajectory)
+    (raise-arguments-error 'ode-trajectory3d-arc-length-at
+                           "legacy trajectory has no immutable arc-length table"
+                           "trajectory" trajectory))
+  (define segments (prepared-trajectory3d-value-segments trajectory))
+  (if (zero? (vector-length segments))
+      0
+      (let ([index (dense-segment-index-for-time3d segments time)])
+        (+ (vector-ref (prepared-trajectory3d-value-cumulative-arcs trajectory) index)
+           (dense-segment-arc-length-to3d (vector-ref segments index) time)))))
+
+(define (ode-trajectory3d-time-at-arc-length trajectory arc-length)
+  (check-trajectory3d 'ode-trajectory3d-time-at-arc-length trajectory)
+  (unless (prepared-trajectory3d? trajectory)
+    (raise-arguments-error 'ode-trajectory3d-time-at-arc-length
+                           "legacy trajectory has no immutable arc-length table"
+                           "trajectory" trajectory))
+  (define total
+    (dense-trajectory-diagnostics3d-total-arc-length
+     (prepared-trajectory3d-value-diagnostics trajectory)))
+  (unless (and (finite-real? arc-length) (<= 0 arc-length total))
+    (raise-argument-error 'ode-trajectory3d-time-at-arc-length
+                          "arc length within the prepared trajectory" arc-length))
+  (define segments (prepared-trajectory3d-value-segments trajectory))
+  (if (zero? (vector-length segments))
+      (car (ode-trajectory3d-time-range trajectory))
+      (let* ([cumulative (prepared-trajectory3d-value-cumulative-arcs trajectory)]
+             [index (dense-segment-index-for-arc-length3d cumulative arc-length)]
+             [segment (vector-ref segments index)]
+             [local (- arc-length (vector-ref cumulative index))])
+        (dense-segment-time-at-arc-length3d segment local))))
+
+(define (dense-segment-index-for-arc-length3d cumulative arc-length)
+  (let loop ([low 0] [high (- (vector-length cumulative) 2)])
+    (if (= low high)
+        low
+        (let ([middle (quotient (+ low high 1) 2)])
+          (if (<= (vector-ref cumulative middle) arc-length)
+              (loop middle high)
+              (loop low (sub1 middle)))))))
+
+(define (dense-segment-time-at-arc-length3d segment target)
+  (cond [(zero? (trajectory-segment3d-arc-length segment))
+         (trajectory-segment3d-t0 segment)]
+        [else
+         (let loop ([low (trajectory-segment3d-t0 segment)]
+                    [high (trajectory-segment3d-t1 segment)] [iterations 36])
+           (if (zero? iterations)
+               (/ (+ low high) 2)
+               (let ([middle (/ (+ low high) 2)])
+                 (if (< (dense-segment-arc-length-to3d segment middle) target)
+                     (loop middle high (sub1 iterations))
+                     (loop low middle (sub1 iterations))))))]))
 
 
 ;;;
@@ -531,7 +1016,7 @@
       [else
        (define derivative
          (or (and sample (ode3d-frame-sample-derivative sample))
-             (call-trajectory-field3d trajectory time position)))
+             (ode-trajectory3d-derivative trajectory time)))
        (define has-tangent? (positive? (vec3-length derivative)))
        (define direction
          ;; `arrow3d` deliberately rejects a degenerate segment.  Retain the
@@ -583,9 +1068,9 @@
 ;;; Batch Frame Preparation
 
 ;; Like the established 2D flow preparation, these dynamic samples are built
-;; before parallel PNG workers are launched.  A fixed trajectory may call the
-;; field while preparing a frame table, but the later spatial relation resolver
-;; only reads these frozen values.
+;; before parallel PNG workers are launched.  Dense prepared trajectories read
+;; only their frozen segment table here; no later render phase invokes the
+;; author's field.
 (define current-ode3d-frame-samples (make-parameter #f))
 
 ;; Avoids duplicate direct-frame preparation when a parallel PNG or isolated
@@ -629,7 +1114,7 @@
                 (define position (ode-trajectory3d-position trajectory time))
                 (define derivative
                   (and (ode-flow-particle3d-metadata-tangent-length metadata)
-                       (call-trajectory-field3d trajectory time position)))
+                       (ode-trajectory3d-derivative trajectory time)))
                 (hash-set positions time (ode3d-frame-sample position derivative))))))
 
 (define (ode3d-frame-sample-ref metadata time)
@@ -670,13 +1155,19 @@
    time point step))
 
 (define (call-trajectory-field3d trajectory time position)
-  (call-field3d
-   (if (adaptive-ode-trajectory3d? trajectory)
-       (adaptive-ode-trajectory3d-field trajectory)
-       (fixed-ode-trajectory3d-field trajectory))
-   time position))
+  (if (prepared-trajectory3d? trajectory)
+      (ode-trajectory3d-derivative trajectory time)
+      (call-field3d
+       (if (adaptive-ode-trajectory3d? trajectory)
+           (adaptive-ode-trajectory3d-field trajectory)
+           (fixed-ode-trajectory3d-field trajectory))
+       time position)))
 
-(define (call-field3d field time point)
+(define (call-field3d field time point [evaluation-count #f])
+  (when evaluation-count
+    (set-box! evaluation-count (add1 (unbox evaluation-count))))
+  (define procedure
+    (if (ode-field3d? field) (ode-field3d-procedure field) field))
   (define results
     (with-handlers
         ([exn:fail?
@@ -686,9 +1177,9 @@
              "point" point "exception message" (exn-message exception)))])
       (call-with-values
        (lambda ()
-         (if (procedure-arity-includes? field 4)
-             (field time (vec3-x point) (vec3-y point) (vec3-z point))
-             (field (vec3-x point) (vec3-y point) (vec3-z point))))
+         (if (procedure-arity-includes? procedure 4)
+             (procedure time (vec3-x point) (vec3-y point) (vec3-z point))
+             (procedure (vec3-x point) (vec3-y point) (vec3-z point))))
        list)))
   (unless (= (length results) 1)
     (raise-arguments-error 'prepare-ode-trajectory3d
@@ -716,11 +1207,12 @@
                            "time" time "time-range" range)))
 
 (define (check-field3d who field)
-  (unless (and (procedure? field)
-               (or (procedure-arity-includes? field 3)
-                   (procedure-arity-includes? field 4)))
+  (unless (or (ode-field3d? field)
+              (and (procedure? field)
+                   (or (procedure-arity-includes? field 3)
+                       (procedure-arity-includes? field 4))))
     (raise-argument-error who
-                          "procedure accepting (x y z) or (time x y z)" field)))
+                          "ode-field3d? or procedure accepting (x y z) or (time x y z)" field)))
 
 (define (check-vec3 who value)
   (unless (vec3-finite? value) (raise-argument-error who "finite vec3?" value)))

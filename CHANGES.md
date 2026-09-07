@@ -67,12 +67,21 @@
   world dimensions, camera- or upright-axis-facing policy, alpha-aware depth
   testing, software rasterization, and a matching Racket/OpenGL texture pass.
   The spatial inspector and the repository probe now report billboard items.
+- Began SCENE-3D-T with explicit `ode-field3d` and solver values plus dense,
+  immutable prepared trajectories. Fixed RK4 and adaptive RK45 now retain all
+  required numerical nodes and endpoint derivatives: position, tangent, and
+  arc-length queries use binary search and stored interpolation only, so
+  later rendering and preview workers never reintegrate an author field.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
   frame artifacts for projected-label depth queries.
 
-Known boundaries: adaptive implicit extraction, analytic implicit picking,
+Known boundaries: SCENE-3D-T currently has no event roots, explicit termination
+policies, adaptive streamline sets, seed values, Poincare sections,
+equilibrium/flow-map analysis, or certified arc-length integration; each dense
+segment uses a deterministic eight-chord arc-length estimate. Adaptive implicit
+extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
 IDs), touching/self-intersecting section validation, repeated capped
 multi-plane geometry cuts, general polygon section fills, automatic default

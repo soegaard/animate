@@ -17,7 +17,9 @@ adds fixed-grid parametric/function surfaces with direct-time calculus helpers,
 SCENE-3D-I adds clipping, sections, and depth-aware transparency, and
 SCENE-3D-J adds direct-time linear, affine, pointwise, and homotopy maps.
 SCENE-3D-K adds immutable prepared 3D ODE trajectories plus deterministic
-static vector-field, streamline, and particle geometry. SCENE-3D-L adds
+static vector-field, streamline, and particle geometry. SCENE-3D-T0 refines
+that model into immutable dense trajectory data: later position, tangent, and
+arc-length queries never call the author's ODE field. SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].
 SCENE-3D-M adds an effectful retained-renderer protocol behind that immutable
@@ -119,5 +121,7 @@ currently operate on unwrapped @racket[mesh3d] values only; they sample the
   an error; @racket['drop-triangle] deliberately leaves holes and does not cap
   or repair them. Prepared 3D ODE fields must return finite @racket[vec3]
   values. Their vector-field grids and streamline seeds are explicit finite
-samples, not adaptive field-line topology; there is no event detection or
-3D ODE source inspector.
+samples, not adaptive field-line topology. Arc length is an eight-chord
+per-dense-segment estimate rather than a certified integral; event detection,
+termination policies, adaptive streamline sets, and 3D ODE source inspection
+are still later work.

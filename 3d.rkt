@@ -573,6 +573,28 @@ cutaway3d
  apply-homotopy3-request?
 
  ;; Prepared spatial ODE trajectories and vector fields
+ ode-field3d
+ ode-field3d?
+ ode-field3d-procedure
+ ode-field3d-arity
+ ode-field3d-cache-key
+ ode-field3d-autonomous?
+ fixed-rk4-solver3d
+ fixed-rk4-solver3d?
+ fixed-rk4-solver3d-step-size
+ adaptive-rk45-solver3d
+ adaptive-rk45-solver3d?
+ adaptive-rk45-solver3d-settings
+ prepared-trajectory3d?
+ trajectory-segment3d?
+ trajectory-segment3d-t0
+ trajectory-segment3d-t1
+ trajectory-segment3d-p0
+ trajectory-segment3d-p1
+ trajectory-segment3d-d0
+ trajectory-segment3d-d1
+ trajectory-segment3d-arc-length
+ trajectory-segment3d-bounds
  ode-trajectory3d?
  ode-trajectory3d-time-range
  ode-trajectory3d-step-size
@@ -584,9 +606,18 @@ cutaway3d
  ode-trajectory3d-diagnostics-accepted-steps
  ode-trajectory3d-diagnostics-rejected-steps
  ode-trajectory3d-diagnostics-termination-time
+ ode-trajectory3d-diagnostics-termination-reason
  ode-trajectory3d-diagnostics-maximum-error
+ ode-trajectory3d-diagnostics-field-evaluations
+ ode-trajectory3d-diagnostics-dense-segment-count
+ ode-trajectory3d-diagnostics-total-arc-length
  prepare-ode-trajectory3d
  ode-trajectory3d-position
+ ode-trajectory3d-derivative
+ ode-trajectory3d-speed
+ ode-trajectory3d-arc-length-at
+ ode-trajectory3d-time-at-arc-length
+ ode-trajectory3d-segment-index
  vector-field3d
  streamline3d
  streamlines3d

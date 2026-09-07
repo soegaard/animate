@@ -32,13 +32,10 @@
    (lambda ()
      (define paths (render-frames! scene directory #:fps 2 #:workers 2))
      (check-equal? (length paths) 2)
-     ;; The phase values are 0 and 1/2.  Preparation performs one RK4
-     ;; remainder (four calls); parallel workers do not call the field.
-     (check-equal? (unbox calls) 4)
-     ;; The direct one-frame renderer has the same preparation boundary.  It
-     ;; does not build one table and then integrate a second time while the
-     ;; spatial relation is resolved.
+     ;; T-0's dense trajectory owns all needed numerical data.  Parallel
+     ;; workers and direct rendering therefore never call the author field.
+     (check-equal? (unbox calls) 0)
      (set-box! calls 0)
      (scene->pict scene 1/2)
-     (check-equal? (unbox calls) 4))
+     (check-equal? (unbox calls) 0))
    (lambda () (delete-directory/files directory))))

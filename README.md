@@ -55,10 +55,11 @@ Linear and affine maps retain exact existing topology—including a complete
 coordinate diagram—while nonlinear maps intentionally sample only the authored
 mesh vertices at each requested scene time.
 SCENE-3D-K generalizes the numerical trajectory kernel across real, `vec2`,
-`vec3`, and fixed-length vector states. `animate/3d` now supplies immutable
-prepared RK4/RK45 trajectories, static vector fields and streamlines, and
-parameter-driven particles/tangents. Renderer workers consume precomputed
-particle samples rather than call author ODE fields.
+`vec3`, and fixed-length vector states. SCENE-3D-T0 upgrades `animate/3d` to
+explicit ODE-field/solver values and immutable dense RK4/RK45 trajectory data:
+position, tangent, and arc-length queries are random-access and never call an
+author field after preparation. Static vector fields/streamlines and
+parameter-driven particles lower from those prepared values.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric
@@ -3020,13 +3021,14 @@ lose the follow-on idea that led to the work.
   it neither caps nor repairs the mesh. Recomputed normals describe the sampled
   result, while retaining source normals can make nonlinear shading misleading.
   Prepared 3D ODE trajectories have finite `vec3` fields and deterministic
-  random-access lookup. Fixed RK4 may integrate the bounded suffix after a
-  checkpoint during an ordinary lookup; adaptive RK45 interpolates stored
-  accepted nodes. The renderer prepares requested particle positions before
-  workers begin, but an author querying a fixed trajectory directly still pays
-  that bounded lookup cost. Vector-field and streamline samples are explicit
-  finite author grids/seeds, not adaptive field-line topology. There is no
-  event detection, adaptive streamline termination, or 3D ODE source inspection.
+  random-access lookup. Both fixed RK4 and adaptive RK45 retain dense numeric
+  segments, so no query or renderer worker invokes the author field after
+  preparation. Arc length is currently a deterministic eight-chord estimate
+  per dense segment, not a certified integral. Vector-field and streamline
+  samples are explicit finite author grids/seeds, not adaptive field-line
+  topology. There is still no event detection, explicit termination policy,
+  adaptive streamline set, Poincare section, equilibrium/flow-map analysis,
+  or 3D ODE source inspection.
   Spatial picking now uses object AABBs plus deterministic local BVHs to find
   an exact indexed mesh triangle from a camera ray. It includes generated curve
   and surface meshes, but not analytic implicit shapes, texture UVs,
