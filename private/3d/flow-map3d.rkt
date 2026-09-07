@@ -23,6 +23,12 @@
   (unless (memq on-termination '(absent use-termination-point))
     (raise-argument-error 'prepare-flow-map3d "'absent or 'use-termination-point as #:on-termination" on-termination))
   (unless (boolean? parallel?) (raise-argument-error 'prepare-flow-map3d "boolean? as #:parallel?" parallel?))
+  (define field-key (and (ode-field3d? field) (ode-field3d-cache-key field)))
+  (define cacheability (if field-key 'persistent-candidate 'memory-only))
+  (define preparation-key
+    (and field-key
+         (list 'prepared-flow-map3d 'schema-1 field-key solver
+               (seed-set3d-cache-key seeds) termination start-time end-time on-termination)))
   (define trajectories
     (vector->immutable-vector
      (list->vector
@@ -44,6 +50,8 @@
            'endpoint-count (for/sum ([point (in-vector endpoints)]) (if point 1 0))
            'missing-endpoint-count (for/sum ([point (in-vector endpoints)]) (if point 0 1))
            'on-termination on-termination
+           'cacheability cacheability
+           'preparation-key preparation-key
            ;; Independent computations have deterministic slots; field calls
            ;; remain serial in this pure layer until worker preparation lands.
            'parallel-mode (if parallel? 'independent 'serial))))

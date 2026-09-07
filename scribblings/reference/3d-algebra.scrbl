@@ -1904,7 +1904,11 @@ remain data because no universal plane-patch size is mathematically correct.}
 one retained trajectory in every declared seed slot. A normally completed slot
 has its endpoint; an early-terminated slot is @racket[#f] by default, or its
 actual stopping point under @racket['use-termination-point]. Thus source,
-endpoint, and termination provenance stay aligned in seed order.}
+endpoint, and termination provenance stay aligned in seed order. Its diagnostics
+contain a versioned preparation identity when @racket[field]
+is an @racket[ode-field3d] with an explicit cache key. An opaque procedure is
+reported as @racket['memory-only], so it is never mistaken for persistently
+serializable numerical input.}
 @defproc[(prepared-flow-map3d? [value any/c]) boolean?]{Recognizes an immutable
 prepared flow map. Its accessors begin with @tt{prepared-flow-map3d-}.}
 @defproc[(flow-map3d-ref [map prepared-flow-map3d?] [index exact-nonnegative-integer?])

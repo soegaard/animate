@@ -23,6 +23,8 @@
   author-visible future policy rather than an implicit geometric alteration.
 - Added immutable dynamical inspection reports for prepared trajectories,
   equilibrium searches, linearizations, and individual flow-map slots.
+- Flow-map diagnostics now distinguish persistently keyed numerical inputs
+  from opaque memory-only fields, and retain a versioned preparation identity.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

@@ -20,4 +20,12 @@
     (prepare-flow-map3d (lambda (x y z) (vec3 1 0 0)) seeds
                         #:start-time 0 #:end-time 2 #:termination bounded
                         #:on-termination 'use-termination-point))
-  (check-equal? (flow-map3d-ref use-point 0) (vec3 1/2 0 0)))
+  (check-equal? (flow-map3d-ref use-point 0) (vec3 1/2 0 0))
+  (check-equal? (hash-ref (prepared-flow-map3d-diagnostics map) 'cacheability)
+                'memory-only)
+  (define keyed
+    (prepare-flow-map3d (ode-field3d (lambda (x y z) (vec3 1 0 0)) #:cache-key 'constant)
+                        seeds #:solver (fixed-rk4-solver3d #:step-size 1/10)))
+  (check-equal? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'cacheability)
+                'persistent-candidate)
+  (check-true (pair? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'preparation-key))))
