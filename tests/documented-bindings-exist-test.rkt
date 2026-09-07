@@ -234,7 +234,8 @@
                          flow-volume-cell3d
                          flow-map3d-local-jacobian flow-map3d-volume-factor
                          trajectory-samples3d trajectory-tube3d trajectory-ribbon3d trajectory-bundle3d
-                         trajectory-inspection3d trajectory-pick-inspection3d equilibrium-inspection3d
+                         trajectory-inspection3d trajectory-pick-inspection3d
+                         view3d-dynamical-inspections3d equilibrium-inspection3d
                          linearization-inspection3d flow-map-inspection3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d

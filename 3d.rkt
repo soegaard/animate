@@ -614,6 +614,7 @@ cutaway3d
  trajectory-bundle3d
  trajectory-inspection3d
  trajectory-pick-inspection3d
+ view3d-dynamical-inspections3d
  equilibrium-inspection3d
  linearization-inspection3d
  flow-map-inspection3d

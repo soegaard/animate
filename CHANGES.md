@@ -45,6 +45,11 @@
   streamline/flow/Poincaré seeds and cooperative cancellation checks at solver,
   event-root, seed, and display-resampling boundaries. Worker completion never
   affects seed/visual order or the reported first failure.
+- Added `view3d-dynamical-inspections3d` and a preview-only 3D dynamics
+  inspector section for retained `flow-particle3d` trajectories.
+  Solver, accepted/rejected steps, termination, event count, field work, and
+  arc length are inspected from immutable prepared data without modifying a
+  scene or triggering numerical preparation.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

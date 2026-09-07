@@ -206,6 +206,7 @@
          streamline3d
          streamlines3d
          flow-particle3d
+         flow-particle3d-trajectory
          flow-cloud3d
          prepare-ode3d-frame-samples
          call-with-ode3d-frame-samples
@@ -2684,6 +2685,16 @@
 ;; resolving their arbitrary author procedures in its worker threads.
 (struct ode-flow-particle3d-metadata (trajectory phase-id tangent-length) #:transparent)
 (struct ode3d-frame-sample (position derivative) #:transparent)
+
+;; This narrow query lets inspection clients identify the prepared numerical
+;; value behind a particle relation without resolving the relation or exposing
+;; its renderer-only frame sample table. Non-particle spatial values simply
+;; return #f, making a spatial-tree walk total.
+(define (flow-particle3d-trajectory value)
+  (and (spatial-relation? value)
+       (let ([metadata (spatial-relation-cache-key value)])
+         (and (ode-flow-particle3d-metadata? metadata)
+              (ode-flow-particle3d-metadata-trajectory metadata)))))
 
 (define (flow-particle3d trajectory phase
                          #:id id

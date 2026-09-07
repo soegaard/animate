@@ -41,11 +41,13 @@
          "3d/camera3d.rkt"
          "3d/bounds3.rkt"
          "3d/clipping3d.rkt"
+         "3d/dynamical-inspection3d.rkt"
          "3d/preview-camera3d-override.rkt"
          "3d/projection3d.rkt"
          "3d/ray-plane.rkt"
          "3d/rotation3.rkt"
          "3d/spatial-inspection.rkt"
+         "3d/spatial-group.rkt"
          "3d/vec3.rkt"
          "3d/view3d-visual.rkt"
          "visual-inspector.rkt"
@@ -1421,12 +1423,59 @@
                'copy-spatial-path "Copy spatial path"
                `(copy-spatial-path ,path) #t))))
           #f)))
+  ;; A dynamical report attaches to a prepared flow-particle relation. It is a
+  ;; retained-data readout: selecting a row neither reruns the ODE solver nor
+  ;; adds markers or overlays to the authored 3D scene.
+  (define (dynamical-inspection-section)
+    (define session (unbox controller-box))
+    (define view-id (active-spatial-view-id))
+    (define view (and session view-id (resolved-inspection-view session view-id)))
+    (and view
+         (let ([entries (view3d-dynamical-inspections3d view)])
+           (and (pair? entries)
+                (inspector-section
+                 'dynamics "3D dynamics"
+                 (apply append
+                        (for/list ([entry (in-list entries)])
+                          (define path (hash-ref entry 'path))
+                          (define report (hash-ref entry 'report))
+                          (define termination (hash-ref report 'termination))
+                          (define event-hits (hash-ref report 'event-hits))
+                          (list
+                           (inspector-row
+                            (format "~s solver" path)
+                            (format "~s; ~a accepted, ~a rejected steps"
+                                    (hash-ref report 'solver)
+                                    (hash-ref report 'accepted-steps)
+                                    (hash-ref report 'rejected-steps))
+                            'info '())
+                           (inspector-row
+                            (format "~s termination" path)
+                            (format "~s; ~a stored policy hit~a"
+                                    (hash-ref report 'termination-reason)
+                                    (vector-length termination)
+                                    (if (= (vector-length termination) 1) "" "s"))
+                            'info '())
+                           (inspector-row
+                            (format "~s events" path)
+                            (format "~a hit~a; ~a field evaluations"
+                                    (vector-length event-hits)
+                                    (if (= (vector-length event-hits) 1) "" "s")
+                                    (hash-ref report 'field-evaluations))
+                            'info '())
+                           (inspector-row
+                            (format "~s arc length" path)
+                            (format "~a" (hash-ref report 'arc-length))
+                            'info '()))))
+                 #f)))))
   (define (available-inspector-sections document)
     (append (if (inspector-document? document)
                 (inspector-document-sections document)
                 '())
             (let ([spatial (spatial-hierarchy-section)])
-              (if spatial (list spatial) '()))))
+              (if spatial (list spatial) '()))
+            (let ([dynamics (dynamical-inspection-section)])
+              (if dynamics (list dynamics) '()))))
   (define (display-inspector-section! index)
     (define document (unbox inspector-document-box))
     (define sections (available-inspector-sections document))

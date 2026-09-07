@@ -4,25 +4,55 @@
 ;; prepared values only and never select, transform, or otherwise mutate a
 ;; Scene or view.
 
-(require "../geometry.rkt"
+(require "../geometry.rkt" "../visual-model.rkt"
          "equilibrium3d.rkt" "flow-map3d.rkt" "linearization3d.rkt"
-         "ode-flow3d.rkt" "seed-set3d.rkt" "vec3.rkt")
+         "ode-flow3d.rkt" "seed-set3d.rkt" "spatial-group.rkt"
+         "spatial-visual.rkt" "vec3.rkt" "view3d-visual.rkt")
 
 (provide trajectory-inspection3d equilibrium-inspection3d
          trajectory-pick-inspection3d
-         linearization-inspection3d flow-map-inspection3d)
+         linearization-inspection3d flow-map-inspection3d
+         view3d-dynamical-inspections3d)
 
 (define (trajectory-inspection3d trajectory)
   (unless (prepared-trajectory3d? trajectory)
     (raise-argument-error 'trajectory-inspection3d "prepared-trajectory3d?" trajectory))
   (define range (ode-trajectory3d-time-range trajectory))
+  (define diagnostics (ode-trajectory3d-diagnostics trajectory))
   (hasheq 'kind 'trajectory
           'time-range range
           'solver (ode-trajectory3d-solver trajectory)
-          'diagnostics (ode-trajectory3d-diagnostics trajectory)
+          'diagnostics diagnostics
+          'accepted-steps (ode-trajectory3d-diagnostics-accepted-steps diagnostics)
+          'rejected-steps (ode-trajectory3d-diagnostics-rejected-steps diagnostics)
+          'termination-reason (ode-trajectory3d-diagnostics-termination-reason diagnostics)
+          'field-evaluations (ode-trajectory3d-diagnostics-field-evaluations diagnostics)
+          'event-count (ode-trajectory3d-diagnostics-event-count diagnostics)
           'termination (ode-trajectory3d-termination trajectory)
           'event-hits (ode-trajectory3d-event-hits trajectory)
           'arc-length (ode-trajectory3d-arc-length-at trajectory (cdr range))))
+
+;; The window inspector calls this over one already-sampled `view3d`. Reports
+;; are retained numerical facts attached to flow-particle relations, not a
+;; request to resolve a relation, integrate a field, or alter the view.
+(define (view3d-dynamical-inspections3d view)
+  (unless (view3d? view)
+    (raise-argument-error 'view3d-dynamical-inspections3d "view3d?" view))
+  (define (walk visual path)
+    (define trajectory (flow-particle3d-trajectory visual))
+    (append
+     (if trajectory
+         (list (hasheq 'path path 'report (trajectory-inspection3d trajectory)))
+         '())
+     (if (spatial-container? visual)
+         (apply append
+                (for/list ([child (in-list (spatial-child-entries visual))])
+                  (walk (spatial-child-visual child)
+                        (append path (list (spatial-child-id child))))))
+         '())))
+  (apply append
+         (for/list ([child (in-list (view3d-children view))])
+           (walk child (list (visual-id view) (spatial-id child))))))
 
 ;; A preview can map a screen pick to world space, then ask this retained-data
 ;; query for an author-facing explanation.  The closest position is evaluated

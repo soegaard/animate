@@ -2003,6 +2003,13 @@ early remains a shorter retained bundle child.}
 @defproc[(trajectory-inspection3d [trajectory prepared-trajectory3d?]) immutable-hash?]{Returns
 a read-only report of retained solver diagnostics, termination, event hits, and
 arc length.}
+@defproc[(view3d-dynamical-inspections3d [view view3d?]) list?]{Returns ordered
+immutable report hashes for every @racket[flow-particle3d] relation in
+@racket[view]. Each hash contains its rooted spatial @racket['path] and a
+@racket[trajectory-inspection3d] @racket['report]. The query walks retained
+relation metadata only: it never evaluates an ODE field, resolves a relation,
+or changes the authored view. The preview's @italic{3D dynamics} inspector
+section presents the same reports.}
 @defproc[(trajectory-pick-inspection3d [trajectory prepared-trajectory3d?]
                                         [point vec3?]
                                         [#:samples samples exact-integer? 128]
