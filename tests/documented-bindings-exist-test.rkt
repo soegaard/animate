@@ -50,6 +50,7 @@
                          polyhedral-complex3d-vertex-to-faces polyhedral-complex3d-diagnostics
                          convex-hull3d convex-hull3d-result?
                          combinatorial-dual3d polar-dual3d dual-polyhedron3d-result?
+                         prepare-schlegel-diagram3d schlegel-diagram3d schlegel-diagram3d-data?
                          material3d directional-light3d
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color

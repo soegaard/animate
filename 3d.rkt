@@ -32,6 +32,7 @@
          "private/3d/polyhedral-complex3d.rkt"
          "private/3d/convex-hull3d.rkt"
          "private/3d/dual-polyhedron3d.rkt"
+         "private/3d/schlegel3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -368,6 +369,9 @@
  (struct-out dual-polyhedron3d-result)
  combinatorial-dual3d
  polar-dual3d
+ (struct-out schlegel-diagram3d-data)
+ prepare-schlegel-diagram3d
+ schlegel-diagram3d
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d

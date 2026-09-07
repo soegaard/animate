@@ -32,6 +32,10 @@
   absence for renderer diagonals within polygonal faces. The geometric polar
   operation verifies a closed orientable manifold, convex supporting planes,
   and a strictly interior centre before constructing a result.
+- Added SCENE-3D-U5's deterministic Schlegel projection preparation and flat
+  3D edge visual. It preserves primal vertex/edge/face identities, validates
+  that inner projected vertices stay inside the chosen simple outer face, and
+  reports the target plane, canonical basis, margin, and viewpoint distance.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

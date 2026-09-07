@@ -1,0 +1,15 @@
+#lang racket/base
+(require rackunit "../3d.rkt")
+(define cube-points (vector (vec3 -1 -1 -1) (vec3 1 -1 -1) (vec3 1 1 -1) (vec3 -1 1 -1) (vec3 -1 -1 1) (vec3 1 -1 1) (vec3 1 1 1) (vec3 -1 1 1)))
+(module+ test
+ (define c (polyhedral-complex3d (convex-hull3d-result-mesh (convex-hull3d cube-points))))
+ (define d (prepare-schlegel-diagram3d c))
+ (check-equal? (vector-length (schlegel-diagram3d-data-vertex-positions d)) 8)
+ (check-equal? (vector-length (schlegel-diagram3d-data-edges d)) 12)
+ (check-equal? (vector-length (schlegel-diagram3d-data-face-polygons d)) 6)
+ (check-true (group3d? (schlegel-diagram3d d)))
+ (for ([i (in-range 6)])
+  (check-equal? (schlegel-diagram3d-data-outer-face (prepare-schlegel-diagram3d c #:outer-face i))
+                (polyhedral-face3d-id (vector-ref (polyhedral-complex3d-faces c) i))))
+ (define tetra (polyhedral-complex3d (tetrahedron3d 1 #:id 'tetra) #:faces 'triangles))
+ (check-equal? (vector-length (schlegel-diagram3d-data-edges (prepare-schlegel-diagram3d tetra))) 6))
