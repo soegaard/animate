@@ -1,54 +1,421 @@
 #lang racket/base
-(require racket/list racket/set "mesh3d.rkt" "mesh-topology3d.rkt" "polyhedral-complex3d.rkt" "vec3.rkt")
-(provide (struct-out net-hinge3d) (struct-out net-face-transform3d)
-         (struct-out polyhedron-net3d) prepare-polyhedron-net3d)
+
+;;;
+;;; Polyhedral-net preparation
+;;;
+
+;; A prepared net is pure geometry: a face-adjacency spanning tree, a rigid
+;; flattened frame per face, and a deterministic overlap report.  The later
+;; animation layer can therefore rotate around these same hinges without ever
+;; interpolating unrelated face vertices.
+
+(require racket/list
+         racket/set
+         "mesh3d.rkt"
+         "mesh-topology3d.rkt"
+         "net-overlap3d.rkt"
+         "polyhedral-complex3d.rkt"
+         "vec3.rkt")
+
+(provide (struct-out net-overlap3d)
+         (struct-out net-hinge3d)
+         (struct-out net-face-transform3d)
+         (struct-out polyhedron-net3d)
+         prepare-polyhedron-net3d)
 
 (struct net-hinge3d (parent child primal-edge) #:transparent)
-;; An explicit rigid local frame: a source point p maps to origin + dot(p-a,e)E
-;; + dot(p-a,f)F + dot(p-a,n)N. Face points have zero final normal coordinate.
-(struct net-face-transform3d (face source-origin source-e source-f source-n target-origin target-e target-f target-n) #:transparent)
-(struct polyhedron-net3d (root-face hinge-tree cut-edges face-transforms flat-polygons overlaps diagnostics) #:transparent)
 
-(define (prepare-polyhedron-net3d complex #:root-face [root 0] #:hinges [hinges #f]
-                                  #:strategy [strategy 'breadth-first] #:search-limit [limit 1000])
- (unless (polyhedral-complex3d? complex) (raise-argument-error 'prepare-polyhedron-net3d "polyhedral-complex3d?" complex))
- (unless (memq strategy '(breadth-first depth-first minimum-overlap)) (raise-argument-error 'prepare-polyhedron-net3d "net strategy" strategy))
- (define faces (polyhedral-complex3d-faces complex)) (define n (vector-length faces))
- (unless (and (exact-nonnegative-integer? root) (< root n)) (raise-argument-error 'prepare-polyhedron-net3d "face index" root))
- (for ([f (in-vector faces)]) (unless (polyhedral-face3d-boundary-vertex-indices f) (raise-arguments-error 'prepare-polyhedron-net3d "simple polygonal faces" "face" f)))
- (define topology (polyhedral-complex3d-topology complex))
- (define adj (make-vector n '()))
- (for ([i (in-range (vector-length (mesh-topology3d-edges topology)))])
-  (define fs (vector-ref (polyhedral-complex3d-edge-to-faces complex) i))
-  (when (= (vector-length fs) 2) (define a (vector-ref fs 0)) (define b (vector-ref fs 1))
-   (vector-set! adj a (cons (cons b i) (vector-ref adj a))) (vector-set! adj b (cons (cons a i) (vector-ref adj b)))))
- (define selected (and hinges (list->set hinges)))
- (define tree
-  (let loop ([todo (list root)] [seen (list root)] [out '()])
-   (if (null? todo) (reverse out)
-    (let* ([p (car todo)] [ns (sort (filter (lambda (x) (or (not selected) (set-member? selected (cdr x)))) (vector-ref adj p)) < #:key cdr)])
-     (define add (filter (lambda (x) (not (member (car x) seen))) ns))
-     (loop (if (eq? strategy 'depth-first) (append (reverse (map car add)) (cdr todo)) (append (cdr todo) (map car add)))
-           (append seen (map car add)) (append (for/list ([x (in-list add)]) (net-hinge3d p (car x) (cdr x))) out))))))
- (unless (= (length tree) (sub1 n)) (raise-arguments-error 'prepare-polyhedron-net3d "a connected face-adjacency spanning tree" "root" root))
- (define tree-edges (map net-hinge3d-primal-edge tree))
- (define cuts (for/vector ([i (in-range (vector-length (mesh-topology3d-edges topology)))] #:when (and (= (vector-length (vector-ref (polyhedral-complex3d-edge-to-faces complex) i)) 2) (not (member i tree-edges)))) i))
- (define vertices (mesh3d-vertices (polyhedral-complex3d-mesh complex)))
- (define root-face (vector-ref faces root)) (define rn (polyhedral-face3d-normal root-face))
- (define maps (make-vector n #f))
- (define (make-map face origin target-a target-b)
-  (define bs (polyhedral-face3d-boundary-vertex-indices face)) (define a (vector-ref bs 0)) (define b (vector-ref bs 1))
-  (define se (vec3-normalize (vec3- (vector-ref vertices b) (vector-ref vertices a)))) (define sn (polyhedral-face3d-normal face)) (define sf (vec3-cross sn se))
-  (define te (vec3-normalize (vec3- target-b target-a))) (define tf (vec3-cross rn te))
-  (net-face-transform3d #f (vector-ref vertices a) se sf sn target-a te tf rn))
- (define rb (vector-ref (polyhedral-face3d-boundary-vertex-indices root-face) 1))
- (vector-set! maps root (make-map root-face #f (vector-ref vertices (vector-ref (polyhedral-face3d-boundary-vertex-indices root-face) 0)) (vector-ref vertices rb)))
- (define (apply-map m p) (define d (vec3- p (net-face-transform3d-source-origin m))) (vec3+ (net-face-transform3d-target-origin m) (vec3+ (vec3-scale (vec3-dot d (net-face-transform3d-source-e m)) (net-face-transform3d-target-e m)) (vec3+ (vec3-scale (vec3-dot d (net-face-transform3d-source-f m)) (net-face-transform3d-target-f m)) (vec3-scale (vec3-dot d (net-face-transform3d-source-n m)) (net-face-transform3d-target-n m))))))
- (for ([h (in-list tree)])
-  (define edge (mesh-edge-topology3d-vertices (vector-ref (mesh-topology3d-edges topology) (net-hinge3d-primal-edge h))))
-  (define parent-map (vector-ref maps (net-hinge3d-parent h))) (define a (vector-ref edge 0)) (define b (vector-ref edge 1))
-  (define child-face (vector-ref faces (net-hinge3d-child h)))
-  (vector-set! maps (net-hinge3d-child h) (make-map child-face #f (apply-map parent-map (vector-ref vertices a)) (apply-map parent-map (vector-ref vertices b)))))
- (define frozen (for/vector ([m (in-vector maps)] [i (in-naturals)]) (struct-copy net-face-transform3d m [face i])))
- (define polygons (for/vector ([f (in-vector faces)] [m (in-vector frozen)]) (for/vector ([i (in-vector (polyhedral-face3d-boundary-vertex-indices f))]) (apply-map m (vector-ref vertices i)))))
- (polyhedron-net3d root (list->vector tree) (vector->immutable-vector cuts) (vector->immutable-vector frozen) (vector->immutable-vector polygons) #() (hasheq 'strategy strategy 'search-complete? (not (eq? strategy 'minimum-overlap)) 'search-limit limit)))
+;; A source point p maps to origin + dot(p-a,e)E + dot(p-a,f)F
+;; + dot(p-a,n)N.  A face-plane point has zero final normal coordinate.
+(struct net-face-transform3d
+  (face source-origin source-e source-f source-n
+        target-origin target-e target-f target-n)
+  #:transparent)
+
+(struct polyhedron-net3d
+  (root-face hinge-tree cut-edges face-transforms flat-polygons overlaps diagnostics)
+  #:transparent)
+
+(struct face-adjacency-edge (index first second) #:transparent)
+(struct net-layout (tree cuts transforms polygons overlaps score) #:transparent)
+
+
+;;;
+;;; Public preparation
+;;;
+
+; prepare-polyhedron-net3d
+; : polyhedral-complex3d?
+;   [#:root-face face-selector]
+;   [#:hinges (or/c #f (listof topological-edge-index))]
+;   [#:strategy (or/c 'breadth-first 'depth-first 'minimum-overlap)]
+;   [#:search-limit exact-positive-integer?]
+;   -> polyhedron-net3d?
+;;
+;; An explicit hinge set is a spanning tree of polygonal-face adjacency.  The
+;; automatic minimum-overlap strategy enumerates tree candidates in edge-index
+;; order, scores actual flattened overlap area before boundary crossings and
+;; diameter, and honestly reports whether its search limit was reached.
+(define (prepare-polyhedron-net3d complex
+                                  #:root-face [root 0]
+                                  #:hinges [hinges #f]
+                                  #:strategy [strategy 'breadth-first]
+                                  #:search-limit [limit 1000])
+  (unless (polyhedral-complex3d? complex)
+    (raise-argument-error 'prepare-polyhedron-net3d "polyhedral-complex3d?" complex))
+  (unless (memq strategy '(breadth-first depth-first minimum-overlap))
+    (raise-argument-error 'prepare-polyhedron-net3d
+                          "'breadth-first, 'depth-first, or 'minimum-overlap"
+                          strategy))
+  (unless (exact-positive-integer? limit)
+    (raise-argument-error 'prepare-polyhedron-net3d "exact-positive-integer?" limit))
+  (define faces (polyhedral-complex3d-faces complex))
+  (define face-count (vector-length faces))
+  (unless (and (exact-nonnegative-integer? root) (< root face-count))
+    (raise-argument-error 'prepare-polyhedron-net3d "an in-range face index" root))
+  (for ([face (in-vector faces)])
+    (unless (polyhedral-face3d-boundary-vertex-indices face)
+      (raise-arguments-error
+       'prepare-polyhedron-net3d "simple polygonal faces"
+       "face" (polyhedral-face3d-id face))))
+  (define face-edges (build-face-adjacency-edges complex))
+  (define adjacency (build-face-adjacency face-count face-edges))
+  (define-values (tree search-complete? candidate-count selected-score)
+    (cond
+      [hinges
+       (define selected (checked-hinge-set hinges face-edges))
+       (define tree (oriented-tree face-count adjacency root selected 'breadth-first))
+       (unless (and (= (set-count selected) (sub1 face-count))
+                    (= (length tree) (sub1 face-count))
+                    (equal? selected
+                            (list->set (map net-hinge3d-primal-edge tree))))
+         (raise-arguments-error
+          'prepare-polyhedron-net3d
+          "a connected face-adjacency spanning tree"
+          "hinges" hinges))
+       (values tree #t 1 #f)]
+      [(eq? strategy 'minimum-overlap)
+       (choose-minimum-overlap-tree complex faces face-edges adjacency root limit)]
+      [else
+       (define tree (oriented-tree face-count adjacency root #f strategy))
+       (unless (= (length tree) (sub1 face-count))
+         (raise-arguments-error
+          'prepare-polyhedron-net3d "a connected face-adjacency graph" "root" root))
+       (values tree #t 1 #f)]))
+  (define layout (build-net-layout complex faces face-edges root tree))
+  (define score (or selected-score (net-layout-score layout)))
+  (polyhedron-net3d
+   root
+   (vector->immutable-vector (list->vector tree))
+   (net-layout-cuts layout)
+   (net-layout-transforms layout)
+   (net-layout-polygons layout)
+   (net-layout-overlaps layout)
+   (hasheq 'strategy strategy
+           'search-complete? search-complete?
+           'search-limit limit
+           'candidate-count candidate-count
+           'selected-tree-edge-indices
+           (vector->immutable-vector
+            (list->vector (sort (map net-hinge3d-primal-edge tree) <)))
+           'overlap-count (vector-length (net-layout-overlaps layout))
+           'total-overlap-area (first score)
+           'boundary-crossings (second score)
+           'net-diameter (third score))))
+
+
+;;;
+;;; Face-adjacency trees
+;;;
+
+(define (build-face-adjacency-edges complex)
+  (define topology (polyhedral-complex3d-topology complex))
+  (define edge-to-faces (polyhedral-complex3d-edge-to-faces complex))
+  (for/list ([edge-index (in-range (vector-length (mesh-topology3d-edges topology)))]
+             #:when (= (vector-length (vector-ref edge-to-faces edge-index)) 2))
+    (define incident-faces (vector-ref edge-to-faces edge-index))
+    (face-adjacency-edge edge-index
+                         (min (vector-ref incident-faces 0) (vector-ref incident-faces 1))
+                         (max (vector-ref incident-faces 0) (vector-ref incident-faces 1)))))
+
+(define (build-face-adjacency face-count face-edges)
+  (define adjacency (make-vector face-count '()))
+  (for ([edge (in-list face-edges)])
+    (vector-set! adjacency (face-adjacency-edge-first edge)
+                 (cons (cons (face-adjacency-edge-second edge)
+                             (face-adjacency-edge-index edge))
+                       (vector-ref adjacency (face-adjacency-edge-first edge))))
+    (vector-set! adjacency (face-adjacency-edge-second edge)
+                 (cons (cons (face-adjacency-edge-first edge)
+                             (face-adjacency-edge-index edge))
+                       (vector-ref adjacency (face-adjacency-edge-second edge)))))
+  (vector->immutable-vector
+   (for/vector ([neighbours (in-vector adjacency)])
+     (sort neighbours < #:key cdr))))
+
+(define (checked-hinge-set hinges face-edges)
+  (unless (list? hinges)
+    (raise-argument-error 'prepare-polyhedron-net3d
+                          "a list of topological edge indexes" hinges))
+  (define available (list->set (map face-adjacency-edge-index face-edges)))
+  (for ([edge-index (in-list hinges)])
+    (unless (and (exact-nonnegative-integer? edge-index)
+                 (set-member? available edge-index))
+      (raise-arguments-error
+       'prepare-polyhedron-net3d "a face-adjacency topological edge index"
+       "hinge" edge-index)))
+  (list->set hinges))
+
+;; `allowed-edges` is #f for the full graph or a set of primal edge indexes.
+(define (oriented-tree face-count adjacency root allowed-edges strategy)
+  (define seen (make-hash))
+  (hash-set! seen root #t)
+  (let loop ([pending (list root)] [reversed-tree '()])
+    (cond [(null? pending) (reverse reversed-tree)]
+          [else
+           (define parent (car pending))
+           ;; A malformed complex can give the same two polygonal faces more
+           ;; than one common topological edge.  The first source edge is the
+           ;; only candidate allowed to discover that child; otherwise the
+           ;; traversal would create two parent links and cease to be a tree.
+           (define usable '())
+           (define discovered-here (make-hash))
+           (for ([entry (in-list (vector-ref adjacency parent))])
+             (when (and (or (not allowed-edges)
+                            (set-member? allowed-edges (cdr entry)))
+                        (not (hash-has-key? seen (car entry)))
+                        (not (hash-has-key? discovered-here (car entry))))
+               (hash-set! discovered-here (car entry) #t)
+               (set! usable (append usable (list entry)))))
+           (for ([entry (in-list usable)])
+             (hash-set! seen (car entry) #t))
+           (define children (map car usable))
+           (define next-pending
+             (if (eq? strategy 'depth-first)
+                 (append (reverse children) (cdr pending))
+                 (append (cdr pending) children)))
+           (loop next-pending
+                 (append (reverse
+                          (for/list ([entry (in-list usable)])
+                            (net-hinge3d parent (car entry) (cdr entry))))
+                         reversed-tree))])))
+
+
+;;;
+;;; Deterministic minimum-overlap search
+;;;
+
+(define (choose-minimum-overlap-tree complex faces face-edges adjacency root limit)
+  (define face-count (vector-length faces))
+  ;; One extra candidate tells us that the prescribed search limit was reached
+  ;; without pretending that the first `limit` candidates were an exhaustive
+  ;; search.  Candidate edge vectors are in increasing edge-index order.
+  (define-values (candidate-edge-sets stopped?)
+    (enumerate-spanning-edge-sets face-count face-edges (add1 limit)))
+  (when (null? candidate-edge-sets)
+    (raise-arguments-error
+     'prepare-polyhedron-net3d "a connected face-adjacency spanning tree"
+     "root" root))
+  (define examined (take candidate-edge-sets (min limit (length candidate-edge-sets))))
+  (define best
+    (for/fold ([best #f]) ([edge-set (in-list examined)])
+      (define tree (oriented-tree face-count adjacency root (list->set edge-set)
+                                  'breadth-first))
+      (define layout (build-net-layout complex faces face-edges root tree))
+      (define candidate (cons tree (net-layout-score layout)))
+      (if (or (not best) (net-score<? (cdr candidate) (cdr best)))
+          candidate
+          best)))
+  (values (car best)
+          (and (not stopped?) (<= (length candidate-edge-sets) limit))
+          (length examined)
+          (cdr best)))
+
+(define (enumerate-spanning-edge-sets face-count face-edges cap)
+  (define sorted-edges (sort face-edges < #:key face-adjacency-edge-index))
+  (define collected '())
+  (define stopped? #f)
+  (define (visit start remaining chosen)
+    (cond [(>= (length collected) cap) (set! stopped? #t)]
+          [(zero? remaining)
+           (when (edge-set-spans? face-count chosen)
+             (set! collected
+                   (append collected
+                           (list (sort (map face-adjacency-edge-index chosen) <)))))]
+          [else
+           (define last-start (- (length sorted-edges) remaining))
+           (for ([index (in-range start (add1 last-start))])
+             (unless stopped?
+               (visit (add1 index) (sub1 remaining)
+                      (append chosen (list (list-ref sorted-edges index))))))]))
+  (visit 0 (sub1 face-count) '())
+  (values collected stopped?))
+
+(define (edge-set-spans? face-count edges)
+  (and (= (length edges) (sub1 face-count))
+       (let ([adjacency (make-vector face-count '())])
+         (for ([edge (in-list edges)])
+           (vector-set! adjacency (face-adjacency-edge-first edge)
+                        (cons (face-adjacency-edge-second edge)
+                              (vector-ref adjacency (face-adjacency-edge-first edge))))
+           (vector-set! adjacency (face-adjacency-edge-second edge)
+                        (cons (face-adjacency-edge-first edge)
+                              (vector-ref adjacency (face-adjacency-edge-second edge)))))
+         (define seen (make-hash))
+         (let visit ([pending '(0)])
+           (cond [(null? pending) (= (hash-count seen) face-count)]
+                 [else
+                  (define current (car pending))
+                  (if (hash-has-key? seen current)
+                      (visit (cdr pending))
+                      (begin
+                        (hash-set! seen current #t)
+                        (visit (append (cdr pending)
+                                       (vector-ref adjacency current)))))])))))
+
+
+;;;
+;;; Rigid flattening and overlap score
+;;;
+
+(define (build-net-layout complex faces face-edges root tree)
+  (define topology (polyhedral-complex3d-topology complex))
+  (define vertices (mesh3d-vertices (polyhedral-complex3d-mesh complex)))
+  (define root-face (vector-ref faces root))
+  (define root-normal (polyhedral-face3d-normal root-face))
+  (define maps (make-vector (vector-length faces) #f))
+  (define root-boundary (polyhedral-face3d-boundary-vertex-indices root-face))
+  (define root-a (vector-ref root-boundary 0))
+  (define root-b (vector-ref root-boundary 1))
+  (vector-set! maps root
+               (make-net-map root-face vertices root-normal root-a root-b
+                             (vector-ref vertices root-a)
+                             (vector-ref vertices root-b)))
+  ;; `tree` is parent-before-child by construction, so each child uses a final
+  ;; parent frame.  The shared topological edge, not a face's first boundary
+  ;; edge, is the source axis; this matters for general polygonal faces.
+  (for ([hinge (in-list tree)])
+    (define edge
+      (mesh-edge-topology3d-vertices
+       (vector-ref (mesh-topology3d-edges topology)
+                   (net-hinge3d-primal-edge hinge))))
+    (define source-a (vector-ref edge 0))
+    (define source-b (vector-ref edge 1))
+    (define parent-map (vector-ref maps (net-hinge3d-parent hinge)))
+    (define child-face (vector-ref faces (net-hinge3d-child hinge)))
+    (define child-map
+      (make-net-map child-face vertices root-normal source-a source-b
+                    (net-map-apply parent-map (vector-ref vertices source-a))
+                    (net-map-apply parent-map (vector-ref vertices source-b))))
+    ;; A rigid face has two coplanar choices about a hinge.  Select the one
+    ;; opposite the parent interior; choosing the same side collapses ordinary
+    ;; cube faces directly on top of their parent.
+    (define parent-centroid
+      (net-map-apply parent-map
+                     (polyhedral-face3d-centroid
+                      (vector-ref faces (net-hinge3d-parent hinge)))))
+    (define parent-side
+      (vec3-dot
+       (vec3- parent-centroid (net-face-transform3d-target-origin child-map))
+       (net-face-transform3d-target-f child-map)))
+    (define child-side
+      (vec3-dot
+       (vec3- (polyhedral-face3d-centroid child-face)
+              (net-face-transform3d-source-origin child-map))
+       (net-face-transform3d-source-f child-map)))
+    (define unfolded-child-map
+      (if (positive? (* parent-side child-side))
+          ;; Flip both perpendicular axes to retain an orientation-preserving
+          ;; frame.  `target-n` is not a cosmetic field: it is the normal axis
+          ;; used later by fold/unfold rotations.
+          (struct-copy net-face-transform3d child-map
+                       [target-f
+                        (vec3-scale -1 (net-face-transform3d-target-f child-map))]
+                       [target-n
+                        (vec3-scale -1 (net-face-transform3d-target-n child-map))])
+          child-map))
+    (vector-set! maps (net-hinge3d-child hinge) unfolded-child-map))
+  (define transforms
+    (vector->immutable-vector
+     (for/vector ([transform (in-vector maps)] [face-index (in-naturals)])
+       (unless transform
+         (raise-arguments-error
+          'prepare-polyhedron-net3d "a parent-before-child spanning tree"
+          "unmapped-face" face-index))
+       (struct-copy net-face-transform3d transform [face face-index]))))
+  (define polygons
+    (vector->immutable-vector
+     (for/vector ([face (in-vector faces)] [transform (in-vector transforms)])
+       (vector->immutable-vector
+        (for/vector ([vertex-index
+                      (in-vector (polyhedral-face3d-boundary-vertex-indices face))])
+          (net-map-apply transform (vector-ref vertices vertex-index)))))))
+  (define root-map (vector-ref transforms root))
+  (define overlaps
+    (net-polygons-overlaps3d polygons
+                             (net-face-transform3d-target-origin root-map)
+                             (net-face-transform3d-target-e root-map)
+                             (net-face-transform3d-target-f root-map)))
+  (define tree-edge-set (list->set (map net-hinge3d-primal-edge tree)))
+  (define cuts
+    (vector->immutable-vector
+     (for/vector ([edge (in-list face-edges)]
+                  #:unless (set-member? tree-edge-set
+                                        (face-adjacency-edge-index edge)))
+       (face-adjacency-edge-index edge))))
+  (net-layout tree cuts transforms polygons overlaps
+              (list (for/sum ([overlap (in-vector overlaps)])
+                      (net-overlap3d-area overlap))
+                    (for/sum ([overlap (in-vector overlaps)])
+                      (net-overlap3d-boundary-crossings overlap))
+                    (net-diameter polygons root-map))))
+
+(define (make-net-map face vertices root-normal source-a-index source-b-index
+                      target-a target-b)
+  (define source-e
+    (vec3-normalize
+     (vec3- (vector-ref vertices source-b-index)
+            (vector-ref vertices source-a-index))))
+  (define source-n (polyhedral-face3d-normal face))
+  (define source-f (vec3-cross source-n source-e))
+  (define target-e (vec3-normalize (vec3- target-b target-a)))
+  (define target-f (vec3-cross root-normal target-e))
+  (net-face-transform3d #f (vector-ref vertices source-a-index)
+                        source-e source-f source-n
+                        target-a target-e target-f root-normal))
+
+(define (net-map-apply transform point)
+  (define offset (vec3- point (net-face-transform3d-source-origin transform)))
+  (vec3+
+   (net-face-transform3d-target-origin transform)
+   (vec3+
+    (vec3-scale (vec3-dot offset (net-face-transform3d-source-e transform))
+                (net-face-transform3d-target-e transform))
+    (vec3+
+     (vec3-scale (vec3-dot offset (net-face-transform3d-source-f transform))
+                 (net-face-transform3d-target-f transform))
+     (vec3-scale (vec3-dot offset (net-face-transform3d-source-n transform))
+                 (net-face-transform3d-target-n transform))))))
+
+(define (net-score<? left right)
+  (cond [(< (first left) (first right)) #t]
+        [(> (first left) (first right)) #f]
+        [(< (second left) (second right)) #t]
+        [(> (second left) (second right)) #f]
+        [else (< (third left) (third right))]))
+
+(define (net-diameter polygons root-map)
+  (define origin (net-face-transform3d-target-origin root-map))
+  (define basis-e (net-face-transform3d-target-e root-map))
+  (define basis-f (net-face-transform3d-target-f root-map))
+  (define coordinates
+    (append*
+     (for/list ([polygon (in-vector polygons)])
+       (for/list ([point (in-vector polygon)])
+         (define offset (vec3- point origin))
+         (cons (vec3-dot offset basis-e) (vec3-dot offset basis-f))))))
+  (define xs (map car coordinates))
+  (define ys (map cdr coordinates))
+  (define width (- (apply max xs) (apply min xs)))
+  (define height (- (apply max ys) (apply min ys)))
+  (sqrt (+ (* width width) (* height height))))

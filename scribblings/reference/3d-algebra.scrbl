@@ -574,6 +574,98 @@ closed orientable manifold. The combinatorial centroid embedding may overlap or
 self-intersect for a nonconvex polyhedron; it is intentionally data for later
 diagram/matching operations, not a convexity assertion. The polar operation has
 no automatic centre-finding or nonconvex repair policy.
+
+@subsection{Schlegel diagrams and polyhedral nets}
+
+@defstruct*[schlegel-diagram3d-data
+            ([outer-face any/c] [viewpoint vec3?] [plane plane3?]
+             [vertex-positions vector?] [edges vector?] [face-polygons vector?]
+             [mappings hash?] [diagnostics hash?]) #:transparent]{Prepared
+Schlegel-projection data. The diagnostics retain the deterministic outer face,
+canonical target-plane basis, margin, and viewpoint distance.}
+@defproc[(prepare-schlegel-diagram3d [complex polyhedral-complex3d?]
+                                     [#:outer-face selector any/c #f]
+                                     [#:viewpoint-distance distance positive-real? 3]
+                                     [#:margin margin nonnegative-real? 1/20]
+                                     [#:tolerance tolerance nonnegative-real? 1e-8])
+         schlegel-diagram3d-data?]{Projects a selected simple outer face into a
+canonical plane. It rejects projections whose inner vertices do not lie in the
+outer polygon instead of returning a misleading diagram.}
+@defproc[(schlegel-diagram3d [data schlegel-diagram3d-data?]
+                             [#:id id symbol? 'schlegel]
+                             [#:color color any/c "slateblue"]
+                             [#:width width positive-real? 2])
+         spatial-visual?]{Builds the flat 3D edge visual from prepared data.}
+
+@defstruct*[net-overlap3d
+            ([first-face exact-nonnegative-integer?]
+             [second-face exact-nonnegative-integer?]
+             [area nonnegative-real?]
+             [boundary-crossings exact-nonnegative-integer?])
+            #:transparent]{A positive-area pairwise overlap in root-plane
+coordinates. Sharing only a hinge boundary has zero area and therefore does not
+produce this record.}
+@defstruct*[net-hinge3d
+            ([parent exact-nonnegative-integer?] [child exact-nonnegative-integer?]
+             [primal-edge exact-nonnegative-integer?]) #:transparent]{One
+oriented parent-to-child hinge in a face-adjacency spanning tree.}
+@defstruct*[net-face-transform3d
+            ([face exact-nonnegative-integer?] [source-origin vec3?]
+             [source-e vec3?] [source-f vec3?] [source-n vec3?]
+             [target-origin vec3?] [target-e vec3?] [target-f vec3?]
+             [target-n vec3?]) #:transparent]{An orientation-preserving rigid
+frame from a source face to the net's root plane.}
+@defstruct*[polyhedron-net3d
+            ([root-face exact-nonnegative-integer?] [hinge-tree vector?]
+             [cut-edges vector?] [face-transforms vector?] [flat-polygons vector?]
+             [overlaps vector?] [diagnostics hash?]) #:transparent]{Prepared
+net data. @racket[diagnostics] records strategy, search completion, selected
+tree edges, overlap total, boundary crossings, and flat-net diameter.}
+@defproc[(prepare-polyhedron-net3d [complex polyhedral-complex3d?]
+                                   [#:root-face root exact-nonnegative-integer? 0]
+                                   [#:hinges hinges (or/c #f (listof exact-nonnegative-integer?)) #f]
+                                   [#:strategy strategy (or/c 'breadth-first 'depth-first 'minimum-overlap) 'breadth-first]
+                                   [#:search-limit limit exact-positive-integer? 1000])
+         polyhedron-net3d?]{Prepares a rigid flat net. Explicit @racket[hinges]
+must form a connected spanning tree. The automatic breadth/depth policies use
+source edge order. @racket['minimum-overlap] enumerates candidate trees in that
+order and minimizes total positive overlap area, then boundary crossings and
+flat-net diameter. When its bounded search is truncated,
+@racket[(hash-ref (polyhedron-net3d-diagnostics result) 'search-complete?)] is
+false and no optimality claim is made.}
+
+@bold{Limitations.} Net faces must be simple polygonal U-2 faces. The overlap
+kernel handles simple concave polygons by deterministic ear triangulation, but
+does not repair self-intersection or hole boundaries. Prepared nets have rigid
+face frames; the procedural folding/unfolding clips and their stable scene
+children are a later U stage.
+
+@subsection{Conservative mesh correspondence}
+
+@defstruct*[spatial-correspondence3d
+            ([source any/c] [destination any/c] [reason any/c] [mode any/c]
+             [route any/c] [diagnostics hash?]) #:transparent]{The common
+author-visible planning record for a matched spatial part. Route-aware spatial
+matching is reserved for a later U slice.}
+@defstruct*[mesh-correspondence3d
+            ([vertex-map vector?] [edge-map vector?] [face-map vector?]
+             [unmatched-source hash?] [unmatched-destination hash?]
+             [diagnostics hash?]) #:transparent]{A source-index-to-destination-
+index plan. Every map entry is an index or @racket[#f]. Unmatched hashes are
+keyed by @racket['vertex], @racket['edge], and @racket['face].}
+@defproc[(prepare-mesh-correspondence3d [source mesh3d?] [destination mesh3d?]
+                                        [#:vertex-map vertex-map (or/c #f vector?) #f]
+                                        [#:edge-map edge-map (or/c #f vector?) #f]
+                                        [#:face-map face-map (or/c #f vector?) #f])
+         mesh-correspondence3d?]{Creates an injective correspondence plan.
+Priority is explicit author map, shared semantic part IDs, unchanged indexed
+topology, then a unique local topological signature. Symmetric signature
+classes are retained as ambiguity records rather than being paired arbitrarily.}
+
+@bold{Limitations.} Geometric fallback, provenance-map matching, and matching
+transform clips are intentionally not implied by this planner. A plan that
+contains ambiguity or unmatched records requires an explicit map or a later
+opt-in geometric policy; it never silently morphs unrelated index arrays.
 @defproc[(mesh3d-normals [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable normals.}
 @defproc[(mesh3d-colors [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable colours.}
 @defproc[(mesh3d-material [mesh mesh3d?]) material3d?]{Returns the surface material.}

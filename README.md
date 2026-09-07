@@ -79,7 +79,8 @@ SCENE-3D-U2 lifts those render triangles into immutable mathematical polygonal
 faces: authors may declare a face partition, retain individual triangles, or
 merge edge-connected transformed coplanar regions. The result preserves source
 provenance and reports holes or branching boundaries instead of inventing a
-simple polygon; duals, nets, and face-transform animation come later.
+simple polygon. Hole triangulation remains deliberately outside the current
+polyhedral operations.
 SCENE-3D-U3 adds deterministic provenance-preserving convex hulls. It produces
 an outward triangle mesh for a solid and true point/segment/planar results for
 degenerate input, with scale-aware inexact diagnostics and optional merged
@@ -88,6 +89,22 @@ SCENE-3D-U4 adds distinct combinatorial and polar duals. Both retain explicit
 primal-to-dual correspondence; the polar operation validates convexity and a
 strictly interior chosen centre instead of treating an arbitrary mesh as a
 geometric dual.
+SCENE-3D-U5 prepares a deterministic Schlegel projection from an explicit
+polygonal outer face and preserves the primal face/edge/vertex identities in a
+flat 3D diagram. It rejects a projection whose inner vertices do not land
+inside the selected outer polygon; it does not yet provide a separate ordinary
+2D Visual adapter.
+SCENE-3D-U6 prepares polyhedral nets from an explicit or deterministic
+face-adjacency hinge tree. Each face receives a rigid root-plane frame, shared
+hinges may touch, and positive-area overlap is measured rather than guessed.
+`'minimum-overlap` searches trees in deterministic edge order and records when
+its search limit prevents an optimality claim. Folding/unfolding clips and
+their face-child visuals are still a subsequent U slice.
+SCENE-3D-U7 begins mesh correspondence planning. Explicit maps and semantic
+part IDs take priority; unchanged indexed topology and unique local topological
+signatures are then accepted. Symmetric candidates stay unmatched with a
+diagnostic instead of receiving an arbitrary pairing. Geometric fallback,
+spatial routes, and matching-transform clips remain later U work.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric

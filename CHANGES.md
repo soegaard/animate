@@ -36,6 +36,15 @@
   3D edge visual. It preserves primal vertex/edge/face identities, validates
   that inner projected vertices stay inside the chosen simple outer face, and
   reports the target plane, canonical basis, margin, and viewpoint distance.
+- Added SCENE-3D-U6's prepared polyhedral nets. Nets use a face-adjacency
+  spanning tree, rigid root-plane face frames based on the actual hinge edge,
+  positive-area polygon overlap reports, and deterministic cut edges. The
+  bounded `'minimum-overlap` search reports whether its candidate enumeration
+  was complete; it never claims an optimum after a limit is reached.
+- Added SCENE-3D-U7's conservative mesh-correspondence plan. Explicit maps,
+  semantic IDs, unchanged indexed topology, and unique local topological
+  signatures have distinct diagnostic reasons. Ambiguous signatures remain
+  unmatched, and every authored map is checked to be injective.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

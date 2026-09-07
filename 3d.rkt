@@ -374,6 +374,7 @@
  (struct-out schlegel-diagram3d-data)
  prepare-schlegel-diagram3d
  schlegel-diagram3d
+ (struct-out net-overlap3d)
  (struct-out net-hinge3d) (struct-out net-face-transform3d) (struct-out polyhedron-net3d)
  prepare-polyhedron-net3d
  (struct-out spatial-correspondence3d) (struct-out mesh-correspondence3d)
