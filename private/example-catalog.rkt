@@ -95,6 +95,10 @@
     "examples/3d/camera-orbit.rkt" 'make-demo-scene
     '(3d animation camera source-selection) '(core latex dvisvgm) 5/2 5)
    (example-entry
+    'cube-net-hinge-rotations "Cube net hinge rotations"
+    "examples/3d/fold-unfold-polyhedron.rkt" 'make-demo-scene
+    '(3d topology polyhedron nets animation) '(core) 3 6)
+   (example-entry
     'projected-labels "Spatial relations and projected labels"
     "examples/3d/projected-labels.rkt" 'make-demo-scene
     '(3d relations projected-labels camera animation) '(core latex dvisvgm) 3 6)

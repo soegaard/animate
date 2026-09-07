@@ -34,6 +34,7 @@
          "private/3d/dual-polyhedron3d.rkt"
          "private/3d/schlegel3d.rkt"
          "private/3d/polyhedron-net3d.rkt"
+         "private/3d/polyhedron-fold-animation3d.rkt"
          "private/3d/correspondence3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
@@ -376,7 +377,12 @@
  schlegel-diagram3d
  (struct-out net-overlap3d)
  (struct-out net-hinge3d) (struct-out net-face-transform3d) (struct-out polyhedron-net3d)
+ polyhedron-net3d-face-child-ids
  prepare-polyhedron-net3d
+ polyhedron-net3d-group
+ polyhedron-net3d-sample-transforms
+ unfold-polyhedron3d unfold-polyhedron3d-request?
+ fold-polyhedron3d fold-polyhedron3d-request?
  (struct-out spatial-correspondence3d) (struct-out mesh-correspondence3d)
  prepare-mesh-correspondence3d
  (struct-out mesh3d-duplicate-triangle)
@@ -928,6 +934,10 @@ cutaway3d
  scale3d-by-request?
  transform3d-to
  transform3d-to-request?
+ unfold-polyhedron3d
+ unfold-polyhedron3d-request?
+ fold-polyhedron3d
+ fold-polyhedron3d-request?
  camera3d-move-to
  camera3d-move-to-request?
  camera3d-look-at-to

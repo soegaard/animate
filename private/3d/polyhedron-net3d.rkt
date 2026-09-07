@@ -21,6 +21,7 @@
          (struct-out net-hinge3d)
          (struct-out net-face-transform3d)
          (struct-out polyhedron-net3d)
+         polyhedron-net3d-face-child-ids
          prepare-polyhedron-net3d)
 
 (struct net-hinge3d (parent child primal-edge) #:transparent)
@@ -112,6 +113,10 @@
    (net-layout-polygons layout)
    (net-layout-overlaps layout)
    (hasheq 'strategy strategy
+           ;; A prepared net addresses its face children through stable symbols.
+           ;; Explicit polygonal face identifiers are retained verbatim; generated
+           ;; complex faces get deterministic `face-N` names instead.
+           'face-child-ids (face-child-ids faces)
            'search-complete? search-complete?
            'search-limit limit
            'candidate-count candidate-count
@@ -122,6 +127,36 @@
            'total-overlap-area (first score)
            'boundary-crossings (second score)
            'net-diameter (third score))))
+
+; polyhedron-net3d-face-child-ids : polyhedron-net3d? -> immutable-vectorof symbol?
+;; Returns the stable direct-child IDs expected by polyhedron net fold/unfold
+;; animations.  The vector index is the polygonal face index.
+(define (polyhedron-net3d-face-child-ids net)
+  (unless (polyhedron-net3d? net)
+    (raise-argument-error 'polyhedron-net3d-face-child-ids "polyhedron-net3d?" net))
+  (define ids (hash-ref (polyhedron-net3d-diagnostics net) 'face-child-ids #f))
+  (unless (and (vector? ids) (andmap symbol? (vector->list ids)))
+    (raise-arguments-error
+     'polyhedron-net3d-face-child-ids
+     "a prepared net with stable face child IDs"
+     "net" net))
+  ids)
+
+(define (face-child-ids faces)
+  (define ids
+    (vector->immutable-vector
+     (for/vector ([face (in-vector faces)] [index (in-naturals)])
+       (define face-id (polyhedral-face3d-id face))
+       (if (symbol? face-id)
+           face-id
+           (string->symbol (format "face-~a" index))))))
+  (when (not (= (vector-length ids)
+                (length (remove-duplicates (vector->list ids)))))
+    (raise-arguments-error
+     'prepare-polyhedron-net3d
+     "unique symbolic polygonal face identities for a foldable net"
+     "face-child-ids" ids))
+  ids)
 
 
 ;;;

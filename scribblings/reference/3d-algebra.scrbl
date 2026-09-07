@@ -634,11 +634,42 @@ flat-net diameter. When its bounded search is truncated,
 @racket[(hash-ref (polyhedron-net3d-diagnostics result) 'search-complete?)] is
 false and no optimality claim is made.}
 
+@defproc[(polyhedron-net3d-face-child-ids [net polyhedron-net3d?]) vector?]{
+Returns one stable direct-child symbol per polygonal face, in face-index order.
+An explicit polygonal face identity is retained, so face @racket['front] is a
+child at @racket['(net front)]; generated faces use deterministic
+@racket['face-N] identities.}
+@defproc[(polyhedron-net3d-group [complex polyhedral-complex3d?]
+                                 [net polyhedron-net3d?]
+                                 [#:id id symbol?]
+                                 [#:face-materials materials (or/c #f vector?) #f])
+         group3d?]{Creates the canonical group of independent mesh children
+for a prepared net. @racket[materials], when present, has one @racket[material3d]
+per face and is useful for making a net's face boundaries visually legible.}
+@defproc[(polyhedron-net3d-sample-transforms [net polyhedron-net3d?]
+                                             [progress (real-in 0 1)])
+         vector?]{Returns the source-to-sampled local transform for every
+canonical face child. Interior samples recursively rotate each child around its
+source hinge and inherit its parent's current rigid map; the root stays fixed.
+The endpoints use exact identity and prepared-flat transforms.}
+@defproc[(unfold-polyhedron3d [target spatial-path?] [net polyhedron-net3d?])
+         any/c]{Returns a @racket[scene-play] request that unfolds the direct
+face children below @racket[target].}
+@defproc[(fold-polyhedron3d [target spatial-path?] [net polyhedron-net3d?])
+         any/c]{Returns the inverse request. It requires the exact flattened
+endpoint produced by @racket[unfold-polyhedron3d], and returns the exact source
+transforms.}
+
+The canonical runnable demonstration is
+@filepath{examples/3d/fold-unfold-polyhedron.rkt}.
+
 @bold{Limitations.} Net faces must be simple polygonal U-2 faces. The overlap
 kernel handles simple concave polygons by deterministic ear triangulation, but
-does not repair self-intersection or hole boundaries. Prepared nets have rigid
-face frames; the procedural folding/unfolding clips and their stable scene
-children are a later U stage.
+does not repair self-intersection or hole boundaries. Fold/unfold presently
+requires the independent, identity-local-transform face meshes made by
+@racket[polyhedron-net3d-group]; it does not yet retarget arbitrary authored
+mesh trees, animate labels/strokes with their faces, sequence hinges to avoid
+intermediate collisions, or solve a global collision-free folding path.
 
 @subsection{Conservative mesh correspondence}
 

@@ -53,9 +53,12 @@
          "3d/curve3d.rkt"
          "3d/mesh3d.rkt"
          "3d/parametric-surface3d.rkt"
+         "3d/polyhedron-fold-animation3d.rkt"
+         "3d/polyhedron-net3d.rkt"
          "3d/projection3d.rkt"
          "3d/rotation3.rkt"
          "3d/spatial-animation.rkt"
+         "3d/spatial-group.rkt"
          "3d/spatial-path.rkt"
          "3d/surface-animation.rkt"
          "3d/spatial-map3d.rkt"
@@ -104,6 +107,10 @@
          scale3d-by-request?
          transform3d-to
          transform3d-to-request?
+         unfold-polyhedron3d
+         unfold-polyhedron3d-request?
+         fold-polyhedron3d
+         fold-polyhedron3d-request?
          move-along-curve3d
          move-along-curve3d-request?
          orient-along-curve3d
@@ -2578,6 +2585,67 @@
    #:scale destination-scale)
    1/2))
 
+; compile-polyhedron-fold-request : scene-state? polyhedron-fold-animation-request?
+;                                    -> polyhedron-fold-animation?
+;; Validates the canonical independent face children once at clip admission.
+;; Their source and flat transforms are captured exactly; sampling itself is
+;; delegated to the prepared net's hinge tree and is history-independent.
+(define (compile-polyhedron-fold-request state request)
+  (define target-path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car target-path) 'scene-play))
+  (define target (view3d-spatial-ref view target-path))
+  (unless (spatial-container? target)
+    (raise-arguments-error
+     'scene-play
+     "a spatial group containing canonical polyhedron face meshes"
+     "spatial-path" target-path
+     "spatial-visual" target))
+  (define net
+    (if (unfold-polyhedron3d-request? request)
+        (unfold-polyhedron3d-request-net request)
+        (fold-polyhedron3d-request-net request)))
+  (define direction
+    (if (unfold-polyhedron3d-request? request) 'unfold 'fold))
+  (define child-ids (polyhedron-net3d-face-child-ids net))
+  (define direct-child-ids
+    (map spatial-child-id (spatial-child-entries target)))
+  (for ([child-id (in-vector child-ids)])
+    (unless (memq child-id direct-child-ids)
+      (raise-arguments-error
+       'scene-play
+       "one direct face mesh for every prepared net face"
+       "target-path" target-path
+       "missing-face-child" child-id
+       "direct-child-ids" direct-child-ids)))
+  (define face-paths
+    (vector->immutable-vector
+     (for/vector ([child-id (in-vector child-ids)])
+       (append target-path (list child-id)))))
+  (define source-transforms (polyhedron-net3d-sample-transforms net 0))
+  (define flat-transforms (polyhedron-net3d-sample-transforms net 1))
+  (define expected
+    (if (eq? direction 'unfold) source-transforms flat-transforms))
+  (for ([face-path (in-vector face-paths)]
+        [expected-transform (in-vector expected)])
+    (define face (view3d-spatial-ref view face-path))
+    (unless (mesh3d? face)
+      (raise-arguments-error
+       'scene-play
+       "a mesh3d direct child made by polyhedron-net3d-group"
+       "face-path" face-path
+       "spatial-visual" face))
+    (unless (equal? (spatial-transform face) expected-transform)
+      (raise-arguments-error
+       'scene-play
+       (if (eq? direction 'unfold)
+           "canonical source transforms before unfold-polyhedron3d"
+           "the exact flattened endpoint before fold-polyhedron3d")
+       "face-path" face-path
+       "actual-transform" (spatial-transform face)
+       "expected-transform" expected-transform)))
+  (polyhedron-fold-animation target-path net direction face-paths
+                             source-transforms flat-transforms))
+
 ; compile-spatial-curve-animation-request : scene-state?
 ;                                            spatial-curve-animation-request?
 ;                                            -> spatial-curve-compiled-animation?
@@ -2865,6 +2933,8 @@
      (compile-spatial-surface-animation-request state request)]
     [(spatial-map-animation-request? request)
      (compile-spatial-map-animation-request state request)]
+    [(polyhedron-fold-animation-request? request)
+     (compile-polyhedron-fold-request state request)]
     [(spatial-animation-request? request)
      (compile-spatial-animation-request state request)]
     [(camera3d-animation-request? request)
@@ -4007,6 +4077,14 @@
 ;; replacement from silently colliding at the clip boundary.
 (define (animation-request-affected-ids request)
   (cond
+    [(polyhedron-fold-animation-request? request)
+     (define target-path (animation-request-target-id request))
+     (define net
+       (if (unfold-polyhedron3d-request? request)
+           (unfold-polyhedron3d-request-net request)
+           (fold-polyhedron3d-request-net request)))
+     (for/list ([child-id (in-vector (polyhedron-net3d-face-child-ids net))])
+       (append target-path (list child-id)))]
     [(transform-shape-request? request)
      (list (transform-shape-request-source-id request)
            (visual-id (transform-shape-request-destination request)))]
@@ -4049,6 +4127,7 @@
       (rotate-by-request? value)
       (scale-to-request? value)
       (scale-by-request? value)
+      (polyhedron-fold-animation-request? value)
       (spatial-curve-animation-request? value)
       (spatial-surface-animation-request? value)
       (spatial-map-animation-request? value)
@@ -4164,6 +4243,10 @@
      (scale3d-by-request-target-path request)]
     [(transform3d-to-request? request)
      (transform3d-to-request-target-path request)]
+    [(unfold-polyhedron3d-request? request)
+     (unfold-polyhedron3d-request-target-path request)]
+    [(fold-polyhedron3d-request? request)
+     (fold-polyhedron3d-request-target-path request)]
     [(apply-linear3-request? request)
      (apply-linear3-request-target-path request)]
     [(apply-affine3-request? request)
@@ -4312,6 +4395,8 @@
          (scale3d-by-request? request))
      '(spatial-scale)]
     [(transform3d-to-request? request)
+     '(spatial-translation spatial-rotation spatial-scale)]
+    [(polyhedron-fold-animation-request? request)
      '(spatial-translation spatial-rotation spatial-scale)]
     [(or (apply-linear3-request? request)
          (apply-affine3-request? request)
@@ -4511,6 +4596,7 @@
       (spatial-curve-compiled-animation? value)
       (spatial-surface-compiled-animation? value)
       (spatial-map-compiled-animation? value)
+      (polyhedron-fold-compiled-animation? value)
       (spatial-compiled-animation? value)
       (affine-map-animation? value)
       (pointwise-map-animation? value)
@@ -4561,6 +4647,8 @@
      (apply-spatial-surface-compiled-animation state animation progress)]
     [(spatial-map-compiled-animation? animation)
      (apply-spatial-map-compiled-animation state animation progress)]
+    [(polyhedron-fold-compiled-animation? animation)
+     (apply-polyhedron-fold-animation state animation progress)]
     [(spatial-compiled-animation? animation)
      (apply-spatial-compiled-animation state animation progress)]
     [(affine-map-animation? animation)
@@ -4650,6 +4738,32 @@
    state
    view-id
    (view3d-spatial-update view path update)))
+
+; apply-polyhedron-fold-animation : scene-state? polyhedron-fold-animation?
+;                                   unit-real? -> scene-state?
+;; Applies every face from one immutable sampled transform vector.  The vector
+;; derives from hinge rotations, never a previously sampled face position, so
+;; random access and forward playback have identical geometry.
+(define (apply-polyhedron-fold-animation state animation progress)
+  (cond
+    [(zero? progress) state]
+    [else
+     (define unfold? (eq? (polyhedron-fold-animation-direction animation) 'unfold))
+     (define transforms
+       (cond [(= progress 1)
+              (if unfold?
+                  (polyhedron-fold-animation-flat-transforms animation)
+                  (polyhedron-fold-animation-source-transforms animation))]
+             [else
+              (polyhedron-net3d-sample-transforms
+               (polyhedron-fold-animation-net animation)
+               (if unfold? progress (- 1 progress)))]))
+     (for/fold ([sampled-state state])
+               ([path (in-vector (polyhedron-fold-animation-face-paths animation))]
+                [transform (in-vector transforms)])
+       (update-spatial-at
+        sampled-state path
+        (lambda (object) (spatial-with-transform object transform))))]))
 
 ; apply-spatial-compiled-animation : scene-state? spatial-compiled-animation?
 ;                                    finite-real? -> scene-state?

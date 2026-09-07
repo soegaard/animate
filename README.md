@@ -98,8 +98,12 @@ SCENE-3D-U6 prepares polyhedral nets from an explicit or deterministic
 face-adjacency hinge tree. Each face receives a rigid root-plane frame, shared
 hinges may touch, and positive-area overlap is measured rather than guessed.
 `'minimum-overlap` searches trees in deterministic edge order and records when
-its search limit prevents an optimality claim. Folding/unfolding clips and
-their face-child visuals are still a subsequent U slice.
+its search limit prevents an optimality claim. `polyhedron-net3d-group` makes
+the stable direct face children, and fold/unfold clips move them through the
+hinge tree rather than interpolating vertices. This first animation API needs
+those canonical identity-local-transform face meshes; arbitrary authored mesh
+trees, label/stroke attachment, and collision-free hinge sequencing remain
+later U work.
 SCENE-3D-U7 begins mesh correspondence planning. Explicit maps and semantic
 part IDs take priority; unchanged indexed topology and unique local topological
 signatures are then accepted. Symmetric candidates stay unmatched with a
@@ -159,6 +163,7 @@ exactly synchronized with the gallery and example requirements.
 - [Perspective wireframe cube](examples/3d/wireframe-cube.rkt) — 3d, wireframe, camera; requires core, latex, dvisvgm.
 - [Opaque depth-tested cube](examples/3d/opaque-cube.rkt) — 3d, opaque, depth, lighting; requires core.
 - [Spatial cube and camera orbit](examples/3d/camera-orbit.rkt) — 3d, animation, camera, source-selection; requires core, latex, dvisvgm.
+- [Cube net hinge rotations](examples/3d/fold-unfold-polyhedron.rkt) — 3d, topology, polyhedron, nets, animation; requires core.
 - [Spatial relations and projected labels](examples/3d/projected-labels.rkt) — 3d, relations, projected-labels, camera, animation; requires core, latex, dvisvgm.
 - [Spatial vector components](examples/3d/vector-components.rkt) — 3d, curves, tubes, axes, vectors, camera, animation; requires core.
 - [Saddle surface and tangent plane](examples/3d/tangent-plane.rkt) — 3d, surfaces, calculus, normals, color, camera, animation; requires core.

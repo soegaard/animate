@@ -41,6 +41,13 @@
   positive-area polygon overlap reports, and deterministic cut edges. The
   bounded `'minimum-overlap` search reports whether its candidate enumeration
   was complete; it never claims an optimum after a limit is reached.
+- Added SCENE-3D-U6's canonical face groups and fold/unfold clips. A prepared
+  net now names one stable direct mesh child per mathematical face; interior
+  animation samples recursively rotate children about their source hinges and
+  inherit current parent maps, preserving shared edge endpoints at every
+  random-access frame. The current clip intentionally requires those
+  identity-local-transform canonical meshes rather than retargeting arbitrary
+  authored spatial trees.
 - Added SCENE-3D-U7's conservative mesh-correspondence plan. Explicit maps,
   semantic IDs, unchanged indexed topology, and unique local topological
   signatures have distinct diagnostic reasons. Ambiguous signatures remain
