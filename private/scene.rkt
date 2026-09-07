@@ -1614,8 +1614,8 @@
         (define right-request
           (visual-request-spec-request right))
         (when (and
-               (equal? (animation-request-target-id left-request)
-                       (animation-request-target-id right-request))
+               (equal? (animation-request-component-target-id left-request)
+                       (animation-request-component-target-id right-request))
                (intervals-overlap?
                 (visual-request-spec-start left)
                 (visual-request-spec-duration left)
@@ -1633,7 +1633,7 @@
             (raise-arguments-error
              'scene-play
              "two overlapping scheduled animations target the same animation component"
-             "target-id" (animation-request-target-id left-request)
+             "target-id" (animation-request-component-target-id left-request)
              "component" duplicate-component
              "first-interval"
              (cons (visual-request-spec-start left)

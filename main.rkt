@@ -945,6 +945,20 @@
  lagged-start-animation-request?
  style-to
  style-to-animation-request?
+ light3d-intensity-to
+ light3d-intensity-to-request?
+ light3d-color-to
+ light3d-color-to-request?
+ point-light3d-move-to
+ point-light3d-move-to-request?
+ point-light3d-move-by
+ point-light3d-move-by-request?
+ spot-light3d-move-to
+ spot-light3d-move-to-request?
+ spot-light3d-aim-at
+ spot-light3d-aim-at-request?
+ spot-light3d-cone-to
+ spot-light3d-cone-to-request?
  scene?
  make-scene
  scene-add

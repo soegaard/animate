@@ -52,6 +52,8 @@
          "3d/correspondence3d.rkt"
          "3d/curve-animation3d.rkt"
          "3d/curve3d.rkt"
+         "3d/light-animation3d.rkt"
+         "3d/light3d.rkt"
          "3d/mesh3d.rkt"
          "3d/matching-animation3d.rkt"
          "3d/parametric-surface3d.rkt"
@@ -109,6 +111,20 @@
          scale3d-by-request?
          transform3d-to
          transform3d-to-request?
+         light3d-intensity-to
+         light3d-intensity-to-request?
+         light3d-color-to
+         light3d-color-to-request?
+         point-light3d-move-to
+         point-light3d-move-to-request?
+         point-light3d-move-by
+         point-light3d-move-by-request?
+         spot-light3d-move-to
+         spot-light3d-move-to-request?
+         spot-light3d-aim-at
+         spot-light3d-aim-at-request?
+         spot-light3d-cone-to
+         spot-light3d-cone-to-request?
          transform-matching-mesh3d
          transform-matching-mesh3d-request?
          transform-matching-spatial
@@ -239,6 +255,7 @@
          animation-request?
          animation-request-default-duration
          animation-request-target-id
+         animation-request-component-target-id
          animation-request-components
          compile-animation-requests
          apply-compiled-animations
@@ -2577,8 +2594,115 @@
     [else
      (raise-argument-error
       'compile-spatial-animation-request
-      "spatial animation request"
-      request)]))
+     "spatial animation request"
+     request)]))
+
+; compile-light3d-animation-request : scene-state? light3d-animation-request?
+;                                     -> light3d-compiled-animation?
+;; Resolves a `(view-id light-id)` pair at the exact clip start.  Finite-light
+;; values remain view frame state rather than pseudo-spatial children.
+(define (compile-light3d-animation-request state request)
+  (define view-id (light3d-animation-request-view-id request))
+  (define light-id (light3d-animation-request-light-id request))
+  (define view (scene-state-view3d-ref state view-id 'scene-play))
+  (define light (view3d-light-ref view light-id))
+  (cond
+    [(light3d-intensity-to-request? request)
+     (light3d-intensity-animation
+      view-id light-id (light3d-intensity light)
+      (light3d-intensity-to-request-destination request))]
+    [(light3d-color-to-request? request)
+     (light3d-color-animation
+      view-id light-id (light3d-color light)
+      (light3d-color-to-request-destination request))]
+    [(point-light3d-move-to-request? request)
+     (unless (point-light3d? light)
+       (raise-light-kind-error 'point-light3d-move-to view-id light-id 'point light))
+     (point-light3d-position-animation
+      view-id light-id (point-light3d-position light)
+      (point-light3d-move-to-request-destination request))]
+    [(point-light3d-move-by-request? request)
+     (unless (point-light3d? light)
+       (raise-light-kind-error 'point-light3d-move-by view-id light-id 'point light))
+     (define from (point-light3d-position light))
+     (point-light3d-position-animation
+      view-id light-id from
+      (vec3+ from (point-light3d-move-by-request-delta request)))]
+    [(spot-light3d-move-to-request? request)
+     (unless (spot-light3d? light)
+       (raise-light-kind-error 'spot-light3d-move-to view-id light-id 'spot light))
+     (spot-light3d-position-animation
+      view-id light-id (spot-light3d-position light)
+      (spot-light3d-move-to-request-destination request))]
+    [(spot-light3d-aim-at-request? request)
+     (unless (spot-light3d? light)
+       (raise-light-kind-error 'spot-light3d-aim-at view-id light-id 'spot light))
+     (define direction
+       (vec3- (spot-light3d-aim-at-request-target request)
+              (spot-light3d-position light)))
+     (when (zero? (vec3-length direction))
+       (raise-arguments-error 'spot-light3d-aim-at
+                              "an aim target distinct from the clip-start spot position"
+                              "view-id" view-id
+                              "light-id" light-id
+                              "target" (spot-light3d-aim-at-request-target request)))
+     (spot-light3d-direction-animation
+      view-id light-id (spot-light3d-direction light) (vec3-normalize direction))]
+    [(spot-light3d-cone-to-request? request)
+     (unless (spot-light3d? light)
+       (raise-light-kind-error 'spot-light3d-cone-to view-id light-id 'spot light))
+     (spot-light3d-cone-animation
+      view-id light-id
+      (spot-light3d-inner-angle light) (spot-light3d-outer-angle light)
+      (spot-light3d-cone-to-request-inner-angle request)
+      (spot-light3d-cone-to-request-outer-angle request))]
+    [else
+     (raise-argument-error 'compile-light3d-animation-request
+                           "light3d animation request" request)]))
+
+(define (light3d-animation-request-view-id request)
+  (cond [(light3d-intensity-to-request? request)
+         (light3d-intensity-to-request-view-id request)]
+        [(light3d-color-to-request? request)
+         (light3d-color-to-request-view-id request)]
+        [(point-light3d-move-to-request? request)
+         (point-light3d-move-to-request-view-id request)]
+        [(point-light3d-move-by-request? request)
+         (point-light3d-move-by-request-view-id request)]
+        [(spot-light3d-move-to-request? request)
+         (spot-light3d-move-to-request-view-id request)]
+        [(spot-light3d-aim-at-request? request)
+         (spot-light3d-aim-at-request-view-id request)]
+        [(spot-light3d-cone-to-request? request)
+         (spot-light3d-cone-to-request-view-id request)]
+        [else (raise-argument-error 'light3d-animation-request-view-id
+                                    "light3d animation request" request)]))
+
+(define (light3d-animation-request-light-id request)
+  (cond [(light3d-intensity-to-request? request)
+         (light3d-intensity-to-request-light-id request)]
+        [(light3d-color-to-request? request)
+         (light3d-color-to-request-light-id request)]
+        [(point-light3d-move-to-request? request)
+         (point-light3d-move-to-request-light-id request)]
+        [(point-light3d-move-by-request? request)
+         (point-light3d-move-by-request-light-id request)]
+        [(spot-light3d-move-to-request? request)
+         (spot-light3d-move-to-request-light-id request)]
+        [(spot-light3d-aim-at-request? request)
+         (spot-light3d-aim-at-request-light-id request)]
+        [(spot-light3d-cone-to-request? request)
+         (spot-light3d-cone-to-request-light-id request)]
+        [else (raise-argument-error 'light3d-animation-request-light-id
+                                    "light3d animation request" request)]))
+
+(define (raise-light-kind-error who view-id light-id expected actual)
+  (raise-arguments-error who
+                         "a light of the required kind at this clip start"
+                         "view-id" view-id
+                         "light-id" light-id
+                         "expected-kind" expected
+                         "actual-light" actual))
 
 (define (check-spatial-scale-interpolation transform destination-scale)
   ;; Delegate the zero-crossing rule to transform3's one authoritative
@@ -3041,6 +3165,8 @@
      (compile-polyhedron-fold-request state request)]
     [(spatial-animation-request? request)
      (compile-spatial-animation-request state request)]
+    [(light3d-animation-request? request)
+     (compile-light3d-animation-request state request)]
     [(camera3d-animation-request? request)
      (compile-camera3d-animation-request state request)]
     [(apply-affine-request? request)
@@ -4181,6 +4307,13 @@
 ;; replacement from silently colliding at the clip boundary.
 (define (animation-request-affected-ids request)
   (cond
+    ;; A light belongs to a root view Visual, but its animation identity must
+    ;; also include the light id.  Keeping that pair here lets component
+    ;; conflict detection distinguish two lights in the same view, while the
+    ;; generic target validator below continues to receive the root view id.
+    [(light3d-animation-request? request)
+     (list (list (light3d-animation-request-view-id request)
+                 (light3d-animation-request-light-id request)))]
     [(polyhedron-fold-animation-request? request)
      (define target-path (animation-request-target-id request))
      (define net
@@ -4202,6 +4335,16 @@
          (list (car (visual-selection-root target)))
          (list target))]
     [else (list (animation-request-target-id request))]))
+
+; animation-request-component-target-id : animation-request? -> any/c
+;;   Returns the identity whose components the request changes.  This normally
+;;   is the ordinary target identity; a 3D light is one component namespace
+;;   per light inside its owning view.
+(define (animation-request-component-target-id request)
+  (if (light3d-animation-request? request)
+      (list (light3d-animation-request-view-id request)
+            (light3d-animation-request-light-id request))
+      (animation-request-target-id request)))
 
 ; find-duplicate-key : list? -> any/c
 ;;   Returns the first duplicate key or #f when all keys are distinct.
@@ -4238,6 +4381,7 @@
       (spatial-surface-animation-request? value)
       (spatial-map-animation-request? value)
       (spatial-animation-request? value)
+      (light3d-animation-request? value)
       (apply-affine-request? value)
       (apply-pointwise-request? value)
       (apply-homotopy-request? value)
@@ -4349,6 +4493,11 @@
      (scale3d-by-request-target-path request)]
     [(transform3d-to-request? request)
      (transform3d-to-request-target-path request)]
+    [(light3d-animation-request? request)
+     ;; The generic animation compiler validates this identifier as a scene
+     ;; Visual path.  A light is addressed relative to that view by the light
+     ;; compiler, so only the owning view belongs here.
+     (light3d-animation-request-view-id request)]
     [(transform-matching-spatial-request? request)
      (transform-matching-spatial-request-target-path request)]
     [(transform-matching-mesh3d-request? request)
@@ -4506,6 +4655,18 @@
      '(spatial-scale)]
     [(transform3d-to-request? request)
      '(spatial-translation spatial-rotation spatial-scale)]
+    [(light3d-intensity-to-request? request)
+     '(light-intensity)]
+    [(light3d-color-to-request? request)
+     '(light-color)]
+    [(or (point-light3d-move-to-request? request)
+         (point-light3d-move-by-request? request)
+         (spot-light3d-move-to-request? request))
+     '(light-position)]
+    [(spot-light3d-aim-at-request? request)
+     '(light-direction)]
+    [(spot-light3d-cone-to-request? request)
+     '(light-cone)]
     [(transform-matching-spatial-request? request)
      '(spatial-translation spatial-rotation spatial-scale spatial-face-parts)]
     [(transform-matching-mesh3d-request? request)
@@ -4714,6 +4875,7 @@
       (mesh-match-compiled-animation? value)
       (polyhedron-fold-compiled-animation? value)
       (spatial-compiled-animation? value)
+      (light3d-compiled-animation? value)
       (affine-map-animation? value)
       (pointwise-map-animation? value)
       (homotopy-map-animation? value)
@@ -4771,6 +4933,8 @@
      (apply-polyhedron-fold-animation state animation progress)]
     [(spatial-compiled-animation? animation)
      (apply-spatial-compiled-animation state animation progress)]
+    [(light3d-compiled-animation? animation)
+     (apply-light3d-compiled-animation state animation progress)]
     [(affine-map-animation? animation)
      (apply-affine-map-animation state animation progress)]
     [(pointwise-map-animation? animation)
@@ -4983,9 +5147,226 @@
                           progress))))]
     [else
      (raise-argument-error
-      'apply-spatial-compiled-animation
+     'apply-spatial-compiled-animation
       "spatial compiled animation"
       animation)]))
+
+;;;
+;;; SCENE-3D-V4 Sampling
+;;;
+
+; update-light3d-at : scene-state? symbol? symbol? (light3d? -> light3d?)
+;                     -> scene-state?
+;; Changes only a view's immutable light list.  The spatial children and their
+;; compiled geometry key remain untouched.
+(define (update-light3d-at state view-id light-id update)
+  (define view (scene-state-view3d-ref state view-id 'apply-light3d-compiled-animation))
+  (scene-state-update
+   state view-id
+   (view3d-light-update view light-id update)))
+
+(define (apply-light3d-compiled-animation state animation progress)
+  (cond
+    [(light3d-intensity-animation? animation)
+     (update-light3d-at
+      state
+      (light3d-intensity-animation-view-id animation)
+      (light3d-intensity-animation-light-id animation)
+      (lambda (light)
+        (light3d-with-intensity
+         light
+         (sample-real-endpoints (light3d-intensity-animation-from animation)
+                                (light3d-intensity-animation-to animation)
+                                progress))))]
+    [(light3d-color-animation? animation)
+     (update-light3d-at
+      state
+      (light3d-color-animation-view-id animation)
+      (light3d-color-animation-light-id animation)
+      (lambda (light)
+        (light3d-with-color
+         light
+         (light3d-color-sample (light3d-color-animation-from animation)
+                               (light3d-color-animation-to animation)
+                               progress))))]
+    [(point-light3d-position-animation? animation)
+     (update-light3d-at
+      state
+      (point-light3d-position-animation-view-id animation)
+      (point-light3d-position-animation-light-id animation)
+      (lambda (light)
+        (unless (point-light3d? light)
+          (raise-light-kind-error 'apply-light3d-compiled-animation
+                                  (point-light3d-position-animation-view-id animation)
+                                  (point-light3d-position-animation-light-id animation)
+                                  'point light))
+        (point-light3d-with-position
+         light
+         (sample-vec3-endpoints (point-light3d-position-animation-from animation)
+                                (point-light3d-position-animation-to animation)
+                                progress))))]
+    [(spot-light3d-position-animation? animation)
+     (update-light3d-at
+      state
+      (spot-light3d-position-animation-view-id animation)
+      (spot-light3d-position-animation-light-id animation)
+      (lambda (light)
+        (unless (spot-light3d? light)
+          (raise-light-kind-error 'apply-light3d-compiled-animation
+                                  (spot-light3d-position-animation-view-id animation)
+                                  (spot-light3d-position-animation-light-id animation)
+                                  'spot light))
+        (spot-light3d-with-position
+         light
+         (sample-vec3-endpoints (spot-light3d-position-animation-from animation)
+                                (spot-light3d-position-animation-to animation)
+                                progress))))]
+    [(spot-light3d-direction-animation? animation)
+     (update-light3d-at
+      state
+      (spot-light3d-direction-animation-view-id animation)
+      (spot-light3d-direction-animation-light-id animation)
+      (lambda (light)
+        (unless (spot-light3d? light)
+          (raise-light-kind-error 'apply-light3d-compiled-animation
+                                  (spot-light3d-direction-animation-view-id animation)
+                                  (spot-light3d-direction-animation-light-id animation)
+                                  'spot light))
+        (spot-light3d-with-direction
+         light
+         (light3d-direction-sample (spot-light3d-direction-animation-from animation)
+                                   (spot-light3d-direction-animation-to animation)
+                                   progress))))]
+    [(spot-light3d-cone-animation? animation)
+     (update-light3d-at
+      state
+      (spot-light3d-cone-animation-view-id animation)
+      (spot-light3d-cone-animation-light-id animation)
+      (lambda (light)
+        (unless (spot-light3d? light)
+          (raise-light-kind-error 'apply-light3d-compiled-animation
+                                  (spot-light3d-cone-animation-view-id animation)
+                                  (spot-light3d-cone-animation-light-id animation)
+                                  'spot light))
+        (spot-light3d-with-cone
+         light
+         (sample-real-endpoints (spot-light3d-cone-animation-from-inner animation)
+                                (spot-light3d-cone-animation-to-inner animation)
+                                progress)
+         (sample-real-endpoints (spot-light3d-cone-animation-from-outer animation)
+                                (spot-light3d-cone-animation-to-outer animation)
+                                progress))))]
+    [else
+     (raise-argument-error 'apply-light3d-compiled-animation
+                           "compiled light3d animation" animation)]))
+
+(define (sample-real-endpoints from to progress)
+  (cond [(zero? progress) from]
+        [(= progress 1) to]
+        [else (real-lerp from to progress)]))
+
+(define (sample-vec3-endpoints from to progress)
+  (cond [(zero? progress) from]
+        [(= progress 1) to]
+        [else (vec3-lerp from to progress)]))
+
+;; Constructors remain the single source of field validation.  These focused
+;; rebuilding helpers ensure an update preserves every future-facing field
+;; (attenuation, range, and shadow policy) rather than accidentally dropping
+;; it during a V4 animation sample.
+(define (light3d-with-intensity light intensity)
+  (cond [(ambient-light3d? light)
+         (ambient-light3d #:id (ambient-light3d-id light) #:intensity intensity
+                          #:color (ambient-light3d-color light)
+                          #:shadow (ambient-light3d-shadow light))]
+        [(directional-light3d? light)
+         (directional-light3d (directional-light3d-direction light)
+                              #:id (directional-light3d-id light) #:intensity intensity
+                              #:color (directional-light3d-color light)
+                              #:shadow (directional-light3d-shadow light))]
+        [(point-light3d? light)
+         (point-light3d (point-light3d-position light)
+                        #:id (point-light3d-id light) #:intensity intensity
+                        #:color (point-light3d-color light)
+                        #:attenuation (point-light3d-attenuation light)
+                        #:range (point-light3d-range light)
+                        #:shadow (point-light3d-shadow light))]
+        [(spot-light3d? light)
+         (spot-light3d (spot-light3d-position light) (spot-light3d-direction light)
+                       #:id (spot-light3d-id light) #:intensity intensity
+                       #:color (spot-light3d-color light)
+                       #:inner-angle (spot-light3d-inner-angle light)
+                       #:outer-angle (spot-light3d-outer-angle light)
+                       #:attenuation (spot-light3d-attenuation light)
+                       #:range (spot-light3d-range light)
+                       #:shadow (spot-light3d-shadow light))]
+        [else (raise-argument-error 'light3d-with-intensity "light3d?" light)]))
+
+(define (light3d-with-color light color)
+  (cond [(ambient-light3d? light)
+         (ambient-light3d #:id (ambient-light3d-id light)
+                          #:intensity (ambient-light3d-intensity light) #:color color
+                          #:shadow (ambient-light3d-shadow light))]
+        [(directional-light3d? light)
+         (directional-light3d (directional-light3d-direction light)
+                              #:id (directional-light3d-id light)
+                              #:intensity (directional-light3d-intensity light) #:color color
+                              #:shadow (directional-light3d-shadow light))]
+        [(point-light3d? light)
+         (point-light3d (point-light3d-position light)
+                        #:id (point-light3d-id light)
+                        #:intensity (point-light3d-intensity light) #:color color
+                        #:attenuation (point-light3d-attenuation light)
+                        #:range (point-light3d-range light)
+                        #:shadow (point-light3d-shadow light))]
+        [(spot-light3d? light)
+         (spot-light3d (spot-light3d-position light) (spot-light3d-direction light)
+                       #:id (spot-light3d-id light)
+                       #:intensity (spot-light3d-intensity light) #:color color
+                       #:inner-angle (spot-light3d-inner-angle light)
+                       #:outer-angle (spot-light3d-outer-angle light)
+                       #:attenuation (spot-light3d-attenuation light)
+                       #:range (spot-light3d-range light)
+                       #:shadow (spot-light3d-shadow light))]
+        [else (raise-argument-error 'light3d-with-color "light3d?" light)]))
+
+(define (point-light3d-with-position light position)
+  (point-light3d position #:id (point-light3d-id light)
+                 #:intensity (point-light3d-intensity light)
+                 #:color (point-light3d-color light)
+                 #:attenuation (point-light3d-attenuation light)
+                 #:range (point-light3d-range light)
+                 #:shadow (point-light3d-shadow light)))
+
+(define (spot-light3d-with-position light position)
+  (spot-light3d position (spot-light3d-direction light) #:id (spot-light3d-id light)
+                #:intensity (spot-light3d-intensity light)
+                #:color (spot-light3d-color light)
+                #:inner-angle (spot-light3d-inner-angle light)
+                #:outer-angle (spot-light3d-outer-angle light)
+                #:attenuation (spot-light3d-attenuation light)
+                #:range (spot-light3d-range light)
+                #:shadow (spot-light3d-shadow light)))
+
+(define (spot-light3d-with-direction light direction)
+  (spot-light3d (spot-light3d-position light) direction #:id (spot-light3d-id light)
+                #:intensity (spot-light3d-intensity light)
+                #:color (spot-light3d-color light)
+                #:inner-angle (spot-light3d-inner-angle light)
+                #:outer-angle (spot-light3d-outer-angle light)
+                #:attenuation (spot-light3d-attenuation light)
+                #:range (spot-light3d-range light)
+                #:shadow (spot-light3d-shadow light)))
+
+(define (spot-light3d-with-cone light inner-angle outer-angle)
+  (spot-light3d (spot-light3d-position light) (spot-light3d-direction light)
+                #:id (spot-light3d-id light)
+                #:intensity (spot-light3d-intensity light)
+                #:color (spot-light3d-color light)
+                #:inner-angle inner-angle #:outer-angle outer-angle
+                #:attenuation (spot-light3d-attenuation light)
+                #:range (spot-light3d-range light)
+                #:shadow (spot-light3d-shadow light)))
 
 ; apply-spatial-curve-compiled-animation : scene-state?
 ;                                           spatial-curve-compiled-animation?

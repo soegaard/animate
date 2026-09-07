@@ -63,6 +63,9 @@
                          ambient-light3d directional-light3d point-light3d spot-light3d
                          light3d? light3d-id light3d-kind light3d-color
                          light3d-intensity light3d-shadow
+                         light3d-intensity-to light3d-color-to
+                         point-light3d-move-to point-light3d-move-by
+                         spot-light3d-move-to spot-light3d-aim-at spot-light3d-cone-to
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color
                          stroke3d stroke3d? stroke3d-color stroke3d-width

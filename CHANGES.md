@@ -2,6 +2,15 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V4's immutable finite-light timeline requests: named light
+  intensity and linear-light colour, point/spot position, spot aim, and spot
+  cone animation. Each compilation captures exact local clip-start values and
+  samples directly, including within timed, succession, parallel, staggered,
+  and reparameterized compositions. Near-antipodal spot directions use a
+  deterministic quaternion fallback. V4 is model/timeline work only:
+  finite-light rendering is still V5, and attenuation, range, and shadow
+  descriptors remain fixed during a clip.
+
 - Added SCENE-3D-V3's immutable, stable light model. Ambient, directional,
   point, and spot lights each have a required-unique symbolic identity,
   generic inspection accessors, declared future shadow policy, and immutable

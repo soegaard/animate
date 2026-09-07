@@ -83,6 +83,7 @@
          "private/3d/material3d.rkt"
          "private/3d/color-space3d.rkt"
          "private/3d/light-attenuation3d.rkt"
+         "private/3d/light-animation3d.rkt"
          "private/3d/light3d.rkt"
          "private/3d/spatial-dependency.rkt"
          "private/3d/spatial-relation-context.rkt"
@@ -961,6 +962,22 @@ cutaway3d
  light3d-color
  light3d-intensity
  light3d-shadow
+
+ ;; Immutable finite-light animation requests
+ light3d-intensity-to
+ light3d-intensity-to-request?
+ light3d-color-to
+ light3d-color-to-request?
+ point-light3d-move-to
+ point-light3d-move-to-request?
+ point-light3d-move-by
+ point-light3d-move-by-request?
+ spot-light3d-move-to
+ spot-light3d-move-to-request?
+ spot-light3d-aim-at
+ spot-light3d-aim-at-request?
+ spot-light3d-cone-to
+ spot-light3d-cone-to-request?
 
  ;; Camera and projection
  (struct-out perspective-projection3d)
