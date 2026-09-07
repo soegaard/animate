@@ -4,9 +4,10 @@
 ;; `ode-trajectory3d-position`, whose prepared branch is dense retained data.
 
 (require racket/list
-         "../geometry.rkt" "mesh3d.rkt" "ode-flow3d.rkt" "tube3d.rkt" "vec3.rkt")
+         "../geometry.rkt" "flow-map3d.rkt" "mesh3d.rkt" "ode-flow3d.rkt"
+         "spatial-group.rkt" "tube3d.rkt" "vec3.rkt")
 
-(provide trajectory-samples3d trajectory-tube3d trajectory-ribbon3d)
+(provide trajectory-samples3d trajectory-tube3d trajectory-ribbon3d trajectory-bundle3d)
 
 (define (trajectory-samples3d trajectory #:count [count 64])
   (unless (prepared-trajectory3d? trajectory)
@@ -80,6 +81,36 @@
        (list (vector a c b) (vector b c d)))))
   (define triangles (vector->immutable-vector (list->vector triangle-list)))
   (mesh3d #:id id #:vertices vertices #:triangles triangles))
+
+;; A bundle lowers only trajectories retained by a prepared flow map. In
+;; particular it never re-prepares a seed and it retains input slot order even
+;; when individual trajectories ended at different times.
+(define (trajectory-bundle3d map
+                             #:id [id 'trajectory-bundle]
+                             #:style [style 'tube]
+                             #:radius [radius 1/20]
+                             #:width [width 1/10]
+                             #:sides [sides 12]
+                             #:samples [samples 64]
+                             #:initial-normal [initial-normal #f])
+  (unless (prepared-flow-map3d? map)
+    (raise-argument-error 'trajectory-bundle3d "prepared-flow-map3d?" map))
+  (unless (symbol? id)
+    (raise-argument-error 'trajectory-bundle3d "symbol? as #:id" id))
+  (unless (memq style '(tube ribbon))
+    (raise-argument-error 'trajectory-bundle3d "'tube or 'ribbon as #:style" style))
+  (group3d
+   (for/list ([trajectory (in-vector (prepared-flow-map3d-trajectories map))]
+              [index (in-naturals)])
+     (define child-id (string->symbol (format "trajectory-~a" index)))
+     (case style
+       [(tube)
+        (trajectory-tube3d trajectory #:id child-id #:radius radius
+                           #:sides sides #:samples samples)]
+       [else
+        (trajectory-ribbon3d trajectory #:id child-id #:width width
+                             #:samples samples #:initial-normal initial-normal)]))
+   #:id id))
 
 (define (orthogonal-normal tangent preferred)
   (define candidate

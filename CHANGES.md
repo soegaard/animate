@@ -29,6 +29,12 @@
   grids; unstructured seed sets are rejected rather than inventing adjacency.
 - Added grid-only local flow-map Jacobian and volume-factor queries using
   retained endpoint neighbours and explicit central/one-sided differences.
+- Added `flow-volume-cell3d`, which lowers one explicit retained grid cell to
+  a hexahedral endpoint mesh. It preserves the map's actual eight corners and
+  rejects missing endpoint or unstructured-neighbourhood claims.
+- Added `trajectory-bundle3d`, a stable seed-ordered tube or ribbon group
+  built solely from retained flow-map trajectories.
+- Added canonical saddle-linearization and prepared flow-volume examples.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

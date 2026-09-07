@@ -1924,6 +1924,16 @@ for an absent endpoint.}
 a flow map from an explicit @racket['grid] seed set to retained endpoint edges.
 An absent endpoint breaks its incident edges. Arbitrary unstructured seed sets
 are rejected because no neighbourhood relation is implied by their order.}
+@defproc[(flow-volume-cell3d [map prepared-flow-map3d?]
+                              [cell-index exact-nonnegative-integer?]
+                              [#:id id (or/c false/c symbol?) #f]
+                              [#:material material material3d? default-material3d]) mesh3d?]{Lowers
+one retained hexahedral seed cell to its eight endpoint corners and twelve
+outward-wound triangular faces. @racket[cell-index] enumerates lower corners in
+the source grid's retained declaration order; it is not a loose seed index. The
+operation requires an explicit complete grid and eight retained endpoints. It
+does not interpolate, repair an absent endpoint, or infer volume from an
+unstructured cloud.}
 @defproc[(flow-map3d-local-jacobian [map prepared-flow-map3d?]
                                     [index exact-nonnegative-integer?]) linear3?]{Estimates
 the local endpoint derivative from a retained explicit grid neighbourhood.
@@ -1955,6 +1965,18 @@ prepared samples to a two-sided ribbon mesh. Its normal frame uses discrete
 parallel transport, projected at every retained tangent. A closed-loop twist
 correction is intentionally not automatic: a finite display ribbon must not
 silently choose a loop-closing convention for its author.}
+@defproc[(trajectory-bundle3d [map prepared-flow-map3d?]
+                               [#:id id symbol? 'trajectory-bundle]
+                               [#:style style (or/c 'tube 'ribbon) 'tube]
+                               [#:radius radius positive? 1/20]
+                               [#:width width positive? 1/10]
+                               [#:sides sides exact-integer? 12]
+                               [#:samples samples exact-integer? 64]
+                               [#:initial-normal initial-normal (or/c false/c vec3?) #f]) group3d?]{Lowers
+every retained trajectory of a prepared flow map in stable seed order. The
+selected tube or parallel-transport ribbon style is display-only: it never
+calls the author field or reintegrates a seed. A trajectory that terminated
+early remains a shorter retained bundle child.}
 @defproc[(trajectory-inspection3d [trajectory prepared-trajectory3d?]) immutable-hash?]{Returns
 a read-only report of retained solver diagnostics, termination, event hits, and
 arc length.}

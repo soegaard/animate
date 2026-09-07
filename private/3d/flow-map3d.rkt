@@ -2,11 +2,13 @@
 
 (require racket/list
          "../geometry.rkt" "ode-flow3d.rkt" "point-line-arrow3d.rkt"
-         "linear3.rkt" "seed-set3d.rkt" "spatial-group.rkt" "vec3.rkt")
+         "linear3.rkt" "material3d.rkt" "mesh3d.rkt" "seed-set3d.rkt"
+         "spatial-group.rkt" "vec3.rkt")
 
 (provide (struct-out prepared-flow-map3d)
          prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
-         flow-map-grid3d flow-map3d-local-jacobian flow-map3d-volume-factor)
+         flow-map-grid3d flow-volume-cell3d
+         flow-map3d-local-jacobian flow-map3d-volume-factor)
 
 ;; Endpoints are #f when a trajectory ended early under the default policy.
 ;; The retained trajectory and diagnostics still expose why, in the original
@@ -102,6 +104,93 @@
      (line3d (vector-ref endpoints (car pair)) (vector-ref endpoints (cdr pair))
              #:id (string->symbol (format "edge-~a" edge-index))))
    #:id id))
+
+;; A grid cell has a concrete source neighbourhood, unlike a loose collection
+;; of seeds.  Cell indices enumerate lower grid corners in retained seed order;
+;; the eight vertices themselves retain the source's x/y/z orientation rather
+;; than assuming that a particular seed-order spelling is in use.
+(define (flow-volume-cell3d map cell-index
+                            #:id [id #f]
+                            #:material [material default-material3d])
+  (unless (prepared-flow-map3d? map)
+    (raise-argument-error 'flow-volume-cell3d "prepared-flow-map3d?" map))
+  (unless (exact-nonnegative-integer? cell-index)
+    (raise-argument-error 'flow-volume-cell3d "exact-nonnegative-integer? as cell-index" cell-index))
+  (when (and id (not (symbol? id)))
+    (raise-argument-error 'flow-volume-cell3d "(or/c #f symbol?) as #:id" id))
+  (unless (material3d? material)
+    (raise-argument-error 'flow-volume-cell3d "material3d? as #:material" material))
+  (define seeds (prepared-flow-map3d-seeds map))
+  (unless (eq? (seed-set3d-kind seeds) 'grid)
+    (raise-arguments-error 'flow-volume-cell3d "an explicitly structured grid seed set"
+                           "seed-kind" (seed-set3d-kind seeds)))
+  (define cells (grid-cell-indices (seed-set3d-points seeds)))
+  (unless (< cell-index (vector-length cells))
+    (raise-arguments-error 'flow-volume-cell3d "a valid retained grid cell index"
+                           "cell-index" cell-index
+                           "cell-count" (vector-length cells)))
+  (define source-indices (vector-ref cells cell-index))
+  (define endpoints (prepared-flow-map3d-endpoints map))
+  (define vertices
+    (for/vector ([source-index (in-vector source-indices)])
+      (define endpoint (vector-ref endpoints source-index))
+      (unless endpoint
+        (raise-arguments-error 'flow-volume-cell3d
+                               "endpoints for all eight requested grid-cell vertices"
+                               "cell-index" cell-index
+                               "seed-index" source-index))
+      endpoint))
+  (mesh3d #:id (or id (string->symbol (format "flow-volume-cell-~a" cell-index)))
+          #:vertices vertices
+          #:material material
+          ;; The indices are x/y/z corners 000,100,010,110,001,101,011,111.
+          ;; Every face has a stable outward winding for an orientation-
+          ;; preserving map. A negative volume factor naturally reverses its
+          ;; physical orientation; the geometry does not conceal that fact.
+          #:triangles
+          (vector (vector 0 2 1) (vector 1 2 3) ; z-
+                  (vector 4 5 6) (vector 5 7 6) ; z+
+                  (vector 0 1 4) (vector 1 5 4) ; y-
+                  (vector 2 6 3) (vector 3 6 7) ; y+
+                  (vector 0 4 2) (vector 2 4 6) ; x-
+                  (vector 1 3 5) (vector 3 7 5)))) ; x+
+
+;; -> immutable-vectorof eight-index vectors. The semantic cell order is
+;; determined by source coordinates, not by the optional `grid-seeds3d`
+;; declaration order. This makes the API stable for all supported grid orders.
+(define (grid-cell-indices points)
+  (vector->immutable-vector
+   (list->vector
+    (for/list ([origin (in-range (vector-length points))]
+               #:do [(define x (grid-axis-successor points origin 0))
+                     (define y (grid-axis-successor points origin 1))
+                     (define z (grid-axis-successor points origin 2))]
+               #:when (and x y z))
+      (define xy (and x (grid-axis-successor points x 1)))
+      (define xz (and x (grid-axis-successor points x 2)))
+      (define yz (and y (grid-axis-successor points y 2)))
+      (define xyz (and xy (grid-axis-successor points xy 2)))
+      ;; A regular grid supplies all of these. Keeping the check makes this
+      ;; helper truthful if a future grid provenance admits holes.
+      (unless (and xy xz yz xyz)
+        (raise-arguments-error 'flow-volume-cell3d
+                               "complete explicit grid cells"
+                               "origin-index" origin))
+      (vector-immutable origin x y xy z xz yz xyz)))))
+
+(define (grid-axis-successor points index axis)
+  (define source (vector-ref points index))
+  (for/fold ([best #f]) ([candidate-index (in-range (vector-length points))]
+                         #:unless (= candidate-index index))
+    (define candidate (vector-ref points candidate-index))
+    (if (and (for/and ([other-axis '(0 1 2)] #:unless (= other-axis axis))
+              (= (coordinate candidate other-axis) (coordinate source other-axis)))
+             (> (coordinate candidate axis) (coordinate source axis))
+             (or (not best)
+                 (< (coordinate candidate axis)
+                    (coordinate (vector-ref points best) axis))))
+        candidate-index
+        best)))
 
 (define (grid-neighbours? points i j)
   (define a (vector-ref points i)) (define b (vector-ref points j))
