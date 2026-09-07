@@ -85,6 +85,8 @@
          "private/3d/ode-flow3d.rkt"
          "private/3d/jacobian3d.rkt"
          "private/3d/equilibrium3d.rkt"
+         "private/3d/eigensystem3d.rkt"
+         "private/3d/linearization3d.rkt"
          "private/3d/spatial-inspection.rkt"
          "private/3d/projection3d.rkt"
          "private/3d/camera3d.rkt"
@@ -589,6 +591,11 @@ cutaway3d
  (struct-out equilibrium-root3d)
  (struct-out equilibrium-search3d)
  equilibrium-points3d
+ (struct-out eigensystem3d)
+ eigensystem3d-of
+ (struct-out linearization3d)
+ linearize3d
+ linearization-diagram3d
  fixed-rk4-solver3d
  fixed-rk4-solver3d?
  fixed-rk4-solver3d-step-size

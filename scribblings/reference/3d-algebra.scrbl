@@ -1868,6 +1868,32 @@ equilibrium search.}
 equilibrium solver settings value.}
 @defthing[default-equilibrium-solver3d equilibrium-solver3d?]{The default
 bounded damped Newton settings.}
+@defproc[(eigensystem3d-of [matrix linear3?] [#:tolerance tolerance positive? 1e-10])
+         eigensystem3d?]{Computes a bounded deterministic real 3×3 eigensystem.
+Eigenvalues are ordered by real component, then imaginary component, with the
+positive member of a conjugate pair first. Real eigenvectors use the sign whose
+largest-magnitude component is positive. Diagnostics report the characteristic
+discriminant and near-defect tolerance rather than concealing numerically
+ambiguous cases.}
+@defproc[(eigensystem3d? [value any/c]) boolean?]{Recognizes immutable
+eigensystem data. Its accessors begin with @tt{eigensystem3d-}.}
+@defproc[(linearize3d [field any/c] [point vec3?]
+                       [#:time time finite-real? 0]
+                       [#:jacobian derivative (or/c false/c procedure?) #f]
+                       [#:tolerance tolerance positive? 1e-8]) linearization3d?]{Combines
+a Jacobian and deterministic eigensystem at a point. It classifies sink,
+source, saddle, spiral sink/source, center-like, nonhyperbolic, or indeterminate
+using the declared tolerance; complex pairs expose complementary invariant-plane
+data where a stable real normal is available.}
+@defproc[(linearization3d? [value any/c]) boolean?]{Recognizes an immutable
+local linearization. Its accessors begin with @tt{linearization3d-}.}
+@defproc[(linearization-diagram3d [value linearization3d?]
+                                  [#:id id symbol? 'linearization]
+                                  [#:scale scale positive? 1]) group3d?]{Lowers
+the retained real eigendirections to named finite 3D diagram lines. Stable,
+unstable, and center directions receive separately configurable stroke styles.
+The finite extent is explicitly author-chosen by @racket[scale]; invariant planes
+remain data because no universal plane-patch size is mathematically correct.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]

@@ -218,6 +218,13 @@
                          default-equilibrium-solver3d equilibrium-seed-result3d
                          equilibrium-seed-result3d? equilibrium-root3d equilibrium-root3d?
                          equilibrium-search3d equilibrium-search3d? equilibrium-points3d
+                         eigensystem3d eigensystem3d? eigensystem3d-eigenvalues
+                         eigensystem3d-real-directions eigensystem3d-diagnostics eigensystem3d-of
+                         linearization3d linearization3d? linearization3d-point
+                         linearization3d-jacobian linearization3d-eigenvalues
+                         linearization3d-real-directions linearization3d-invariant-planes
+                         linearization3d-classification linearization3d-diagnostics
+                         linearize3d linearization-diagram3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

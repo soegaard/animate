@@ -10,6 +10,10 @@
 - Added explicit seed-bounded damped Newton equilibrium search. It preserves
   every seed's convergence or failure diagnostic, and clusters successful
   roots deterministically using the earliest contributing seed.
+- Added deterministic local eigensystems, tolerance-aware linearization
+  classifications, and finite real-eigendirection diagram geometry. Complex
+  invariant planes remain explicit data instead of acquiring an arbitrary
+  default rendered extent.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution
