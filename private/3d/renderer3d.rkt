@@ -417,6 +417,7 @@
     (compiled-view3d-strokes compiled)
     (compiled-view3d-point-markers compiled)
     (compiled-view3d-arrow-markers compiled)
+    (compiled-view3d-billboards compiled)
     (compiled-view3d-edge-overlays compiled)
     (compiled-view3d-background compiled)
     (compiled-view3d-render-mode compiled)

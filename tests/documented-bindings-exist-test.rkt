@@ -97,6 +97,9 @@
                          dihedral-angle3d normal-marker3d coordinate-tripod3d
                          projected-label follow-projected-point
                          follow-projected-spatial projected-label-occlusion
+                         billboard-image3d billboard-image3d?
+                         billboard-style3d billboard-style3d?
+                         billboard3d billboard3d?
                          prepare-scene-label-layout3d
                          move3d-to move3d-by rotate3d-to rotate3d-by
                          scale3d-to scale3d-by transform3d-to

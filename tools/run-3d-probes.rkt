@@ -503,6 +503,7 @@
             'stroke-command-count (vector-length (compiled-view3d-strokes compiled))
             'point-marker-count (vector-length (compiled-view3d-point-markers compiled))
             'arrow-marker-count (vector-length (compiled-view3d-arrow-markers compiled))
+            'billboard-count (vector-length (compiled-view3d-billboards compiled))
             'edge-overlay-count (vector-length (compiled-view3d-edge-overlays compiled))
             'stroke-width-modes
             (for/list ([stroke (in-vector (compiled-view3d-strokes compiled))])

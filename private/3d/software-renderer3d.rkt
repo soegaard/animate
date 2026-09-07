@@ -9,6 +9,8 @@
          "../preview-cancellation.rkt"
          "../visual-model.rkt"
          "affine3.rkt"
+         "billboard3d.rkt"
+         "billboard-raster3d.rkt"
          "camera3d.rkt"
          "clipping3d.rkt"
          "compiled-view3d.rkt"
@@ -55,7 +57,9 @@
 (struct software-render-preparation
   (compiled-view frame-spec opaque depth-only transparent hidden-strokes visible-strokes
                  overlay-strokes hidden-points visible-points overlay-points
-                 hidden-arrows visible-arrows overlay-arrows lights diagnostics)
+                 hidden-arrows visible-arrows overlay-arrows
+                 hidden-billboards visible-billboards overlay-billboards
+                 lights diagnostics)
   #:transparent)
 
 ;; The normal Pict protocol deliberately stays renderer-neutral.  Preview's
@@ -206,6 +210,19 @@
                (compiled-arrow-marker3d-clip-planes marker)
                camera aspect (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec)
                (compiled-arrow-marker3d-drawing-index marker)))))
+  (define prepared-billboards
+    (filter values
+            (for/list ([billboard (in-vector (compiled-view3d-billboards compiled))])
+              (prepare-billboard3d
+               (compiled-billboard3d-path billboard)
+               (compiled-billboard3d-position billboard)
+               (compiled-billboard3d-world-transform billboard)
+               (compiled-billboard3d-image billboard)
+               (compiled-billboard3d-style billboard)
+               (compiled-billboard3d-opacity billboard)
+               (compiled-billboard3d-clip-planes billboard)
+               camera aspect (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec)
+               (compiled-billboard3d-drawing-index billboard)))))
   (define (markers-in mode access markers)
     (filter (lambda (marker) (eq? (access marker) mode)) markers))
   (define hidden-points
@@ -225,11 +242,24 @@
                                         (prepared-arrow-marker3d-style marker))) prepared-arrows))
   (define overlay-arrows
     (markers-in 'always (lambda (marker) (arrow-style3d-depth-mode
-                                          (prepared-arrow-marker3d-style marker))) prepared-arrows))
+                                        (prepared-arrow-marker3d-style marker))) prepared-arrows))
+  (define hidden-billboards
+    (markers-in 'hidden (lambda (billboard) (billboard-style3d-depth-mode
+                                                   (prepared-billboard3d-style billboard)))
+                prepared-billboards))
+  (define visible-billboards
+    (markers-in 'test (lambda (billboard) (billboard-style3d-depth-mode
+                                                 (prepared-billboard3d-style billboard)))
+                prepared-billboards))
+  (define overlay-billboards
+    (markers-in 'always (lambda (billboard) (billboard-style3d-depth-mode
+                                                    (prepared-billboard3d-style billboard)))
+                prepared-billboards))
   (software-render-preparation
    compiled frame-spec opaque depth-only transparent hidden-strokes visible-strokes
    overlay-strokes hidden-points visible-points overlay-points
-   hidden-arrows visible-arrows overlay-arrows lights
+   hidden-arrows visible-arrows overlay-arrows
+   hidden-billboards visible-billboards overlay-billboards lights
    (software-render-diagnostics
     (length commands) source-count clipped-count 0 0
     (+ (vector-length (compiled-view3d-strokes compiled))
@@ -281,6 +311,9 @@
   (define hidden-arrow-pixels
     (rasterize-prepared-arrow-markers!
      target (software-render-preparation-hidden-arrows preparation) 'hidden))
+  (define hidden-billboard-pixels
+    (rasterize-prepared-billboards!
+     target (software-render-preparation-hidden-billboards preparation) 'hidden))
   (define visible-stroke-pixels
     (rasterize-prepared-strokes!
      target (software-render-preparation-visible-strokes preparation) 'test))
@@ -290,6 +323,9 @@
   (define visible-arrow-pixels
     (rasterize-prepared-arrow-markers!
      target (software-render-preparation-visible-arrows preparation) 'test))
+  (define visible-billboard-pixels
+    (rasterize-prepared-billboards!
+     target (software-render-preparation-visible-billboards preparation) 'test))
   (define ordered-transparent
     (order-transparent-triangles
      (software-render-preparation-transparent preparation)
@@ -308,6 +344,9 @@
   (define overlay-arrow-pixels
     (rasterize-prepared-arrow-markers!
      target (software-render-preparation-overlay-arrows preparation) 'always))
+  (define overlay-billboard-pixels
+    (rasterize-prepared-billboards!
+     target (software-render-preparation-overlay-billboards preparation) 'always))
   (define initial-diagnostics (software-render-preparation-diagnostics preparation))
   (software-render-result
    target
@@ -315,19 +354,19 @@
     (software-render-diagnostics-command-count initial-diagnostics)
     (software-render-diagnostics-source-triangle-count initial-diagnostics)
     (software-render-diagnostics-clipped-triangle-count initial-diagnostics)
-                                (+ opaque-raster depth-only-raster transparent-raster)
-                                (+ opaque-pixels transparent-pixels
-                                   hidden-stroke-pixels visible-stroke-pixels
-                                   overlay-stroke-pixels
-                                   hidden-point-pixels visible-point-pixels overlay-point-pixels
-                                   hidden-arrow-pixels visible-arrow-pixels overlay-arrow-pixels)
+    (+ opaque-raster depth-only-raster transparent-raster)
+    (+ opaque-pixels transparent-pixels
+       hidden-stroke-pixels visible-stroke-pixels overlay-stroke-pixels
+       hidden-point-pixels visible-point-pixels overlay-point-pixels
+       hidden-arrow-pixels visible-arrow-pixels overlay-arrow-pixels
+       hidden-billboard-pixels visible-billboard-pixels overlay-billboard-pixels)
     (software-render-diagnostics-stroke-command-count initial-diagnostics)
     (software-render-diagnostics-source-stroke-segment-count initial-diagnostics)
     (software-render-diagnostics-dash-segment-count initial-diagnostics)
     (software-render-diagnostics-stroke-triangle-count initial-diagnostics)
-    (+ visible-stroke-pixels visible-point-pixels visible-arrow-pixels)
-    (+ hidden-stroke-pixels hidden-point-pixels hidden-arrow-pixels)
-    (+ overlay-stroke-pixels overlay-point-pixels overlay-arrow-pixels)
+    (+ visible-stroke-pixels visible-point-pixels visible-arrow-pixels visible-billboard-pixels)
+    (+ hidden-stroke-pixels hidden-point-pixels hidden-arrow-pixels hidden-billboard-pixels)
+    (+ overlay-stroke-pixels overlay-point-pixels overlay-arrow-pixels overlay-billboard-pixels)
     (software-render-diagnostics-silhouette-edge-count initial-diagnostics)
     (software-render-diagnostics-crease-edge-count initial-diagnostics)
     (software-render-diagnostics-boundary-edge-count initial-diagnostics))))

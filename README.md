@@ -135,6 +135,7 @@ exactly synchronized with the gallery and example requirements.
 - [Capped cube cutaway](examples/3d/capped-cube-cutaway.rkt) — 3d, cutaway, sections, caps, hatching, volume, clipping; requires core.
 - [Anchor-aware projected labels](examples/3d/anchor-aware-labels.rkt) — 3d, anchors, projected-labels, layout, prepared-layout, camera; requires core.
 - [Fixed spatial annotations](examples/3d/spatial-annotations.rkt) — 3d, annotations, dimensions, angles, normals, axes, camera; requires core.
+- [Depth-tested textured billboards](examples/3d/textured-billboards.rkt) — 3d, billboards, textures, alpha, depth, camera; requires core.
 - [Retained Racket/OpenGL cube](examples/3d/opengl-opaque-cube.rkt) — 3d, opengl, retained, framebuffer, cache; requires core, gui, opengl.
 - [OpenGL two spatial viewports](examples/3d/opengl-two-viewports.rkt) — 3d, opengl, viewports, perspective, orthographic; requires core, gui, opengl.
 <!-- END GENERATED: canonical examples -->
@@ -2994,8 +2995,9 @@ lose the follow-on idea that led to the work.
   normal 2D Visuals that follow an unclipped 3D projection and remain visible
   with fixed pixel offsets. The final compositor batches direct-mode projected
   labels to choose deterministic overlap-aware candidates. It minimizes
-  overlap but cannot guarantee a disjoint result; labels are not
-  3D billboards. Prepared label trajectories are explicit immutable render
+  overlap but cannot guarantee a disjoint result. Projected labels remain
+  crisp 2D overlays; depth-tested ARGB billboards are available separately for
+  spatial image annotations. Prepared label trajectories are explicit immutable render
   inputs, made with `prepare-scene-label-layout3d` or
   `prepare-project-label-layout3d`; ordinary rendering retains direct layout
   until one is supplied. Top-level labels can

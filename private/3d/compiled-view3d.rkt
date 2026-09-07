@@ -34,6 +34,7 @@
          (struct-out compiled-stroke3d)
          (struct-out compiled-point-marker3d)
          (struct-out compiled-arrow-marker3d)
+         (struct-out compiled-billboard3d)
          (struct-out compiled-edge-overlay3d)
          (struct-out compiled-view3d)
          (struct-out frame3d-spec)
@@ -76,6 +77,10 @@
   (path from to world-transform style opacity clip-planes drawing-index)
   #:transparent)
 
+(struct compiled-billboard3d
+  (path image position world-transform style opacity clip-planes drawing-index)
+  #:transparent)
+
 ;; An edge overlay refers to the same canonical geometry resource as its
 ;; surface instance.  Its camera-dependent feature selection is intentionally
 ;; delayed until frame preparation.
@@ -84,7 +89,7 @@
   #:transparent)
 
 (struct compiled-view3d
-  (geometries instances strokes point-markers arrow-markers edge-overlays
+  (geometries instances strokes point-markers arrow-markers billboards edge-overlays
               background render-mode transparency-mode)
   #:transparent)
 
@@ -123,6 +128,7 @@
   (define strokes '())
   (define point-markers '())
   (define arrow-markers '())
+  (define billboards '())
   (define edge-overlays '())
   (for ([command (in-list commands)])
     (cond
@@ -229,6 +235,19 @@
                        (draw-arrow-marker3d-command-opacity command)
                        (immutable-list (draw-arrow-marker3d-command-clip-planes command))
                        (draw-arrow-marker3d-command-drawing-index command)))))]
+      [(draw-billboard3d-command? command)
+       (set! billboards
+             (append billboards
+                     (list
+                      (compiled-billboard3d
+                       (immutable-symbol-path (draw-billboard3d-command-path command))
+                       (draw-billboard3d-command-image command)
+                       (draw-billboard3d-command-position command)
+                       (draw-billboard3d-command-world-transform command)
+                       (draw-billboard3d-command-style command)
+                       (draw-billboard3d-command-opacity command)
+                       (immutable-list (draw-billboard3d-command-clip-planes command))
+                       (draw-billboard3d-command-drawing-index command)))))]
       [else
        (raise-arguments-error 'compile-view3d "a supported spatial draw command"
                               "command" command)]))
@@ -238,6 +257,7 @@
    (vector->immutable-vector (list->vector strokes))
    (vector->immutable-vector (list->vector point-markers))
    (vector->immutable-vector (list->vector arrow-markers))
+   (vector->immutable-vector (list->vector billboards))
    (vector->immutable-vector (list->vector edge-overlays))
    (view3d-background view)
    (view3d-render-mode view)
@@ -254,6 +274,7 @@
           [(compiled-stroke3d? primitive) (compiled-stroke3d-drawing-index primitive)]
           [(compiled-point-marker3d? primitive) (compiled-point-marker3d-drawing-index primitive)]
           [(compiled-arrow-marker3d? primitive) (compiled-arrow-marker3d-drawing-index primitive)]
+          [(compiled-billboard3d? primitive) (compiled-billboard3d-drawing-index primitive)]
           [(compiled-edge-overlay3d? primitive) (compiled-edge-overlay3d-drawing-index primitive)]))
   (vector->immutable-vector
    (list->vector
@@ -261,6 +282,7 @@
                   (vector->list (compiled-view3d-strokes compiled))
                   (vector->list (compiled-view3d-point-markers compiled))
                   (vector->list (compiled-view3d-arrow-markers compiled))
+                  (vector->list (compiled-view3d-billboards compiled))
                   (vector->list (compiled-view3d-edge-overlays compiled)))
           < #:key drawing-index))))
 

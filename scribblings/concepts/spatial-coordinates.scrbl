@@ -83,8 +83,8 @@ unlit/flat/smooth shaded, and resolved by a deterministic z-buffer. A
 render-only @racket[clip3d] adds local half-space clipping, while
 @racket[slice-mesh3d] and plane sections produce actual geometry. Transparent
 triangles are sorted far-to-near against the opaque depth target, which is
-deterministic but not order-independent transparency. There is no texture
-mapping, specular response, shadows, or arbitrary slice cap generation. Stage
+deterministic but not order-independent transparency. There is no general mesh
+texture mapping, specular response, shadows, or arbitrary slice cap generation. Stage
 L picking operates on indexed mesh triangles (including generated curve and
 surface meshes), not analytic implicit shapes, UVs, or a GPU selection pass;
 its preview overlays are diagnostic-only and never enter a rendered frame.
@@ -93,7 +93,7 @@ not GPU accelerated. The optional OpenGL backend requires an explicit
 @racketmodname[animate/3d/opengl] choice in a GUI-capable Racket process and
 uses one serialized context, FBO readback, and tolerance-based rather than
 bit-exact software conformance. It has no direct GL presentation, GPU picking,
-textures, shadows, specular/roughness shading, or order-independent
+general mesh textures, shadows, specular/roughness shading, or order-independent
 transparency.
 Stage F diagrams have deterministic physical-radius tubes and direct-time curve
 animation; Stage O adds screen-space widths, caps, joins, dashes, visible and
@@ -102,9 +102,11 @@ is deterministic rather than analytically antialiased, and hidden-line
 classification deliberately ignores transparent surfaces. Stage G surfaces use
 fixed rectangular topology, deterministic normal fallbacks, and direct-time
 reveal/morph. Adaptive/implicit surfaces and general solids remain later work.
-Projected labels are 2D overlays with fixed pixel offsets—not
-occlusion-aware 3D billboards—but may opt into opaque-depth @racket['hide] or
-@racket['fade] behaviour and can overlap. `move3d-*`,
+Projected labels are 2D overlays with fixed pixel offsets. For depth-tested
+ARGB image annotations, @racket[billboard3d] provides screen/world sizing and
+camera/axis-facing policy; it is not a source-mapped formula facility.
+Projected labels may opt into opaque-depth @racket['hide] or @racket['fade]
+behaviour and can overlap. `move3d-*`,
 `rotate3d-*`, `scale3d-*`,
 and `camera3d-*` requests are finite immutable clips: a frame is calculated
 from its requested time rather than the previous frame. Camera aspect comes

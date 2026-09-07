@@ -63,6 +63,10 @@
 - Added CPU surface-pick refinement with retained parametric or implicit source
   provenance. Regular parametric surface anchors now retain their resolved
   world normal and u-tangent.
+- Added immutable straight-ARGB `billboard3d` image primitives with screen or
+  world dimensions, camera- or upright-axis-facing policy, alpha-aware depth
+  testing, software rasterization, and a matching Racket/OpenGL texture pass.
+  The spatial inspector and the repository probe now report billboard items.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
@@ -72,8 +76,7 @@ Known boundaries: adaptive implicit extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
 IDs), touching/self-intersecting section validation, repeated capped
 multi-plane geometry cuts, general polygon section fills, automatic default
-use of prepared label trajectories, and billboard texture rendering are not
-complete in this change. Core mathematical annotations are world-space
+use of prepared label trajectories are not complete in this change. Core mathematical annotations are world-space
 relations; they do not yet provide automatic formula labels or camera-facing
 screen sizing. Leaders are currently top-level 2D compositor overlays, with
 intentionally fixed styling.

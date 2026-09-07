@@ -29,6 +29,7 @@
          "../software-renderer3d.rkt"
          "../vec3.rkt"
          "api.rkt"
+         "billboard-pass.rkt"
          "capabilities.rkt"
          "context-host.rkt"
          "framebuffer.rkt"
@@ -268,7 +269,10 @@
           'depth (make-gl-shader-program host (shader-path "mesh.vert")
                                         (shader-path "depth.frag"))
           'stroke (make-gl-shader-program host (shader-path "stroke.vert")
-                                         (shader-path "stroke.frag"))))
+                                         (shader-path "stroke.frag"))
+          'billboard (make-gl-shader-program
+                      host (shader-path "billboard.vert") (shader-path "billboard.frag")
+                      #:attributes '(("position" . 0) ("uv" . 1)))))
 
 (define (shader-digests programs)
   (for/hasheq ([(name program) (in-hash programs)])
@@ -380,6 +384,8 @@
                (opengl3d-info-maximum-samples (opengl-renderer3d-value-info renderer))))
             (define stroke-batches
               (prepare-opengl-stroke-batches compiled frame-spec))
+            (define billboards
+              (prepare-opengl-billboards compiled frame-spec))
             (define start (current-inexact-milliseconds))
             (define-values (rgba raw-depth instance-count triangle-count)
               (gl-context-host-call
@@ -394,9 +400,12 @@
                  (for ([instance (in-list depth-only)])
                    (draw-instance/current! renderer compiled frame-spec instance #t))
                  (draw-stroke-batches/current! renderer stroke-batches 'hidden)
+                 (draw-billboards/current! renderer billboards 'hidden frame-spec)
                  (draw-stroke-batches/current! renderer stroke-batches 'visible)
+                 (draw-billboards/current! renderer billboards 'test frame-spec)
                  (draw-transparent/current! renderer compiled frame-spec transparent)
                  (draw-stroke-batches/current! renderer stroke-batches 'always)
+                 (draw-billboards/current! renderer billboards 'always frame-spec)
                  (values (gl-framebuffer-target-read-rgba! target host)
                          (and (member 'linear-depth requested)
                               (gl-framebuffer-target-read-depth! target host))
@@ -422,6 +431,7 @@
                                    (opengl-stroke-batches-visible-count stroke-batches)
                                    (opengl-stroke-batches-always-count stroke-batches))
                                 3))
+            (statistics-add! renderer 'raster-triangle-count (* 2 (length billboards)))
             (statistics-add! renderer 'pixel-count (* (frame3d-spec-width frame-spec)
                                                        (frame3d-spec-height frame-spec)))
             (statistics-add! renderer 'raster-milliseconds (- raster-end start))
@@ -581,6 +591,14 @@
                                     (opengl-stroke-batches-always batches)
                                     (opengl-stroke-batches-always-count batches)
                                     'always)]))
+
+(define (draw-billboards/current! renderer billboards mode frame-spec)
+  (gl-draw-billboards/current!
+   (hash-ref (opengl-renderer3d-value-programs renderer) 'billboard)
+   billboards mode
+   (frame3d-spec-camera frame-spec)
+   (frame3d-spec-width frame-spec)
+   (frame3d-spec-height frame-spec)))
 
 (define (instance-depth compiled frame-spec instance)
   (define geometry

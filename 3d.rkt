@@ -35,6 +35,7 @@
          "private/3d/curve3d.rkt"
          "private/3d/stroke3d.rkt"
          "private/3d/marker3d.rkt"
+         "private/3d/billboard3d.rkt"
          "private/3d/edge-style3d.rkt"
          "private/3d/edge-overlay3d.rkt"
          "private/3d/curve-animation3d.rkt"
@@ -390,6 +391,26 @@
  arrow-style3d-depth-bias
  arrow-style3d-with-color
  arrow-style3d-with-opacity
+ billboard-image3d
+ billboard-image3d?
+ billboard-image3d-width
+ billboard-image3d-height
+ billboard-image3d-argb
+ billboard-style3d
+ billboard-style3d?
+ billboard-style3d-width
+ billboard-style3d-height
+ billboard-style3d-size-mode
+ billboard-style3d-facing
+ billboard-style3d-axis
+ billboard-style3d-opacity
+ billboard-style3d-depth-mode
+ billboard-style3d-depth-bias
+ billboard3d
+ billboard3d?
+ billboard3d-image
+ billboard3d-position
+ billboard3d-style
  edge-style3d
  edge-style3d?
  edge-style3d-edges

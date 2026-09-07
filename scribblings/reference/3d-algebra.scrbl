@@ -879,6 +879,59 @@ The canonical example uses all of this without a second timeline:
 For the complete moving tetrahedron with labels A–D, see
 @filepath{examples/3d/projected-labels.rkt}.
 
+@section{Textured billboards}
+
+@racket[billboard3d] is the depth-tested spatial counterpart to a projected
+label. It is appropriate for a sprite, image annotation, or marker that must
+exist in the 3D viewport rather than above it. A billboard image is immutable
+straight-ARGB data, so it can be sampled by a render worker and uploaded by an
+OpenGL renderer without retaining a GUI @tt{bitmap%} or a renderer-local
+texture in the Scene.
+
+@defproc[(billboard-image3d [width exact-positive-integer?]
+                             [height exact-positive-integer?]
+                             [argb bytes?])
+         billboard-image3d?]{Creates an immutable source image. @racket[argb]
+contains exactly four bytes per pixel in top-to-bottom straight ARGB order.
+The constructor copies the bytes.}
+@defproc[(billboard-image3d? [value any/c]) boolean?]{Recognizes a billboard
+image source.}
+@defproc[(billboard-style3d [#:width width positive? 32]
+                             [#:height height (or/c #f positive?) #f]
+                             [#:size-mode size-mode (or/c 'screen 'world) 'screen]
+                             [#:facing facing (or/c 'camera 'axis) 'camera]
+                             [#:axis axis vec3? y-axis3]
+                             [#:opacity opacity (real-in 0 1) 1]
+                             [#:depth-mode depth-mode (or/c 'test 'always 'hidden) 'test]
+                             [#:depth-bias depth-bias nonnegative-real? 1e-5])
+         billboard-style3d?]{Creates an immutable billboard policy. In
+@racket['screen] mode, @racket[width] and @racket[height] are output pixels;
+in @racket['world] mode they are physical plane dimensions. An omitted height
+preserves image aspect ratio. @racket['camera] uses camera image-plane axes;
+@racket['axis] keeps @racket[axis] upright and rotates around it toward the
+camera. Axis-facing therefore requires world sizing. Depth modes have the same
+meaning as @racket[stroke3d]: @racket['test] is normally occluded,
+@racket['always] is an overlay, and @racket['hidden] paints only behind opaque
+geometry.}
+@defproc[(billboard3d [image billboard-image3d?] [position vec3?]
+                      [#:id id symbol?]
+                      [#:style style billboard-style3d? (billboard-style3d)]
+                      [#:transform transform transform3? identity-transform3]
+                      [#:opacity opacity (real-in 0 1) 1])
+         spatial-visual?]{Creates one immutable spatial billboard. Its child
+path is stable, its camera-dependent plane is resolved only during frame
+preparation, and transparent texels do not write scene depth.}
+
+The software renderer and the explicit Racket/OpenGL renderer consume the same
+prepared corners, depth policy, and ARGB source. The executable probe is
+@filepath{examples/3d/textured-billboards.rkt}.
+
+@bold{Billboard limitations:} source images use nearest sampling; a billboard
+whose world quad crosses the frustum boundary is conservatively omitted rather
+than clipped; partial alpha does not write depth; and billboards do not yet
+participate in exact spatial picking or cast/receive shadows. Use
+@racket[projected-label] for source-mapped formulas and crisp vector text.
+
 @section{Spatial curves and vector diagrams}
 
 SCENE-3D-F added finite spatial diagram geometry; SCENE-3D-O separates a
@@ -1421,8 +1474,7 @@ layout.  The function has no previous-frame dependency and does not create a
 
 Current limitations: prepared tables are explicit render inputs rather than a
 default project-render policy, and a table applies only to the source-frame
-grid and viewport raster for which it was measured. Textured/camera-facing
-billboards remain later work. Core
+grid and viewport raster for which it was measured. Core
 world-space dimensions, angle markers, normal markers, and coordinate tripods
 are fixed-structure spatial relations, but they do not yet supply automatic
 formula labels or camera-facing screen sizing. Leaders are fixed one-pixel grey
@@ -1980,7 +2032,7 @@ geometry.
 @bold{OpenGL limitations:} The first backend has one serialized context and
 therefore requires @racket[#:workers 1]; it does not create threaded GPU
 workers. It uses FBO readback rather than direct OpenGL preview-canvas
-composition. There is no GPU picking, textures, shadows, specular/roughness
+composition. There is no GPU picking, general mesh textures, shadows, specular/roughness
 lighting, persistent mapped buffers, PBO pipelining, compute/geometry shaders,
 or order-independent transparency. The software backend remains the portable
 default and conformance reference. Compare GPU/software pixels by tolerance:
@@ -2028,8 +2080,10 @@ useful deterministic approximation, not OIT. Section joining does not repair
 pathological nonmanifold meshes. Projected labels are crisp 2D overlays; the
 final compositor now uses overlap-aware candidate selection among direct-mode
 projected labels (it minimizes overlap but cannot guarantee a disjoint result), but
-prepared trajectories, leaders, and visibility policies are not yet consumed.
-Only opaque depth is considered for their hide/fade policy.
+prepared trajectories remain explicit inputs for their sampled frame grid.
+Leaders and visibility policies are consumed by final composition. Only opaque
+depth is considered for their hide/fade policy. Billboard image annotations
+are depth-tested, but do not yet provide source-mapped text or exact picking.
 Linear and affine map requests do not resample geometry; singular maps use a
 deterministic authored-normal shading fallback. Pointwise and homotopy maps
 currently accept only an unwrapped @racket[mesh3d], not curves, surfaces, or

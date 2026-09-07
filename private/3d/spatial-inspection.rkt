@@ -14,6 +14,7 @@
          "../visual-model.rkt"
          "affine3.rkt"
          "affine-map3d-visual.rkt"
+         "billboard3d.rkt"
          "bounds3.rkt"
          "bvh3d.rkt"
          "camera3d.rkt"
@@ -127,14 +128,28 @@
                 ;; to the inspector result.  A preview can therefore explain
                 ;; an adaptive or implicit mesh without rerunning its author
                 ;; procedure or reverse engineering a renderer cache key.
-                (if (surface3d? object)
+                (cond
+                  [(surface3d? object)
+                   (hash-set
                     (hash-set
-                     (hash-set
-                      (hash-set base 'surface-kind (surface3d-kind object))
-                      'surface-topology-key
-                      (surface-mesh3d-topology-key (surface3d-mesh object)))
-                     'surface-diagnostics (surface3d-diagnostics object))
-                    base))]
+                     (hash-set base 'surface-kind (surface3d-kind object))
+                     'surface-topology-key
+                     (surface-mesh3d-topology-key (surface3d-mesh object)))
+                    'surface-diagnostics (surface3d-diagnostics object))]
+                  [(billboard3d? object)
+                   (define image (billboard3d-image object))
+                   (define style (billboard3d-style object))
+                   (hash-set*
+                    base
+                    'billboard-size (vector (billboard-style3d-width style)
+                                            (billboard-style3d-height style))
+                    'billboard-size-mode (billboard-style3d-size-mode style)
+                    'billboard-facing (billboard-style3d-facing style)
+                    'billboard-depth-mode (billboard-style3d-depth-mode style)
+                    'billboard-image-pixels
+                    (vector (billboard-image3d-width image)
+                            (billboard-image3d-height image)))]
+                  [else base]))]
              [inspection
               (spatial-inspection
                path (spatial-kind object) (spatial-transform object) world-transform
@@ -180,6 +195,7 @@
   (cond [(mesh3d? object) 'mesh]
         [(curve3d? object) 'curve]
         [(surface3d? object) 'surface]
+        [(billboard3d? object) 'billboard]
         [(spatial-container? object) 'group]
         [else 'spatial-visual]))
 

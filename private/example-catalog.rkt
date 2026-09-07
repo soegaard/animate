@@ -183,6 +183,10 @@
     "examples/3d/spatial-annotations.rkt" 'make-demo-scene
     '(3d annotations dimensions angles normals axes camera) '(core) 2 4)
    (example-entry
+    'textured-billboards "Depth-tested textured billboards"
+    "examples/3d/textured-billboards.rkt" 'make-demo-scene
+    '(3d billboards textures alpha depth camera) '(core) 2 4)
+   (example-entry
     'opengl-opaque-cube "Retained Racket/OpenGL cube"
     "examples/3d/opengl-opaque-cube.rkt" 'make-demo-scene
     '(3d opengl retained framebuffer cache) '(core gui opengl) 5/2 5)

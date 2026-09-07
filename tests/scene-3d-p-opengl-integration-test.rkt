@@ -56,6 +56,29 @@
    #:id 'clip-and-glass #:width 4 #:height 3 #:camera default-test-camera
    #:background "aliceblue" #:render-mode 'opaque))
 
+;; Billboards use the same immutable straight-ARGB data in both renderers.
+;; The small opaque sprite makes texture orientation and depth policy visible
+;; without introducing a platform font rasterizer into the OpenGL probe.
+(define (solid-billboard-image)
+  (define pixels (make-bytes (* 4 4)))
+  (for ([index (in-range 0 (bytes-length pixels) 4)])
+    (bytes-set! pixels index 255)
+    (bytes-set! pixels (add1 index) 255)
+    (bytes-set! pixels (+ index 2) 210)
+    (bytes-set! pixels (+ index 3) 20))
+  (billboard-image3d 2 2 pixels))
+
+(define (billboard-view)
+  (view3d
+   (list
+    (cube3d 2 #:id 'cube #:color "navy")
+    ;; The sprite is behind the cube at the central camera ray. It can only be
+    ;; seen at its unoccluded boundary, exercising a real depth-tested texture.
+    (billboard3d (solid-billboard-image) origin3 #:id 'sprite
+                 #:style (billboard-style3d #:width 34 #:depth-mode 'test)))
+   #:id 'billboard-world #:width 4 #:height 3 #:camera default-test-camera
+   #:background "aliceblue" #:render-mode 'opaque))
+
 (define (render-bytes renderer view [width 128] [height 96])
   (define request (view3d->render3d-request view width height))
   (renderer3d-render-result-argb-bytes
@@ -139,6 +162,11 @@
         (render-bytes software (clipped-transparent-view))
         (render-bytes renderer (clipped-transparent-view))
         #:mean-tolerance 3 #:maximum-tolerance 160)
+       (check-conform-to-software
+        'textured-billboard
+        (render-bytes software (billboard-view))
+        (render-bytes renderer (billboard-view))
+        #:mean-tolerance 3 #:maximum-tolerance 180)
        (define statistics (renderer-statistics renderer))
        (check-equal? (hash-ref statistics 'backend) 'opengl-racket)
        (check-equal? (hash-ref (hash-ref statistics 'framebuffer-cache) 'allocations) 1)

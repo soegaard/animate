@@ -5,6 +5,7 @@
 (require racket/list
          "affine3.rkt"
          "affine-map3d-visual.rkt"
+         "billboard3d.rkt"
          "clipping3d.rkt"
          "curve3d.rkt"
          "edge-style3d.rkt"
@@ -24,6 +25,7 @@
          (struct-out draw-stroke3d-command)
          (struct-out draw-point-marker3d-command)
          (struct-out draw-arrow-marker3d-command)
+         (struct-out draw-billboard3d-command)
          spatial-tree->draw3d-commands
          spatial-tree->draw-mesh3d-commands)
 
@@ -55,6 +57,13 @@
 
 (struct draw-arrow-marker3d-command
   (path world-transform from to style opacity clip-planes drawing-index)
+  #:transparent)
+
+;; A billboard retains its data image, anchor, and camera-facing policy until
+;; the per-frame backend pass.  It is deliberately not lowered to a semantic
+;; mesh: screen-sized billboards have no fixed world-space vertices.
+(struct draw-billboard3d-command
+  (path world-transform image position style opacity clip-planes drawing-index)
   #:transparent)
 
 ; spatial-tree->draw-mesh3d-commands : spatial-container?
@@ -185,6 +194,14 @@
          (cons (draw-arrow-marker3d-command
                 path world-transform (arrow-marker3d-from object)
                 (arrow-marker3d-to object) (arrow-marker3d-style object)
+                opacity parent-clips next-index)
+               reversed)
+         (add1 next-index))]
+       [(billboard3d? object)
+        (values
+         (cons (draw-billboard3d-command
+                path world-transform (billboard3d-image object)
+                (billboard3d-position object) (billboard3d-style object)
                 opacity parent-clips next-index)
                reversed)
          (add1 next-index))]
