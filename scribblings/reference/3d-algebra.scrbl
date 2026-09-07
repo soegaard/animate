@@ -277,6 +277,9 @@ the replacement to retain the final path identity.}
                   [#:vertices vertices vector?]
                   [#:triangles triangles vector? #()]
                   [#:edges edges (or/c #f vector?) #f]
+                  [#:vertex-ids vertex-ids (or/c #f vector?) #f]
+                  [#:edge-ids edge-ids (or/c #f vector?) #f]
+                  [#:face-ids face-ids (or/c #f vector?) #f]
                   [#:normals normals (or/c #f vector?) #f]
                   [#:colors colors (or/c #f vector?) #f]
                   [#:material material material3d?]
@@ -295,11 +298,44 @@ In @racket['wireframe] mode the stable edge order remains visible. In
 depth-tested, and shaded with @racket[material]. Flat and smooth materials use
 the declared face or interpolated vertex normals respectively; per-vertex
 colours are interpolated perspective-correctly.
+
+Optional semantic ID vectors are immutable vectors of unique symbols, aligned
+with vertices, edges, and declared triangle faces respectively. They describe
+author-visible mathematical parts, not GPU geometry. A symbol may appear in
+more than one kind because the part kind distinguishes it. Omit a vector to
+use the stable numeric source indices rather than manufacturing names.
 }
 @defproc[(mesh3d? [value any/c]) boolean?]{Recognizes an immutable indexed mesh.}
 @defproc[(mesh3d-vertices [mesh mesh3d?]) vector?]{Returns immutable vertices.}
 @defproc[(mesh3d-triangles [mesh mesh3d?]) vector?]{Returns immutable triangle indices.}
 @defproc[(mesh3d-edges [mesh mesh3d?]) vector?]{Returns immutable wireframe edge indices.}
+@defproc[(mesh3d-vertex-ids [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable semantic vertex IDs.}
+@defproc[(mesh3d-edge-ids [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable semantic edge IDs.}
+@defproc[(mesh3d-face-ids [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable semantic triangle-face IDs.}
+@defproc[(mesh3d-vertex-id [mesh mesh3d?] [index exact-nonnegative-integer?])
+         (or/c symbol? exact-nonnegative-integer?)]{Returns the explicit vertex
+semantic ID or, if absent, its stable source index.}
+@defproc[(mesh3d-edge-id [mesh mesh3d?] [index exact-nonnegative-integer?])
+         (or/c symbol? exact-nonnegative-integer?)]{Returns the explicit edge
+semantic ID or, if absent, its stable source index.}
+@defproc[(mesh3d-face-id [mesh mesh3d?] [index exact-nonnegative-integer?])
+         (or/c symbol? exact-nonnegative-integer?)]{Returns the explicit face
+semantic ID or, if absent, its stable source index.}
+@defstruct*[geometry-key3d
+            ([digest bytes?] [byte-length exact-nonnegative-integer?]
+             [vertex-count exact-nonnegative-integer?]
+             [triangle-count exact-nonnegative-integer?]
+             [edge-count exact-nonnegative-integer?])] #:transparent]{A
+renderer geometry identity. It intentionally excludes semantic part IDs.}
+@defproc[(mesh3d-geometry-key [mesh mesh3d?]) geometry-key3d?]{Returns the
+immutable render-geometry key, excluding material, placement, and semantic IDs.}
+@defstruct*[mesh3d-semantic-key3d
+            ([geometry geometry-key3d?]
+             [vertex-ids (or/c #f vector?)] [edge-ids (or/c #f vector?)]
+             [face-ids (or/c #f vector?)] [provenance-schema symbol?])
+            #:transparent]{An authoring identity layered over geometry.}
+@defproc[(mesh3d-semantic-key [mesh mesh3d?]) mesh3d-semantic-key3d?]{Returns
+the immutable semantic key. It is not a renderer cache key.}
 @defproc[(mesh3d-normals [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable normals.}
 @defproc[(mesh3d-colors [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable colours.}
 @defproc[(mesh3d-material [mesh mesh3d?]) material3d?]{Returns the surface material.}
@@ -1271,9 +1307,11 @@ nonnegative-radius profile around an axis.}
                    [#:id id symbol?]) mesh3d?]{Sweeps a simple profile along a
 sampled curve using a direct parallel-transport frame.}
 @defproc[(mesh3d-smooth-normals [mesh mesh3d?]) mesh3d?]{Computes stable
-area-weighted shared-vertex normals.}
+area-weighted shared-vertex normals while retaining every semantic part ID.}
 @defproc[(mesh3d-flat-normals [mesh mesh3d?]) mesh3d?]{Duplicates face vertices
-so every triangle receives one normal.}
+so every triangle receives one normal. Triangle face IDs remain one-to-one;
+vertex and edge ID vectors are deliberately absent because their parts have
+been split into new representation corners.}
 @defproc[(mesh3d-boundary-edges [mesh mesh3d?]) vector?]{Reports its
 deterministically ordered manifold boundary edges.}
 

@@ -204,7 +204,9 @@
   (define output-vertices-reversed '())
   (define output-normals-reversed '())
   (define output-colors-reversed '())
+  (define output-point-keys-reversed '())
   (define output-triangles-reversed '())
+  (define output-face-ids-reversed '())
   (define next-index 0)
   (define source-has-normals? (and (mesh3d-normals mesh) #t))
   (define source-has-colors? (and (mesh3d-colors mesh) #t))
@@ -217,6 +219,8 @@
            (hash-set! vertex-indices key index)
            (set! output-vertices-reversed
                  (cons (slice-point3d-position point) output-vertices-reversed))
+           (set! output-point-keys-reversed
+                 (cons (slice-point3d-key point) output-point-keys-reversed))
            (when source-has-normals?
              (set! output-normals-reversed
                    (cons (slice-point3d-normal point) output-normals-reversed)))
@@ -226,29 +230,73 @@
            index]))
   (parameterize ([current-section-distance-tolerance
                   (section3d-settings-distance-tolerance settings)])
-    (for ([triangle (in-vector (mesh3d-triangles mesh))])
+    (for ([triangle (in-vector (mesh3d-triangles mesh))]
+          [triangle-index (in-naturals)])
       (define polygon
         (clip-indexed-triangle-by-plane mesh triangle actual-clip))
       (when (>= (length polygon) 3)
         (define indices (map register! polygon))
+        (define unchanged-triangle?
+          (and (= (length polygon) 3)
+               (for/and ([point (in-list polygon)])
+                 (eq? (slice-key3d-kind (slice-point3d-key point)) 'vertex))))
         (for ([index (in-range 1 (sub1 (length polygon)))])
           (define triangle-indices
             (vector (first indices) (list-ref indices index) (list-ref indices (add1 index))))
           (when (= (length (remove-duplicates (vector->list triangle-indices))) 3)
             (set! output-triangles-reversed
-                  (cons triangle-indices output-triangles-reversed)))))))
-  (mesh3d #:id id
-          #:vertices (list->vector (reverse output-vertices-reversed))
-          #:triangles (list->vector (reverse output-triangles-reversed))
-          #:normals (and source-has-normals?
-                         (list->vector (reverse output-normals-reversed)))
-          #:colors (and source-has-colors?
-                       (list->vector (reverse output-colors-reversed)))
-          #:material (mesh3d-material mesh)
-          #:transform (spatial-transform mesh)
-          #:opacity (spatial-opacity mesh)
-          #:wireframe-color (mesh3d-wireframe-color mesh)
-          #:wireframe-width (mesh3d-wireframe-width mesh)))
+                  (cons triangle-indices output-triangles-reversed))
+            (when (mesh3d-face-ids mesh)
+              (set! output-face-ids-reversed
+                    (cons (if unchanged-triangle?
+                              (mesh3d-face-id mesh triangle-index)
+                              (slice-derived-id
+                               'face (mesh3d-face-id mesh triangle-index) index))
+                          output-face-ids-reversed))))))))
+  (define output-vertices (list->vector (reverse output-vertices-reversed)))
+  (define output-triangles (list->vector (reverse output-triangles-reversed)))
+  (define output-normals
+    (and source-has-normals? (list->vector (reverse output-normals-reversed))))
+  (define output-colors
+    (and source-has-colors? (list->vector (reverse output-colors-reversed))))
+  ;; Build the unchanged render mesh first. The second construction only adds
+  ;; semantic annotation to the exact same geometry/attributes, so slicing
+  ;; cannot accidentally make renderer cache identity depend on names.
+  (define unannotated
+    (mesh3d #:id id #:vertices output-vertices #:triangles output-triangles
+            #:normals output-normals #:colors output-colors
+            #:material (mesh3d-material mesh)
+            #:transform (spatial-transform mesh)
+            #:opacity (spatial-opacity mesh)
+            #:wireframe-color (mesh3d-wireframe-color mesh)
+            #:wireframe-width (mesh3d-wireframe-width mesh)))
+  (define output-point-keys (reverse output-point-keys-reversed))
+  (define output-vertex-ids
+    (and (mesh3d-vertex-ids mesh)
+         (list->vector
+          (for/list ([key (in-list output-point-keys)])
+            (slice-vertex-semantic-id mesh key)))))
+  (define output-edge-ids
+    (and (mesh3d-edge-ids mesh)
+         (let ([source-edge-ids (slice-source-edge-id-table mesh)])
+           (list->vector
+            (for/list ([edge (in-vector (mesh3d-edges unannotated))])
+              (slice-edge-semantic-id mesh output-point-keys edge source-edge-ids))))))
+  (define output-face-ids
+    (and (mesh3d-face-ids mesh)
+         (list->vector (reverse output-face-ids-reversed))))
+  (if (or output-vertex-ids output-edge-ids output-face-ids)
+      (mesh3d #:id id #:vertices output-vertices #:triangles output-triangles
+              #:edges (mesh3d-edges unannotated)
+              #:vertex-ids output-vertex-ids #:edge-ids output-edge-ids
+              #:face-ids output-face-ids
+              #:normals output-normals #:colors output-colors
+              #:material (mesh3d-material mesh)
+              #:transform (spatial-transform mesh)
+              #:opacity (spatial-opacity mesh)
+              #:wireframe-color (mesh3d-wireframe-color mesh)
+              #:wireframe-width (mesh3d-wireframe-width mesh))
+      unannotated))
 
 ; slice-mesh-by-planes3d : mesh3d? (listof (or/c plane3? clip-plane3d?)) ... -> mesh3d?
 ;; Applies authored clipping planes in declaration order, creating geometry at
@@ -280,6 +328,52 @@
 ;; triangles agree even if they enumerate their shared edge in opposite order.
 (struct slice-key3d (kind low high) #:transparent)
 (struct slice-point3d (position normal color key) #:transparent)
+
+;; Semantic IDs are an author-visible provenance boundary. A source vertex or
+;; unchanged source face retains its declared symbol. A new cut vertex/edge or
+;; split face receives a deterministic, readable symbol derived from the source
+;; part(s). `mesh3d` validates the resulting namespace, so a deliberately
+;; colliding authored spelling fails rather than silently aliases a part.
+(define (slice-derived-id kind first second)
+  (string->symbol (format "slice-~a-~s-~s" kind first second)))
+
+(define (slice-vertex-semantic-id mesh key)
+  (if (eq? (slice-key3d-kind key) 'vertex)
+      (mesh3d-vertex-id mesh (slice-key3d-low key))
+      (slice-derived-id 'vertex
+                        (mesh3d-vertex-id mesh (slice-key3d-low key))
+                        (mesh3d-vertex-id mesh (slice-key3d-high key)))))
+
+(define (slice-source-edge-id-table mesh)
+  (for/hash ([edge (in-vector (mesh3d-edges mesh))]
+             [index (in-naturals)])
+    (values (cons (min (vector-ref edge 0) (vector-ref edge 1))
+                  (max (vector-ref edge 0) (vector-ref edge 1)))
+            (mesh3d-edge-id mesh index))))
+
+(define (slice-point-semantic-token mesh key)
+  (if (eq? (slice-key3d-kind key) 'vertex)
+      (list 'vertex (mesh3d-vertex-id mesh (slice-key3d-low key)))
+      (list 'source-edge
+            (mesh3d-vertex-id mesh (slice-key3d-low key))
+            (mesh3d-vertex-id mesh (slice-key3d-high key)))))
+
+(define (slice-edge-semantic-id mesh point-keys edge source-edge-ids)
+  (define first-key (list-ref point-keys (vector-ref edge 0)))
+  (define second-key (list-ref point-keys (vector-ref edge 1)))
+  (define direct-source-id
+    (and (eq? (slice-key3d-kind first-key) 'vertex)
+         (eq? (slice-key3d-kind second-key) 'vertex)
+         (hash-ref source-edge-ids
+                   (cons (min (slice-key3d-low first-key) (slice-key3d-low second-key))
+                         (max (slice-key3d-low first-key) (slice-key3d-low second-key)))
+                   #f)))
+  (or direct-source-id
+      (let ([first-token (slice-point-semantic-token mesh first-key)]
+            [second-token (slice-point-semantic-token mesh second-key)])
+        (if (string<=? (format "~s" first-token) (format "~s" second-token))
+            (slice-derived-id 'edge first-token second-token)
+            (slice-derived-id 'edge second-token first-token)))))
 
 (define (clip-indexed-triangle-by-plane mesh triangle clip)
   (define source-normals (mesh3d-normals mesh))
@@ -643,6 +737,10 @@
                                 (vec3- third-point first-point))))
     (for ([index (in-vector triangle)]) (vector-set! normals index normal)))
   (mesh3d #:id (spatial-id mesh) #:vertices vertices #:triangles (mesh3d-triangles mesh)
+          #:edges (mesh3d-edges mesh)
+          #:vertex-ids (mesh3d-vertex-ids mesh)
+          #:edge-ids (mesh3d-edge-ids mesh)
+          #:face-ids (mesh3d-face-ids mesh)
           #:normals normals #:material (mesh3d-material mesh)
           #:transform (spatial-transform mesh) #:opacity (spatial-opacity mesh)
           #:wireframe-color (mesh3d-wireframe-color mesh)

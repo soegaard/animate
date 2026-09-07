@@ -158,6 +158,7 @@
   (define destination-vertices '())
   (define destination-source-indices '())
   (define destination-triangles '())
+  (define destination-source-triangle-indices '())
   (define (destination-index source-index)
     (or (vector-ref source->destination source-index)
         (let ([index (length destination-vertices)])
@@ -169,12 +170,15 @@
           (set! destination-source-indices
                 (append destination-source-indices (list source-index)))
           index)))
-  (for ([triangle (in-vector (mesh3d-triangles mesh))])
+  (for ([triangle (in-vector (mesh3d-triangles mesh))]
+        [triangle-index (in-naturals)])
     (define indices (vector->list triangle))
     (when (andmap (lambda (index) (vec3? (vector-ref mapped index))) indices)
       (set! destination-triangles
             (append destination-triangles
-                    (list (list->vector (map destination-index indices)))))))
+                    (list (list->vector (map destination-index indices)))))
+      (set! destination-source-triangle-indices
+            (append destination-source-triangle-indices (list triangle-index)))))
   (define source-colors (mesh3d-colors mesh))
   (define source-normals (mesh3d-normals mesh))
   (define result
@@ -182,6 +186,15 @@
      #:id (spatial-id mesh)
      #:vertices (list->vector destination-vertices)
      #:triangles (list->vector destination-triangles)
+     ;; A retained mapped vertex/triangle remains the same author-visible part,
+     ;; even though its coordinate has changed. Edges are intentionally
+     ;; regenerated from surviving triangles by the longstanding map policy;
+     ;; their optional IDs are therefore absent rather than falsely attached to
+     ;; a different derived edge table.
+     #:vertex-ids (select-semantic-ids (mesh3d-vertex-ids mesh)
+                                        destination-source-indices)
+     #:face-ids (select-semantic-ids (mesh3d-face-ids mesh)
+                                      destination-source-triangle-indices)
      #:normals (and (not recompute-normals?) source-normals
                     (list->vector
                      (for/list ([source-index (in-list destination-source-indices)])
@@ -198,6 +211,12 @@
   (if recompute-normals?
       (mesh3d-smooth-normals result)
       result))
+
+(define (select-semantic-ids ids source-indices)
+  (and ids
+       (list->vector
+        (for/list ([index (in-list source-indices)])
+          (vector-ref ids index)))))
 
 (define (map-one-vertex map-point world-point on-failure index)
   (define (failed message . details)

@@ -65,6 +65,12 @@ terminal hits become canonical path endpoints. Poisson sets use a local
 integer-seeded generator, never the process-global random state. Static vector
 fields/streamlines and parameter-driven particles lower from these prepared
 values.
+SCENE-3D-U0 begins topology-aware authoring with optional immutable semantic
+IDs for mesh vertices, edges, and triangle faces. These semantic names have a
+separate key from retained render geometry, so they support later matching and
+inspection without changing geometry-cache sharing. Identity-preserving mesh
+operations retain their IDs; operations which split parts state their policy
+explicitly rather than assigning a misleading inherited name.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric

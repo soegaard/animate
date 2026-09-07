@@ -27,6 +27,12 @@
          mesh3d-vertices
          mesh3d-triangles
          mesh3d-edges
+         mesh3d-vertex-ids
+         mesh3d-edge-ids
+         mesh3d-face-ids
+         mesh3d-vertex-id
+         mesh3d-edge-id
+         mesh3d-face-id
          mesh3d-normals
          mesh3d-colors
          mesh3d-material
@@ -41,6 +47,7 @@
 
 (struct mesh3d-value
   (id transform opacity vertices triangles edges normals colors
+      vertex-ids edge-ids face-ids
       material wireframe-color wireframe-width local-bounds)
   #:transparent
   #:methods gen:spatial-visual
@@ -71,6 +78,9 @@
 ;;  - edges            immutable-vectorof index pairs, stable line order.
 ;;  - normals          (or/c #f immutable-vectorof vec3?) per-vertex normals.
 ;;  - colors           (or/c #f immutable-vectorof color-spec?) per-vertex colors.
+;;  - vertex-ids       (or/c #f immutable-vectorof symbol?) semantic vertex IDs.
+;;  - edge-ids         (or/c #f immutable-vectorof symbol?) semantic edge IDs.
+;;  - face-ids         (or/c #f immutable-vectorof symbol?) semantic triangle IDs.
 ;;  - material         material3d?             surface material.
 ;;  - wireframe-color  color-spec?             current independent line colour.
 ;;  - wireframe-width  positive finite real?   current cosmetic line width.
@@ -80,12 +90,42 @@
 (define mesh3d-vertices mesh3d-value-vertices)
 (define mesh3d-triangles mesh3d-value-triangles)
 (define mesh3d-edges mesh3d-value-edges)
+(define mesh3d-vertex-ids mesh3d-value-vertex-ids)
+(define mesh3d-edge-ids mesh3d-value-edge-ids)
+(define mesh3d-face-ids mesh3d-value-face-ids)
 (define mesh3d-normals mesh3d-value-normals)
 (define mesh3d-colors mesh3d-value-colors)
 (define mesh3d-material mesh3d-value-material)
 (define mesh3d-wireframe-color mesh3d-value-wireframe-color)
 (define mesh3d-wireframe-width mesh3d-value-wireframe-width)
 (define mesh3d-local-bounds mesh3d-value-local-bounds)
+
+; mesh3d-vertex-id : mesh3d? exact-nonnegative-integer? -> (or/c symbol? exact-nonnegative-integer?)
+;; mesh3d-edge-id : mesh3d? exact-nonnegative-integer? -> (or/c symbol? exact-nonnegative-integer?)
+;; mesh3d-face-id : mesh3d? exact-nonnegative-integer? -> (or/c symbol? exact-nonnegative-integer?)
+;; Returns an explicit semantic ID when authored, otherwise the stable source
+;; index.  Keeping the fallback numeric avoids inventing public symbols merely
+;; because a mesh was constructed without semantic-part annotation.
+(define (mesh3d-vertex-id mesh index)
+  (mesh3d-part-id 'mesh3d-vertex-id mesh index mesh3d-vertex-ids mesh3d-vertices))
+
+(define (mesh3d-edge-id mesh index)
+  (mesh3d-part-id 'mesh3d-edge-id mesh index mesh3d-edge-ids mesh3d-edges))
+
+(define (mesh3d-face-id mesh index)
+  (mesh3d-part-id 'mesh3d-face-id mesh index mesh3d-face-ids mesh3d-triangles))
+
+(define (mesh3d-part-id who mesh index ids-proc parts-proc)
+  (unless (mesh3d? mesh)
+    (raise-argument-error who "mesh3d?" mesh))
+  (unless (and (exact-nonnegative-integer? index)
+               (< index (vector-length (parts-proc mesh))))
+    (raise-arguments-error who
+                           "an in-range exact nonnegative part index"
+                           "index" index
+                           "part-count" (vector-length (parts-proc mesh))))
+  (define ids (ids-proc mesh))
+  (if ids (vector-ref ids index) index))
 
 
 ;;;
@@ -95,6 +135,9 @@
 ; mesh3d : #:id symbol? #:vertices (vectorof vec3?)
 ;          [#:triangles (vectorof index-triple?)]
 ;          [#:edges (or/c #f (vectorof index-pair?))]
+;          [#:vertex-ids (or/c #f (vectorof symbol?))]
+;          [#:edge-ids (or/c #f (vectorof symbol?))]
+;          [#:face-ids (or/c #f (vectorof symbol?))]
 ;          [#:normals (or/c #f (vectorof vec3?))]
 ;          [#:colors (or/c #f (vectorof color-spec?))]
 ;          [#:material material3d?]
@@ -106,6 +149,9 @@
                 #:vertices vertices
                 #:triangles [triangles #()]
                 #:edges [edges #f]
+                #:vertex-ids [vertex-ids #f]
+                #:edge-ids [edge-ids #f]
+                #:face-ids [face-ids #f]
                 #:normals [normals #f]
                 #:colors [colors #f]
                 #:material [material default-material3d]
@@ -134,6 +180,15 @@
         (copy-index-tuples 'mesh3d "edge index pairs" edges 2
                            (vector-length checked-vertices))
         (derive-edges checked-triangles)))
+  (define checked-vertex-ids
+    (copy-semantic-id-vector 'mesh3d "vertex IDs" vertex-ids
+                             (vector-length checked-vertices)))
+  (define checked-edge-ids
+    (copy-semantic-id-vector 'mesh3d "edge IDs" edge-ids
+                             (vector-length checked-edges)))
+  (define checked-face-ids
+    (copy-semantic-id-vector 'mesh3d "face IDs" face-ids
+                             (vector-length checked-triangles)))
   (define checked-normals
     (copy-attribute-vectors 'mesh3d "normals" normals vec3?
                             (vector-length checked-vertices)))
@@ -141,8 +196,10 @@
     (copy-attribute-vectors 'mesh3d "colors" colors color-spec?
                             (vector-length checked-vertices)))
   (mesh3d-value id transform opacity checked-vertices checked-triangles
-                checked-edges checked-normals checked-colors material wireframe-color
-                wireframe-width (aabb3-from-points (vector->list checked-vertices))))
+                checked-edges checked-normals checked-colors
+                checked-vertex-ids checked-edge-ids checked-face-ids
+                material wireframe-color wireframe-width
+                (aabb3-from-points (vector->list checked-vertices))))
 
 
 ;;;
@@ -209,6 +266,38 @@
                                      "attribute" kind
                                      "value" value))
             value))]))
+
+; copy-semantic-id-vector : symbol? string? any/c exact-nonnegative-integer?
+;                           -> (or/c #f immutable-vectorof symbol?)
+;; Semantic IDs are intentionally stricter than generic attributes: a part
+;; kind has one unambiguous name per local source index.  Different kinds may
+;; reuse a symbol because the accessor's part kind supplies the distinction.
+(define (copy-semantic-id-vector who kind values part-count)
+  (cond [(not values) #f]
+        [(not (vector? values))
+         (raise-argument-error who "(or/c #f vector?)" values)]
+        [(not (= (vector-length values) part-count))
+         (raise-arguments-error who
+                                "a semantic ID vector matching its part count"
+                                "part-kind" kind
+                                "id-count" (vector-length values)
+                                "part-count" part-count)]
+        [else
+         (define copied
+           (for/vector ([value (in-vector values)])
+             (unless (symbol? value)
+               (raise-arguments-error who
+                                      "a vector of unique symbol semantic IDs"
+                                      "part-kind" kind
+                                      "id" value))
+             value))
+         (define duplicate (check-duplicates (vector->list copied)))
+         (when duplicate
+           (raise-arguments-error who
+                                  "unique semantic IDs within one part kind"
+                                  "part-kind" kind
+                                  "duplicate-id" duplicate))
+         (vector->immutable-vector copied)]))
 
 ; derive-edges : immutable-vectorof triangle-index-triple? -> immutable-vectorof edge-index-pair?
 ;;   Returns each undirected triangle edge once in first-face encounter order.

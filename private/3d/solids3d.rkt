@@ -68,9 +68,15 @@
                     #:material [material #f]
                     #:color [color "cornflowerblue"]
                     #:transform [transform identity-transform3]
-                    #:opacity [opacity 1])
+                    #:opacity [opacity 1]
+                    #:vertex-ids [vertex-ids #f]
+                    #:edge-ids [edge-ids #f]
+                    #:face-ids [face-ids #f]
+                    #:edges [edges #f])
   (define base
     (mesh3d #:id id #:vertices vertices #:triangles triangles
+            #:edges edges
+            #:vertex-ids vertex-ids #:edge-ids edge-ids #:face-ids face-ids
             #:material (solid-material material color)
             #:transform transform #:opacity opacity))
   (mesh3d-smooth-normals base))
@@ -528,6 +534,10 @@
                      (affine3-apply-point map vertex)))
   (define normals (mesh3d-normals mesh))
   (mesh3d #:id (spatial-id mesh) #:vertices vertices #:triangles (mesh3d-triangles mesh)
+          #:edges (mesh3d-edges mesh)
+          #:vertex-ids (mesh3d-vertex-ids mesh)
+          #:edge-ids (mesh3d-edge-ids mesh)
+          #:face-ids (mesh3d-face-ids mesh)
           #:normals (and normals (for/vector ([normal (in-vector normals)])
                                   (safe-normal (linear3-apply-vector
                                                 (affine3-normal-transform map) normal))))
@@ -560,7 +570,13 @@
       (set! normals (append normals (list face)))
       (when source-colors (set! colors (append colors (list (vector-ref source-colors index))))))
     (set! triangles (append triangles (list (vector base (add1 base) (+ base 2))))))
+  ;; Face identities survive: every output triangle is the same declared
+  ;; triangle. Vertex and edge identities cannot: this operation deliberately
+  ;; splits one source vertex into one independent corner per face. Dropping
+  ;; those two optional vectors is an explicit semantic policy, not an attempt
+  ;; to claim that a duplicated corner remains one unique vertex part.
   (mesh3d #:id (spatial-id mesh) #:vertices (list->vector vertices) #:triangles (list->vector triangles)
+          #:face-ids (mesh3d-face-ids mesh)
           #:normals (list->vector normals) #:colors (and source-colors (list->vector colors))
           #:material (mesh3d-material mesh) #:transform (spatial-transform mesh)
           #:opacity (spatial-opacity mesh) #:wireframe-color (mesh3d-wireframe-color mesh)
@@ -615,7 +631,8 @@
   (define inputs (if (vector? meshes) (vector->list meshes) meshes))
   (unless (pair? inputs) (raise-argument-error 'mesh3d-merge "nonempty sequence of mesh3d?" meshes))
   (unless (andmap mesh3d? inputs) (raise-argument-error 'mesh3d-merge "sequence of mesh3d?" meshes))
-  (define vertices '()) (define triangles '()) (define colors '()) (define every-color? (andmap mesh3d-colors inputs))
+  (define vertices '()) (define triangles '()) (define edges '()) (define colors '())
+  (define every-color? (andmap mesh3d-colors inputs))
   (for ([mesh (in-list inputs)])
     (define offset (length vertices))
     (define map (transform3->affine3 (spatial-transform mesh)))
@@ -625,8 +642,16 @@
                             (for/list ([triangle (in-vector (mesh3d-triangles mesh))])
                               (vector (+ offset (vector-ref triangle 0)) (+ offset (vector-ref triangle 1))
                                       (+ offset (vector-ref triangle 2))))))
+    (set! edges (append edges
+                        (for/list ([edge (in-vector (mesh3d-edges mesh))])
+                          (vector (+ offset (vector-ref edge 0))
+                                  (+ offset (vector-ref edge 1))))))
     (when every-color? (set! colors (append colors (vector->list (mesh3d-colors mesh))))))
   (make-solid id (list->vector vertices) (list->vector triangles)
+              #:edges (list->vector edges)
+              #:vertex-ids (merged-semantic-ids 'mesh3d-merge "vertex" mesh3d-vertex-ids inputs)
+              #:edge-ids (merged-semantic-ids 'mesh3d-merge "edge" mesh3d-edge-ids inputs)
+              #:face-ids (merged-semantic-ids 'mesh3d-merge "face" mesh3d-face-ids inputs)
               #:material material #:color color))
 
 
@@ -731,7 +756,33 @@
                    #:normals [normals (mesh3d-normals mesh)]
                    #:material [material (mesh3d-material mesh)])
   (mesh3d #:id (spatial-id mesh) #:vertices (mesh3d-vertices mesh) #:triangles triangles
+          #:edges (mesh3d-edges mesh)
+          #:vertex-ids (mesh3d-vertex-ids mesh)
+          #:edge-ids (mesh3d-edge-ids mesh)
+          #:face-ids (mesh3d-face-ids mesh)
           #:normals normals #:colors (mesh3d-colors mesh) #:material material
           #:transform (spatial-transform mesh) #:opacity (spatial-opacity mesh)
           #:wireframe-color (mesh3d-wireframe-color mesh)
           #:wireframe-width (mesh3d-wireframe-width mesh)))
+
+;; mesh3d-merge bakes local transforms but does not combine coincident source
+;; vertices. Consequently every explicit part ID can be retained exactly when
+;; every operand supplies that kind and the resulting namespace is unique.
+;; A mixed named/unnamed set would require manufactured public names, and a
+;; collision would make a part reference ambiguous, so both fail explicitly.
+(define (merged-semantic-ids who kind accessor meshes)
+  (define vectors (map accessor meshes))
+  (cond [(andmap not vectors) #f]
+        [(ormap not vectors)
+         (raise-arguments-error who
+                                "either semantic IDs on every input mesh or none"
+                                "part-kind" kind)]
+        [else
+         (define ids (apply append (map vector->list vectors)))
+         (define duplicate (check-duplicates ids))
+         (when duplicate
+           (raise-arguments-error who
+                                  "noncolliding semantic IDs across merged meshes"
+                                  "part-kind" kind
+                                  "duplicate-id" duplicate))
+         (list->vector ids)]))

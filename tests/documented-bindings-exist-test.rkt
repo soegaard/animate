@@ -38,7 +38,9 @@
                          spatial-with-transform spatial-opacity spatial-with-opacity
                          spatial-local-bounds group3d spatial-child
                          spatial-path? spatial-relative-ref spatial-relative-replace
-                         mesh3d mesh3d-material material3d directional-light3d
+                         mesh3d mesh3d-material mesh3d-vertex-ids mesh3d-edge-ids
+                         mesh3d-face-ids mesh3d-vertex-id mesh3d-edge-id mesh3d-face-id
+                         mesh3d-geometry-key mesh3d-semantic-key material3d directional-light3d
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color
                          stroke3d stroke3d? stroke3d-color stroke3d-width

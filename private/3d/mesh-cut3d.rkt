@@ -121,6 +121,17 @@
                              "first-opacity" opacity
                              "mesh-opacity" (spatial-opacity mesh))))
   (define index-by-position (make-hash))
+  ;; Welding identifies exact positions. A semantic vertex/edge can therefore
+  ;; survive only when every operand names that part kind and coincident source
+  ;; parts agree on one name. Face triangles are merely concatenated, so their
+  ;; IDs can survive whenever every operand supplies face IDs. Mixed annotation
+  ;; is represented honestly as an absent output vector, never as a guessed
+  ;; name for an unannotated part.
+  (define carry-vertex-ids? (andmap mesh3d-vertex-ids meshes))
+  (define carry-edge-ids? (andmap mesh3d-edge-ids meshes))
+  (define carry-face-ids? (andmap mesh3d-face-ids meshes))
+  (define vertex-id-by-position (make-hash))
+  (define edge-id-by-output-edge (make-hash))
   ;; Gather colours by exact position before allocating output indices.  A cap
   ;; normally has no authored vertex colours, but all of its vertices are
   ;; already cut-boundary vertices in the side mesh and therefore inherit the
@@ -143,16 +154,31 @@
             [else (hash-set! color-by-position point color)])))
   (define carry-colors? (positive? (hash-count color-by-position)))
   (define vertices-reversed '())
+  (define vertex-ids-reversed '())
   (define colors-reversed '())
   (define triangles-reversed '())
+  (define face-ids-reversed '())
   (define next-index 0)
-  (define (register! point)
-    (cond [(hash-ref index-by-position point #f) => values]
+  (define (register! point semantic-id)
+    (cond [(hash-ref index-by-position point #f)
+           => (lambda (index)
+                (when carry-vertex-ids?
+                  (define earlier (hash-ref vertex-id-by-position point))
+                  (unless (eq? earlier semantic-id)
+                    (raise-arguments-error 'mesh3d-weld
+                                           "one semantic vertex identity at each welded position"
+                                           "position" point
+                                           "first-id" earlier
+                                           "later-id" semantic-id)))
+                index)]
           [else
            (define index next-index)
            (set! next-index (add1 next-index))
            (hash-set! index-by-position point index)
            (set! vertices-reversed (cons point vertices-reversed))
+           (when carry-vertex-ids?
+             (hash-set! vertex-id-by-position point semantic-id)
+             (set! vertex-ids-reversed (cons semantic-id vertex-ids-reversed)))
            (when carry-colors?
              (define color (hash-ref color-by-position point #f))
              (unless color
@@ -161,11 +187,31 @@
                                       "position" point))
              (set! colors-reversed (cons color colors-reversed)))
            index]))
+  (define (record-edge-id! edge semantic-id)
+    (cond [(hash-ref edge-id-by-output-edge edge #f)
+           => (lambda (earlier)
+                (unless (eq? earlier semantic-id)
+                  (raise-arguments-error 'mesh3d-weld
+                                         "one semantic edge identity at each welded edge"
+                                         "edge" edge
+                                         "first-id" earlier
+                                         "later-id" semantic-id)))]
+          [else (hash-set! edge-id-by-output-edge edge semantic-id)]))
   (for ([mesh (in-list meshes)])
     (define remap
-      (for/vector ([point (in-vector (mesh3d-vertices mesh))])
-        (register! point)))
-    (for ([triangle (in-vector (mesh3d-triangles mesh))])
+      (for/vector ([point (in-vector (mesh3d-vertices mesh))]
+                   [vertex-index (in-naturals)])
+        (register! point
+                   (and carry-vertex-ids? (mesh3d-vertex-id mesh vertex-index)))))
+    (when carry-edge-ids?
+      (for ([edge (in-vector (mesh3d-edges mesh))]
+            [edge-index (in-naturals)])
+        (define first (vector-ref remap (vector-ref edge 0)))
+        (define second (vector-ref remap (vector-ref edge 1)))
+        (record-edge-id! (cons (min first second) (max first second))
+                         (mesh3d-edge-id mesh edge-index))))
+    (for ([triangle (in-vector (mesh3d-triangles mesh))]
+          [triangle-index (in-naturals)])
       (define welded-triangle
         (vector (vector-ref remap (vector-ref triangle 0))
                 (vector-ref remap (vector-ref triangle 1))
@@ -174,16 +220,42 @@
         (raise-arguments-error 'mesh3d-weld
                                "input meshes without collapsed welded triangles"
                                "triangle" triangle))
-      (set! triangles-reversed (cons welded-triangle triangles-reversed))))
-  (mesh3d #:id final-id
-          #:vertices (list->vector (reverse vertices-reversed))
-          #:triangles (list->vector (reverse triangles-reversed))
-          #:colors (and carry-colors? (list->vector (reverse colors-reversed)))
-          #:material final-material
-          #:transform transform
-          #:opacity opacity
-          #:wireframe-color (mesh3d-wireframe-color first-mesh)
-          #:wireframe-width (mesh3d-wireframe-width first-mesh)))
+      (set! triangles-reversed (cons welded-triangle triangles-reversed))
+      (when carry-face-ids?
+        (set! face-ids-reversed
+              (cons (mesh3d-face-id mesh triangle-index) face-ids-reversed)))))
+  (define output-vertices (list->vector (reverse vertices-reversed)))
+  (define output-triangles (list->vector (reverse triangles-reversed)))
+  (define output-colors (and carry-colors? (list->vector (reverse colors-reversed))))
+  (define unannotated
+    (mesh3d #:id final-id #:vertices output-vertices #:triangles output-triangles
+            #:colors output-colors #:material final-material #:transform transform #:opacity opacity
+            #:wireframe-color (mesh3d-wireframe-color first-mesh)
+            #:wireframe-width (mesh3d-wireframe-width first-mesh)))
+  (define output-vertex-ids
+    (and carry-vertex-ids? (list->vector (reverse vertex-ids-reversed))))
+  (define output-face-ids
+    (and carry-face-ids? (list->vector (reverse face-ids-reversed))))
+  ;; A mesh may carry a custom edge vector that omits a triangle side. The
+  ;; output's derived edge table then has no source edge provenance, so that
+  ;; optional semantic vector remains absent rather than partially fabricated.
+  (define output-edge-ids
+    (and carry-edge-ids?
+         (let ([ids
+                (for/list ([edge (in-vector (mesh3d-edges unannotated))])
+                  (hash-ref edge-id-by-output-edge
+                            (cons (vector-ref edge 0) (vector-ref edge 1)) #f))])
+           (and (andmap values ids) (list->vector ids)))))
+  (if (or output-vertex-ids output-edge-ids output-face-ids)
+      (mesh3d #:id final-id #:vertices output-vertices #:triangles output-triangles
+              #:edges (mesh3d-edges unannotated)
+              #:vertex-ids output-vertex-ids #:edge-ids output-edge-ids
+              #:face-ids output-face-ids
+              #:colors output-colors #:material final-material
+              #:transform transform #:opacity opacity
+              #:wireframe-color (mesh3d-wireframe-color first-mesh)
+              #:wireframe-width (mesh3d-wireframe-width first-mesh))
+      unannotated))
 
 (define (orient-cut-solid mesh)
   ;; Exact welding establishes adjacency; this separate purely topological
@@ -213,13 +285,15 @@
          (define vertices-reversed '())
          (define normals-reversed '())
          (define triangles-reversed '())
+         (define face-ids-reversed '())
          (define next-index 0)
          (define basis (section3d-basis section))
          ;; The positive kept side exposes the removed negative half-space.
          (define normal (vec3-scale (if (eq? side 'positive) -1 1)
                                     (plane3-normal (section3d-plane section))))
          (define offset (vec3-scale (cap-style3d-offset style) normal))
-         (for ([region (in-list (section-cap-regions basis loops))])
+         (for ([region (in-list (section-cap-regions basis loops))]
+               [region-index (in-naturals)])
            (define outer (car region))
            (define holes (cdr region))
            (define ordered
@@ -236,7 +310,8 @@
            (for ([point (in-list ordered)])
              (set! vertices-reversed (cons (vec3+ point offset) vertices-reversed))
              (set! normals-reversed (cons normal normals-reversed)))
-           (for ([triangle (in-list local-triangles)])
+           (for ([triangle (in-list local-triangles)]
+                 [triangle-index (in-naturals)])
              ;; A CCW plane-basis triangle faces the plane normal.  The
              ;; positive retained half must expose the opposite normal.
              (define indices
@@ -249,10 +324,19 @@
                                      (vector-ref indices 2)
                                      (vector-ref indices 1))
                              indices)
-                         triangles-reversed))))
+                         triangles-reversed))
+             ;; A cap has no source mesh face to inherit. Its face ID records
+             ;; the deterministic cap region (the section component after
+             ;; hole grouping) and local triangle instead.
+             (set! face-ids-reversed
+                   (cons (string->symbol
+                          (format "cap-face-~a-~a-~a-~a"
+                                  id side region-index triangle-index))
+                         face-ids-reversed))))
          (mesh3d #:id id
                  #:vertices (list->vector (reverse vertices-reversed))
                  #:triangles (list->vector (reverse triangles-reversed))
+                 #:face-ids (list->vector (reverse face-ids-reversed))
                  #:normals (list->vector (reverse normals-reversed))
                  #:material (cap-style3d-material style))]))
 

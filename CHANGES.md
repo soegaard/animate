@@ -2,6 +2,14 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Began SCENE-3D-U with immutable optional semantic vertex, edge, and triangle
+  face IDs on `mesh3d`. IDs are validated within their part kind and use
+  numeric source indices when omitted. `mesh3d-semantic-key` deliberately
+  layers these annotations over the unchanged render `geometry-key3d`, so
+  semantic matching never splits GPU geometry sharing. One-to-one mesh
+  operations retain IDs; flat-normal expansion explicitly keeps only face IDs,
+  and merge rejects mixed or colliding semantic namespaces.
+
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses
   scale-aware symmetric finite differences; one-sided sampling happens only

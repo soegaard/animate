@@ -20,8 +20,10 @@
          "vec3.rkt")
 
 (provide (struct-out geometry-key3d)
+         (struct-out mesh3d-semantic-key3d)
          mesh3d-geometry-canonical-bytes
          mesh3d-geometry-key
+         mesh3d-semantic-key
          mesh3d-semantic-geometry=?)
 
 
@@ -30,6 +32,13 @@
 ;;;
 
 (struct geometry-key3d (digest byte-length vertex-count triangle-count edge-count)
+  #:transparent)
+
+;; A semantic key deliberately layers author-visible part identities on top of
+;; one geometry key.  Renderers use only geometry-key3d, so semantically named
+;; copies still share their VBO/EBO data.  The schema marker reserves an honest
+;; boundary for later provenance-bearing mesh operations.
+(struct mesh3d-semantic-key3d (geometry vertex-ids edge-ids face-ids provenance-schema)
   #:transparent)
 
 ;; geometry-key3d represents a non-security SHA-1 digest of one canonical
@@ -78,6 +87,18 @@
                   (vector-length (mesh3d-vertices mesh))
                   (vector-length (mesh3d-triangles mesh))
                   (vector-length (mesh3d-edges mesh))))
+
+; mesh3d-semantic-key : mesh3d? -> mesh3d-semantic-key3d?
+;; Gives an immutable authoring key. It is intentionally unsuitable as a GPU
+;; geometry-cache key because part IDs have no effect on rendered geometry.
+(define (mesh3d-semantic-key mesh)
+  (unless (mesh3d? mesh)
+    (raise-argument-error 'mesh3d-semantic-key "mesh3d?" mesh))
+  (mesh3d-semantic-key3d (mesh3d-geometry-key mesh)
+                          (mesh3d-vertex-ids mesh)
+                          (mesh3d-edge-ids mesh)
+                          (mesh3d-face-ids mesh)
+                          'mesh3d-semantic-v1))
 
 ; mesh3d-semantic-geometry=? : mesh3d? mesh3d? -> boolean?
 ;;   Compares exactly the mesh fields that participate in a geometry key.

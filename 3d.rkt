@@ -27,6 +27,7 @@
          "private/3d/spatial-group.rkt"
          "private/3d/spatial-path.rkt"
          "private/3d/mesh3d.rkt"
+         "private/3d/geometry-fingerprint3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -305,12 +306,22 @@
  mesh3d-vertices
  mesh3d-triangles
  mesh3d-edges
+ mesh3d-vertex-ids
+ mesh3d-edge-ids
+ mesh3d-face-ids
+ mesh3d-vertex-id
+ mesh3d-edge-id
+ mesh3d-face-id
  mesh3d-normals
  mesh3d-colors
  mesh3d-material
  mesh3d-wireframe-color
  mesh3d-wireframe-width
  mesh3d-local-bounds
+ (struct-out geometry-key3d)
+ (struct-out mesh3d-semantic-key3d)
+ mesh3d-geometry-key
+ mesh3d-semantic-key
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d
