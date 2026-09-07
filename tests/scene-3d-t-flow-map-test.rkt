@@ -28,4 +28,10 @@
                         seeds #:solver (fixed-rk4-solver3d #:step-size 1/10)))
   (check-equal? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'cacheability)
                 'persistent-candidate)
-  (check-true (pair? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'preparation-key))))
+  (check-true (pair? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'preparation-key)))
+  (define grid-map
+    (prepare-flow-map3d (lambda (x y z) (vec3 1 0 0))
+                        (grid-seeds3d #:counts '(2 2 2))
+                        #:solver (fixed-rk4-solver3d #:step-size 1/10)))
+  (check-true (group3d? (flow-map-grid3d grid-map #:id 'grid)))
+  (check-exn exn:fail:contract? (lambda () (flow-map-grid3d map))))

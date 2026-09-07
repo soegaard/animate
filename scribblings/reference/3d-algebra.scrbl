@@ -1918,6 +1918,12 @@ for an absent endpoint.}
 @racket[(cons seed endpoint)] entries for slots with endpoints.}
 @defproc[(flow-map3d-displacement [map prepared-flow-map3d?] [index exact-nonnegative-integer?])
          (or/c false/c vec3?)]{Returns endpoint minus source for one slot.}
+@defproc[(flow-map-grid3d [map prepared-flow-map3d?]
+                           [#:id id symbol? 'flow-map-grid]
+                           [#:connectivity connectivity 'axis-neighbours]) group3d?]{Lowers
+a flow map from an explicit @racket['grid] seed set to retained endpoint edges.
+An absent endpoint breaks its incident edges. Arbitrary unstructured seed sets
+are rejected because no neighbourhood relation is implied by their order.}
 @defproc[(trajectory-samples3d [trajectory prepared-trajectory3d?]
                                 [#:count count exact-integer? 64]) vector?]{Returns
 an immutable uniform-time sequence of positions from retained dense trajectory

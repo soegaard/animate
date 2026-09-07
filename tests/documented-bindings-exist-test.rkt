@@ -230,6 +230,7 @@
                          prepared-flow-map3d-seeds prepared-flow-map3d-endpoints
                          prepared-flow-map3d-trajectories prepared-flow-map3d-diagnostics
                          prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
+                         flow-map-grid3d
                          trajectory-samples3d trajectory-tube3d trajectory-ribbon3d
                          trajectory-inspection3d equilibrium-inspection3d
                          linearization-inspection3d flow-map-inspection3d

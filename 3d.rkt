@@ -604,6 +604,7 @@ cutaway3d
  flow-map3d-ref
  flow-map3d-pairs
  flow-map3d-displacement
+ flow-map-grid3d
  trajectory-samples3d
  trajectory-tube3d
  trajectory-ribbon3d
