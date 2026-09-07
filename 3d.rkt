@@ -31,6 +31,7 @@
          "private/3d/mesh-topology3d.rkt"
          "private/3d/polyhedral-complex3d.rkt"
          "private/3d/convex-hull3d.rkt"
+         "private/3d/dual-polyhedron3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -363,6 +364,10 @@
  (struct-out convex-hull3d-result)
  (struct-out convex-hull3d-coplanar-group3d)
  convex-hull3d
+ (struct-out dual-polyhedron-face3d)
+ (struct-out dual-polyhedron3d-result)
+ combinatorial-dual3d
+ polar-dual3d
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d

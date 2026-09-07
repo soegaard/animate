@@ -84,6 +84,10 @@ SCENE-3D-U3 adds deterministic provenance-preserving convex hulls. It produces
 an outward triangle mesh for a solid and true point/segment/planar results for
 degenerate input, with scale-aware inexact diagnostics and optional merged
 polygonal supporting faces for the next polyhedral stages.
+SCENE-3D-U4 adds distinct combinatorial and polar duals. Both retain explicit
+primal-to-dual correspondence; the polar operation validates convexity and a
+strictly interior chosen centre instead of treating an arbitrary mesh as a
+geometric dual.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric

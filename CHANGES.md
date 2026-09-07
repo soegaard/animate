@@ -27,6 +27,11 @@
   supporting triangles into U2 polygonal faces. Exact coordinates use exact
   orientation signs; inexact near-zero decisions and the selected tolerance
   policy are explicit diagnostics.
+- Added SCENE-3D-U4's separate combinatorial and polar dual operations.
+  Results retain face/edge/vertex primal-to-dual mappings, including explicit
+  absence for renderer diagonals within polygonal faces. The geometric polar
+  operation verifies a closed orientable manifold, convex supporting planes,
+  and a strictly interior centre before constructing a result.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses
