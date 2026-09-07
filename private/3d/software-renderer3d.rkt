@@ -133,6 +133,10 @@
   (unless (andmap light3d? lights)
     (raise-arguments-error 'prepare-compiled-view3d-opaque "a list of light3d? values"
                            "lights" lights))
+  ;; Raster triangles carry camera-local positions.  Rotate normals and
+  ;; directional light travel vectors into that same space once per prepared
+  ;; frame, so Blinn--Phong is invariant under camera motion.
+  (define view-lights (lights->view-space camera lights))
   (define-values (prepared source-count clipped-count)
     (prepare-commands commands camera aspect cancellation-token))
   (define depth-only
@@ -259,7 +263,7 @@
    compiled frame-spec opaque depth-only transparent hidden-strokes visible-strokes
    overlay-strokes hidden-points visible-points overlay-points
    hidden-arrows visible-arrows overlay-arrows
-   hidden-billboards visible-billboards overlay-billboards lights
+   hidden-billboards visible-billboards overlay-billboards view-lights
    (software-render-diagnostics
     (length commands) source-count clipped-count 0 0
     (+ (vector-length (compiled-view3d-strokes compiled))
@@ -488,8 +492,10 @@
     (unless (zero? (vec3-length local-normal))
        (define normal
          (vec3-normalize
-          (linear3-apply-vector (draw-mesh3d-command-normal-transform command)
-                                local-normal)))
+          (world-vector->view
+           camera
+           (linear3-apply-vector (draw-mesh3d-command-normal-transform command)
+                                 local-normal))))
        (define mesh-normals (mesh3d-normals mesh))
        (define mesh-colors (mesh3d-colors mesh))
        (define source (list (draw-mesh3d-command-path command) triangle-index))
@@ -498,8 +504,10 @@
            (define vertex-normal
              (if (and mesh-normals (eq? (material3d-shading material) 'smooth))
                  (vec3-normalize
-                  (linear3-apply-vector (draw-mesh3d-command-normal-transform command)
-                                        (vector-ref mesh-normals index)))
+                  (world-vector->view
+                   camera
+                   (linear3-apply-vector (draw-mesh3d-command-normal-transform command)
+                                         (vector-ref mesh-normals index))))
                  normal))
            (define authored-color
              (if mesh-colors (vector-ref mesh-colors index) (material3d-color material)))
@@ -536,7 +544,8 @@
                   (- (vec3-z view-position))
                   (vec3-normalize (clip-vertex3d-normal vertex))
                   (clip-vertex3d-color vertex)
-                  (clip-vertex3d-source vertex))))
+                  (clip-vertex3d-source vertex)
+                  #:view-position view-position)))
              (define order (+ first-order (length prepared)))
              (define owner (+ first-owner (length prepared)))
              (set! prepared
@@ -604,6 +613,23 @@
   (define resolved (color-spec->rgba-color color 'render-view3d-opaque))
   (rgba-color (rgba-color-red resolved) (rgba-color-green resolved)
               (rgba-color-blue resolved) (* opacity (rgba-color-alpha resolved))))
+
+(define (world-vector->view camera vector)
+  ;; `camera3d-world->view` transforms points.  Subtracting the transformed
+  ;; origin obtains exactly its rotation-only action on a displacement.
+  (vec3-
+   (camera3d-world->view camera vector)
+   (camera3d-world->view camera origin3)))
+
+(define (lights->view-space camera lights)
+  (for/list ([light (in-list lights)])
+    (cond [(ambient-light3d? light) light]
+          [else
+           (directional-light3d
+            (vec3-normalize
+             (world-vector->view camera (directional-light3d-direction light)))
+            #:intensity (directional-light3d-intensity light)
+            #:color (directional-light3d-color light))])))
 
 (define (order-transparent-triangles triangles mode)
   (define (farther? first-triangle second-triangle)

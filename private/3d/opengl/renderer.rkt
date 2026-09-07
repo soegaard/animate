@@ -740,6 +740,13 @@
                (rgba-color-alpha color))
   (uniform-1f! program "objectOpacity" (compiled-instance3d-opacity instance))
   (uniform-1i! program "useVertexColor" (if (mesh3d-colors mesh) 1 0))
+  (define emission (material3d-emission material))
+  (uniform-3f! program "materialEmission"
+               (/ (rgba-color-red emission) 255.0)
+               (/ (rgba-color-green emission) 255.0)
+               (/ (rgba-color-blue emission) 255.0))
+  (uniform-1f! program "materialEmissionStrength"
+               (material3d-emission-strength material))
   (upload-clip-uniforms/current! program (compiled-instance3d-clip-planes instance)))
 
 (define (upload-clip-uniforms/current! program clips)
@@ -763,6 +770,19 @@
   (when (not (eq? (material3d-shading material) 'unlit))
     (uniform-1f! program "materialAmbient" (material3d-ambient material))
     (uniform-1f! program "materialDiffuse" (material3d-diffuse material))
+    (uniform-1f! program "materialSpecular" (material3d-specular material))
+    (define specular-color (material3d-specular-color material))
+    (uniform-3f! program "materialSpecularColor"
+                 (/ (rgba-color-red specular-color) 255.0)
+                 (/ (rgba-color-green specular-color) 255.0)
+                 (/ (rgba-color-blue specular-color) 255.0))
+    (uniform-1f! program "materialSpecularExponent"
+                 (material3d-specular-exponent material))
+    (uniform-1i! program "materialLighting"
+                 (if (eq? (material3d-lighting material) 'blinn-phong) 1 0))
+    (define camera-position (camera3d-position (frame3d-spec-camera frame-spec)))
+    (uniform-3f! program "cameraPosition"
+                 (vec3-x camera-position) (vec3-y camera-position) (vec3-z camera-position))
     (define lights (if (null? (frame3d-spec-lights frame-spec))
                        default-lights3d
                        (frame3d-spec-lights frame-spec)))

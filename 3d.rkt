@@ -887,9 +887,20 @@ cutaway3d
  material3d-ambient
  material3d-diffuse
  material3d-specular
+ material3d-specular-color
  material3d-roughness
+ material3d-specular-exponent
+ material3d-lighting
+ material3d-emission
+ material3d-emission-strength
  material3d-double-sided?
+ material3d-casts-shadow?
+ material3d-receives-shadow?
  material3d-wireframe?
+ material3d-with-color
+ material3d-with-roughness
+ material3d-with-emission
+ material3d-with-shadow-policy
  ambient-light3d
  ambient-light3d?
  ambient-light3d-intensity

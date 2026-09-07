@@ -2,6 +2,14 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V1 material semantics across the deterministic software and
+  optional OpenGL renderers: explicit Lambert or Blinn--Phong lighting,
+  validated roughness-to-exponent mapping, specular colour, additive emission,
+  and durable shadow-caster/receiver policy. The spatial inspector reports the
+  exact derived exponent. Immutable material update helpers and mesh/surface
+  reconstruction paths preserve all fields rather than dropping future shadow
+  policy during a utility operation. Unlit materials retain base colour and add
+  emission; shadow policy remains declarative until the shadow stage.
 - Added SCENE-3D-V0's extensible immutable `renderer3d-capabilities` value:
   symbol features, exact/transparent limits, and immutable diagnostics replace
   the nine positional booleans. Renderer instances now report through
@@ -15,8 +23,8 @@
   OpenGL renderer only for an explicitly selected GRacket/OpenGL project.
 - The initial OpenGL declaration now records four directional-light and eight
   clip-plane shader limits. It rejects over-limit directional lights before
-  uniform upload instead of silently truncating them. Point/spot lights,
-  specular, emission, and shadows remain unadvertised V1+ work; a capability
+  uniform upload instead of silently truncating them. Point/spot lights and
+  shadows remain unadvertised future work; a capability
   name in the common vocabulary is never an implementation claim.
 
 - Began SCENE-3D-U with immutable optional semantic vertex, edge, and triangle
@@ -307,11 +315,11 @@ the explicit integration test remains separate from ordinary headless runs.
   warm-frame/cache/FBO/readback evidence without a timing CI threshold. Added
   the retained cube, project, and two-viewport examples.
 
-Known boundary: this first optional backend requires a compatible OpenGL 3.2 /
+Known boundary: this optional backend requires a compatible OpenGL 3.2 /
 GLSL 1.50 context and is tested on macOS plus an optional Xvfb lane. It uses
 one serialized context with `#:workers 1`; it does not offer threaded GPU
 parallelism, direct OpenGL preview-canvas composition, GPU picking, textures,
-shadows, specular/roughness shading, or order-independent transparency. The
+shadows, or order-independent transparency. The
 software renderer remains the portable default. GPU and software images are
 compared by documented tolerance—especially at antialiased and transparent
 edges—not by bit identity.

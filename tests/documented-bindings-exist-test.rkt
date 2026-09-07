@@ -51,7 +51,12 @@
                          convex-hull3d convex-hull3d-result?
                          combinatorial-dual3d polar-dual3d dual-polyhedron3d-result?
                          prepare-schlegel-diagram3d schlegel-diagram3d schlegel-diagram3d-data?
-                         material3d directional-light3d
+                         material3d material3d-lighting material3d-specular-color
+                         material3d-specular-exponent material3d-emission
+                         material3d-emission-strength material3d-casts-shadow?
+                         material3d-receives-shadow? material3d-with-color
+                         material3d-with-roughness material3d-with-emission
+                         material3d-with-shadow-policy directional-light3d
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color
                          stroke3d stroke3d? stroke3d-color stroke3d-width

@@ -138,8 +138,13 @@ request-demand calculation serves project preflight and backend preparation,
 so unsupported facilities and over-limit directional lights or clip planes are
 reported before raster work. The initial OpenGL backend now rejects more than
 four directional lights rather than silently truncating its shader uniform
-array. Point/spot lights, specular, emission, and shadows are declared future
-vocabulary only until a later V stage implements and advertises them.
+array. SCENE-3D-V1 adds matching software/OpenGL Lambert and Blinn--Phong
+material rendering, an exact roughness-to-exponent mapping, highlight and
+emission colours, and immutable update helpers. Emission is additive after
+lighting (and after base colour for unlit materials); shadow-caster/receiver
+policy is retained but has no renderer effect until the shadow stage. Current
+display-space channel clamping is deliberately provisional until the later
+linear-colour and tone-mapping stage.
 SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
 deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and

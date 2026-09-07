@@ -617,9 +617,17 @@
   (define material (mesh3d-material mesh))
   (copy-mesh mesh #:material
              (material3d #:color (material3d-color material) #:shading (material3d-shading material)
+                         #:lighting (material3d-lighting material)
                          #:ambient (material3d-ambient material) #:diffuse (material3d-diffuse material)
-                         #:specular (material3d-specular material) #:roughness (material3d-roughness material)
-                         #:double-sided? (material3d-double-sided? material) #:wireframe? #t)))
+                         #:specular (material3d-specular material)
+                         #:specular-color (material3d-specular-color material)
+                         #:roughness (material3d-roughness material)
+                         #:emission (material3d-emission material)
+                         #:emission-strength (material3d-emission-strength material)
+                         #:double-sided? (material3d-double-sided? material)
+                         #:casts-shadow? (material3d-casts-shadow? material)
+                         #:receives-shadow? (material3d-receives-shadow? material)
+                         #:wireframe? #t)))
 
 ; mesh3d-merge : (sequenceof mesh3d?) #:id symbol? -> mesh3d?
 ;;   Bakes a deterministic sequence of compatible meshes into one local mesh.

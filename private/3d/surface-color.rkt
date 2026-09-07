@@ -115,11 +115,17 @@
    surface
    (material3d #:color (material3d-color material)
                #:shading (material3d-shading material)
+               #:lighting (material3d-lighting material)
                #:ambient (material3d-ambient material)
                #:diffuse (material3d-diffuse material)
                #:specular (material3d-specular material)
+               #:specular-color (material3d-specular-color material)
                #:roughness (material3d-roughness material)
+               #:emission (material3d-emission material)
+               #:emission-strength (material3d-emission-strength material)
                #:double-sided? (material3d-double-sided? material)
+               #:casts-shadow? (material3d-casts-shadow? material)
+               #:receives-shadow? (material3d-receives-shadow? material)
                #:wireframe? #t)))
 
 
@@ -131,11 +137,4 @@
   (color-spec->rgba-color color who))
 
 (define (material-with-color material color)
-  (material3d #:color color
-              #:shading (material3d-shading material)
-              #:ambient (material3d-ambient material)
-              #:diffuse (material3d-diffuse material)
-              #:specular (material3d-specular material)
-              #:roughness (material3d-roughness material)
-              #:double-sided? (material3d-double-sided? material)
-              #:wireframe? (material3d-wireframe? material)))
+  (material3d-with-color material color))

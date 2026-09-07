@@ -883,29 +883,73 @@ broad-phase candidate query, not a narrow-phase proof of intersection.}
 
 @defproc[(material3d [#:color color any/c "cornflowerblue"]
                       [#:shading shading (or/c 'unlit 'flat 'smooth) 'flat]
+                      [#:lighting lighting (or/c 'lambert 'blinn-phong) 'lambert]
                       [#:ambient ambient nonnegative-real? 1]
                       [#:diffuse diffuse nonnegative-real? 1]
                       [#:specular specular nonnegative-real? 0]
-                      [#:roughness roughness positive-real? 1]
+                      [#:specular-color specular-color any/c "white"]
+                      [#:roughness roughness (and/c positive-real? (<=/c 1)) 1]
+                      [#:emission emission any/c "black"]
+                      [#:emission-strength emission-strength nonnegative-real? 0]
                       [#:double-sided? double-sided? boolean? #f]
+                      [#:casts-shadow? casts-shadow? boolean? #t]
+                      [#:receives-shadow? receives-shadow? boolean? #t]
                       [#:wireframe? wireframe? boolean? #f])
          material3d?]{
 Constructs an immutable surface material. @racket['unlit] uses its base
-colour; @racket['flat] evaluates one face normal using ambient and directional
-lights; and @racket['smooth] interpolates supplied vertex normals. The colour
-may include alpha; the renderer's explicit transparent pass controls its
-compositing policy. Specular, roughness, and wireframe flags are immutable
-authoring data reserved for later renderer stages.
+colour and then adds @racket[emission * emission-strength], without consulting
+lights. @racket['flat] evaluates one face normal using ambient and directional
+lights; @racket['smooth] interpolates supplied vertex normals. @racket['lambert]
+uses ambient plus diffuse illumination. @racket['blinn-phong] additionally
+adds a directional-light highlight, scaled by @racket[specular] and
+@racket[specular-color]. The colour may include alpha; the renderer's explicit
+transparent pass controls its compositing policy.
+
+For Blinn--Phong the roughness @italic{r} maps identically in the reference
+and OpenGL renderers to @racketblock[n = max(1, 2/r^2 - 2)]. @racket[roughness]
+must be finite in @math{(0,1]}; ambient, diffuse, specular, and
+@racket[emission-strength] must be finite and nonnegative. Coefficients larger
+than one are intentionally accepted for illustrative effects; the current
+renderers clamp the displayed channels after lighting. A later colour-management
+stage will define linear-light conversion and tone mapping.
+
+@racket[emission] is added after ambient, diffuse, and specular terms and is
+therefore not reduced by shadows. @racket[casts-shadow?] and
+@racket[receives-shadow?] are durable material policy for the forthcoming
+shadow renderer; they do not yet alter either current backend.
 }
 @defproc[(material3d? [value any/c]) boolean?]{Recognizes a material.}
 @defproc[(material3d-color [material material3d?]) rgba-color?]{Returns base colour and alpha.}
 @defproc[(material3d-shading [material material3d?]) (or/c 'unlit 'flat 'smooth)]{Returns its active shading mode.}
+@defproc[(material3d-lighting [material material3d?]) (or/c 'lambert 'blinn-phong)]{Returns its lighting model.}
 @defproc[(material3d-ambient [material material3d?]) nonnegative-real?]{Returns ambient coefficient.}
 @defproc[(material3d-diffuse [material material3d?]) nonnegative-real?]{Returns diffuse coefficient.}
-@defproc[(material3d-specular [material material3d?]) nonnegative-real?]{Returns retained specular coefficient.}
-@defproc[(material3d-roughness [material material3d?]) positive-real?]{Returns retained roughness.}
+@defproc[(material3d-specular [material material3d?]) nonnegative-real?]{Returns specular coefficient.}
+@defproc[(material3d-specular-color [material material3d?]) rgba-color?]{Returns the highlight colour.}
+@defproc[(material3d-roughness [material material3d?]) (and/c positive-real? (<=/c 1))]{Returns roughness.}
+@defproc[(material3d-specular-exponent [material material3d?]) positive-real?]{Returns
+the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial inspector.}
+@defproc[(material3d-emission [material material3d?]) rgba-color?]{Returns the additive emission colour.}
+@defproc[(material3d-emission-strength [material material3d?]) nonnegative-real?]{Returns emission strength.}
 @defproc[(material3d-double-sided? [material material3d?]) boolean?]{Reports whether back-face culling is disabled for this mesh.}
+@defproc[(material3d-casts-shadow? [material material3d?]) boolean?]{Returns future shadow-caster policy.}
+@defproc[(material3d-receives-shadow? [material material3d?]) boolean?]{Returns future shadow-receiver policy.}
 @defproc[(material3d-wireframe? [material material3d?]) boolean?]{Returns retained wireframe intent.}
+@defproc[(material3d-with-color [material material3d?] [color any/c]) material3d?]{Returns
+@racket[material] with only its base colour replaced.}
+@defproc[(material3d-with-roughness [material material3d?]
+                                     [roughness (and/c positive-real? (<=/c 1))])
+         material3d?]{Returns @racket[material] with only its roughness replaced.}
+@defproc[(material3d-with-emission [material material3d?] [emission any/c]
+                                   [#:strength strength nonnegative-real?
+                                    (material3d-emission-strength material)])
+         material3d?]{Returns @racket[material] with emission fields replaced.}
+@defproc[(material3d-with-shadow-policy [material material3d?]
+                                        [#:casts-shadow? casts-shadow? boolean?
+                                         (material3d-casts-shadow? material)]
+                                        [#:receives-shadow? receives-shadow? boolean?
+                                         (material3d-receives-shadow? material)])
+         material3d?]{Returns @racket[material] with its future shadow policy replaced.}
 
 @defproc[(ambient-light3d [#:intensity intensity nonnegative-real? 1]
                            [#:color color any/c "white"])

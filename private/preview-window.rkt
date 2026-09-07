@@ -41,6 +41,7 @@
          "3d/camera3d.rkt"
          "3d/bounds3.rkt"
          "3d/clipping3d.rkt"
+         "3d/material3d.rkt"
          "3d/dynamical-inspection3d.rkt"
          "3d/preview-camera3d-override.rkt"
          "3d/projection3d.rkt"
@@ -1483,16 +1484,25 @@
             (define depth (max 0 (sub1 (length path))))
             (define selected? (and selected
                                    (equal? path (spatial-pick-path selected))))
+            (define material (spatial-inspection-material entry))
+            (define material-summary
+              (if material
+                  (format "; ~a; roughness ~a; exponent ~a"
+                          (material3d-lighting material)
+                          (material3d-roughness material)
+                          (material3d-specular-exponent material))
+                  ""))
             (inspector-row
              (format "~a~a~a"
                      (make-string (* 2 depth) #\space)
                      (if selected? "▶ " "")
                      (list-ref path (sub1 (length path))))
-             (format "~a; ~a triangles; ~a vertices; depth ~a"
+             (format "~a; ~a triangles; ~a vertices; depth ~a~a"
                      (spatial-inspection-kind entry)
                      (spatial-inspection-triangle-count entry)
                      (spatial-inspection-vertex-count entry)
-                     (or (spatial-inspection-view-depth entry) "n/a"))
+                     (or (spatial-inspection-view-depth entry) "n/a")
+                     material-summary)
              'info
              (list
               (inspector-action

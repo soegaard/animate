@@ -22,6 +22,7 @@
          "edge-style3d.rkt"
          "feature-edges3d.rkt"
          "linear3.rkt"
+         "material3d.rkt"
          "mesh3d.rkt"
          "marker3d.rkt"
          "marker-raster3d.rkt"
@@ -181,11 +182,23 @@
                       (hash-set base 'topology
                                 (mesh-topology-inspector-data mesh))
                       base))
+                (define with-material
+                  (if mesh
+                      (let ([material (mesh3d-material mesh)])
+                        (hash-set*
+                         with-topology
+                         'material-lighting (material3d-lighting material)
+                         'material-roughness (material3d-roughness material)
+                         'material-specular-exponent
+                         (material3d-specular-exponent material)
+                         'material-emission-strength
+                         (material3d-emission-strength material)))
+                      with-topology))
                 (cond
                   [(surface3d? object)
                    (hash-set
                     (hash-set
-                     (hash-set with-topology 'surface-kind (surface3d-kind object))
+                     (hash-set with-material 'surface-kind (surface3d-kind object))
                      'surface-topology-key
                      (surface-mesh3d-topology-key (surface3d-mesh object)))
                     'surface-diagnostics (surface3d-diagnostics object))]
@@ -193,7 +206,7 @@
                    (define image (billboard3d-image object))
                    (define style (billboard3d-style object))
                    (hash-set*
-                    with-topology
+                    with-material
                     'billboard-size (vector (billboard-style3d-width style)
                                             (billboard-style3d-height style))
                     'billboard-size-mode (billboard-style3d-size-mode style)
@@ -202,7 +215,7 @@
                     'billboard-image-pixels
                     (vector (billboard-image3d-width image)
                             (billboard-image3d-height image)))]
-                  [else with-topology]))]
+                  [else with-material]))]
              [inspection
               (spatial-inspection
                path (spatial-kind object) (spatial-transform object) world-transform
