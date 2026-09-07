@@ -2864,9 +2864,9 @@ cache, or recovering from a failed optional native renderer cannot mutate a
 instance.}
 @defproc[(renderer3d-id [renderer renderer3d?]) symbol?]{Returns a stable
 backend identity, such as @racket['software-reference].}
-@defproc[(renderer3d-capabilities [renderer renderer3d?])
-         renderer3d-capability-set?]{Returns the backend's declared facility
-set.}
+@defproc[(renderer3d-capabilities-of [renderer renderer3d?])
+         renderer3d-capabilities?]{Returns the backend's immutable declared
+feature set, limits, and diagnostics.}
 @defproc[(renderer3d-fingerprint [renderer renderer3d?]
                                  [request render3d-request?]) any/c]{Returns
 an implementation-owned cache key for this immutable request. It is diagnostic
@@ -2883,20 +2883,68 @@ preparation and request.}
 resource retained by @racket[renderer]. It does not change an existing Scene or
 an already returned render result.}
 
-@defstruct*[renderer3d-capability-set
-            ([wireframe boolean?]
-             [opaque-triangles boolean?]
-             [perspective boolean?]
-             [orthographic boolean?]
-             [depth-buffer boolean?]
-             [flat-shading boolean?]
-             [smooth-shading boolean?]
-             [transparency boolean?]
-             [clipping-planes boolean?]) #:transparent]{
-The explicit feature record returned by @racket[renderer3d-capabilities].
-Project capability declarations use this same record rather than a separate
-3D capability type.
+@defstruct*[renderer3d-capabilities
+            ([features set?] [limits immutable-hash?] [diagnostics immutable-hash?])
+            #:transparent]{
+The immutable declaration returned by @racket[renderer3d-capabilities-of].
+@racket[features] is an immutable set of symbols; @racket[limits] maps a
+symbol to an exact number (or a transparent future resource value), and
+@racket[diagnostics] records immutable backend details. It replaces the former
+nine positional booleans, which could not safely grow with renderer features.
 }
+
+@defthing[renderer3d-known-features set?]{The vocabulary currently includes
+@racket['wireframe], @racket['opaque-triangles], @racket['perspective],
+@racket['orthographic], @racket['depth-buffer], @racket['flat-shading],
+@racket['smooth-shading], @racket['transparency], @racket['clipping-planes],
+@racket['screen-strokes], @racket['linear-depth], @racket['object-id],
+@racket['ambient-light], @racket['directional-light], @racket['point-light],
+@racket['spot-light], @racket['specular], @racket['emission],
+@racket['directional-shadow], and @racket['spot-shadow]. A vocabulary symbol
+is not an implied implementation claim: use @racket[renderer3d-supports?].}
+
+@defthing[renderer3d-known-limits set?]{The current limit vocabulary includes
+@racket['maximum-directional-lights], @racket['maximum-point-lights],
+@racket['maximum-spot-lights], @racket['maximum-shadow-lights],
+@racket['maximum-clip-planes], @racket['maximum-shadow-map-size], and
+@racket['maximum-samples].}
+
+@defproc[(renderer3d-supports? [capabilities renderer3d-capabilities?]
+                                [features (or/c symbol? (listof symbol?) set?)])
+         boolean?]{Returns true exactly when every requested feature is in the
+immutable report.}
+@defproc[(renderer3d-capability-limit [capabilities renderer3d-capabilities?]
+                                      [limit symbol?]
+                                      [default any/c #f])
+         any/c]{Returns the declared limit, or @racket[default] when the
+backend did not declare it. A zero limit is distinct from an absent limit.}
+@defproc[(renderer3d-missing-capabilities [capabilities renderer3d-capabilities?]
+                                          [features (or/c symbol? (listof symbol?) set?)])
+         (listof symbol?)]{Returns missing requested features in request order.}
+@defproc[(renderer3d-require-capabilities [capabilities renderer3d-capabilities?]
+                                          [features (or/c symbol? (listof symbol?) set?)])
+         void?]{Raises a diagnostic exception when one or more requested
+features are missing.}
+@defproc[(renderer3d-request-required-features [request render3d-request?])
+         set?]{Infers the immutable set of features needed by one compiled
+request, including projection, material shading, present light kinds, clipping,
+screen marks, transparency, and requested frame attachments.}
+@defproc[(renderer3d-request-required-limits [request render3d-request?])
+         immutable-hash?]{Returns exact per-frame resource demands, including
+directional-light and clip-plane counts.}
+@defproc[(renderer3d-require-request-capabilities [renderer renderer3d?]
+                                                  [request render3d-request?])
+         void?]{Checks the same inferred feature and limit demand before a
+built-in backend prepares resources. @racket[check-project!] performs this
+comparison across every selected project frame before rendering begins.}
+
+@bold{Current V0 limitation:} Point and spot lights, specular highlights,
+emission, and shadows are capability vocabulary only; no current backend
+advertises them yet. The software backend has no practical fixed directional
+light or clipping bound. The initial OpenGL shaders explicitly support at most
+four directional lights and eight clip planes; an over-limit request raises an
+error rather than silently dropping lights. Its maximum sample count is the
+live GL limit, although a one-sample framebuffer remains available.
 
 @defstruct*[compiled-geometry3d
             ([key any/c] [mesh mesh3d?] [local-bounds aabb3?]

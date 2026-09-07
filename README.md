@@ -132,6 +132,14 @@ overlay show the same data, including face boundary, component, boundary
 segments, directed half-edges, and normal. A raw mesh still maps one render
 triangle to one polygonal face; a separate polygonal-complex mapping and
 automatic primal/dual, net, or matching annotations remain later work.
+SCENE-3D-V0 replaces the fixed positional renderer-capability booleans with an
+immutable feature set, exact resource limits, and diagnostics. The same pure
+request-demand calculation serves project preflight and backend preparation,
+so unsupported facilities and over-limit directional lights or clip planes are
+reported before raster work. The initial OpenGL backend now rejects more than
+four directional lights rather than silently truncating its shader uniform
+array. Point/spot lights, specular, emission, and shadows are declared future
+vocabulary only until a later V stage implements and advertises them.
 SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
 deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and

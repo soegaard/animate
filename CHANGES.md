@@ -2,6 +2,23 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V0's extensible immutable `renderer3d-capabilities` value:
+  symbol features, exact/transparent limits, and immutable diagnostics replace
+  the nine positional booleans. Renderer instances now report through
+  `renderer3d-capabilities-of`; `renderer3d-supports?`,
+  `renderer3d-capability-limit`, and `renderer3d-require-capabilities` make
+  the result safe to query without starting rendering.
+- Added one pure per-frame feature/limit demand calculation shared by project
+  preflight and the built-in renderer prepare paths. `check-project!` samples
+  the selected project frame grid and reports unsupported 3D features or
+  insufficient resource limits before rendering. It opens a short-lived owned
+  OpenGL renderer only for an explicitly selected GRacket/OpenGL project.
+- The initial OpenGL declaration now records four directional-light and eight
+  clip-plane shader limits. It rejects over-limit directional lights before
+  uniform upload instead of silently truncating them. Point/spot lights,
+  specular, emission, and shadows remain unadvertised V1+ work; a capability
+  name in the common vocabulary is never an implementation claim.
+
 - Began SCENE-3D-U with immutable optional semantic vertex, edge, and triangle
   face IDs on `mesh3d`. IDs are validated within their part kind and use
   numeric source indices when omitted. `mesh3d-semantic-key` deliberately

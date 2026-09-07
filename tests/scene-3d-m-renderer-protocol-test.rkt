@@ -26,12 +26,10 @@
 
   (check-eq? (renderer3d-id reference) 'software-reference)
   (check-eq? (renderer3d-id retained) 'retained-software-reference)
-  (check-true (renderer3d-capability-set-opaque-triangles
-               (renderer3d-capabilities retained)))
-  (check-true (renderer3d-capability-set-depth-buffer
-               (renderer3d-capabilities retained)))
-  (check-true (renderer3d-capability-set-transparency
-               (renderer3d-capabilities retained)))
+  (define retained-capabilities (renderer3d-capabilities-of retained))
+  (check-true (renderer3d-supports? retained-capabilities 'opaque-triangles))
+  (check-true (renderer3d-supports? retained-capabilities 'depth-buffer))
+  (check-true (renderer3d-supports? retained-capabilities 'transparency))
 
   (define reference-result
     (renderer3d-render reference (renderer3d-prepare reference request) request))

@@ -261,9 +261,15 @@
                          analyze-mesh3d mesh3d-validate mesh3d-orient-consistently
                          mesh3d-orient-outward mesh3d-self-intersection-candidates))])
     (check-not-eq? (public-binding "../3d.rkt" name) absent))
-  (for ([name (in-list '(renderer3d? renderer3d-id renderer3d-capabilities
+  (for ([name (in-list '(renderer3d? renderer3d-id renderer3d-capabilities-of
                          renderer3d-fingerprint renderer3d-prepare renderer3d-render
-                         renderer3d-release renderer3d-capability-set
+                         renderer3d-release renderer3d-capabilities
+                         renderer3d-known-features renderer3d-known-limits
+                         renderer3d-supports? renderer3d-capability-limit
+                         renderer3d-missing-capabilities renderer3d-require-capabilities
+                         renderer3d-request-required-features
+                         renderer3d-request-required-limits
+                         renderer3d-require-request-capabilities
                          compile-view3d compiled-view3d-primitives
                          view3d->frame3d-spec view3d->render3d-request
                          render3d-request renderer3d-render-result renderer3d-statistics

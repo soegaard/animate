@@ -16,7 +16,7 @@
 (provide gen:renderer3d
          renderer3d?
          renderer3d-id
-         renderer3d-capabilities
+         renderer3d-capabilities-of
          renderer3d-fingerprint
          renderer3d-prepare
          renderer3d-render
@@ -54,7 +54,16 @@
          render-view3d-frame-artifact
          compiled-view3d-primitives
          view3d->frame3d-spec
-         (struct-out renderer3d-capability-set)
+         (struct-out renderer3d-capabilities)
+         renderer3d-known-features
+         renderer3d-known-limits
+         renderer3d-supports?
+         renderer3d-capability-limit
+         renderer3d-missing-capabilities
+         renderer3d-require-capabilities
+         renderer3d-request-required-features
+         renderer3d-request-required-limits
+         renderer3d-require-request-capabilities
          (struct-out render3d-request)
          view3d->render3d-request
          (struct-out renderer3d-render-result)

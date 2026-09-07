@@ -18,13 +18,18 @@
          racket/match
          racket/path
          racket/runtime-path
+         racket/set
          racket/string
          "authoring.rkt"
          "main.rkt"
          "private/3d/label-layout-preparation3d.rkt"
          "private/3d/renderer3d.rkt"
+         "private/3d/view3d-visual.rkt"
          "private/doctor.rkt"
          "private/ffmpeg-capabilities.rkt"
+         "private/scene-frame-grid.rkt"
+         "private/scene-state.rkt"
+         "private/visual-model.rkt"
          "version.rkt")
 
 ;; This path is used only after a project explicitly selects a non-software
@@ -774,10 +779,10 @@
          #:center (camera-center scene-camera)
          #:background (camera-background scene-camera)))))
 
-;; renderer3d-capability-set comes from the backend-neutral spatial renderer
-;; protocol.  Keeping project validation on that exact type prevents a project
-;; declaration from claiming a facility which its selected renderer cannot
-;; report through `renderer3d-capabilities`.
+;; renderer3d-capabilities comes from the backend-neutral spatial renderer
+;; protocol. Keeping project validation on that exact immutable declaration
+;; prevents a project from claiming a facility its selected renderer cannot
+;; report through `renderer3d-capabilities-of`.
 
 (struct renderer-capabilities
   (paths text gradients clipping secondary-camera visible-ink-bounds perspective depth-buffer three-dimensional)
@@ -785,7 +790,7 @@
 
 ;; renderer-capabilities lets validation ask for semantic facilities rather
 ;; than inspect a concrete Pict renderer class.  `three-dimensional` is the
-;; nested renderer3d-capability-set declaration above.
+;; nested renderer3d-capabilities declaration above.
 
 (struct project-check-report (ok? requirements warnings failures tools)
   #:transparent)
@@ -816,7 +821,8 @@
                    '()))]
              [renderer-check
               (check-project-renderer3d
-               (animate-project-render project))]
+               (animate-project-render project)
+               preparation)]
              [missing
               (for/list ([requirement (in-list requirements)]
                          #:unless (doctor-has-capability? doctor requirement))
@@ -892,11 +898,13 @@
 ;; OpenGL choice is different: we first make the launcher requirement clear,
 ;; then probe the requested backend in GRacket.  This gives a project author a
 ;; useful diagnostic before any output directory or cache is touched.
-(define (check-project-renderer3d render)
+(define (check-project-renderer3d render prepared)
+  (define demand (project-3d-capability-demand prepared render))
   (define declaration (render-spec-renderer3d render))
   (cond
     [(eq? declaration 'software)
-     (hasheq 'warnings '() 'failures '())]
+     (renderer3d-capability-check
+      (renderer3d-capabilities-of (software-renderer3d)) demand)]
     [(not (current-process-is-gracket?))
      (hasheq
       'warnings '()
@@ -922,18 +930,101 @@
        (define available?
          (dynamic-require opengl-renderer-module 'opengl-renderer3d-available?))
        (if (available?)
-           (hasheq 'warnings '() 'failures '())
+           ;; A live OpenGL declaration depends on driver limits, so construct
+           ;; and release one short-lived owned renderer for the same
+           ;; non-rendering capability comparison that execution will use.
+           (let ([make-renderer
+                  (dynamic-require opengl-renderer-module 'opengl-renderer3d)]
+                 [release-renderer!
+                  (dynamic-require opengl-renderer-module 'opengl-renderer3d-release!)])
+             (define renderer (make-renderer declaration))
+             (dynamic-wind
+              void
+              (lambda () (renderer3d-capability-check
+                          (renderer3d-capabilities-of renderer) demand))
+              (lambda () (release-renderer! renderer))))
            (if (eq? (opengl-spec-fallback declaration) 'software)
-               (hasheq
-                'warnings
-                (list
-                 "OpenGL renderer is unavailable; the explicit #:fallback 'software policy will be used")
-                'failures '())
+               (let ([checked
+                      (renderer3d-capability-check
+                       (renderer3d-capabilities-of (software-renderer3d)) demand)])
+                 (hash-set
+                  checked
+                  'warnings
+                  (cons
+                   "OpenGL renderer is unavailable; the explicit #:fallback 'software policy will be used"
+                   (hash-ref checked 'warnings '()))))
                (hasheq
                 'warnings '()
                 'failures
                 (list
-                 "OpenGL renderer requested but no compatible OpenGL 3.2 / GLSL 1.50 context is available; select #:fallback 'software explicitly to allow the reference renderer")))))]))
+               "OpenGL renderer requested but no compatible OpenGL 3.2 / GLSL 1.50 context is available; select #:fallback 'software explicitly to allow the reference renderer")))))]))
+
+;; `check-project!` has already prepared the exact selected source and frame
+;; grid.  Sampling it is pure; we compile each opaque `view3d` only to discover
+;; which declared renderer facilities the production frame will need.
+(define (project-3d-capability-demand prepared render)
+  (define features (mutable-seteq))
+  (define limits (make-hasheq))
+  (define (merge-request! request)
+    (for ([feature (in-set (renderer3d-request-required-features request))])
+      (set-add! features feature))
+    (for ([(limit value) (in-hash (renderer3d-request-required-limits request))])
+      (hash-set! limits limit (max value (hash-ref limits limit 0)))))
+  (for ([frame-index (in-list (prepared-project-target-frame-indices prepared))])
+    (define state
+      (scene-sample (prepared-project-scene prepared)
+                    (frame-index->time frame-index #:fps (render-spec-fps render))))
+    (for ([view (in-list (scene-state-view3ds state))]
+          #:when (eq? (view3d-render-mode view) 'opaque))
+      ;; Capability needs are independent of the outer viewport's pixel
+      ;; dimensions.  One pixel avoids creating a render target while still
+      ;; compiling the exact immutable spatial visual.
+      (merge-request! (view3d->render3d-request view 1 1))))
+  (hasheq 'features (for/seteq ([feature (in-set features)]) feature)
+          'limits (for/hasheq ([(limit value) (in-hash limits)])
+                    (values limit value))))
+
+(define (scene-state-view3ds state)
+  (define (walk visual)
+    (append (if (view3d? visual) (list visual) '())
+            (if (visual-container? visual)
+                (append*
+                 (for/list ([child (in-list (visual-child-entries visual))])
+                   (walk (visual-child-visual child))))
+                '())))
+  (append*
+   ;; Production rendering resolves derived/relation visuals before asking
+   ;; renderers to draw them. Preflight must traverse that same concrete tree
+   ;; so a nested, resolved `view3d` cannot bypass capability validation.
+   (for/list ([visual (in-list (scene-state-resolved-visuals-in-drawing-order state))])
+     (walk visual))))
+
+(define (renderer3d-capability-check capabilities demand)
+  (define required-features (hash-ref demand 'features))
+  (define missing
+    (renderer3d-missing-capabilities capabilities required-features))
+  (define limit-failures
+    (for/list ([entry
+                (in-list
+                 (sort (hash->list (hash-ref demand 'limits))
+                       symbol<? #:key car))]
+               #:do [(define limit (car entry))
+                     (define required (cdr entry))]
+               #:when (let ([available
+                             (renderer3d-capability-limit capabilities limit #f)])
+                        (not (and (number? available)
+                                  (exact? available)
+                                  (>= available required)))))
+      (format "3D renderer limit is insufficient: ~a requires ~a, backend provides ~a"
+              limit required
+              (renderer3d-capability-limit capabilities limit #f))))
+  (hasheq
+   'warnings '()
+   'failures
+   (append
+    (for/list ([feature (in-list missing)])
+      (format "3D renderer lacks required feature: ~a" feature))
+    limit-failures)))
 
 ;; The OpenGL spec intentionally has no public field accessors: it is an
 ;; opaque backend declaration from the point of view of headless project

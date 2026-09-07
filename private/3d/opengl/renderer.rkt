@@ -12,6 +12,7 @@
 (require racket/list
          racket/match
          racket/runtime-path
+         racket/set
          ffi/vector
          "../../color-style.rkt"
          "../affine3.rkt"
@@ -94,12 +95,13 @@
   #:methods gen:renderer3d
   [(define (renderer3d-id renderer)
      (if (opengl-renderer3d-value-host renderer) 'opengl-racket 'software))
-   (define (renderer3d-capabilities renderer)
+   (define (renderer3d-capabilities-of renderer)
      ;; These are the capabilities of a live GL renderer.  A deliberate
      ;; software fallback delegates the reference renderer's capability report.
      (if (opengl-renderer3d-value-host renderer)
-         (renderer3d-capability-set #t #t #t #t #t #t #t #t #t)
-         (renderer3d-capabilities (opengl-renderer3d-value-fallback-renderer renderer))))
+         (opengl-capabilities renderer)
+         (renderer3d-capabilities-of
+          (opengl-renderer3d-value-fallback-renderer renderer))))
    (define (renderer3d-fingerprint renderer request)
      (if (opengl-renderer3d-value-host renderer)
          (vector 'animate-opengl-racket-v1
@@ -126,6 +128,41 @@
      (opengl-renderer3d-release! renderer))])
 
 (define opengl-renderer3d? opengl-renderer3d-value?)
+
+;; The initial GL shaders have fixed uniform arrays. Keeping those limits in
+;; the renderer declaration makes an over-limit project fail before submission
+;; instead of silently drawing only a prefix of its authored lights or clips.
+(define (opengl-capabilities renderer)
+  (define info (opengl-renderer3d-value-info renderer))
+  (define spec (opengl-renderer3d-value-spec renderer))
+  (renderer3d-capabilities
+   (seteq 'opaque-triangles
+          'perspective
+          'orthographic
+          'depth-buffer
+          'flat-shading
+          'smooth-shading
+          'transparency
+          'clipping-planes
+          'screen-strokes
+          'linear-depth
+          'ambient-light
+          'directional-light)
+   (hasheq 'maximum-directional-lights 4
+           'maximum-point-lights 0
+           'maximum-spot-lights 0
+           'maximum-shadow-lights 0
+           'maximum-clip-planes 8
+           'maximum-shadow-map-size 0
+           ;; A non-multisample framebuffer remains valid at one sample even
+           ;; when GL_MAX_SAMPLES is unavailable or reports zero.
+           'maximum-samples (max 1 (opengl3d-info-maximum-samples info)))
+   (hasheq 'backend 'opengl-racket
+           'requested-samples (opengl-renderer3d-spec-value-samples spec)
+           'shader-limits (hasheq 'directional-lights 4 'clip-planes 8)
+           'unsupported-features
+           '(wireframe object-id point-light spot-light specular emission
+                       directional-shadow spot-shadow))))
 
 ; opengl-renderer3d : [opengl-renderer3d-spec?] -> renderer3d?
 ;; The default `#:fallback 'error` intentionally makes an explicit OpenGL
@@ -347,6 +384,7 @@
 ;;;
 
 (define (prepare-opengl renderer request)
+  (renderer3d-require-request-capabilities renderer request)
   (define compiled (render3d-request-compiled-view request))
   ;; Surface resources are camera-independent.  Screen-space O primitives are
   ;; prepared afresh per frame below, precisely because their clipping, dashes,
@@ -742,7 +780,16 @@
                        directions)]
               [else (values red green blue (append directions (list light)))])))
     (uniform-3f! program "ambientLight" ambient-red ambient-green ambient-blue)
-    (define selected (take directions (min 4 (length directions))))
+    (unless (<= (length directions) 4)
+      ;; This should have been rejected by the generic request capability
+      ;; preflight. Retain a local check so a future direct call cannot turn a
+      ;; shader-array bound into silently omitted authored lights.
+      (raise-arguments-error
+       'opengl-renderer3d
+       "at most four directional lights for the current shader"
+       "directional-light-count" (length directions)
+       "maximum-directional-lights" 4))
+    (define selected directions)
     (uniform-1i! program "directionalCount" (length selected))
     (for ([light (in-list selected)] [index (in-naturals)])
       (define direction (directional-light3d-direction light))

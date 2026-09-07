@@ -11,7 +11,15 @@
 (require racket/class
          racket/draw
          racket/generic
+         racket/set
          "../preview-cancellation.rkt"
+         "../color-style.rkt"
+         "camera3d.rkt"
+         "light3d.rkt"
+         "material3d.rkt"
+         "mesh3d.rkt"
+         "projection3d.rkt"
+         "renderer3d-capabilities.rkt"
          "compiled-view3d.rkt"
          "compiled-view-cache3d.rkt"
          "frame-artifact3d.rkt"
@@ -25,7 +33,7 @@
 (provide gen:renderer3d
          renderer3d?
          renderer3d-id
-         renderer3d-capabilities
+         renderer3d-capabilities-of
          renderer3d-fingerprint
          renderer3d-prepare
          renderer3d-render
@@ -45,7 +53,16 @@
          renderer3d-frame-linear-depth-at
          renderer3d-frame-object-at
          renderer3d-frame-project
-         (struct-out renderer3d-capability-set)
+         (struct-out renderer3d-capabilities)
+         renderer3d-known-features
+         renderer3d-known-limits
+         renderer3d-supports?
+         renderer3d-capability-limit
+         renderer3d-missing-capabilities
+         renderer3d-require-capabilities
+         renderer3d-request-required-features
+         renderer3d-request-required-limits
+         renderer3d-require-request-capabilities
          (struct-out render3d-request)
          view3d->render3d-request
          (struct-out renderer3d-render-result)
@@ -71,21 +88,6 @@
 ;;;
 ;;; Protocol Values
 ;;;
-
-(struct renderer3d-capability-set
-  (wireframe opaque-triangles perspective orthographic depth-buffer flat-shading
-             smooth-shading transparency clipping-planes)
-  #:transparent
-  #:guard
-  (lambda (wireframe opaque-triangles perspective orthographic depth-buffer
-                    flat-shading smooth-shading transparency clipping-planes who)
-    (for ([value (in-list (list wireframe opaque-triangles perspective orthographic
-                                depth-buffer flat-shading smooth-shading
-                                transparency clipping-planes))])
-      (unless (boolean? value)
-        (raise-argument-error who "boolean?" value)))
-    (values wireframe opaque-triangles perspective orthographic depth-buffer
-            flat-shading smooth-shading transparency clipping-planes)))
 
 ;; The request excludes a raw view3d. Compilation captures camera-independent
 ;; data first, so a camera orbit affects only frame preparation.
@@ -137,14 +139,177 @@
 
 (define-generics renderer3d
   (renderer3d-id renderer3d)
-  (renderer3d-capabilities renderer3d)
+  (renderer3d-capabilities-of renderer3d)
   (renderer3d-fingerprint renderer3d request)
   (renderer3d-prepare renderer3d request)
   (renderer3d-render renderer3d preparation request)
   (renderer3d-release renderer3d))
 
+(define maximum-reference-resource-count
+  ;; The reference backend has no fixed shader-array resource limit. Capability
+  ;; limits remain exact numbers by contract, so represent that practical
+  ;; unboundedness by the largest count this implementation can reasonably
+  ;; index without exposing an inexact infinity.
+  (sub1 (expt 2 61)))
+
 (define reference-capabilities
-  (renderer3d-capability-set #f #t #t #t #t #t #t #t #t))
+  (renderer3d-capabilities
+   (seteq 'opaque-triangles
+          'perspective
+          'orthographic
+          'depth-buffer
+          'flat-shading
+          'smooth-shading
+          'transparency
+          'clipping-planes
+          'screen-strokes
+          'linear-depth
+          'object-id
+          'ambient-light
+          'directional-light)
+   (hasheq 'maximum-directional-lights maximum-reference-resource-count
+           'maximum-point-lights 0
+           'maximum-spot-lights 0
+           'maximum-shadow-lights 0
+           'maximum-clip-planes maximum-reference-resource-count
+           'maximum-shadow-map-size 0
+           'maximum-samples 1)
+   (hasheq 'backend 'software-reference
+           'unsupported-features
+           '(wireframe point-light spot-light specular emission
+                       directional-shadow spot-shadow))))
+
+;;;
+;;; Request Capability Requirements
+;;;
+
+;; Capability demands are inferred from the immutable compiled request rather
+;; than trusting a project-level claim.  The same calculation is used by
+;; project preflight and the backend boundary, so a selected renderer cannot
+;; begin costly preparation only to discover that a feature is unavailable.
+
+(define (renderer3d-request-required-features request)
+  (unless (render3d-request? request)
+    (raise-argument-error 'renderer3d-request-required-features
+                          "render3d-request?" request))
+  (define compiled (render3d-request-compiled-view request))
+  (define frame (render3d-request-frame-spec request))
+  (define features (mutable-seteq 'depth-buffer))
+  (define (need! feature) (set-add! features feature))
+  (when (positive? (vector-length (compiled-view3d-instances compiled)))
+    (need! 'opaque-triangles)
+    (for ([instance (in-vector (compiled-view3d-instances compiled))])
+      (define material (compiled-instance3d-material instance))
+      (case (material3d-shading material)
+        [(flat) (need! 'flat-shading)]
+        [(smooth) (need! 'smooth-shading)]
+        [else (void)]))
+    (when (request-has-transparent-instance? compiled)
+      (need! 'transparency))
+    (when (request-has-lit-instance? compiled)
+      (for ([light (in-list (effective-request-lights frame))])
+        (cond [(ambient-light3d? light) (need! 'ambient-light)]
+              [(directional-light3d? light) (need! 'directional-light)]))))
+  (define projection (camera3d-projection (frame3d-spec-camera frame)))
+  (cond [(perspective-projection3d? projection) (need! 'perspective)]
+        [(orthographic-projection3d? projection) (need! 'orthographic)])
+  (when (positive? (request-maximum-clip-plane-count compiled))
+    (need! 'clipping-planes))
+  (when (or (positive? (vector-length (compiled-view3d-strokes compiled)))
+            (positive? (vector-length (compiled-view3d-point-markers compiled)))
+            (positive? (vector-length (compiled-view3d-arrow-markers compiled)))
+            (positive? (vector-length (compiled-view3d-billboards compiled)))
+            (positive? (vector-length (compiled-view3d-edge-overlays compiled))))
+    (need! 'screen-strokes))
+  (for ([attachment (in-list (render3d-request-attachments request))])
+    (case attachment
+      [(linear-depth) (need! 'linear-depth)]
+      [(object-id) (need! 'object-id)]
+      [else (void)]))
+  (for/seteq ([feature (in-set features)]) feature))
+
+(define (renderer3d-request-required-limits request)
+  (unless (render3d-request? request)
+    (raise-argument-error 'renderer3d-request-required-limits
+                          "render3d-request?" request))
+  (define compiled (render3d-request-compiled-view request))
+  (define frame (render3d-request-frame-spec request))
+  (hasheq 'maximum-directional-lights
+          (if (request-has-lit-instance? compiled)
+              (for/sum ([light (in-list (effective-request-lights frame))])
+                (if (directional-light3d? light) 1 0))
+              0)
+          'maximum-point-lights 0
+          'maximum-spot-lights 0
+          'maximum-shadow-lights 0
+          'maximum-clip-planes (request-maximum-clip-plane-count compiled)))
+
+(define (renderer3d-require-request-capabilities renderer request)
+  (unless (renderer3d? renderer)
+    (raise-argument-error 'renderer3d-require-request-capabilities
+                          "renderer3d?" renderer))
+  (unless (render3d-request? request)
+    (raise-argument-error 'renderer3d-require-request-capabilities
+                          "render3d-request?" request))
+  (define capabilities (renderer3d-capabilities-of renderer))
+  (renderer3d-require-capabilities capabilities
+                                   (renderer3d-request-required-features request))
+  (for ([(limit required) (in-hash (renderer3d-request-required-limits request))])
+    (define available (renderer3d-capability-limit capabilities limit #f))
+    (unless (and (number? available) (exact? available) (>= available required))
+      (raise-arguments-error
+       'renderer3d-require-request-capabilities
+       "a renderer whose declared limit covers this frame"
+       "limit" limit
+       "required" required
+       "available" available
+       "renderer" (renderer3d-id renderer)
+       "diagnostics" (renderer3d-capabilities-diagnostics capabilities))))
+  (void))
+
+(define (effective-request-lights frame)
+  (define lights (frame3d-spec-lights frame))
+  (if (null? lights) default-lights3d lights))
+
+(define (request-has-lit-instance? compiled)
+  (for/or ([instance (in-vector (compiled-view3d-instances compiled))])
+    (not (eq? (material3d-shading (compiled-instance3d-material instance))
+              'unlit))))
+
+(define (request-has-transparent-instance? compiled)
+  (for/or ([instance (in-vector (compiled-view3d-instances compiled))])
+    (define material (compiled-instance3d-material instance))
+    (or (< (compiled-instance3d-opacity instance) 1)
+        (< (rgba-color-alpha (material3d-color material)) 1)
+        (let* ([geometry-key (compiled-instance3d-geometry-key instance)]
+               [geometry
+                (for/first ([candidate (in-vector (compiled-view3d-geometries compiled))]
+                            #:when (equal? (compiled-geometry3d-key candidate) geometry-key))
+                  candidate)]
+               [colors (and geometry
+                            (mesh3d-colors (compiled-geometry3d-mesh geometry)))])
+          (and colors
+               (for/or ([color (in-vector colors)])
+                 (< (rgba-color-alpha color) 1)))))))
+
+(define (request-maximum-clip-plane-count compiled)
+  (define (maximum vector accessor)
+    (for/fold ([result 0]) ([entry (in-vector vector)])
+      (max result (length (accessor entry)))))
+  (apply max
+         0
+         (list (maximum (compiled-view3d-instances compiled)
+                        compiled-instance3d-clip-planes)
+               (maximum (compiled-view3d-strokes compiled)
+                        compiled-stroke3d-clip-planes)
+               (maximum (compiled-view3d-point-markers compiled)
+                        compiled-point-marker3d-clip-planes)
+               (maximum (compiled-view3d-arrow-markers compiled)
+                        compiled-arrow-marker3d-clip-planes)
+               (maximum (compiled-view3d-billboards compiled)
+                        compiled-billboard3d-clip-planes)
+               (maximum (compiled-view3d-edge-overlays compiled)
+                        compiled-edge-overlay3d-clip-planes))))
 
 
 ;;;
@@ -254,9 +419,10 @@
   #:transparent
   #:methods gen:renderer3d
   [(define (renderer3d-id _self) 'software-reference)
-   (define (renderer3d-capabilities _self) reference-capabilities)
+   (define (renderer3d-capabilities-of _self) reference-capabilities)
    (define (renderer3d-fingerprint _self request) (request-fingerprint request))
    (define (renderer3d-prepare self request)
+     (renderer3d-require-request-capabilities self request)
      ;; No retained geometry exists here, but every fingerprint and miss remains
      ;; visible in the same measurement schema as the retained backend.
      (statistics-update!
@@ -311,9 +477,10 @@
   #:transparent
   #:methods gen:renderer3d
   [(define (renderer3d-id _self) 'retained-software-reference)
-   (define (renderer3d-capabilities _self) reference-capabilities)
+   (define (renderer3d-capabilities-of _self) reference-capabilities)
    (define (renderer3d-fingerprint _self request) (request-fingerprint request))
    (define (renderer3d-prepare self request)
+     (renderer3d-require-request-capabilities self request)
      (call-with-semaphore
       (retained-software-renderer3d-value-lock self)
       (lambda ()
