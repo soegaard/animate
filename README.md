@@ -126,6 +126,7 @@ exactly synchronized with the gallery and example requirements.
 - [Sphere cut by a moving plane](examples/3d/sphere-plane-section.rkt) — 3d, clipping, sections, transparency, occlusion, animation; requires core.
 - [Spatial maps and homotopies](examples/3d/spatial-maps-and-homotopies.rkt) — 3d, affine, pointwise, homotopy, animation; requires core.
 - [Prepared Lorenz flow](examples/3d/prepared-lorenz-flow.rkt) — 3d, ode, vector-fields, trajectories, camera, animation; requires core.
+- [Lorenz event crossings](examples/3d/lorenz-events.rkt) — 3d, ode, lorenz, events, dense-roots, trajectories, camera, animation; requires core.
 - [Event-aware trajectory](examples/3d/event-aware-trajectory.rkt) — 3d, ode, events, terminal-roots, trajectories, camera, animation; requires core.
 - [Trajectory termination policies](examples/3d/trajectory-termination.rkt) — 3d, ode, termination, bounds, arc-length, events, trajectories, camera, animation; requires core.
 - [Prepared adaptive streamlines](examples/3d/adaptive-streamlines.rkt) — 3d, ode, streamlines, adaptive, arc-length, trajectories, camera, animation; requires core.

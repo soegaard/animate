@@ -2118,8 +2118,10 @@ Creates one prepared particle per trajectory using the shared time parameter.}
 
 The canonical acceptance scenes are
 @filepath{examples/3d/prepared-lorenz-flow.rkt} and
-@filepath{examples/3d/event-aware-trajectory.rkt}; explicit policies are shown
-in @filepath{examples/3d/trajectory-termination.rkt}, while
+@filepath{examples/3d/lorenz-events.rkt}; the latter distinguishes retained
+nonterminal rise/fall roots through the same Lorenz surface. Explicit policies are shown
+in @filepath{examples/3d/event-aware-trajectory.rkt} and
+@filepath{examples/3d/trajectory-termination.rkt}, while
 @filepath{examples/3d/adaptive-streamlines.rkt} shows T3's world-space
 resampling and @filepath{examples/3d/deterministic-seed-sets.rkt} shows T4
 Poisson seed provenance. @filepath{examples/3d/poincare-section.rkt} shows T5

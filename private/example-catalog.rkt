@@ -123,6 +123,10 @@
     "examples/3d/prepared-lorenz-flow.rkt" 'make-demo-scene
     '(3d ode vector-fields trajectories camera animation) '(core) 3 6)
    (example-entry
+   'lorenz-events "Lorenz event crossings"
+    "examples/3d/lorenz-events.rkt" 'make-demo-scene
+    '(3d ode lorenz events dense-roots trajectories camera animation) '(core) 3 6)
+   (example-entry
    'event-aware-trajectory "Event-aware trajectory"
     "examples/3d/event-aware-trajectory.rkt" 'make-demo-scene
     '(3d ode events terminal-roots trajectories camera animation) '(core) 5/2 5)
