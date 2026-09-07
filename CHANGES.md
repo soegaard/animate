@@ -27,6 +27,8 @@
   from opaque memory-only fields, and retain a versioned preparation identity.
 - Added `flow-map-grid3d`, an endpoint-only visual for explicit structured
   grids; unstructured seed sets are rejected rather than inventing adjacency.
+- Added grid-only local flow-map Jacobian and volume-factor queries using
+  retained endpoint neighbours and explicit central/one-sided differences.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

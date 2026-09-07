@@ -1924,6 +1924,15 @@ for an absent endpoint.}
 a flow map from an explicit @racket['grid] seed set to retained endpoint edges.
 An absent endpoint breaks its incident edges. Arbitrary unstructured seed sets
 are rejected because no neighbourhood relation is implied by their order.}
+@defproc[(flow-map3d-local-jacobian [map prepared-flow-map3d?]
+                                    [index exact-nonnegative-integer?]) linear3?]{Estimates
+the local endpoint derivative from a retained explicit grid neighbourhood.
+Interior slots use central differences and grid boundaries use a retained
+one-sided difference. An absent endpoint, incomplete axis neighbourhood, or
+unstructured seed set is an error rather than a guessed result.}
+@defproc[(flow-map3d-volume-factor [map prepared-flow-map3d?]
+                                   [index exact-nonnegative-integer?]) finite-real?]{Returns
+the determinant of @racket[flow-map3d-local-jacobian] at one grid slot.}
 @defproc[(trajectory-samples3d [trajectory prepared-trajectory3d?]
                                 [#:count count exact-integer? 64]) vector?]{Returns
 an immutable uniform-time sequence of positions from retained dense trajectory

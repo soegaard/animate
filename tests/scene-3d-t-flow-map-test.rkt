@@ -34,4 +34,6 @@
                         (grid-seeds3d #:counts '(2 2 2))
                         #:solver (fixed-rk4-solver3d #:step-size 1/10)))
   (check-true (group3d? (flow-map-grid3d grid-map #:id 'grid)))
+  (check-equal? (flow-map3d-local-jacobian grid-map 0) identity-linear3)
+  (check-equal? (flow-map3d-volume-factor grid-map 0) 1)
   (check-exn exn:fail:contract? (lambda () (flow-map-grid3d map))))

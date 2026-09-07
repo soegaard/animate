@@ -605,6 +605,8 @@ cutaway3d
  flow-map3d-pairs
  flow-map3d-displacement
  flow-map-grid3d
+ flow-map3d-local-jacobian
+ flow-map3d-volume-factor
  trajectory-samples3d
  trajectory-tube3d
  trajectory-ribbon3d

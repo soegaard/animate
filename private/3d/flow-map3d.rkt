@@ -2,11 +2,11 @@
 
 (require racket/list
          "../geometry.rkt" "ode-flow3d.rkt" "point-line-arrow3d.rkt"
-         "seed-set3d.rkt" "spatial-group.rkt" "vec3.rkt")
+         "linear3.rkt" "seed-set3d.rkt" "spatial-group.rkt" "vec3.rkt")
 
 (provide (struct-out prepared-flow-map3d)
          prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
-         flow-map-grid3d)
+         flow-map-grid3d flow-map3d-local-jacobian flow-map3d-volume-factor)
 
 ;; Endpoints are #f when a trajectory ended early under the default policy.
 ;; The retained trajectory and diagnostics still expose why, in the original
@@ -118,3 +118,42 @@
                      (< low (coordinate middle axis) high)))))))
 (define (coordinate point axis)
   (case axis [(0) (vec3-x point)] [(1) (vec3-y point)] [else (vec3-z point)]))
+
+;; A local derivative is meaningful here only because grid provenance supplies
+;; a physical neighbourhood.  Central differences are preferred; a boundary
+;; uses its one retained adjacent cell deterministically.
+(define (flow-map3d-local-jacobian map index)
+  (unless (prepared-flow-map3d? map) (raise-argument-error 'flow-map3d-local-jacobian "prepared-flow-map3d?" map))
+  (define seeds (prepared-flow-map3d-seeds map))
+  (unless (eq? (seed-set3d-kind seeds) 'grid)
+    (raise-arguments-error 'flow-map3d-local-jacobian "an explicit grid seed set" "seed-kind" (seed-set3d-kind seeds)))
+  (define points (seed-set3d-points seeds))
+  (define endpoints (prepared-flow-map3d-endpoints map))
+  (define source (vector-ref points index))
+  (define endpoint (vector-ref endpoints index))
+  (unless endpoint (raise-arguments-error 'flow-map3d-local-jacobian "an endpoint at the requested seed" "index" index))
+  (define columns
+    (for/list ([axis '(0 1 2)])
+      (define candidates
+        (for/list ([j (in-range (vector-length points))]
+                   #:when (and (not (= j index))
+                               (vector-ref endpoints j)
+                               (for/and ([other '(0 1 2)] #:unless (= other axis))
+                                 (= (coordinate (vector-ref points j) other) (coordinate source other))))) j))
+      (define minus (for/first ([j (in-list candidates)] #:when (< (coordinate (vector-ref points j) axis) (coordinate source axis))) j))
+      (define plus (for/first ([j (in-list candidates)] #:when (> (coordinate (vector-ref points j) axis) (coordinate source axis))) j))
+      (cond [(and minus plus)
+             (vec3-scale (/ 1 (- (coordinate (vector-ref points plus) axis) (coordinate (vector-ref points minus) axis)))
+                         (vec3- (vector-ref endpoints plus) (vector-ref endpoints minus)))]
+            [plus (vec3-scale (/ 1 (- (coordinate (vector-ref points plus) axis) (coordinate source axis)))
+                              (vec3- (vector-ref endpoints plus) endpoint))]
+            [minus (vec3-scale (/ 1 (- (coordinate source axis) (coordinate (vector-ref points minus) axis)))
+                               (vec3- endpoint (vector-ref endpoints minus)))]
+            [else (raise-arguments-error 'flow-map3d-local-jacobian "a retained adjacent endpoint on every grid axis" "axis" axis "index" index)])))
+  (define dx (first columns)) (define dy (second columns)) (define dz (third columns))
+  (linear3 (vec3-x dx) (vec3-x dy) (vec3-x dz)
+           (vec3-y dx) (vec3-y dy) (vec3-y dz)
+           (vec3-z dx) (vec3-z dy) (vec3-z dz)))
+
+(define (flow-map3d-volume-factor map index)
+  (linear3-determinant (flow-map3d-local-jacobian map index)))
