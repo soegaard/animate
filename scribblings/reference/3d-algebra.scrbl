@@ -492,6 +492,51 @@ nonmanifold/self-intersecting input nor creates a polygonal approximation. A
 region with holes is retained and diagnosed, but does not yet expose a usable
 multi-loop polygon. Hole triangulation, duals, Schlegel diagrams, nets, and
 face-transform animation are later U stages.
+
+@subsection{Deterministic convex hulls}
+
+@defstruct*[convex-hull3d-coplanar-group3d
+            ([face-id any/c] [triangle-indices vector?]
+             [boundary-vertex-indices (or/c #f vector?)]
+             [source-point-indices vector?]) #:transparent]{One merged coplanar
+supporting face of a three-dimensional hull. The source-point vector includes
+every retained input point on that plane, including a point in the face
+interior.}
+@defstruct*[convex-hull3d-result
+            ([dimension (integer-in 0 3)] [mesh mesh3d?]
+             [source-point-indices vector?] [coplanar-groups vector?]
+             [interior-indices vector?] [diagnostics hash?]) #:transparent]{A
+truthful hull result. @racket[source-point-indices] maps returned mesh vertices
+to original input indexes. @racket[interior-indices] includes non-extreme and
+merged-duplicate inputs. For dimension 0, 1, and 2, @racket[mesh] is,
+respectively, a point mesh, segment mesh, or planar triangle fan---never a
+fabricated three-dimensional solid.}
+@defproc[(convex-hull3d [points (or/c vector? list?)]
+                         [#:id id symbol? 'hull]
+                         [#:tolerance tolerance (or/c 'automatic nonnegative-real?) 'automatic]
+                         [#:coplanar coplanar (or/c 'merge 'triangulate) 'merge]
+                         [#:on-degenerate on-degenerate (or/c 'report 'error) 'report])
+         convex-hull3d-result?]{Builds a deterministic convex hull. It retains
+original source indexes, merges exact duplicates, and also merges near points
+when a numeric @racket[tolerance] is supplied. The automatic tolerance merges
+only exact duplicates; it uses a scale-aware orientation threshold for inexact
+classification. Exact coordinates use exact determinant signs.
+
+The next outside point is chosen by greatest positive face distance, then
+stable coordinate/source order. @racket['merge] returns U-2 polygonal
+supporting-face records; @racket['triangulate] leaves that vector empty. If a
+point set is lower-dimensional, @racket['report] returns its actual dimension
+and @racket['error] raises instead. Diagnostics state the effective tolerances,
+the exact/inexact orientation policy, duplicate count, and near-zero decision
+count.}
+
+@bold{Limitations.} This U-3 implementation is deterministic but not a general
+computational-geometry repair system: it does not resolve self-intersecting
+input, and inexact near-degenerate cases use the recorded scale-aware policy
+instead of a bigfloat/exact-predicate fallback. Near-duplicate clustering with
+an explicit tolerance is deterministic and representative-based; choose that
+tolerance deliberately. Concave hulls, Delaunay triangulation, and arbitrary
+polygon-with-hole operations are outside this stage.
 @defproc[(mesh3d-normals [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable normals.}
 @defproc[(mesh3d-colors [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable colours.}
 @defproc[(mesh3d-material [mesh mesh3d?]) material3d?]{Returns the surface material.}

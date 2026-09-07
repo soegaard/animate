@@ -48,6 +48,7 @@
                          polyhedral-complex3d-mesh polyhedral-complex3d-topology
                          polyhedral-complex3d-faces polyhedral-complex3d-edge-to-faces
                          polyhedral-complex3d-vertex-to-faces polyhedral-complex3d-diagnostics
+                         convex-hull3d convex-hull3d-result?
                          material3d directional-light3d
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color

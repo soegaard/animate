@@ -30,6 +30,7 @@
          "private/3d/geometry-fingerprint3d.rkt"
          "private/3d/mesh-topology3d.rkt"
          "private/3d/polyhedral-complex3d.rkt"
+         "private/3d/convex-hull3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -359,6 +360,9 @@
  polyhedral-complex3d-vertex-to-faces
  polyhedral-complex3d-diagnostics
  polyhedral-complex3d
+ (struct-out convex-hull3d-result)
+ (struct-out convex-hull3d-coplanar-group3d)
+ convex-hull3d
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d

@@ -21,6 +21,12 @@
   their least source triangle; explicit IDs win. Regions with holes, branches,
   or repeated boundary vertices remain diagnosed rather than being fabricated
   into simple polygons.
+- Added SCENE-3D-U3's deterministic convex-hull preparation. It preserves
+  source-point provenance, returns true 0D/1D/2D results for degenerate input,
+  emits an outward indexed mesh for solid input, and optionally groups its
+  supporting triangles into U2 polygonal faces. Exact coordinates use exact
+  orientation signs; inexact near-zero decisions and the selected tolerance
+  policy are explicit diagnostics.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

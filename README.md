@@ -80,6 +80,10 @@ faces: authors may declare a face partition, retain individual triangles, or
 merge edge-connected transformed coplanar regions. The result preserves source
 provenance and reports holes or branching boundaries instead of inventing a
 simple polygon; duals, nets, and face-transform animation come later.
+SCENE-3D-U3 adds deterministic provenance-preserving convex hulls. It produces
+an outward triangle mesh for a solid and true point/segment/planar results for
+degenerate input, with scale-aware inexact diagnostics and optional merged
+polygonal supporting faces for the next polyhedral stages.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric
