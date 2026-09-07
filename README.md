@@ -151,6 +151,12 @@ software and optional OpenGL paths share test vectors and selected-pixel
 conformance checks. The current scope intentionally stops short of full ICC
 colour management, display-HDR output, or colour-managed composition with
 ordinary outer 2D Picts.
+SCENE-3D-V3 adds stable symbolic IDs to ambient, directional, point, and spot
+light values, plus immutable viewport lookup/replacement/update operations.
+Finite lights carry named constant, inverse-square, or polynomial attenuation;
+spots add an explicit smoothstep cone. Point and spot values are accepted and
+preflighted, but intentionally rejected by current renderers until V5 adds
+finite-light evaluation—never silently treated as directional lights.
 SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
 deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and

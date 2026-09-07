@@ -38,6 +38,9 @@
          view3d-camera
          view3d-with-camera
          view3d-lights
+         view3d-light-ref
+         view3d-light-replace
+         view3d-light-update
          view3d-background
          view3d-tone-map
          view3d-render-mode
@@ -184,8 +187,7 @@
     (raise-argument-error 'view3d "finite real in [0, 1]" opacity))
   (unless (camera3d? camera)
     (raise-argument-error 'view3d "camera3d?" camera))
-  (unless (and (list? lights) (andmap light3d? lights))
-    (raise-argument-error 'view3d "(listof light3d?)" lights))
+  (check-lights 'view3d lights)
   (unless (color-spec? background)
     (raise-argument-error 'view3d "color-spec?" background))
   (unless (tone-map3d? tone-map)
@@ -228,6 +230,56 @@
   (retain-view3d-content-key!
    (struct-copy view3d-value view [camera camera])
    view))
+
+;;;
+;;; Stable Lights
+;;;
+
+; view3d-light-ref : view3d? symbol? -> light3d?
+;;   Resolves one authored light by its stable identity.
+(define (view3d-light-ref view id)
+  (check-view-light-id 'view3d-light-ref view id)
+  (or (for/first ([light (in-list (view3d-lights view))]
+                  #:when (eq? (light3d-id light) id))
+        light)
+      (raise-arguments-error 'view3d-light-ref
+                             "a light ID present in this view3d"
+                             "view-id" (visual-id view)
+                             "light-id" id)))
+
+; view3d-light-replace : view3d? symbol? light3d? -> view3d?
+;;   Immutably replaces an authored light while retaining its stable ID.
+(define (view3d-light-replace view id replacement)
+  (check-view-light-id 'view3d-light-replace view id)
+  (unless (light3d? replacement)
+    (raise-argument-error 'view3d-light-replace "light3d?" replacement))
+  (view3d-light-ref view id)
+  (unless (eq? (light3d-id replacement) id)
+    (raise-arguments-error 'view3d-light-replace
+                           "a replacement preserving the light ID"
+                           "expected-light-id" id
+                           "replacement-light-id" (light3d-id replacement)))
+  ;; Lights are camera/frame state.  Updating them therefore retains the
+  ;; compiled spatial content cache just as `view3d-with-camera` does.
+  (retain-view3d-content-key!
+   (struct-copy view3d-value view
+                [lights
+                 (for/list ([light (in-list (view3d-lights view))])
+                   (if (eq? (light3d-id light) id) replacement light))])
+   view))
+
+; view3d-light-update : view3d? symbol? (light3d? -> light3d?) -> view3d?
+;;   Applies an immutable update that must preserve the selected light ID.
+(define (view3d-light-update view id update)
+  (check-view-light-id 'view3d-light-update view id)
+  (unless (procedure? update)
+    (raise-argument-error 'view3d-light-update "procedure?" update))
+  (define replacement (update (view3d-light-ref view id)))
+  (unless (light3d? replacement)
+    (raise-arguments-error 'view3d-light-update
+                           "an update returning a light3d value"
+                           "result" replacement))
+  (view3d-light-replace view id replacement))
 
 
 ;;;
@@ -356,6 +408,26 @@
 ;;;
 ;;; Validation
 ;;;
+
+(define (check-lights who lights)
+  (unless (and (list? lights) (andmap light3d? lights))
+    (raise-argument-error who "(listof light3d?)" lights))
+  (define seen (make-hasheq))
+  (for ([light (in-list lights)])
+    (define id (light3d-id light))
+    (when (hash-ref seen id #f)
+      (raise-arguments-error who
+                             "a list of lights with distinct stable IDs"
+                             "duplicate-light-id" id
+                             "lights" lights))
+    (hash-set! seen id #t))
+  lights)
+
+(define (check-view-light-id who view id)
+  (unless (view3d? view)
+    (raise-argument-error who "view3d?" view))
+  (unless (symbol? id)
+    (raise-argument-error who "symbol? light ID" id)))
 
 (define (check-view-path who view path)
   (unless (view3d? view)

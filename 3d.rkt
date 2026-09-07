@@ -82,6 +82,7 @@
          "private/3d/vector-diagram3d.rkt"
          "private/3d/material3d.rkt"
          "private/3d/color-space3d.rkt"
+         "private/3d/light-attenuation3d.rkt"
          "private/3d/light3d.rkt"
          "private/3d/spatial-dependency.rkt"
          "private/3d/spatial-relation-context.rkt"
@@ -913,15 +914,53 @@ cutaway3d
  (struct-out tone-map3d)
  default-tone-map3d
  tone-map3d-apply
+ (struct-out light-attenuation3d)
+ constant-attenuation3d
+ inverse-square-attenuation3d
+ polynomial-attenuation3d
+ light-attenuation3d-factor
+ spot-smoothstep3d
+ spot-cone-factor3d
  ambient-light3d
  ambient-light3d?
+ ambient-light3d-id
  ambient-light3d-intensity
  ambient-light3d-color
+ ambient-light3d-shadow
  directional-light3d
  directional-light3d?
+ directional-light3d-id
  directional-light3d-direction
  directional-light3d-intensity
  directional-light3d-color
+ directional-light3d-shadow
+ point-light3d
+ point-light3d?
+ point-light3d-id
+ point-light3d-position
+ point-light3d-intensity
+ point-light3d-color
+ point-light3d-attenuation
+ point-light3d-range
+ point-light3d-shadow
+ spot-light3d
+ spot-light3d?
+ spot-light3d-id
+ spot-light3d-position
+ spot-light3d-direction
+ spot-light3d-intensity
+ spot-light3d-color
+ spot-light3d-inner-angle
+ spot-light3d-outer-angle
+ spot-light3d-attenuation
+ spot-light3d-range
+ spot-light3d-shadow
+ light3d?
+ light3d-id
+ light3d-kind
+ light3d-color
+ light3d-intensity
+ light3d-shadow
 
  ;; Camera and projection
  (struct-out perspective-projection3d)
@@ -947,6 +986,12 @@ cutaway3d
  camera3d-pixel-ray
  camera3d-frustum
  camera3d-fit-bounds
+
+ ;; Stable authored lights in a view3d
+ view3d-lights
+ view3d-light-ref
+ view3d-light-replace
+ view3d-light-update
 
  ;; Spatial and camera animation requests
  move3d-to

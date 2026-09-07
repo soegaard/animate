@@ -803,7 +803,13 @@
                        (+ blue (* (ambient-light3d-intensity light)
                                   (linear-rgba3d-blue linear)))
                        directions)]
-              [else (values red green blue (append directions (list light)))])))
+              [(directional-light3d? light)
+               (values red green blue (append directions (list light)))]
+              [else
+               (raise-arguments-error
+                'opengl-renderer3d
+                "ambient or directional light values until finite-light evaluation arrives in V5"
+                "light" light)])))
     (uniform-3f! program "ambientLight" ambient-red ambient-green ambient-blue)
     (unless (<= (length directions) 4)
       ;; This should have been rejected by the generic request capability

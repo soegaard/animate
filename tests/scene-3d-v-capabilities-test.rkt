@@ -55,8 +55,8 @@
    #:width 4 #:height 3 #:render-mode 'opaque
    #:lights
    (list (ambient-light3d)
-         (directional-light3d (vec3 1 0 -1))
-         (directional-light3d (vec3 -1 0 -1)))))
+         (directional-light3d (vec3 1 0 -1) #:id 'key-left)
+         (directional-light3d (vec3 -1 0 -1) #:id 'key-right))))
 
 (module+ test
   (define report (capabilities))
@@ -149,7 +149,8 @@
           #:id 'five-lights #:width 4 #:height 3 #:render-mode 'opaque
           #:lights
           (for/list ([index (in-range 5)])
-            (directional-light3d (vec3 (+ index 1) 1 -1)))))
+            (directional-light3d (vec3 (+ index 1) 1 -1)
+                                 #:id (string->symbol (format "key-~a" index))))))
        (check-exn
         exn:fail?
         (lambda ()

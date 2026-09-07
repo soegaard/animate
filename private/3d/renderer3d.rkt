@@ -209,7 +209,12 @@
     (when (request-has-lit-instance? compiled)
       (for ([light (in-list (effective-request-lights frame))])
         (cond [(ambient-light3d? light) (need! 'ambient-light)]
-              [(directional-light3d? light) (need! 'directional-light)]))))
+              [(directional-light3d? light) (need! 'directional-light)]
+              ;; Values are part of the stable authored model in V3.  Their
+              ;; finite-position lighting implementation deliberately follows
+              ;; in V5, so no current renderer may approximate them.
+              [(point-light3d? light) (need! 'point-light)]
+              [(spot-light3d? light) (need! 'spot-light)]))))
   (define projection (camera3d-projection (frame3d-spec-camera frame)))
   (cond [(perspective-projection3d? projection) (need! 'perspective)]
         [(orthographic-projection3d? projection) (need! 'orthographic)])
@@ -239,8 +244,16 @@
               (for/sum ([light (in-list (effective-request-lights frame))])
                 (if (directional-light3d? light) 1 0))
               0)
-          'maximum-point-lights 0
-          'maximum-spot-lights 0
+          'maximum-point-lights
+          (if (request-has-lit-instance? compiled)
+              (for/sum ([light (in-list (effective-request-lights frame))])
+                (if (point-light3d? light) 1 0))
+              0)
+          'maximum-spot-lights
+          (if (request-has-lit-instance? compiled)
+              (for/sum ([light (in-list (effective-request-lights frame))])
+                (if (spot-light3d? light) 1 0))
+              0)
           'maximum-shadow-lights 0
           'maximum-clip-planes (request-maximum-clip-plane-count compiled)))
 

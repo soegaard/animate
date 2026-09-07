@@ -951,22 +951,114 @@ the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial ins
                                          (material3d-receives-shadow? material)])
          material3d?]{Returns @racket[material] with its future shadow policy replaced.}
 
-@defproc[(ambient-light3d [#:intensity intensity nonnegative-real? 1]
-                           [#:color color any/c "white"])
-         ambient-light3d?]{Creates uniform opaque ambient illumination.}
+@defproc[(ambient-light3d [#:id id symbol? 'ambient]
+                           [#:intensity intensity nonnegative-real? 1]
+                           [#:color color any/c "white"]
+                           [#:shadow shadow #f #f])
+         ambient-light3d?]{Creates uniform opaque ambient illumination with a
+stable authored identifier. Shadow descriptors are reserved for a later stage;
+the only accepted current value is @racket[#f].}
 @defproc[(directional-light3d [direction vec3?]
+                               [#:id id symbol? 'key]
                                [#:intensity intensity nonnegative-real? 1]
-                               [#:color color any/c "white"])
+                               [#:color color any/c "white"]
+                               [#:shadow shadow #f #f])
          directional-light3d?]{Creates an opaque directional light. Its
 direction is the direction in which illumination travels, so a normal facing
-its negation receives diffuse light.}
+its negation receives diffuse light. The direction is normalized.}
+@defproc[(point-light3d [position vec3?]
+                         [#:id id symbol? 'point]
+                         [#:intensity intensity nonnegative-real? 1]
+                         [#:color color any/c "white"]
+                         [#:attenuation attenuation light-attenuation3d?
+                          (inverse-square-attenuation3d)]
+                         [#:range range (or/c #f positive-real?) #f]
+                         [#:shadow shadow #f #f])
+         point-light3d?]{Creates a finite-position light value.}
+@defproc[(spot-light3d [position vec3?] [direction vec3?]
+                        [#:id id symbol? 'spot]
+                        [#:intensity intensity nonnegative-real? 1]
+                        [#:color color any/c "white"]
+                        [#:inner-angle inner-angle nonnegative-real? 0]
+                        [#:outer-angle outer-angle positive-real? @math{pi/4}]
+                        [#:attenuation attenuation light-attenuation3d?
+                         (inverse-square-attenuation3d)]
+                        [#:range range (or/c #f positive-real?) #f]
+                        [#:shadow shadow #f #f])
+         spot-light3d?]{Creates a finite-position cone light. Its normalized
+direction points outward; inside @racket[inner-angle] illumination is full,
+outside @racket[outer-angle] it is zero, and the interval between uses the
+fixed smoothstep falloff. Angles are radians.}
 @defproc[(ambient-light3d? [value any/c]) boolean?]{Recognizes ambient light.}
+@defproc[(ambient-light3d-id [light ambient-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(ambient-light3d-intensity [light ambient-light3d?]) nonnegative-real?]{Returns ambient intensity.}
 @defproc[(ambient-light3d-color [light ambient-light3d?]) rgba-color?]{Returns opaque ambient colour.}
+@defproc[(ambient-light3d-shadow [light ambient-light3d?]) #f]{Returns reserved shadow policy.}
 @defproc[(directional-light3d? [value any/c]) boolean?]{Recognizes directional light.}
+@defproc[(directional-light3d-id [light directional-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(directional-light3d-direction [light directional-light3d?]) vec3?]{Returns normalized travel direction.}
 @defproc[(directional-light3d-intensity [light directional-light3d?]) nonnegative-real?]{Returns directional intensity.}
 @defproc[(directional-light3d-color [light directional-light3d?]) rgba-color?]{Returns opaque directional colour.}
+@defproc[(directional-light3d-shadow [light directional-light3d?]) #f]{Returns reserved shadow policy.}
+@defproc[(point-light3d? [value any/c]) boolean?]{Recognizes a point light.}
+@defproc[(point-light3d-id [light point-light3d?]) symbol?]{Returns its stable ID.}
+@defproc[(point-light3d-position [light point-light3d?]) vec3?]{Returns position.}
+@defproc[(point-light3d-intensity [light point-light3d?]) nonnegative-real?]{Returns intensity.}
+@defproc[(point-light3d-color [light point-light3d?]) rgba-color?]{Returns opaque colour.}
+@defproc[(point-light3d-attenuation [light point-light3d?]) light-attenuation3d?]{Returns attenuation policy.}
+@defproc[(point-light3d-range [light point-light3d?]) (or/c #f positive-real?)]{Returns optional cutoff range.}
+@defproc[(point-light3d-shadow [light point-light3d?]) #f]{Returns reserved shadow policy.}
+@defproc[(spot-light3d? [value any/c]) boolean?]{Recognizes a spot light.}
+@defproc[(spot-light3d-id [light spot-light3d?]) symbol?]{Returns its stable ID.}
+@defproc[(spot-light3d-position [light spot-light3d?]) vec3?]{Returns position.}
+@defproc[(spot-light3d-direction [light spot-light3d?]) vec3?]{Returns normalized outward direction.}
+@defproc[(spot-light3d-intensity [light spot-light3d?]) nonnegative-real?]{Returns intensity.}
+@defproc[(spot-light3d-color [light spot-light3d?]) rgba-color?]{Returns opaque colour.}
+@defproc[(spot-light3d-inner-angle [light spot-light3d?]) nonnegative-real?]{Returns full-cone angle in radians.}
+@defproc[(spot-light3d-outer-angle [light spot-light3d?]) positive-real?]{Returns cutoff-cone angle in radians.}
+@defproc[(spot-light3d-attenuation [light spot-light3d?]) light-attenuation3d?]{Returns attenuation policy.}
+@defproc[(spot-light3d-range [light spot-light3d?]) (or/c #f positive-real?)]{Returns optional cutoff range.}
+@defproc[(spot-light3d-shadow [light spot-light3d?]) #f]{Returns reserved shadow policy.}
+@defproc[(light3d? [value any/c]) boolean?]{Recognizes any authored light.}
+@defproc[(light3d-id [light light3d?]) symbol?]{Returns its stable ID.}
+@defproc[(light3d-kind [light light3d?]) (or/c 'ambient 'directional 'point 'spot)]{Returns its kind.}
+@defproc[(light3d-color [light light3d?]) rgba-color?]{Returns opaque light colour.}
+@defproc[(light3d-intensity [light light3d?]) nonnegative-real?]{Returns intensity.}
+@defproc[(light3d-shadow [light light3d?]) #f]{Returns reserved shadow policy.}
+
+@defstruct*[light-attenuation3d ([mode (or/c 'constant 'inverse-square 'polynomial)]
+                                  [parameters immutable-hash?]) #:transparent]{
+An immutable, inspectable finite-light attenuation policy. The parameter hash
+uses the named schema selected by @racket[mode].}
+@defproc[(constant-attenuation3d [#:factor factor nonnegative-real? 1])
+         light-attenuation3d?]{Creates a distance-independent multiplier.}
+@defproc[(inverse-square-attenuation3d
+          [#:reference-distance reference-distance positive-real? 1]
+          [#:cutoff cutoff (or/c #f positive-real?) #f])
+         light-attenuation3d?]{Creates the finite rule
+@math{(r / max(d,r))^2}, optionally zeroing beyond @racket[cutoff]. The
+named reference distance explicitly clamps the otherwise singular origin.}
+@defproc[(polynomial-attenuation3d [#:constant constant nonnegative-real? 1]
+                                    [#:linear linear nonnegative-real? 0]
+                                    [#:quadratic quadratic nonnegative-real? 0]
+                                    [#:cutoff cutoff (or/c #f positive-real?) #f])
+         light-attenuation3d?]{Creates @math{1/(c + ld + qd^2)}. At least one
+coefficient must be positive.}
+@defproc[(light-attenuation3d-factor [attenuation light-attenuation3d?]
+                                      [distance nonnegative-real?])
+         nonnegative-real?]{Evaluates the named attenuation policy.}
+@defproc[(spot-smoothstep3d [progress finite-real?]) (and/c real? (between/c 0 1))]{
+Returns the clamped cubic @math{t^2(3-2t)} used for spotlight falloff.}
+@defproc[(spot-cone-factor3d [inner-angle nonnegative-real?]
+                              [outer-angle positive-real?]
+                              [angle nonnegative-real?])
+         (and/c real? (between/c 0 1))]{Evaluates the fixed spot cone rule.}
+
+@bold{Current limitation.} Point and spot lights are fully validated semantic
+values and participate in renderer capability preflight, but finite-light
+surface lighting arrives in V5. Current software and OpenGL renderers reject
+such a lit frame before preparation rather than approximating it as a
+directional light.
 
 @subsection{Colour space and final output}
 
@@ -1095,7 +1187,7 @@ Returns immutable inward-facing near, far, left, right, bottom, and top planes.}
                   [#:scale scale (or/c positive-real? vec2?) 1]
                   [#:opacity opacity (and/c real? (between/c 0 1)) 1]
                   [#:camera camera camera3d? (perspective-camera3d)]
-                  [#:lights lights (listof (or/c ambient-light3d? directional-light3d?)) null]
+                  [#:lights lights (listof light3d?) null]
                   [#:background background any/c "white"]
                   [#:tone-map tone-map tone-map3d? default-tone-map3d]
                   [#:render-mode render-mode (or/c 'wireframe 'opaque) 'wireframe]
@@ -1108,7 +1200,9 @@ ordinary Visuals. @racket['wireframe] retains the initial clipped-edge adapter.
 @racket['opaque] uses a deterministic software triangle renderer: six-plane
 frustum clipping, CCW front-face culling (unless a material is double-sided),
 pixel-centre rasterization, and a z-buffer. An empty @racket[lights] list uses
-a deterministic ambient-plus-directional default.
+a deterministic ambient-plus-directional default. Every explicit light ID must
+be distinct. Lights live in the view's immutable frame state, not in its
+spatial tree.
 When material or effective spatial opacity is below one, transparent triangles
 are composited after the opaque depth-writing pass using the selected explicit
 sorting mode.
@@ -1120,6 +1214,13 @@ containing a spatial tree.}
 @defproc[(view3d-height [view view3d?]) positive-real?]{Returns local 2D viewport height.}
 @defproc[(view3d-camera [view view3d?]) camera3d?]{Returns the spatial camera.}
 @defproc[(view3d-lights [view view3d?]) list?]{Returns immutable light declarations.}
+@defproc[(view3d-light-ref [view view3d?] [id symbol?]) light3d?]{Returns the
+unique authored light with @racket[id].}
+@defproc[(view3d-light-replace [view view3d?] [id symbol?] [replacement light3d?]) view3d?]{
+Returns a view with one light replaced. @racket[replacement] must retain
+@racket[id].}
+@defproc[(view3d-light-update [view view3d?] [id symbol?] [update procedure?]) view3d?]{
+Applies an immutable same-ID update to one authored light.}
 @defproc[(view3d-background [view view3d?]) any/c]{Returns the opaque viewport background.}
 @defproc[(view3d-tone-map [view view3d?]) tone-map3d?]{Returns the immutable
 linear-light final output policy.}

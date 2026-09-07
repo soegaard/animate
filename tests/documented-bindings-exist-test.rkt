@@ -56,7 +56,13 @@
                          material3d-emission-strength material3d-casts-shadow?
                          material3d-receives-shadow? material3d-with-color
                          material3d-with-roughness material3d-with-emission
-                         material3d-with-shadow-policy directional-light3d
+                         material3d-with-shadow-policy
+                         light-attenuation3d constant-attenuation3d
+                         inverse-square-attenuation3d polynomial-attenuation3d
+                         light-attenuation3d-factor spot-smoothstep3d spot-cone-factor3d
+                         ambient-light3d directional-light3d point-light3d spot-light3d
+                         light3d? light3d-id light3d-kind light3d-color
+                         light3d-intensity light3d-shadow
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color
                          stroke3d stroke3d? stroke3d-color stroke3d-width

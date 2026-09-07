@@ -2,6 +2,15 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V3's immutable, stable light model. Ambient, directional,
+  point, and spot lights each have a required-unique symbolic identity,
+  generic inspection accessors, declared future shadow policy, and immutable
+  `view3d` lookup/replacement/update operations. Point/spot values carry
+  named attenuation and the specified smoothstep cone calculation. Current
+  renderers deliberately reject finite lights during capability preflight;
+  their physical evaluation arrives in V5 rather than being approximated as
+  directional lighting.
+
 - Added SCENE-3D-V2's explicit cross-backend colour contract. Semantic input
   colours remain sRGB, while mesh lighting, transparent composition, strokes,
   markers, and billboards use linear RGB; alpha remains linear. A view owns an

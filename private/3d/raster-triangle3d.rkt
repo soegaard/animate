@@ -257,7 +257,7 @@
                                (* (material3d-ambient material)
                                   (ambient-light3d-intensity light))))
             (values red green blue specular-red specular-green specular-blue)]
-           [else
+           [(directional-light3d? light)
             (define light-direction (vec3-scale -1 (directional-light3d-direction light)))
             (define facing (max 0 (vec3-dot normal light-direction)))
             (define-values (red green blue)
@@ -279,7 +279,12 @@
             (define-values (spec-red spec-green spec-blue)
               (add-light-color specular-red specular-green specular-blue
                                (directional-light3d-color light) specular-amount))
-            (values red green blue spec-red spec-green spec-blue)])))
+            (values red green blue spec-red spec-green spec-blue)]
+           [else
+            (raise-arguments-error
+             'raster-triangle3d!
+             "ambient or directional light values until finite-light evaluation arrives in V5"
+             "light" light)])))
      (define specular-color (material3d-specular-color material))
      (define linear-specular-color (rgba-srgb->linear specular-color))
      (with-emission

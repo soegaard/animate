@@ -133,6 +133,12 @@
   (unless (andmap light3d? lights)
     (raise-arguments-error 'prepare-compiled-view3d-opaque "a list of light3d? values"
                            "lights" lights))
+  (when (ormap (lambda (light) (or (point-light3d? light) (spot-light3d? light)))
+               lights)
+    (raise-arguments-error
+     'prepare-compiled-view3d-opaque
+     "ambient and directional lights until finite-light evaluation arrives in V5"
+     "lights" lights))
   ;; Raster triangles carry camera-local positions.  Rotate normals and
   ;; directional light travel vectors into that same space once per prepared
   ;; frame, so Blinn--Phong is invariant under camera motion.
@@ -624,13 +630,18 @@
 
 (define (lights->view-space camera lights)
   (for/list ([light (in-list lights)])
-    (cond [(ambient-light3d? light) light]
-          [else
+    (cond [(or (ambient-light3d? light) (point-light3d? light) (spot-light3d? light))
+           light]
+          [(directional-light3d? light)
            (directional-light3d
             (vec3-normalize
              (world-vector->view camera (directional-light3d-direction light)))
+            #:id (directional-light3d-id light)
             #:intensity (directional-light3d-intensity light)
-            #:color (directional-light3d-color light))])))
+            #:color (directional-light3d-color light)
+            #:shadow (directional-light3d-shadow light))]
+          [else
+           (raise-argument-error 'lights->view-space "light3d?" light)])))
 
 (define (order-transparent-triangles triangles mode)
   (define (farther? first-triangle second-triangle)
