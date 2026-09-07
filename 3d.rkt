@@ -29,6 +29,7 @@
          "private/3d/mesh3d.rkt"
          "private/3d/geometry-fingerprint3d.rkt"
          "private/3d/mesh-topology3d.rkt"
+         "private/3d/polyhedral-complex3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -346,6 +347,18 @@
  mesh3d-boundary-count
  mesh3d-component-invariants
  mesh3d-genus
+ (struct-out polyhedral-plane3d)
+ (struct-out polyhedral-source-face-id3d)
+ (struct-out polyhedral-face-declaration3d)
+ (struct-out polyhedral-face3d)
+ polyhedral-complex3d?
+ polyhedral-complex3d-mesh
+ polyhedral-complex3d-topology
+ polyhedral-complex3d-faces
+ polyhedral-complex3d-edge-to-faces
+ polyhedral-complex3d-vertex-to-faces
+ polyhedral-complex3d-diagnostics
+ polyhedral-complex3d
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d

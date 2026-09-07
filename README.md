@@ -75,6 +75,11 @@ SCENE-3D-U1 adds immutable deterministic half-edge topology on those indexed
 meshes. It exposes edge-connected components, boundary graphs, adjacency,
 manifold/orientability checks, and explicit Euler/genus reports; malformed
 topology is diagnosed rather than repaired or assigned a guessed genus.
+SCENE-3D-U2 lifts those render triangles into immutable mathematical polygonal
+faces: authors may declare a face partition, retain individual triangles, or
+merge edge-connected transformed coplanar regions. The result preserves source
+provenance and reports holes or branching boundaries instead of inventing a
+simple polygon; duals, nets, and face-transform animation come later.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric

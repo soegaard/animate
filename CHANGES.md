@@ -15,6 +15,12 @@
   Euler/boundary/genus reports. The cached structural skeleton is geometry-keyed
   while each query overlays its own semantic part IDs; nonmanifold or
   nonorientable inputs produce diagnostics rather than guessed genus values.
+- Added SCENE-3D-U2's immutable polygonal-face complex. It can preserve render
+  triangles, use an explicit triangle partition, or deterministically merge
+  edge-connected transformed coplanar triangles. Generated face IDs expose
+  their least source triangle; explicit IDs win. Regions with holes, branches,
+  or repeated boundary vertices remain diagnosed rather than being fabricated
+  into simple polygons.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

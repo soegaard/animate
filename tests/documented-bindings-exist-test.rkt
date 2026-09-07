@@ -44,6 +44,10 @@
                          mesh3d-topology mesh-topology3d-manifold? mesh-topology3d-closed?
                          mesh-topology3d-orientable? mesh3d-euler-characteristic
                          mesh3d-boundary-count mesh3d-component-invariants mesh3d-genus
+                         polyhedral-complex3d polyhedral-complex3d?
+                         polyhedral-complex3d-mesh polyhedral-complex3d-topology
+                         polyhedral-complex3d-faces polyhedral-complex3d-edge-to-faces
+                         polyhedral-complex3d-vertex-to-faces polyhedral-complex3d-diagnostics
                          material3d directional-light3d
                          tube3d tube-style3d tube-style3d? tube-style3d-radius
                          tube-style3d-sides tube-style3d-color
