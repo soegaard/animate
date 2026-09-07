@@ -1766,6 +1766,33 @@ acceptance-ordered deterministic Bridson-style Poisson set. It uses a local
 SplitMix64 generator, FIFO active points, thirty candidates per active point,
 and inclusive box/minimum-distance checks; it neither reads nor mutates the
 process-global pseudo-random generator.}
+@defproc[(prepared-streamline-set3d? [value any/c]) boolean?]{Recognizes an
+immutable collection prepared from one @racket[seed-set3d?]. Its accessors
+begin with @tt{prepared-streamline-set3d-}; @tt{streamlines} is an immutable
+vector of accepted @racket[prepared-streamline3d?] values in seed declaration
+order.}
+@defproc[(prepare-streamlines3d
+          [field any/c] [seeds seed-set3d?]
+          [#:direction direction (or/c 'forward 'backward 'both) 'forward]
+          [#:parameterization parameterization (or/c 'time 'arc-length) 'time]
+          [#:solver solver any/c (adaptive-rk45-solver3d)]
+          [#:termination termination (or/c false/c trajectory-termination3d?) #f]
+          [#:sample-policy sample-policy streamline-sample-policy3d?
+                           (streamline-sample-policy3d)]
+          [#:separation separation (or/c false/c positive?) #f]
+          [#:parallel? parallel? boolean? #t]) prepared-streamline-set3d?]{Prepares
+one immutable streamline per accepted seed. When @racket[separation] is false,
+the result is independent and canonical in seed order. A positive separation
+processes seeds in that order, rejects a seed already too near an accepted
+line, and makes a later candidate stop at a terminal separation event. The
+set diagnostic reports accepted/rejected seeds, terminal reasons, field work,
+curve samples, the policy separation, discarded short lines, and whether the
+set was independent, serial, or ordered by separation.}
+@defproc[(adaptive-streamline-set3d [prepared prepared-streamline-set3d?]
+                                    [#:id id symbol?]
+                                    [#:style style any/c]
+                                    [#:opacity opacity real? 1]) group3d?]{Lowers
+all accepted prepared lines to ordinary named curve children.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
@@ -1824,10 +1851,12 @@ not infer seeding topology from a field. Curve @racket['parameter] spacing is
 the stored polyline sample index rather than a source-function parameter,
 surface sets require a retained parametric evaluator/range, and Poisson's
 floating geometric candidates are repeatable rather than a mathematical
-blue-noise certificate. T4 still has one independent prepared streamline at a
-time: separated/parallel streamline sets, Poincare sections, equilibrium/
-flow-map analysis, and certified arc-length integration are later
-SCENE-3D-T slices.
+blue-noise certificate. Streamline separation uses display-sample segments and
+a cell hash, so it is an explicit finite geometric policy rather than a proof
+about the continuous ODE. Independent sets retain canonical order but this
+pure layer does not concurrently call arbitrary author field procedures.
+Poincare sections, equilibrium/flow-map analysis, and certified arc-length
+integration are later SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)

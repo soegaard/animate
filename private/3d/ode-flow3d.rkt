@@ -162,6 +162,23 @@
          surface-seeds3d
          sphere-seeds3d
          poisson-seeds3d
+         prepared-streamline-set3d?
+         prepared-streamline-set3d-seeds
+         prepared-streamline-set3d-streamlines
+         prepared-streamline-set3d-diagnostics
+         prepared-streamline-set3d-spatial-index
+         streamline-set-diagnostics3d?
+         streamline-set-diagnostics3d-seed-count
+         streamline-set-diagnostics3d-accepted-seed-count
+         streamline-set-diagnostics3d-rejected-seed-count
+         streamline-set-diagnostics3d-termination-reasons
+         streamline-set-diagnostics3d-field-evaluations
+         streamline-set-diagnostics3d-total-curve-samples
+         streamline-set-diagnostics3d-minimum-separation
+         streamline-set-diagnostics3d-discarded-short-lines
+         streamline-set-diagnostics3d-parallel-mode
+         prepare-streamlines3d
+         adaptive-streamline-set3d
          vector-field3d
          streamline3d
          streamlines3d
@@ -2011,6 +2028,230 @@
   (if (< (vector-length samples) 2)
       (group3d '() #:id id)
       (polyline3d (vector->list samples) #:id id #:style style #:opacity opacity)))
+
+;; T-3's set layer retains a seed value, accepted immutable paths, and a
+;; deterministic spatial hash separately from its eventual curve Visuals.
+;; The hash is only an acceleration structure for separation tests: values are
+;; inserted and queried in canonical seed/segment order, never enumerated.
+(struct streamline-index-segment3d (start end owner) #:transparent)
+(struct streamline-spatial-index3d
+  (cell-size cells segment-count)
+  #:transparent)
+(struct streamline-set-diagnostics3d
+  (seed-count accepted-seed-count rejected-seed-count termination-reasons
+              field-evaluations total-curve-samples minimum-separation
+              discarded-short-lines parallel-mode)
+  #:transparent)
+(struct prepared-streamline-set3d-value
+  (seeds streamlines diagnostics spatial-index)
+  #:transparent)
+
+(define prepared-streamline-set3d? prepared-streamline-set3d-value?)
+(define (check-prepared-streamline-set3d who value)
+  (unless (prepared-streamline-set3d? value)
+    (raise-argument-error who "prepared-streamline-set3d?" value)))
+(define (prepared-streamline-set3d-seeds value)
+  (check-prepared-streamline-set3d 'prepared-streamline-set3d-seeds value)
+  (prepared-streamline-set3d-value-seeds value))
+(define (prepared-streamline-set3d-streamlines value)
+  (check-prepared-streamline-set3d 'prepared-streamline-set3d-streamlines value)
+  (prepared-streamline-set3d-value-streamlines value))
+(define (prepared-streamline-set3d-diagnostics value)
+  (check-prepared-streamline-set3d 'prepared-streamline-set3d-diagnostics value)
+  (prepared-streamline-set3d-value-diagnostics value))
+(define (prepared-streamline-set3d-spatial-index value)
+  (check-prepared-streamline-set3d 'prepared-streamline-set3d-spatial-index value)
+  (prepared-streamline-set3d-value-spatial-index value))
+
+(define (check-streamline-set-separation who separation)
+  (unless (or (not separation)
+              (and (finite-real? separation) (positive? separation)))
+    (raise-argument-error who "#f or positive finite separation" separation)))
+
+(define (streamline-spatial-index3d-empty separation)
+  (streamline-spatial-index3d separation (hash) 0))
+
+(define (streamline-index-cell3d index point)
+  (define cell-size (streamline-spatial-index3d-cell-size index))
+  (define (coordinate value)
+    (inexact->exact (floor (/ value cell-size))))
+  (vector (coordinate (vec3-x point))
+          (coordinate (vec3-y point))
+          (coordinate (vec3-z point))))
+
+(define (streamline-index-cells-between3d index first last)
+  (define first-cell (streamline-index-cell3d index first))
+  (define last-cell (streamline-index-cell3d index last))
+  (for*/list ([x (in-range (min (vector-ref first-cell 0) (vector-ref last-cell 0))
+                             (add1 (max (vector-ref first-cell 0) (vector-ref last-cell 0))))]
+              [y (in-range (min (vector-ref first-cell 1) (vector-ref last-cell 1))
+                             (add1 (max (vector-ref first-cell 1) (vector-ref last-cell 1))))]
+              [z (in-range (min (vector-ref first-cell 2) (vector-ref last-cell 2))
+                             (add1 (max (vector-ref first-cell 2) (vector-ref last-cell 2))))])
+    (vector x y z)))
+
+(define (streamline-spatial-index3d-add index samples owner)
+  (for/fold ([cells (streamline-spatial-index3d-cells index)]
+             [segment-count (streamline-spatial-index3d-segment-count index)])
+            ([sample-index (in-range 1 (vector-length samples))])
+    (define segment
+      (streamline-index-segment3d (vector-ref samples (sub1 sample-index))
+                                  (vector-ref samples sample-index) owner))
+    (values
+     (for/fold ([next-cells cells])
+               ([cell (in-list (streamline-index-cells-between3d
+                                index
+                                (streamline-index-segment3d-start segment)
+                                (streamline-index-segment3d-end segment)))])
+       (hash-set next-cells cell (cons segment (hash-ref next-cells cell '()))))
+     (add1 segment-count))))
+
+(define (streamline-spatial-index3d-add-streamline index line owner)
+  (define samples (prepared-streamline3d-curve-samples line))
+  (define-values (cells segment-count)
+    (streamline-spatial-index3d-add index samples owner))
+  (streamline-spatial-index3d (streamline-spatial-index3d-cell-size index)
+                              cells segment-count))
+
+(define (point-segment-distance3d point start end)
+  (define delta (vec3- end start))
+  (define magnitude-squared (vec3-dot delta delta))
+  (if (zero? magnitude-squared)
+      (vec3-distance point start)
+      (let* ([raw-progress (/ (vec3-dot (vec3- point start) delta)
+                              magnitude-squared)]
+             [progress (max 0 (min 1 raw-progress))])
+        (vec3-distance point (vec3-lerp start end progress)))))
+
+(define (streamline-spatial-index3d-nearest-distance index point)
+  (if (zero? (streamline-spatial-index3d-segment-count index))
+      +inf.0
+      (let ([cell (streamline-index-cell3d index point)])
+        (for*/fold ([nearest +inf.0])
+                   ([x (in-range (- (vector-ref cell 0) 1)
+                                 (+ (vector-ref cell 0) 2))]
+                    [y (in-range (- (vector-ref cell 1) 1)
+                                 (+ (vector-ref cell 1) 2))]
+                    [z (in-range (- (vector-ref cell 2) 1)
+                                 (+ (vector-ref cell 2) 2))]
+                    [segment (in-list
+                              (hash-ref (streamline-spatial-index3d-cells index)
+                                        (vector x y z) '()))])
+          (min nearest
+               (point-segment-distance3d point
+                                         (streamline-index-segment3d-start segment)
+                                         (streamline-index-segment3d-end segment)))))))
+
+(define (termination-with-streamline-separation3d termination index separation)
+  (define separation-event
+    (ode-event3d
+     #:id 'streamline-separation
+     #:function
+     (lambda (point)
+       (define distance (streamline-spatial-index3d-nearest-distance index point))
+       ;; The event protocol requires a finite scalar.  An empty nearby-cell
+       ;; query proves only that the candidate is farther than the policy
+       ;; radius, so a fixed positive value is the exact information needed.
+       (if (finite-real? distance) (- distance separation) separation))))
+  (trajectory-termination3d
+   #:time-limit (trajectory-termination3d-time-limit termination)
+   #:arc-length-limit (trajectory-termination3d-arc-length-limit termination)
+   #:bounds (trajectory-termination3d-bounds termination)
+   #:minimum-speed (trajectory-termination3d-minimum-speed termination)
+   #:maximum-steps (trajectory-termination3d-maximum-steps termination)
+   #:events (append (trajectory-termination3d-events termination)
+                    (list separation-event))
+   #:on-field-error (trajectory-termination3d-on-field-error termination)))
+
+(define (streamline-set-termination-reasons3d lines)
+  (apply append
+         (for/list ([line (in-list lines)])
+           (streamline-diagnostics3d-termination-reasons
+            (prepared-streamline3d-diagnostics line)))))
+
+;; prepare-streamlines3d : ode-field/procedure seed-set3d? ...
+;;                         -> prepared-streamline-set3d?
+;; Independent sets retain canonical seed order even when `#:parallel?` says
+;; they may be scheduled in parallel by a future prepared-work executor.  This
+;; pure implementation deliberately does not run arbitrary author procedures
+;; concurrently.  Separation is intentionally ordered because each accepted
+;; line becomes an event boundary for later candidates.
+(define (prepare-streamlines3d field seeds
+                               #:direction [direction 'forward]
+                               #:parameterization [parameterization 'time]
+                               #:solver [solver (adaptive-rk45-solver3d)]
+                               #:termination [termination #f]
+                               #:sample-policy [sample-policy (streamline-sample-policy3d)]
+                               #:separation [separation #f]
+                               #:parallel? [parallel? #t])
+  (define normalized-field (normalize-ode-field3d 'prepare-streamlines3d field))
+  (unless (seed-set3d? seeds)
+    (raise-argument-error 'prepare-streamlines3d "seed-set3d?" seeds))
+  (check-direction 'prepare-streamlines3d direction)
+  (check-streamline-parameterization 'prepare-streamlines3d parameterization)
+  (check-streamline-sample-policy3d 'prepare-streamlines3d sample-policy)
+  (check-streamline-set-separation 'prepare-streamlines3d separation)
+  (unless (boolean? parallel?)
+    (raise-argument-error 'prepare-streamlines3d "boolean? as #:parallel?" parallel?))
+  (define effective-termination
+    (normalize-streamline-termination3d 'prepare-streamlines3d termination))
+  (define seed-points (seed-set3d-points seeds))
+  (define initial-index
+    (and separation (streamline-spatial-index3d-empty separation)))
+  (define-values (accepted rejected discarded index)
+    (for/fold ([accepted '()] [rejected 0] [discarded 0] [index initial-index])
+              ([seed (in-vector seed-points)] [seed-index (in-naturals)])
+      (cond
+        [(and separation
+              (< (streamline-spatial-index3d-nearest-distance index seed) separation))
+         (values accepted (add1 rejected) discarded index)]
+        [else
+         (define candidate-termination
+           (if (and separation
+                    (positive? (streamline-spatial-index3d-segment-count index)))
+               (termination-with-streamline-separation3d effective-termination
+                                                        index separation)
+               effective-termination))
+         (define line
+           (prepare-streamline3d
+            normalized-field seed #:direction direction #:parameterization parameterization
+            #:solver solver #:termination candidate-termination
+            #:sample-policy sample-policy))
+         (if (< (vector-length (prepared-streamline3d-curve-samples line)) 2)
+             (values accepted (add1 rejected) (add1 discarded) index)
+             (values (append accepted (list line)) rejected discarded
+                     (if separation
+                         (streamline-spatial-index3d-add-streamline index line seed-index)
+                         index)))])))
+  (define diagnostics
+    (streamline-set-diagnostics3d
+     (vector-length seed-points) (length accepted) rejected
+     (streamline-set-termination-reasons3d accepted)
+     (for/sum ([line (in-list accepted)])
+       (streamline-diagnostics3d-field-evaluations
+        (prepared-streamline3d-diagnostics line)))
+     (for/sum ([line (in-list accepted)])
+       (streamline-diagnostics3d-curve-sample-count
+        (prepared-streamline3d-diagnostics line)))
+     separation discarded
+     (cond [separation 'ordered-separation]
+           [parallel? 'independent]
+           [else 'serial])))
+  (prepared-streamline-set3d-value
+   seeds (vector->immutable-vector (list->vector accepted)) diagnostics index))
+
+(define (adaptive-streamline-set3d prepared
+                                   #:id id
+                                   #:style [style (stroke3d #:color "royalblue" #:width 2)]
+                                   #:opacity [opacity 1])
+  (check-prepared-streamline-set3d 'adaptive-streamline-set3d prepared)
+  (check-symbol 'adaptive-streamline-set3d id)
+  (group3d
+   (for/list ([line (in-vector (prepared-streamline-set3d-streamlines prepared))]
+              [index (in-naturals)])
+     (adaptive-streamline3d line #:id (child-id3d id index)
+                            #:style style #:opacity opacity))
+   #:id id))
 
 ;; The old static spelling now routes through immutable preparation.  Its
 ;; familiar step and count keywords select a fixed solver and finite horizon.

@@ -32,15 +32,14 @@
                               #:maximum-segment-length 1/6
                               #:minimum-segment-length 1/4000))
 
-(define streamlines
-  (for/list ([seed (in-vector (seed-set3d-points seeds))])
-    (prepare-streamline3d
-     field seed #:direction 'both #:parameterization 'arc-length
-     #:solver (adaptive-rk45-solver3d #:relative-tolerance 1e-8
-                                     #:absolute-tolerance 1e-10
-                                     #:initial-step 1/10 #:maximum-step 1/5)
-     #:termination (trajectory-termination3d #:time-limit 5 #:arc-length-limit 4)
-     #:sample-policy sampling)))
+(define prepared-set
+  (prepare-streamlines3d
+   field seeds #:direction 'both #:parameterization 'arc-length
+   #:solver (adaptive-rk45-solver3d #:relative-tolerance 1e-8
+                                   #:absolute-tolerance 1e-10
+                                   #:initial-step 1/10 #:maximum-step 1/5)
+   #:termination (trajectory-termination3d #:time-limit 5 #:arc-length-limit 4)
+   #:sample-policy sampling #:parallel? #t))
 
 (define colors
   '("tomato" "goldenrod" "royalblue" "mediumseagreen" "orchid"
@@ -50,7 +49,8 @@
   (define world
     (view3d
      (append
-      (for/list ([line (in-list streamlines)] [color (in-list colors)]
+      (for/list ([line (in-vector (prepared-streamline-set3d-streamlines prepared-set))]
+                 [color (in-list colors)]
                  [index (in-naturals)])
         (adaptive-streamline3d line #:id (string->symbol (format "line-~a" index))
                                #:style (stroke3d #:color color #:width 3)))

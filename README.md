@@ -3036,8 +3036,10 @@ lose the follow-on idea that led to the work.
   estimate per dense segment, not a certified integral. Vector-field samples
   and immutable seed sets are explicit finite author data, not adaptive
   field-line topology; Poisson sets use a local explicit seed, not global
-  random state. There is still no prepared/adaptively separated streamline set,
-  Poincare section, equilibrium/flow-map analysis, or 3D ODE source inspection.
+  random state. Prepared streamline sets retain canonical seed order and can
+  use ordered display-sample separation; they do not yet run author fields in
+  parallel. There is still no Poincare section, equilibrium/flow-map analysis,
+  or 3D ODE source inspection.
   Spatial picking now uses object AABBs plus deterministic local BVHs to find
   an exact indexed mesh triangle from a camera ray. It includes generated curve
   and surface meshes, but not analytic implicit shapes, texture UVs,

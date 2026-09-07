@@ -93,6 +93,12 @@
   point order and serializable provenance/diagnostics. Poisson sampling owns a
   SplitMix64 source seeded by an explicit integer, so it never reads or changes
   Racket's process-global random generator.
+- Added immutable prepared streamline collections over those seed sets. They
+  preserve seed declaration order, retain set-wide diagnostics, and can use a
+  deterministic spatial-hash separation boundary against earlier accepted
+  lines. Separation intentionally makes preparation ordered; independent sets
+  remain canonical but this pure path does not concurrently invoke arbitrary
+  author field procedures.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
@@ -103,7 +109,7 @@ roots, but not isolated tangency detection. Arc-length limits use the same
 deterministic eight-chord estimate as general trajectory queries rather than a
 certified integral; low-speed termination checks accepted nodes and one
 midpoint per segment, without a configurable consecutive-check policy. It also
-lacks streamline-set preparation, separation policy, Poincare sections,
+lacks worker-parallel streamline preparation, Poincare sections,
 equilibrium/flow-map analysis, and certified arc-length integration. Adaptive implicit
 extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic

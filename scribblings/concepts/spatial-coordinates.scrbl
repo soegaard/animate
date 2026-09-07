@@ -25,7 +25,9 @@ curve lookup never call the author's ODE field. T2's arc-length stopping
 remains a deterministic approximation rather than a certified integral, and
 T3's unbounded-streamline fallback is an explicit finite eight-unit horizon.
 T4 adds immutable, canonically ordered seed sets and local-seed Poisson
-sampling, without field-aware or separated streamline-set preparation.
+sampling plus prepared streamline collections. Their optional separation policy
+is ordered against earlier display samples; independent field procedures are
+not yet run concurrently by this pure layer.
 SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].

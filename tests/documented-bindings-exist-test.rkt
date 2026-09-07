@@ -181,6 +181,21 @@
                          seed-set3d-provenance seed-set3d-diagnostics seed-set3d-cache-key
                          explicit-seeds3d grid-seeds3d plane-seeds3d curve-seeds3d
                          surface-seeds3d sphere-seeds3d poisson-seeds3d
+                         prepared-streamline-set3d? prepared-streamline-set3d-seeds
+                         prepared-streamline-set3d-streamlines
+                         prepared-streamline-set3d-diagnostics
+                         prepared-streamline-set3d-spatial-index
+                         streamline-set-diagnostics3d?
+                         streamline-set-diagnostics3d-seed-count
+                         streamline-set-diagnostics3d-accepted-seed-count
+                         streamline-set-diagnostics3d-rejected-seed-count
+                         streamline-set-diagnostics3d-termination-reasons
+                         streamline-set-diagnostics3d-field-evaluations
+                         streamline-set-diagnostics3d-total-curve-samples
+                         streamline-set-diagnostics3d-minimum-separation
+                         streamline-set-diagnostics3d-discarded-short-lines
+                         streamline-set-diagnostics3d-parallel-mode
+                         prepare-streamlines3d adaptive-streamline-set3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?
