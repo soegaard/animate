@@ -104,11 +104,14 @@ hinge tree rather than interpolating vertices. This first animation API needs
 those canonical identity-local-transform face meshes; arbitrary authored mesh
 trees, label/stroke attachment, and collision-free hinge sequencing remain
 later U work.
-SCENE-3D-U7 begins mesh correspondence planning. Explicit maps and semantic
-part IDs take priority; unchanged indexed topology and unique local topological
+SCENE-3D-U7 plans mesh correspondence. Explicit maps and semantic part IDs
+take priority; unchanged indexed topology and unique local topological
 signatures are then accepted. Symmetric candidates stay unmatched with a
-diagnostic instead of receiving an arbitrary pairing. Geometric fallback,
-spatial routes, and matching-transform clips remain later U work.
+diagnostic instead of receiving an arbitrary pairing. An explicit bounded
+geometric fallback can complete only still-unmatched parts using normalized
+local position, normals and valence; it records all accepted/rejected costs.
+It is not a graph-isomorphism proof. Spatial routes and matching-transform
+clips remain later U work.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric

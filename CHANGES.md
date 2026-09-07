@@ -52,6 +52,13 @@
   semantic IDs, unchanged indexed topology, and unique local topological
   signatures have distinct diagnostic reasons. Ambiguous signatures remain
   unmatched, and every authored map is checked to be injective.
+- Extended SCENE-3D-U7 with an explicit bounded geometric fallback. It only
+  assigns still-unmatched parts to unused destinations in a declared
+  local-normalized comparison frame, uses a deterministic Hungarian assignment,
+  preserves semantic/topological decisions already made, and reports accepted
+  costs plus threshold/capacity rejections. It is off by default and rejects
+  candidate sets beyond its stated bound instead of pretending to solve a
+  large-mesh correspondence problem.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

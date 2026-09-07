@@ -687,16 +687,33 @@ keyed by @racket['vertex], @racket['edge], and @racket['face].}
 @defproc[(prepare-mesh-correspondence3d [source mesh3d?] [destination mesh3d?]
                                         [#:vertex-map vertex-map (or/c #f vector?) #f]
                                         [#:edge-map edge-map (or/c #f vector?) #f]
-                                        [#:face-map face-map (or/c #f vector?) #f])
+                                        [#:face-map face-map (or/c #f vector?) #f]
+                                        [#:geometric-fallback? geometric-fallback? boolean? #f]
+                                        [#:geometric-frame geometric-frame 'local-normalized]
+                                        [#:geometric-limit geometric-limit exact-positive-integer? 64]
+                                        [#:maximum-geometric-cost maximum-geometric-cost
+                                                                 (or/c #f nonnegative-real?) #f])
          mesh-correspondence3d?]{Creates an injective correspondence plan.
 Priority is explicit author map, shared semantic part IDs, unchanged indexed
 topology, then a unique local topological signature. Symmetric signature
-classes are retained as ambiguity records rather than being paired arbitrarily.}
+classes are retained as ambiguity records rather than being paired arbitrarily.
 
-@bold{Limitations.} Geometric fallback, provenance-map matching, and matching
-transform clips are intentionally not implied by this planner. A plan that
-contains ambiguity or unmatched records requires an explicit map or a later
-opt-in geometric policy; it never silently morphs unrelated index arrays.
+Passing @racket[#:geometric-fallback? #t] explicitly permits a final bounded
+minimum-cost assignment only between still-unmatched source parts and unused
+destination parts. The current declared @racket['local-normalized] frame
+centres each mesh's local AABB and divides by its largest extent. The cost
+records normalized position, available normal agreement, local valence, and a
+penalty for unequal explicit semantic IDs. Its diagnostics retain the initial
+reason, candidate indexes, accepted pairs and their costs, and rejected pairs.
+@racket[#:maximum-geometric-cost] rejects an assigned pair above its threshold
+rather than treating it as a successful correspondence.}
+
+@bold{Limitations.} Geometric fallback is deliberately local-frame-only and
+bounded; it is not a graph-isomorphism proof, a provenance-map matcher, or a
+large-mesh nearest-neighbour service. Routes and matching-transform clips are
+not implied by this planner. A plan that still contains ambiguity or unmatched
+records requires an explicit map or a separate cross-fade; it never silently
+morphs unrelated index arrays.
 @defproc[(mesh3d-normals [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable normals.}
 @defproc[(mesh3d-colors [mesh mesh3d?]) (or/c #f vector?)]{Returns optional immutable colours.}
 @defproc[(mesh3d-material [mesh mesh3d?]) material3d?]{Returns the surface material.}
