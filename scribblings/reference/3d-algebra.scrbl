@@ -1936,6 +1936,17 @@ prepared samples to a two-sided ribbon mesh. Its normal frame uses discrete
 parallel transport, projected at every retained tangent. A closed-loop twist
 correction is intentionally not automatic: a finite display ribbon must not
 silently choose a loop-closing convention for its author.}
+@defproc[(trajectory-inspection3d [trajectory prepared-trajectory3d?]) immutable-hash?]{Returns
+a read-only report of retained solver diagnostics, termination, event hits, and
+arc length.}
+@defproc[(equilibrium-inspection3d [search equilibrium-search3d?]) immutable-hash?]{Returns
+the complete retained convergence report without hiding failed seed slots.}
+@defproc[(linearization-inspection3d [value linearization3d?]) immutable-hash?]{Returns
+the local Jacobian, eigendata, classification, and tolerance diagnostics.}
+@defproc[(flow-map-inspection3d [map prepared-flow-map3d?] [index exact-nonnegative-integer?])
+         immutable-hash?]{Returns one flow-map source/endpoint trajectory slot,
+including its absent-endpoint status when applicable. These inspection values
+do not mutate a Scene, selection, camera, or preview overlay.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]

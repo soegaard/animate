@@ -231,6 +231,8 @@
                          prepared-flow-map3d-trajectories prepared-flow-map3d-diagnostics
                          prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
                          trajectory-samples3d trajectory-tube3d trajectory-ribbon3d
+                         trajectory-inspection3d equilibrium-inspection3d
+                         linearization-inspection3d flow-map-inspection3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

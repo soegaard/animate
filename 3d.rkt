@@ -89,6 +89,7 @@
          "private/3d/linearization3d.rkt"
          "private/3d/flow-map3d.rkt"
          "private/3d/trajectory-visual3d.rkt"
+         "private/3d/dynamical-inspection3d.rkt"
          "private/3d/spatial-inspection.rkt"
          "private/3d/projection3d.rkt"
          "private/3d/camera3d.rkt"
@@ -606,6 +607,10 @@ cutaway3d
  trajectory-samples3d
  trajectory-tube3d
  trajectory-ribbon3d
+ trajectory-inspection3d
+ equilibrium-inspection3d
+ linearization-inspection3d
+ flow-map-inspection3d
  fixed-rk4-solver3d
  fixed-rk4-solver3d?
  fixed-rk4-solver3d-step-size
