@@ -73,6 +73,12 @@
   equal child IDs), morphs only independently compatible mesh pairs, and fades
   unmatched/incompatible children under interior-only identities. General
   group splitting and nested-tree retargeting remain intentionally unsupported.
+- Began SCENE-3D-U8's topology-aware picking data. Mesh inspections now retain
+  immutable Euler/boundary/manifold/orientability/component/genus diagnostics,
+  while an exact triangle pick carries semantic vertex and edge IDs, render
+  triangle and polygonal-face policy, connected component, and incident
+  boundary components. A raw `mesh3d` honestly reports each render triangle as
+  its polygonal face until a separate polygonal-complex mapping is attached.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

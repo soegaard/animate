@@ -7,7 +7,11 @@
   (define near
     (mesh3d #:id 'near
             #:vertices (vector (vec3 -1 -1 0) (vec3 1 -1 0) (vec3 0 1 0))
-            #:triangles (vector (vector 0 1 2))))
+            #:triangles (vector (vector 0 1 2))
+            #:edges (vector (vector 0 1) (vector 1 2) (vector 2 0))
+            #:vertex-ids '#(west east peak)
+            #:edge-ids '#(base right-side left-side)
+            #:face-ids '#(front)))
   (define far
     (mesh3d #:id 'far
             #:vertices (vector (vec3 -1 -1 -1) (vec3 1 -1 -1) (vec3 0 1 -1))
@@ -25,4 +29,24 @@
   (check-equal? (length (hash-ref (spatial-pick-metadata hit) 'world-triangle)) 3)
   (check-true
    (andmap vec3? (hash-ref (spatial-pick-metadata hit) 'world-triangle)))
+  (define pick-metadata (spatial-pick-metadata hit))
+  (check-equal? (hash-ref pick-metadata 'semantic-vertex-ids)
+                '#(west east peak))
+  (check-equal? (sort (vector->list (hash-ref pick-metadata 'semantic-edge-ids))
+                      symbol<?)
+                '(base left-side right-side))
+  (check-eq? (hash-ref pick-metadata 'render-triangle-id) 'front)
+  (check-eq? (hash-ref pick-metadata 'semantic-polygonal-face-id) 'front)
+  (check-eq? (hash-ref pick-metadata 'polygonal-face-policy) 'render-triangle)
+  (check-equal? (hash-ref pick-metadata 'connected-component) 0)
+  (check-equal? (hash-ref pick-metadata 'boundary-components) '#(0))
+  (define topology (hash-ref pick-metadata 'topology))
+  (check-equal? (hash-ref topology 'euler-characteristic) 1)
+  (check-equal? (hash-ref topology 'boundary-count) 1)
+  (check-true (hash-ref topology 'manifold?))
+  (check-true (hash-ref topology 'orientable?))
+  (check-equal? (hash-ref (spatial-inspection-metadata
+                            (spatial-pick-inspection hit))
+                          'topology)
+                topology)
   (check-false (view3d-pixel-pick world 0 0 #:width 200 #:height 200)))

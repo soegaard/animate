@@ -2710,6 +2710,17 @@ marks use the same prepared projected footprint and depth predicate as the
 renderer. Stroke metadata includes source segment index/progress, world point,
 view depth, pixel distance, and style. Ties are resolved by depth, drawing
 index, then authored triangle or source segment index.
+
+For a mesh triangle, metadata also carries immutable semantic and topological
+inspection data: @racket['semantic-vertex-ids], @racket['semantic-edge-ids],
+@racket['render-triangle-id], @racket['connected-component],
+@racket['boundary-components], and @racket['topology].  The latter records the
+Euler characteristic, boundary count, manifold/closed/orientable predicates,
+component invariants, genus report, and diagnostics.  The explicitly named
+@racket['semantic-polygonal-face-id] currently equals the render-triangle ID,
+with @racket['polygonal-face-policy] set to @racket['render-triangle]: a plain
+@racket[mesh3d] does not yet retain a separate polygonal-face-complex mapping.
+Inspection only reads immutable topology; it does not alter the Scene.
 }
 @defstruct*[surface-pick3d
             ([spatial-pick spatial-pick?]

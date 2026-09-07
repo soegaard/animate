@@ -28,6 +28,7 @@
          "parametric-surface3d.rkt"
          "ray-plane.rkt"
          "render-command3d.rkt"
+         "mesh-topology3d.rkt"
          "spatial-group.rkt"
          "spatial-visual.rkt"
          "stroke-raster3d.rkt"
@@ -128,11 +129,16 @@
                 ;; to the inspector result.  A preview can therefore explain
                 ;; an adaptive or implicit mesh without rerunning its author
                 ;; procedure or reverse engineering a renderer cache key.
+                (define with-topology
+                  (if mesh
+                      (hash-set base 'topology
+                                (mesh-topology-inspector-data mesh))
+                      base))
                 (cond
                   [(surface3d? object)
                    (hash-set
                     (hash-set
-                     (hash-set base 'surface-kind (surface3d-kind object))
+                     (hash-set with-topology 'surface-kind (surface3d-kind object))
                      'surface-topology-key
                      (surface-mesh3d-topology-key (surface3d-mesh object)))
                     'surface-diagnostics (surface3d-diagnostics object))]
@@ -140,7 +146,7 @@
                    (define image (billboard3d-image object))
                    (define style (billboard3d-style object))
                    (hash-set*
-                    base
+                    with-topology
                     'billboard-size (vector (billboard-style3d-width style)
                                             (billboard-style3d-height style))
                     'billboard-size-mode (billboard-style3d-size-mode style)
@@ -149,7 +155,7 @@
                     'billboard-image-pixels
                     (vector (billboard-image3d-width image)
                             (billboard-image3d-height image)))]
-                  [else base]))]
+                  [else with-topology]))]
              [inspection
               (spatial-inspection
                path (spatial-kind object) (spatial-transform object) world-transform
@@ -190,6 +196,65 @@
          (curve3d->mesh3d object)]
         [(surface3d? object) (surface3d->mesh3d object)]
         [else #f]))
+
+;; The inspection hash intentionally contains only immutable topology results;
+;; it never names an internal cache entry or renderer object.  Individual
+;; values are retained rather than flattened into prose so a GUI, a REPL, and
+;; a headless test can choose their own presentation without recomputation.
+(define (mesh-topology-inspector-data mesh)
+  (define topology (mesh3d-topology mesh))
+  (hasheq
+   'euler-characteristic (mesh3d-euler-characteristic topology)
+   'boundary-count (mesh3d-boundary-count topology)
+   'manifold? (mesh-topology3d-manifold? topology)
+   'closed? (mesh-topology3d-closed? topology)
+   'orientable? (mesh-topology3d-orientable? topology)
+   'components (mesh3d-component-invariants topology)
+   'genus (mesh3d-genus topology)
+   'diagnostics (mesh-topology3d-diagnostics topology)))
+
+;; Pick metadata bridges the renderer triangle to semantic topology.  A raw
+;; mesh has no separate U-2 polygonal-face declaration attached to it, so one
+;; render triangle is truthfully its polygonal face and the policy is explicit.
+;; Future spatial values that carry a polyhedral-complex mapping can replace
+;; that one field without altering pick geometry or the public pick record.
+(define (mesh-triangle-topology-metadata mesh triangle-index)
+  (define topology (mesh3d-topology mesh))
+  (define triangle (vector-ref (mesh3d-triangles mesh) triangle-index))
+  (define triangle-record
+    (vector-ref (mesh-topology3d-triangles topology) triangle-index))
+  (define edge-indices
+    (vector->immutable-vector
+     (for/vector ([halfedge-index
+                  (in-vector (mesh-triangle-topology3d-halfedges triangle-record))])
+       (mesh-halfedge3d-edge
+        (vector-ref (mesh-topology3d-halfedges topology) halfedge-index)))))
+  (define boundary-components
+    (vector->immutable-vector
+     (for/vector ([boundary (in-vector (mesh-topology3d-boundaries topology))]
+                  #:when
+                  (for/or ([edge-index (in-vector edge-indices)])
+                    (member edge-index
+                            (vector->list
+                             (mesh-boundary-component3d-edges boundary)))))
+       (mesh-boundary-component3d-index boundary))))
+  (define render-triangle-id (mesh3d-face-id mesh triangle-index))
+  (hasheq
+   'semantic-vertex-ids
+   (vector->immutable-vector
+    (for/vector ([vertex-index (in-vector triangle)])
+      (mesh3d-vertex-id mesh vertex-index)))
+   'semantic-edge-ids
+   (vector->immutable-vector
+    (for/vector ([edge-index (in-vector edge-indices)])
+      (mesh-edge-topology3d-id
+       (vector-ref (mesh-topology3d-edges topology) edge-index))))
+   'render-triangle-id render-triangle-id
+   'semantic-polygonal-face-id render-triangle-id
+   'polygonal-face-policy 'render-triangle
+   'connected-component (mesh-triangle-topology3d-component triangle-record)
+   'boundary-components boundary-components
+   'topology (mesh-topology-inspector-data mesh)))
 
 (define (spatial-kind object)
   (cond [(mesh3d? object) 'mesh]
@@ -635,6 +700,8 @@
              (vec3-normalize
               (linear3-apply-vector normal-transform
                                     (ray3-triangle-hit-normal local-hit))))
+           (define topology-metadata
+             (mesh-triangle-topology-metadata mesh triangle-index))
            (spatial-pick
             inspection
             (draw-mesh3d-command-path command)
@@ -646,16 +713,22 @@
             (ray3-triangle-hit-barycentric local-hit)
             normal
             world-ray
-            (hasheq 'kind 'mesh-triangle
-                    'material (draw-mesh3d-command-material command)
-                    'drawing-index (draw-mesh3d-command-drawing-index command)
-                    'command-opacity (draw-mesh3d-command-opacity command)
-                    ;; This is inspection data, not a new semantic mesh.  It
-                    ;; lets a preview draw the exact selected triangle without
-                    ;; reverse engineering it from a cached raster image.
-                    'world-triangle
-                    (for/list ([point (in-list points)])
-                      (affine3-apply-point world-transform point)))))]))
+            (hash-merge
+             (hasheq 'kind 'mesh-triangle
+                     'material (draw-mesh3d-command-material command)
+                     'drawing-index (draw-mesh3d-command-drawing-index command)
+                     'command-opacity (draw-mesh3d-command-opacity command)
+                     ;; This is inspection data, not a new semantic mesh.  It
+                     ;; lets a preview draw the exact selected triangle without
+                     ;; reverse engineering it from a cached raster image.
+                     'world-triangle
+                     (for/list ([point (in-list points)])
+                       (affine3-apply-point world-transform point)))
+             topology-metadata)))]))
+
+(define (hash-merge first second)
+  (for/fold ([merged first]) ([(key value) (in-hash second)])
+    (hash-set merged key value)))
 
 (define (pick-before? first second)
   (cond [(< (spatial-pick-distance first) (spatial-pick-distance second)) #t]
