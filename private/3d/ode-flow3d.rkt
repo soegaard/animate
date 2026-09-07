@@ -32,6 +32,7 @@
          "spatial-relation-context.rkt"
          "spatial-visual.rkt"
          "stroke3d.rkt"
+         "bounds3.rkt"
          "vec3.rkt"
          "view3d-visual.rkt")
 
@@ -66,6 +67,20 @@
          ode-event-hit3d-segment-index
          ode-event-hit3d-iterations
          ode-event-hit3d-provenance
+         trajectory-termination3d
+         trajectory-termination3d?
+         trajectory-termination3d-time-limit
+         trajectory-termination3d-arc-length-limit
+         trajectory-termination3d-bounds
+         trajectory-termination3d-minimum-speed
+         trajectory-termination3d-maximum-steps
+         trajectory-termination3d-events
+         trajectory-termination3d-on-field-error
+         trajectory-termination-hit3d?
+         trajectory-termination-hit3d-reason
+         trajectory-termination-hit3d-time
+         trajectory-termination-hit3d-position
+         trajectory-termination-hit3d-details
          prepared-trajectory3d?
          trajectory-segment3d?
          trajectory-segment3d-t0
@@ -83,6 +98,7 @@
          ode-trajectory3d-solver
          ode-trajectory3d-diagnostics
          ode-trajectory3d-event-hits
+         ode-trajectory3d-termination
          ode-trajectory3d-diagnostics?
          ode-trajectory3d-diagnostics-solver
          ode-trajectory3d-diagnostics-accepted-steps
@@ -252,10 +268,67 @@
   (event-id time position value direction segment-index iterations provenance)
   #:transparent)
 
+;; A termination policy is an immutable plan, separate from both the author
+;; field and the prepared result.  Time and arc limits apply independently on
+;; either side of the seed time when a requested range straddles zero.
+(struct trajectory-termination3d-value
+  (time-limit arc-length-limit bounds minimum-speed maximum-steps events on-field-error)
+  #:transparent)
+
+(define (trajectory-termination3d #:time-limit [time-limit #f]
+                                  #:arc-length-limit [arc-length-limit #f]
+                                  #:bounds [bounds #f]
+                                  #:minimum-speed [minimum-speed #f]
+                                  #:maximum-steps [maximum-steps 100000]
+                                  #:events [events '()]
+                                  #:on-field-error [on-field-error 'error])
+  (check-optional-nonnegative 'trajectory-termination3d "time-limit" time-limit)
+  (check-optional-nonnegative 'trajectory-termination3d "arc-length-limit" arc-length-limit)
+  (when bounds
+    (unless (and (aabb3? bounds) (not (aabb3-empty? bounds)))
+      (raise-argument-error 'trajectory-termination3d "nonempty aabb3? or #f as #:bounds"
+                            bounds)))
+  (check-optional-nonnegative 'trajectory-termination3d "minimum-speed" minimum-speed)
+  (check-positive-integer 'trajectory-termination3d "maximum-steps" maximum-steps)
+  (check-ode-events3d 'trajectory-termination3d events)
+  (unless (memq on-field-error '(error terminate))
+    (raise-argument-error 'trajectory-termination3d "'error or 'terminate as #:on-field-error"
+                          on-field-error))
+  (trajectory-termination3d-value time-limit arc-length-limit bounds minimum-speed
+                                  maximum-steps events on-field-error))
+
+(define (trajectory-termination3d? value) (trajectory-termination3d-value? value))
+(define (check-trajectory-termination3d who value)
+  (unless (trajectory-termination3d? value)
+    (raise-argument-error who "trajectory-termination3d?" value)))
+(define (trajectory-termination3d-time-limit value)
+  (check-trajectory-termination3d 'trajectory-termination3d-time-limit value)
+  (trajectory-termination3d-value-time-limit value))
+(define (trajectory-termination3d-arc-length-limit value)
+  (check-trajectory-termination3d 'trajectory-termination3d-arc-length-limit value)
+  (trajectory-termination3d-value-arc-length-limit value))
+(define (trajectory-termination3d-bounds value)
+  (check-trajectory-termination3d 'trajectory-termination3d-bounds value)
+  (trajectory-termination3d-value-bounds value))
+(define (trajectory-termination3d-minimum-speed value)
+  (check-trajectory-termination3d 'trajectory-termination3d-minimum-speed value)
+  (trajectory-termination3d-value-minimum-speed value))
+(define (trajectory-termination3d-maximum-steps value)
+  (check-trajectory-termination3d 'trajectory-termination3d-maximum-steps value)
+  (trajectory-termination3d-value-maximum-steps value))
+(define (trajectory-termination3d-events value)
+  (check-trajectory-termination3d 'trajectory-termination3d-events value)
+  (trajectory-termination3d-value-events value))
+(define (trajectory-termination3d-on-field-error value)
+  (check-trajectory-termination3d 'trajectory-termination3d-on-field-error value)
+  (trajectory-termination3d-value-on-field-error value))
+
+(struct trajectory-termination-hit3d (reason time position details) #:transparent)
+
 (struct prepared-trajectory-node3d (time position derivative) #:transparent)
 (struct trajectory-segment3d (t0 t1 p0 p1 d0 d1 arc-length bounds) #:transparent)
 (struct prepared-trajectory3d-value
-  (time-range solver nodes segments event-hits cumulative-arcs diagnostics source-key checkpoint-every)
+  (time-range solver nodes segments event-hits termination cumulative-arcs diagnostics source-key checkpoint-every)
   #:transparent)
 (struct dense-trajectory-diagnostics3d
   (solver field-evaluations accepted-steps rejected-steps termination-time
@@ -321,6 +394,12 @@
       (prepared-trajectory3d-value-event-hits trajectory)
       (vector)))
 
+(define (ode-trajectory3d-termination trajectory)
+  (check-trajectory3d 'ode-trajectory3d-termination trajectory)
+  (if (prepared-trajectory3d? trajectory)
+      (prepared-trajectory3d-value-termination trajectory)
+      (vector)))
+
 (define (ode-trajectory3d-diagnostics? value)
   (or (ode-trajectory3d-diagnostics-value? value)
       (dense-trajectory-diagnostics3d? value)))
@@ -377,6 +456,7 @@
 ;                            [#:checkpoint-every positive-exact-integer?]
 ;                            [#:solver (or/c #f adaptive-rk45?)]
 ;                            [#:events (listof ode-event3d?)]
+;                            [#:termination (or/c #f trajectory-termination3d?)]
 ;                            -> ode-trajectory3d?
 ;; Fields accept either (x y z) or (time x y z).  Preparation is the only
 ;; operation that creates a trajectory; all returned values are immutable and
@@ -386,17 +466,28 @@
                                   #:step-size [step-size 1/20]
                                   #:checkpoint-every [checkpoint-every 16]
                                   #:solver [solver #f]
-                                  #:events [events '()])
+                                  #:events [events '()]
+                                  #:termination [termination #f])
   (define normalized-field (normalize-ode-field3d 'prepare-ode-trajectory3d field))
   (check-vec3 'prepare-ode-trajectory3d seed)
   (check-positive 'prepare-ode-trajectory3d "step-size" step-size)
   (check-checkpoint-every 'prepare-ode-trajectory3d checkpoint-every)
-  (check-ode-events3d 'prepare-ode-trajectory3d events)
+  (define normalized-termination
+    (cond [(not termination) (trajectory-termination3d)]
+          [(trajectory-termination3d? termination) termination]
+          [else (raise-argument-error 'prepare-ode-trajectory3d
+                                      "#f or trajectory-termination3d? as #:termination"
+                                      termination)]))
+  (define all-events (append events (trajectory-termination3d-events normalized-termination)))
+  (check-ode-events3d 'prepare-ode-trajectory3d all-events)
   (define-values (start-time end-time)
     (check-time-range 'prepare-ode-trajectory3d time-range))
-  (prepare-dense-trajectory3d normalized-field seed start-time end-time
+  (define-values (limited-start limited-end start-time-limited? end-time-limited?)
+    (termination-time-range3d start-time end-time normalized-termination))
+  (prepare-dense-trajectory3d normalized-field seed limited-start limited-end
                               (normalize-solver3d 'prepare-ode-trajectory3d solver step-size)
-                              checkpoint-every events))
+                              checkpoint-every all-events normalized-termination
+                              (cons start-time-limited? end-time-limited?)))
 
 ; ode-trajectory3d-position : ode-trajectory3d? finite-real? -> vec3?
 ;; Every created trajectory resolves this through stored Hermite segments and
@@ -600,7 +691,11 @@
 ;; above while the public API transitions.  `prepare-ode-trajectory3d` now
 ;; always creates this representation; the older structs are no longer made.
 
-(struct dense-series-report3d (accepted rejected maximum-error steps) #:transparent)
+(struct dense-series-report3d
+  (accepted rejected maximum-error steps stop-reason stop-node stop-details)
+  #:transparent)
+
+(struct exn:fail:ode-field3d exn:fail:contract (time point) #:transparent)
 
 (define (normalize-ode-field3d who value)
   (cond [(ode-field3d? value) value]
@@ -615,24 +710,40 @@
         [else (raise-argument-error
                who "#f, fixed-rk4-solver3d?, adaptive-rk45-solver3d?, or adaptive-rk45?" value)]))
 
-(define (prepare-dense-trajectory3d field seed start-time end-time solver checkpoint-every events)
+(define (prepare-dense-trajectory3d field seed start-time end-time solver checkpoint-every
+                                    events termination time-limited?)
   (define evaluations (box 0))
   (define lower-target (min 0 start-time))
   (define upper-target (max 0 end-time))
   (define-values (backward backward-report)
-    (dense-integrate-series3d field seed 0 lower-target solver evaluations))
+    (dense-integrate-series3d field seed 0 lower-target solver evaluations termination))
   (define-values (forward forward-report)
-    (dense-integrate-series3d field seed 0 upper-target solver evaluations))
+    (dense-integrate-series3d field seed 0 upper-target solver evaluations termination))
   (define all-nodes (append (reverse (cdr backward)) forward))
+  (define available-start (prepared-trajectory-node3d-time (car all-nodes)))
+  (define available-end (prepared-trajectory-node3d-time (last all-nodes)))
+  ;; A max-step or field-error policy may leave only a proper prefix of a
+  ;; requested branch.  Clamp the requested data range to actual numerical
+  ;; data before any dense lookup is attempted.
+  (define unclamped-start (max start-time available-start))
+  (define unclamped-end (min end-time available-end))
+  (define-values (reachable-start reachable-end)
+    (if (<= unclamped-start unclamped-end)
+        (values unclamped-start unclamped-end)
+        (let ([endpoint (if (positive? start-time) available-end available-start)])
+          (values endpoint endpoint))))
   ;; Locate roots from the common dense representation.  The event procedure
   ;; is invoked only during preparation, while the field is never invoked for
   ;; root finding or later lookup.
-  (define requested-nodes (dense-clip-nodes3d all-nodes start-time end-time))
+  (define requested-nodes (dense-clip-nodes3d all-nodes reachable-start reachable-end))
   (define requested-segments (dense-make-segments3d requested-nodes))
   (define requested-hits
     (dense-event-hits3d events requested-nodes requested-segments))
-  (define-values (actual-start actual-end termination-reason)
-    (dense-terminal-range3d start-time end-time requested-hits events))
+  (define-values (actual-start actual-end termination-hits)
+    (dense-resolve-termination3d
+     reachable-start reachable-end requested-nodes requested-segments requested-hits
+     events termination time-limited?
+     (dense-series-termination-candidates3d backward-report forward-report)))
   ;; A terminal root is made an actual endpoint node, rather than merely a
   ;; sampled hit inside another segment.  That keeps subsequent lookup and
   ;; arc-length data canonical and frame-order independent.
@@ -651,98 +762,153 @@
   (define rejected (+ (dense-series-report3d-rejected backward-report)
                       (dense-series-report3d-rejected forward-report)))
   (prepared-trajectory3d-value
-   (cons actual-start actual-end) solver nodes segments event-hits cumulative
+   (cons actual-start actual-end) solver nodes segments event-hits termination-hits cumulative
    (dense-trajectory-diagnostics3d
-    solver (unbox evaluations) accepted rejected actual-end termination-reason
+    solver (unbox evaluations) accepted rejected
+    (if (positive? (vector-length termination-hits))
+        (trajectory-termination-hit3d-time (vector-ref termination-hits 0))
+        actual-end)
+    (if (positive? (vector-length termination-hits))
+        (trajectory-termination-hit3d-reason (vector-ref termination-hits 0))
+        'time-range)
     (max (dense-series-report3d-maximum-error backward-report)
          (dense-series-report3d-maximum-error forward-report))
     (vector-length segments) total (vector-length event-hits)
     (dense-event-warnings3d event-hits))
    (ode-field3d-cache-key field) checkpoint-every))
 
-(define (dense-integrate-series3d field seed start-time target-time solver evaluations)
-  (define initial
-    (prepared-trajectory-node3d start-time seed
-                                (call-field3d field start-time seed evaluations)))
-  (cond [(= start-time target-time)
-         (values (list initial) (dense-series-report3d 0 0 0 '()))]
-        [(fixed-rk4-solver3d? solver)
-         (dense-fixed-series3d field initial target-time
-                               (fixed-rk4-solver3d-step-size solver) evaluations)]
-        [else
-         (dense-adaptive-series3d field initial target-time
-                                  (adaptive-rk45-solver3d-settings solver) evaluations)]))
+(define (dense-initial-report3d reason node details)
+  (dense-series-report3d 0 0 0 '() reason node details))
 
-(define (dense-fixed-series3d field initial target-time step-size evaluations)
+(define (dense-integrate-series3d field seed start-time target-time solver evaluations termination)
+  (let/ec return
+    (define initial
+      (with-handlers
+          ([exn:fail:ode-field3d?
+            (lambda (exception)
+              (if (eq? (trajectory-termination3d-on-field-error termination) 'terminate)
+                  (return
+                   (values (list (prepared-trajectory-node3d start-time seed origin3))
+                           (dense-initial-report3d
+                            'field-error
+                            (prepared-trajectory-node3d start-time seed origin3)
+                            (list 'field-error (exn-message exception)))))
+                  (raise exception)))])
+        (prepared-trajectory-node3d start-time seed
+                                    (call-field3d field start-time seed evaluations))))
+    (cond [(= start-time target-time)
+           (values (list initial) (dense-initial-report3d 'time-range #f #f))]
+          [(fixed-rk4-solver3d? solver)
+           (dense-fixed-series3d field initial target-time
+                                 (fixed-rk4-solver3d-step-size solver) evaluations termination)]
+          [else
+           (dense-adaptive-series3d field initial target-time
+                                    (adaptive-rk45-solver3d-settings solver)
+                                    evaluations termination)])))
+
+(define (dense-fixed-series3d field initial target-time step-size evaluations termination)
   (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
   (let loop ([current initial] [reversed (list initial)] [steps '()])
     (define remaining (- target-time (prepared-trajectory-node3d-time current)))
-    (if (zero? remaining)
-        (values (reverse reversed)
-                (dense-series-report3d (length steps) 0 0 (reverse steps)))
-        (let* ([step (* direction (min step-size (abs remaining)))]
-               [next-time (+ (prepared-trajectory-node3d-time current) step)]
-               [next-position (dense-rk4-step3d field
-                                                 (prepared-trajectory-node3d-time current)
-                                                 (prepared-trajectory-node3d-position current)
-                                                 step evaluations)]
-               [next (prepared-trajectory-node3d
-                      next-time next-position
-                      (call-field3d field next-time next-position evaluations))])
-          (loop next (cons next reversed) (cons (abs step) steps))))))
+    (cond
+      [(zero? remaining)
+       (values (reverse reversed)
+               (dense-series-report3d (length steps) 0 0 (reverse steps)
+                                      'time-range #f #f))]
+      [(>= (length steps) (trajectory-termination3d-maximum-steps termination))
+       (values (reverse reversed)
+               (dense-series-report3d
+                (length steps) 0 0 (reverse steps) 'maximum-steps current
+                (list 'maximum-steps (trajectory-termination3d-maximum-steps termination))))]
+      [else
+       (with-handlers
+           ([exn:fail:ode-field3d?
+             (lambda (exception)
+               (if (eq? (trajectory-termination3d-on-field-error termination) 'terminate)
+                   (values (reverse reversed)
+                           (dense-series-report3d
+                            (length steps) 0 0 (reverse steps) 'field-error current
+                            (list 'field-error (exn-message exception))))
+                   (raise exception)))])
+         (define step (* direction (min step-size (abs remaining))))
+         (define next-time (+ (prepared-trajectory-node3d-time current) step))
+         (define next-position
+           (dense-rk4-step3d field
+                              (prepared-trajectory-node3d-time current)
+                              (prepared-trajectory-node3d-position current)
+                              step evaluations))
+         (define next
+           (prepared-trajectory-node3d
+            next-time next-position
+            (call-field3d field next-time next-position evaluations)))
+         (loop next (cons next reversed) (cons (abs step) steps)))])))
 
-(define (dense-adaptive-series3d field initial target-time solver evaluations)
+(define (dense-adaptive-series3d field initial target-time solver evaluations termination)
   (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
   (let loop ([current initial]
              [step (* direction (adaptive-rk45-initial-step solver))]
              [reversed (list initial)] [accepted 0] [rejected 0]
              [maximum-error 0] [steps '()])
-    (when (>= (+ accepted rejected) (adaptive-rk45-maximum-steps solver))
-      (raise-arguments-error
-       'prepare-ode-trajectory3d "adaptive solver exceeded maximum-steps"
-       "maximum-steps" (adaptive-rk45-maximum-steps solver)
-       "last-time" (prepared-trajectory-node3d-time current)
-       "target-time" target-time))
-    (define remaining (- target-time (prepared-trajectory-node3d-time current)))
-    (define trial-step
-      (* direction
-         (min (abs remaining) (adaptive-rk45-maximum-step solver)
-              (max (adaptive-rk45-minimum-step solver) (abs step)))))
-    (define-values (candidate endpoint-derivative error)
-      (ode-state-space-dormand-prince-step
-       vec3-ode-state-space
-       (lambda (field-time field-point)
-         (call-field3d field field-time field-point evaluations))
-       (prepared-trajectory-node3d-time current)
-       (prepared-trajectory-node3d-position current)
-       trial-step
-       (adaptive-rk45-relative-tolerance solver)
-       (adaptive-rk45-absolute-tolerance solver)))
-    (define next-maximum-error (max maximum-error error))
+    (define maximum-steps
+      (min (adaptive-rk45-maximum-steps solver)
+           (trajectory-termination3d-maximum-steps termination)))
     (cond
-      [(<= error 1)
-       (define next
-         (prepared-trajectory-node3d
-          (+ (prepared-trajectory-node3d-time current) trial-step)
-          candidate endpoint-derivative))
-       (if (= (prepared-trajectory-node3d-time next) target-time)
-           (values (reverse (cons next reversed))
-                   (dense-series-report3d (add1 accepted) rejected next-maximum-error
-                                          (reverse (cons (abs trial-step) steps))))
-           (loop next
-                 (* direction (adaptive-next-step-magnitude3d solver (abs trial-step) error))
-                 (cons next reversed) (add1 accepted) rejected next-maximum-error
-                 (cons (abs trial-step) steps)))]
+      [(>= (+ accepted rejected) maximum-steps)
+       (values (reverse reversed)
+               (dense-series-report3d
+                accepted rejected maximum-error (reverse steps) 'maximum-steps current
+                (list 'maximum-steps maximum-steps)))]
       [else
-       (when (<= (abs trial-step) (adaptive-rk45-minimum-step solver))
-         (raise-arguments-error
-          'prepare-ode-trajectory3d
-          "adaptive solver reached minimum-step before satisfying tolerance"
-          "minimum-step" (adaptive-rk45-minimum-step solver)
-          "error-ratio" error "time" (prepared-trajectory-node3d-time current)))
-       (loop current
-             (* direction (adaptive-rejected-step-magnitude3d solver (abs trial-step) error))
-             reversed accepted (add1 rejected) next-maximum-error steps)])))
+       (with-handlers
+           ([exn:fail:ode-field3d?
+             (lambda (exception)
+               (if (eq? (trajectory-termination3d-on-field-error termination) 'terminate)
+                   (values (reverse reversed)
+                           (dense-series-report3d
+                            accepted rejected maximum-error (reverse steps) 'field-error current
+                            (list 'field-error (exn-message exception))))
+                   (raise exception)))])
+         (define remaining (- target-time (prepared-trajectory-node3d-time current)))
+         (define trial-step
+           (* direction
+              (min (abs remaining) (adaptive-rk45-maximum-step solver)
+                   (max (adaptive-rk45-minimum-step solver) (abs step)))))
+         (define-values (candidate endpoint-derivative error)
+           (ode-state-space-dormand-prince-step
+            vec3-ode-state-space
+            (lambda (field-time field-point)
+              (call-field3d field field-time field-point evaluations))
+            (prepared-trajectory-node3d-time current)
+            (prepared-trajectory-node3d-position current)
+            trial-step
+            (adaptive-rk45-relative-tolerance solver)
+            (adaptive-rk45-absolute-tolerance solver)))
+         (define next-maximum-error (max maximum-error error))
+         (cond
+           [(<= error 1)
+            (define next
+              (prepared-trajectory-node3d
+               (+ (prepared-trajectory-node3d-time current) trial-step)
+               candidate endpoint-derivative))
+            (if (= (prepared-trajectory-node3d-time next) target-time)
+                (values (reverse (cons next reversed))
+                        (dense-series-report3d
+                         (add1 accepted) rejected next-maximum-error
+                         (reverse (cons (abs trial-step) steps)) 'time-range #f #f))
+                (loop next
+                      (* direction (adaptive-next-step-magnitude3d solver (abs trial-step) error))
+                      (cons next reversed) (add1 accepted) rejected next-maximum-error
+                      (cons (abs trial-step) steps)))]
+           [else
+            (when (<= (abs trial-step) (adaptive-rk45-minimum-step solver))
+              (raise-arguments-error
+               'prepare-ode-trajectory3d
+               "adaptive solver reached minimum-step before satisfying tolerance"
+               "minimum-step" (adaptive-rk45-minimum-step solver)
+               "error-ratio" error "time" (prepared-trajectory-node3d-time current)))
+            (loop current
+                  (* direction (adaptive-rejected-step-magnitude3d solver (abs trial-step) error))
+                  reversed accepted (add1 rejected) next-maximum-error steps)]))])))
 
 (define (dense-rk4-step3d field time point step evaluations)
   (ode-state-space-rk4-step
@@ -914,43 +1080,361 @@
                                          lower-value upper-value direction))]
              [else '()])))))]))
 
-(define (dense-terminal-range3d start-time end-time hits events)
+;; `dense-termination-candidate3d` is a private, serializable comparison value.
+;; The public result is the smaller `trajectory-termination-hit3d` record.
+(struct dense-termination-candidate3d (reason time position details priority)
+  #:transparent)
+
+(define (dense-termination-priority reason)
+  ;; The first four cases are the published tie order.  A time limit is a
+  ;; clipped request boundary, and low-speed is an accepted-node observation,
+  ;; so they follow the more geometrically precise exit conditions.
+  (case reason
+    [(field-error) 0]
+    [(terminal-event) 1]
+    [(bounds-exit) 2]
+    [(arc-length-limit) 3]
+    [(minimum-speed) 4]
+    [(maximum-steps) 5]
+    [(time-limit) 6]
+    [else 7]))
+
+(define (make-termination-candidate3d reason time position details)
+  (dense-termination-candidate3d reason time position details
+                                 (dense-termination-priority reason)))
+
+(define (dense-candidate->hit3d candidate)
+  (trajectory-termination-hit3d
+   (dense-termination-candidate3d-reason candidate)
+   (dense-termination-candidate3d-time candidate)
+   (dense-termination-candidate3d-position candidate)
+   (dense-termination-candidate3d-details candidate)))
+
+(define (dense-best-termination3d direction candidates)
+  (for/fold ([best #f]) ([candidate (in-list candidates)])
+    (cond
+      [(not best) candidate]
+      [(eq? direction 'forward)
+       (cond [(< (dense-termination-candidate3d-time candidate)
+                 (dense-termination-candidate3d-time best)) candidate]
+             [(and (= (dense-termination-candidate3d-time candidate)
+                       (dense-termination-candidate3d-time best))
+                    (< (dense-termination-candidate3d-priority candidate)
+                       (dense-termination-candidate3d-priority best))) candidate]
+             [else best])]
+      [else
+       (cond [(> (dense-termination-candidate3d-time candidate)
+                 (dense-termination-candidate3d-time best)) candidate]
+             [(and (= (dense-termination-candidate3d-time candidate)
+                       (dense-termination-candidate3d-time best))
+                    (< (dense-termination-candidate3d-priority candidate)
+                       (dense-termination-candidate3d-priority best))) candidate]
+             [else best])])))
+
+(define (dense-terminal-event-candidates3d events hits start-time anchor end-time)
   (define terminal-ids
     (for/list ([event (in-list events)] #:when (ode-event3d-terminal? event))
       (ode-event3d-id event)))
-  (define terminal-hits
-    (filter (lambda (hit) (memq (ode-event-hit3d-event-id hit) terminal-ids)) hits))
-  (define (minimum-time-hit candidates)
-    (and (pair? candidates) (car candidates)))
-  (define (maximum-time-hit candidates)
-    ;; Keep the first declaration at an equal time; the hit list is already
-    ;; increasing-time, declaration-order deterministic.
-    (for/fold ([best #f]) ([candidate (in-list candidates)])
-      (if (or (not best) (> (ode-event-hit3d-time candidate)
-                             (ode-event-hit3d-time best)))
-          candidate best)))
+  (for/list ([hit (in-list hits)]
+             #:when (and (memq (ode-event-hit3d-event-id hit) terminal-ids)
+                         (<= start-time (ode-event-hit3d-time hit) end-time)))
+    (make-termination-candidate3d
+     'terminal-event
+     (ode-event-hit3d-time hit)
+     (ode-event-hit3d-position hit)
+     (list 'event (ode-event-hit3d-event-id hit)
+           (ode-event-hit3d-direction hit)
+           (ode-event-hit3d-provenance hit)))))
+
+(define (dense-quadratic-roots-in-unit-interval3d a b c)
+  ;; Roots of a*u^2 + b*u + c.  They are used only to split a Hermite
+  ;; segment at coordinate extrema, so roots at the segment endpoints add no
+  ;; information and are discarded.
   (cond
-    [(null? terminal-hits) (values start-time end-time 'time-range)]
-    [(>= start-time 0)
-     (define forward (minimum-time-hit terminal-hits))
-     (if forward
-         (values start-time (min end-time (ode-event-hit3d-time forward)) 'terminal-event)
-         (values start-time end-time 'time-range))]
-    [(<= end-time 0)
-     (define backward (maximum-time-hit terminal-hits))
-     (if backward
-         (values (max start-time (ode-event-hit3d-time backward)) end-time 'terminal-event)
-         (values start-time end-time 'time-range))]
+    [(zero? a)
+     (if (zero? b)
+         '()
+         (let ([root (/ (- c) b)])
+           (if (< 0 root 1) (list root) '())))]
     [else
-     (define backward
-       (maximum-time-hit
-        (filter (lambda (hit) (<= (ode-event-hit3d-time hit) 0)) terminal-hits)))
-     (define forward
-       (minimum-time-hit
-        (filter (lambda (hit) (>= (ode-event-hit3d-time hit) 0)) terminal-hits)))
-     (values (if backward (max start-time (ode-event-hit3d-time backward)) start-time)
-             (if forward (min end-time (ode-event-hit3d-time forward)) end-time)
-             (if (or backward forward) 'terminal-event 'time-range))]))
+     (define discriminant (- (* b b) (* 4 a c)))
+     (if (negative? discriminant)
+         '()
+         (let* ([root-discriminant (sqrt discriminant)]
+                [denominator (* 2 a)]
+                [first (/ (+ (- b) root-discriminant) denominator)]
+                [second (/ (- (- b) root-discriminant) denominator)])
+           (remove-duplicates
+            (filter (lambda (root) (< 0 root 1)) (list first second)) =)))]))
+
+(define (dense-segment-coordinate-extrema3d segment coordinate)
+  ;; Each coordinate of a cubic Hermite segment is itself a cubic.  Splitting
+  ;; at all roots of its derivative gives intervals on which every coordinate
+  ;; is monotone, so an AABB exit cannot be hidden between two samples.
+  (define t0 (trajectory-segment3d-t0 segment))
+  (define step (- (trajectory-segment3d-t1 segment) t0))
+  (define p0 (coordinate (trajectory-segment3d-p0 segment)))
+  (define p1 (coordinate (trajectory-segment3d-p1 segment)))
+  (define d0 (coordinate (trajectory-segment3d-d0 segment)))
+  (define d1 (coordinate (trajectory-segment3d-d1 segment)))
+  (define cubic-a (+ (* 2 p0) (* -2 p1) (* step d0) (* step d1)))
+  (define cubic-b (+ (* -3 p0) (* 3 p1) (* -2 step d0) (* -1 step d1)))
+  (define cubic-c (* step d0))
+  (for/list ([u (in-list (dense-quadratic-roots-in-unit-interval3d
+                           (* 3 cubic-a) (* 2 cubic-b) cubic-c))])
+    (+ t0 (* u step))))
+
+(define (dense-sampled-times3d segments start-time end-time direction)
+  (define times
+    (append*
+     (for/list ([segment (in-vector segments)])
+       (define first (max start-time (trajectory-segment3d-t0 segment)))
+       (define last (min end-time (trajectory-segment3d-t1 segment)))
+       (if (> first last)
+           '()
+           (sort
+            (append (list first last)
+                    (filter (lambda (time) (< first time last))
+                            (append (dense-segment-coordinate-extrema3d segment vec3-x)
+                                    (dense-segment-coordinate-extrema3d segment vec3-y)
+                                    (dense-segment-coordinate-extrema3d segment vec3-z))))
+            <)))))
+  (define unique (remove-duplicates (sort times <) =))
+  (if (eq? direction 'forward) unique (reverse unique)))
+
+(define (dense-bounds-normal3d bounds point)
+  (define minimum (aabb3-minimum bounds))
+  (define maximum (aabb3-maximum bounds))
+  (define faces
+    (list (cons (abs (- (vec3-x point) (vec3-x minimum))) (vec3 -1 0 0))
+          (cons (abs (- (vec3-x point) (vec3-x maximum))) (vec3 1 0 0))
+          (cons (abs (- (vec3-y point) (vec3-y minimum))) (vec3 0 -1 0))
+          (cons (abs (- (vec3-y point) (vec3-y maximum))) (vec3 0 1 0))
+          (cons (abs (- (vec3-z point) (vec3-z minimum))) (vec3 0 0 -1))
+          (cons (abs (- (vec3-z point) (vec3-z maximum))) (vec3 0 0 1))))
+  (cdr (for/fold ([best (car faces)]) ([face (in-list (cdr faces))])
+         (if (< (car face) (car best)) face best))))
+
+(define (dense-bounds-face-normal-at3d bounds point)
+  ;; An accepted node can land exactly on a face.  Preserve that exact time
+  ;; instead of needlessly replacing it by a nearby bisection result; it also
+  ;; makes the documented terminal-event/bounds tie order observable.
+  (define minimum (aabb3-minimum bounds))
+  (define maximum (aabb3-maximum bounds))
+  (cond [(= (vec3-x point) (vec3-x minimum)) (vec3 -1 0 0)]
+        [(= (vec3-x point) (vec3-x maximum)) (vec3 1 0 0)]
+        [(= (vec3-y point) (vec3-y minimum)) (vec3 0 -1 0)]
+        [(= (vec3-y point) (vec3-y maximum)) (vec3 0 1 0)]
+        [(= (vec3-z point) (vec3-z minimum)) (vec3 0 0 -1)]
+        [(= (vec3-z point) (vec3-z maximum)) (vec3 0 0 1)]
+        [else #f]))
+
+(define (dense-bounds-face-point3d bounds point normal)
+  ;; Preserve the dense state on the two tangential axes, while representing
+  ;; the hit exactly on the reported AABB face.  This avoids a one-ulp
+  ;; "outside" endpoint after bisection.
+  (define minimum (aabb3-minimum bounds))
+  (define maximum (aabb3-maximum bounds))
+  (define (clamp coordinate lower upper)
+    (max lower (min upper coordinate)))
+  (define x (clamp (vec3-x point) (vec3-x minimum) (vec3-x maximum)))
+  (define y (clamp (vec3-y point) (vec3-y minimum) (vec3-y maximum)))
+  (define z (clamp (vec3-z point) (vec3-z minimum) (vec3-z maximum)))
+  (cond [(positive? (vec3-x normal)) (vec3 (vec3-x maximum) y z)]
+        [(negative? (vec3-x normal)) (vec3 (vec3-x minimum) y z)]
+        [(positive? (vec3-y normal)) (vec3 x (vec3-y maximum) z)]
+        [(negative? (vec3-y normal)) (vec3 x (vec3-y minimum) z)]
+        [(positive? (vec3-z normal)) (vec3 x y (vec3-z maximum))]
+        [else (vec3 x y (vec3-z minimum))]))
+
+(define (dense-bounds-exit-between3d bounds segment inside-time outside-time)
+  (let loop ([inside-time inside-time] [outside-time outside-time] [iterations 0])
+    (if (= iterations 48)
+        (let* ([dense-point (dense-segment-position3d segment outside-time)]
+               [normal (dense-bounds-normal3d bounds dense-point)]
+               [point (dense-bounds-face-point3d bounds dense-point normal)])
+          (make-termination-candidate3d
+           'bounds-exit outside-time point
+           (list 'face-normal normal 'dense-bisection)))
+        (let* ([middle (/ (+ inside-time outside-time) 2)]
+               [point (dense-segment-position3d segment middle)])
+          (if (aabb3-contains? bounds point)
+              (loop middle outside-time (add1 iterations))
+              (loop inside-time middle (add1 iterations)))))))
+
+(define (dense-bounds-exit3d bounds segments start-time end-time direction)
+  (and bounds
+       (let* ([times (dense-sampled-times3d segments start-time end-time direction)]
+              [first-time (and (pair? times) (car times))])
+         (cond
+           [(not first-time) #f]
+           [(not (aabb3-contains? bounds
+                                  (dense-segment-position3d
+                                   (vector-ref segments
+                                               (dense-segment-index-for-time3d segments first-time))
+                                   first-time)))
+            (define position
+              (dense-segment-position3d
+               (vector-ref segments (dense-segment-index-for-time3d segments first-time))
+               first-time))
+            (make-termination-candidate3d
+             'bounds-exit first-time position
+             (list 'initially-outside 'face-normal (dense-bounds-normal3d bounds position)))]
+           [else
+            (let loop ([previous-time first-time] [rest (cdr times)])
+              (cond [(null? rest) #f]
+                    [else
+                     (define next-time (car rest))
+                     (define segment
+                       (vector-ref segments
+                                   (dense-segment-index-for-time3d
+                                    segments (min previous-time next-time))))
+                     (define previous-position
+                       (dense-segment-position3d segment previous-time))
+                     (define next-position (dense-segment-position3d segment next-time))
+                     (if (aabb3-contains? bounds next-position)
+                         (loop next-time (cdr rest))
+                         (let ([normal (dense-bounds-face-normal-at3d bounds previous-position)])
+                           (if normal
+                               (make-termination-candidate3d
+                                'bounds-exit previous-time previous-position
+                                (list 'face-normal normal 'accepted-node))
+                               (dense-bounds-exit-between3d
+                                bounds segment previous-time next-time))))]))]))))
+
+(define (dense-arc-at3d segments cumulative time)
+  (if (zero? (vector-length segments))
+      0
+      (let ([index (dense-segment-index-for-time3d segments time)])
+        (+ (vector-ref cumulative index)
+           (dense-segment-arc-length-to3d (vector-ref segments index) time)))))
+
+(define (dense-arc-limit3d limit segments cumulative anchor target direction)
+  (if (not limit)
+      #f
+      (let ([total (abs (- (dense-arc-at3d segments cumulative target)
+                           (dense-arc-at3d segments cumulative anchor)))])
+        (if (<= total limit)
+            #f
+            (let loop ([near anchor] [far target] [iterations 48])
+              (if (zero? iterations)
+                  (make-termination-candidate3d
+                   'arc-length-limit far (dense-position-from3d #f segments far)
+                   (list 'arc-length limit 'dense-bisection))
+                  (let* ([middle (/ (+ near far) 2)]
+                         [length (abs (- (dense-arc-at3d segments cumulative middle)
+                                         (dense-arc-at3d segments cumulative anchor)))])
+                    (if (> length limit)
+                        (loop near middle (sub1 iterations))
+                        (loop middle far (sub1 iterations))))))))))
+
+(define (dense-low-speed3d minimum-speed nodes segments anchor target direction)
+  (and minimum-speed
+       (let* ([node-times
+               (for/list ([node (in-vector nodes)]
+                          #:when (<= (min anchor target)
+                                     (prepared-trajectory-node3d-time node)
+                                     (max anchor target)))
+                 (prepared-trajectory-node3d-time node))]
+              [midpoint-times
+               (for/list ([segment (in-vector segments)]
+                          #:do [(define middle
+                                   (/ (+ (trajectory-segment3d-t0 segment)
+                                         (trajectory-segment3d-t1 segment)) 2))]
+                          #:when (<= (min anchor target) middle (max anchor target)))
+                 middle)]
+              [times (sort (remove-duplicates (append (list anchor) node-times midpoint-times) =)
+                           <)])
+         (for/first ([time (in-list (if (eq? direction 'forward) times (reverse times)))]
+                   #:do [(define derivative (dense-derivative-from3d nodes segments time))]
+                   #:when (<= (vec3-length derivative) minimum-speed))
+         (make-termination-candidate3d
+          'minimum-speed time (dense-position-from3d nodes segments time)
+          (list 'speed (vec3-length derivative) 'threshold minimum-speed
+                'accepted-node-or-midpoint))))))
+
+(define (dense-series-termination-candidates3d backward-report forward-report)
+  (for/list ([report (in-list (list backward-report forward-report))]
+             #:when (and (dense-series-report3d-stop-node report)
+                         (not (eq? (dense-series-report3d-stop-reason report) 'time-range)))
+             #:do [(define node (dense-series-report3d-stop-node report))])
+    (make-termination-candidate3d
+     (dense-series-report3d-stop-reason report)
+     (prepared-trajectory-node3d-time node)
+     (prepared-trajectory-node3d-position node)
+     (dense-series-report3d-stop-details report))))
+
+(define (dense-resolve-termination3d start-time end-time nodes segments hits events
+                                     termination time-limited? series-candidates)
+  ;; `anchor` is the seed time when it lies in the requested interval, and the
+  ;; closest requested endpoint otherwise. This makes branch-wise termination
+  ;; well-defined for both ordinary forward paths and two-sided trajectories.
+  (define anchor (min end-time (max start-time 0)))
+  (define cumulative (dense-cumulative-arcs3d segments))
+  (define event-candidates
+    (dense-terminal-event-candidates3d events hits start-time anchor end-time))
+  (define (forward-candidates)
+    (append
+     (filter (lambda (candidate) (<= anchor (dense-termination-candidate3d-time candidate) end-time))
+             event-candidates)
+     (filter (lambda (candidate) (<= anchor (dense-termination-candidate3d-time candidate) end-time))
+             series-candidates)
+     (let ([candidate (dense-bounds-exit3d (trajectory-termination3d-bounds termination)
+                                            segments anchor end-time 'forward)])
+       (if candidate (list candidate) '()))
+     (let ([candidate (dense-arc-limit3d (trajectory-termination3d-arc-length-limit termination)
+                                          segments cumulative anchor end-time 'forward)])
+       (if candidate (list candidate) '()))
+     (let ([candidate (dense-low-speed3d (trajectory-termination3d-minimum-speed termination)
+                                          nodes segments anchor end-time 'forward)])
+       (if candidate (list candidate) '()))
+     (if (cdr time-limited?)
+         (list (make-termination-candidate3d
+                'time-limit end-time (dense-position-from3d nodes segments end-time)
+                (list 'time-limit (trajectory-termination3d-time-limit termination))))
+         '())))
+  (define (backward-candidates)
+    (append
+     (filter (lambda (candidate) (<= start-time (dense-termination-candidate3d-time candidate) anchor))
+             event-candidates)
+     (filter (lambda (candidate) (<= start-time (dense-termination-candidate3d-time candidate) anchor))
+             series-candidates)
+     (let ([candidate (dense-bounds-exit3d (trajectory-termination3d-bounds termination)
+                                            segments start-time anchor 'backward)])
+       (if candidate (list candidate) '()))
+     (let ([candidate (dense-arc-limit3d (trajectory-termination3d-arc-length-limit termination)
+                                          segments cumulative anchor start-time 'backward)])
+       (if candidate (list candidate) '()))
+     (let ([candidate (dense-low-speed3d (trajectory-termination3d-minimum-speed termination)
+                                          nodes segments anchor start-time 'backward)])
+       (if candidate (list candidate) '()))
+     (if (car time-limited?)
+         (list (make-termination-candidate3d
+                'time-limit start-time (dense-position-from3d nodes segments start-time)
+                (list 'time-limit (trajectory-termination3d-time-limit termination))))
+         '())))
+  (define forward (and (< anchor end-time)
+                       (dense-best-termination3d 'forward (forward-candidates))))
+  (define backward (and (< start-time anchor)
+                        (dense-best-termination3d 'backward (backward-candidates))))
+  (define actual-start (if backward (dense-termination-candidate3d-time backward) start-time))
+  (define actual-end (if forward (dense-termination-candidate3d-time forward) end-time))
+  ;; A requested interval that lies entirely beyond a time budget collapses
+  ;; to the boundary itself.  Neither integration branch has positive length
+  ;; in that case, but the policy must still be inspectable as the reason for
+  ;; the returned singleton trajectory.
+  (define degenerate-time-limit
+    (and (= start-time end-time)
+         (or (car time-limited?) (cdr time-limited?))
+         (make-termination-candidate3d
+          'time-limit start-time (dense-position-from3d nodes segments start-time)
+          (list 'time-limit (trajectory-termination3d-time-limit termination)))))
+  (define hit-list
+    (sort (filter values (list backward forward degenerate-time-limit))
+          < #:key dense-termination-candidate3d-time))
+  (values actual-start actual-end
+          (vector->immutable-vector
+           (list->vector (map dense-candidate->hit3d hit-list)))) )
 
 (define (dense-reindex-event-hits3d hits segments)
   (vector->immutable-vector
@@ -1498,9 +1982,10 @@
     (with-handlers
         ([exn:fail?
           (lambda (exception)
-            (raise-arguments-error
-             'prepare-ode-trajectory3d "the 3D ODE field raised an exception"
-             "point" point "exception message" (exn-message exception)))])
+            (raise-ode-field3d-error
+             time point
+             (format "the 3D ODE field raised an exception: ~a"
+                     (exn-message exception))))])
       (call-with-values
        (lambda ()
          (if (procedure-arity-includes? procedure 4)
@@ -1508,15 +1993,23 @@
              (procedure (vec3-x point) (vec3-y point) (vec3-z point))))
        list)))
   (unless (= (length results) 1)
-    (raise-arguments-error 'prepare-ode-trajectory3d
-                           "the 3D ODE field must return exactly one vec3"
-                           "point" point "result count" (length results)))
+    (raise-ode-field3d-error
+     time point
+     (format "the 3D ODE field must return exactly one vec3; result count: ~a"
+             (length results))))
   (define value (car results))
   (unless (vec3-finite? value)
-    (raise-arguments-error 'prepare-ode-trajectory3d
-                           "the 3D ODE field must return a finite vec3"
-                           "point" point "result" value))
+    (raise-ode-field3d-error
+     time point
+     (format "the 3D ODE field must return a finite vec3; result: ~e" value)))
   value)
+
+(define (raise-ode-field3d-error time point message)
+  (raise
+   (exn:fail:ode-field3d
+    (format "prepare-ode-trajectory3d: ~a\n  time: ~e\n  point: ~e"
+            message time point)
+    (current-continuation-marks) time point)))
 
 (define (whole-step-count time step-size)
   (inexact->exact (floor (/ (abs time) step-size))))
@@ -1546,6 +2039,21 @@
 (define (check-positive who name value)
   (unless (and (finite-real? value) (positive? value))
     (raise-arguments-error who "positive finite real" name value)))
+
+(define (check-optional-nonnegative who name value)
+  (when value
+    (unless (and (finite-real? value) (>= value 0))
+      (raise-arguments-error who "#f or nonnegative finite real" name value))))
+
+(define (termination-time-range3d start-time end-time termination)
+  (define limit (trajectory-termination3d-time-limit termination))
+  (if (not limit)
+      (values start-time end-time #f #f)
+      (let ([limited-start (max (- limit) (min limit start-time))]
+            [limited-end (max (- limit) (min limit end-time))])
+        (values limited-start limited-end
+                (not (= limited-start start-time))
+                (not (= limited-end end-time))))))
 
 (define (check-positive-integer who name value)
   (unless (exact-positive-integer? value)

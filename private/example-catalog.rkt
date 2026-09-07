@@ -123,9 +123,13 @@
     "examples/3d/prepared-lorenz-flow.rkt" 'make-demo-scene
     '(3d ode vector-fields trajectories camera animation) '(core) 3 6)
    (example-entry
-    'event-aware-trajectory "Event-aware trajectory"
+   'event-aware-trajectory "Event-aware trajectory"
     "examples/3d/event-aware-trajectory.rkt" 'make-demo-scene
     '(3d ode events terminal-roots trajectories camera animation) '(core) 5/2 5)
+   (example-entry
+    'trajectory-termination "Trajectory termination policies"
+    "examples/3d/trajectory-termination.rkt" 'make-demo-scene
+    '(3d ode termination bounds arc-length events trajectories camera animation) '(core) 5/2 5)
    (example-entry
    'spatial-inspector-picking "Exact spatial picking"
     "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene

@@ -122,6 +122,19 @@
                          ode-event-hit3d-position ode-event-hit3d-value ode-event-hit3d-direction
                          ode-event-hit3d-segment-index ode-event-hit3d-iterations
                          ode-event-hit3d-provenance
+                         trajectory-termination3d trajectory-termination3d?
+                         trajectory-termination3d-time-limit
+                         trajectory-termination3d-arc-length-limit
+                         trajectory-termination3d-bounds
+                         trajectory-termination3d-minimum-speed
+                         trajectory-termination3d-maximum-steps
+                         trajectory-termination3d-events
+                         trajectory-termination3d-on-field-error
+                         trajectory-termination-hit3d?
+                         trajectory-termination-hit3d-reason
+                         trajectory-termination-hit3d-time
+                         trajectory-termination-hit3d-position
+                         trajectory-termination-hit3d-details
                          trajectory-segment3d? trajectory-segment3d-t0 trajectory-segment3d-t1
                          trajectory-segment3d-p0 trajectory-segment3d-p1
                          trajectory-segment3d-d0 trajectory-segment3d-d1
@@ -129,6 +142,7 @@
                          ode-trajectory3d? ode-trajectory3d-time-range
                          ode-trajectory3d-step-size ode-trajectory3d-checkpoint-every
                          ode-trajectory3d-solver ode-trajectory3d-diagnostics ode-trajectory3d-event-hits
+                         ode-trajectory3d-termination
                          ode-trajectory3d-diagnostics-termination-reason
                          ode-trajectory3d-diagnostics-field-evaluations
                          ode-trajectory3d-diagnostics-dense-segment-count

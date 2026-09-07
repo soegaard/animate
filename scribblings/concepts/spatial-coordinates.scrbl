@@ -17,10 +17,12 @@ adds fixed-grid parametric/function surfaces with direct-time calculus helpers,
 SCENE-3D-I adds clipping, sections, and depth-aware transparency, and
 SCENE-3D-J adds direct-time linear, affine, pointwise, and homotopy maps.
 SCENE-3D-K adds immutable prepared 3D ODE trajectories plus deterministic
-static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1 refines
-that model into immutable dense trajectory and event-hit data: later position,
-tangent, arc-length, and terminal-root lookup never call the author's ODE
-field. SCENE-3D-L adds
+static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1/T2
+refines that model into immutable dense trajectory, event-hit, and explicit
+termination-policy data: later position, tangent, arc-length, terminal-root,
+and stopping-condition lookup never call the author's ODE field. T2's
+arc-length stopping remains a deterministic approximation rather than a
+certified integral. SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].
 SCENE-3D-M adds an effectful retained-renderer protocol behind that immutable

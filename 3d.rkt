@@ -604,6 +604,20 @@ cutaway3d
  ode-event-hit3d-segment-index
  ode-event-hit3d-iterations
  ode-event-hit3d-provenance
+ trajectory-termination3d
+ trajectory-termination3d?
+ trajectory-termination3d-time-limit
+ trajectory-termination3d-arc-length-limit
+ trajectory-termination3d-bounds
+ trajectory-termination3d-minimum-speed
+ trajectory-termination3d-maximum-steps
+ trajectory-termination3d-events
+ trajectory-termination3d-on-field-error
+ trajectory-termination-hit3d?
+ trajectory-termination-hit3d-reason
+ trajectory-termination-hit3d-time
+ trajectory-termination-hit3d-position
+ trajectory-termination-hit3d-details
  prepared-trajectory3d?
  trajectory-segment3d?
  trajectory-segment3d-t0
@@ -621,6 +635,7 @@ cutaway3d
  ode-trajectory3d-solver
  ode-trajectory3d-diagnostics
  ode-trajectory3d-event-hits
+ ode-trajectory3d-termination
  ode-trajectory3d-diagnostics?
  ode-trajectory3d-diagnostics-solver
  ode-trajectory3d-diagnostics-accepted-steps

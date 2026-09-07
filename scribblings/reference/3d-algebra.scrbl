@@ -1550,8 +1550,9 @@ The canonical acceptance scene is
 
 @section{Prepared spatial ODE trajectories and vector fields}
 
-SCENE-3D-T0/T1 turns the earlier direct-time flow support into an immutable
-trajectory-data model with event-aware preparation.
+SCENE-3D-T0/T1/T2 turns the earlier direct-time flow support into an immutable
+trajectory-data model with event-aware preparation and explicit stopping
+policies.
 @racket[prepare-ode-trajectory3d] records dense RK4 or Dormand--Prince
 segments once; subsequent position, tangent, arc-length, and event-hit lookup
 accepts any supported time in any order and never calls the author field. A
@@ -1568,6 +1569,18 @@ reported once. Event directions always mean increasing @italic{physical} time,
 including when the requested range runs backward. A terminal event becomes a
 canonical end node and shortens the relevant side of the returned range;
 nonterminal hits remain in the immutable hit vector.
+
+@racket[trajectory-termination3d] makes every other stopping condition
+explicit: a symmetric time budget about the seed, an AABB exit, an accumulated
+arc-length budget, a low-speed threshold, a maximum step count, policy-owned
+events, and a choice between reporting or tolerating an author-field failure.
+Preparation resolves a winning condition against the stored dense Hermite
+segments and records an immutable termination hit.  An AABB exit reports the
+outward face normal.  On one branch, simultaneous candidates are ordered as
+field failure, terminal event in declaration order, bounds exit, arc-length
+limit, low speed, maximum steps, then the requested time limit.  The returned
+range ends exactly at the selected dense point when that condition can be
+located inside a segment.
 
 @racket[flow-particle3d] is a semantic spatial relation. Before an image or
 preview worker resolves it, Animate samples its requested phase values into an
@@ -1598,11 +1611,13 @@ now; it no longer changes lookup cost.
           [#:step-size step-size (and/c finite-real? positive?) 1/20]
           [#:checkpoint-every checkpoint-every exact-positive-integer? 16]
           [#:solver solver any/c #f]
-          [#:events events list? '()])
+          [#:events events list? '()]
+          [#:termination termination (or/c false/c trajectory-termination3d?) #f])
          ode-trajectory3d?]{Prepares one immutable spatial trajectory over the
 closed range @racket[(cons start-time end-time)]. The seed is at time zero;
 the range may extend on either side of it. Terminal event hits may shorten
-that closed range.}
+that closed range. @racket[#:events] and policy-owned events form one
+declaration-ordered set whose identifiers must be distinct.}
 @defproc[(ode-field3d [procedure procedure?]
                        [#:cache-key cache-key any/c #f]
                        [#:autonomous? autonomous? boolean? #t]) any/c]{
@@ -1636,6 +1651,27 @@ the procedure.}
 prepared event-hit record. Its accessors begin with
 @tt{ode-event-hit3d-}, including @tt{ode-event-hit3d-time},
 @tt{ode-event-hit3d-position}, and @tt{ode-event-hit3d-provenance}.}
+@defproc[(trajectory-termination3d
+          [#:time-limit time-limit (or/c false/c nonnegative-real?) #f]
+          [#:arc-length-limit arc-length-limit (or/c false/c nonnegative-real?) #f]
+          [#:bounds bounds (or/c false/c aabb3?) #f]
+          [#:minimum-speed minimum-speed (or/c false/c nonnegative-real?) #f]
+          [#:maximum-steps maximum-steps exact-positive-integer? 100000]
+          [#:events events list? '()]
+          [#:on-field-error on-field-error (or/c 'error 'terminate) 'error])
+         trajectory-termination3d?]{Constructs an immutable stopping policy.
+A time limit constrains absolute physical time to
+@racket[(- time-limit)] through @racket[time-limit]. An AABB means the first
+exit from a nonempty box, not a request to clip the displayed mesh. The arc
+budget is measured independently from the seed on each branch. A field error
+normally remains an author error; @racket['terminate] instead ends at the last
+accepted node and records a @racket['field-error] hit.}
+@defproc[(trajectory-termination3d? [value any/c]) boolean?]{Recognizes a
+termination policy. Accessors begin with @tt{trajectory-termination3d-}.}
+@defproc[(trajectory-termination-hit3d? [value any/c]) boolean?]{Recognizes an
+immutable winning-policy record. Its accessors begin with
+@tt{trajectory-termination-hit3d-}; @tt{reason}, @tt{time}, @tt{position},
+and @tt{details} are deliberately serializable inspection data.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
@@ -1649,6 +1685,11 @@ physical time. Simultaneous hits use event declaration order as their
 tie-break. Each hit records its event identifier, dense root time and position,
 event value, physical crossing direction, segment index, iteration count, and
 root-finding provenance.}
+@defproc[(ode-trajectory3d-termination [trajectory ode-trajectory3d?]) vector?]{Returns
+the immutable, increasing-physical-time vector of selected
+@racket[trajectory-termination-hit3d?] records. There is normally zero or one
+hit for a one-sided trajectory and up to two for a range extending on both
+sides of the seed.}
 @defproc[(ode-trajectory3d-step-size [trajectory ode-trajectory3d?])
          (or/c positive? false/c)]{Returns a fixed path's RK4 step, or
 @racket[#f] for an adaptive path.}
@@ -1674,13 +1715,18 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T1 limits.} Arc length is a deterministic eight-chord estimate
-per stored dense segment rather than a certified integral. T1 detects
-sign-changing roots and exact/tolerance-zero endpoints; it does not yet search
-for an isolated tangency whose sampled event values retain the same sign.
-Only terminal event roots shorten a trajectory. Explicit bounds, arc-length,
-and low-speed termination, adaptive streamlines, and flow-map preparation are
-later SCENE-3D-T slices.
+@bold{Current T2 limits.} Arc length is a deterministic eight-chord estimate
+per stored dense segment rather than a certified integral, so an arc-length
+endpoint is deterministic but not mathematically certified. The low-speed
+policy observes accepted nodes and one midpoint per segment; it does not yet
+require a configurable run of consecutive slow observations. T2 detects
+sign-changing roots and exact/tolerance-zero endpoints, but does not search for
+an isolated tangency whose sampled event values retain the same sign. AABB
+exits are split at all dense-coordinate extrema and then bisected; numerical
+roots remain tolerance-limited, although an accepted face node is preserved
+exactly. Adaptive streamline sets, seed values, Poincare sections,
+equilibrium/flow-map analysis, and certified arc-length integration are later
+SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)
@@ -1719,7 +1765,8 @@ Creates one prepared particle per trajectory using the shared time parameter.}
 
 The canonical acceptance scenes are
 @filepath{examples/3d/prepared-lorenz-flow.rkt} and
-@filepath{examples/3d/event-aware-trajectory.rkt}.
+@filepath{examples/3d/event-aware-trajectory.rkt}; explicit policies are shown
+in @filepath{examples/3d/trajectory-termination.rkt}.
 
 @section{Spatial inspection and exact picking}
 

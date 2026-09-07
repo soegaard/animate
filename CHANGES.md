@@ -76,17 +76,25 @@
   functions are evaluated only during preparation against dense Hermite
   segments; hits are sorted in physical time, shared-node roots are deduplicated,
   and a terminal root becomes the corresponding canonical trajectory endpoint.
+- Added SCENE-3D-T2 immutable trajectory-termination policies for symmetric
+  time budgets, AABB exits, dense arc-length budgets, sampled low-speed stops,
+  maximum step counts, policy-owned terminal events, and explicit field-error
+  handling. Preparation records immutable termination-hit data and clips the
+  returned trajectory to the resolved dense endpoint. AABB checking splits
+  each Hermite segment at all coordinate extrema before bisection, reports an
+  exact outward face normal, and preserves an accepted node already on a face.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
   frame artifacts for projected-label depth queries.
 
 Known boundaries: SCENE-3D-T currently has sign-changing and endpoint event
-roots, but not isolated tangency detection or explicit bounds/arc-length/
-low-speed termination policies. It also lacks adaptive streamline sets, seed
-values, Poincare sections, equilibrium/flow-map analysis, and certified
-arc-length integration; each dense segment uses a deterministic eight-chord
-arc-length estimate. Adaptive implicit
+roots, but not isolated tangency detection. Arc-length limits use the same
+deterministic eight-chord estimate as general trajectory queries rather than a
+certified integral; low-speed termination checks accepted nodes and one
+midpoint per segment, without a configurable consecutive-check policy. It also
+lacks adaptive streamline sets, seed values, Poincare sections,
+equilibrium/flow-map analysis, and certified arc-length integration. Adaptive implicit
 extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
 IDs), touching/self-intersecting section validation, repeated capped
