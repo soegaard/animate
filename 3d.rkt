@@ -34,6 +34,7 @@
          "private/3d/dual-polyhedron3d.rkt"
          "private/3d/schlegel3d.rkt"
          "private/3d/polyhedron-net3d.rkt"
+         "private/3d/correspondence3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -375,6 +376,8 @@
  schlegel-diagram3d
  (struct-out net-hinge3d) (struct-out net-face-transform3d) (struct-out polyhedron-net3d)
  prepare-polyhedron-net3d
+ (struct-out spatial-correspondence3d) (struct-out mesh-correspondence3d)
+ prepare-mesh-correspondence3d
  (struct-out mesh3d-duplicate-triangle)
  (struct-out mesh3d-analysis)
  analyze-mesh3d
