@@ -7,6 +7,9 @@
   scale-aware symmetric finite differences; one-sided sampling happens only
   at an explicitly declared domain boundary. Every result records its method,
   coordinate steps, work count, and local error indicator.
+- Added explicit seed-bounded damped Newton equilibrium search. It preserves
+  every seed's convergence or failure diagnostic, and clusters successful
+  roots deterministically using the earliest contributing seed.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

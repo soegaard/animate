@@ -1838,6 +1838,36 @@ and a local first-versus-second-order error indicator where it is available.}
 @defproc[(jacobian3d-result? [value any/c]) boolean?]{Recognizes the transparent
 immutable result record returned by @racket[jacobian3d]. Its constructor and
 accessors begin with @tt{jacobian3d-result-}.}
+@defproc[(equilibrium-points3d [field any/c] [seeds seed-set3d?]
+                                [#:solver solver equilibrium-solver3d?
+                                           default-equilibrium-solver3d]
+                                [#:jacobian derivative (or/c false/c procedure?) #f]
+                                [#:merge-distance merge-distance positive? 1e-6]
+                                [#:domain domain (or/c false/c procedure?) #f]
+                                [#:time time finite-real? 0]) equilibrium-search3d?]{Runs
+bounded damped Newton searches from precisely the declared seed order. A
+successful root is clustered against earlier successful roots only, so the
+earliest seed is its canonical representative. Failed seeds remain as
+@racket[equilibrium-seed-result3d?] entries with an explicit status such as
+@racket['singular-jacobian], @racket['out-of-domain], @racket['stalled], or
+@racket['iteration-limit].}
+@defproc[(equilibrium-search3d? [value any/c]) boolean?]{Recognizes the
+immutable search result. Its @tt{seeds}, @tt{roots}, @tt{seed-results}, and
+@tt{diagnostics} accessors retain all seed outcomes rather than only the
+converged representatives.}
+@defproc[(equilibrium-seed-result3d? [value any/c]) boolean?]{Recognizes one
+immutable seed outcome. Its accessors begin with @tt{equilibrium-seed-result3d-}.}
+@defproc[(equilibrium-solver3d [residual-tolerance positive?]
+                               [step-tolerance positive?]
+                               [maximum-iterations exact-positive-integer?]
+                               [damping positive?]
+                               [minimum-damping positive?]) equilibrium-solver3d?]{Constructs
+the explicit tolerances and deterministic backtracking schedule used by an
+equilibrium search.}
+@defproc[(equilibrium-solver3d? [value any/c]) boolean?]{Recognizes an
+equilibrium solver settings value.}
+@defthing[default-equilibrium-solver3d equilibrium-solver3d?]{The default
+bounded damped Newton settings.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]

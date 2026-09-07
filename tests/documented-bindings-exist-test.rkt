@@ -210,6 +210,14 @@
                          jacobian3d-result-matrix jacobian3d-result-method
                          jacobian3d-result-step jacobian3d-result-evaluations
                          jacobian3d-result-error-estimate jacobian3d-result-diagnostics
+                         equilibrium-solver3d equilibrium-solver3d?
+                         equilibrium-solver3d-residual-tolerance
+                         equilibrium-solver3d-step-tolerance
+                         equilibrium-solver3d-maximum-iterations
+                         equilibrium-solver3d-damping equilibrium-solver3d-minimum-damping
+                         default-equilibrium-solver3d equilibrium-seed-result3d
+                         equilibrium-seed-result3d? equilibrium-root3d equilibrium-root3d?
+                         equilibrium-search3d equilibrium-search3d? equilibrium-points3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

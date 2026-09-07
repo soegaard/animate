@@ -31,7 +31,9 @@ not yet run concurrently by this pure layer. T5 extracts direction-filtered
 Poincare plane crossings from stored dense trajectory segments, not visual
 curve samples. T6 begins the local phase-space layer with analytic or
 scale-aware finite-difference Jacobians whose stencils and diagnostics are
-explicit immutable data.
+explicit immutable data, then applies bounded damped Newton iteration only to
+author-declared seed sets. Every seed retains its convergence/failure status;
+successful roots merge in seed order rather than hiding missed candidates.
 SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].
