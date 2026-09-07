@@ -3041,11 +3041,16 @@ lose the follow-on idea that led to the work.
   estimate per dense segment, not a certified integral. Vector-field samples
   and immutable seed sets are explicit finite author data, not adaptive
   field-line topology; Poisson sets use a local explicit seed, not global
-  random state. Prepared streamline sets retain canonical seed order and can
-  use ordered display-sample separation; they do not yet run author fields in
-  parallel. Poincare sections use retained dense sign-changing/end-point roots;
-  they do not find isolated same-sign tangencies. There is still no
-  equilibrium/flow-map analysis or 3D ODE source inspection.
+  random state. Independent prepared streamline, Poincare, and flow-map seed
+  slots may use bounded concurrent Racket threads, but are reassembled in
+  canonical seed order; ordered display-sample separation remains serial.
+  This assumes pure author callbacks and is not a process-serializable,
+  portable multicore executor. Poincare sections use retained dense
+  sign-changing/end-point roots; they do not find isolated same-sign
+  tangencies. Seed-bounded equilibrium/Jacobian/eigenanalysis, prepared
+  flow-map deformation, and retained-data trajectory/equilibrium/linearization
+  inspection are available. Cancellation checks occur only at safe numerical
+  boundaries, not inside arbitrary author callbacks.
   Spatial picking now uses object AABBs plus deterministic local BVHs to find
   an exact indexed mesh triangle from a camera ray. It includes generated curve
   and surface meshes, but not analytic implicit shapes, texture UVs,

@@ -1794,8 +1794,11 @@ processes seeds in that order, rejects a seed already too near an accepted
 line, and makes a later candidate stop at a terminal separation event. The
 set diagnostic reports accepted/rejected seeds, terminal reasons, field work,
 curve samples, the policy separation, discarded short lines, and whether the
-set was independent, serial, or ordered by separation. A cancellation token
-is checked at every seed boundary and never leaves a partial set.}
+set was prepared by bounded worker threads, serially, or in ordered separation
+mode. Worker completion never changes seed/child order. As with every
+numerical field callback, the parallel result presumes a pure author field;
+arbitrary closures are not serialised to external processes. A cancellation
+token is checked at every seed boundary and never leaves a partial set.}
 @defproc[(adaptive-streamline-set3d [prepared prepared-streamline-set3d?]
                                     [#:id id symbol?]
                                     [#:style style any/c]
@@ -1823,10 +1826,13 @@ projection, suitable for an ordinary two-dimensional plot.}
 ordinary spatial point markers.}
 @defproc[(prepare-poincare-map3d [field any/c] [plane plane3?] [seeds seed-set3d?]
                                  [#:direction direction (or/c 'any 'positive 'negative) 'any]
-                                 [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore])
+                                 [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore]
+                                 [#:parallel? parallel? boolean? #t]
+                                 [#:cancellation-token cancellation-token any/c #f])
          prepared-poincare-map3d?]{Prepares per-seed first and second crossings.
 Missing returns remain @racket[#f] in the same seed slot; the result is not a
-claim that an arbitrary flow has a global return map.}
+claim that an arbitrary flow has a global return map. Independent trajectory
+preparation may use bounded worker threads but retains seed order.}
 @defproc[(prepared-poincare-map3d? [value any/c]) boolean?]{Recognizes an
 immutable per-seed return-map record. Its accessors begin with
 @tt{prepared-poincare-map3d-}.}
@@ -1922,7 +1928,10 @@ is an @racket[ode-field3d] with an explicit cache key and every termination
 event has an explicit cache key. The identity records solver, seed-set,
 termination, time-parameterization, dense-resampling, and endpoint policy.
 An opaque field or event is reported as @racket['memory-only], so it is never
-mistaken for persistently serializable numerical input.}
+mistaken for persistently serializable numerical input. Independent seed slots
+use bounded worker threads when @racket[#:parallel?] is true; trajectories,
+endpoints, diagnostics, and any raised failure retain seed order rather than
+worker completion order.}
 @defproc[(prepared-flow-map3d? [value any/c]) boolean?]{Recognizes an immutable
 prepared flow map. Its accessors begin with @tt{prepared-flow-map3d-}.}
 @defproc[(flow-map3d-ref [map prepared-flow-map3d?] [index exact-nonnegative-integer?])

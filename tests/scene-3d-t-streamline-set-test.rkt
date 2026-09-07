@@ -36,7 +36,7 @@
   (check-equal? (streamline-set-diagnostics3d-accepted-seed-count independent-diagnostics) 3)
   (check-equal? (streamline-set-diagnostics3d-rejected-seed-count independent-diagnostics) 0)
   (check-equal? (streamline-set-diagnostics3d-parallel-mode independent-diagnostics)
-                'independent)
+                'threaded)
   (check-true
    (group3d?
     (adaptive-streamline-set3d independent #:id 'independent

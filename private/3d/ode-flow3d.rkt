@@ -28,6 +28,7 @@
          "marker3d.rkt"
          "plane-basis3d.rkt"
          "point-line-arrow3d.rkt"
+         "preparation-scheduler3d.rkt"
          "ray-plane.rkt"
          "seed-set3d.rkt"
          "spatial-dependency.rkt"
@@ -2235,11 +2236,10 @@
 
 ;; prepare-streamlines3d : ode-field/procedure seed-set3d? ...
 ;;                         -> prepared-streamline-set3d?
-;; Independent sets retain canonical seed order even when `#:parallel?` says
-;; they may be scheduled in parallel by a future prepared-work executor.  This
-;; pure implementation deliberately does not run arbitrary author procedures
-;; concurrently.  Separation is intentionally ordered because each accepted
-;; line becomes an event boundary for later candidates.
+;; Independent sets use bounded indexed worker threads when `#:parallel?` is
+;; true, but are reassembled in canonical seed order. Separation is
+;; intentionally ordered because each accepted line becomes an event boundary
+;; for later candidates.
 (define (prepare-streamlines3d field seeds
                                #:direction [direction 'forward]
                                #:parameterization [parameterization 'time]
@@ -2269,34 +2269,54 @@
   (define seed-points (seed-set3d-points seeds))
   (define initial-index
     (and separation (streamline-spatial-index3d-empty separation)))
-  (define-values (accepted rejected discarded index)
-    (for/fold ([accepted '()] [rejected 0] [discarded 0] [index initial-index])
-              ([seed (in-vector seed-points)] [seed-index (in-naturals)])
-      ;; Separation makes this loop order-dependent; even independent sets
-      ;; use its canonical seed boundary for cancellation.
-      (when cancellation-token (check-cancellation cancellation-token))
-      (cond
-        [(and separation
-              (< (streamline-spatial-index3d-nearest-distance index seed) separation))
-         (values accepted (add1 rejected) discarded index)]
-        [else
-         (define candidate-termination
-           (if (and separation
-                    (positive? (streamline-spatial-index3d-segment-count index)))
-               (termination-with-streamline-separation3d effective-termination
-                                                        index separation)
-               effective-termination))
-         (define line
-           (prepare-streamline3d
-            normalized-field seed #:direction direction #:parameterization parameterization
-            #:solver solver #:termination candidate-termination
-            #:sample-policy sample-policy #:cancellation-token cancellation-token))
-         (if (< (vector-length (prepared-streamline3d-curve-samples line)) 2)
-             (values accepted (add1 rejected) (add1 discarded) index)
-             (values (append accepted (list line)) rejected discarded
-                     (if separation
-                         (streamline-spatial-index3d-add-streamline index line seed-index)
-                         index)))])))
+  (define-values (accepted rejected discarded index parallel-mode)
+    (cond
+      [separation
+       ;; Earlier accepted lines alter a later candidate's terminal policy, so
+       ;; this branch deliberately has one canonical serial order.
+       (define-values (accepted rejected discarded index)
+         (for/fold ([accepted '()] [rejected 0] [discarded 0] [index initial-index])
+                   ([seed (in-vector seed-points)] [seed-index (in-naturals)])
+           (when cancellation-token (check-cancellation cancellation-token))
+           (cond
+             [(< (streamline-spatial-index3d-nearest-distance index seed) separation)
+              (values accepted (add1 rejected) discarded index)]
+             [else
+              (define candidate-termination
+                (if (positive? (streamline-spatial-index3d-segment-count index))
+                    (termination-with-streamline-separation3d effective-termination
+                                                             index separation)
+                    effective-termination))
+              (define line
+                (prepare-streamline3d
+                 normalized-field seed #:direction direction #:parameterization parameterization
+                 #:solver solver #:termination candidate-termination
+                 #:sample-policy sample-policy #:cancellation-token cancellation-token))
+              (if (< (vector-length (prepared-streamline3d-curve-samples line)) 2)
+                  (values accepted (add1 rejected) (add1 discarded) index)
+                  (values (append accepted (list line)) rejected discarded
+                          (streamline-spatial-index3d-add-streamline index line seed-index)))])))
+       (values accepted rejected discarded index 'ordered-separation)]
+      [else
+       (define-values (candidates mode)
+         (prepare-indexed-work3d
+          (vector-length seed-points)
+          (lambda (index)
+            (prepare-streamline3d
+             normalized-field (vector-ref seed-points index)
+             #:direction direction #:parameterization parameterization
+             #:solver solver #:termination effective-termination
+             #:sample-policy sample-policy #:cancellation-token cancellation-token))
+          #:parallel? parallel? #:cancellation-token cancellation-token))
+       ;; `candidates` is already in seed index order, independent of worker
+       ;; completion order. Short lines are filtered only after all slots are
+       ;; retained, preserving the previous acceptance semantics.
+       (define accepted
+         (for/list ([line (in-vector candidates)]
+                    #:when (>= (vector-length (prepared-streamline3d-curve-samples line)) 2))
+           line))
+       (define discarded (- (vector-length candidates) (length accepted)))
+       (values accepted discarded discarded #f mode)]))
   (define diagnostics
     (streamline-set-diagnostics3d
      (vector-length seed-points) (length accepted) rejected
@@ -2308,9 +2328,7 @@
        (streamline-diagnostics3d-curve-sample-count
         (prepared-streamline3d-diagnostics line)))
      separation discarded
-     (cond [separation 'ordered-separation]
-           [parallel? 'independent]
-           [else 'serial])))
+     parallel-mode))
   (prepared-streamline-set3d-value
    seeds (vector->immutable-vector (list->vector accepted)) diagnostics index))
 
@@ -2449,7 +2467,8 @@
                                 #:termination [termination #f]
                                 #:sample-policy [sample-policy (streamline-sample-policy3d)]
                                 #:separation [separation #f]
-                                #:parallel? [parallel? #t])
+                                #:parallel? [parallel? #t]
+                                #:cancellation-token [cancellation-token #f])
   (unless (plane3? plane)
     (raise-argument-error 'prepare-poincare-map3d "plane3?" plane))
   (unless (seed-set3d? seeds)
@@ -2464,6 +2483,12 @@
   (check-streamline-set-separation 'prepare-poincare-map3d separation)
   (unless (boolean? parallel?)
     (raise-argument-error 'prepare-poincare-map3d "boolean? as #:parallel?" parallel?))
+  (when cancellation-token
+    (unless (cancellation-token? cancellation-token)
+      (raise-argument-error 'prepare-poincare-map3d
+                            "#f or cancellation-token? as #:cancellation-token"
+                            cancellation-token))
+    (check-cancellation cancellation-token))
   ;; A return-map record needs one slot for every declared seed, including an
   ;; equilibrium or otherwise short trajectory with no first return.  Ordered
   ;; separation intentionally drops seeds, so it is not a coherent map domain.
@@ -2471,11 +2496,17 @@
     (raise-arguments-error 'prepare-poincare-map3d
                            "Poincare maps retain every declared seed; use #:separation #f"
                            "separation" separation))
-  (define lines
-    (for/list ([seed (in-vector (seed-set3d-points seeds))])
-      (prepare-streamline3d
-       field seed #:direction streamline-direction #:parameterization parameterization
-       #:solver solver #:termination termination #:sample-policy sample-policy)))
+  (define-values (line-vector parallel-mode)
+    (prepare-indexed-work3d
+     (seed-set3d-count seeds)
+     (lambda (index)
+       (prepare-streamline3d
+        field (vector-ref (seed-set3d-points seeds) index)
+        #:direction streamline-direction #:parameterization parameterization
+        #:solver solver #:termination termination #:sample-policy sample-policy
+        #:cancellation-token cancellation-token))
+     #:parallel? parallel? #:cancellation-token cancellation-token))
+  (define lines (vector->list line-vector))
   (define trajectories
     (vector->immutable-vector
      (list->vector
@@ -2511,7 +2542,7 @@
            (for/sum ([hit (in-vector second-hits)]) (if hit 0 1))
            'complete-pairs
            (for/sum ([pair (in-vector pairs)]) (if pair 1 0))
-           'parallel-mode (if parallel? 'independent 'serial)
+           'parallel-mode parallel-mode
            'field-evaluations
            (for/sum ([line (in-list lines)])
              (streamline-diagnostics3d-field-evaluations

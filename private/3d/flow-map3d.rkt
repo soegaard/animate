@@ -3,7 +3,7 @@
 (require racket/list
          "../geometry.rkt" "../preview-cancellation.rkt" "ode-flow3d.rkt" "point-line-arrow3d.rkt"
          "linear3.rkt" "material3d.rkt" "mesh3d.rkt" "seed-set3d.rkt"
-         "spatial-group.rkt" "vec3.rkt")
+         "preparation-scheduler3d.rkt" "spatial-group.rkt" "vec3.rkt")
 
 (provide (struct-out prepared-flow-map3d)
          prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
@@ -56,16 +56,18 @@
                'resampling 'retained-dense
                'start-time start-time 'end-time end-time
                'on-termination on-termination)))
-  (define trajectories
-    (vector->immutable-vector
-     (list->vector
-      (for/list ([seed (in-vector (seed-set3d-points seeds))])
-        ;; A map never returns a partial retained value after cancellation.
-        ;; Its next seed slot is the deterministic cancellation boundary.
-        (when cancellation-token (check-cancellation cancellation-token))
-        (prepare-ode-trajectory3d field seed #:time-range (cons start-time end-time)
-                                  #:solver solver #:termination termination
-                                  #:cancellation-token cancellation-token)))))
+  (define-values (trajectories parallel-mode)
+    (prepare-indexed-work3d
+     (seed-set3d-count seeds)
+     (lambda (index)
+       ;; A map never returns a partial retained value after cancellation. Its
+       ;; seed index is stable even if a different worker finishes first.
+       (prepare-ode-trajectory3d
+        field (vector-ref (seed-set3d-points seeds) index)
+        #:time-range (cons start-time end-time)
+        #:solver solver #:termination termination
+        #:cancellation-token cancellation-token))
+     #:parallel? parallel? #:cancellation-token cancellation-token))
   (define endpoints
     (vector->immutable-vector
      (list->vector
@@ -83,9 +85,7 @@
            'on-termination on-termination
            'cacheability cacheability
            'preparation-key preparation-key
-           ;; Independent computations have deterministic slots; field calls
-           ;; remain serial in this pure layer until worker preparation lands.
-           'parallel-mode (if parallel? 'independent 'serial))))
+           'parallel-mode parallel-mode)))
 
 ;; Cache identities must never retain an event procedure. An event without an
 ;; explicit cache key therefore downgrades the whole operation to memory-only.

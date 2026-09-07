@@ -41,6 +41,10 @@
   termination/event cache keys, time parameterization, retained-dense
   resampling, and endpoint policy; an opaque event makes preparation
   memory-only.
+- Added bounded indexed worker preparation for independent
+  streamline/flow/Poincaré seeds and cooperative cancellation checks at solver,
+  event-root, seed, and display-resampling boundaries. Worker completion never
+  affects seed/visual order or the reported first failure.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution
@@ -137,8 +141,7 @@
   preserve seed declaration order, retain set-wide diagnostics, and can use a
   deterministic spatial-hash separation boundary against earlier accepted
   lines. Separation intentionally makes preparation ordered; independent sets
-  remain canonical but this pure path does not concurrently invoke arbitrary
-  author field procedures.
+  use bounded concurrent Racket threads and remain canonical by seed index.
 - Added SCENE-3D-T5 Poincare extraction over retained dense trajectory
   segments, including physical-time ordering, crossing-direction filters,
   duplicate-time suppression, explicit tangent-touch policy, marker visuals,
@@ -153,7 +156,7 @@ roots, but not isolated tangency detection. Arc-length limits use the same
 deterministic eight-chord estimate as general trajectory queries rather than a
 certified integral; low-speed termination checks accepted nodes and one
 midpoint per segment, without a configurable consecutive-check policy. It also
-lacks worker-parallel streamline preparation, equilibrium/linearization,
+lacks a process-serializable multicore preparation executor,
 equilibrium/flow-map analysis, and certified arc-length integration. Adaptive implicit
 extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
