@@ -585,6 +585,25 @@ cutaway3d
  adaptive-rk45-solver3d
  adaptive-rk45-solver3d?
  adaptive-rk45-solver3d-settings
+ ode-event3d
+ ode-event3d?
+ ode-event3d-id
+ ode-event3d-function
+ ode-event3d-direction
+ ode-event3d-terminal?
+ ode-event3d-value-tolerance
+ ode-event3d-time-tolerance
+ ode-event3d-maximum-iterations
+ ode-event3d-cache-key
+ ode-event-hit3d?
+ ode-event-hit3d-event-id
+ ode-event-hit3d-time
+ ode-event-hit3d-position
+ ode-event-hit3d-value
+ ode-event-hit3d-direction
+ ode-event-hit3d-segment-index
+ ode-event-hit3d-iterations
+ ode-event-hit3d-provenance
  prepared-trajectory3d?
  trajectory-segment3d?
  trajectory-segment3d-t0
@@ -601,6 +620,7 @@ cutaway3d
  ode-trajectory3d-checkpoint-every
  ode-trajectory3d-solver
  ode-trajectory3d-diagnostics
+ ode-trajectory3d-event-hits
  ode-trajectory3d-diagnostics?
  ode-trajectory3d-diagnostics-solver
  ode-trajectory3d-diagnostics-accepted-steps
@@ -611,6 +631,8 @@ cutaway3d
  ode-trajectory3d-diagnostics-field-evaluations
  ode-trajectory3d-diagnostics-dense-segment-count
  ode-trajectory3d-diagnostics-total-arc-length
+ ode-trajectory3d-diagnostics-event-count
+ ode-trajectory3d-diagnostics-warnings
  prepare-ode-trajectory3d
  ode-trajectory3d-position
  ode-trajectory3d-derivative

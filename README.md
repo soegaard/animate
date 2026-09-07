@@ -55,11 +55,13 @@ Linear and affine maps retain exact existing topology—including a complete
 coordinate diagram—while nonlinear maps intentionally sample only the authored
 mesh vertices at each requested scene time.
 SCENE-3D-K generalizes the numerical trajectory kernel across real, `vec2`,
-`vec3`, and fixed-length vector states. SCENE-3D-T0 upgrades `animate/3d` to
-explicit ODE-field/solver values and immutable dense RK4/RK45 trajectory data:
-position, tangent, and arc-length queries are random-access and never call an
-author field after preparation. Static vector fields/streamlines and
-parameter-driven particles lower from those prepared values.
+`vec3`, and fixed-length vector states. SCENE-3D-T0/T1 upgrades `animate/3d`
+to explicit ODE-field/solver/event values and immutable dense RK4/RK45
+trajectory data: position, tangent, arc-length, and event-hit queries are
+random-access and never call an author field after preparation. Event roots use
+stored dense segments; terminal hits become canonical path endpoints. Static
+vector fields/streamlines and parameter-driven particles lower from those
+prepared values.
 SCENE-3D-L adds pure spatial inspection records and exact 3D picking. A query
 turns a viewport pixel into a camera ray, culls object bounds, traverses a
 deterministic local BVH, and finishes with a double-sided triangle/barycentric
@@ -121,6 +123,7 @@ exactly synchronized with the gallery and example requirements.
 - [Sphere cut by a moving plane](examples/3d/sphere-plane-section.rkt) — 3d, clipping, sections, transparency, occlusion, animation; requires core.
 - [Spatial maps and homotopies](examples/3d/spatial-maps-and-homotopies.rkt) — 3d, affine, pointwise, homotopy, animation; requires core.
 - [Prepared Lorenz flow](examples/3d/prepared-lorenz-flow.rkt) — 3d, ode, vector-fields, trajectories, camera, animation; requires core.
+- [Event-aware trajectory](examples/3d/event-aware-trajectory.rkt) — 3d, ode, events, terminal-roots, trajectories, camera, animation; requires core.
 - [Exact spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, bvh, camera; requires core, gui.
 - [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
 - [Compiled mesh diagnostics](examples/3d/mesh-diagnostics.rkt) — 3d, topology, diagnostics, compilation, cache, camera; requires core.

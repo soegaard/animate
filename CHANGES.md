@@ -72,15 +72,21 @@
   required numerical nodes and endpoint derivatives: position, tangent, and
   arc-length queries use binary search and stored interpolation only, so
   later rendering and preview workers never reintegrate an author field.
+- Added SCENE-3D-T1 event descriptors and immutable event-hit records. Event
+  functions are evaluated only during preparation against dense Hermite
+  segments; hits are sorted in physical time, shared-node roots are deduplicated,
+  and a terminal root becomes the corresponding canonical trajectory endpoint.
 - Hardened the P backend locally: absolute-source CI package installation,
   unique GL context identities, owned context custodians, premultiplied GL
   compositing/readback conversion, byte-bounded FBOs, and shared software
   frame artifacts for projected-label depth queries.
 
-Known boundaries: SCENE-3D-T currently has no event roots, explicit termination
-policies, adaptive streamline sets, seed values, Poincare sections,
-equilibrium/flow-map analysis, or certified arc-length integration; each dense
-segment uses a deterministic eight-chord arc-length estimate. Adaptive implicit
+Known boundaries: SCENE-3D-T currently has sign-changing and endpoint event
+roots, but not isolated tangency detection or explicit bounds/arc-length/
+low-speed termination policies. It also lacks adaptive streamline sets, seed
+values, Poincare sections, equilibrium/flow-map analysis, and certified
+arc-length integration; each dense segment uses a deterministic eight-chord
+arc-length estimate. Adaptive implicit
 extraction, analytic implicit picking,
 trim Boolean regions, general mesh attribute descriptors (UV/scalar/semantic
 IDs), touching/self-intersecting section validation, repeated capped

@@ -1550,14 +1550,24 @@ The canonical acceptance scene is
 
 @section{Prepared spatial ODE trajectories and vector fields}
 
-SCENE-3D-T0 turns the earlier direct-time flow support into an immutable
-trajectory-data model. @racket[prepare-ode-trajectory3d] records dense RK4 or
-Dormand--Prince segments once; subsequent position, tangent, and arc-length
-lookup accepts any supported time in any order and never calls the author
-field. A field accepts either @racket[(field x y z)] or
+SCENE-3D-T0/T1 turns the earlier direct-time flow support into an immutable
+trajectory-data model with event-aware preparation.
+@racket[prepare-ode-trajectory3d] records dense RK4 or Dormand--Prince
+segments once; subsequent position, tangent, arc-length, and event-hit lookup
+accepts any supported time in any order and never calls the author field. A
+field accepts either @racket[(field x y z)] or
 @racket[(field time x y z)] and must return exactly one finite @racket[vec3].
 Use @racket[ode-field3d] when the field needs an explicit cache identity or
 when its autonomous status matters to later flow analysis.
+
+An @racket[ode-event3d] evaluates a finite scalar on the stored trajectory
+while it is prepared. Its procedure accepts either @racket[(event point)] or
+@racket[(event time point)]. A sign-changing root is found by deterministic
+bisection of the dense Hermite segment; a zero at a shared accepted node is
+reported once. Event directions always mean increasing @italic{physical} time,
+including when the requested range runs backward. A terminal event becomes a
+canonical end node and shortens the relevant side of the returned range;
+nonterminal hits remain in the immutable hit vector.
 
 @racket[flow-particle3d] is a semantic spatial relation. Before an image or
 preview worker resolves it, Animate samples its requested phase values into an
@@ -1587,10 +1597,12 @@ now; it no longer changes lookup cost.
           [#:time-range time-range (cons/c finite-real? finite-real?)]
           [#:step-size step-size (and/c finite-real? positive?) 1/20]
           [#:checkpoint-every checkpoint-every exact-positive-integer? 16]
-          [#:solver solver any/c #f])
+          [#:solver solver any/c #f]
+          [#:events events list? '()])
          ode-trajectory3d?]{Prepares one immutable spatial trajectory over the
 closed range @racket[(cons start-time end-time)]. The seed is at time zero;
-the range may extend on either side of it.}
+the range may extend on either side of it. Terminal event hits may shorten
+that closed range.}
 @defproc[(ode-field3d [procedure procedure?]
                        [#:cache-key cache-key any/c #f]
                        [#:autonomous? autonomous? boolean? #t]) any/c]{
@@ -1608,6 +1620,22 @@ not this procedure.}
          any/c]{Constructs immutable adaptive RK45 settings.
 The earlier @racket[adaptive-rk45] setting remains accepted while examples are
 migrated.}
+@defproc[(ode-event3d [#:id id symbol?]
+                       [#:function function procedure?]
+                       [#:direction direction (or/c 'any 'increasing 'decreasing) 'any]
+                       [#:terminal? terminal? boolean? #t]
+                       [#:value-tolerance value-tolerance positive? 1e-9]
+                       [#:time-tolerance time-tolerance positive? 1e-9]
+                       [#:maximum-iterations maximum-iterations exact-positive-integer? 64]
+                       [#:cache-key cache-key any/c #f]) any/c]{Constructs an
+event descriptor. Event identifiers must be distinct in one preparation call.
+The optional cache key describes the opaque event procedure for a future
+persistent preparation cache; the completed trajectory itself never retains
+the procedure.}
+@defproc[(ode-event-hit3d? [value any/c]) boolean?]{Recognizes one immutable
+prepared event-hit record. Its accessors begin with
+@tt{ode-event-hit3d-}, including @tt{ode-event-hit3d-time},
+@tt{ode-event-hit3d-position}, and @tt{ode-event-hit3d-provenance}.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
@@ -1615,6 +1643,12 @@ immutable spatial trajectory.}
 position at a supported time. Every prepared lookup reads only stored data.}
 @defproc[(ode-trajectory3d-time-range [trajectory ode-trajectory3d?])
          (cons/c finite-real? finite-real?)]{Returns its supported range.}
+@defproc[(ode-trajectory3d-event-hits [trajectory ode-trajectory3d?]) vector?]{Returns
+an immutable vector of @racket[ode-event-hit3d?] records, sorted by increasing
+physical time. Simultaneous hits use event declaration order as their
+tie-break. Each hit records its event identifier, dense root time and position,
+event value, physical crossing direction, segment index, iteration count, and
+root-finding provenance.}
 @defproc[(ode-trajectory3d-step-size [trajectory ode-trajectory3d?])
          (or/c positive? false/c)]{Returns a fixed path's RK4 step, or
 @racket[#f] for an adaptive path.}
@@ -1640,11 +1674,13 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T0 limits.} Arc length is a deterministic eight-chord estimate
-per stored dense segment rather than a certified integral. Event roots,
-explicit bounds/arc-length/low-speed termination, adaptive streamlines, and
-flow-map preparation are later SCENE-3D-T slices; this stage does not claim
-them yet.
+@bold{Current T1 limits.} Arc length is a deterministic eight-chord estimate
+per stored dense segment rather than a certified integral. T1 detects
+sign-changing roots and exact/tolerance-zero endpoints; it does not yet search
+for an isolated tangency whose sampled event values retain the same sign.
+Only terminal event roots shorten a trajectory. Explicit bounds, arc-length,
+and low-speed termination, adaptive streamlines, and flow-map preparation are
+later SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)
@@ -1681,8 +1717,9 @@ rather than claiming an arbitrary direction.}
                         [phase scene-parameter?] [#:id id symbol?]) group3d?]{
 Creates one prepared particle per trajectory using the shared time parameter.}
 
-The canonical acceptance scene is
-@filepath{examples/3d/prepared-lorenz-flow.rkt}.
+The canonical acceptance scenes are
+@filepath{examples/3d/prepared-lorenz-flow.rkt} and
+@filepath{examples/3d/event-aware-trajectory.rkt}.
 
 @section{Spatial inspection and exact picking}
 

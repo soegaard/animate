@@ -114,17 +114,27 @@
                          fixed-rk4-solver3d fixed-rk4-solver3d? fixed-rk4-solver3d-step-size
                          adaptive-rk45-solver3d adaptive-rk45-solver3d?
                          adaptive-rk45-solver3d-settings prepared-trajectory3d?
+                         ode-event3d ode-event3d? ode-event3d-id ode-event3d-function
+                         ode-event3d-direction ode-event3d-terminal?
+                         ode-event3d-value-tolerance ode-event3d-time-tolerance
+                         ode-event3d-maximum-iterations ode-event3d-cache-key
+                         ode-event-hit3d? ode-event-hit3d-event-id ode-event-hit3d-time
+                         ode-event-hit3d-position ode-event-hit3d-value ode-event-hit3d-direction
+                         ode-event-hit3d-segment-index ode-event-hit3d-iterations
+                         ode-event-hit3d-provenance
                          trajectory-segment3d? trajectory-segment3d-t0 trajectory-segment3d-t1
                          trajectory-segment3d-p0 trajectory-segment3d-p1
                          trajectory-segment3d-d0 trajectory-segment3d-d1
                          trajectory-segment3d-arc-length trajectory-segment3d-bounds
                          ode-trajectory3d? ode-trajectory3d-time-range
                          ode-trajectory3d-step-size ode-trajectory3d-checkpoint-every
-                         ode-trajectory3d-solver ode-trajectory3d-diagnostics
+                         ode-trajectory3d-solver ode-trajectory3d-diagnostics ode-trajectory3d-event-hits
                          ode-trajectory3d-diagnostics-termination-reason
                          ode-trajectory3d-diagnostics-field-evaluations
                          ode-trajectory3d-diagnostics-dense-segment-count
                          ode-trajectory3d-diagnostics-total-arc-length
+                         ode-trajectory3d-diagnostics-event-count
+                         ode-trajectory3d-diagnostics-warnings
                          prepare-ode-trajectory3d ode-trajectory3d-position
                          ode-trajectory3d-derivative ode-trajectory3d-speed
                          ode-trajectory3d-arc-length-at ode-trajectory3d-time-at-arc-length

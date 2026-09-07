@@ -47,6 +47,25 @@
          adaptive-rk45-solver3d
          adaptive-rk45-solver3d?
          adaptive-rk45-solver3d-settings
+         ode-event3d
+         ode-event3d?
+         ode-event3d-id
+         ode-event3d-function
+         ode-event3d-direction
+         ode-event3d-terminal?
+         ode-event3d-value-tolerance
+         ode-event3d-time-tolerance
+         ode-event3d-maximum-iterations
+         ode-event3d-cache-key
+         ode-event-hit3d?
+         ode-event-hit3d-event-id
+         ode-event-hit3d-time
+         ode-event-hit3d-position
+         ode-event-hit3d-value
+         ode-event-hit3d-direction
+         ode-event-hit3d-segment-index
+         ode-event-hit3d-iterations
+         ode-event-hit3d-provenance
          prepared-trajectory3d?
          trajectory-segment3d?
          trajectory-segment3d-t0
@@ -63,6 +82,7 @@
          ode-trajectory3d-checkpoint-every
          ode-trajectory3d-solver
          ode-trajectory3d-diagnostics
+         ode-trajectory3d-event-hits
          ode-trajectory3d-diagnostics?
          ode-trajectory3d-diagnostics-solver
          ode-trajectory3d-diagnostics-accepted-steps
@@ -73,6 +93,8 @@
          ode-trajectory3d-diagnostics-field-evaluations
          ode-trajectory3d-diagnostics-dense-segment-count
          ode-trajectory3d-diagnostics-total-arc-length
+         ode-trajectory3d-diagnostics-event-count
+         ode-trajectory3d-diagnostics-warnings
          prepare-ode-trajectory3d
          ode-trajectory3d-position
          ode-trajectory3d-derivative
@@ -168,14 +190,77 @@
     (raise-argument-error 'adaptive-rk45-solver3d-settings "adaptive-rk45-solver3d?" value))
   (adaptive-rk45-solver3d-value-settings value))
 
+;; Event descriptors remain author-side values: their procedures run only while
+;; a trajectory is prepared.  A completed trajectory retains immutable hit
+;; records, never the event procedures themselves.
+(struct ode-event3d-value
+  (id function arity direction terminal? value-tolerance time-tolerance
+      maximum-iterations cache-key)
+  #:transparent)
+
+(define (ode-event3d #:id id
+                     #:function function
+                     #:direction [direction 'any]
+                     #:terminal? [terminal? #t]
+                     #:value-tolerance [value-tolerance 1e-9]
+                     #:time-tolerance [time-tolerance 1e-9]
+                     #:maximum-iterations [maximum-iterations 64]
+                     #:cache-key [cache-key #f])
+  (check-symbol 'ode-event3d id)
+  (unless (and (procedure? function)
+               (or (procedure-arity-includes? function 1)
+                   (procedure-arity-includes? function 2)))
+    (raise-argument-error
+     'ode-event3d "procedure accepting (point) or (time point) as #:function" function))
+  (unless (memq direction '(any increasing decreasing))
+    (raise-argument-error 'ode-event3d "'any, 'increasing, or 'decreasing as #:direction"
+                          direction))
+  (unless (boolean? terminal?)
+    (raise-argument-error 'ode-event3d "boolean? as #:terminal?" terminal?))
+  (check-positive 'ode-event3d "value-tolerance" value-tolerance)
+  (check-positive 'ode-event3d "time-tolerance" time-tolerance)
+  (check-positive-integer 'ode-event3d "maximum-iterations" maximum-iterations)
+  (ode-event3d-value id function
+                      (if (procedure-arity-includes? function 2) 2 1)
+                      direction terminal? value-tolerance time-tolerance
+                      maximum-iterations cache-key))
+
+(define (ode-event3d? value) (ode-event3d-value? value))
+(define (check-ode-event3d who value)
+  (unless (ode-event3d? value) (raise-argument-error who "ode-event3d?" value)))
+(define (ode-event3d-id value)
+  (check-ode-event3d 'ode-event3d-id value) (ode-event3d-value-id value))
+(define (ode-event3d-function value)
+  (check-ode-event3d 'ode-event3d-function value) (ode-event3d-value-function value))
+(define (ode-event3d-direction value)
+  (check-ode-event3d 'ode-event3d-direction value) (ode-event3d-value-direction value))
+(define (ode-event3d-terminal? value)
+  (check-ode-event3d 'ode-event3d-terminal? value) (ode-event3d-value-terminal? value))
+(define (ode-event3d-value-tolerance value)
+  (check-ode-event3d 'ode-event3d-value-tolerance value)
+  (ode-event3d-value-value-tolerance value))
+(define (ode-event3d-time-tolerance value)
+  (check-ode-event3d 'ode-event3d-time-tolerance value)
+  (ode-event3d-value-time-tolerance value))
+(define (ode-event3d-maximum-iterations value)
+  (check-ode-event3d 'ode-event3d-maximum-iterations value)
+  (ode-event3d-value-maximum-iterations value))
+(define (ode-event3d-cache-key value)
+  (check-ode-event3d 'ode-event3d-cache-key value) (ode-event3d-value-cache-key value))
+
+(struct ode-event-hit3d
+  (event-id time position value direction segment-index iterations provenance)
+  #:transparent)
+
 (struct prepared-trajectory-node3d (time position derivative) #:transparent)
 (struct trajectory-segment3d (t0 t1 p0 p1 d0 d1 arc-length bounds) #:transparent)
 (struct prepared-trajectory3d-value
-  (time-range solver nodes segments cumulative-arcs diagnostics source-key checkpoint-every)
+  (time-range solver nodes segments event-hits cumulative-arcs diagnostics source-key checkpoint-every)
   #:transparent)
 (struct dense-trajectory-diagnostics3d
   (solver field-evaluations accepted-steps rejected-steps termination-time
-          termination-reason maximum-error dense-segment-count total-arc-length)
+          termination-reason maximum-error dense-segment-count total-arc-length
+          event-count warnings)
   #:transparent)
 
 (define (ode-trajectory3d? value)
@@ -230,6 +315,12 @@
          (adaptive-ode-trajectory3d-diagnostics trajectory)]
         [else #f]))
 
+(define (ode-trajectory3d-event-hits trajectory)
+  (check-trajectory3d 'ode-trajectory3d-event-hits trajectory)
+  (if (prepared-trajectory3d? trajectory)
+      (prepared-trajectory3d-value-event-hits trajectory)
+      (vector)))
+
 (define (ode-trajectory3d-diagnostics? value)
   (or (ode-trajectory3d-diagnostics-value? value)
       (dense-trajectory-diagnostics3d? value)))
@@ -271,12 +362,21 @@
   (if (dense-trajectory-diagnostics3d? value)
       (dense-trajectory-diagnostics3d-total-arc-length value)
       #f))
+(define (ode-trajectory3d-diagnostics-event-count value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-event-count value)
+      #f))
+(define (ode-trajectory3d-diagnostics-warnings value)
+  (if (dense-trajectory-diagnostics3d? value)
+      (dense-trajectory-diagnostics3d-warnings value)
+      '()))
 
 ; prepare-ode-trajectory3d : procedure? vec3?
 ;                            #:time-range (cons/c finite-real? finite-real?)
 ;                            [#:step-size positive-finite-real?]
 ;                            [#:checkpoint-every positive-exact-integer?]
 ;                            [#:solver (or/c #f adaptive-rk45?)]
+;                            [#:events (listof ode-event3d?)]
 ;                            -> ode-trajectory3d?
 ;; Fields accept either (x y z) or (time x y z).  Preparation is the only
 ;; operation that creates a trajectory; all returned values are immutable and
@@ -285,16 +385,18 @@
                                   #:time-range time-range
                                   #:step-size [step-size 1/20]
                                   #:checkpoint-every [checkpoint-every 16]
-                                  #:solver [solver #f])
+                                  #:solver [solver #f]
+                                  #:events [events '()])
   (define normalized-field (normalize-ode-field3d 'prepare-ode-trajectory3d field))
   (check-vec3 'prepare-ode-trajectory3d seed)
   (check-positive 'prepare-ode-trajectory3d "step-size" step-size)
   (check-checkpoint-every 'prepare-ode-trajectory3d checkpoint-every)
+  (check-ode-events3d 'prepare-ode-trajectory3d events)
   (define-values (start-time end-time)
     (check-time-range 'prepare-ode-trajectory3d time-range))
   (prepare-dense-trajectory3d normalized-field seed start-time end-time
                               (normalize-solver3d 'prepare-ode-trajectory3d solver step-size)
-                              checkpoint-every))
+                              checkpoint-every events))
 
 ; ode-trajectory3d-position : ode-trajectory3d? finite-real? -> vec3?
 ;; Every created trajectory resolves this through stored Hermite segments and
@@ -513,7 +615,7 @@
         [else (raise-argument-error
                who "#f, fixed-rk4-solver3d?, adaptive-rk45-solver3d?, or adaptive-rk45?" value)]))
 
-(define (prepare-dense-trajectory3d field seed start-time end-time solver checkpoint-every)
+(define (prepare-dense-trajectory3d field seed start-time end-time solver checkpoint-every events)
   (define evaluations (box 0))
   (define lower-target (min 0 start-time))
   (define upper-target (max 0 end-time))
@@ -522,8 +624,26 @@
   (define-values (forward forward-report)
     (dense-integrate-series3d field seed 0 upper-target solver evaluations))
   (define all-nodes (append (reverse (cdr backward)) forward))
-  (define nodes (dense-clip-nodes3d all-nodes start-time end-time))
+  ;; Locate roots from the common dense representation.  The event procedure
+  ;; is invoked only during preparation, while the field is never invoked for
+  ;; root finding or later lookup.
+  (define requested-nodes (dense-clip-nodes3d all-nodes start-time end-time))
+  (define requested-segments (dense-make-segments3d requested-nodes))
+  (define requested-hits
+    (dense-event-hits3d events requested-nodes requested-segments))
+  (define-values (actual-start actual-end termination-reason)
+    (dense-terminal-range3d start-time end-time requested-hits events))
+  ;; A terminal root is made an actual endpoint node, rather than merely a
+  ;; sampled hit inside another segment.  That keeps subsequent lookup and
+  ;; arc-length data canonical and frame-order independent.
+  (define nodes (dense-clip-nodes3d all-nodes actual-start actual-end))
   (define segments (dense-make-segments3d nodes))
+  (define event-hits
+    (dense-reindex-event-hits3d
+     (filter (lambda (hit)
+               (<= actual-start (ode-event-hit3d-time hit) actual-end))
+             requested-hits)
+     segments))
   (define cumulative (dense-cumulative-arcs3d segments))
   (define total (vector-ref cumulative (sub1 (vector-length cumulative))))
   (define accepted (+ (dense-series-report3d-accepted backward-report)
@@ -531,12 +651,13 @@
   (define rejected (+ (dense-series-report3d-rejected backward-report)
                       (dense-series-report3d-rejected forward-report)))
   (prepared-trajectory3d-value
-   (cons start-time end-time) solver nodes segments cumulative
+   (cons actual-start actual-end) solver nodes segments event-hits cumulative
    (dense-trajectory-diagnostics3d
-    solver (unbox evaluations) accepted rejected end-time 'time-range
+    solver (unbox evaluations) accepted rejected actual-end termination-reason
     (max (dense-series-report3d-maximum-error backward-report)
          (dense-series-report3d-maximum-error forward-report))
-    (vector-length segments) total)
+    (vector-length segments) total (vector-length event-hits)
+    (dense-event-warnings3d event-hits))
    (ode-field3d-cache-key field) checkpoint-every))
 
 (define (dense-integrate-series3d field seed start-time target-time solver evaluations)
@@ -643,6 +764,211 @@
                        #:when (< start-time (prepared-trajectory-node3d-time node) end-time))
               node)
             (if (= start-time end-time) '() (list (node-at end-time)))))))
+
+;;;
+;;; T-1 Event Detection
+
+;; Event tests intentionally use the dense Hermite segment, rather than a
+;; linear interpolation of two event values.  Thus the event path follows the
+;; same stored numerical trajectory that lookup and rendering use.
+
+(define (check-ode-events3d who events)
+  (unless (list? events) (raise-argument-error who "list? as #:events" events))
+  (for ([event (in-list events)]) (check-ode-event3d who event))
+  (define ids (map ode-event3d-id events))
+  (unless (= (length ids) (length (remove-duplicates ids)))
+    (raise-arguments-error who "event ids must be distinct" "events" events)))
+
+(define (call-event3d event time point)
+  (define value
+    (with-handlers
+        ([exn:fail?
+          (lambda (exception)
+            (raise-arguments-error
+             'prepare-ode-trajectory3d "a 3D ODE event raised an exception"
+             "event-id" (ode-event3d-id event)
+             "time" time
+             "point" point
+             "exception message" (exn-message exception)))])
+      (if (= (ode-event3d-value-arity event) 2)
+          ((ode-event3d-value-function event) time point)
+          ((ode-event3d-value-function event) point))))
+  (unless (finite-real? value)
+    (raise-arguments-error
+     'prepare-ode-trajectory3d "a 3D ODE event must return a finite real"
+     "event-id" (ode-event3d-id event) "time" time "point" point "result" value))
+  value)
+
+(define (event-sign3d event value)
+  (cond [(> value (ode-event3d-value-tolerance event)) 1]
+        [(< value (- (ode-event3d-value-tolerance event))) -1]
+        [else 0]))
+
+(define (event-direction-from-signs3d lower-sign upper-sign)
+  (cond [(and (= lower-sign 0) (= upper-sign 0)) 'any]
+        [(or (and (= lower-sign -1) (>= upper-sign 0))
+             (and (= lower-sign 0) (= upper-sign 1))) 'increasing]
+        [(or (and (= lower-sign 1) (<= upper-sign 0))
+             (and (= lower-sign 0) (= upper-sign -1))) 'decreasing]
+        [else 'any]))
+
+(define (event-direction-allowed? event physical-direction)
+  (or (eq? (ode-event3d-direction event) 'any)
+      ;; A sustained tolerance-zero endpoint has no physical crossing
+      ;; orientation. It remains observable for an explicitly directional
+      ;; event rather than being silently discarded.
+      (eq? physical-direction 'any)
+      (eq? (ode-event3d-direction event) physical-direction)))
+
+(define (dense-event-hit-at3d event time position value direction segment-index iterations provenance)
+  (ode-event-hit3d (ode-event3d-id event) time position value direction
+                   segment-index iterations provenance))
+
+(define (dense-event-root3d event segment segment-index lower-value upper-value direction)
+  (define lower-time (trajectory-segment3d-t0 segment))
+  (define upper-time (trajectory-segment3d-t1 segment))
+  (define lower-sign (event-sign3d event lower-value))
+  (let loop ([low lower-time] [high upper-time]
+             [low-value lower-value] [high-value upper-value]
+             [best-time (if (<= (abs lower-value) (abs upper-value)) lower-time upper-time)]
+             [best-value (if (<= (abs lower-value) (abs upper-value)) lower-value upper-value)]
+             [iteration 0])
+    (cond
+      [(>= iteration (ode-event3d-value-maximum-iterations event))
+       (dense-event-hit-at3d event best-time
+                             (dense-segment-position3d segment best-time) best-value direction
+                             segment-index iteration 'maximum-iterations)]
+      [else
+       (define middle (/ (+ low high) 2))
+       (define middle-position (dense-segment-position3d segment middle))
+       (define middle-value (call-event3d event middle middle-position))
+       (define middle-sign (event-sign3d event middle-value))
+       (define-values (next-best-time next-best-value)
+         (if (< (abs middle-value) (abs best-value))
+             (values middle middle-value)
+             (values best-time best-value)))
+       (cond
+         [(zero? middle-sign)
+          (dense-event-hit-at3d event middle middle-position middle-value direction
+                                segment-index (add1 iteration) 'bisection)]
+         [(and (<= (- high low) (ode-event3d-value-time-tolerance event))
+               (<= (abs middle-value) (ode-event3d-value-tolerance event)))
+          (dense-event-hit-at3d event next-best-time
+                                (dense-segment-position3d segment next-best-time)
+                                next-best-value direction segment-index
+                                (add1 iteration) 'bisection)]
+         [(= (event-sign3d event low-value) middle-sign)
+          (loop middle high middle-value high-value
+                next-best-time next-best-value (add1 iteration))]
+         [else
+          (loop low middle low-value middle-value
+                next-best-time next-best-value (add1 iteration))])])))
+
+(define (dense-event-hits3d events nodes segments)
+  (cond
+    [(null? events) '()]
+    [(zero? (vector-length segments))
+     (define node (vector-ref nodes 0))
+     (for/list ([event (in-list events)]
+                #:do [(define value
+                        (call-event3d event
+                                      (prepared-trajectory-node3d-time node)
+                                      (prepared-trajectory-node3d-position node)))]
+                #:when (and (zero? (event-sign3d event value))
+                            (event-direction-allowed? event 'any)))
+       (dense-event-hit-at3d event
+                             (prepared-trajectory-node3d-time node)
+                             (prepared-trajectory-node3d-position node)
+                             value 'any 0 0 'endpoint))]
+    [else
+     (append*
+      (for/list ([segment (in-vector segments)] [segment-index (in-naturals)])
+        (append*
+         (for/list ([event (in-list events)])
+           (define lower-time (trajectory-segment3d-t0 segment))
+           (define upper-time (trajectory-segment3d-t1 segment))
+           (define lower-position (trajectory-segment3d-p0 segment))
+           (define upper-position (trajectory-segment3d-p1 segment))
+           (define lower-value (call-event3d event lower-time lower-position))
+           (define upper-value (call-event3d event upper-time upper-position))
+           (define lower-sign (event-sign3d event lower-value))
+           (define upper-sign (event-sign3d event upper-value))
+           (define direction (event-direction-from-signs3d lower-sign upper-sign))
+           (define (allowed?) (event-direction-allowed? event direction))
+           (cond
+             ;; A shared event node belongs to the segment on its left.  This
+             ;; reports an endpoint once even when multiple segments meet it.
+             [(and (zero? lower-sign) (zero? segment-index))
+              (if (allowed?)
+                  (list (dense-event-hit-at3d event lower-time lower-position lower-value
+                                               direction segment-index 0 'endpoint))
+                  '())]
+             [(zero? lower-sign) '()]
+             [(zero? upper-sign)
+              (if (allowed?)
+                  (list (dense-event-hit-at3d event upper-time upper-position upper-value
+                                               direction segment-index 0 'endpoint))
+                  '())]
+             [(and (not (= lower-sign upper-sign)) (allowed?))
+              (list (dense-event-root3d event segment segment-index
+                                         lower-value upper-value direction))]
+             [else '()])))))]))
+
+(define (dense-terminal-range3d start-time end-time hits events)
+  (define terminal-ids
+    (for/list ([event (in-list events)] #:when (ode-event3d-terminal? event))
+      (ode-event3d-id event)))
+  (define terminal-hits
+    (filter (lambda (hit) (memq (ode-event-hit3d-event-id hit) terminal-ids)) hits))
+  (define (minimum-time-hit candidates)
+    (and (pair? candidates) (car candidates)))
+  (define (maximum-time-hit candidates)
+    ;; Keep the first declaration at an equal time; the hit list is already
+    ;; increasing-time, declaration-order deterministic.
+    (for/fold ([best #f]) ([candidate (in-list candidates)])
+      (if (or (not best) (> (ode-event-hit3d-time candidate)
+                             (ode-event-hit3d-time best)))
+          candidate best)))
+  (cond
+    [(null? terminal-hits) (values start-time end-time 'time-range)]
+    [(>= start-time 0)
+     (define forward (minimum-time-hit terminal-hits))
+     (if forward
+         (values start-time (min end-time (ode-event-hit3d-time forward)) 'terminal-event)
+         (values start-time end-time 'time-range))]
+    [(<= end-time 0)
+     (define backward (maximum-time-hit terminal-hits))
+     (if backward
+         (values (max start-time (ode-event-hit3d-time backward)) end-time 'terminal-event)
+         (values start-time end-time 'time-range))]
+    [else
+     (define backward
+       (maximum-time-hit
+        (filter (lambda (hit) (<= (ode-event-hit3d-time hit) 0)) terminal-hits)))
+     (define forward
+       (minimum-time-hit
+        (filter (lambda (hit) (>= (ode-event-hit3d-time hit) 0)) terminal-hits)))
+     (values (if backward (max start-time (ode-event-hit3d-time backward)) start-time)
+             (if forward (min end-time (ode-event-hit3d-time forward)) end-time)
+             (if (or backward forward) 'terminal-event 'time-range))]))
+
+(define (dense-reindex-event-hits3d hits segments)
+  (vector->immutable-vector
+   (list->vector
+    (for/list ([hit (in-list hits)])
+      (struct-copy ode-event-hit3d hit
+                   [segment-index
+                    (if (zero? (vector-length segments))
+                        0
+                        (dense-segment-index-for-time3d
+                         segments (ode-event-hit3d-time hit)))])))))
+
+(define (dense-event-warnings3d hits)
+  (for/list ([hit (in-vector hits)]
+             #:when (eq? (ode-event-hit3d-provenance hit) 'maximum-iterations))
+    (list 'event-maximum-iterations
+          (ode-event-hit3d-event-id hit)
+          (ode-event-hit3d-time hit))))
 
 (define (dense-make-segments3d nodes)
   (vector->immutable-vector
