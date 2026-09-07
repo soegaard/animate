@@ -655,6 +655,34 @@ cutaway3d
  ode-trajectory3d-arc-length-at
  ode-trajectory3d-time-at-arc-length
  ode-trajectory3d-segment-index
+ streamline-sample-policy3d
+ streamline-sample-policy3d?
+ streamline-sample-policy3d-maximum-chord-error
+ streamline-sample-policy3d-maximum-turn-angle
+ streamline-sample-policy3d-maximum-segment-length
+ streamline-sample-policy3d-minimum-segment-length
+ prepared-streamline3d?
+ prepared-streamline3d-seed
+ prepared-streamline3d-direction
+ prepared-streamline3d-parameterization
+ prepared-streamline3d-trajectory
+ prepared-streamline3d-curve-samples
+ prepared-streamline3d-diagnostics
+ prepared-streamline3d-seed-index
+ streamline-diagnostics3d?
+ streamline-diagnostics3d-forward
+ streamline-diagnostics3d-backward
+ streamline-diagnostics3d-field-evaluations
+ streamline-diagnostics3d-curve-sample-count
+ streamline-diagnostics3d-total-arc-length
+ streamline-diagnostics3d-termination-reasons
+ streamline-branch-diagnostics3d?
+ streamline-branch-diagnostics3d-direction
+ streamline-branch-diagnostics3d-time-range
+ streamline-branch-diagnostics3d-segment-count
+ streamline-branch-diagnostics3d-termination
+ prepare-streamline3d
+ adaptive-streamline3d
  vector-field3d
  streamline3d
  streamlines3d

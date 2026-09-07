@@ -127,9 +127,13 @@
     "examples/3d/event-aware-trajectory.rkt" 'make-demo-scene
     '(3d ode events terminal-roots trajectories camera animation) '(core) 5/2 5)
    (example-entry
-    'trajectory-termination "Trajectory termination policies"
+   'trajectory-termination "Trajectory termination policies"
     "examples/3d/trajectory-termination.rkt" 'make-demo-scene
     '(3d ode termination bounds arc-length events trajectories camera animation) '(core) 5/2 5)
+   (example-entry
+    'adaptive-streamlines "Prepared adaptive streamlines"
+    "examples/3d/adaptive-streamlines.rkt" 'make-demo-scene
+    '(3d ode streamlines adaptive arc-length trajectories camera animation) '(core) 5/2 5)
    (example-entry
    'spatial-inspector-picking "Exact spatial picking"
     "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene

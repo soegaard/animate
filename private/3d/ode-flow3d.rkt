@@ -33,6 +33,7 @@
          "spatial-visual.rkt"
          "stroke3d.rkt"
          "bounds3.rkt"
+         "tube-style3d.rkt"
          "vec3.rkt"
          "view3d-visual.rkt")
 
@@ -118,6 +119,34 @@
          ode-trajectory3d-arc-length-at
          ode-trajectory3d-time-at-arc-length
          ode-trajectory3d-segment-index
+         streamline-sample-policy3d
+         streamline-sample-policy3d?
+         streamline-sample-policy3d-maximum-chord-error
+         streamline-sample-policy3d-maximum-turn-angle
+         streamline-sample-policy3d-maximum-segment-length
+         streamline-sample-policy3d-minimum-segment-length
+         prepared-streamline3d?
+         prepared-streamline3d-seed
+         prepared-streamline3d-direction
+         prepared-streamline3d-parameterization
+         prepared-streamline3d-trajectory
+         prepared-streamline3d-curve-samples
+         prepared-streamline3d-diagnostics
+         prepared-streamline3d-seed-index
+         streamline-diagnostics3d?
+         streamline-diagnostics3d-forward
+         streamline-diagnostics3d-backward
+         streamline-diagnostics3d-field-evaluations
+         streamline-diagnostics3d-curve-sample-count
+         streamline-diagnostics3d-total-arc-length
+         streamline-diagnostics3d-termination-reasons
+         streamline-branch-diagnostics3d?
+         streamline-branch-diagnostics3d-direction
+         streamline-branch-diagnostics3d-time-range
+         streamline-branch-diagnostics3d-segment-count
+         streamline-branch-diagnostics3d-termination
+         prepare-streamline3d
+         adaptive-streamline3d
          vector-field3d
          streamline3d
          streamlines3d
@@ -1643,19 +1672,19 @@
 ;;;
 ;;; Static Curves and Vector Fields
 
-(define (streamline3d field seed
+(define (legacy-streamline3d field seed
                       #:id id
                       #:direction [direction 'both]
                       #:step-size [step-size 1/20]
                       #:steps [steps 120]
                       #:style [style (stroke3d #:color "royalblue" #:width 2)]
                       #:opacity [opacity 1])
-  (check-field3d 'streamline3d field)
-  (check-vec3 'streamline3d seed)
-  (check-symbol 'streamline3d id)
-  (check-direction 'streamline3d direction)
-  (check-positive 'streamline3d "step-size" step-size)
-  (check-positive-integer 'streamline3d "steps" steps)
+  (check-field3d 'legacy-streamline3d field)
+  (check-vec3 'legacy-streamline3d seed)
+  (check-symbol 'legacy-streamline3d id)
+  (check-direction 'legacy-streamline3d direction)
+  (check-positive 'legacy-streamline3d "step-size" step-size)
+  (check-positive-integer 'legacy-streamline3d "steps" steps)
   (define trajectory
     (prepare-ode-trajectory3d field seed
                               #:time-range (cons (* -1 steps step-size)
@@ -1668,6 +1697,322 @@
      [(backward) (for/list ([index (in-range steps -1 -1)]) (at (- index)))]
      [else (append (for/list ([index (in-range steps 0 -1)]) (at (- index)))
                    (for/list ([index (in-range 0 (add1 steps))]) (at index)))])
+   #:id id #:style style #:opacity opacity))
+
+(define (legacy-streamlines3d field seeds
+                       #:id id
+                       #:direction [direction 'both]
+                       #:step-size [step-size 1/20]
+                       #:steps [steps 120]
+                       #:style [style (stroke3d #:color "royalblue" #:width 2)]
+                       #:opacity [opacity 1])
+  (check-field3d 'legacy-streamlines3d field)
+  (unless (list? seeds) (raise-argument-error 'legacy-streamlines3d "list?" seeds))
+  (for ([seed (in-list seeds)]) (check-vec3 'legacy-streamlines3d seed))
+  (check-symbol 'legacy-streamlines3d id)
+  (group3d
+   (for/list ([seed (in-list seeds)] [index (in-naturals)])
+     (legacy-streamline3d field seed #:id (child-id3d id index)
+                   #:direction direction #:step-size step-size #:steps steps
+                   #:style style #:opacity opacity))
+   #:id id))
+
+;; T-3 keeps the numerical trajectory separate from its visual sampling.  The
+;; former is dense immutable data; the latter is a deterministic world-space
+;; polyline that never changes with camera distance or pixel scale.
+(struct streamline-sample-policy3d-value
+  (maximum-chord-error maximum-turn-angle maximum-segment-length minimum-segment-length)
+  #:transparent)
+
+(define (streamline-sample-policy3d #:maximum-chord-error [maximum-chord-error 1/100]
+                                    #:maximum-turn-angle [maximum-turn-angle (/ (acos -1) 12)]
+                                    #:maximum-segment-length [maximum-segment-length 1/4]
+                                    #:minimum-segment-length [minimum-segment-length 1/2000])
+  (check-optional-nonnegative 'streamline-sample-policy3d
+                              "maximum-chord-error" maximum-chord-error)
+  (unless (and (finite-real? maximum-turn-angle)
+               (<= 0 maximum-turn-angle (acos -1)))
+    (raise-arguments-error 'streamline-sample-policy3d
+                           "turn angle in the closed interval [0, pi]"
+                           "maximum-turn-angle" maximum-turn-angle))
+  (check-positive 'streamline-sample-policy3d
+                  "maximum-segment-length" maximum-segment-length)
+  (check-positive 'streamline-sample-policy3d
+                  "minimum-segment-length" minimum-segment-length)
+  (when (> minimum-segment-length maximum-segment-length)
+    (raise-arguments-error 'streamline-sample-policy3d
+                           "minimum segment length no greater than maximum segment length"
+                           "minimum-segment-length" minimum-segment-length
+                           "maximum-segment-length" maximum-segment-length))
+  (streamline-sample-policy3d-value maximum-chord-error maximum-turn-angle
+                                    maximum-segment-length minimum-segment-length))
+
+(define streamline-sample-policy3d? streamline-sample-policy3d-value?)
+(define (check-streamline-sample-policy3d who value)
+  (unless (streamline-sample-policy3d? value)
+    (raise-argument-error who "streamline-sample-policy3d?" value)))
+(define (streamline-sample-policy3d-maximum-chord-error value)
+  (check-streamline-sample-policy3d 'streamline-sample-policy3d-maximum-chord-error value)
+  (streamline-sample-policy3d-value-maximum-chord-error value))
+(define (streamline-sample-policy3d-maximum-turn-angle value)
+  (check-streamline-sample-policy3d 'streamline-sample-policy3d-maximum-turn-angle value)
+  (streamline-sample-policy3d-value-maximum-turn-angle value))
+(define (streamline-sample-policy3d-maximum-segment-length value)
+  (check-streamline-sample-policy3d 'streamline-sample-policy3d-maximum-segment-length value)
+  (streamline-sample-policy3d-value-maximum-segment-length value))
+(define (streamline-sample-policy3d-minimum-segment-length value)
+  (check-streamline-sample-policy3d 'streamline-sample-policy3d-minimum-segment-length value)
+  (streamline-sample-policy3d-value-minimum-segment-length value))
+
+;; Branch data is intentionally a small immutable summary. It reveals the
+;; two sides of a bidirectional integration without retaining an author field
+;; or mutable solver state.
+(struct streamline-branch-diagnostics3d
+  (direction time-range segment-count termination)
+  #:transparent)
+(struct streamline-diagnostics3d
+  (forward backward field-evaluations curve-sample-count total-arc-length
+           termination-reasons seed-index)
+  #:transparent)
+(struct prepared-streamline3d-value
+  (seed direction parameterization trajectory curve-samples diagnostics)
+  #:transparent)
+
+(define prepared-streamline3d? prepared-streamline3d-value?)
+(define (check-prepared-streamline3d who value)
+  (unless (prepared-streamline3d? value)
+    (raise-argument-error who "prepared-streamline3d?" value)))
+(define (prepared-streamline3d-seed value)
+  (check-prepared-streamline3d 'prepared-streamline3d-seed value)
+  (prepared-streamline3d-value-seed value))
+(define (prepared-streamline3d-direction value)
+  (check-prepared-streamline3d 'prepared-streamline3d-direction value)
+  (prepared-streamline3d-value-direction value))
+(define (prepared-streamline3d-parameterization value)
+  (check-prepared-streamline3d 'prepared-streamline3d-parameterization value)
+  (prepared-streamline3d-value-parameterization value))
+(define (prepared-streamline3d-trajectory value)
+  (check-prepared-streamline3d 'prepared-streamline3d-trajectory value)
+  (prepared-streamline3d-value-trajectory value))
+(define (prepared-streamline3d-curve-samples value)
+  (check-prepared-streamline3d 'prepared-streamline3d-curve-samples value)
+  (prepared-streamline3d-value-curve-samples value))
+(define (prepared-streamline3d-diagnostics value)
+  (check-prepared-streamline3d 'prepared-streamline3d-diagnostics value)
+  (prepared-streamline3d-value-diagnostics value))
+(define (prepared-streamline3d-seed-index value)
+  (streamline-diagnostics3d-seed-index (prepared-streamline3d-diagnostics value)))
+
+(define (check-streamline-parameterization who value)
+  (unless (memq value '(time arc-length))
+    (raise-argument-error who "'time or 'arc-length" value)))
+
+(define (normalize-streamline-termination3d who termination)
+  (cond [(not termination) (trajectory-termination3d #:time-limit 8)]
+        [(trajectory-termination3d? termination) termination]
+        [else (raise-argument-error who "#f or trajectory-termination3d?" termination)]))
+
+(define (arc-length-streamline-termination3d termination)
+  ;; A normalized field has no direction at an equilibrium.  Make that an
+  ;; explicit zero-speed endpoint unless the author supplied a stricter or
+  ;; looser threshold already.
+  (if (trajectory-termination3d-minimum-speed termination)
+      termination
+      (trajectory-termination3d
+       #:time-limit (trajectory-termination3d-time-limit termination)
+       #:arc-length-limit (trajectory-termination3d-arc-length-limit termination)
+       #:bounds (trajectory-termination3d-bounds termination)
+       #:minimum-speed 0
+       #:maximum-steps (trajectory-termination3d-maximum-steps termination)
+       #:events (trajectory-termination3d-events termination)
+       #:on-field-error (trajectory-termination3d-on-field-error termination))))
+
+(define (streamline-horizon3d termination)
+  ;; A supplied policy without a time budget may stop on bounds, an arc budget,
+  ;; an event, or speed. Eight parameter units are the deterministic finite
+  ;; safety horizon if none of those does.
+  (or (trajectory-termination3d-time-limit termination) 8))
+
+(define (streamline-field3d who field parameterization)
+  (define normalized (normalize-ode-field3d who field))
+  (case parameterization
+    [(time) normalized]
+    [else
+     (unless (ode-field3d-autonomous? normalized)
+       (raise-arguments-error who "arc-length streamlines require an autonomous field"
+                              "field" field))
+     (ode-field3d
+      (lambda (x y z)
+        (define derivative (call-field3d normalized 0 (vec3 x y z)))
+        (define speed (vec3-length derivative))
+        (if (zero? speed) origin3 (vec3-scale (/ 1 speed) derivative)))
+      #:cache-key (list 'arc-length-streamline (ode-field3d-cache-key normalized)))]))
+
+(define (streamline-turn-angle3d first second)
+  (define first-length (vec3-length first))
+  (define second-length (vec3-length second))
+  (if (or (zero? first-length) (zero? second-length))
+      0
+      (acos (max -1 (min 1 (/ (vec3-dot first second)
+                               (* first-length second-length)))))))
+
+(define (streamline-segment-samples3d trajectory policy first-time last-time)
+  (define first-position (ode-trajectory3d-position trajectory first-time))
+  (define last-position (ode-trajectory3d-position trajectory last-time))
+  (let loop ([left-time first-time] [left-position first-position]
+             [right-time last-time] [right-position last-position] [depth 0])
+    (define chord-length (vec3-distance left-position right-position))
+    (define middle-time (/ (+ left-time right-time) 2))
+    (define middle-position (ode-trajectory3d-position trajectory middle-time))
+    (define chord-error (vec3-distance middle-position
+                                     (vec3-lerp left-position right-position 1/2)))
+    (define turn-angle
+      (streamline-turn-angle3d
+       (ode-trajectory3d-derivative trajectory left-time)
+       (ode-trajectory3d-derivative trajectory right-time)))
+    (define subdivide?
+      (and (< depth 48)
+           (> chord-length (streamline-sample-policy3d-minimum-segment-length policy))
+           (or (> chord-length (streamline-sample-policy3d-maximum-segment-length policy))
+               (> chord-error (streamline-sample-policy3d-maximum-chord-error policy))
+               (> turn-angle (streamline-sample-policy3d-maximum-turn-angle policy)))))
+    (if (not subdivide?)
+        (list left-position right-position)
+        (append (drop-right (loop left-time left-position middle-time middle-position (add1 depth)) 1)
+                (loop middle-time middle-position right-time right-position (add1 depth))))))
+
+(define (streamline-resample3d trajectory policy)
+  (define segments (prepared-trajectory3d-value-segments trajectory))
+  (if (zero? (vector-length segments))
+      (vector->immutable-vector
+       (vector (ode-trajectory3d-position trajectory
+                                          (car (ode-trajectory3d-time-range trajectory)))))
+      (let ([samples
+             (for/fold ([samples '()]) ([segment (in-vector segments)])
+               (define next
+                 (streamline-segment-samples3d trajectory policy
+                                              (trajectory-segment3d-t0 segment)
+                                              (trajectory-segment3d-t1 segment)))
+               (if (null? samples) next (append samples (cdr next))))])
+        (define distinct
+          (for/fold ([reversed '()]) ([point (in-list samples)])
+            (if (and (pair? reversed) (equal? point (car reversed)))
+                reversed
+                (cons point reversed))))
+        (vector->immutable-vector (list->vector (reverse distinct))))))
+
+(define (streamline-sample-length3d samples)
+  (for/fold ([total 0]) ([index (in-range 1 (vector-length samples))])
+    (+ total (vec3-distance (vector-ref samples (sub1 index))
+                            (vector-ref samples index)))))
+
+(define (streamline-branch-diagnostics3d-for trajectory direction)
+  (define range (ode-trajectory3d-time-range trajectory))
+  (define branch-range
+    (case direction
+      [(forward) (cons 0 (cdr range))]
+      [else (cons (car range) 0)]))
+  (define segments (prepared-trajectory3d-value-segments trajectory))
+  (define segment-count
+    (for/sum ([segment (in-vector segments)])
+      (if (case direction
+            [(forward) (>= (trajectory-segment3d-t0 segment) 0)]
+            [else (<= (trajectory-segment3d-t1 segment) 0)])
+          1 0)))
+  (define termination
+    (for/first ([hit (in-vector (ode-trajectory3d-termination trajectory))]
+                #:when (case direction
+                         [(forward) (>= (trajectory-termination-hit3d-time hit) 0)]
+                         [else (<= (trajectory-termination-hit3d-time hit) 0)]))
+      hit))
+  (streamline-branch-diagnostics3d direction branch-range segment-count termination))
+
+(define (prepare-streamline3d field seed
+                              #:direction [direction 'forward]
+                              #:parameterization [parameterization 'time]
+                              #:solver [solver (adaptive-rk45-solver3d)]
+                              #:termination [termination #f]
+                              #:sample-policy [sample-policy (streamline-sample-policy3d)])
+  (check-vec3 'prepare-streamline3d seed)
+  (check-direction 'prepare-streamline3d direction)
+  (check-streamline-parameterization 'prepare-streamline3d parameterization)
+  (check-streamline-sample-policy3d 'prepare-streamline3d sample-policy)
+  (define normalized-termination
+    (normalize-streamline-termination3d 'prepare-streamline3d termination))
+  (define effective-termination
+    (if (eq? parameterization 'arc-length)
+        (arc-length-streamline-termination3d normalized-termination)
+        normalized-termination))
+  (define horizon (streamline-horizon3d effective-termination))
+  ;; Ask for a little more than an explicit time budget, so the trajectory
+  ;; layer records that budget as the selected stopping policy rather than
+  ;; treating an exactly equal request endpoint as ordinary completion.
+  (define requested-horizon
+    (if (trajectory-termination3d-time-limit effective-termination)
+        (+ horizon (max 1 (/ horizon 2)))
+        horizon))
+  (define time-range
+    (case direction
+      [(forward) (cons 0 requested-horizon)]
+      [(backward) (cons (- requested-horizon) 0)]
+      [else (cons (- requested-horizon) requested-horizon)]))
+  (define trajectory
+    (prepare-ode-trajectory3d
+     (streamline-field3d 'prepare-streamline3d field parameterization)
+     seed #:time-range time-range #:solver solver #:termination effective-termination))
+  (define samples (streamline-resample3d trajectory sample-policy))
+  (define seed-index
+    (or (for/first ([point (in-vector samples)] [index (in-naturals)]
+                    #:when (equal? point seed)) index)
+        0))
+  (define trajectory-diagnostics (ode-trajectory3d-diagnostics trajectory))
+  (define termination-hits (ode-trajectory3d-termination trajectory))
+  (define diagnostics
+    (streamline-diagnostics3d
+     (and (memq direction '(forward both))
+          (streamline-branch-diagnostics3d-for trajectory 'forward))
+     (and (memq direction '(backward both))
+          (streamline-branch-diagnostics3d-for trajectory 'backward))
+     (ode-trajectory3d-diagnostics-field-evaluations trajectory-diagnostics)
+     (vector-length samples)
+     (streamline-sample-length3d samples)
+     (for/list ([hit (in-vector termination-hits)])
+       (trajectory-termination-hit3d-reason hit))
+     seed-index))
+  (prepared-streamline3d-value seed direction parameterization trajectory samples diagnostics))
+
+(define (adaptive-streamline3d prepared
+                               #:id id
+                               #:style [style (stroke3d #:color "royalblue" #:width 2)]
+                               #:opacity [opacity 1])
+  (check-prepared-streamline3d 'adaptive-streamline3d prepared)
+  (check-symbol 'adaptive-streamline3d id)
+  (unless (or (stroke3d? style) (tube-style3d? style))
+    (raise-argument-error 'adaptive-streamline3d
+                          "stroke3d? or tube-style3d? as #:style" style))
+  (unless (and (finite-real? opacity) (<= 0 opacity 1))
+    (raise-argument-error 'adaptive-streamline3d "finite real in [0, 1]" opacity))
+  (define samples (prepared-streamline3d-curve-samples prepared))
+  (if (< (vector-length samples) 2)
+      (group3d '() #:id id)
+      (polyline3d (vector->list samples) #:id id #:style style #:opacity opacity)))
+
+;; The old static spelling now routes through immutable preparation.  Its
+;; familiar step and count keywords select a fixed solver and finite horizon.
+(define (streamline3d field seed
+                      #:id id
+                      #:direction [direction 'both]
+                      #:step-size [step-size 1/20]
+                      #:steps [steps 120]
+                      #:style [style (stroke3d #:color "royalblue" #:width 2)]
+                      #:opacity [opacity 1])
+  (check-positive 'streamline3d "step-size" step-size)
+  (check-positive-integer 'streamline3d "steps" steps)
+  (adaptive-streamline3d
+   (prepare-streamline3d
+    field seed #:direction direction
+    #:solver (fixed-rk4-solver3d #:step-size step-size)
+    #:termination (trajectory-termination3d #:time-limit (* steps step-size)))
    #:id id #:style style #:opacity opacity))
 
 (define (streamlines3d field seeds

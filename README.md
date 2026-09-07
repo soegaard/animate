@@ -125,6 +125,7 @@ exactly synchronized with the gallery and example requirements.
 - [Prepared Lorenz flow](examples/3d/prepared-lorenz-flow.rkt) — 3d, ode, vector-fields, trajectories, camera, animation; requires core.
 - [Event-aware trajectory](examples/3d/event-aware-trajectory.rkt) — 3d, ode, events, terminal-roots, trajectories, camera, animation; requires core.
 - [Trajectory termination policies](examples/3d/trajectory-termination.rkt) — 3d, ode, termination, bounds, arc-length, events, trajectories, camera, animation; requires core.
+- [Prepared adaptive streamlines](examples/3d/adaptive-streamlines.rkt) — 3d, ode, streamlines, adaptive, arc-length, trajectories, camera, animation; requires core.
 - [Exact spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, bvh, camera; requires core, gui.
 - [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
 - [Compiled mesh diagnostics](examples/3d/mesh-diagnostics.rkt) — 3d, topology, diagnostics, compilation, cache, camera; requires core.

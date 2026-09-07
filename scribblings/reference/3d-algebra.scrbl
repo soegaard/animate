@@ -1550,9 +1550,9 @@ The canonical acceptance scene is
 
 @section{Prepared spatial ODE trajectories and vector fields}
 
-SCENE-3D-T0/T1/T2 turns the earlier direct-time flow support into an immutable
-trajectory-data model with event-aware preparation and explicit stopping
-policies.
+SCENE-3D-T0/T1/T2/T3 turns the earlier direct-time flow support into an
+immutable trajectory-data model with event-aware preparation, explicit
+stopping policies, and display-ready adaptive streamlines.
 @racket[prepare-ode-trajectory3d] records dense RK4 or Dormand--Prince
 segments once; subsequent position, tangent, arc-length, and event-hit lookup
 accepts any supported time in any order and never calls the author field. A
@@ -1588,6 +1588,18 @@ immutable table. Thus worker rendering reads positions and tangents only; it
 does not evaluate the field procedure. The fixed solver's
 @racket[#:checkpoint-every] value remains diagnostic preparation metadata for
 now; it no longer changes lookup cost.
+
+@racket[prepare-streamline3d] uses the same dense prepared trajectory but adds
+an explicit choice of parameterization. @racket['time] means
+@italic{dp/ds = F(p)}, preserving the field's speed. @racket['arc-length]
+means @italic{dp/ds = F(p)/||F(p)||}; it therefore requires an autonomous
+field and ends at an equilibrium rather than inventing a direction. The
+prepared display samples are recursively subdivided in world coordinates until
+the chord error, tangent turn, and segment length satisfy an immutable
+@racket[streamline-sample-policy3d]. Camera zoom does not change their points.
+For a bidirectional streamline, the returned samples run from the backward end
+through one copy of the seed to the forward end; the seed index and per-branch
+diagnostics remain inspectable.
 
 @racketblock[
 (define lorenz-path
@@ -1672,6 +1684,39 @@ termination policy. Accessors begin with @tt{trajectory-termination3d-}.}
 immutable winning-policy record. Its accessors begin with
 @tt{trajectory-termination-hit3d-}; @tt{reason}, @tt{time}, @tt{position},
 and @tt{details} are deliberately serializable inspection data.}
+@defproc[(streamline-sample-policy3d
+          [#:maximum-chord-error maximum-chord-error nonnegative-real? 1/100]
+          [#:maximum-turn-angle maximum-turn-angle nonnegative-real? (/ pi 12)]
+          [#:maximum-segment-length maximum-segment-length positive? 1/4]
+          [#:minimum-segment-length minimum-segment-length positive? 1/2000])
+         streamline-sample-policy3d?]{Constructs an immutable, world-space
+display resampling policy. The minimum length is an explicit recursion floor
+and must not exceed the maximum length. Accessors begin with
+@tt{streamline-sample-policy3d-}.}
+@defproc[(prepare-streamline3d
+          [field any/c]
+          [seed vec3?]
+          [#:direction direction (or/c 'forward 'backward 'both) 'forward]
+          [#:parameterization parameterization (or/c 'time 'arc-length) 'time]
+          [#:solver solver any/c (adaptive-rk45-solver3d)]
+          [#:termination termination (or/c false/c trajectory-termination3d?) #f]
+          [#:sample-policy sample-policy streamline-sample-policy3d?
+                           (streamline-sample-policy3d)])
+         prepared-streamline3d?]{Prepares one immutable streamline. If no
+policy is supplied, preparation uses a finite eight-unit time budget. A
+supplied policy with no time limit uses the same finite safety horizon unless
+another termination condition ends first.}
+@defproc[(prepared-streamline3d? [value any/c]) boolean?]{Recognizes an
+immutable prepared streamline. Its accessors begin with
+@tt{prepared-streamline3d-}; @tt{curve-samples} is an immutable vector of
+world-space @racket[vec3] values and @tt{seed-index} names the seed's sole
+joined occurrence.}
+@defproc[(adaptive-streamline3d [prepared prepared-streamline3d?]
+                                [#:id id symbol?]
+                                [#:style style any/c]
+                                [#:opacity opacity real? 1]) spatial-visual?]{Converts
+prepared display samples to an ordinary spatial curve. A zero-length prepared
+streamline lowers to an empty named group rather than a fictitious segment.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
@@ -1715,7 +1760,7 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T2 limits.} Arc length is a deterministic eight-chord estimate
+@bold{Current T3 limits.} Arc length is a deterministic eight-chord estimate
 per stored dense segment rather than a certified integral, so an arc-length
 endpoint is deterministic but not mathematically certified. The low-speed
 policy observes accepted nodes and one midpoint per segment; it does not yet
@@ -1724,9 +1769,11 @@ sign-changing roots and exact/tolerance-zero endpoints, but does not search for
 an isolated tangency whose sampled event values retain the same sign. AABB
 exits are split at all dense-coordinate extrema and then bisected; numerical
 roots remain tolerance-limited, although an accepted face node is preserved
-exactly. Adaptive streamline sets, seed values, Poincare sections,
-equilibrium/flow-map analysis, and certified arc-length integration are later
-SCENE-3D-T slices.
+exactly. A standalone streamline without a time limit has the documented
+eight-unit safety horizon. T3 has one independent prepared streamline at a
+time; deterministic seed sets, separated/parallel streamline sets, Poincare
+sections, equilibrium/flow-map analysis, and certified arc-length integration
+are later SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)
@@ -1766,7 +1813,9 @@ Creates one prepared particle per trajectory using the shared time parameter.}
 The canonical acceptance scenes are
 @filepath{examples/3d/prepared-lorenz-flow.rkt} and
 @filepath{examples/3d/event-aware-trajectory.rkt}; explicit policies are shown
-in @filepath{examples/3d/trajectory-termination.rkt}.
+in @filepath{examples/3d/trajectory-termination.rkt}, while
+@filepath{examples/3d/adaptive-streamlines.rkt} shows T3's world-space
+resampling.
 
 @section{Spatial inspection and exact picking}
 
