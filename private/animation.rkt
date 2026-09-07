@@ -49,9 +49,11 @@
          "3d/camera3d-animation.rkt"
          "3d/camera3d-fit.rkt"
          "3d/camera3d.rkt"
+         "3d/correspondence3d.rkt"
          "3d/curve-animation3d.rkt"
          "3d/curve3d.rkt"
          "3d/mesh3d.rkt"
+         "3d/matching-animation3d.rkt"
          "3d/parametric-surface3d.rkt"
          "3d/polyhedron-fold-animation3d.rkt"
          "3d/polyhedron-net3d.rkt"
@@ -107,6 +109,8 @@
          scale3d-by-request?
          transform3d-to
          transform3d-to-request?
+         transform-matching-mesh3d
+         transform-matching-mesh3d-request?
          unfold-polyhedron3d
          unfold-polyhedron3d-request?
          fold-polyhedron3d
@@ -2585,6 +2589,58 @@
    #:scale destination-scale)
    1/2))
 
+; compile-mesh-match-request : scene-state? transform-matching-mesh3d-request?
+;                              -> mesh-match-animation3d?
+;; Captures exact source/destination mesh values at admission.  The source path
+;; remains valid for the full clip, hence the destination must retain that
+;; spatial identity.  Cross-fade is deliberately an explicit topology mode;
+;; only require-equal is allowed to call the indexed mesh sampler.
+(define (compile-mesh-match-request state request)
+  (define target-path (animation-request-target-id request))
+  (define view (scene-state-view3d-ref state (car target-path) 'scene-play))
+  (define source (view3d-spatial-ref view target-path))
+  (unless (mesh3d? source)
+    (raise-arguments-error
+     'transform-matching-mesh3d
+     "a mesh3d at the target spatial path"
+     "target-path" target-path
+     "spatial-visual" source))
+  (define destination (transform-matching-mesh3d-request-destination request))
+  (unless (eq? (spatial-id source) (spatial-id destination))
+    (raise-arguments-error
+     'transform-matching-mesh3d
+     "a destination mesh preserving the target's spatial identity"
+     "target-path" target-path
+     "source-id" (spatial-id source)
+     "destination-id" (spatial-id destination)))
+  (define correspondence
+    (or (transform-matching-mesh3d-request-correspondence request)
+        (prepare-mesh-correspondence3d source destination)))
+  (when (and (eq? (transform-matching-mesh3d-request-topology request)
+                  'require-equal)
+             (not (mesh3d-correspondence-compatible?
+                   source destination correspondence)))
+    (raise-arguments-error
+     'transform-matching-mesh3d
+     "complete compatible indexed topology, or #:topology 'cross-fade"
+     "target-path" target-path
+     "correspondence" correspondence
+     "unmatched-source" (mesh-correspondence3d-unmatched-source correspondence)
+     "unmatched-destination" (mesh-correspondence3d-unmatched-destination correspondence)
+     "diagnostics" (mesh-correspondence3d-diagnostics correspondence)))
+  ;; Force the same decomposition validity check used by transform3d-to before
+  ;; a request enters the timeline. Cross-fade never interpolates scale, so it
+  ;; is not subject to this geometric-morph requirement.
+  (when (eq? (transform-matching-mesh3d-request-topology request)
+             'require-equal)
+    (transform3-lerp (spatial-transform source)
+                     (spatial-transform destination)
+                     1/2))
+  (mesh-match-animation3d
+   target-path source destination correspondence
+   (transform-matching-mesh3d-request-topology request)
+   (transform-matching-mesh3d-request-route request)))
+
 ; compile-polyhedron-fold-request : scene-state? polyhedron-fold-animation-request?
 ;                                    -> polyhedron-fold-animation?
 ;; Validates the canonical independent face children once at clip admission.
@@ -2933,6 +2989,8 @@
      (compile-spatial-surface-animation-request state request)]
     [(spatial-map-animation-request? request)
      (compile-spatial-map-animation-request state request)]
+    [(transform-matching-mesh3d-request? request)
+     (compile-mesh-match-request state request)]
     [(polyhedron-fold-animation-request? request)
      (compile-polyhedron-fold-request state request)]
     [(spatial-animation-request? request)
@@ -4127,6 +4185,7 @@
       (rotate-by-request? value)
       (scale-to-request? value)
       (scale-by-request? value)
+      (transform-matching-mesh3d-request? value)
       (polyhedron-fold-animation-request? value)
       (spatial-curve-animation-request? value)
       (spatial-surface-animation-request? value)
@@ -4243,6 +4302,8 @@
      (scale3d-by-request-target-path request)]
     [(transform3d-to-request? request)
      (transform3d-to-request-target-path request)]
+    [(transform-matching-mesh3d-request? request)
+     (transform-matching-mesh3d-request-target-path request)]
     [(unfold-polyhedron3d-request? request)
      (unfold-polyhedron3d-request-target-path request)]
     [(fold-polyhedron3d-request? request)
@@ -4396,6 +4457,8 @@
      '(spatial-scale)]
     [(transform3d-to-request? request)
      '(spatial-translation spatial-rotation spatial-scale)]
+    [(transform-matching-mesh3d-request? request)
+     '(spatial-translation spatial-rotation spatial-scale spatial-mesh-geometry)]
     [(polyhedron-fold-animation-request? request)
      '(spatial-translation spatial-rotation spatial-scale)]
     [(or (apply-linear3-request? request)
@@ -4596,6 +4659,7 @@
       (spatial-curve-compiled-animation? value)
       (spatial-surface-compiled-animation? value)
       (spatial-map-compiled-animation? value)
+      (mesh-match-compiled-animation? value)
       (polyhedron-fold-compiled-animation? value)
       (spatial-compiled-animation? value)
       (affine-map-animation? value)
@@ -4647,6 +4711,8 @@
      (apply-spatial-surface-compiled-animation state animation progress)]
     [(spatial-map-compiled-animation? animation)
      (apply-spatial-map-compiled-animation state animation progress)]
+    [(mesh-match-compiled-animation? animation)
+     (apply-mesh-match-animation state animation progress)]
     [(polyhedron-fold-compiled-animation? animation)
      (apply-polyhedron-fold-animation state animation progress)]
     [(spatial-compiled-animation? animation)
@@ -4738,6 +4804,33 @@
    state
    view-id
    (view3d-spatial-update view path update)))
+
+; apply-mesh-match-animation : scene-state? mesh-match-animation3d?
+;                              unit-real? -> scene-state?
+;; Sampling is endpoint-direct.  In particular, an arbitrary final seek
+;; installs the captured destination mesh itself, not a numerically rebuilt
+;; approximation.  Cross-fade samples use two separate temporary child meshes
+;; and never interpolate a source index array against a destination one.
+(define (apply-mesh-match-animation state animation progress)
+  (cond [(zero? progress) state]
+        [(= progress 1)
+         (update-spatial-at
+          state (mesh-match-animation3d-target-path animation)
+          (lambda (_ignored) (mesh-match-animation3d-destination animation)))]
+        [else
+         (define source (mesh-match-animation3d-source animation))
+         (define destination (mesh-match-animation3d-destination animation))
+         (define route (mesh-match-animation3d-route animation))
+         (define sampled
+           (if (eq? (mesh-match-animation3d-topology animation) 'require-equal)
+               (mesh3d-matching-sample
+                source destination
+                (mesh-match-animation3d-correspondence animation)
+                route progress)
+               (mesh3d-cross-fade-sample source destination route progress)))
+         (update-spatial-at
+          state (mesh-match-animation3d-target-path animation)
+          (lambda (_ignored) sampled))]))
 
 ; apply-polyhedron-fold-animation : scene-state? polyhedron-fold-animation?
 ;                                   unit-real? -> scene-state?

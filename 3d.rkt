@@ -36,6 +36,7 @@
          "private/3d/polyhedron-net3d.rkt"
          "private/3d/polyhedron-fold-animation3d.rkt"
          "private/3d/correspondence3d.rkt"
+         "private/3d/matching-animation3d.rkt"
          "private/3d/edge-adjacency3d.rkt"
          "private/3d/mesh-analysis3d.rkt"
          "private/3d/mesh-orientation3d.rkt"
@@ -934,6 +935,19 @@ cutaway3d
  scale3d-by-request?
  transform3d-to
  transform3d-to-request?
+ transform-matching-mesh3d
+ transform-matching-mesh3d-request?
+ spatial-line-route3d
+ spatial-line-route3d?
+ spatial-arc-route3d
+ spatial-arc-route3d?
+ spatial-bezier-route3d
+ spatial-bezier-route3d?
+ spatial-route3d?
+ spatial-route3d-sample
+ mesh3d-correspondence-compatible?
+ mesh3d-matching-sample
+ mesh3d-cross-fade-sample
  unfold-polyhedron3d
  unfold-polyhedron3d-request?
  fold-polyhedron3d

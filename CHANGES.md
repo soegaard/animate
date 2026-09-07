@@ -59,6 +59,15 @@
   costs plus threshold/capacity rejections. It is off by default and rejects
   candidate sets beyond its stated bound instead of pretending to solve a
   large-mesh correspondence problem.
+- Added SCENE-3D-U7's first topology-safe matching request:
+  `transform-matching-mesh3d`. Complete compatible correspondence plans
+  interpolate only mapped vertex/normal/colour data while preserving source
+  index arrays at interior frames; source and destination values are exact at
+  the clip boundaries. Explicit line, circular-arc, and cubic-Bézier routes
+  affect only the reference translation. Any topology change requires the
+  separate `'cross-fade` mode, which retains two independent mesh layers
+  instead of inventing unrelated indexed interpolation. General polygonal
+  face-part and nested spatial-tree matching are still pending.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses
