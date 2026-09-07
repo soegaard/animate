@@ -143,8 +143,14 @@ material rendering, an exact roughness-to-exponent mapping, highlight and
 emission colours, and immutable update helpers. Emission is additive after
 lighting (and after base colour for unlit materials); shadow-caster/receiver
 policy is retained but has no renderer effect until the shadow stage. Current
-display-space channel clamping is deliberately provisional until the later
-linear-colour and tone-mapping stage.
+SCENE-3D-V2 makes the output contract explicit: authored colours are sRGB,
+mesh/overlay lighting and alpha composition occur in linear RGB, and final
+pixels are tone-mapped then encoded to sRGB. `view3d` selects immutable
+`'clamp` (the default) or `'reinhard` output through `tone-map3d`; the
+software and optional OpenGL paths share test vectors and selected-pixel
+conformance checks. The current scope intentionally stops short of full ICC
+colour management, display-HDR output, or colour-managed composition with
+ordinary outer 2D Picts.
 SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
 deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and

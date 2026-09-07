@@ -11,6 +11,7 @@
 ;; dimensions, visibility, or depth semantics.
 
 (require racket/list
+         "../color-style.rkt"
          "../geometry.rkt"
          "affine3.rkt"
          "billboard3d.rkt"
@@ -213,18 +214,9 @@
               (+ x (* y (raster-target3d-width target)))))
 
 (define (blend-argb! target x y color)
-  (define bytes (raster-target3d-color-bytes target))
-  (define index (* 4 (+ x (* y (raster-target3d-width target)))))
-  (define alpha (vector-ref color 3))
-  (define old-alpha (/ (bytes-ref bytes index) 255.0))
-  (define out-alpha (+ alpha (* (- 1 alpha) old-alpha)))
-  (define (channel channel old-index)
-    (if (zero? out-alpha) 0
-        (/ (+ (* alpha channel) (* (- 1 alpha) old-alpha (bytes-ref bytes old-index)))
-           out-alpha)))
-  (bytes-set! bytes index (to-byte (* 255 out-alpha)))
-  (bytes-set! bytes (add1 index) (to-byte (channel (vector-ref color 0) (add1 index))))
-  (bytes-set! bytes (+ index 2) (to-byte (channel (vector-ref color 1) (+ index 2))))
-  (bytes-set! bytes (+ index 3) (to-byte (channel (vector-ref color 2) (+ index 3)))))
-
-(define (to-byte value) (inexact->exact (round (max 0 (min 255 value)))))
+  (raster-target3d-write-srgb!
+   target
+   (+ x (* y (raster-target3d-width target)))
+   (rgba-color (vector-ref color 0) (vector-ref color 1) (vector-ref color 2)
+               (vector-ref color 3))
+   #:blend? #t))

@@ -29,9 +29,11 @@
   (define pixel-index (+ 32 (* 24 64)))
   (define byte-index (* 4 pixel-index))
   (check-equal? (bytes-ref bytes byte-index) 255)
-  (check-true (<= 120 (bytes-ref bytes (add1 byte-index)) 136))
+  ;; Source-over happens in linear light, so a 50/50 red/blue mixture encodes
+  ;; to roughly 188 sRGB rather than the incorrect display-space midpoint 128.
+  (check-true (<= 186 (bytes-ref bytes (add1 byte-index)) 190))
   (check-equal? (bytes-ref bytes (+ byte-index 2)) 0)
-  (check-true (<= 120 (bytes-ref bytes (+ byte-index 3)) 136))
+  (check-true (<= 186 (bytes-ref bytes (+ byte-index 3)) 190))
 
   ;; Both explicit sort modes are accepted and produce a deterministic frame.
   (check-true

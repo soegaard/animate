@@ -293,7 +293,8 @@
   (define target
     (make-raster-target3d (frame3d-spec-width frame-spec)
                           (frame3d-spec-height frame-spec)
-                          (compiled-view3d-background compiled)))
+                          (compiled-view3d-background compiled)
+                          #:tone-map (compiled-view3d-tone-map compiled)))
   (define-values (opaque-raster opaque-pixels)
     (rasterize-prepared! target
                          (software-render-preparation-opaque preparation)

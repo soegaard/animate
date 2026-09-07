@@ -6,6 +6,7 @@
          "../color-style.rkt"
          "../geometry.rkt"
          "../preview-cancellation.rkt"
+         "color-space3d.rkt"
          "light3d.rkt"
          "material3d.rkt"
          "raster-target3d.rkt"
@@ -224,19 +225,23 @@
   (or (negative? dy) (and (zero? dy) (positive? dx))))
 
 (define (shade color normal view-position material lights)
-  (define emission (material3d-emission material))
+  ;; `color` is already a straight-alpha linear-light value.  Every semantic
+  ;; material/light colour enters this equation through `rgba-srgb->linear`.
+  (define emission (rgba-srgb->linear (material3d-emission material)))
   (define emission-scale (material3d-emission-strength material))
   (define (with-emission red green blue)
-    (rgba-color (clamp-channel (+ red (* emission-scale (rgba-color-red emission))))
-                (clamp-channel (+ green (* emission-scale (rgba-color-green emission))))
-                (clamp-channel (+ blue (* emission-scale (rgba-color-blue emission))))
-                (rgba-color-alpha color)))
+    (linear-rgba3d (+ red (* emission-scale (linear-rgba3d-red emission)))
+                   (+ green (* emission-scale (linear-rgba3d-green emission)))
+                   (+ blue (* emission-scale (linear-rgba3d-blue emission)))
+                   (linear-rgba3d-alpha color)))
   (cond
     ;; `unlit` is a normal-interpolation policy with no illumination model:
     ;; its base colour remains visible and material emission is an additive,
     ;; light-independent contribution.
     [(eq? (material3d-shading material) 'unlit)
-     (with-emission (rgba-color-red color) (rgba-color-green color) (rgba-color-blue color))]
+     (with-emission (linear-rgba3d-red color)
+                    (linear-rgba3d-green color)
+                    (linear-rgba3d-blue color))]
     [else
      (define view-direction
        (safe-normalize (vec3-scale -1 view-position) z-axis3))
@@ -276,34 +281,38 @@
                                (directional-light3d-color light) specular-amount))
             (values red green blue spec-red spec-green spec-blue)])))
      (define specular-color (material3d-specular-color material))
-     ;; Keep the CPU and GPU equation in display colour space until the later
-     ;; colour-management stage establishes the common linear-space boundary.
+     (define linear-specular-color (rgba-srgb->linear specular-color))
      (with-emission
-      (+ (* (rgba-color-red color) light-red)
-         (* (rgba-color-red specular-color) specular-red))
-      (+ (* (rgba-color-green color) light-green)
-         (* (rgba-color-green specular-color) specular-green))
-      (+ (* (rgba-color-blue color) light-blue)
-         (* (rgba-color-blue specular-color) specular-blue)))]))
+      (+ (* (linear-rgba3d-red color) light-red)
+         (* (linear-rgba3d-red linear-specular-color) specular-red))
+      (+ (* (linear-rgba3d-green color) light-green)
+         (* (linear-rgba3d-green linear-specular-color) specular-green))
+      (+ (* (linear-rgba3d-blue color) light-blue)
+         (* (linear-rgba3d-blue linear-specular-color) specular-blue)))]))
 
 (define (add-light-color red green blue color amount)
-  (values (+ red (* amount (/ (rgba-color-red color) 255)))
-          (+ green (* amount (/ (rgba-color-green color) 255)))
-          (+ blue (* amount (/ (rgba-color-blue color) 255)))))
+  (define linear (rgba-srgb->linear color))
+  (values (+ red (* amount (linear-rgba3d-red linear)))
+          (+ green (* amount (linear-rgba3d-green linear)))
+          (+ blue (* amount (linear-rgba3d-blue linear)))))
 
 (define (weighted-color first-color second-color third-color first-weight second-weight third-weight)
-  (rgba-color (clamp-channel (+ (* first-weight (rgba-color-red first-color))
-                                (* second-weight (rgba-color-red second-color))
-                                (* third-weight (rgba-color-red third-color))))
-              (clamp-channel (+ (* first-weight (rgba-color-green first-color))
-                                (* second-weight (rgba-color-green second-color))
-                                (* third-weight (rgba-color-green third-color))))
-              (clamp-channel (+ (* first-weight (rgba-color-blue first-color))
-                                (* second-weight (rgba-color-blue second-color))
-                                (* third-weight (rgba-color-blue third-color))))
-              (max 0 (min 1 (+ (* first-weight (rgba-color-alpha first-color))
-                               (* second-weight (rgba-color-alpha second-color))
-                               (* third-weight (rgba-color-alpha third-color)))))))
+  (define first-linear (rgba-srgb->linear first-color))
+  (define second-linear (rgba-srgb->linear second-color))
+  (define third-linear (rgba-srgb->linear third-color))
+  (linear-rgba3d
+   (+ (* first-weight (linear-rgba3d-red first-linear))
+      (* second-weight (linear-rgba3d-red second-linear))
+      (* third-weight (linear-rgba3d-red third-linear)))
+   (+ (* first-weight (linear-rgba3d-green first-linear))
+      (* second-weight (linear-rgba3d-green second-linear))
+      (* third-weight (linear-rgba3d-green third-linear)))
+   (+ (* first-weight (linear-rgba3d-blue first-linear))
+      (* second-weight (linear-rgba3d-blue second-linear))
+      (* third-weight (linear-rgba3d-blue third-linear)))
+   (max 0 (min 1 (+ (* first-weight (linear-rgba3d-alpha first-linear))
+                    (* second-weight (linear-rgba3d-alpha second-linear))
+                    (* third-weight (linear-rgba3d-alpha third-linear)))))))
 
 (define (weighted-vector first-vector second-vector third-vector first-weight second-weight third-weight)
   (vec3+ (vec3-scale first-weight first-vector)
@@ -313,40 +322,5 @@
 (define (safe-normalize vector fallback)
   (if (zero? (vec3-length vector)) fallback (vec3-normalize vector)))
 
-(define (clamp-channel value)
-  (max 0 (min 255 value)))
-
 (define (write-pixel! target index color #:blend? [blend? #f])
-  (define bytes (raster-target3d-color-bytes target))
-  (define byte-index (* index 4))
-  (define final-color
-    (if blend?
-        (let* ([source-alpha (rgba-color-alpha color)]
-               [destination-alpha (/ (bytes-ref bytes byte-index) 255.0)]
-               [destination-red (bytes-ref bytes (add1 byte-index))]
-               [destination-green (bytes-ref bytes (+ byte-index 2))]
-               [destination-blue (bytes-ref bytes (+ byte-index 3))]
-               [result-alpha (+ source-alpha (* (- 1 source-alpha) destination-alpha))])
-          ;; The target stores straight alpha.  The normal viewport background
-          ;; is opaque, but this also keeps semi-transparent backgrounds honest.
-          (if (zero? result-alpha)
-              (rgba-color 0 0 0 0)
-              (rgba-color
-               (/ (+ (* source-alpha (rgba-color-red color))
-                     (* (- 1 source-alpha) destination-alpha destination-red))
-                  result-alpha)
-               (/ (+ (* source-alpha (rgba-color-green color))
-                     (* (- 1 source-alpha) destination-alpha destination-green))
-                  result-alpha)
-               (/ (+ (* source-alpha (rgba-color-blue color))
-                     (* (- 1 source-alpha) destination-alpha destination-blue))
-                  result-alpha)
-               result-alpha)))
-        color))
-  (bytes-set! bytes byte-index (channel-byte (* 255 (rgba-color-alpha final-color))))
-  (bytes-set! bytes (add1 byte-index) (channel-byte (rgba-color-red final-color)))
-  (bytes-set! bytes (+ byte-index 2) (channel-byte (rgba-color-green final-color)))
-  (bytes-set! bytes (+ byte-index 3) (channel-byte (rgba-color-blue final-color))))
-
-(define (channel-byte value)
-  (inexact->exact (round (max 0 (min 255 value)))))
+  (raster-target3d-write-linear! target index color #:blend? blend?))

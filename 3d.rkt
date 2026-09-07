@@ -81,6 +81,7 @@
                   grid-plane3d)
          "private/3d/vector-diagram3d.rkt"
          "private/3d/material3d.rkt"
+         "private/3d/color-space3d.rkt"
          "private/3d/light3d.rkt"
          "private/3d/spatial-dependency.rkt"
          "private/3d/spatial-relation-context.rkt"
@@ -901,6 +902,17 @@ cutaway3d
  material3d-with-roughness
  material3d-with-emission
  material3d-with-shadow-policy
+
+ ;; Linear-light colour and final output policy
+ (struct-out linear-rgba3d)
+ srgb-channel->linear
+ linear-channel->srgb
+ rgba-srgb->linear
+ rgba-linear->srgb
+ linear-rgba3d-over
+ (struct-out tone-map3d)
+ default-tone-map3d
+ tone-map3d-apply
  ambient-light3d
  ambient-light3d?
  ambient-light3d-intensity
@@ -1000,6 +1012,7 @@ cutaway3d
  view3d-with-camera
  view3d-lights
  view3d-background
+ view3d-tone-map
  view3d-render-mode
  view3d-transparency-mode
  view3d-spatial-ref

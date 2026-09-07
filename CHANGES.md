@@ -2,6 +2,16 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V2's explicit cross-backend colour contract. Semantic input
+  colours remain sRGB, while mesh lighting, transparent composition, strokes,
+  markers, and billboards use linear RGB; alpha remains linear. A view owns an
+  immutable `tone-map3d` policy (`'clamp` by default or `'reinhard`) and final
+  stored ARGB pixels are tone-mapped then sRGB encoded. The OpenGL path now
+  composites into a linear floating-point target before shared final encoding;
+  focused transfer-vector and opt-in interior-pixel conformance tests cover
+  the two paths. Full ICC/display-HDR management and colour-managed outer 2D
+  composition remain intentionally out of scope.
+
 - Added SCENE-3D-V1 material semantics across the deterministic software and
   optional OpenGL renderers: explicit Lambert or Blinn--Phong lighting,
   validated roughness-to-exponent mapping, specular colour, additive emission,

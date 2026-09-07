@@ -239,21 +239,5 @@
               (* opacity (rgba-color-alpha color))))
 
 (define (blend-color! target x y source)
-  (define bytes (raster-target3d-color-bytes target))
-  (define byte-index (* 4 (+ x (* y (raster-target3d-width target)))))
-  (define alpha (rgba-color-alpha source))
-  (define old-alpha (/ (bytes-ref bytes byte-index) 255.0))
-  (define out-alpha (+ alpha (* (- 1 alpha) old-alpha)))
-  (define (channel new old)
-    (if (zero? out-alpha) 0
-        (/ (+ (* alpha new) (* (- 1 alpha) old-alpha old)) out-alpha)))
-  (bytes-set! bytes byte-index (to-byte (* 255 out-alpha)))
-  (bytes-set! bytes (add1 byte-index)
-              (to-byte (channel (rgba-color-red source) (bytes-ref bytes (add1 byte-index)))))
-  (bytes-set! bytes (+ byte-index 2)
-              (to-byte (channel (rgba-color-green source) (bytes-ref bytes (+ byte-index 2)))))
-  (bytes-set! bytes (+ byte-index 3)
-              (to-byte (channel (rgba-color-blue source) (bytes-ref bytes (+ byte-index 3))))))
-
-(define (to-byte number)
-  (inexact->exact (round (max 0 (min 255 number)))))
+  (raster-target3d-write-srgb!
+   target (+ x (* y (raster-target3d-width target))) source #:blend? #t))

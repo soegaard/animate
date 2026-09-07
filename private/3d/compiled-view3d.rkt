@@ -90,7 +90,7 @@
 
 (struct compiled-view3d
   (geometries instances strokes point-markers arrow-markers billboards edge-overlays
-              background render-mode transparency-mode)
+              background tone-map render-mode transparency-mode)
   #:transparent)
 
 ;; Collections are immutable vectors in first encounter/drawing order.  This
@@ -260,6 +260,7 @@
    (vector->immutable-vector (list->vector billboards))
    (vector->immutable-vector (list->vector edge-overlays))
    (view3d-background view)
+   (view3d-tone-map view)
    (view3d-render-mode view)
    (view3d-transparency-mode view)))
 

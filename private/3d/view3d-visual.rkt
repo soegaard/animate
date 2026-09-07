@@ -23,6 +23,7 @@
          "affine-map3d-visual.rkt"
          "bounds3.rkt"
          "camera3d.rkt"
+         "color-space3d.rkt"
          "light3d.rkt"
          "spatial-group.rkt"
          "spatial-path.rkt"
@@ -38,6 +39,7 @@
          view3d-with-camera
          view3d-lights
          view3d-background
+         view3d-tone-map
          view3d-render-mode
          view3d-transparency-mode
          view3d-content-key
@@ -55,7 +57,7 @@
 ;;;
 
 (struct view3d-value
-  (id transform opacity children width height camera lights background render-mode transparency-mode)
+  (id transform opacity children width height camera lights background tone-map render-mode transparency-mode)
   #:transparent
   #:methods gen:visual
   [(define (visual-id view)
@@ -106,6 +108,7 @@
 ;;  - camera       camera3d?                  immutable internal camera.
 ;;  - lights       (listof light3d?)           opaque-render lighting values.
 ;;  - background   color-spec?                opaque local viewport background.
+;;  - tone-map     tone-map3d?                final linear-light output policy.
 ;;  - render-mode  'wireframe or 'opaque      renderer selection.
 
 (define view3d? view3d-value?)
@@ -115,6 +118,7 @@
 (define view3d-camera view3d-value-camera)
 (define view3d-lights view3d-value-lights)
 (define view3d-background view3d-value-background)
+(define view3d-tone-map view3d-value-tone-map)
 (define view3d-render-mode view3d-value-render-mode)
 (define view3d-transparency-mode view3d-value-transparency-mode)
 
@@ -146,6 +150,7 @@
 ;          [#:center vec2?] [#:width positive-real?] [#:height positive-real?]
 ;          [#:rotation finite-real?] [#:scale scale-factor?] [#:opacity opacity?]
 ;          [#:camera camera3d?] [#:lights list?] [#:background color-spec?]
+;          [#:tone-map tone-map3d?]
 ;          [#:render-mode 'wireframe]
 ;          [#:transparency-mode (or/c 'object-sorted 'triangle-sorted)] -> view3d?
 ;;   Creates a 2D viewport whose spatial children retain a separate 3D tree.
@@ -160,6 +165,7 @@
                 #:camera [camera (perspective-camera3d)]
                 #:lights [lights '()]
                 #:background [background "white"]
+                #:tone-map [tone-map default-tone-map3d]
                 #:render-mode [render-mode 'wireframe]
                 #:transparency-mode [transparency-mode 'triangle-sorted])
   (unless (symbol? id)
@@ -182,6 +188,8 @@
     (raise-argument-error 'view3d "(listof light3d?)" lights))
   (unless (color-spec? background)
     (raise-argument-error 'view3d "color-spec?" background))
+  (unless (tone-map3d? tone-map)
+    (raise-argument-error 'view3d "tone-map3d? as #:tone-map" tone-map))
   (unless (memq render-mode '(wireframe opaque))
     (raise-argument-error 'view3d "(or/c 'wireframe 'opaque)" render-mode))
   (unless (memq transparency-mode '(object-sorted triangle-sorted))
@@ -195,7 +203,7 @@
     opacity
     (check-children 'view3d id children)
     width height camera (for/list ([light (in-list lights)]) light)
-    background render-mode transparency-mode)))
+    background tone-map render-mode transparency-mode)))
 
 (define (view3d-with-children view children)
   (unless (view3d? view)

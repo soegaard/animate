@@ -587,6 +587,7 @@
     (compiled-view3d-billboards compiled)
     (compiled-view3d-edge-overlays compiled)
     (compiled-view3d-background compiled)
+    (compiled-view3d-tone-map compiled)
     (compiled-view3d-render-mode compiled)
     (compiled-view3d-transparency-mode compiled))
    (render3d-request-frame-spec request)

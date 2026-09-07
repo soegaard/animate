@@ -18,6 +18,7 @@
          "../affine3.rkt"
          "../bounds3.rkt"
          "../camera3d.rkt"
+         "../color-space3d.rkt"
          "../clipping3d.rkt"
          "../compiled-view3d.rkt"
          "../light3d.rkt"
@@ -425,7 +426,7 @@
             (define billboards
               (prepare-opengl-billboards compiled frame-spec))
             (define start (current-inexact-milliseconds))
-            (define-values (rgba raw-depth instance-count triangle-count)
+            (define-values (linear-rgba raw-depth instance-count triangle-count)
               (gl-context-host-call
                host
                (lambda ()
@@ -444,7 +445,7 @@
                  (draw-transparent/current! renderer compiled frame-spec transparent)
                  (draw-stroke-batches/current! renderer stroke-batches 'always)
                  (draw-billboards/current! renderer billboards 'always frame-spec)
-                 (values (gl-framebuffer-target-read-rgba! target host)
+                 (values (gl-framebuffer-target-read-linear-rgba! target host)
                          (and (member 'linear-depth requested)
                               (gl-framebuffer-target-read-depth! target host))
                          (length (vector->list (compiled-view3d-instances compiled)))
@@ -453,8 +454,9 @@
             (define raster-end (current-inexact-milliseconds))
             (define argb-start (current-inexact-milliseconds))
             (define argb
-              (gl-rgba-bottom-up->argb-top-down
-               (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec) rgba))
+              (gl-linear-rgba-bottom-up->argb-top-down
+               (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec) linear-rgba
+               (compiled-view3d-tone-map compiled)))
             (define linear-depth
               (and raw-depth
                    (gl-depth-bottom-up->linear-top-down
@@ -496,8 +498,10 @@
             (renderer3d-render-result artifact)))]))
 
 (define (initialize-frame/current! target host compiled)
-  (define background (color-spec->rgba-color (compiled-view3d-background compiled)
-                                              'opengl-renderer3d))
+  (define background
+    (rgba-srgb->linear
+     (color-spec->rgba-color (compiled-view3d-background compiled)
+                             'opengl-renderer3d)))
   (gl-framebuffer-target-bind-draw! target host)
   (glDisable GL_SCISSOR_TEST)
   (glEnable GL_DEPTH_TEST)
@@ -510,10 +514,10 @@
   (glColorMask #t #t #t #t)
   ;; Framebuffer colour is premultiplied RGBA.  This makes the transparent pass
   ;; well-defined even when an author deliberately chooses a transparent view.
-  (define background-alpha (exact->inexact (rgba-color-alpha background)))
-  (glClearColor (* background-alpha (/ (rgba-color-red background) 255.0))
-                (* background-alpha (/ (rgba-color-green background) 255.0))
-                (* background-alpha (/ (rgba-color-blue background) 255.0))
+  (define background-alpha (exact->inexact (linear-rgba3d-alpha background)))
+  (glClearColor (* background-alpha (linear-rgba3d-red background))
+                (* background-alpha (linear-rgba3d-green background))
+                (* background-alpha (linear-rgba3d-blue background))
                 background-alpha)
   (glClear (bitwise-ior GL_COLOR_BUFFER_BIT GL_DEPTH_BUFFER_BIT GL_STENCIL_BUFFER_BIT)))
 
@@ -791,12 +795,13 @@
                 ([light (in-list lights)])
         (cond [(ambient-light3d? light)
                (define color (ambient-light3d-color light))
+               (define linear (rgba-srgb->linear color))
                (values (+ red (* (ambient-light3d-intensity light)
-                                 (/ (rgba-color-red color) 255.0)))
+                                 (linear-rgba3d-red linear)))
                        (+ green (* (ambient-light3d-intensity light)
-                                   (/ (rgba-color-green color) 255.0)))
+                                   (linear-rgba3d-green linear)))
                        (+ blue (* (ambient-light3d-intensity light)
-                                  (/ (rgba-color-blue color) 255.0)))
+                                  (linear-rgba3d-blue linear)))
                        directions)]
               [else (values red green blue (append directions (list light)))])))
     (uniform-3f! program "ambientLight" ambient-red ambient-green ambient-blue)

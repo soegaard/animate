@@ -16,6 +16,7 @@
          gl-framebuffer-target-bind-draw!
          gl-framebuffer-target-resolve!
          gl-framebuffer-target-read-rgba!
+         gl-framebuffer-target-read-linear-rgba!
          gl-framebuffer-target-read-depth!
          gl-framebuffer-cache-statistics)
 
@@ -105,7 +106,10 @@
                            "status" (glCheckFramebufferStatus GL_FRAMEBUFFER))))
 
 (define (make-framebuffer-target/current! host width height samples)
-  (define byte-size (* width height 4))
+  ;; RGBA16F stores premultiplied linear light.  The final tone-map/sRGB
+  ;; conversion happens only after the whole frame (including transparent
+  ;; overlays) has been composited.
+  (define byte-size (* width height 8))
   (define framebuffer #f)
   (define color #f)
   (define depth #f)
@@ -126,7 +130,7 @@
                                                 "framebuffer-depth"))
        (glBindFramebuffer GL_FRAMEBUFFER (gl-resource-id framebuffer))
        (glBindTexture GL_TEXTURE_2D (gl-resource-id color))
-       (glTexImage2D GL_TEXTURE_2D 0 GL_RGBA8 width height 0 GL_RGBA GL_UNSIGNED_BYTE #f)
+       (glTexImage2D GL_TEXTURE_2D 0 GL_RGBA16F width height 0 GL_RGBA GL_FLOAT #f)
        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_NEAREST)
        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_NEAREST)
        (glFramebufferTexture2D GL_FRAMEBUFFER GL_COLOR_ATTACHMENT0 GL_TEXTURE_2D
@@ -138,7 +142,7 @@
        (check-complete 'make-framebuffer-target/current!)]
       [else
        ;; Multisampled drawing uses renderbuffers, then resolves into a normal
-       ;; RGBA8 texture/FBO which has a portable glReadPixels path.
+       ;; RGBA16F texture/FBO keeps the resolved frame in linear light.
        (set! framebuffer (make-framebuffer-resource host (one (glGenFramebuffers 1)) "multisample-framebuffer"))
        (set! color (make-renderbuffer-resource host (one (glGenRenderbuffers 1)) byte-size
                                                 "multisample-colour"))
@@ -146,7 +150,7 @@
                                                 "multisample-depth"))
        (glBindFramebuffer GL_FRAMEBUFFER (gl-resource-id framebuffer))
        (glBindRenderbuffer GL_RENDERBUFFER (gl-resource-id color))
-       (glRenderbufferStorageMultisample GL_RENDERBUFFER samples GL_RGBA8 width height)
+       (glRenderbufferStorageMultisample GL_RENDERBUFFER samples GL_RGBA16F width height)
        (glFramebufferRenderbuffer GL_FRAMEBUFFER GL_COLOR_ATTACHMENT0 GL_RENDERBUFFER
                                   (gl-resource-id color))
        (glBindRenderbuffer GL_RENDERBUFFER (gl-resource-id depth))
@@ -160,7 +164,7 @@
                                                "resolve-colour"))
        (glBindFramebuffer GL_FRAMEBUFFER (gl-resource-id resolve-framebuffer))
        (glBindTexture GL_TEXTURE_2D (gl-resource-id resolve-color))
-       (glTexImage2D GL_TEXTURE_2D 0 GL_RGBA8 width height 0 GL_RGBA GL_UNSIGNED_BYTE #f)
+       (glTexImage2D GL_TEXTURE_2D 0 GL_RGBA16F width height 0 GL_RGBA GL_FLOAT #f)
        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_NEAREST)
        (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_NEAREST)
        (glFramebufferTexture2D GL_FRAMEBUFFER GL_COLOR_ATTACHMENT0 GL_TEXTURE_2D
@@ -213,6 +217,22 @@
                              (gl-framebuffer-target-height target))))
   (glReadPixels 0 0 (gl-framebuffer-target-width target) (gl-framebuffer-target-height target)
                 GL_RGBA GL_UNSIGNED_BYTE rgba)
+  rgba)
+
+;; Returns bottom-up premultiplied RGBA linear-light samples.  The OpenGL
+;; renderer owns output encoding and invokes the common colour-space policy at
+;; the renderer boundary, just as the software target does.
+(define (gl-framebuffer-target-read-linear-rgba! target host)
+  (check-target-current! target host 'gl-framebuffer-target-read-linear-rgba!)
+  (gl-framebuffer-target-resolve! target host)
+  (glBindFramebuffer GL_FRAMEBUFFER
+                     (gl-resource-id
+                      (or (gl-framebuffer-target-resolve-framebuffer target)
+                          (gl-framebuffer-target-framebuffer target))))
+  (define rgba (make-f32vector (* 4 (gl-framebuffer-target-width target)
+                                (gl-framebuffer-target-height target))))
+  (glReadPixels 0 0 (gl-framebuffer-target-width target) (gl-framebuffer-target-height target)
+                GL_RGBA GL_FLOAT rgba)
   rgba)
 
 ; gl-framebuffer-target-read-depth! : gl-framebuffer-target? gl-context-host?

@@ -910,8 +910,8 @@ and OpenGL renderers to @racketblock[n = max(1, 2/r^2 - 2)]. @racket[roughness]
 must be finite in @math{(0,1]}; ambient, diffuse, specular, and
 @racket[emission-strength] must be finite and nonnegative. Coefficients larger
 than one are intentionally accepted for illustrative effects; the current
-renderers clamp the displayed channels after lighting. A later colour-management
-stage will define linear-light conversion and tone mapping.
+renderers retain their linear energy through composition and apply the owning
+viewport's final tone-map policy only when storing output pixels.
 
 @racket[emission] is added after ambient, diffuse, and specular terms and is
 therefore not reduced by shadows. @racket[casts-shadow?] and
@@ -967,6 +967,60 @@ its negation receives diffuse light.}
 @defproc[(directional-light3d-direction [light directional-light3d?]) vec3?]{Returns normalized travel direction.}
 @defproc[(directional-light3d-intensity [light directional-light3d?]) nonnegative-real?]{Returns directional intensity.}
 @defproc[(directional-light3d-color [light directional-light3d?]) rgba-color?]{Returns opaque directional colour.}
+
+@subsection{Colour space and final output}
+
+Semantic @racket[rgba-color] values are sRGB: RGB channels use the ordinary
+@racket[0] through @racket[255] display encoding and alpha is linear coverage.
+Before interpolation, lighting, or source-over composition, an opaque 3D
+renderer converts RGB into linear light. It keeps a separate
+@racket[linear-rgba3d] value internally because material emission or specular
+terms may exceed one without being clipped. At the final output boundary RGB is
+tone-mapped, converted back to sRGB, and stored; alpha is preserved unchanged.
+
+@defstruct*[linear-rgba3d ([red nonnegative-real?]
+                           [green nonnegative-real?]
+                           [blue nonnegative-real?]
+                           [alpha (and/c real? (between/c 0 1))]) #:transparent]{
+An internal-style straight-alpha linear-light colour. RGB is nonnegative and
+may exceed @racket[1] before tone mapping.}
+@defproc[(srgb-channel->linear [channel (and/c real? (between/c 0 1))]) real?]{
+Applies the IEC 61966-2-1 sRGB transfer curve to one normalized channel.}
+@defproc[(linear-channel->srgb [channel (and/c real? (between/c 0 1))]) real?]{
+Applies the inverse IEC 61966-2-1 transfer curve to one normalized channel.}
+@defproc[(rgba-srgb->linear [color rgba-color?]) linear-rgba3d?]{Converts a
+semantic sRGB colour to straight linear light; alpha is unchanged.}
+@defproc[(rgba-linear->srgb [color linear-rgba3d?]) rgba-color?]{Converts a
+unit-range linear-light value to semantic sRGB. Values above one must first be
+passed through @racket[tone-map3d-apply].}
+@defproc[(linear-rgba3d-over [source linear-rgba3d?]
+                              [destination linear-rgba3d?])
+         linear-rgba3d?]{Performs straight-alpha source-over in linear light.}
+
+@defstruct*[tone-map3d ([mode (or/c 'clamp 'reinhard)]
+                        [exposure nonnegative-real?]
+                        [white-point positive-real?]) #:transparent]{
+The immutable final RGB output policy. Exposure multiplies linear RGB before
+the selected operator. @racket['clamp] clamps the exposed value to one;
+@racket['reinhard] maps an exposed channel @math{x} to
+@math{x/(x + white-point)}. The white point is retained for @racket['clamp]
+too, so a later mode switch preserves the authored policy.}
+@defthing[default-tone-map3d tone-map3d?]{The default
+@racket[(tone-map3d 'clamp 1 1)].}
+@defproc[(tone-map3d-apply [policy tone-map3d?] [color linear-rgba3d?])
+         linear-rgba3d?]{Applies @racket[policy] to RGB only and preserves
+alpha exactly.}
+
+@bold{Limitations.} The colour contract covers opaque 3D rendering and its
+3D strokes, markers, and billboards. It does not provide ICC profiles,
+wide-gamut or display-HDR export, texture colour-space metadata, or guaranteed
+linear composition between a rendered @racket[view3d] and arbitrary outer
+two-dimensional Picts. Transparency remains order-sorted rather than
+order-independent.
+
+The runnable comparison is @filepath{examples/3d/tone-map-emission.rkt}; it
+uses strong emission to show the visible difference between the default clamp
+policy and Reinhard output.
 
 @section{Cameras and projection}
 
@@ -1043,6 +1097,7 @@ Returns immutable inward-facing near, far, left, right, bottom, and top planes.}
                   [#:camera camera camera3d? (perspective-camera3d)]
                   [#:lights lights (listof (or/c ambient-light3d? directional-light3d?)) null]
                   [#:background background any/c "white"]
+                  [#:tone-map tone-map tone-map3d? default-tone-map3d]
                   [#:render-mode render-mode (or/c 'wireframe 'opaque) 'wireframe]
                   [#:transparency-mode transparency-mode
                    (or/c 'object-sorted 'triangle-sorted) 'triangle-sorted])
@@ -1066,6 +1121,8 @@ containing a spatial tree.}
 @defproc[(view3d-camera [view view3d?]) camera3d?]{Returns the spatial camera.}
 @defproc[(view3d-lights [view view3d?]) list?]{Returns immutable light declarations.}
 @defproc[(view3d-background [view view3d?]) any/c]{Returns the opaque viewport background.}
+@defproc[(view3d-tone-map [view view3d?]) tone-map3d?]{Returns the immutable
+linear-light final output policy.}
 @defproc[(view3d-render-mode [view view3d?]) (or/c 'wireframe 'opaque)]{Returns the renderer mode.}
 @defproc[(view3d-transparency-mode [view view3d?])
          (or/c 'object-sorted 'triangle-sorted)]{Returns its transparent-pass
