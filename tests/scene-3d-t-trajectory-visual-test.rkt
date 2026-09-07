@@ -11,4 +11,8 @@
   (check-equal? (vector-length (trajectory-samples3d trajectory #:count 8)) 8)
   (check-equal? calls calls-after-preparation)
   (check-true (mesh3d? (trajectory-tube3d trajectory #:id 'tube #:samples 8)))
+  (check-equal? calls calls-after-preparation)
+  (define ribbon (trajectory-ribbon3d trajectory #:id 'ribbon #:samples 8 #:width 1/4))
+  (check-equal? (vector-length (mesh3d-vertices ribbon)) 16)
+  (check-equal? (vector-length (mesh3d-triangles ribbon)) 14)
   (check-equal? calls calls-after-preparation))

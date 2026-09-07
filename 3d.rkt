@@ -605,6 +605,7 @@ cutaway3d
  flow-map3d-displacement
  trajectory-samples3d
  trajectory-tube3d
+ trajectory-ribbon3d
  fixed-rk4-solver3d
  fixed-rk4-solver3d?
  fixed-rk4-solver3d-step-size

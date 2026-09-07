@@ -230,7 +230,7 @@
                          prepared-flow-map3d-seeds prepared-flow-map3d-endpoints
                          prepared-flow-map3d-trajectories prepared-flow-map3d-diagnostics
                          prepare-flow-map3d flow-map3d-ref flow-map3d-pairs flow-map3d-displacement
-                         trajectory-samples3d trajectory-tube3d
+                         trajectory-samples3d trajectory-tube3d trajectory-ribbon3d
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

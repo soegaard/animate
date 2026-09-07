@@ -18,6 +18,9 @@
   absences after early termination, plus pair and displacement queries.
 - Added `trajectory-tube3d`, which lowers retained dense trajectory positions
   to a deterministic tube mesh without calling an author field during display.
+- Added `trajectory-ribbon3d`, using discrete parallel transport from an
+  optional explicit initial normal. Closed-loop twist correction remains an
+  author-visible future policy rather than an implicit geometric alteration.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

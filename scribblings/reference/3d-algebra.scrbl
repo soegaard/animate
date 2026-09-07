@@ -1927,6 +1927,15 @@ data. It never invokes the author ODE field.}
 trajectory samples into a deterministic finite tube mesh. It is a display
 choice, not a re-integration, and its world radius and sample count are
 explicit.}
+@defproc[(trajectory-ribbon3d [trajectory prepared-trajectory3d?]
+                               [#:id id symbol? 'trajectory-ribbon]
+                               [#:width width positive? 1/10]
+                               [#:samples samples exact-integer? 64]
+                               [#:initial-normal initial-normal (or/c false/c vec3?) #f]) mesh3d?]{Lowers
+prepared samples to a two-sided ribbon mesh. Its normal frame uses discrete
+parallel transport, projected at every retained tangent. A closed-loop twist
+correction is intentionally not automatic: a finite display ribbon must not
+silently choose a loop-closing convention for its author.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]
