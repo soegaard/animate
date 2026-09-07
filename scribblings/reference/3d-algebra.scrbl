@@ -1822,6 +1822,22 @@ claim that an arbitrary flow has a global return map.}
 @defproc[(prepared-poincare-map3d? [value any/c]) boolean?]{Recognizes an
 immutable per-seed return-map record. Its accessors begin with
 @tt{prepared-poincare-map3d-}.}
+@defproc[(jacobian3d [field any/c] [point vec3?]
+                     [#:time time finite-real? 0]
+                     [#:derivative derivative (or/c false/c procedure?) #f]
+                     [#:step step (or/c false/c positive?) #f]
+                     [#:domain domain (or/c false/c procedure?) #f])
+         jacobian3d-result?]{Returns an immutable local derivative matrix for
+an ODE field at @racket[point]. An analytic @racket[#:derivative] follows the
+field's usual @racket[(x y z)] or @racket[(time x y z)] calling convention and
+must return a finite @racket[linear3]. Otherwise the result uses deterministic
+scale-aware symmetric finite differences. The optional @racket[#:domain]
+predicate receives a @racket[vec3]; it is the only reason a one-sided stencil
+is used. The result records its method, coordinate steps, total evaluations,
+and a local first-versus-second-order error indicator where it is available.}
+@defproc[(jacobian3d-result? [value any/c]) boolean?]{Recognizes the transparent
+immutable result record returned by @racket[jacobian3d]. Its constructor and
+accessors begin with @tt{jacobian3d-result-}.}
 @defproc[(ode-trajectory3d? [value any/c]) boolean?]{Recognizes a prepared
 immutable spatial trajectory.}
 @defproc[(ode-trajectory3d-position [trajectory ode-trajectory3d?]

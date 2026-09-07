@@ -2,6 +2,12 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added `jacobian3d`, a deterministic local ODE-field derivative query. It
+  validates author-supplied analytic `linear3` derivatives or uses
+  scale-aware symmetric finite differences; one-sided sampling happens only
+  at an explicitly declared domain boundary. Every result records its method,
+  coordinate steps, work count, and local error indicator.
+
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution
   implicit surfaces. Their mesh/provenance and diagnostics remain pure; the

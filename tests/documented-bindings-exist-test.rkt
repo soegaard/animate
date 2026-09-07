@@ -206,6 +206,10 @@
                          prepared-poincare-map3d-first-hits prepared-poincare-map3d-second-hits
                          prepared-poincare-map3d-pairs prepared-poincare-map3d-diagnostics
                          prepare-poincare-map3d
+                         jacobian3d jacobian3d-result jacobian3d-result?
+                         jacobian3d-result-matrix jacobian3d-result-method
+                         jacobian3d-result-step jacobian3d-result-evaluations
+                         jacobian3d-result-error-estimate jacobian3d-result-diagnostics
                          vector-field3d streamline3d streamlines3d
                          flow-particle3d flow-cloud3d
                          spatial-inspection? spatial-pick? surface-pick3d?

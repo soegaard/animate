@@ -83,6 +83,7 @@
          "private/3d/spatial-animation.rkt"
          "private/3d/spatial-map3d.rkt"
          "private/3d/ode-flow3d.rkt"
+         "private/3d/jacobian3d.rkt"
          "private/3d/spatial-inspection.rkt"
          "private/3d/projection3d.rkt"
          "private/3d/camera3d.rkt"
@@ -579,6 +580,8 @@ cutaway3d
  ode-field3d-arity
  ode-field3d-cache-key
  ode-field3d-autonomous?
+ jacobian3d
+ (struct-out jacobian3d-result)
  fixed-rk4-solver3d
  fixed-rk4-solver3d?
  fixed-rk4-solver3d-step-size
