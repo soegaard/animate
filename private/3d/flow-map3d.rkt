@@ -1,7 +1,7 @@
 #lang racket/base
 
 (require racket/list
-         "../geometry.rkt" "ode-flow3d.rkt" "point-line-arrow3d.rkt"
+         "../geometry.rkt" "../preview-cancellation.rkt" "ode-flow3d.rkt" "point-line-arrow3d.rkt"
          "linear3.rkt" "material3d.rkt" "mesh3d.rkt" "seed-set3d.rkt"
          "spatial-group.rkt" "vec3.rkt")
 
@@ -21,25 +21,51 @@
                             #:solver [solver #f]
                             #:termination [termination #f]
                             #:on-termination [on-termination 'absent]
-                            #:parallel? [parallel? #t])
+                            #:parallel? [parallel? #t]
+                            #:cancellation-token [cancellation-token #f])
   (unless (seed-set3d? seeds) (raise-argument-error 'prepare-flow-map3d "seed-set3d?" seeds))
   (unless (and (finite-real? start-time) (finite-real? end-time) (< start-time end-time))
     (raise-argument-error 'prepare-flow-map3d "increasing finite start/end times" (list start-time end-time)))
   (unless (memq on-termination '(absent use-termination-point))
     (raise-argument-error 'prepare-flow-map3d "'absent or 'use-termination-point as #:on-termination" on-termination))
   (unless (boolean? parallel?) (raise-argument-error 'prepare-flow-map3d "boolean? as #:parallel?" parallel?))
+  (when cancellation-token
+    (unless (cancellation-token? cancellation-token)
+      (raise-argument-error 'prepare-flow-map3d
+                            "#f or cancellation-token? as #:cancellation-token"
+                            cancellation-token))
+    (check-cancellation cancellation-token))
   (define field-key (and (ode-field3d? field) (ode-field3d-cache-key field)))
-  (define cacheability (if field-key 'persistent-candidate 'memory-only))
+  (define termination-key (flow-map-termination-key termination))
+  (define solver-key (or solver (fixed-rk4-solver3d)))
+  (define cacheability
+    (if (and field-key termination-key (seed-set3d-cache-key seeds))
+        'persistent-candidate
+        'memory-only))
   (define preparation-key
-    (and field-key
-         (list 'prepared-flow-map3d 'schema-1 field-key solver
-               (seed-set3d-cache-key seeds) termination start-time end-time on-termination)))
+    (and (eq? cacheability 'persistent-candidate)
+         (list 'prepared-flow-map3d 'schema-2
+               'field field-key
+               'solver solver-key
+               'seed-set (seed-set3d-cache-key seeds)
+               'termination termination-key
+               ;; A flow map has time parameterization and keeps dense data;
+               ;; include those policy choices now so a future cache format
+               ;; cannot accidentally reuse a different display preparation.
+               'parameterization 'time
+               'resampling 'retained-dense
+               'start-time start-time 'end-time end-time
+               'on-termination on-termination)))
   (define trajectories
     (vector->immutable-vector
      (list->vector
       (for/list ([seed (in-vector (seed-set3d-points seeds))])
+        ;; A map never returns a partial retained value after cancellation.
+        ;; Its next seed slot is the deterministic cancellation boundary.
+        (when cancellation-token (check-cancellation cancellation-token))
         (prepare-ode-trajectory3d field seed #:time-range (cons start-time end-time)
-                                  #:solver solver #:termination termination)))))
+                                  #:solver solver #:termination termination
+                                  #:cancellation-token cancellation-token)))))
   (define endpoints
     (vector->immutable-vector
      (list->vector
@@ -60,6 +86,36 @@
            ;; Independent computations have deterministic slots; field calls
            ;; remain serial in this pure layer until worker preparation lands.
            'parallel-mode (if parallel? 'independent 'serial))))
+
+;; Cache identities must never retain an event procedure. An event without an
+;; explicit cache key therefore downgrades the whole operation to memory-only.
+;; Bounds and numerical policy values are immutable transparent data.
+(define (flow-map-termination-key termination)
+  (cond [(not termination) '(default-termination)]
+        [(not (trajectory-termination3d? termination))
+         (raise-argument-error 'prepare-flow-map3d
+                               "#f or trajectory-termination3d? as #:termination"
+                               termination)]
+        [else
+         (define event-keys
+           (for/list ([event (in-list (trajectory-termination3d-events termination))])
+             (and (ode-event3d-cache-key event)
+                  (list 'event (ode-event3d-id event)
+                        (ode-event3d-cache-key event)
+                        (ode-event3d-direction event)
+                        (ode-event3d-terminal? event)
+                        (ode-event3d-value-tolerance event)
+                        (ode-event3d-time-tolerance event)
+                        (ode-event3d-maximum-iterations event)))))
+         (and (andmap values event-keys)
+              (list 'termination
+                    (trajectory-termination3d-time-limit termination)
+                    (trajectory-termination3d-arc-length-limit termination)
+                    (trajectory-termination3d-bounds termination)
+                    (trajectory-termination3d-minimum-speed termination)
+                    (trajectory-termination3d-maximum-steps termination)
+                    event-keys
+                    (trajectory-termination3d-on-field-error termination)))]))
 
 (define (flow-map3d-ref map index)
   (unless (prepared-flow-map3d? map) (raise-argument-error 'flow-map3d-ref "prepared-flow-map3d?" map))

@@ -21,6 +21,7 @@
          "../ode-flow.rkt"
          "../ode-state-space.rkt"
          "../parameter.rkt"
+         "../preview-cancellation.rkt"
          "../scene-state.rkt"
          "../visual-model.rkt"
          "curve3d.rkt"
@@ -549,7 +550,8 @@
                                   #:checkpoint-every [checkpoint-every 16]
                                   #:solver [solver #f]
                                   #:events [events '()]
-                                  #:termination [termination #f])
+                                  #:termination [termination #f]
+                                  #:cancellation-token [cancellation-token #f])
   (define normalized-field (normalize-ode-field3d 'prepare-ode-trajectory3d field))
   (check-vec3 'prepare-ode-trajectory3d seed)
   (check-positive 'prepare-ode-trajectory3d "step-size" step-size)
@@ -562,6 +564,12 @@
                                       termination)]))
   (define all-events (append events (trajectory-termination3d-events normalized-termination)))
   (check-ode-events3d 'prepare-ode-trajectory3d all-events)
+  (when cancellation-token
+    (unless (cancellation-token? cancellation-token)
+      (raise-argument-error 'prepare-ode-trajectory3d
+                            "#f or cancellation-token? as #:cancellation-token"
+                            cancellation-token))
+    (check-cancellation cancellation-token))
   (define-values (start-time end-time)
     (check-time-range 'prepare-ode-trajectory3d time-range))
   (define-values (limited-start limited-end start-time-limited? end-time-limited?)
@@ -569,7 +577,8 @@
   (prepare-dense-trajectory3d normalized-field seed limited-start limited-end
                               (normalize-solver3d 'prepare-ode-trajectory3d solver step-size)
                               checkpoint-every all-events normalized-termination
-                              (cons start-time-limited? end-time-limited?)))
+                              (cons start-time-limited? end-time-limited?)
+                              cancellation-token))
 
 ; ode-trajectory3d-position : ode-trajectory3d? finite-real? -> vec3?
 ;; Every created trajectory resolves this through stored Hermite segments and
@@ -793,14 +802,16 @@
                who "#f, fixed-rk4-solver3d?, adaptive-rk45-solver3d?, or adaptive-rk45?" value)]))
 
 (define (prepare-dense-trajectory3d field seed start-time end-time solver checkpoint-every
-                                    events termination time-limited?)
+                                    events termination time-limited? cancellation-token)
   (define evaluations (box 0))
   (define lower-target (min 0 start-time))
   (define upper-target (max 0 end-time))
   (define-values (backward backward-report)
-    (dense-integrate-series3d field seed 0 lower-target solver evaluations termination))
+    (dense-integrate-series3d field seed 0 lower-target solver evaluations termination
+                              cancellation-token))
   (define-values (forward forward-report)
-    (dense-integrate-series3d field seed 0 upper-target solver evaluations termination))
+    (dense-integrate-series3d field seed 0 upper-target solver evaluations termination
+                              cancellation-token))
   (define all-nodes (append (reverse (cdr backward)) forward))
   (define available-start (prepared-trajectory-node3d-time (car all-nodes)))
   (define available-end (prepared-trajectory-node3d-time (last all-nodes)))
@@ -820,7 +831,7 @@
   (define requested-nodes (dense-clip-nodes3d all-nodes reachable-start reachable-end))
   (define requested-segments (dense-make-segments3d requested-nodes))
   (define requested-hits
-    (dense-event-hits3d events requested-nodes requested-segments))
+    (dense-event-hits3d events requested-nodes requested-segments cancellation-token))
   (define-values (actual-start actual-end termination-hits)
     (dense-resolve-termination3d
      reachable-start reachable-end requested-nodes requested-segments requested-hits
@@ -862,8 +873,10 @@
 (define (dense-initial-report3d reason node details)
   (dense-series-report3d 0 0 0 '() reason node details))
 
-(define (dense-integrate-series3d field seed start-time target-time solver evaluations termination)
+(define (dense-integrate-series3d field seed start-time target-time solver evaluations termination
+                                  cancellation-token)
   (let/ec return
+    (when cancellation-token (check-cancellation cancellation-token))
     (define initial
       (with-handlers
           ([exn:fail:ode-field3d?
@@ -882,15 +895,19 @@
            (values (list initial) (dense-initial-report3d 'time-range #f #f))]
           [(fixed-rk4-solver3d? solver)
            (dense-fixed-series3d field initial target-time
-                                 (fixed-rk4-solver3d-step-size solver) evaluations termination)]
+                                 (fixed-rk4-solver3d-step-size solver) evaluations termination
+                                 cancellation-token)]
           [else
            (dense-adaptive-series3d field initial target-time
                                     (adaptive-rk45-solver3d-settings solver)
-                                    evaluations termination)])))
+                                    evaluations termination cancellation-token)])))
 
-(define (dense-fixed-series3d field initial target-time step-size evaluations termination)
+(define (dense-fixed-series3d field initial target-time step-size evaluations termination
+                              cancellation-token)
   (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
   (let loop ([current initial] [reversed (list initial)] [steps '()])
+    ;; This is the boundary immediately before the next accepted fixed step.
+    (when cancellation-token (check-cancellation cancellation-token))
     (define remaining (- target-time (prepared-trajectory-node3d-time current)))
     (cond
       [(zero? remaining)
@@ -925,12 +942,16 @@
             (call-field3d field next-time next-position evaluations)))
          (loop next (cons next reversed) (cons (abs step) steps)))])))
 
-(define (dense-adaptive-series3d field initial target-time solver evaluations termination)
+(define (dense-adaptive-series3d field initial target-time solver evaluations termination
+                                 cancellation-token)
   (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
   (let loop ([current initial]
              [step (* direction (adaptive-rk45-initial-step solver))]
              [reversed (list initial)] [accepted 0] [rejected 0]
              [maximum-error 0] [steps '()])
+    ;; Both accepted and rejected adaptive trials return here before another
+    ;; solver step is attempted, so cancellation cannot install partial data.
+    (when cancellation-token (check-cancellation cancellation-token))
     (define maximum-steps
       (min (adaptive-rk45-maximum-steps solver)
            (trajectory-termination3d-maximum-steps termination)))
@@ -1072,7 +1093,8 @@
   (ode-event-hit3d (ode-event3d-id event) time position value direction
                    segment-index iterations provenance))
 
-(define (dense-event-root3d event segment segment-index lower-value upper-value direction)
+(define (dense-event-root3d event segment segment-index lower-value upper-value direction
+                            [cancellation-token #f])
   (define lower-time (trajectory-segment3d-t0 segment))
   (define upper-time (trajectory-segment3d-t1 segment))
   (define lower-sign (event-sign3d event lower-value))
@@ -1081,6 +1103,9 @@
              [best-time (if (<= (abs lower-value) (abs upper-value)) lower-time upper-time)]
              [best-value (if (<= (abs lower-value) (abs upper-value)) lower-value upper-value)]
              [iteration 0])
+    ;; Root refinement can be substantially more expensive than a normal step
+    ;; when event tolerances are tight; cooperate before every bisection.
+    (when cancellation-token (check-cancellation cancellation-token))
     (cond
       [(>= iteration (ode-event3d-value-maximum-iterations event))
        (dense-event-hit-at3d event best-time
@@ -1112,7 +1137,7 @@
           (loop low middle low-value middle-value
                 next-best-time next-best-value (add1 iteration))])])))
 
-(define (dense-event-hits3d events nodes segments)
+(define (dense-event-hits3d events nodes segments [cancellation-token #f])
   (cond
     [(null? events) '()]
     [(zero? (vector-length segments))
@@ -1131,8 +1156,10 @@
     [else
      (append*
       (for/list ([segment (in-vector segments)] [segment-index (in-naturals)])
+        (when cancellation-token (check-cancellation cancellation-token))
         (append*
          (for/list ([event (in-list events)])
+           (when cancellation-token (check-cancellation cancellation-token))
            (define lower-time (trajectory-segment3d-t0 segment))
            (define upper-time (trajectory-segment3d-t1 segment))
            (define lower-position (trajectory-segment3d-p0 segment))
@@ -1159,7 +1186,8 @@
                   '())]
              [(and (not (= lower-sign upper-sign)) (allowed?))
               (list (dense-event-root3d event segment segment-index
-                                         lower-value upper-value direction))]
+                                         lower-value upper-value direction
+                                         cancellation-token))]
              [else '()])))))]))
 
 ;; `dense-termination-candidate3d` is a private, serializable comparison value.
@@ -1909,11 +1937,14 @@
       (acos (max -1 (min 1 (/ (vec3-dot first second)
                                (* first-length second-length)))))))
 
-(define (streamline-segment-samples3d trajectory policy first-time last-time)
+(define (streamline-segment-samples3d trajectory policy first-time last-time
+                                         [cancellation-token #f])
+  (when cancellation-token (check-cancellation cancellation-token))
   (define first-position (ode-trajectory3d-position trajectory first-time))
   (define last-position (ode-trajectory3d-position trajectory last-time))
   (let loop ([left-time first-time] [left-position first-position]
              [right-time last-time] [right-position last-position] [depth 0])
+    (when cancellation-token (check-cancellation cancellation-token))
     (define chord-length (vec3-distance left-position right-position))
     (define middle-time (/ (+ left-time right-time) 2))
     (define middle-position (ode-trajectory3d-position trajectory middle-time))
@@ -1934,7 +1965,7 @@
         (append (drop-right (loop left-time left-position middle-time middle-position (add1 depth)) 1)
                 (loop middle-time middle-position right-time right-position (add1 depth))))))
 
-(define (streamline-resample3d trajectory policy)
+(define (streamline-resample3d trajectory policy [cancellation-token #f])
   (define segments (prepared-trajectory3d-value-segments trajectory))
   (if (zero? (vector-length segments))
       (vector->immutable-vector
@@ -1942,10 +1973,12 @@
                                           (car (ode-trajectory3d-time-range trajectory)))))
       (let ([samples
              (for/fold ([samples '()]) ([segment (in-vector segments)])
+               (when cancellation-token (check-cancellation cancellation-token))
                (define next
                  (streamline-segment-samples3d trajectory policy
                                               (trajectory-segment3d-t0 segment)
-                                              (trajectory-segment3d-t1 segment)))
+                                              (trajectory-segment3d-t1 segment)
+                                              cancellation-token))
                (if (null? samples) next (append samples (cdr next))))])
         (define distinct
           (for/fold ([reversed '()]) ([point (in-list samples)])
@@ -1985,11 +2018,18 @@
                               #:parameterization [parameterization 'time]
                               #:solver [solver (adaptive-rk45-solver3d)]
                               #:termination [termination #f]
-                              #:sample-policy [sample-policy (streamline-sample-policy3d)])
+                              #:sample-policy [sample-policy (streamline-sample-policy3d)]
+                              #:cancellation-token [cancellation-token #f])
   (check-vec3 'prepare-streamline3d seed)
   (check-direction 'prepare-streamline3d direction)
   (check-streamline-parameterization 'prepare-streamline3d parameterization)
   (check-streamline-sample-policy3d 'prepare-streamline3d sample-policy)
+  (when cancellation-token
+    (unless (cancellation-token? cancellation-token)
+      (raise-argument-error 'prepare-streamline3d
+                            "#f or cancellation-token? as #:cancellation-token"
+                            cancellation-token))
+    (check-cancellation cancellation-token))
   (define normalized-termination
     (normalize-streamline-termination3d 'prepare-streamline3d termination))
   (define effective-termination
@@ -2012,8 +2052,11 @@
   (define trajectory
     (prepare-ode-trajectory3d
      (streamline-field3d 'prepare-streamline3d field parameterization)
-     seed #:time-range time-range #:solver solver #:termination effective-termination))
-  (define samples (streamline-resample3d trajectory sample-policy))
+     seed #:time-range time-range #:solver solver #:termination effective-termination
+     #:cancellation-token cancellation-token))
+  ;; Resampling potentially recurses deeply around a curved retained path, so
+  ;; it observes the same token before it constructs display samples.
+  (define samples (streamline-resample3d trajectory sample-policy cancellation-token))
   (define seed-index
     (or (for/first ([point (in-vector samples)] [index (in-naturals)]
                     #:when (equal? point seed)) index)
@@ -2204,7 +2247,8 @@
                                #:termination [termination #f]
                                #:sample-policy [sample-policy (streamline-sample-policy3d)]
                                #:separation [separation #f]
-                               #:parallel? [parallel? #t])
+                               #:parallel? [parallel? #t]
+                               #:cancellation-token [cancellation-token #f])
   (define normalized-field (normalize-ode-field3d 'prepare-streamlines3d field))
   (unless (seed-set3d? seeds)
     (raise-argument-error 'prepare-streamlines3d "seed-set3d?" seeds))
@@ -2214,6 +2258,12 @@
   (check-streamline-set-separation 'prepare-streamlines3d separation)
   (unless (boolean? parallel?)
     (raise-argument-error 'prepare-streamlines3d "boolean? as #:parallel?" parallel?))
+  (when cancellation-token
+    (unless (cancellation-token? cancellation-token)
+      (raise-argument-error 'prepare-streamlines3d
+                            "#f or cancellation-token? as #:cancellation-token"
+                            cancellation-token))
+    (check-cancellation cancellation-token))
   (define effective-termination
     (normalize-streamline-termination3d 'prepare-streamlines3d termination))
   (define seed-points (seed-set3d-points seeds))
@@ -2222,6 +2272,9 @@
   (define-values (accepted rejected discarded index)
     (for/fold ([accepted '()] [rejected 0] [discarded 0] [index initial-index])
               ([seed (in-vector seed-points)] [seed-index (in-naturals)])
+      ;; Separation makes this loop order-dependent; even independent sets
+      ;; use its canonical seed boundary for cancellation.
+      (when cancellation-token (check-cancellation cancellation-token))
       (cond
         [(and separation
               (< (streamline-spatial-index3d-nearest-distance index seed) separation))
@@ -2237,7 +2290,7 @@
            (prepare-streamline3d
             normalized-field seed #:direction direction #:parameterization parameterization
             #:solver solver #:termination candidate-termination
-            #:sample-policy sample-policy))
+            #:sample-policy sample-policy #:cancellation-token cancellation-token))
          (if (< (vector-length (prepared-streamline3d-curve-samples line)) 2)
              (values accepted (add1 rejected) (add1 discarded) index)
              (values (append accepted (list line)) rejected discarded

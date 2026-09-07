@@ -35,6 +35,12 @@
 - Added `trajectory-bundle3d`, a stable seed-ordered tube or ribbon group
   built solely from retained flow-map trajectories.
 - Added canonical saddle-linearization and prepared flow-volume examples.
+- Added retained-data trajectory pick reports with a declared sampling policy,
+  nearest position/time, arc length, stored derivative, and nearby event hit.
+- Flow-map cache identities now include the normalized solver, seed set,
+  termination/event cache keys, time parameterization, retained-dense
+  resampling, and endpoint policy; an opaque event makes preparation
+  memory-only.
 
 - Added a common immutable surface-lowering record and deterministic producers
   for adaptive parametric, signed-trimmed parametric, and fixed-resolution

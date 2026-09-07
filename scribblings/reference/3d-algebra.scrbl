@@ -1625,12 +1625,15 @@ diagnostics remain inspectable.
           [#:checkpoint-every checkpoint-every exact-positive-integer? 16]
           [#:solver solver any/c #f]
           [#:events events list? '()]
-          [#:termination termination (or/c false/c trajectory-termination3d?) #f])
+          [#:termination termination (or/c false/c trajectory-termination3d?) #f]
+          [#:cancellation-token cancellation-token any/c #f])
          ode-trajectory3d?]{Prepares one immutable spatial trajectory over the
 closed range @racket[(cons start-time end-time)]. The seed is at time zero;
 the range may extend on either side of it. Terminal event hits may shorten
 that closed range. @racket[#:events] and policy-owned events form one
-declaration-ordered set whose identifiers must be distinct.}
+declaration-ordered set whose identifiers must be distinct. A preview
+cancellation token is checked before and between solver steps and before event
+root refinement; cancellation raises rather than returning a partial trajectory.}
 @defproc[(ode-field3d [procedure procedure?]
                        [#:cache-key cache-key any/c #f]
                        [#:autonomous? autonomous? boolean? #t]) any/c]{
@@ -1702,11 +1705,14 @@ and must not exceed the maximum length. Accessors begin with
           [#:solver solver any/c (adaptive-rk45-solver3d)]
           [#:termination termination (or/c false/c trajectory-termination3d?) #f]
           [#:sample-policy sample-policy streamline-sample-policy3d?
-                           (streamline-sample-policy3d)])
+                           (streamline-sample-policy3d)]
+          [#:cancellation-token cancellation-token any/c #f])
          prepared-streamline3d?]{Prepares one immutable streamline. If no
 policy is supplied, preparation uses a finite eight-unit time budget. A
 supplied policy with no time limit uses the same finite safety horizon unless
-another termination condition ends first.}
+another termination condition ends first. A preview worker can pass its
+cooperative cancellation token; cancellation is checked before numerical steps
+and while the retained curve is resampled, and returns no partial streamline.}
 @defproc[(prepared-streamline3d? [value any/c]) boolean?]{Recognizes an
 immutable prepared streamline. Its accessors begin with
 @tt{prepared-streamline3d-}; @tt{curve-samples} is an immutable vector of
@@ -1780,14 +1786,16 @@ order.}
           [#:sample-policy sample-policy streamline-sample-policy3d?
                            (streamline-sample-policy3d)]
           [#:separation separation (or/c false/c positive?) #f]
-          [#:parallel? parallel? boolean? #t]) prepared-streamline-set3d?]{Prepares
+          [#:parallel? parallel? boolean? #t]
+          [#:cancellation-token cancellation-token any/c #f]) prepared-streamline-set3d?]{Prepares
 one immutable streamline per accepted seed. When @racket[separation] is false,
 the result is independent and canonical in seed order. A positive separation
 processes seeds in that order, rejects a seed already too near an accepted
 line, and makes a later candidate stop at a terminal separation event. The
 set diagnostic reports accepted/rejected seeds, terminal reasons, field work,
 curve samples, the policy separation, discarded short lines, and whether the
-set was independent, serial, or ordered by separation.}
+set was independent, serial, or ordered by separation. A cancellation token
+is checked at every seed boundary and never leaves a partial set.}
 @defproc[(adaptive-streamline-set3d [prepared prepared-streamline-set3d?]
                                     [#:id id symbol?]
                                     [#:style style any/c]
@@ -1844,13 +1852,16 @@ accessors begin with @tt{jacobian3d-result-}.}
                                 [#:jacobian derivative (or/c false/c procedure?) #f]
                                 [#:merge-distance merge-distance positive? 1e-6]
                                 [#:domain domain (or/c false/c procedure?) #f]
-                                [#:time time finite-real? 0]) equilibrium-search3d?]{Runs
+                                [#:time time finite-real? 0]
+                                [#:cancellation-token cancellation-token any/c #f]) equilibrium-search3d?]{Runs
 bounded damped Newton searches from precisely the declared seed order. A
 successful root is clustered against earlier successful roots only, so the
 earliest seed is its canonical representative. Failed seeds remain as
 @racket[equilibrium-seed-result3d?] entries with an explicit status such as
 @racket['singular-jacobian], @racket['out-of-domain], @racket['stalled], or
-@racket['iteration-limit].}
+@racket['iteration-limit]. A cancellation token is checked between seed
+searches and Newton/backtracking iterations; it raises instead of returning a
+partial root collection.}
 @defproc[(equilibrium-search3d? [value any/c]) boolean?]{Recognizes the
 immutable search result. Its @tt{seeds}, @tt{roots}, @tt{seed-results}, and
 @tt{diagnostics} accessors retain all seed outcomes rather than only the
@@ -1900,15 +1911,18 @@ remain data because no universal plane-patch size is mathematically correct.}
                              [#:solver solver any/c #f]
                              [#:termination termination any/c #f]
                              [#:on-termination policy (or/c 'absent 'use-termination-point) 'absent]
-                             [#:parallel? parallel? boolean? #t]) prepared-flow-map3d?]{Prepares
+                             [#:parallel? parallel? boolean? #t]
+                             [#:cancellation-token cancellation-token any/c #f]) prepared-flow-map3d?]{Prepares
 one retained trajectory in every declared seed slot. A normally completed slot
 has its endpoint; an early-terminated slot is @racket[#f] by default, or its
 actual stopping point under @racket['use-termination-point]. Thus source,
 endpoint, and termination provenance stay aligned in seed order. Its diagnostics
 contain a versioned preparation identity when @racket[field]
-is an @racket[ode-field3d] with an explicit cache key. An opaque procedure is
-reported as @racket['memory-only], so it is never mistaken for persistently
-serializable numerical input.}
+is an @racket[ode-field3d] with an explicit cache key and every termination
+event has an explicit cache key. The identity records solver, seed-set,
+termination, time-parameterization, dense-resampling, and endpoint policy.
+An opaque field or event is reported as @racket['memory-only], so it is never
+mistaken for persistently serializable numerical input.}
 @defproc[(prepared-flow-map3d? [value any/c]) boolean?]{Recognizes an immutable
 prepared flow map. Its accessors begin with @tt{prepared-flow-map3d-}.}
 @defproc[(flow-map3d-ref [map prepared-flow-map3d?] [index exact-nonnegative-integer?])
@@ -1980,6 +1994,16 @@ early remains a shorter retained bundle child.}
 @defproc[(trajectory-inspection3d [trajectory prepared-trajectory3d?]) immutable-hash?]{Returns
 a read-only report of retained solver diagnostics, termination, event hits, and
 arc length.}
+@defproc[(trajectory-pick-inspection3d [trajectory prepared-trajectory3d?]
+                                        [point vec3?]
+                                        [#:samples samples exact-integer? 128]
+                                        [#:near-event-time near-event-time (or/c false/c nonnegative-real?) #f])
+         immutable-hash?]{Returns a read-only nearest-trajectory report for a
+world-space pick. It records the nearest declared uniform curve sample, its
+nearest sampled-polyline interpolation time and position, retained arc-length
+position and derivative, and a nearby retained event hit when one lies within
+the declared or sample-interval time radius. It does not reintegrate or invoke
+the author field.}
 @defproc[(equilibrium-inspection3d [search equilibrium-search3d?]) immutable-hash?]{Returns
 the complete retained convergence report without hiding failed seed slots.}
 @defproc[(linearization-inspection3d [value linearization3d?]) immutable-hash?]{Returns

@@ -4,6 +4,7 @@
 
 (require racket/list
          "../geometry.rkt"
+         "../preview-cancellation.rkt"
          "jacobian3d.rkt"
          "linear3.rkt"
          "ode-flow3d.rkt"
@@ -38,7 +39,8 @@
                               #:jacobian [derivative #f]
                               #:merge-distance [merge-distance 1e-6]
                               #:domain [domain #f]
-                              #:time [time 0])
+                              #:time [time 0]
+                              #:cancellation-token [cancellation-token #f])
   (check-solver solver)
   (unless (seed-set3d? seeds) (raise-argument-error 'equilibrium-points3d "seed-set3d?" seeds))
   (unless (and (finite-real? merge-distance) (positive? merge-distance))
@@ -47,11 +49,20 @@
   (when domain
     (unless (and (procedure? domain) (procedure-arity-includes? domain 1))
       (raise-argument-error 'equilibrium-points3d "#f or (vec3? -> boolean?) as #:domain" domain)))
+  (when cancellation-token
+    (unless (cancellation-token? cancellation-token)
+      (raise-argument-error 'equilibrium-points3d
+                            "#f or cancellation-token? as #:cancellation-token"
+                            cancellation-token))
+    (check-cancellation cancellation-token))
   ;; `jacobian3d` validates field, derivative, and domain calls before the
   ;; first Newton update.  Each seed gets its own independent bounded search.
   (define raw-results
     (for/list ([seed (in-vector (seed-set3d-points seeds))] [index (in-naturals)])
-      (search-one field seed index solver derivative domain time)))
+      ;; Root slots are independent, but preserve seed-order assembly. A
+      ;; cancellation never returns a partially merged root set.
+      (when cancellation-token (check-cancellation cancellation-token))
+      (search-one field seed index solver derivative domain time cancellation-token)))
   (define roots '())
   (define finalized
     (for/list ([result (in-list raw-results)])
@@ -98,7 +109,7 @@
            'jacobian-evaluations (for/sum ([r (in-list finalized)])
                                    (equilibrium-seed-result3d-jacobian-evaluations r)))))
 
-(define (search-one field seed index solver derivative domain time)
+(define (search-one field seed index solver derivative domain time cancellation-token)
   (define field-evaluations 0)
   (define jacobian-evaluations 0)
   (define (sample point)
@@ -107,11 +118,13 @@
   (define (finish status point residual iterations)
     (equilibrium-seed-result3d index seed status point residual iterations
                                field-evaluations jacobian-evaluations #f))
-  (with-handlers ([exn:fail? (lambda (_) (finish 'non-finite seed +inf.0 0))])
+  (with-handlers ([exn:fail:preview-canceled? raise]
+                  [exn:fail? (lambda (_) (finish 'non-finite seed +inf.0 0))])
     (cond
     [(and domain (not (domain? domain seed))) (finish 'out-of-domain seed +inf.0 0)]
     [else
      (let loop ([point seed] [residual (sample seed)] [iteration 0])
+       (when cancellation-token (check-cancellation cancellation-token))
        (define norm (vec3-length residual))
        (cond [(not (finite-real? norm)) (finish 'non-finite point norm iteration)]
              [(<= norm (equilibrium-solver3d-residual-tolerance solver))
@@ -130,6 +143,7 @@
                     [else
                      (define accepted
                        (let damp ([factor (equilibrium-solver3d-damping solver)])
+                         (when cancellation-token (check-cancellation cancellation-token))
                          (cond [(< factor (equilibrium-solver3d-minimum-damping solver)) #f]
                                [else
                                 (define candidate (vec3- point (vec3-scale factor delta)))

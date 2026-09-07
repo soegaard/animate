@@ -29,6 +29,26 @@
   (check-equal? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'cacheability)
                 'persistent-candidate)
   (check-true (pair? (hash-ref (prepared-flow-map3d-diagnostics keyed) 'preparation-key)))
+  (define unkeyed-event-map
+    (prepare-flow-map3d
+     (ode-field3d (lambda (x y z) (vec3 1 0 0)) #:cache-key 'constant)
+     seeds
+     #:termination
+     (trajectory-termination3d
+      #:events (list (ode-event3d #:id 'opaque-event #:function (lambda (point) 1))))))
+  (check-equal? (hash-ref (prepared-flow-map3d-diagnostics unkeyed-event-map) 'cacheability)
+                'memory-only)
+  (check-false (hash-ref (prepared-flow-map3d-diagnostics unkeyed-event-map) 'preparation-key))
+  (define keyed-event-map
+    (prepare-flow-map3d
+     (ode-field3d (lambda (x y z) (vec3 1 0 0)) #:cache-key 'constant)
+     seeds
+     #:termination
+     (trajectory-termination3d
+      #:events (list (ode-event3d #:id 'keyed-event #:function (lambda (point) 1)
+                                  #:cache-key 'one)))))
+  (check-equal? (hash-ref (prepared-flow-map3d-diagnostics keyed-event-map) 'cacheability)
+                'persistent-candidate)
   (define grid-map
     (prepare-flow-map3d (lambda (x y z) (vec3 1 0 0))
                         (grid-seeds3d #:counts '(2 2 2))
