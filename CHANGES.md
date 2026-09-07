@@ -79,6 +79,14 @@
   triangle and polygonal-face policy, connected component, and incident
   boundary components. A raw `mesh3d` honestly reports each render triangle as
   its polygonal face until a separate polygonal-complex mapping is attached.
+- U8 picking now also has an on-demand `spatial-pick-topology-overlay3d`
+  value for preview clients: nearest vertex/edge, selected face, component
+  faces, component boundary segments, and directed halfedges are all
+  world-space immutable diagnostic data. `topology-inspection3d` provides the
+  same semantic-part and invariant report to both the preview pane and
+  headless callers. The preview paints these after the rendered bitmap, while
+  its topology section reports semantic IDs and invariants. Neither path
+  changes an authored `view3d`.
 
 - Added `jacobian3d`, a deterministic local ODE-field derivative query. It
   validates author-supplied analytic `linear3` derivatives or uses

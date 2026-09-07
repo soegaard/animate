@@ -101,6 +101,7 @@
          "private/3d/trajectory-visual3d.rkt"
          "private/3d/dynamical-inspection3d.rkt"
          "private/3d/spatial-inspection.rkt"
+         "private/3d/topology-inspection3d.rkt"
          "private/3d/projection3d.rkt"
          "private/3d/camera3d.rkt"
          "private/3d/camera3d-animation.rkt"
@@ -856,8 +857,12 @@ cutaway3d
  ;; Spatial inspection and exact picking
  (struct-out spatial-inspection)
  (struct-out spatial-pick)
+ (struct-out spatial-topology-overlay3d)
+ (struct-out topology-inspection3d)
  (struct-out surface-pick3d)
  spatial-pick-kind
+ spatial-pick-topology-inspection3d
+ spatial-pick-topology-overlay3d
  view3d-spatial-inspections
  view3d-spatial-inspection-tree
  view3d-spatial-inspection-at

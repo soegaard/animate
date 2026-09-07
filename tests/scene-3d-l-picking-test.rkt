@@ -38,6 +38,11 @@
   (check-eq? (hash-ref pick-metadata 'render-triangle-id) 'front)
   (check-eq? (hash-ref pick-metadata 'semantic-polygonal-face-id) 'front)
   (check-eq? (hash-ref pick-metadata 'polygonal-face-policy) 'render-triangle)
+  ;; A triangle hit has no invented exact lower-dimensional hit. These two
+  ;; stable IDs instead classify the nearest authored vertex and opposite edge
+  ;; from the barycentric coordinates, with source order breaking ties.
+  (check-eq? (hash-ref pick-metadata 'nearest-semantic-vertex-id) 'peak)
+  (check-eq? (hash-ref pick-metadata 'nearest-semantic-edge-id) 'right-side)
   (check-equal? (hash-ref pick-metadata 'connected-component) 0)
   (check-equal? (hash-ref pick-metadata 'boundary-components) '#(0))
   (define topology (hash-ref pick-metadata 'topology))
@@ -49,4 +54,17 @@
                             (spatial-pick-inspection hit))
                           'topology)
                 topology)
+  ;; The preview-only topology overlay derives all its world coordinates after
+  ;; a selection. It is deliberately separate from immutable scene children.
+  (define children-before-overlay (view3d-children world))
+  (define overlay (spatial-pick-topology-overlay3d world hit))
+  (check-true (spatial-topology-overlay3d? overlay))
+  (check-equal? (spatial-topology-overlay3d-vertex overlay) (vec3 0 1 0))
+  (check-equal? (spatial-topology-overlay3d-edge overlay)
+                (vector-immutable (vec3 1 -1 0) (vec3 0 1 0)))
+  (check-equal? (vector-length (spatial-topology-overlay3d-face overlay)) 3)
+  (check-equal? (vector-length (spatial-topology-overlay3d-component-faces overlay)) 1)
+  (check-equal? (vector-length (spatial-topology-overlay3d-boundary-segments overlay)) 3)
+  (check-equal? (vector-length (spatial-topology-overlay3d-halfedges overlay)) 3)
+  (check-equal? (view3d-children world) children-before-overlay)
   (check-false (view3d-pixel-pick world 0 0 #:width 200 #:height 200)))

@@ -37,6 +37,13 @@ successful roots merge in seed order rather than hiding missed candidates.
 SCENE-3D-L adds
 immutable spatial inspection records, deterministic local BVH traversal, and
 exact camera-ray triangle picking for a sampled @racket[view3d].
+SCENE-3D-U8 extends an exact mesh pick with its semantic parts, nearest
+vertex/edge classification, component and boundary identity, plus immutable
+Euler/genus diagnostics. Its preview overlay is paint-only: selected face,
+component, boundary, half-edge, and normal marks never become spatial children.
+For a raw @racket[mesh3d], a render triangle remains the honest polygonal-face
+identifier; retained polygonal-complex, primal/dual, net, and correspondence
+annotations are deliberately separate future mappings.
 SCENE-3D-M adds an effectful retained-renderer protocol behind that immutable
 model. SCENE-3D-N adds explicit indexed-mesh topology diagnostics, orientation
 repair, and camera-independent compiled geometry resources; renderer caches and

@@ -125,6 +125,13 @@ deterministic local BVH, and finishes with a double-sided triangle/barycentric
 test. In the interactive preview, a 3D click stays separate from authored
 selection and paints preview-only diagnostics above the cached viewport;
 copy/focus/scratch actions never change the source Scene or authored camera.
+SCENE-3D-U8 extends a mesh pick with its semantic vertices/edges, nearest
+primitive classification, face/component/boundary identity, and immutable
+Euler/genus diagnostics. The preview's `3D topology` pane and post-render
+overlay show the same data, including face boundary, component, boundary
+segments, directed half-edges, and normal. A raw mesh still maps one render
+triangle to one polygonal face; a separate polygonal-complex mapping and
+automatic primal/dual, net, or matching annotations remain later work.
 SCENE-3D-M adds an effectful `animate/3d/render` backend protocol. The
 deterministic software rasterizer remains the conformance reference, while its
 default bounded retained instance reuses immutable camera-space preparation and
@@ -191,7 +198,7 @@ exactly synchronized with the gallery and example requirements.
 - [Dense Poincare section crossings](examples/3d/poincare-section.rkt) — 3d, ode, poincare, events, trajectories, crossings, camera, animation; requires core.
 - [Saddle equilibrium linearization](examples/3d/equilibrium-linearization.rkt) — 3d, ode, equilibria, jacobian, eigensystem, linearization, camera, animation; requires core.
 - [Prepared flow-map volume cell](examples/3d/flow-map-volume.rkt) — 3d, ode, flow-map, trajectories, volume, deformation, camera, animation; requires core.
-- [Exact spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, bvh, camera; requires core, gui.
+- [Topology-aware spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, topology, bvh, camera; requires core, gui.
 - [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
 - [Compiled mesh diagnostics](examples/3d/mesh-diagnostics.rkt) — 3d, topology, diagnostics, compilation, cache, camera; requires core.
 - [Depth-aware tetrahedron outline](examples/3d/hidden-line-tetrahedron.rkt) — 3d, strokes, hidden-lines, feature-edges, silhouettes; requires core.

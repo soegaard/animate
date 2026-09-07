@@ -2720,8 +2720,59 @@ component invariants, genus report, and diagnostics.  The explicitly named
 @racket['semantic-polygonal-face-id] currently equals the render-triangle ID,
 with @racket['polygonal-face-policy] set to @racket['render-triangle]: a plain
 @racket[mesh3d] does not yet retain a separate polygonal-face-complex mapping.
+@racket['nearest-semantic-vertex-id] and @racket['nearest-semantic-edge-id]
+classify the nearest lower-dimensional primitive from barycentric coordinates;
+they do not claim an exact lower-dimensional ray intersection. The latter's
+@racket['nearest-edge-incident-face-ids] reports every incident triangle face.
 Inspection only reads immutable topology; it does not alter the Scene.
 }
+@defstruct*[topology-inspection3d
+            ([path (listof symbol?)]
+             [semantic-vertex-ids vector?]
+             [semantic-edge-ids vector?]
+             [nearest-vertex-id any/c]
+             [nearest-edge-id any/c]
+             [nearest-edge-incident-face-ids vector?]
+             [render-triangle-id any/c]
+             [polygonal-face-id any/c]
+             [polygonal-face-policy any/c]
+             [connected-component any/c]
+             [boundary-components vector?]
+             [topology hash?]) #:transparent]{
+One immutable, presentation-neutral explanation of a mesh pick's semantic
+parts and topological report. The preview's @tt{3D topology} section uses this
+record; a headless authoring tool can use precisely the same data.}
+@defproc[(spatial-pick-topology-inspection3d [pick spatial-pick?])
+         (or/c #f topology-inspection3d?)]{
+Returns a @racket[topology-inspection3d] for an exact mesh-triangle pick, and
+@racket[#f] for a stroke or marker pick. It only repackages already retained
+immutable pick data; it does not traverse or mutate the scene.}
+@defstruct*[spatial-topology-overlay3d
+            ([vertex vec3?]
+             [edge vector?]
+             [face vector?]
+             [component-faces vector?]
+             [boundary-segments vector?]
+             [halfedges vector?]) #:transparent]{
+Preview-only world-space geometry derived from one exact mesh pick. The
+@racket[vertex] and @racket[edge] designate the nearest semantic primitive
+under the triangle hit; @racket[face] is the selected render triangle;
+@racket[component-faces] contains its edge-connected component;
+@racket[boundary-segments] contains that component's boundary edges; and
+@racket[halfedges] preserves the selected triangle's directed source edges.
+Each segment is an immutable two-@racket[vec3] vector and each face is an
+immutable three-@racket[vec3] vector. This is diagnostic geometry only: it is
+not a @racket[mesh3d] and cannot affect rendering, matching, or scene state.
+}
+@defproc[(spatial-pick-topology-overlay3d [view view3d?] [pick spatial-pick?])
+         (or/c #f spatial-topology-overlay3d?)]{
+Returns the immutable topology overlay for an exact mesh-triangle pick in
+@racket[view], or @racket[#f] for screen-space marks or a pick that does not
+have a matching mesh command in that view. The function performs its component
+traversal only on demand after a selection; it does not mutate or augment the
+view. The preview paints at most the first 256 component-face outlines and
+512 boundary segments to preserve UI responsiveness; the returned value and
+the topology inspection report always retain the complete component.}
 @defstruct*[surface-pick3d
             ([spatial-pick spatial-pick?]
              [surface-kind symbol?]
@@ -2787,10 +2838,13 @@ triangle candidates. Exact triangle testing remains separate.}
 The canonical preview probe is
 @filepath{examples/3d/spatial-inspector-picking.rkt}. Open it with
 @racketmodname[animate/preview], click a visible facet, then use the
-@tt{Animate → 3D selection} menu to copy the spatial path, hit point, or
+@tt{3D topology} inspector section to see semantic part IDs and invariants;
+the post-render overlay marks its face, component, boundaries, half-edges, and
+normal. @tt{Animate → 3D selection} can copy the spatial path, hit point, or
 normal; its scratch action also supplies a clipping plane. Focusing the
-inspection camera changes only the preview override, never the authored
-camera or timeline.
+inspection camera changes only the preview override, never the authored camera
+or timeline. The raw mesh uses render triangles as polygonal faces, so the
+probe does not claim an unretained higher-level polygonal-face mapping.
 
 @section{Retained renderer backends}
 

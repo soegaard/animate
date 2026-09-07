@@ -43,7 +43,9 @@
 
 (provide (struct-out spatial-inspection)
          (struct-out spatial-pick)
+         (struct-out spatial-topology-overlay3d)
          spatial-pick-kind
+         spatial-pick-topology-overlay3d
          view3d-spatial-inspections
          view3d-spatial-inspection-tree
          view3d-spatial-inspection-at
@@ -68,10 +70,55 @@
   (inspection path triangle-index point distance barycentric normal ray metadata)
   #:transparent)
 
+;; Preview-only geometry derived from an exact mesh pick.  The values are all
+;; world-space points or immutable vectors thereof, so a client can paint a
+;; useful topology explanation without modifying the sampled `view3d` or
+;; reconstructing topology from a cached bitmap. `component-faces` contains
+;; the selected face's edge-connected component; `boundary-segments` contains
+;; every boundary edge of that component; `halfedges` preserves the selected
+;; triangle's directed source order.
+(struct spatial-topology-overlay3d
+  (vertex edge face component-faces boundary-segments halfedges)
+  #:transparent)
+
 (define (spatial-pick-kind pick)
   (unless (spatial-pick? pick)
     (raise-argument-error 'spatial-pick-kind "spatial-pick?" pick))
   (hash-ref (spatial-pick-metadata pick) 'kind 'mesh-triangle))
+
+;; spatial-pick-topology-overlay3d : view3d? spatial-pick?
+;;                                      -> (or/c #f spatial-topology-overlay3d?)
+;; Materializes topology-overlay geometry only after an exact mesh selection.
+;; This avoids turning every candidate hit in the regular picker into a
+;; whole-component traversal, while leaving the resulting overlay a pure,
+;; deterministic value suitable for previews and tests.
+(define (spatial-pick-topology-overlay3d view pick)
+  (unless (view3d? view)
+    (raise-argument-error 'spatial-pick-topology-overlay3d "view3d?" view))
+  (unless (spatial-pick? pick)
+    (raise-argument-error 'spatial-pick-topology-overlay3d "spatial-pick?" pick))
+  (define triangle-index (spatial-pick-triangle-index pick))
+  (define drawing-index
+    (hash-ref (spatial-pick-metadata pick) 'drawing-index #f))
+  (define command
+    (and (exact-nonnegative-integer? triangle-index)
+         (for/first ([candidate
+                      (in-list
+                       (spatial-tree->draw-mesh3d-commands
+                        view #:root-path (list (visual-id view))))]
+                     #:when (and (equal? (draw-mesh3d-command-path candidate)
+                                          (spatial-pick-path pick))
+                                 (equal? (draw-mesh3d-command-drawing-index candidate)
+                                         drawing-index)))
+           candidate)))
+  (and command
+       (< triangle-index
+          (vector-length (mesh3d-triangles (draw-mesh3d-command-mesh command))))
+       (mesh-pick-topology-overlay
+        (draw-mesh3d-command-mesh command)
+        (draw-mesh3d-command-world-transform command)
+        triangle-index
+        (spatial-pick-barycentric pick))))
 
 ;; view3d-spatial-inspections : view3d? -> (listof spatial-inspection?)
 ;; Returns pre-order records in deterministic child order, including groups so
@@ -255,6 +302,122 @@
    'connected-component (mesh-triangle-topology3d-component triangle-record)
    'boundary-components boundary-components
    'topology (mesh-topology-inspector-data mesh)))
+
+;; The selected vertex/edge are intentionally described as nearest primitive
+;; classifications, rather than claiming the ray exactly hit a lower
+;; dimensional part. Ties keep the first source index, so the answer stays
+;; deterministic on a triangle bisector.
+(define (mesh-triangle-nearest-part-metadata mesh triangle-index barycentric)
+  (define topology (mesh3d-topology mesh))
+  (define triangle (vector-ref (mesh3d-triangles mesh) triangle-index))
+  (define triangle-record
+    (vector-ref (mesh-topology3d-triangles topology) triangle-index))
+  (define weights
+    (vector (vec3-x barycentric) (vec3-y barycentric) (vec3-z barycentric)))
+  (define vertex-local-index (vector-index-of-largest weights))
+  ;; The nearest edge is opposite the least-weight barycentric vertex.  The
+  ;; triangle's directed halfedges follow `(a->b b->c c->a)`, hence the next
+  ;; halfedge is that opposite edge.
+  (define edge-local-index (modulo (add1 (vector-index-of-smallest weights)) 3))
+  (define halfedge-index
+    (vector-ref (mesh-triangle-topology3d-halfedges triangle-record) edge-local-index))
+  (define edge-index
+    (mesh-halfedge3d-edge
+     (vector-ref (mesh-topology3d-halfedges topology) halfedge-index)))
+  (define selected-edge
+    (vector-ref (mesh-topology3d-edges topology) edge-index))
+  (hasheq
+   'nearest-semantic-vertex-id
+   (mesh3d-vertex-id mesh (vector-ref triangle vertex-local-index))
+   'nearest-semantic-edge-id
+   (mesh-edge-topology3d-id
+    selected-edge)
+   'nearest-edge-incident-face-ids
+   (vector->immutable-vector
+    (for/vector ([incident-halfedge-index
+                 (in-vector (mesh-edge-topology3d-halfedges selected-edge))])
+      (define incident-halfedge
+        (vector-ref (mesh-topology3d-halfedges topology) incident-halfedge-index))
+      (mesh-triangle-topology3d-id
+       (vector-ref (mesh-topology3d-triangles topology)
+                   (mesh-halfedge3d-triangle incident-halfedge)))))))
+
+(define (vector-index-of-largest weights)
+  (define-values (index _value)
+    (for/fold ([best-index 0] [best-value (vector-ref weights 0)])
+              ([value (in-vector weights)] [index (in-naturals)])
+      (if (> value best-value)
+          (values index value)
+          (values best-index best-value))))
+  index)
+
+(define (vector-index-of-smallest weights)
+  (define-values (index _value)
+    (for/fold ([best-index 0] [best-value (vector-ref weights 0)])
+              ([value (in-vector weights)] [index (in-naturals)])
+      (if (< value best-value)
+          (values index value)
+          (values best-index best-value))))
+  index)
+
+(define (mesh-pick-topology-overlay mesh world-transform triangle-index barycentric)
+  (define topology (mesh3d-topology mesh))
+  (define triangle-record
+    (vector-ref (mesh-topology3d-triangles topology) triangle-index))
+  (define component-index
+    (mesh-triangle-topology3d-component triangle-record))
+  (define triangle
+    (vector-ref (mesh3d-triangles mesh) triangle-index))
+  (define (world-point vertex-index)
+    (affine3-apply-point world-transform
+                         (vector-ref (mesh3d-vertices mesh) vertex-index)))
+  (define (world-face face-index)
+    (vector->immutable-vector
+     (for/vector ([vertex-index
+                  (in-vector (vector-ref (mesh3d-triangles mesh) face-index))])
+       (world-point vertex-index))))
+  (define weights
+    (vector (vec3-x barycentric) (vec3-y barycentric) (vec3-z barycentric)))
+  (define selected-vertex
+    (world-point (vector-ref triangle (vector-index-of-largest weights))))
+  (define selected-halfedge-index
+    (vector-ref (mesh-triangle-topology3d-halfedges triangle-record)
+                (modulo (add1 (vector-index-of-smallest weights)) 3)))
+  (define selected-halfedge
+    (vector-ref (mesh-topology3d-halfedges topology) selected-halfedge-index))
+  (define selected-edge
+    (vector-immutable (world-point (mesh-halfedge3d-from selected-halfedge))
+                      (world-point (mesh-halfedge3d-to selected-halfedge))))
+  (define component
+    (vector-ref (mesh-topology3d-components topology) component-index))
+  (define component-faces
+    (vector->immutable-vector
+     (for/vector ([face-index
+                  (in-vector (mesh-component-topology3d-triangles component))])
+       (world-face face-index))))
+  (define boundary-segments
+    (vector->immutable-vector
+     (list->vector
+      (append*
+       (for/list ([boundary (in-vector (mesh-topology3d-boundaries topology))]
+                  #:when (= component-index
+                             (mesh-boundary-component3d-component boundary)))
+         (for/list ([edge-index
+                     (in-vector (mesh-boundary-component3d-edges boundary))])
+           (define edge (vector-ref (mesh-topology3d-edges topology) edge-index))
+           (define vertices (mesh-edge-topology3d-vertices edge))
+           (vector-immutable (world-point (vector-ref vertices 0))
+                             (world-point (vector-ref vertices 1)))))))))
+  (define halfedges
+    (vector->immutable-vector
+     (for/vector ([halfedge-index
+                  (in-vector (mesh-triangle-topology3d-halfedges triangle-record))])
+       (define halfedge (vector-ref (mesh-topology3d-halfedges topology) halfedge-index))
+       (vector-immutable (world-point (mesh-halfedge3d-from halfedge))
+                         (world-point (mesh-halfedge3d-to halfedge))))))
+  (spatial-topology-overlay3d selected-vertex selected-edge
+                              (world-face triangle-index)
+                              component-faces boundary-segments halfedges))
 
 (define (spatial-kind object)
   (cond [(mesh3d? object) 'mesh]
@@ -714,17 +877,20 @@
             normal
             world-ray
             (hash-merge
-             (hasheq 'kind 'mesh-triangle
-                     'material (draw-mesh3d-command-material command)
-                     'drawing-index (draw-mesh3d-command-drawing-index command)
-                     'command-opacity (draw-mesh3d-command-opacity command)
-                     ;; This is inspection data, not a new semantic mesh.  It
-                     ;; lets a preview draw the exact selected triangle without
-                     ;; reverse engineering it from a cached raster image.
-                     'world-triangle
-                     (for/list ([point (in-list points)])
-                       (affine3-apply-point world-transform point)))
-             topology-metadata)))]))
+             (hash-merge
+              (hasheq 'kind 'mesh-triangle
+                      'material (draw-mesh3d-command-material command)
+                      'drawing-index (draw-mesh3d-command-drawing-index command)
+                      'command-opacity (draw-mesh3d-command-opacity command)
+                      ;; This is inspection data, not a new semantic mesh.  It
+                      ;; lets a preview draw the exact selected triangle without
+                      ;; reverse engineering it from a cached raster image.
+                      'world-triangle
+                      (for/list ([point (in-list points)])
+                        (affine3-apply-point world-transform point)))
+              topology-metadata)
+             (mesh-triangle-nearest-part-metadata
+              mesh triangle-index (ray3-triangle-hit-barycentric local-hit)))))]))
 
 (define (hash-merge first second)
   (for/fold ([merged first]) ([(key value) (in-hash second)])

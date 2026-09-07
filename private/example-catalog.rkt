@@ -167,9 +167,9 @@
     "examples/3d/flow-map-volume.rkt" 'make-demo-scene
     '(3d ode flow-map trajectories volume deformation camera animation) '(core) 5/2 5)
    (example-entry
-   'spatial-inspector-picking "Exact spatial picking"
+   'spatial-inspector-picking "Topology-aware spatial picking"
     "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene
-    '(3d preview inspection picking bvh camera) '(core gui) 5/2 5)
+    '(3d preview inspection picking topology bvh camera) '(core gui) 5/2 5)
    (example-entry
     'retained-renderer "Retained 3D renderer protocol"
     "examples/3d/retained-renderer.rkt" 'make-demo-scene

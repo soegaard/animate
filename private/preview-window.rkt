@@ -48,6 +48,7 @@
          "3d/rotation3.rkt"
          "3d/spatial-inspection.rkt"
          "3d/spatial-group.rkt"
+         "3d/topology-inspection3d.rkt"
          "3d/vec3.rkt"
          "3d/view3d-visual.rkt"
          "visual-inspector.rkt"
@@ -873,6 +874,81 @@
                                       (2 6) (3 7) (4 5) (4 6) (5 7) (6 7)))])
                  (draw-line-between (list-ref corners (car edge))
                                     (list-ref corners (cadr edge)))))
+             ;; Topology overlays are computed only for the retained exact
+             ;; pick, after normal rendering. They make vertex/edge/face,
+             ;; component, boundary, and directed-halfedge information visible
+             ;; without installing a single diagnostic Visual in the scene.
+             (define topology-overlay
+               (spatial-pick-topology-overlay3d view prior-pick))
+             (define (draw-overlay-segment segment color line-width)
+               (when (and (vector? segment) (= (vector-length segment) 2)
+                          (vec3? (vector-ref segment 0))
+                          (vec3? (vector-ref segment 1)))
+                 (send dc set-pen (make-pen #:color color #:width line-width))
+                 (draw-line-between (project (vector-ref segment 0))
+                                    (project (vector-ref segment 1)))))
+             (define (draw-halfedge-direction segment)
+               (when (and (vector? segment) (= (vector-length segment) 2))
+                 (define first (project (vector-ref segment 0)))
+                 (define second (project (vector-ref segment 1)))
+                 (when (and first second)
+                   (define dx (- (car second) (car first)))
+                   (define dy (- (cdr second) (cdr first)))
+                   (define length (sqrt (+ (* dx dx) (* dy dy))))
+                   (when (> length 6)
+                     (define unit-x (/ dx length))
+                     (define unit-y (/ dy length))
+                     (define middle-x (+ (car first) (* 0.58 dx)))
+                     (define middle-y (+ (cdr first) (* 0.58 dy)))
+                     (define back-x (- middle-x (* 6 unit-x)))
+                     (define back-y (- middle-y (* 6 unit-y)))
+                     (define side-x (* 3 unit-y))
+                     (define side-y (* -3 unit-x))
+                     (send dc set-pen (make-pen #:color "mediumorchid" #:width 1))
+                     (send dc draw-line middle-x middle-y
+                           (+ back-x side-x) (+ back-y side-y))
+                     (send dc draw-line middle-x middle-y
+                           (- back-x side-x) (- back-y side-y))))))
+             (when topology-overlay
+               ;; Component edges are deliberately thin: they establish the
+               ;; selected face's connected component without hiding the
+               ;; rendered object beneath the preview-only diagnostic.
+               (for ([face
+                      (in-vector
+                       (spatial-topology-overlay3d-component-faces topology-overlay))]
+                     [index (in-naturals)]
+                     #:break (>= index 256))
+                 (when (and (vector? face) (= (vector-length face) 3))
+                   (draw-overlay-segment
+                    (vector (vector-ref face 0) (vector-ref face 1))
+                    "mediumpurple" 1)
+                   (draw-overlay-segment
+                    (vector (vector-ref face 1) (vector-ref face 2))
+                    "mediumpurple" 1)
+                   (draw-overlay-segment
+                    (vector (vector-ref face 2) (vector-ref face 0))
+                    "mediumpurple" 1)))
+               (for ([segment
+                      (in-vector
+                       (spatial-topology-overlay3d-boundary-segments topology-overlay))]
+                     [index (in-naturals)]
+                     #:break (>= index 512))
+                 (draw-overlay-segment segment "darkorange" 3))
+               (for ([segment
+                      (in-vector (spatial-topology-overlay3d-halfedges topology-overlay))])
+                 (draw-halfedge-direction segment))
+               (draw-overlay-segment (spatial-topology-overlay3d-edge topology-overlay)
+                                     "orangered" 4)
+               (define selected-vertex
+                 (project (spatial-topology-overlay3d-vertex topology-overlay)))
+               (when selected-vertex
+                 (define vertex-x (car selected-vertex))
+                 (define vertex-y (cdr selected-vertex))
+                 (send dc set-pen (make-pen #:color "hotpink" #:width 2))
+                 (send dc set-brush (make-brush #:style 'transparent))
+                 (send dc draw-ellipse (- vertex-x 6) (- vertex-y 6) 12 12)
+                 (send dc draw-line (- vertex-x 8) vertex-y (+ vertex-x 8) vertex-y)
+                 (send dc draw-line vertex-x (- vertex-y 8) vertex-x (+ vertex-y 8))))
              ;; The exact tested triangle is retained as inspector metadata.
              ;; Its cyan stroke distinguishes geometric picking from an AABB
              ;; candidate that happened merely to be under the pointer.
@@ -1423,6 +1499,75 @@
                'copy-spatial-path "Copy spatial path"
                `(copy-spatial-path ,path) #t))))
           #f)))
+  ;; A selected mesh face has a richer inspection than the hierarchy alone.
+  ;; This section only reads the exact pick's immutable metadata: it neither
+  ;; changes the current Scene nor causes the renderer to prepare another
+  ;; frame. The neighbouring preview overlay presents the same data spatially.
+  (define (spatial-topology-section)
+    (define pick (active-spatial-pick))
+    (define report (and pick (spatial-pick-topology-inspection3d pick)))
+    (define topology (and report (topology-inspection3d-topology report)))
+    (and report
+         (let* ([path (topology-inspection3d-path report)]
+                [diagnostics (hash-ref topology 'diagnostics #hasheq())]
+                [base-rows
+                 (list
+                  (inspector-row
+                   "semantic path" path 'info
+                   (list
+                    (inspector-action
+                     'copy-spatial-topology "Copy topology query"
+                     `(spatial-pick-topology-overlay3d view ,path) #t)))
+                  (inspector-row
+                   "nearest vertex / edge"
+                   (vector (topology-inspection3d-nearest-vertex-id report)
+                           (topology-inspection3d-nearest-edge-id report))
+                   'info '())
+                  (inspector-row
+                   "nearest edge incident faces"
+                   (topology-inspection3d-nearest-edge-incident-face-ids report)
+                   'info '())
+                  (inspector-row
+                   "face vertices / edges"
+                   (vector (topology-inspection3d-semantic-vertex-ids report)
+                           (topology-inspection3d-semantic-edge-ids report))
+                   'info '())
+                  (inspector-row
+                   "render triangle / polygonal face"
+                   (vector (topology-inspection3d-render-triangle-id report)
+                           (topology-inspection3d-polygonal-face-id report)
+                           (topology-inspection3d-polygonal-face-policy report))
+                   'info '())
+                  (inspector-row
+                   "component / incident boundaries"
+                   (vector (topology-inspection3d-connected-component report)
+                           (topology-inspection3d-boundary-components report))
+                   'info '())
+                  (inspector-row
+                   "Euler / boundaries / components"
+                   (vector (hash-ref topology 'euler-characteristic #f)
+                           (hash-ref topology 'boundary-count #f)
+                           (vector-length (hash-ref topology 'components '#())))
+                   'info '())
+                  (inspector-row
+                   "manifold / closed / orientable"
+                   (vector (hash-ref topology 'manifold? #f)
+                           (hash-ref topology 'closed? #f)
+                           (hash-ref topology 'orientable? #f))
+                   (if (and (hash-ref topology 'manifold? #f)
+                            (hash-ref topology 'orientable? #f))
+                       'info
+                       'warning)
+                   '())
+                  (inspector-row "genus report" (hash-ref topology 'genus #f)
+                                 'info '()))]
+                [diagnostic-rows
+                 (for/list ([(key value) (in-hash diagnostics)]
+                            #:when value)
+                   (inspector-row (format "topology diagnostic ~a" key)
+                                  value 'warning '()))])
+           (inspector-section 'spatial-topology "3D topology"
+                              (append base-rows diagnostic-rows) #f))))
   ;; A dynamical report attaches to a prepared flow-particle relation. It is a
   ;; retained-data readout: selecting a row neither reruns the ODE solver nor
   ;; adds markers or overlays to the authored 3D scene.
@@ -1474,6 +1619,8 @@
                 '())
             (let ([spatial (spatial-hierarchy-section)])
               (if spatial (list spatial) '()))
+            (let ([topology (spatial-topology-section)])
+              (if topology (list topology) '()))
             (let ([dynamics (dynamical-inspection-section)])
               (if dynamics (list dynamics) '()))))
   (define (display-inspector-section! index)
