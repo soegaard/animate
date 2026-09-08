@@ -2,6 +2,14 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V10's immutable material/light/fragment-lighting inspection
+  model and preview inspector sections. A mesh click now exposes authored
+  material policies, named light data, and a pure per-light equation report
+  including pre-tone-map linear and final sRGB colours. The preview never
+  reads or guesses a renderer-private map: an unsupplied declared-shadow
+  factor is explicitly reported as `not-sampled`. The new lighting-inspector
+  example makes this workflow available in GRacket.
+
 - Added SCENE-3D-V9 OpenGL directional and spot shadows. The retained GPU
   renderer creates context-owned depth-texture framebuffers, renders eligible
   opaque mesh casters in a depth pass, and applies explicit square PCF only to

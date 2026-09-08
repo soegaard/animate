@@ -41,6 +41,8 @@
          "3d/camera3d.rkt"
          "3d/bounds3.rkt"
          "3d/clipping3d.rkt"
+         "3d/light3d.rkt"
+         "3d/lighting-inspection3d.rkt"
          "3d/material3d.rkt"
          "3d/dynamical-inspection3d.rkt"
          "3d/preview-camera3d-override.rkt"
@@ -1623,6 +1625,114 @@
                             (format "~a" (hash-ref report 'arc-length))
                             'info '()))))
                  #f)))))
+  ;; V10 inspection derives its rows directly from immutable materials, lights,
+  ;; and an exact spatial pick. It never asks a renderer to redraw or mutates
+  ;; the authored view. A shadow descriptor without a supplied sampled factor
+  ;; is deliberately reported as such rather than guessed from the bitmap.
+  (define (lighting-inspection-sections)
+    (define session (unbox controller-box))
+    (define view-id (active-spatial-view-id))
+    (define view (and session view-id (resolved-inspection-view session view-id)))
+    (define pick (active-spatial-pick))
+    (define picked-material
+      (and pick
+           (spatial-inspection-material (spatial-pick-inspection pick))))
+    (define (rows-for-fields fields ordered)
+      (append
+       (for/list ([key (in-list ordered)] #:when (hash-has-key? fields key))
+         (inspector-row (symbol->string key) (hash-ref fields key) 'info '()))
+       (for/list ([key (in-list (sort (filter (lambda (key) (not (member key ordered)))
+                                       (hash-keys fields))
+                                      symbol<?))])
+         (inspector-row (symbol->string key) (hash-ref fields key) 'info '()))))
+    (define material-section
+      (and picked-material
+           (let* ([report (material3d-inspection picked-material)]
+                  [fields (material-inspection3d-fields report)])
+             (inspector-section
+              'lighting-material "Material"
+              (cons (inspector-row "selected path" (spatial-pick-path pick) 'info '())
+                    (rows-for-fields
+                     fields
+                     '(base-colour normal-mode lighting-model ambient diffuse specular
+                                   specular-colour roughness derived-specular-exponent
+                                   emission emission-strength double-sided?
+                                   casts-shadow? receives-shadow?)))
+              #f))))
+    (define light-section
+      (and view
+           (let ([lights (if (null? (view3d-lights view))
+                             default-lights3d
+                             (view3d-lights view))])
+             (inspector-section
+              'lighting-lights "Lights"
+              (apply append
+                     (for/list ([light (in-list lights)])
+                       (define fields (light-inspection3d-fields (light3d-inspection light)))
+                       (cons (inspector-row
+                              (format "~a light" (light3d-id light))
+                              (hash-ref fields 'type) 'info '())
+                             (for/list ([key (in-list
+                                             '(position direction colour intensity attenuation range
+                                                        inner-angle outer-angle shadow))]
+                                        #:when (hash-has-key? fields key))
+                               (inspector-row
+                                (format "~a ~a" (light3d-id light) key)
+                                (hash-ref fields key) 'info '())))))
+              #f))))
+    (define fragment-section
+      (and view picked-material pick
+           (let* ([lights (if (null? (view3d-lights view))
+                              default-lights3d
+                              (view3d-lights view))]
+                  [report
+                   (fragment-lighting-inspection3d
+                    picked-material lights (spatial-pick-point pick) (spatial-pick-normal pick)
+                    (camera3d-position (view3d-camera view))
+                    #:tone-map (view3d-tone-map view))]
+                  [sample-rows
+                   (apply append
+                          (for/list ([sample (in-list
+                                               (fragment-lighting-report3d-light-samples report))])
+                            (define prefix (symbol->string (fragment-light-sample3d-id sample)))
+                            (list
+                             (inspector-row (format "~a direction" prefix)
+                                            (fragment-light-sample3d-direction sample) 'info '())
+                             (inspector-row (format "~a attenuation / cone" prefix)
+                                            (vector (fragment-light-sample3d-attenuation sample)
+                                                    (fragment-light-sample3d-cone sample)) 'info '())
+                             (inspector-row (format "~a diffuse / specular" prefix)
+                                            (vector (fragment-light-sample3d-diffuse-energy sample)
+                                                    (fragment-light-sample3d-specular-energy sample)) 'info '())
+                             (inspector-row (format "~a shadow" prefix)
+                                            (vector (fragment-light-sample3d-shadow-factor sample)
+                                                    (fragment-light-sample3d-shadow-state sample))
+                                            (if (eq? (fragment-light-sample3d-shadow-state sample)
+                                                     'not-sampled)
+                                                'warning
+                                                'info)
+                                            '()))))]
+                  [diagnostic-rows
+                   (for/list ([diagnostic (in-list
+                                            (fragment-lighting-report3d-diagnostics report))])
+                     (inspector-row "shadow diagnostic" diagnostic 'warning '()))])
+             (inspector-section
+              'lighting-fragment "Fragment probe"
+              (append
+               (list (inspector-row "world point" (fragment-lighting-report3d-world-point report)
+                                    'info '())
+                     (inspector-row "normal / view vector"
+                                    (vector (fragment-lighting-report3d-normal report)
+                                            (fragment-lighting-report3d-view-direction report))
+                                    'info '()))
+               sample-rows
+               (list (inspector-row "pre-tone-map linear colour"
+                                    (fragment-lighting-report3d-pre-tone-map report) 'info '())
+                     (inspector-row "final sRGB colour"
+                                    (fragment-lighting-report3d-final-srgb report) 'info '()))
+               diagnostic-rows)
+              #f))))
+    (filter values (list material-section light-section fragment-section)))
   (define (available-inspector-sections document)
     (append (if (inspector-document? document)
                 (inspector-document-sections document)
@@ -1632,7 +1742,8 @@
             (let ([topology (spatial-topology-section)])
               (if topology (list topology) '()))
             (let ([dynamics (dynamical-inspection-section)])
-              (if dynamics (list dynamics) '()))))
+              (if dynamics (list dynamics) '()))
+            (lighting-inspection-sections)))
   (define (display-inspector-section! index)
     (define document (unbox inspector-document-box))
     (define sections (available-inspector-sections document))

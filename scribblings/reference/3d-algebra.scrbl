@@ -954,6 +954,63 @@ the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial ins
                                          (material3d-receives-shadow? material)])
          material3d?]{Returns @racket[material] with its future shadow policy replaced.}
 
+@subsection{Lighting inspection}
+
+@defstruct*[material-inspection3d
+            ([material material3d?] [fields immutable-hash?]) #:transparent]{
+An immutable, presentation-neutral report of every material parameter relevant
+to the current lighting contract. @racket[fields] names the base colour,
+normal mode, lighting model, ambient/diffuse/specular coefficients, specular
+colour, roughness, derived exponent, emission, double-sided policy, and
+cast/receive-shadow policies.}
+@defproc[(material3d-inspection [material material3d?]) material-inspection3d?]{
+Returns the immutable material report without rendering or changing
+@racket[material].}
+
+@defstruct*[light-inspection3d
+            ([light light3d?] [fields immutable-hash?]) #:transparent]{
+An immutable description of one light. Its fields include the stable ID, kind,
+colour, intensity, position or direction where applicable, attenuation/range,
+spot angles, and its shadow descriptor.}
+@defproc[(light3d-inspection [light light3d?]) light-inspection3d?]{Returns the
+immutable light report without allocating renderer resources.}
+
+@defstruct*[fragment-light-sample3d
+            ([id symbol?] [kind symbol?] [direction any/c] [distance any/c]
+             [attenuation any/c] [cone any/c] [facing any/c]
+             [shadow-factor real?] [shadow-state symbol?]
+             [diffuse-energy real?] [specular-energy real?]
+             [diffuse-linear any/c] [specular-linear any/c]) #:transparent]{
+One per-light term in a lighting probe. Ambient samples deliberately use
+@racket[#f] for geometric values that have no ambient meaning.}
+@defstruct*[fragment-lighting-report3d
+            ([world-point vec3?] [normal vec3?] [view-direction vec3?]
+             [material material3d?] [light-samples list?]
+             [pre-tone-map any/c] [final-srgb rgba-color?]
+             [diagnostics list?]) #:transparent]{
+The complete pure fragment-lighting explanation: normalized geometry, each
+light's diffuse/specular/shadow term, the accumulated linear colour before
+tone mapping, final sRGB output, and any honest unavailable-data diagnostic.}
+@defproc[(fragment-lighting-inspection3d
+          [material material3d?] [lights (listof light3d?)]
+          [world-point vec3?] [normal vec3?] [camera-position vec3?]
+          [#:tone-map tone-map tone-map3d? default-tone-map3d]
+          [#:shadow-factors shadow-factors immutable-hash? #hasheq()])
+         fragment-lighting-report3d?]{
+Recomputes the documented lighting equation from immutable authoring values.
+@racket[shadow-factors] may supply a sampled fraction in @math{[0,1]} for each
+named shadowed light. The preview's @tt{Material}, @tt{Lights}, and
+@tt{Fragment probe} inspector sections use the same query after a mesh click.}
+
+@bold{Current limitation.} A pure probe does not read a private software or
+OpenGL depth map: when a light declares a shadow but its factor has not been
+explicitly supplied, the report uses a numerically unshadowed factor of one,
+marks it @racket['not-sampled], and returns a diagnostic. This prevents the
+inspector from guessing hidden renderer state or changing the rendered Scene.
+It is not a per-pixel GPU debugger; the preview probe reports the exact CPU
+pick and authored equations, while actual shadow-map sampling remains backend
+owned.
+
 @defproc[(ambient-light3d [#:id id symbol? 'ambient]
                            [#:intensity intensity nonnegative-real? 1]
                            [#:color color any/c "white"]

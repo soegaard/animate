@@ -88,6 +88,7 @@
          "private/3d/shadow-map3d.rkt"
          "private/3d/light-animation3d.rkt"
          "private/3d/light3d.rkt"
+         "private/3d/lighting-inspection3d.rkt"
          "private/3d/spatial-dependency.rkt"
          "private/3d/spatial-relation-context.rkt"
          "private/3d/spatial-relation.rkt"
@@ -991,6 +992,15 @@ cutaway3d
  light3d-color
  light3d-intensity
  light3d-shadow
+
+ ;; Material/light and fragment inspection
+ (struct-out material-inspection3d)
+ (struct-out light-inspection3d)
+ (struct-out fragment-light-sample3d)
+ (struct-out fragment-lighting-report3d)
+ material3d-inspection
+ light3d-inspection
+ fragment-lighting-inspection3d
 
  ;; Immutable finite-light animation requests
  light3d-intensity-to
