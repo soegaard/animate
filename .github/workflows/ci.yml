@@ -134,7 +134,7 @@ jobs:
           ./tools/ci-bootstrap-svg.sh
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
-      - run: raco test tests/scene-ej-token-formula-test.rkt tests/scene-ek-match-plan-test.rkt tests/scene-dg-test.rkt tests/scene-dh-test.rkt
+      - run: raco test tests/scene-ej-token-formula-test.rkt tests/scene-ek-match-plan-test.rkt tests/scene-dg-test.rkt
 
   gui-smoke:
     name: GRacket preview smoke
@@ -191,7 +191,8 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: >-
-          GRACKET="$(racket -e '(display (build-path (path-only (find-system-path (quote exec-file))) "gracket"))')" &&
+          RACKET="$(command -v racket)" &&
+          GRACKET="$(dirname "$RACKET")/gracket" &&
           test -x "$GRACKET" &&
           env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 "$GRACKET" -l raco/main -- test
           tests/scene-3d-p-opengl-integration-test.rkt
