@@ -171,6 +171,10 @@
     "examples/3d/spatial-inspector-picking.rkt" 'make-demo-scene
     '(3d preview inspection picking topology bvh camera) '(core gui) 5/2 5)
    (example-entry
+   'lighting-inspector "3D lighting inspector"
+    "examples/3d/lighting-inspector.rkt" 'make-demo-scene
+    '(3d preview inspection material lights fragment probe) '(core gui) 5/2 5)
+   (example-entry
     'retained-renderer "Retained 3D renderer protocol"
     "examples/3d/retained-renderer.rkt" 'make-demo-scene
     '(3d rendering retained conformance camera) '(core) 5/2 5)
@@ -235,9 +239,13 @@
     "examples/3d/opengl-opaque-cube.rkt" 'make-demo-scene
     '(3d opengl retained framebuffer cache) '(core gui opengl) 5/2 5)
    (example-entry
-    'opengl-two-viewports "OpenGL two spatial viewports"
+   'opengl-two-viewports "OpenGL two spatial viewports"
     "examples/3d/opengl-two-viewports.rkt" 'make-demo-scene
-    '(3d opengl viewports perspective orthographic) '(core gui opengl) 0 1)))
+    '(3d opengl viewports perspective orthographic) '(core gui opengl) 0 1)
+   (example-entry
+    'opengl-finite-lighting-project "OpenGL finite-light project"
+    "examples/3d/opengl-finite-lighting-project.rkt" 'opengl-finite-lighting-project
+    '(3d opengl point-light spot-light attenuation) '(core gui opengl) 5/2 5)))
 
 
 ;;;

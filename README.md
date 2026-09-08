@@ -247,7 +247,7 @@ exactly synchronized with the gallery and example requirements.
 - [Saddle equilibrium linearization](examples/3d/equilibrium-linearization.rkt) — 3d, ode, equilibria, jacobian, eigensystem, linearization, camera, animation; requires core.
 - [Prepared flow-map volume cell](examples/3d/flow-map-volume.rkt) — 3d, ode, flow-map, trajectories, volume, deformation, camera, animation; requires core.
 - [Topology-aware spatial picking](examples/3d/spatial-inspector-picking.rkt) — 3d, preview, inspection, picking, topology, bvh, camera; requires core, gui.
-- [3D lighting inspector](examples/3d/lighting-inspector.rkt) — 3d, preview, inspection, material, lights, fragment probe; requires core, gui.
+- [3D lighting inspector](examples/3d/lighting-inspector.rkt) — 3d, preview, inspection, material, lights, fragment, probe; requires core, gui.
 - [Retained 3D renderer protocol](examples/3d/retained-renderer.rkt) — 3d, rendering, retained, conformance, camera; requires core.
 - [Compiled mesh diagnostics](examples/3d/mesh-diagnostics.rkt) — 3d, topology, diagnostics, compilation, cache, camera; requires core.
 - [Depth-aware tetrahedron outline](examples/3d/hidden-line-tetrahedron.rkt) — 3d, strokes, hidden-lines, feature-edges, silhouettes; requires core.
