@@ -49,6 +49,7 @@
 ;                       material3d? (listof light3d?) exact-nonnegative-integer?
 ;                       [#:write-depth? boolean?] [#:write-color? boolean?]
 ;                       [#:blend? boolean?]
+;                       [#:shadow-factor (or/c #f procedure?)]
 ;                       [#:cancellation-token (or/c #f cancellation-token?)]
 ;                       -> exact-nonnegative-integer?
 ;; Returns how many pixels were replaced.  Equal depths resolve to the later
@@ -57,6 +58,7 @@
                             #:write-depth? [write-depth? #t]
                             #:write-color? [write-color? #t]
                             #:blend? [blend? #f]
+                            #:shadow-factor [shadow-factor #f]
                             #:cancellation-token [cancellation-token #f])
   (unless (raster-target3d? target)
     (raise-argument-error 'raster-triangle3d! "raster-target3d?" target))
@@ -75,6 +77,8 @@
     (raise-argument-error 'raster-triangle3d! "boolean? as #:write-color?" write-color?))
   (unless (boolean? blend?)
     (raise-argument-error 'raster-triangle3d! "boolean? as #:blend?" blend?))
+  (unless (or (not shadow-factor) (procedure? shadow-factor))
+    (raise-argument-error 'raster-triangle3d! "#f or procedure? as #:shadow-factor" shadow-factor))
   (when cancellation-token (check-cancellation cancellation-token))
   (define original (vector->list triangle))
   ;; Front faces are CCW in NDC (the conventional camera-local projected view).
@@ -98,7 +102,7 @@
      (if (zero? area)
          0
          (rasterize! target vertices area material lights owner back-face?
-                     write-depth? write-color? blend?
+                     write-depth? write-color? blend? shadow-factor
                      cancellation-token))]))
 
 (struct screen-vertex (x y raster) #:transparent)
@@ -126,7 +130,7 @@
   (- (* (- bx ax) (- cy ay)) (* (- by ay) (- cx ax))))
 
 (define (rasterize! target vertices area material lights owner back-face?
-                    write-depth? write-color? blend? cancellation-token)
+                    write-depth? write-color? blend? shadow-factor cancellation-token)
   (define first-vertex (first vertices))
   (define second-vertex (second vertices))
   (define third-vertex (third vertices))
@@ -216,7 +220,7 @@
                                 (raster-vertex3d-view-position (screen-vertex-raster second-vertex))
                                 (raster-vertex3d-view-position (screen-vertex-raster third-vertex))
                                 perspective-weight0 perspective-weight1 perspective-weight2)
-                               material lights)
+                               material lights shadow-factor)
                         #:blend? blend?))
                      (add1 written))
                    written))
@@ -234,7 +238,7 @@
   (define dy (- (screen-vertex-y end) (screen-vertex-y start)))
   (or (negative? dy) (and (zero? dy) (positive? dx))))
 
-(define (shade color normal view-position material lights)
+(define (shade color normal view-position material lights shadow-factor)
   ;; `color` is already a straight-alpha linear-light value.  Every semantic
   ;; material/light colour enters this equation through `rgba-srgb->linear`.
   (define emission (rgba-srgb->linear (material3d-emission material)))
@@ -273,7 +277,10 @@
             (define-values (light-direction intensity attenuation cone color)
               (non-ambient-light-sample light view-position normal))
             (define facing (max 0 (vec3-dot normal light-direction)))
-            (define energy (* intensity attenuation cone))
+            (define shadow (if shadow-factor
+                               (shadow-factor view-position normal material light)
+                               1))
+            (define energy (* intensity attenuation cone shadow))
             (define-values (red green blue)
               (add-light-color light-red light-green light-blue color
                                (* (material3d-diffuse material) energy facing)))

@@ -85,6 +85,7 @@
          "private/3d/light-attenuation3d.rkt"
          "private/3d/shadow3d.rkt"
          "private/3d/shadow-bounds3d.rkt"
+         "private/3d/shadow-map3d.rkt"
          "private/3d/light-animation3d.rkt"
          "private/3d/light3d.rkt"
          "private/3d/spatial-dependency.rkt"
@@ -947,6 +948,9 @@ cutaway3d
  prepare-shadow-bounds3d
  prepared-shadow-bounds3d-key
  shadow-map3d-identity
+ (struct-out shadow-map3d)
+ shadow-map3d-factor
+ shadow-light-camera3d
  ambient-light3d
  ambient-light3d?
  ambient-light3d-id

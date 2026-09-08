@@ -169,17 +169,19 @@
           'ambient-light
           'directional-light
           'point-light
-          'spot-light)
+          'spot-light
+          'directional-shadow
+          'spot-shadow)
    (hasheq 'maximum-directional-lights maximum-reference-resource-count
            'maximum-point-lights maximum-reference-resource-count
            'maximum-spot-lights maximum-reference-resource-count
-           'maximum-shadow-lights 0
+           'maximum-shadow-lights maximum-reference-resource-count
            'maximum-clip-planes maximum-reference-resource-count
-           'maximum-shadow-map-size 0
+           'maximum-shadow-map-size maximum-reference-resource-count
            'maximum-samples 1)
    (hasheq 'backend 'software-reference
            'unsupported-features
-           '(wireframe directional-shadow spot-shadow))))
+           '(wireframe))))
 
 ;;;
 ;;; Request Capability Requirements

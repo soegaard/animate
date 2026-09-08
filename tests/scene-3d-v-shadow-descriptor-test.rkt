@@ -105,9 +105,9 @@
   (check-not-equal? (shadow-map3d-identity first-view 'sun prepared)
                     (shadow-map3d-identity moved-view 'sun range-prepared))
 
-  ;; A descriptor immediately becomes a capability demand. V7's current
-  ;; renderers advertise no shadow maps, so the request is rejected at prepare
-  ;; time—before an author can mistake a no-op for a rendered shadow.
+  ;; A descriptor remains a capability demand. V8's software renderer now
+  ;; advertises and prepares directional maps; the OpenGL renderer remains
+  ;; deliberately unavailable until V9 rather than silently ignoring it.
   (define request (view3d->render3d-request first-view 80 60))
   (check-true (set-member? (renderer3d-request-required-features request)
                            'directional-shadow))
@@ -117,5 +117,9 @@
   (check-equal? (hash-ref (renderer3d-request-required-limits request)
                           'maximum-shadow-map-size)
                 256)
-  (check-exn exn:fail?
-             (lambda () (renderer3d-prepare (software-renderer3d) request))))
+  (check-true
+   (renderer3d-supports?
+    (renderer3d-capabilities-of (software-renderer3d))
+    '(directional-shadow)))
+  (check-not-exn
+   (lambda () (renderer3d-prepare (software-renderer3d) request))))

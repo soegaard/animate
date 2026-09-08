@@ -2,14 +2,24 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V8 software directional and spot shadow maps. The reference
+  renderer now fits deterministic orthographic/perspective light cameras,
+  rasterizes opaque eligible meshes into immutable positive-depth maps, and
+  applies the documented depth/normal bias plus square PCF factor only to
+  diffuse and Blinn--Phong specular light. Emission and ambient remain
+  unchanged. Explicit world-space bounds are supported; otherwise maps report
+  their direct current-frame caster fit. Transparent meshes, strokes, markers,
+  billboards, point-light cube maps, persistent shadow-map caching, and OpenGL
+  shadow rendering remain outside V8.
+
 - Added SCENE-3D-V7's immutable directional/spot shadow descriptors and
   settings (map size, depth/normal bias, PCF radius, explicit bounds, and a
   prepared-bound key). `prepare-shadow-bounds3d` unions opaque caster bounds
   across an explicit sampled frame range and rejects a changing shadow-light
   pose. Future map identities exclude the view camera but include caster
   geometry/transforms/policy, light pose/settings, and prepared bounds. Both
-  renderers deliberately reject these descriptors during preflight until V8/V9
-  implement shadow maps; point-light cube shadows remain deferred.
+  the OpenGL renderer deliberately rejects these descriptors during preflight
+  until V9 implements GPU maps; point-light cube shadows remain deferred.
 
 - Added SCENE-3D-V6 OpenGL finite-light evaluation. The retained GPU renderer
   now supports named point and spot lights with the same attenuation, range,

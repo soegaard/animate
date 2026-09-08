@@ -11,6 +11,7 @@
          "affine3.rkt"
          "billboard3d.rkt"
          "billboard-raster3d.rkt"
+         "bounds3.rkt"
          "camera3d.rkt"
          "clipping3d.rkt"
          "compiled-view3d.rkt"
@@ -26,6 +27,9 @@
          "raster-target3d.rkt"
          "raster-triangle3d.rkt"
          "render-command3d.rkt"
+         "rotation3.rkt"
+         "shadow-map3d.rkt"
+         "shadow3d.rkt"
          "software-render-diagnostics.rkt"
          "stroke-raster3d.rkt"
          "stroke3d.rkt"
@@ -44,10 +48,18 @@
          software-render-preparation?
          software-render-preparation-compiled-view
          software-render-preparation-frame-spec
+         software-render-preparation-shadow-maps
          software-render-preparation-diagnostics
          software-render-result->bitmap)
 
 (struct software-render-result (target diagnostics) #:transparent)
+
+;; A shadow map is paired with its original world-space light.  Raster
+;; triangles carry main-camera-local positions, while a shadow lookup must
+;; project world coordinates through the light camera.  Keeping both values
+;; together prevents a camera orbit from accidentally changing the authored
+;; light direction used by the depth comparison.
+(struct software-shadow-map (light map) #:transparent)
 
 ;; A preparation holds only backend-side, camera-space triangle data.  It does
 ;; not mutate a `view3d`, mesh, material, or any other semantic value, so a
@@ -59,7 +71,7 @@
                  overlay-strokes hidden-points visible-points overlay-points
                  hidden-arrows visible-arrows overlay-arrows
                  hidden-billboards visible-billboards overlay-billboards
-                 lights diagnostics)
+                 lights shadow-maps diagnostics)
   #:transparent)
 
 ;; The normal Pict protocol deliberately stays renderer-neutral.  Preview's
@@ -140,6 +152,8 @@
   (define view-lights (lights->view-space camera lights))
   (define-values (prepared source-count clipped-count)
     (prepare-commands commands camera aspect cancellation-token))
+  (define shadow-maps
+    (prepare-software-shadow-maps compiled commands lights cancellation-token))
   (define depth-only
     (filter (lambda (triangle) (eq? (prepared-triangle3d-surface-mode triangle) 'depth-only))
             prepared))
@@ -264,7 +278,7 @@
    compiled frame-spec opaque depth-only transparent hidden-strokes visible-strokes
    overlay-strokes hidden-points visible-points overlay-points
    hidden-arrows visible-arrows overlay-arrows
-   hidden-billboards visible-billboards overlay-billboards view-lights
+   hidden-billboards visible-billboards overlay-billboards view-lights shadow-maps
    (software-render-diagnostics
     (length commands) source-count clipped-count 0 0
     (+ (vector-length (compiled-view3d-strokes compiled))
@@ -296,11 +310,15 @@
                           (frame3d-spec-height frame-spec)
                           (compiled-view3d-background compiled)
                           #:tone-map (compiled-view3d-tone-map compiled)))
+  (define shadow-factor
+    (make-shadow-factor (frame3d-spec-camera frame-spec)
+                        (software-render-preparation-shadow-maps preparation)))
   (define-values (opaque-raster opaque-pixels)
     (rasterize-prepared! target
                          (software-render-preparation-opaque preparation)
                          (software-render-preparation-lights preparation)
                          #:write-depth? #t #:blend? #f
+                         #:shadow-factor shadow-factor
                          #:cancellation-token cancellation-token))
   (define-values (depth-only-raster _depth-only-pixels)
     (rasterize-prepared! target
@@ -397,6 +415,109 @@
     (set! next-order (+ next-order (length triangles)))
     (set! next-owner (+ next-owner (length triangles))))
   (values prepared source-count clipped-count))
+
+;; V8's reference implementation creates one immutable depth target per
+;; shadowed directional/spot light.  Only opaque mesh commands with an
+;; affirmative caster policy participate.  Strokes, markers, billboards and
+;; translucent meshes deliberately never reach `commands`, so cannot become
+;; accidental casters.
+(define (prepare-software-shadow-maps compiled commands lights cancellation-token)
+  (define caster-bounds (commands-shadow-caster-bounds commands))
+  (cond
+    [(aabb3-empty? caster-bounds) '()]
+    [else
+     (for/list ([light (in-list lights)]
+                #:when (light3d-shadow light))
+       (when cancellation-token (check-cancellation cancellation-token))
+       (define shadow (light3d-shadow light))
+       (define settings (shadow3d-settings shadow))
+       ;; An authored box deliberately wins.  Otherwise this single-frame
+       ;; renderer fits the current opaque caster bounds.  `prepared-bounds-
+       ;; key` remains a cache/preparation identity for retained renderers;
+       ;; no mutable global registry is consulted here.
+       (define bounds (or (shadow-settings3d-bounds settings) caster-bounds))
+       (define light-camera (shadow-light-camera3d light settings bounds))
+       (define-values (prepared _source-count _clipped-count)
+         (prepare-commands commands light-camera 1 cancellation-token))
+       (define casters
+         (filter (lambda (triangle)
+                   (and (prepared-triangle3d-opaque? triangle)
+                        (material3d-casts-shadow?
+                         (prepared-triangle3d-material triangle))))
+                 prepared))
+       (define map-size (shadow-settings3d-map-size settings))
+       (define target (make-raster-target3d map-size map-size "black"))
+       (rasterize-prepared! target casters '()
+                            #:write-depth? #t #:write-color? #f #:blend? #f
+                            #:cancellation-token cancellation-token)
+       (software-shadow-map
+        light
+        (make-shadow-map3d
+         target light-camera settings bounds
+         (hasheq 'light-id (light3d-id light)
+                 'kind (light3d-kind light)
+                 'map-size map-size
+                 'bounds-source (if (shadow-settings3d-bounds settings)
+                                    'explicit
+                                    'direct-current-frame)
+                 'prepared-bounds-key
+                 (shadow-settings3d-prepared-bounds-key settings)
+                 'caster-triangle-count (length casters)))))]))
+
+(define (commands-shadow-caster-bounds commands)
+  (for/fold ([result aabb3-empty]) ([command (in-list commands)])
+    (if (command-shadow-caster? command)
+        (aabb3-union
+         result
+         (aabb3-transform
+          (mesh3d-local-bounds (draw-mesh3d-command-mesh command))
+          (draw-mesh3d-command-world-transform command)))
+        result)))
+
+(define (command-shadow-caster? command)
+  (define material (draw-mesh3d-command-material command))
+  (define mesh (draw-mesh3d-command-mesh command))
+  (and (material3d-casts-shadow? material)
+       (= (draw-mesh3d-command-opacity command) 1)
+       (= (rgba-color-alpha (material3d-color material)) 1)
+       (let ([colors (mesh3d-colors mesh)])
+         (or (not colors)
+             (for/and ([color (in-vector colors)])
+               (= (rgba-color-alpha color) 1))))))
+
+;; Converts the rasterizer's camera-local fragment position and normal back
+;; to world space before consulting the immutable light map.  Ambient and
+;; unshadowed finite lights leave the normal lighting equation untouched.
+(define (make-shadow-factor camera maps)
+  (define (view->world-point point)
+    (vec3+ (camera3d-position camera)
+           (rotation3-apply (camera3d-rotation camera) point)))
+  (define (view->world-vector vector)
+    (rotation3-apply (camera3d-rotation camera) vector))
+  (lambda (view-position view-normal material light)
+    (cond
+      [(not (material3d-receives-shadow? material)) 1]
+      [else
+       (define record
+         (for/first ([candidate (in-list maps)]
+                     #:when (eq? (light3d-id (software-shadow-map-light candidate))
+                                 (light3d-id light)))
+           candidate))
+       (cond
+         [(not record) 1]
+         [(directional-light3d? (software-shadow-map-light record))
+          (shadow-map3d-factor
+           (software-shadow-map-map record)
+           (view->world-point view-position)
+           (view->world-vector view-normal)
+           (directional-light3d-direction (software-shadow-map-light record)))]
+         [(spot-light3d? (software-shadow-map-light record))
+          (shadow-map3d-factor
+           (software-shadow-map-map record)
+           (view->world-point view-position)
+           (view->world-vector view-normal)
+           (spot-light3d-direction (software-shadow-map-light record)))]
+         [else 1])])))
 
 ;; Edge selection is deliberately per-frame: silhouettes depend on the camera
 ;; and crease angles depend on the current inverse-transpose normal transform.
@@ -688,6 +809,7 @@
 
 (define (rasterize-prepared! target triangles lights #:write-depth? write-depth?
                              #:write-color? [write-color? #t] #:blend? blend?
+                             #:shadow-factor [shadow-factor #f]
                              #:cancellation-token cancellation-token)
   (for/fold ([raster-count 0] [pixel-count 0]) ([triangle (in-list triangles)])
     (when cancellation-token (check-cancellation cancellation-token))
@@ -697,6 +819,7 @@
                                     (prepared-triangle3d-material triangle) lights
                                     (prepared-triangle3d-owner triangle)
                                     #:write-depth? write-depth? #:write-color? write-color? #:blend? blend?
+                                    #:shadow-factor shadow-factor
                                     #:cancellation-token cancellation-token)))))
 
 ; software-render-result->bitmap : software-render-result?

@@ -70,6 +70,10 @@
                          shadow3d? shadow3d-kind shadow3d-settings
                          prepared-shadow-bounds3d prepared-shadow-bounds3d?
                          prepare-shadow-bounds3d prepared-shadow-bounds3d-key shadow-map3d-identity
+                         shadow-map3d shadow-map3d? shadow-map3d-width shadow-map3d-height
+                         shadow-map3d-depth shadow-map3d-camera shadow-map3d-settings
+                         shadow-map3d-bounds shadow-map3d-diagnostics
+                         shadow-map3d-factor shadow-light-camera3d
                          ambient-light3d directional-light3d point-light3d spot-light3d
                          light3d? light3d-id light3d-kind light3d-color
                          light3d-intensity light3d-shadow

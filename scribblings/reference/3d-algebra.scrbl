@@ -915,10 +915,11 @@ viewport's final tone-map policy only when storing output pixels.
 
 @racket[emission] is added after ambient, diffuse, and specular terms and is
 therefore not reduced by shadows. @racket[casts-shadow?] and
-@racket[receives-shadow?] are durable material policy. V7's preparation uses
-@racket[casts-shadow?] to include only opaque mesh instances in a future map;
-transparent surfaces, strokes, markers, and billboards do not cast. The V8/V9
-renderers will apply the actual receiver policy.
+@racket[receives-shadow?] are durable material policy. The V8 software
+renderer includes only opaque mesh instances with @racket[casts-shadow?] in a
+depth map and applies receiver policy to diffuse and specular illumination.
+Transparent surfaces, strokes, markers, and billboards do not cast; they also
+do not receive a software-map lookup in this stage.
 }
 @defproc[(material3d? [value any/c]) boolean?]{Recognizes a material.}
 @defproc[(material3d-color [material material3d?]) rgba-color?]{Returns base colour and alpha.}
@@ -934,8 +935,8 @@ the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial ins
 @defproc[(material3d-emission [material material3d?]) rgba-color?]{Returns the additive emission colour.}
 @defproc[(material3d-emission-strength [material material3d?]) nonnegative-real?]{Returns emission strength.}
 @defproc[(material3d-double-sided? [material material3d?]) boolean?]{Reports whether back-face culling is disabled for this mesh.}
-@defproc[(material3d-casts-shadow? [material material3d?]) boolean?]{Returns shadow-caster policy. Only opaque mesh instances with true policy enter V7 prepared bounds.}
-@defproc[(material3d-receives-shadow? [material material3d?]) boolean?]{Returns future shadow-receiver policy.}
+@defproc[(material3d-casts-shadow? [material material3d?]) boolean?]{Returns shadow-caster policy. Only opaque mesh instances with true policy enter a V8 software depth map.}
+@defproc[(material3d-receives-shadow? [material material3d?]) boolean?]{Returns whether an opaque mesh receiver applies V8's software shadow factor.}
 @defproc[(material3d-wireframe? [material material3d?]) boolean?]{Returns retained wireframe intent.}
 @defproc[(material3d-with-color [material material3d?] [color any/c]) material3d?]{Returns
 @racket[material] with only its base colour replaced.}
@@ -968,9 +969,8 @@ the only accepted current value is @racket[#f].}
          directional-light3d?]{Creates an opaque directional light. Its
 direction is the direction in which illumination travels, so a normal facing
 its negation receives diffuse light. The direction is normalized. A
-@racket[directional-shadow3d] is immutable authoring intent; until V8/V9 it
-makes a renderer request fail at capability preflight rather than silently do
-nothing.}
+@racket[directional-shadow3d] makes the software renderer produce and sample
+one depth map; the OpenGL renderer remains unavailable until V9.}
 @defproc[(point-light3d [position vec3?]
                          [#:id id symbol? 'point]
                          [#:intensity intensity nonnegative-real? 1]
@@ -993,9 +993,9 @@ nothing.}
          spot-light3d?]{Creates a finite-position cone light. Its normalized
 direction points outward; inside @racket[inner-angle] illumination is full,
 outside @racket[outer-angle] it is zero, and the interval between uses the
-fixed smoothstep falloff. Angles are radians. A @racket[spot-shadow3d] follows
-the same preflight rule as a directional descriptor. Point-light cube shadows
-remain deferred, so a point light accepts only @racket[#f].}
+fixed smoothstep falloff. Angles are radians. A @racket[spot-shadow3d] is
+sampled by the V8 software renderer; OpenGL support remains V9. Point-light
+cube shadows remain deferred, so a point light accepts only @racket[#f].}
 @defproc[(ambient-light3d? [value any/c]) boolean?]{Recognizes ambient light.}
 @defproc[(ambient-light3d-id [light ambient-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(ambient-light3d-intensity [light ambient-light3d?]) nonnegative-real?]{Returns ambient intensity.}
@@ -1046,17 +1046,19 @@ remain deferred, so a point light accepts only @racket[#f].}
                              [#:far far (or/c #f positive-real?) #f]
                              [#:prepared-bounds-key prepared-bounds-key (or/c #f symbol?) #f])
          shadow-settings3d?]{Creates immutable shadow-map settings. An explicit
-@racket[bounds] is a nonempty world-space caster box. Without it, a later
-shadow renderer must use a prepared bound named by @racket[prepared-bounds-key]
-or report that it fitted a direct frame. Biases use the published
-@math{depth-bias + normal-bias(1-n\cdot l)} schema; @racket[pcf-radius] is the
-future square-kernel radius.}
+@racket[bounds] is a nonempty world-space shadow region. Without it, the V8
+software renderer fits the current opaque caster bounds and records that
+direct-frame fit in its private map diagnostics; this can shimmer as casters
+move. @racket[prepared-bounds-key] is retained for stable retained-renderer
+map identity and enables directional texel-centre snapping when named. Biases
+use the published @math{depth-bias + normal-bias(1-n\cdot l)} schema;
+@racket[pcf-radius] is the square PCF-kernel radius.}
 @defproc[(shadow-settings3d? [value any/c]) boolean?]{Recognizes shadow settings.}
 @defproc[(shadow-settings3d-map-size [settings shadow-settings3d?]) exact-positive-integer?]{Returns map size.}
 @defproc[(shadow-settings3d-depth-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns constant receiver-depth bias.}
 @defproc[(shadow-settings3d-normal-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns slope-dependent receiver bias.}
-@defproc[(shadow-settings3d-pcf-radius [settings shadow-settings3d?]) exact-nonnegative-integer?]{Returns future PCF radius.}
-@defproc[(shadow-settings3d-bounds [settings shadow-settings3d?]) (or/c #f aabb3?)]{Returns explicit caster bounds, if any.}
+@defproc[(shadow-settings3d-pcf-radius [settings shadow-settings3d?]) exact-nonnegative-integer?]{Returns square PCF radius.}
+@defproc[(shadow-settings3d-bounds [settings shadow-settings3d?]) (or/c #f aabb3?)]{Returns explicit world-space shadow-region bounds, if any.}
 @defproc[(shadow-settings3d-near [settings shadow-settings3d?]) (or/c #f positive-real?)]{Returns optional light near plane.}
 @defproc[(shadow-settings3d-far [settings shadow-settings3d?]) (or/c #f positive-real?)]{Returns optional light far plane.}
 @defproc[(shadow-settings3d-prepared-bounds-key [settings shadow-settings3d?]) (or/c #f symbol?)]{Returns the optional prepared-bound name.}
@@ -1090,15 +1092,38 @@ prepare separate ranges for animated shadow-light poses.}
 Returns its immutable identity key.}
 @defproc[(shadow-map3d-identity [view view3d?] [light-id symbol?]
                                  [prepared prepared-shadow-bounds3d?]) vector?]{
-Returns the future depth-map key. It includes caster geometry, transforms,
+Returns the depth-map cache key. It includes caster geometry, transforms,
 caster policy, light pose/settings, and prepared bounds, but deliberately
 excludes the viewing camera.}
 
-@bold{Current limitation.} V7 defines descriptors, stable caster preparation,
-and preflight only. Neither renderer creates or samples a shadow map yet; an
-attached descriptor intentionally makes a request fail before drawing. V8 adds
-software maps and V9 adds the OpenGL map pass. Point-light cube shadows remain
-outside this roadmap slice.
+@defstruct*[shadow-map3d
+            ([width exact-positive-integer?] [height exact-positive-integer?]
+             [depth immutable-vector?] [camera camera3d?]
+             [settings shadow-settings3d?] [bounds aabb3?]
+             [diagnostics immutable-hash?]) #:transparent]{An immutable,
+software-prepared depth map. Its depth vector stores positive light-camera
+depth in top-left pixel order. The reference backend owns map construction;
+the value is exposed for inspection and deterministic sampling.}
+@defproc[(shadow-map3d-factor [map shadow-map3d?] [world-position vec3?]
+                               [world-normal vec3?] [light-direction vec3?])
+         real?]{Returns the fraction of a square PCF kernel which is lit. It
+uses @racket[depth-bias + normal-bias*(1-max(0,n·l))]; samples outside the
+fitted map are lit.}
+@defproc[(shadow-light-camera3d [light (or/c directional-light3d? spot-light3d?)]
+                                [settings shadow-settings3d?] [bounds aabb3?])
+         camera3d?]{Fits the deterministic light camera used by the reference
+map. Directional maps use a square orthographic fit and named prepared bounds
+snap their centre to map texels; spots use the source, outward cone, and
+near/far/range policy.}
+
+@bold{Current limitation.} V8's portable software renderer creates one
+directional or spot depth map per descriptor and multiplies only diffuse and
+specular terms by its PCF result. Ambient and emission remain unchanged.
+Only opaque mesh instances cast or receive; transparent surfaces, strokes,
+markers, billboards, and point-light cube shadows are outside this stage.
+Direct-frame fitting can shimmer, and a too-small explicit region yields
+unshadowed outside samples. The OpenGL renderer still rejects shadow requests;
+V9 owns its depth-map pass.
 
 @defstruct*[light-attenuation3d ([mode (or/c 'constant 'inverse-square 'polynomial)]
                                   [parameters immutable-hash?]) #:transparent]{
@@ -3297,9 +3322,9 @@ fixed directional, point, spot, or clipping bound. The optional OpenGL shaders
 explicitly support at most four directional lights, eight point lights, four
 spot lights, and eight clip planes; an over-limit request raises an error
 rather than silently dropping lights. Its maximum sample count is the live GL
-limit, although a one-sample framebuffer remains available. Shadow descriptors
-are valid V7 semantics but neither backend advertises a shadow-map capability
-until V8/V9, so an attached descriptor fails before rendering.
+limit, although a one-sample framebuffer remains available. The software
+backend supports directional and spot maps in V8; the OpenGL backend still
+rejects those descriptor requests until V9.
 
 @defstruct*[compiled-geometry3d
             ([key any/c] [mesh mesh3d?] [local-bounds aabb3?]
@@ -3517,7 +3542,8 @@ therefore requires @racket[#:workers 1]; it does not create threaded GPU
 workers. It uses FBO readback rather than direct OpenGL preview-canvas
 composition. It supports Lambert/Blinn--Phong materials and a packed finite
 light stream with fixed limits of four directional, eight point, and four spot
-lights. V7 descriptors preflight but do not yet render shadows. There is no GPU
+lights. The OpenGL backend still preflights and rejects V7 descriptors; V9 adds
+their GPU map pass. There is no GPU
 picking, general mesh textures, shadows, persistent
 mapped buffers, PBO pipelining, compute/geometry shaders, or order-independent
 transparency. The software backend remains the portable default and conformance

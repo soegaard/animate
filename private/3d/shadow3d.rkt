@@ -46,8 +46,9 @@
 (define shadow-settings3d-prepared-bounds-key
   shadow-settings3d-value-prepared-bounds-key)
 
-;; `bounds` is an explicit world-space caster box.  #f tells V8/V9 to use a
-;; prepared bound if named, or a direct current-frame fit with a diagnostic.
+;; `bounds` is an explicit world-space shadow region. #f tells V8 to use a
+;; direct current-frame caster fit with a diagnostic; retained map caching can
+;; use the named prepared-bound identity without mutable global state.
 (define (shadow-settings3d #:map-size [map-size 1024]
                            #:depth-bias [depth-bias 1/1000]
                            #:normal-bias [normal-bias 1/100]
