@@ -9,16 +9,16 @@
          (only-in pict pict->bitmap)
          "../main.rkt")
 
-(define (bitmap-has-rgb? bitmap red green blue)
+(define (bitmap-has-colour? bitmap predicate)
   (define width (send bitmap get-width))
   (define height (send bitmap get-height))
   (define pixels (make-bytes (* width height 4)))
   (send bitmap get-argb-pixels 0 0 width height pixels)
   (for/or ([index (in-range 0 (bytes-length pixels) 4)])
     (and (= (bytes-ref pixels index) 255)
-         (= (bytes-ref pixels (+ index 1)) red)
-         (= (bytes-ref pixels (+ index 2)) green)
-         (= (bytes-ref pixels (+ index 3)) blue))))
+         (predicate (bytes-ref pixels (+ index 1))
+                    (bytes-ref pixels (+ index 2))
+                    (bytes-ref pixels (+ index 3))))))
 
 (module+ test
   (define test-camera
@@ -73,12 +73,23 @@
   (check-equal? (text-span-font-style (list-ref (text-visual-spans rich) 3))
                 'italic)
   (define rich-scene (scene-add (make-scene #:camera test-camera) rich))
+  (define rich-bitmap (pict->bitmap (scene->pict rich-scene 0) 'aligned))
+  ;; Text anti-aliasing blends the foreground with the white backdrop.  The
+  ;; amount of blending is platform/font dependent, so assert the distinctive
+  ;; colour-channel biases instead of requiring one fully opaque sample to
+  ;; equal the source RGB triplet exactly.
   (check-true
-   (bitmap-has-rgb? (pict->bitmap (scene->pict rich-scene 0) 'aligned)
-                    65 105 225))
+   (bitmap-has-colour?
+    rich-bitmap
+    (lambda (red green blue)
+      (and (> blue (+ green 8))
+           (> blue (+ red 8))))))
   (check-true
-   (bitmap-has-rgb? (pict->bitmap (scene->pict rich-scene 0) 'aligned)
-                    178 34 34))
+   (bitmap-has-colour?
+    rich-bitmap
+    (lambda (red green blue)
+      (and (> red (+ green 8))
+           (> red (+ blue 8))))))
 
   ;; Immutable updates preserve outer geometry/styles and replace the rich
   ;; content representation atomically.
