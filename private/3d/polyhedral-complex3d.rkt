@@ -13,6 +13,8 @@
 (require racket/list
          racket/math
          "../geometry.rkt"
+         "affine3.rkt"
+         "linear3.rkt"
          "mesh3d.rkt"
          "mesh-topology3d.rkt"
          "spatial-visual.rkt"
@@ -24,6 +26,9 @@
          (struct-out polyhedral-face-declaration3d)
          (struct-out polyhedral-face3d)
          polyhedral-complex3d?
+         polyhedral-complex3d-source-mesh
+         polyhedral-complex3d-analysis-mesh
+         polyhedral-complex3d-source-transform
          polyhedral-complex3d-mesh
          polyhedral-complex3d-topology
          polyhedral-complex3d-faces
@@ -64,11 +69,19 @@
 ;; documented predicate/accessors below; authors still construct it with
 ;; `(polyhedral-complex3d mesh ...)`.
 (struct polyhedral-complex3d-value
-  (mesh topology faces edge-to-faces vertex-to-faces diagnostics)
+  (source-mesh analysis-mesh topology faces edge-to-faces vertex-to-faces diagnostics)
   #:transparent)
 
 (define polyhedral-complex3d? polyhedral-complex3d-value?)
-(define polyhedral-complex3d-mesh polyhedral-complex3d-value-mesh)
+(define polyhedral-complex3d-source-mesh polyhedral-complex3d-value-source-mesh)
+(define polyhedral-complex3d-analysis-mesh polyhedral-complex3d-value-analysis-mesh)
+(define (polyhedral-complex3d-source-transform complex)
+  (unless (polyhedral-complex3d? complex)
+    (raise-argument-error 'polyhedral-complex3d-source-transform "polyhedral-complex3d?" complex))
+  (spatial-transform (polyhedral-complex3d-source-mesh complex)))
+;; Compatibility alias.  New code must choose source or analysis explicitly;
+;; the mathematical operations below intentionally use analysis/world space.
+(define polyhedral-complex3d-mesh polyhedral-complex3d-analysis-mesh)
 (define polyhedral-complex3d-topology polyhedral-complex3d-value-topology)
 (define polyhedral-complex3d-faces polyhedral-complex3d-value-faces)
 (define polyhedral-complex3d-edge-to-faces polyhedral-complex3d-value-edge-to-faces)
@@ -104,8 +117,9 @@
                            "an angle no greater than pi radians"
                            "coplanar-angle" coplanar-angle))
   (check-nonnegative-finite 'polyhedral-complex3d "plane-distance" plane-distance)
-  (define topology (mesh3d-topology mesh))
-  (define triangle-planes (mesh-triangle-planes mesh))
+  (define analysis-mesh (mesh3d-analysis-mesh3d mesh))
+  (define topology (mesh3d-topology analysis-mesh))
+  (define triangle-planes (mesh-triangle-planes analysis-mesh))
   (define-values (mode groups explicit-ids)
     (cond [(or (not face-mode) (eq? face-mode 'coplanar))
            (values 'coplanar
@@ -116,15 +130,15 @@
            (values 'triangles
                    (vector->immutable-vector
                     (for/vector ([triangle-index
-                                  (in-range (vector-length (mesh3d-triangles mesh)))])
+                                  (in-range (vector-length (mesh3d-triangles analysis-mesh)))])
                       (list triangle-index)))
                    #f)]
           [else
-           (define-values (groups ids) (normalize-explicit-partition mesh face-mode))
+           (define-values (groups ids) (normalize-explicit-partition analysis-mesh face-mode))
            (values 'explicit groups ids)]))
   (define face-builds
     (for/list ([triangle-group (in-vector groups)] [face-index (in-naturals)])
-      (build-polyhedral-face mesh triangle-planes triangle-group
+      (build-polyhedral-face analysis-mesh triangle-planes triangle-group
                              (and explicit-ids (vector-ref explicit-ids face-index))
                              mode coplanar-angle plane-distance)))
   (define faces
@@ -139,8 +153,13 @@
                                  (hash-ref diagnostic 'planar? #f))))
       index))
   (polyhedral-complex3d-value
-   mesh topology faces edge-to-faces vertex-to-faces
+   mesh analysis-mesh topology faces edge-to-faces vertex-to-faces
    (hasheq 'mode mode
+           'analysis-space 'world
+           'source-transform (spatial-transform mesh)
+           'reflection?
+           (negative? (linear3-determinant
+                       (affine3-linear (transform3->affine3 (spatial-transform mesh)))))
            'coplanar-angle coplanar-angle
            'plane-distance plane-distance
            'invalid-face-indices
@@ -241,17 +260,16 @@
 ;;; Coplanar grouping
 ;;;
 
-;; Each source triangle has one transformed plane.  A triangle with zero area
+;; Each analysis triangle has one world-space plane.  A triangle with zero area
 ;; cannot participate in a mathematical plane and is left as its own group;
 ;; the complex records that condition through a non-simple boundary diagnostic.
 (define (mesh-triangle-planes mesh)
-  (define transform (spatial-transform mesh))
   (define vertices (mesh3d-vertices mesh))
   (vector->immutable-vector
    (for/vector ([triangle (in-vector (mesh3d-triangles mesh))])
-     (define first (transform3-apply-point transform (vector-ref vertices (vector-ref triangle 0))))
-     (define second (transform3-apply-point transform (vector-ref vertices (vector-ref triangle 1))))
-     (define third (transform3-apply-point transform (vector-ref vertices (vector-ref triangle 2))))
+     (define first (vector-ref vertices (vector-ref triangle 0)))
+     (define second (vector-ref vertices (vector-ref triangle 1)))
+     (define third (vector-ref vertices (vector-ref triangle 2)))
      (define raw-normal (vec3-cross (vec3- second first) (vec3- third first)))
      (define twice-area (vec3-length raw-normal))
      (and (positive? twice-area)
@@ -260,6 +278,47 @@
                               (vec3-scale (/ 1 3) (vec3+ first (vec3+ second third)))
                               (/ twice-area 2)
                               (vector-immutable first second third)))))))
+
+;; Topological analysis is deliberately performed on one canonical geometry
+;; space.  Retaining a transformed plane alongside local vertices used to make
+;; downstream dual, Schlegel, and net operations mix coordinate systems.  Bake
+;; the author transform once, preserve all stable semantic IDs, and expose the
+;; original mesh separately for source-level provenance.  A reflection reverses
+;; the analysis winding so geometric face normals stay aligned with transformed
+;; authored normals.
+(define (mesh3d-analysis-mesh3d source)
+  (define map (transform3->affine3 (spatial-transform source)))
+  (define reflected?
+    (negative? (linear3-determinant (affine3-linear map))))
+  (define normals (mesh3d-normals source))
+  (define (normalise normal)
+    (define length (vec3-length normal))
+    (if (zero? length) normal (vec3-scale (/ 1 length) normal)))
+  (define analysis-triangles
+    (if reflected?
+        (for/vector ([triangle (in-vector (mesh3d-triangles source))])
+          (vector (vector-ref triangle 0) (vector-ref triangle 2) (vector-ref triangle 1)))
+        (mesh3d-triangles source)))
+  (mesh3d
+   #:id (spatial-id source)
+   #:vertices
+   (for/vector ([vertex (in-vector (mesh3d-vertices source))])
+     (affine3-apply-point map vertex))
+   #:triangles analysis-triangles
+   #:edges (mesh3d-edges source)
+   #:vertex-ids (mesh3d-vertex-ids source)
+   #:edge-ids (mesh3d-edge-ids source)
+   #:face-ids (mesh3d-face-ids source)
+   #:normals
+   (and normals
+        (for/vector ([normal (in-vector normals)])
+          (normalise
+           (linear3-apply-vector (affine3-normal-transform map) normal))))
+   #:colors (mesh3d-colors source)
+   #:material (mesh3d-material source)
+   #:opacity (spatial-opacity source)
+   #:wireframe-color (mesh3d-wireframe-color source)
+   #:wireframe-width (mesh3d-wireframe-width source)))
 
 (struct triangle-plane3d (normal offset centroid area points) #:transparent)
 

@@ -24,6 +24,10 @@
 
 (provide mesh3d
          mesh3d?
+         (struct-out mesh-attribute3d)
+         mesh3d-attributes
+         mesh3d-attribute
+         mesh3d-extra-attributes
          mesh3d-vertices
          mesh3d-triangles
          mesh3d-edges
@@ -45,10 +49,33 @@
 ;;; Mesh Value
 ;;;
 
+(struct mesh-attribute3d (name values interpolation default semantic?)
+  #:transparent
+  #:guard
+  (lambda (name values interpolation default semantic? who)
+    (unless (symbol? name)
+      (raise-argument-error who "symbol?" name))
+    (unless (vector? values)
+      (raise-argument-error who "vector?" values))
+    (unless (memq interpolation '(linear normalized-linear source-only))
+      (raise-argument-error who
+                            "(or/c 'linear 'normalized-linear 'source-only)"
+                            interpolation))
+    (unless (boolean? semantic?)
+      (raise-argument-error who "boolean?" semantic?))
+    (when (and semantic? (not (eq? interpolation 'source-only)))
+      (raise-arguments-error who
+                             "a semantic attribute with 'source-only interpolation"
+                             "name" name "interpolation" interpolation))
+    (values name
+            (vector->immutable-vector
+             (for/vector ([value (in-vector values)]) value))
+            interpolation default semantic?)))
+
 (struct mesh3d-value
   (id transform opacity vertices triangles edges normals colors
       vertex-ids edge-ids face-ids
-      material wireframe-color wireframe-width local-bounds)
+      material wireframe-color wireframe-width local-bounds extra-attributes)
   #:transparent
   #:methods gen:spatial-visual
   [(define (spatial-id mesh)
@@ -85,8 +112,11 @@
 ;;  - wireframe-color  color-spec?             current independent line colour.
 ;;  - wireframe-width  positive finite real?   current cosmetic line width.
 ;;  - local-bounds     aabb3?                  enclosure of untransformed vertices.
+;;  - extra-attributes immutable descriptors for UV, scalar, and other
+;;                     author data not represented by a renderer core field.
 
 (define mesh3d? mesh3d-value?)
+(define mesh3d-extra-attributes mesh3d-value-extra-attributes)
 (define mesh3d-vertices mesh3d-value-vertices)
 (define mesh3d-triangles mesh3d-value-triangles)
 (define mesh3d-edges mesh3d-value-edges)
@@ -99,6 +129,41 @@
 (define mesh3d-wireframe-color mesh3d-value-wireframe-color)
 (define mesh3d-wireframe-width mesh3d-value-wireframe-width)
 (define mesh3d-local-bounds mesh3d-value-local-bounds)
+
+;; `mesh3d-attributes` presents the complete vertex-data contract, including
+;; the established position/normal/colour/semantic-ID fields and author-added
+;; descriptors such as UV or scalar samples.  Core fields remain direct
+;; accessors for renderer efficiency; callers that need uniform traversal use
+;; this immutable descriptor vector.
+(define (mesh3d-attributes mesh)
+  (unless (mesh3d? mesh)
+    (raise-argument-error 'mesh3d-attributes "mesh3d?" mesh))
+  (define standard
+    (append
+     (list (mesh-attribute3d 'position (mesh3d-vertices mesh) 'linear #f #f))
+     (if (mesh3d-normals mesh)
+         (list (mesh-attribute3d 'normal (mesh3d-normals mesh)
+                                 'normalized-linear z-axis3 #f))
+         '())
+     (if (mesh3d-colors mesh)
+         (list (mesh-attribute3d 'color (mesh3d-colors mesh)
+                                 'linear #f #f))
+         '())
+     (if (mesh3d-vertex-ids mesh)
+         (list (mesh-attribute3d 'semantic-id (mesh3d-vertex-ids mesh)
+                                 'source-only #f #t))
+         '())))
+  (vector->immutable-vector
+   (list->vector (append standard (vector->list (mesh3d-extra-attributes mesh))))))
+
+;; mesh3d-attribute : mesh3d? symbol? -> (or/c #f mesh-attribute3d?)
+;; Looks up one complete vertex-data descriptor by its stable name.
+(define (mesh3d-attribute mesh name)
+  (unless (symbol? name)
+    (raise-argument-error 'mesh3d-attribute "symbol?" name))
+  (for/first ([attribute (in-vector (mesh3d-attributes mesh))]
+              #:when (eq? (mesh-attribute3d-name attribute) name))
+    attribute))
 
 ; mesh3d-vertex-id : mesh3d? exact-nonnegative-integer? -> (or/c symbol? exact-nonnegative-integer?)
 ;; mesh3d-edge-id : mesh3d? exact-nonnegative-integer? -> (or/c symbol? exact-nonnegative-integer?)
@@ -140,6 +205,7 @@
 ;          [#:face-ids (or/c #f (vectorof symbol?))]
 ;          [#:normals (or/c #f (vectorof vec3?))]
 ;          [#:colors (or/c #f (vectorof color-spec?))]
+;          [#:attributes (listof mesh-attribute3d?)]
 ;          [#:material material3d?]
 ;          [#:transform transform3?] [#:opacity spatial-opacity?]
 ;          [#:wireframe-color color-spec?] [#:wireframe-width positive-real?]
@@ -154,6 +220,7 @@
                 #:face-ids [face-ids #f]
                 #:normals [normals #f]
                 #:colors [colors #f]
+                #:attributes [attributes '()]
                 #:material [material default-material3d]
                 #:transform [transform identity-transform3]
                 #:opacity [opacity 1]
@@ -195,11 +262,14 @@
   (define checked-colors
     (copy-attribute-vectors 'mesh3d "colors" colors color-spec?
                             (vector-length checked-vertices)))
+  (define checked-extra-attributes
+    (copy-mesh-attributes attributes (vector-length checked-vertices)))
   (mesh3d-value id transform opacity checked-vertices checked-triangles
                 checked-edges checked-normals checked-colors
                 checked-vertex-ids checked-edge-ids checked-face-ids
                 material wireframe-color wireframe-width
-                (aabb3-from-points (vector->list checked-vertices))))
+                (aabb3-from-points (vector->list checked-vertices))
+                checked-extra-attributes))
 
 
 ;;;
@@ -266,6 +336,35 @@
                                      "attribute" kind
                                      "value" value))
             value))]))
+
+;; Custom descriptors extend rather than shadow the renderer's core position,
+;; normal, colour, and semantic-ID channels.  Each descriptor is aligned with
+;; the immutable vertex vector before any geometry operation sees the mesh.
+(define (copy-mesh-attributes attributes vertex-count)
+  (unless (list? attributes)
+    (raise-argument-error 'mesh3d "listof mesh-attribute3d?" attributes))
+  (define reserved '(position normal color semantic-id))
+  (for ([attribute (in-list attributes)])
+    (unless (mesh-attribute3d? attribute)
+      (raise-argument-error 'mesh3d "mesh-attribute3d?" attribute))
+    (when (memq (mesh-attribute3d-name attribute) reserved)
+      (raise-arguments-error 'mesh3d
+                             "a non-core custom attribute name"
+                             "name" (mesh-attribute3d-name attribute)
+                             "reserved" reserved))
+    (unless (= (vector-length (mesh-attribute3d-values attribute)) vertex-count)
+      (raise-arguments-error 'mesh3d
+                             "an attribute vector matching vertex count"
+                             "name" (mesh-attribute3d-name attribute)
+                             "attribute-length"
+                             (vector-length (mesh-attribute3d-values attribute))
+                             "vertex-count" vertex-count)))
+  (define duplicate
+    (check-duplicates (map mesh-attribute3d-name attributes)))
+  (when duplicate
+    (raise-arguments-error 'mesh3d "distinct custom attribute names"
+                           "duplicate-name" duplicate))
+  (vector->immutable-vector (list->vector attributes)))
 
 ; copy-semantic-id-vector : symbol? string? any/c exact-nonnegative-integer?
 ;                           -> (or/c #f immutable-vectorof symbol?)

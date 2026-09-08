@@ -11,13 +11,21 @@
 (require "parametric-surface3d.rkt"
          "surface-mesh3d.rkt")
 
-(provide surface3d?
+(provide gen:surface3d
+         surface3d?
          surface3d-kind
          surface3d-mesh
          surface3d-material
          surface3d-with-material
+         surface3d-local-mesh
          surface3d-local-bounds
          surface3d-diagnostics
          surface3d-provenance
+         surface3d-domain
+         surface3d-evaluate
+         surface3d-frame-at
          surface3d->mesh3d
+         (struct-out surface-domain3d)
+         (struct-out surface-diagnostics3d)
+         (struct-out surface-frame3d)
          (struct-out surface-mesh3d))

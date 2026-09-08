@@ -57,8 +57,8 @@
   (check-equal? (cadr (trajectory-termination-hit3d-details bounds-hit))
                 (vec3 1 0 0))
 
-  ;; Arc length is accumulated through the deterministic dense chord rule and
-  ;; its limit is resolved inside the segment, not rounded to a step endpoint.
+  ;; Arc length is integrated over the dense Hermite segment and its limit is
+  ;; resolved inside the segment, not rounded to a step endpoint.
   (define arc-limited
     (constant-trajectory 2 #:range (cons 0 4)
                          #:termination (trajectory-termination3d #:arc-length-limit 3)))
@@ -67,9 +67,8 @@
   (check-= (trajectory-termination-hit3d-time arc-hit) 3/2 1e-10)
   (check-= (vec3-x (trajectory-termination-hit3d-position arc-hit)) 3 1e-10)
 
-  ;; The low-speed check observes accepted nodes and deterministic midpoints.
-  ;; This field reaches zero at t = 1 and therefore stops at that accepted
-  ;; node with a fixed half-second step.
+  ;; Low-speed termination finds the first dense threshold crossing before the
+  ;; zero-speed stationary point at t = 1.
   (define slow
     (prepare-ode-trajectory3d
      (lambda (time _x _y _z) (vec3 (- 1 time) 0 0)) origin3
@@ -77,7 +76,7 @@
      #:termination (trajectory-termination3d #:minimum-speed 1/10)))
   (define slow-hit (only-termination slow))
   (check-equal? (trajectory-termination-hit3d-reason slow-hit) 'minimum-speed)
-  (check-equal? (trajectory-termination-hit3d-time slow-hit) 1)
+  (check-= (trajectory-termination-hit3d-time slow-hit) 9/10 1e-8)
 
   ;; A terminal event supplied through the policy participates in the same
   ;; plan as explicit #:events and wins against a coincident bounds exit.

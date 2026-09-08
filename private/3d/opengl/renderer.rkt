@@ -92,7 +92,7 @@
   #:transparent)
 
 (struct opengl-renderer3d-value
-  (spec host info geometry-cache framebuffer-cache shadow-cache programs statistics lock released?
+  (spec host info geometry-cache framebuffer-cache shadow-cache programs fallback-shadow-texture statistics lock released?
         fallback-renderer fallback-diagnostic
         context-creation-milliseconds shader-compilation-milliseconds
         geometry-upload-milliseconds frames)
@@ -188,7 +188,7 @@
         (lambda (exception)
           (if (eq? (opengl-renderer3d-spec-value-fallback spec) 'software)
               (opengl-renderer3d-value
-               spec #f #f #f #f #f #f (make-renderer3d-statistics-state)
+               spec #f #f #f #f #f #f #f (make-renderer3d-statistics-state)
                (make-semaphore 1) #f (retained-software-renderer3d)
                (format "OpenGL unavailable; explicit software fallback: ~a"
                        (exn-message exception))
@@ -206,10 +206,25 @@
       (raise-arguments-error 'opengl-renderer3d "the required OpenGL capabilities"
                              "diagnostics" (opengl3d-info->datum info)))
     (define shader-start (current-inexact-milliseconds))
+    ;; A GLSL sampler has a default texture unit even when a zero count makes
+    ;; its branch unreachable.  Keep one type-correct depth texture around so
+    ;; an unused shadow sampler never aliases a colour texture on strict macOS
+    ;; drivers.  It is not a shadow map and is never counted as one.
+    (define fallback-shadow-texture #f)
     (define programs
       (with-handlers ([exn? (lambda (exception)
+                              (when fallback-shadow-texture
+                                (gl-context-host-call
+                                 host
+                                 (lambda ()
+                                   (gl-resource-delete-current!
+                                    fallback-shadow-texture host))))
                               (gl-context-host-close! host)
                               (raise exception))])
+        (set! fallback-shadow-texture
+              (gl-context-host-call host
+                                    (lambda ()
+                                      (make-fallback-shadow-texture/current! host))))
         (make-programs host)))
     (define shader-finished (current-inexact-milliseconds))
     (opengl-renderer3d-value
@@ -220,6 +235,7 @@
      (make-gl-shadow-cache
       #:max-bytes (* (opengl-renderer3d-spec-value-cache-megabytes spec) 1024 1024))
      programs
+     fallback-shadow-texture
      (make-renderer3d-statistics-state)
      (make-semaphore 1) #f #f #f
      (- context-finished context-start)
@@ -303,6 +319,13 @@
                  (gl-shadow-cache-clear/current!
                   (opengl-renderer3d-value-shadow-cache renderer)
                   (lambda (target) (gl-shadow-target-delete/current! target host)))))
+              (gl-context-host-call
+               host
+               (lambda ()
+                 (define fallback-shadow-texture
+                   (opengl-renderer3d-value-fallback-shadow-texture renderer))
+                 (when fallback-shadow-texture
+                   (gl-resource-delete-current! fallback-shadow-texture host))))
               (gl-framebuffer-cache-clear!
                (opengl-renderer3d-value-framebuffer-cache renderer) host)
               (for ([program (in-hash-values (opengl-renderer3d-value-programs renderer))])
@@ -334,6 +357,33 @@
           'billboard (make-gl-shader-program
                       host (shader-path "billboard.vert") (shader-path "billboard.frag")
                       #:attributes '(("position" . 0) ("uv" . 1)))))
+
+;; A live shader program validates sampler types before it proves that an
+;; array count is zero.  This immutable 1×1 comparison texture gives every
+;; inactive shadow sampler a valid binding; authored shadow maps still replace
+;; their selected slots during each mesh draw.
+(define (make-fallback-shadow-texture/current! host)
+  (define texture-id (u32vector-ref (glGenTextures 1) 0))
+  (define texture
+    (gl-texture (gl-context-host-identity host) texture-id 4 #f
+                "fallback-shadow-depth"
+                (lambda (id) (glDeleteTextures 1 (u32vector id)))))
+  (with-handlers ([exn? (lambda (exception)
+                          (when (positive? texture-id)
+                            (glDeleteTextures 1 (u32vector texture-id)))
+                          (raise exception))])
+    (glActiveTexture GL_TEXTURE0)
+    (glBindTexture GL_TEXTURE_2D texture-id)
+    (glTexImage2D GL_TEXTURE_2D 0 GL_DEPTH_COMPONENT24 1 1 0
+                  GL_DEPTH_COMPONENT GL_FLOAT #f)
+    (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MIN_FILTER GL_NEAREST)
+    (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAG_FILTER GL_NEAREST)
+    (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_BASE_LEVEL 0)
+    (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_MAX_LEVEL 0)
+    (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_COMPARE_MODE GL_COMPARE_REF_TO_TEXTURE)
+    (glTexParameteri GL_TEXTURE_2D GL_TEXTURE_COMPARE_FUNC GL_LEQUAL)
+    (glBindTexture GL_TEXTURE_2D 0)
+    texture))
 
 (define (shader-digests programs)
   (for/hasheq ([(name program) (in-hash programs)])
@@ -863,7 +913,9 @@
   (upload-common-uniforms/current! program frame-spec instance material
                                    (compiled-geometry3d-mesh geometry))
   (unless depth-only?
-    (upload-light-uniforms/current! program frame-spec material shadow-samples))
+    (upload-light-uniforms/current!
+     program frame-spec material shadow-samples
+     (opengl-renderer3d-value-fallback-shadow-texture renderer)))
   (if (material3d-double-sided? material)
       (glDisable GL_CULL_FACE)
       (glEnable GL_CULL_FACE))
@@ -1054,7 +1106,8 @@
                            "light-count" (length records)))
   (void))
 
-(define (upload-light-uniforms/current! program frame-spec material shadow-samples)
+(define (upload-light-uniforms/current! program frame-spec material shadow-samples
+                                        fallback-shadow-texture)
   (when (not (eq? (material3d-shading material) 'unlit))
     (uniform-1f! program "materialAmbient" (material3d-ambient material))
     (uniform-1f! program "materialDiffuse" (material3d-diffuse material))
@@ -1109,13 +1162,15 @@
                    (gl-light-record-inner-angle light))
       (uniform-1f! program (format "nonAmbientLightOuterAngles[~a]" index)
                    (gl-light-record-outer-angle light)))
-    (upload-gl-shadow-uniforms/current! program material selected shadow-samples)))
+    (upload-gl-shadow-uniforms/current! program material selected shadow-samples
+                                        fallback-shadow-texture)))
 
 ;; Every sampled map is associated by its stable authored light id rather than
 ;; by a positional coincidence in the light list.  `selected` is the packed
 ;; non-ambient stream consumed by mesh-lit.frag; ambient lights therefore do
 ;; not disturb the shader index recorded for a shadow map.
-(define (upload-gl-shadow-uniforms/current! program material selected shadow-samples)
+(define (upload-gl-shadow-uniforms/current! program material selected shadow-samples
+                                            fallback-shadow-texture)
   (uniform-1i! program "materialReceivesShadow"
                (if (material3d-receives-shadow? material) 1 0))
   (define indexed-samples
@@ -1131,6 +1186,19 @@
     (raise-arguments-error 'opengl-renderer3d
                            "at most eight shadow maps mapped to active lights"
                            "shadow-map-count" (length indexed-samples)))
+  (unless (gl-texture? fallback-shadow-texture)
+    (raise-arguments-error 'opengl-renderer3d
+                           "a live fallback shadow texture"
+                           "fallback-shadow-texture" fallback-shadow-texture))
+  ;; The shader has eight sampler declarations even when this frame has no
+  ;; shadow maps. Bind an owned depth texture at a reserved ninth unit and
+  ;; point every slot there before real maps override the selected slots.
+  ;; This keeps macOS from validating an inactive sampler against unit zero's
+  ;; colour texture.
+  (glActiveTexture (+ GL_TEXTURE0 8))
+  (glBindTexture GL_TEXTURE_2D (gl-resource-id fallback-shadow-texture))
+  (for ([slot (in-range 8)])
+    (uniform-1i! program (format "shadowMap~a" slot) 8))
   ;; Always upload zero for an empty list: uniforms belong to programs rather
   ;; than draw calls, so leaving an old value would sample stale texture units.
   (uniform-1i! program "shadowMapCount" (length indexed-samples))

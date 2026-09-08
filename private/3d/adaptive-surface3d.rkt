@@ -69,6 +69,29 @@
     (+ (first range)
        (* (dyadic-coordinate->real coordinate)
           (- (second range) (first range)))))
+  ;; Normal-angle tolerance must remain meaningful for ordinary authored
+  ;; parameterizations which do not provide analytic derivatives.  Use a fixed
+  ;; bounded parameter probe, never an unbounded world-space epsilon, so the
+  ;; same input produces the same refinement decisions at every camera.
+  (define (finite-tangent axis u v)
+    (define range (if (eq? axis 'u) u-range v-range))
+    (define coordinate (if (eq? axis 'u) u v))
+    (define step (/ (- (second range) (first range)) 1024))
+    (define low (max (first range) (- coordinate step)))
+    (define high (min (second range) (+ coordinate step)))
+    (define (evaluate parameter)
+      (with-handlers ([exn? (lambda (_exception) #f)])
+        (define point
+          (if (eq? axis 'u)
+              (procedure parameter v)
+              (procedure u parameter)))
+        (and (vec3? point) (vec3-finite? point) point)))
+    (define before (evaluate low))
+    (define after (evaluate high))
+    (and before after
+         (positive? (- high low))
+         (let ([tangent (vec3-scale (/ 1 (- high low)) (vec3- after before))])
+           (and (vec3-finite? tangent) tangent))))
   (define (sample-at key)
     (define found (hash-ref samples key #f))
     (cond [found (set! cache-hits (add1 cache-hits)) found]
@@ -85,8 +108,14 @@
                (cond [(not (and (vec3? point) (vec3-finite? point)))
                       (parametric-sample3d key #f #f #f #f 'non-finite point)]
                      [else
-                      (define tangent-u (and derivative-u (derivative-u u v)))
-                      (define tangent-v (and derivative-v (derivative-v u v)))
+                      (define tangent-u
+                        (if derivative-u
+                            (derivative-u u v)
+                            (finite-tangent 'u u v)))
+                      (define tangent-v
+                        (if derivative-v
+                            (derivative-v u v)
+                            (finite-tangent 'v u v)))
                       (define normal
                         (and (vec3? tangent-u) (vec3? tangent-v)
                              (vec3-finite? tangent-u) (vec3-finite? tangent-v)

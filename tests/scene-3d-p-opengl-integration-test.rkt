@@ -12,6 +12,7 @@
          racket/file
          racket/path
          racket/runtime-path
+         "../private/3d/conformance-report3d.rkt"
          "../3d.rkt"
          "../3d/render.rkt")
 
@@ -93,21 +94,24 @@
   (renderer3d-render-result-argb-bytes
    (renderer3d-render renderer (renderer3d-prepare renderer request) request)))
 
-(define (argb-difference-summary expected actual)
-  (unless (= (bytes-length expected) (bytes-length actual))
-    (raise-arguments-error 'argb-difference-summary "same-sized ARGB byte strings"
-                           "expected-bytes" (bytes-length expected)
-                           "actual-bytes" (bytes-length actual)))
-  (define differences
-    (for/list ([expected-byte (in-bytes expected)] [actual-byte (in-bytes actual)])
-      (abs (- expected-byte actual-byte))))
-  (hasheq 'mean (/ (apply + differences) (length differences))
-          'maximum (apply max differences)
-          'different-components (length (filter positive? differences))))
+(define (argb-difference-summary expected actual [width 128] [height 96])
+  (define metrics
+    (conformance-report3d-metrics
+     (argb-conformance-report3d expected actual width height)))
+  ;; Keep the concise test-facing names while the full report retains
+  ;; percentiles, changed bounds, alpha-only differences, and edge/interior
+  ;; populations for a failing live-context diagnostic.
+  (hasheq 'mean (hash-ref metrics 'mean-absolute-error)
+          'maximum (hash-ref metrics 'maximum-component-error)
+          'different-components (hash-ref metrics 'different-component-count)
+          'large-difference-components (hash-ref metrics 'large-difference-components)
+          'edge (hash-ref metrics 'edge)
+          'interior (hash-ref metrics 'interior)))
 
 (define (check-conform-to-software label expected actual
                                    #:mean-tolerance mean-tolerance
-                                   #:maximum-tolerance maximum-tolerance)
+                                   #:maximum-tolerance maximum-tolerance
+                                   #:large-component-tolerance large-component-tolerance)
   (define summary (argb-difference-summary expected actual))
   ;; OpenGL and the software reference intentionally use different coverage
   ;; rasterizers. Opaque/antialiased marks and transparency therefore have
@@ -117,12 +121,20 @@
               (format "~a mean ARGB difference: ~e" label (hash-ref summary 'mean)))
   (check-true (<= (hash-ref summary 'maximum) maximum-tolerance)
               (format "~a maximum ARGB difference: ~e" label (hash-ref summary 'maximum)))
+  ;; Different rasterizers can assign a full edge sample to opposite sides of
+  ;; a high-contrast primitive.  The maximum therefore permits that one-sample
+  ;; coverage choice, while this independent bound rejects a missing mark,
+  ;; sprite, or clipped edge spread across a material area.
+  (check-true (<= (hash-ref summary 'large-difference-components)
+                  large-component-tolerance)
+              (format "~a large ARGB component differences: ~e"
+                      label (hash-ref summary 'large-difference-components)))
   (when (equal? (getenv "ANIMATE_OPENGL_INTEGRATION_DEBUG") "1")
     (displayln (list label summary))))
 
 (module+ test
-; CI sets the companion requirement flag.  Thus a shell/environment error
-; cannot turn the real-context lane into a successful zero-test skip.
+  ;; CI sets the companion requirement flag.  Thus a shell/environment error
+  ;; cannot turn the real-context lane into a successful zero-test skip.
   (require-opengl-integration!)
   (when (equal? (getenv "ANIMATE_OPENGL_INTEGRATION") "1")
     (define make-renderer (dynamic-require opengl-module-path 'opengl-renderer3d))
@@ -141,10 +153,10 @@
        (check-true (renderer? renderer))
        (check-eq? (renderer3d-id renderer) 'opengl-racket)
        (check-true (hash? (renderer-info renderer)))
-; Construction succeeded with the default 'error fallback and this
-; context probe carries the implementation's actual GL version.  It
-; therefore rejects both software fallback and a merely-loadable
-; backend with no live context.
+       ;; Construction succeeded with the default 'error fallback and this
+       ;; context probe carries the implementation's actual GL version.  It
+       ;; therefore rejects both software fallback and a merely-loadable
+       ;; backend with no live context.
        (check-true (pair? (hash-ref (renderer-info renderer) 'version #f)))
        (check-true (string? (hash-ref (renderer-info renderer) 'renderer #f)))
        (define request (view3d->render3d-request (test-view) 128 96))
@@ -174,17 +186,18 @@
        (check-conform-to-software
         'opaque-strokes-and-markers
         (render-bytes software (test-view))
-        baseline-bytes #:mean-tolerance 1 #:maximum-tolerance 160)
+        baseline-bytes
+        #:mean-tolerance 1 #:maximum-tolerance 224 #:large-component-tolerance 64)
        (check-conform-to-software
         'clipping-and-transparency
         (render-bytes software (clipped-transparent-view))
         (render-bytes renderer (clipped-transparent-view))
-        #:mean-tolerance 3 #:maximum-tolerance 160)
+        #:mean-tolerance 3 #:maximum-tolerance 160 #:large-component-tolerance 16)
        (check-conform-to-software
         'textured-billboard
         (render-bytes software (billboard-view))
         (render-bytes renderer (billboard-view))
-        #:mean-tolerance 3 #:maximum-tolerance 180)
+        #:mean-tolerance 3 #:maximum-tolerance 224 #:large-component-tolerance 160)
        (define statistics (renderer-statistics renderer))
        (check-equal? (hash-ref statistics 'backend) 'opengl-racket)
        (check-equal? (hash-ref (hash-ref statistics 'framebuffer-cache) 'allocations) 1)

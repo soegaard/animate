@@ -185,17 +185,24 @@
                                                    (add1 (* 3 index))
                                                    (+ (* 3 index) 2))
                                  (vector-ref triangle->component index)))))
-  (define-values (_parities orientation-conflict?)
+  (define-values (orientation-parities _orientation-conflict?)
     (mesh3d-orientation-parities mesh adjacency))
-  ;; The current relation solver reports one conflict bit for the complete
-  ;; topology. Until U-2 introduces a polygonal-face relation graph, marking
-  ;; each face component nonorientable when that bit is set is conservative and
-  ;; prevents a component record from contradicting the mesh-level query.
+  (define component-orientation-conflicts
+    (orientation-conflicts-by-component adjacency orientation-parities
+                                        triangle->component
+                                        (vector-length components)))
+  (define orientation-conflict?
+    (for/or ([conflict? (in-vector component-orientation-conflicts)]) conflict?))
+  ;; Orientation parity is a relation over edge-connected faces.  Record the
+  ;; result per component instead of leaking a Möbius conflict into an
+  ;; unrelated tetrahedron (or an isolated vertex) elsewhere in the mesh.
   (define oriented-components
     (vector->immutable-vector
      (for/vector ([component (in-vector components)])
        (struct-copy mesh-component-topology3d component
-                    [orientable? (not orientation-conflict?)]))))
+                    [orientable?
+                     (not (vector-ref component-orientation-conflicts
+                                      (mesh-component-topology3d-index component)))]))))
   (define analysis (analyze-mesh3d mesh))
   (mesh-topology3d
    vertices halfedges edges triangle-records oriented-components boundaries
@@ -207,7 +214,33 @@
                                            #:when (mesh-edge-topology3d-boundary? edge)) 1)
            'isolated-vertex-indices (mesh3d-analysis-isolated-vertices analysis)
            'orientation-conflict? orientation-conflict?
+           'component-orientation-conflicts component-orientation-conflicts
            'cache-policy 'geometry-key-structural-skeleton)))
+
+(define (orientation-conflicts-by-component adjacency parities triangle->component component-count)
+  (define conflicts (make-vector component-count #f))
+  (for ([entry (in-vector adjacency)]
+        #:when (= (vector-length (edge-adjacency3d-incidences entry)) 2))
+    (define first (vector-ref (edge-adjacency3d-incidences entry) 0))
+    (define second (vector-ref (edge-adjacency3d-incidences entry) 1))
+    (define first-index (edge-incidence3d-triangle-index first))
+    (define second-index (edge-incidence3d-triangle-index second))
+    (define component-index (vector-ref triangle->component first-index))
+    ;; A two-incidence edge always lies inside one face component. Keep the
+    ;; assertion explicit so cache or topology regressions cannot turn a
+    ;; cross-component relation into a misleading orientability result.
+    (unless (= component-index (vector-ref triangle->component second-index))
+      (error 'mesh3d-topology "two-incidence edge crosses face components"))
+    (define required-xor
+      (if (and (= (edge-incidence3d-from-index first) (edge-incidence3d-from-index second))
+               (= (edge-incidence3d-to-index first) (edge-incidence3d-to-index second)))
+          1
+          0))
+    (define expected
+      (modulo (+ (vector-ref parities first-index) required-xor) 2))
+    (unless (= expected (vector-ref parities second-index))
+      (vector-set! conflicts component-index #t)))
+  (vector->immutable-vector conflicts))
 
 (define (build-halfedges triangles adjacency edge-index-by-pair)
   (vector->immutable-vector
@@ -590,10 +623,11 @@
      (define face-count (vector-length (mesh-component-topology3d-triangles component)))
      (define chi (- (+ vertex-count face-count) edge-count))
      (define boundary-count (vector-length (mesh-component-topology3d-boundary-components component)))
-     (define manifold? (and (mesh-component-topology3d-manifold? component)
-                            (mesh-topology3d-manifold? topology)))
-     (define orientable? (and (mesh-component-topology3d-orientable? component)
-                              (mesh-topology3d-orientable? topology)))
+     ;; Component reports must remain local: a nonorientable or nonmanifold
+     ;; neighbour elsewhere in the mesh is a mesh-level fact, not this
+     ;; component's mathematical invariant.
+     (define manifold? (mesh-component-topology3d-manifold? component))
+     (define orientable? (mesh-component-topology3d-orientable? component))
      (define numerator (- 2 boundary-count chi))
      (define genus
        (and manifold? orientable? (positive? face-count)

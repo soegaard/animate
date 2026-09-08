@@ -197,8 +197,7 @@
             'trim-count (length trim-fields)
             'trim-expression (and trim-expression
                                   (trim-expression-provenance trim-expression))
-            'retained-triangle-count (vector-length final-triangles)
-            'domain-contains? inside?))
+            'retained-triangle-count (vector-length final-triangles)))
   (define topology-key
     (vector 'trimmed-parametric (surface-mesh3d-topology-key source)
             final-triangles final-provenance final-triangle-provenance
@@ -208,7 +207,13 @@
    (surface-mesh3d mesh final-provenance final-triangle-provenance topology-key diagnostics)
    #:transform transform #:opacity opacity #:material material
    #:wireframe-color wireframe-color #:wireframe-width wireframe-width
-   #:evaluator procedure #:u-range u-range #:v-range v-range #:diagnostics diagnostics))
+   #:evaluator procedure #:u-range u-range #:v-range v-range
+   #:domain
+   (surface-domain3d
+    u-range v-range inside?
+    (vector 'trimmed-domain
+            (and trim-expression (trim-expression-provenance trim-expression))))
+   #:diagnostics diagnostics))
 
 (struct trimmed-vertex (position normal u v cache-key boundary) #:transparent)
 

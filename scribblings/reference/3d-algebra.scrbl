@@ -462,8 +462,10 @@ diagnostic rather than choosing a false polygon.}
                                 [#:plane-distance distance nonnegative-real? 1e-7])
          polyhedral-complex3d?]{Builds an immutable mathematical-face complex.
 With @racket[#:faces #f] (the default) or @racket['coplanar], it merges only
-edge-connected, consistently oriented render triangles whose transformed planes
-agree within the stated angle (in radians) and distance tolerances.
+edge-connected, consistently oriented render triangles whose world-space planes
+agree within the stated angle (in radians) and distance tolerances. The source
+mesh is retained for provenance; all mathematical calculations use an immutable
+world-space analysis mesh with an identity transform.
 
 Use @racket['triangles] to retain every render triangle as a face. An explicit
 partition is a list/vector of @racket[polyhedral-face-declaration3d] values or
@@ -471,8 +473,20 @@ concise @racket[(face-id triangle-index ...)] lists; explicit declarations
 always override automatic merging.}
 @defproc[(polyhedral-complex3d? [value any/c]) boolean?]{Recognizes a
 polygonal-face complex.}
+@defproc[(polyhedral-complex3d-source-mesh [complex polyhedral-complex3d?]) mesh3d?]{Returns
+the unchanged authored mesh whose stable part identities are the source of the
+complex's provenance.}
+@defproc[(polyhedral-complex3d-analysis-mesh [complex polyhedral-complex3d?]) mesh3d?]{Returns
+the immutable world-space mesh used for planes, topology, duals, Schlegel
+diagrams, and nets. Its local transform is @racket[identity-transform3]. A
+reflected source transform is baked with reversed triangle winding so geometric
+normals remain consistent.}
+@defproc[(polyhedral-complex3d-source-transform [complex polyhedral-complex3d?]) transform3?]{Returns
+the authored local-to-world transform recorded before analysis-space baking.}
 @defproc[(polyhedral-complex3d-mesh [complex polyhedral-complex3d?]) mesh3d?]{Returns
-the unchanged source mesh.}
+the analysis mesh. New code should use @racket[polyhedral-complex3d-source-mesh]
+or @racket[polyhedral-complex3d-analysis-mesh] to state which coordinate space
+it needs.}
 @defproc[(polyhedral-complex3d-topology [complex polyhedral-complex3d?]) mesh-topology3d?]{Returns
 the U-1 triangle topology used to build the complex.}
 @defproc[(polyhedral-complex3d-faces [complex polyhedral-complex3d?]) vector?]{Returns
@@ -2120,9 +2134,16 @@ Creates the xy gradient arrow for a declared @racket[function-surface3d].}
 @section{Adaptive, trimmed, and implicit surfaces}
 
 SCENE-3D-Q adds three producers which all lower to the same immutable indexed
-surface record returned by @racket[surface3d-mesh].  The record preserves
+surface record returned by @racket[surface3d-local-mesh].  The record preserves
 vertex and triangle provenance as well as a topology key, while renderer
 caches remain outside authored values.
+
+Surfaces implement @racket[gen:surface3d].  The protocol deliberately separates
+local geometry from the authored spatial envelope: @racket[surface3d-local-mesh]
+always has identity placement and full opacity, while @racket[surface3d->mesh3d]
+restores the surface's transform and opacity for standalone use.  A
+@racket[surface-domain3d] owns any executable retained-domain predicate; the
+serializable @racket[surface-diagnostics3d] value never embeds that procedure.
 
 @racket[adaptive-parametric-surface3d] accepts the same parameterization shape
 as @racket[parametric-surface3d], but samples it on a deterministic dyadic
@@ -2141,6 +2162,14 @@ shares edge/trim intersections by canonical keys.  Consequently
 @racket[surface3d-domain-contains?] and @racket[surface3d-position-at?] can
 distinguish a point in the original parameter box from one outside its trim.
 Root refinement uses deterministic bisection for true sign crossings.
+
+@racket[implicit-surface3d] currently uses deterministic fixed-grid
+marching tetrahedra. It canonicalizes exact iso vertices, uses an author
+gradient when supplied (otherwise bounded one-sided finite differences), and
+reports extraction-boundary crossings. Its @racket[#:on-invalid] policy may
+raise, skip invalid cells, or use bounded local subdivision before recording
+unresolved cells in diagnostics. Adaptive octree implicit extraction is not
+yet part of this release and is intentionally not claimed by this API.
 
 @defproc[(trim-expression3d? [value any/c]) boolean?]{Recognizes an immutable
 signed trim field or Boolean trim expression.}
@@ -2533,9 +2562,11 @@ nonterminal hits remain in the immutable hit vector.
 explicit: a symmetric time budget about the seed, an AABB exit, an accumulated
 arc-length budget, a low-speed threshold, a maximum step count, policy-owned
 events, and a choice between reporting or tolerating an author-field failure.
-Preparation resolves a winning condition against the stored dense Hermite
-segments and records an immutable termination hit.  An AABB exit reports the
-outward face normal.  On one branch, simultaneous candidates are ordered as
+Terminal events are checked on every accepted solver step: the first root
+clips that step and prevents later steps from being accepted. Other termination
+policies are resolved on the retained dense Hermite segments and recorded as
+immutable termination hits. An AABB exit reports the outward face normal. On
+one branch, simultaneous candidates are ordered as
 field failure, terminal event in declaration order, bounds exit, arc-length
 limit, low speed, maximum steps, then the requested time limit.  The returned
 range ends exactly at the selected dense point when that condition can be
@@ -2594,10 +2625,15 @@ cancellation token is checked before and between solver steps and before event
 root refinement; cancellation raises rather than returning a partial trajectory.}
 @defproc[(ode-field3d [procedure procedure?]
                        [#:cache-key cache-key any/c #f]
-                       [#:autonomous? autonomous? boolean? #t]) any/c]{
+                       [#:autonomous? autonomous? (or/c boolean? 'auto) 'auto]
+                       [#:parallel-safe? parallel-safe? boolean? #f]) any/c]{
 Constructs explicit author-time field metadata.  The procedure is used only
 during numerical preparation; a prepared trajectory retains its cache key but
-not this procedure.}
+not this procedure. In @racket['auto] mode, a three-argument field is
+autonomous and a four-argument field is non-autonomous; a procedure accepting
+both arities requires an explicit declaration. @racket[parallel-safe?] is an
+author assertion permitting @racket[#:parallel? 'auto] preparation to use
+worker threads. It defaults to @racket[#f].}
 @defproc[(fixed-rk4-solver3d [#:step-size step-size positive? 1/20])
          any/c]{Constructs fixed-step RK4 solver settings.}
 @defproc[(adaptive-rk45-solver3d [#:relative-tolerance relative-tolerance positive? 1e-6]
@@ -2616,11 +2652,19 @@ migrated.}
                        [#:value-tolerance value-tolerance positive? 1e-9]
                        [#:time-tolerance time-tolerance positive? 1e-9]
                        [#:maximum-iterations maximum-iterations exact-positive-integer? 64]
-                       [#:cache-key cache-key any/c #f]) any/c]{Constructs an
+                       [#:cache-key cache-key any/c #f]
+                       [#:parallel-safe? parallel-safe? boolean? #f]
+                       [#:root-kind root-kind (or/c 'crossing 'touching 'both) 'crossing]
+                       [#:initial-subdivisions initial-subdivisions exact-positive-integer? 4]
+                       [#:maximum-depth maximum-depth exact-nonnegative-integer? 12]) any/c]{Constructs an
 event descriptor. Event identifiers must be distinct in one preparation call.
 The optional cache key describes the opaque event procedure for a future
 persistent preparation cache; the completed trajectory itself never retains
-the procedure.}
+the procedure. A non-safe event makes automatic parallel preparation fall back
+to serial execution. Initial uniform dense-segment subdivisions isolate
+multiple sign-changing roots; @racket['touching] retains a sampled contact
+whose neighbouring event values have the same sign, and @racket['both]
+retains both kinds. Root finding remains tolerance-limited.}
 @defproc[(ode-event-hit3d? [value any/c]) boolean?]{Recognizes one immutable
 prepared event-hit record. Its accessors begin with
 @tt{ode-event-hit3d-}, including @tt{ode-event-hit3d-time},
@@ -2744,7 +2788,7 @@ order.}
           [#:sample-policy sample-policy streamline-sample-policy3d?
                            (streamline-sample-policy3d)]
           [#:separation separation (or/c false/c positive?) #f]
-          [#:parallel? parallel? boolean? #t]
+          [#:parallel? parallel? (or/c boolean? 'auto) 'auto]
           [#:cancellation-token cancellation-token any/c #f]) prepared-streamline-set3d?]{Prepares
 one immutable streamline per accepted seed. When @racket[separation] is false,
 the result is independent and canonical in seed order. A positive separation
@@ -2753,10 +2797,11 @@ line, and makes a later candidate stop at a terminal separation event. The
 set diagnostic reports accepted/rejected seeds, terminal reasons, field work,
 curve samples, the policy separation, discarded short lines, and whether the
 set was prepared by bounded worker threads, serially, or in ordered separation
-mode. Worker completion never changes seed/child order. As with every
-numerical field callback, the parallel result presumes a pure author field;
-arbitrary closures are not serialised to external processes. A cancellation
-token is checked at every seed boundary and never leaves a partial set.}
+mode. @racket['auto] uses workers only when its @racket[ode-field3d] and every
+termination event explicitly declare @racket[parallel-safe?]. @racket[#t] is
+an explicit author override and @racket[#f] is serial. Worker completion never
+changes seed/child order. A cancellation token is checked at every seed
+boundary and never leaves a partial set.}
 @defproc[(adaptive-streamline-set3d [prepared prepared-streamline-set3d?]
                                     [#:id id symbol?]
                                     [#:style style any/c]
@@ -2767,12 +2812,17 @@ all accepted prepared lines to ordinary named curve children.}
                              [#:direction direction (or/c 'any 'positive 'negative) 'any]
                              [#:tolerance tolerance positive? 1e-8]
                              [#:deduplicate-time deduplicate-time positive? tolerance]
-                             [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore])
+                             [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore]
+                             [#:initial-hit initial-hit (or/c 'include 'exclude 'require) 'exclude])
          vector?]{Extracts immutable @racket[poincare-hit3d?] crossings by
 running the event root finder over retained dense trajectory segments. A
 positive/negative direction means increasing/decreasing signed distance along
 increasing physical time. Shared endpoint roots are time-deduplicated; a
-tangent contact is omitted unless explicitly included.}
+tangent contact is omitted unless explicitly included. The default
+@racket['exclude] omits a qualifying hit at the trajectory's range start so a
+return map begins with its first return. @racket['include] retains it, and
+@racket['require] retains it but reports an error when the trajectory does not
+start on the section.}
 @defproc[(poincare-hit3d? [value any/c]) boolean?]{Recognizes an immutable
 crossing record. Its accessors begin with @tt{poincare-hit3d-}; @tt{source-event}
 is the serializable dense root record, not an event procedure.}
@@ -2785,7 +2835,8 @@ ordinary spatial point markers.}
 @defproc[(prepare-poincare-map3d [field any/c] [plane plane3?] [seeds seed-set3d?]
                                  [#:direction direction (or/c 'any 'positive 'negative) 'any]
                                  [#:tangent-policy tangent-policy (or/c 'ignore 'include) 'ignore]
-                                 [#:parallel? parallel? boolean? #t]
+                                 [#:initial-hit initial-hit (or/c 'include 'exclude 'require) 'exclude]
+                                 [#:parallel? parallel? (or/c boolean? 'auto) 'auto]
                                  [#:cancellation-token cancellation-token any/c #f])
          prepared-poincare-map3d?]{Prepares per-seed first and second crossings.
 Missing returns remain @racket[#f] in the same seed slot; the result is not a
@@ -2993,6 +3044,11 @@ immutable spatial trajectory.}
 position at a supported time. Every prepared lookup reads only stored data.}
 @defproc[(ode-trajectory3d-time-range [trajectory ode-trajectory3d?])
          (cons/c finite-real? finite-real?)]{Returns its supported range.}
+@defproc[(ode-trajectory3d-segments [trajectory ode-trajectory3d?]) vector?]{Returns
+the immutable, increasing-time vector of dense @racket[trajectory-segment3d?]
+values. A segment's @racket[trajectory-segment3d-bounds] is an @racket[aabb3?]
+covering all coordinate extrema of its cubic Hermite path, not merely its two
+endpoints.}
 @defproc[(ode-trajectory3d-event-hits [trajectory ode-trajectory3d?]) vector?]{Returns
 an immutable vector of @racket[ode-event-hit3d?] records, sorted by increasing
 physical time. Simultaneous hits use event declaration order as their
@@ -3029,10 +3085,12 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T5 limits.} Arc length is a deterministic eight-chord estimate
-per stored dense segment rather than a certified integral, so an arc-length
-endpoint is deterministic but not mathematically certified. The low-speed
-policy observes accepted nodes and one midpoint per segment; it does not yet
+@bold{Current T5 limits.} Arc length uses deterministic adaptive Simpson
+integration of each stored Hermite segment's tangent magnitude. Each segment
+retains an immutable cumulative table whose intervals are measured by the same
+integrator; arc-length endpoints remain numerical rather than symbolic. The
+low-speed policy isolates ordinary interior extrema of the stored Hermite
+tangent magnitude and bisects the first threshold crossing; it does not yet
 require a configurable run of consecutive slow observations. T2 detects
 sign-changing roots and exact/tolerance-zero endpoints, but does not search for
 an isolated tangency whose sampled event values retain the same sign. AABB
@@ -3051,9 +3109,8 @@ pure layer does not concurrently call arbitrary author field procedures.
 Poincare extraction detects endpoint/sign-changing crossings in retained dense
 segments. It does not search inside a same-sign segment for an isolated tangent,
 and an included tangent is only an explicit endpoint contact. Return maps retain
-only first/second crossings, not a proof of a global map. Equilibrium/
-linearization, flow-map analysis, and certified arc-length integration are
-later SCENE-3D-T slices.
+only first/second crossings, not a proof of a global map. Equilibrium and
+linearization remain later SCENE-3D-T slices.
 
 @defproc[(vector-field3d
           [field (or/c (procedure-arity-includes/c 3)
@@ -3285,6 +3342,118 @@ inspection camera changes only the preview override, never the authored camera
 or timeline. The raw mesh uses render triangles as polygonal faces, so the
 probe does not claim an unretained higher-level polygonal-face mapping.
 
+@section{Supplementary Q--T API}
+
+The following bindings complete the public surface/section/annotation APIs
+introduced by the Q--T stages.  Their detailed data conventions are described
+in the preceding sections; the bindings are listed here so that a client can
+link to the exact exported names.
+
+@subsection{Surface constructors and queries}
+
+@defthing[adaptive-parametric-surface3d procedure?]{Constructs a deterministic
+adaptive parametric surface using the documented dyadic refinement policy.}
+@defthing[trimmed-parametric-surface3d procedure?]{Constructs a parametric
+surface restricted by declared trim fields.}
+@defthing[implicit-surface3d procedure?]{Constructs a sampled implicit surface
+from a scalar field and an iso value.}
+@defthing[gen:surface3d any/c]{The generic interface implemented by every
+surface value. Custom producers implement its kind, local mesh, diagnostics,
+provenance, domain, evaluator, and local-frame methods.}
+@defthing[surface3d-kind procedure?]{Returns a surface producer kind symbol.}
+@defthing[surface3d-local-mesh procedure?]{Returns a @racket[surface-mesh3d]
+with identity transform and opacity one.}
+@defthing[surface3d-mesh procedure?]{Lowers a surface to its immutable indexed
+local mesh representation; it is retained as the concise established spelling
+for @racket[surface3d-local-mesh].}
+@defthing[surface3d->mesh3d procedure?]{Returns a standalone @racket[mesh3d]
+which preserves the surface's authored transform and opacity.}
+@defthing[surface3d-domain procedure?]{Returns the retained
+@racket[surface-domain3d], or @racket[#f] for a producer without UV domain.}
+@defthing[surface3d-evaluate procedure?]{Evaluates a retained parametric
+surface at one valid UV coordinate.}
+@defthing[surface3d-frame-at procedure?]{Returns a @racket[surface-frame3d]
+containing the point, two tangents, and normal at one valid UV coordinate.}
+@defthing[surface3d-diagnostics procedure?]{Returns a serializable
+@racket[surface-diagnostics3d] snapshot.}
+@defthing[surface3d-provenance procedure?]{Returns immutable producer
+provenance aligned with the local surface mesh.}
+@defstruct*[surface-domain3d ([u-range list?]
+                              [v-range list?]
+                              [contains? (or/c #f procedure?)]
+                              [cache-key any/c])
+  #:transparent]{Stores a parametric bounding box, optional retained-domain
+predicate, and stable domain identity. The predicate is deliberately not part
+of diagnostics.}
+@defstruct*[surface-diagnostics3d ([kind symbol?] [fields any/c])
+  #:transparent]{Stores serializable producer diagnostics.}
+@defstruct*[surface-frame3d ([point vec3?]
+                             [tangent-u vec3?]
+                             [tangent-v vec3?]
+                             [normal vec3?])
+  #:transparent]{A local parametric differential frame.}
+@defthing[surface3d-domain-contains? procedure?]{Reports whether a parameter
+point is inside a surface's retained domain.}
+@defthing[surface3d-position-at? procedure?]{Returns a retained surface point
+when the parameter lies inside that domain.}
+
+@subsection{Cuts, sections, and numerical volume}
+
+@defthing[cut-mesh3d procedure?]{Cuts a mesh by one declared plane and returns
+the clipped halves, section, and optional caps.}
+@defthing[clip-planes3d procedure?]{Applies ordered render-only plane clips to
+a spatial visual.}
+@defthing[clip-box3d procedure?]{Applies a render-only axis-aligned box clip to
+a spatial visual.}
+@defthing[section-fill3d procedure?]{Builds a visible cap-style mesh for a
+section.}
+@defthing[section-hatch3d procedure?]{Builds deterministic hatch strokes in a
+section's local plane basis.}
+@defthing[section3d-area procedure?]{Measures the signed-area-normalized
+section region under the documented validity policy.}
+@defthing[section3d-centroid procedure?]{Returns the centroid of a measurable
+section region.}
+@defthing[section3d-perimeter procedure?]{Returns the perimeter of a measurable
+section region.}
+@defproc[(section3d-settings? [value any/c]) boolean?]{Recognizes the immutable
+numerical policy used by section and cut operations.}
+@defthing[slice-stack3d procedure?]{Builds stable section groups for an ordered
+stack of planes.}
+@defthing[prepare-cross-section-function3d procedure?]{Prepares an immutable
+table of sampled cross sections and measurements.}
+@defthing[volume-by-slices3d procedure?]{Estimates volume from a prepared
+cross-section table with an explicit quadrature rule.}
+
+@subsection{Anchors and projected labels}
+
+@defthing[anchor3d? procedure?]{Recognizes an immutable spatial anchor.}
+@defthing[vertex-anchor3d procedure?]{Anchors a label to a stable mesh vertex.}
+@defthing[edge-anchor3d procedure?]{Anchors a label to a stable mesh edge.}
+@defthing[face-anchor3d procedure?]{Anchors a label to a stable mesh face.}
+@defthing[curve-anchor3d procedure?]{Anchors a label to a retained curve
+position.}
+@defthing[surface-anchor3d procedure?]{Anchors a label to a retained surface
+parameter point.}
+@defthing[resolved-anchor3d procedure?]{Constructs or recognizes the immutable
+world-space result of resolving an anchor.}
+@defthing[label3d procedure?]{Attaches a crisp two-dimensional visual to a
+spatial anchor.}
+@defthing[layout-labels3d procedure?]{Computes direct-mode candidate placements
+for projected labels.}
+@defthing[prepare-label-layout3d procedure?]{Precomputes a deterministic
+multi-frame label-placement table.}
+@defthing[prepared-label-layout3d? procedure?]{Recognizes an immutable prepared
+label-placement table.}
+@defthing[billboard-style3d? procedure?]{Recognizes an immutable billboard
+display policy.}
+
+@subsection{Trajectory display}
+
+@defthing[prepared-trajectory3d? procedure?]{Recognizes an immutable prepared
+trajectory.}
+@defthing[streamline-sample-policy3d? procedure?]{Recognizes an immutable
+world-space streamline resampling policy.}
+
 @section{Retained renderer backends}
 
 SCENE-3D-N keeps @racket[animate/3d] pure and places effectful implementation
@@ -3298,6 +3467,11 @@ cache, or recovering from a failed optional native renderer cannot mutate a
 @racket[view3d], any of its spatial children, or a completed frame.
 
 @defmodule[animate/3d/render]
+
+@defthing[geometry-key3d procedure?]{The immutable renderer geometry identity
+for an indexed mesh.  It excludes semantic part IDs and material state.}
+@defthing[geometry-key3d? procedure?]{Recognizes a @racket[geometry-key3d]
+value.}
 
 @defproc[(renderer3d? [value any/c]) boolean?]{Recognizes a renderer-backend
 instance.}

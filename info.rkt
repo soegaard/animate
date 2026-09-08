@@ -43,7 +43,8 @@
 ; compile-omit-paths : (listof path-string?)
 ;;   Keeps optional Rhombus examples out of normal Racket compilation.
 (define compile-omit-paths
-  '("examples/rhombus"))
+  '("examples/rhombus"
+    "tmp"))
 
 ; source-omit-files : (listof path-string?)
 ;; Keeps generated renders, local experiments, and macOS Finder metadata out of
@@ -51,6 +52,7 @@
 ;; retained as requested; compile-omit-paths above keeps them out of the build.
 (define source-omit-files
   '("tmp"
+    "html"
     "rendered-examples"
     ".git"
     ".DS_Store"

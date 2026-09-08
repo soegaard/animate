@@ -174,6 +174,15 @@ measures 2D templates without constructing an optional live OpenGL renderer.}
 
 @defproc[(prepared-project? [value any/c]) boolean?]{Recognizes an effectfully prepared but unrendered project.}
 
+@defproc[(check-project! [plan project-plan?]) project-check-report?]{
+Prepares a project only far enough to validate its declared source, assets,
+tools, target, and renderer capabilities.  It writes no frames or output
+artifacts.  The immutable report separates required failures from optional
+warnings, so it is suitable for a command-line or preview diagnosis.
+}
+@defproc[(project-check-report? [value any/c]) boolean?]{Recognizes an
+immutable project-validation report.}
+
 @defproc[(project-plan->datum [plan project-plan?]) immutable-hash?]{
 Returns a serializable inspection representation of a pure plan.
 }

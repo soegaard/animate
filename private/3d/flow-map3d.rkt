@@ -106,7 +106,10 @@
                         (ode-event3d-terminal? event)
                         (ode-event3d-value-tolerance event)
                         (ode-event3d-time-tolerance event)
-                        (ode-event3d-maximum-iterations event)))))
+                        (ode-event3d-maximum-iterations event)
+                        (ode-event3d-root-kind event)
+                        (ode-event3d-initial-subdivisions event)
+                        (ode-event3d-maximum-depth event)))))
          (and (andmap values event-keys)
               (list 'termination
                     (trajectory-termination3d-time-limit termination)

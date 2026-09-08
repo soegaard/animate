@@ -54,7 +54,8 @@
   (define tangent-plane (plane3 origin3 y-axis3))
   (check-equal? (vector-length (poincare-section3d coplanar tangent-plane)) 0)
   (define tangent-hits
-    (poincare-section3d coplanar tangent-plane #:tangent-policy 'include))
+    (poincare-section3d coplanar tangent-plane
+                         #:tangent-policy 'include #:initial-hit 'include))
   (check-equal? (vector-length tangent-hits) 1)
   (check-equal? (poincare-hit3d-direction (vector-ref tangent-hits 0)) 'tangent)
 

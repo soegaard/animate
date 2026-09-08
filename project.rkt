@@ -895,9 +895,12 @@
         (project-check-report (null? failures) requirements warnings failures doctor))))
 
 ;; `check-project!` normally has no reason to load a GUI library.  An explicit
-;; OpenGL choice is different: we first make the launcher requirement clear,
-;; then probe the requested backend in GRacket.  This gives a project author a
-;; useful diagnostic before any output directory or cache is touched.
+;; OpenGL choice is different: it probes the requested backend before any
+;; output directory or cache is touched.  The probe itself is authoritative:
+;; `raco test` may execute a test module through a GUI-capable Racket process
+;; whose executable name is merely "racket", even when its parent launcher was
+;; GRacket.  Rejecting that process name would hide a real context instead of
+;; reporting the actual availability result.
 (define (check-project-renderer3d render prepared)
   (define demand (project-3d-capability-demand prepared render))
   (define declaration (render-spec-renderer3d render))
@@ -905,12 +908,6 @@
     [(eq? declaration 'software)
      (renderer3d-capability-check
       (renderer3d-capabilities-of (software-renderer3d)) demand)]
-    [(not (current-process-is-gracket?))
-     (hasheq
-      'warnings '()
-      'failures
-      (list
-       "OpenGL renderer requested, but this project check is running in Racket rather than GRacket; run it with the Racket 9.3 gracket executable so the owned GL context can be probed"))]
     [else
      (with-handlers
          ([exn:fail?
@@ -1041,11 +1038,6 @@
              (memq (vector-ref fields 3) '(error software)))
         (vector-ref fields 3)
         'error)))
-
-(define (current-process-is-gracket?)
-  (regexp-match? #rx"(?i:gracket)"
-                 (path->string (find-system-path 'exec-file))))
-
 
 ;;;
 ;;; Serializable Inspection

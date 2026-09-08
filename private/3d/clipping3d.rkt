@@ -204,6 +204,7 @@
   (define output-vertices-reversed '())
   (define output-normals-reversed '())
   (define output-colors-reversed '())
+  (define output-attributes-reversed '())
   (define output-point-keys-reversed '())
   (define output-triangles-reversed '())
   (define output-face-ids-reversed '())
@@ -227,6 +228,9 @@
            (when source-has-colors?
              (set! output-colors-reversed
                    (cons (slice-point3d-color point) output-colors-reversed)))
+           (set! output-attributes-reversed
+                 (cons (slice-point3d-attributes point)
+                       output-attributes-reversed))
            index]))
   (parameterize ([current-section-distance-tolerance
                   (section3d-settings-distance-tolerance settings)])
@@ -259,12 +263,17 @@
     (and source-has-normals? (list->vector (reverse output-normals-reversed))))
   (define output-colors
     (and source-has-colors? (list->vector (reverse output-colors-reversed))))
+  (define output-attributes
+    (slice-output-attributes
+     (mesh3d-extra-attributes mesh)
+     (reverse output-attributes-reversed)))
   ;; Build the unchanged render mesh first. The second construction only adds
   ;; semantic annotation to the exact same geometry/attributes, so slicing
   ;; cannot accidentally make renderer cache identity depend on names.
   (define unannotated
     (mesh3d #:id id #:vertices output-vertices #:triangles output-triangles
             #:normals output-normals #:colors output-colors
+            #:attributes output-attributes
             #:material (mesh3d-material mesh)
             #:transform (spatial-transform mesh)
             #:opacity (spatial-opacity mesh)
@@ -291,6 +300,7 @@
               #:vertex-ids output-vertex-ids #:edge-ids output-edge-ids
               #:face-ids output-face-ids
               #:normals output-normals #:colors output-colors
+              #:attributes output-attributes
               #:material (mesh3d-material mesh)
               #:transform (spatial-transform mesh)
               #:opacity (spatial-opacity mesh)
@@ -327,7 +337,7 @@
 ;; key does not depend on floating-point coordinates, so neighbouring source
 ;; triangles agree even if they enumerate their shared edge in opposite order.
 (struct slice-key3d (kind low high) #:transparent)
-(struct slice-point3d (position normal color key) #:transparent)
+(struct slice-point3d (position normal color attributes attribute-descriptors key) #:transparent)
 
 ;; Semantic IDs are an author-visible provenance boundary. A source vertex or
 ;; unchanged source face retains its declared symbol. A new cut vertex/edge or
@@ -378,12 +388,16 @@
 (define (clip-indexed-triangle-by-plane mesh triangle clip)
   (define source-normals (mesh3d-normals mesh))
   (define source-colors (mesh3d-colors mesh))
+  (define source-attributes (mesh3d-extra-attributes mesh))
   (define polygon
     (for/list ([index (in-vector triangle)])
       (slice-point3d
        (vector-ref (mesh3d-vertices mesh) index)
        (and source-normals (vector-ref source-normals index))
        (and source-colors (vector-ref source-colors index))
+       (for/vector ([attribute (in-vector source-attributes)])
+         (vector-ref (mesh-attribute3d-values attribute) index))
+       source-attributes
        (slice-key3d 'vertex index index))))
   (define plane (clip-plane3d-plane clip))
   (define sign (if (eq? (clip-plane3d-keep clip) 'positive) 1 -1))
@@ -437,6 +451,11 @@
    (vec3-lerp (slice-point3d-position first) (slice-point3d-position second) amount)
    (interpolate-normal (slice-point3d-normal first) (slice-point3d-normal second) amount)
    (interpolate-color (slice-point3d-color first) (slice-point3d-color second) amount)
+   (interpolate-slice-attributes
+    (slice-point3d-attribute-descriptors first)
+    (slice-point3d-attributes first) (slice-point3d-attributes second)
+    (slice-point3d-key first) (slice-point3d-key second) amount)
+   (slice-point3d-attribute-descriptors first)
    (slice-key3d 'edge low high))]))
 
 (define (interpolate-normal first second amount)
@@ -458,6 +477,68 @@
                           amount)]
         [first first]
         [else second]))
+
+;; The descriptor, not an ad-hoc field-name case, decides how every custom
+;; vertex channel crosses a cut. This keeps UV/scalar data linear, reunitizes
+;; direction-like data, and represents semantic/source-only values by explicit
+;; generated provenance instead of pretending they were interpolated.
+(define (interpolate-slice-attributes descriptors first-values second-values
+                                      first-key second-key amount)
+  (for/vector ([descriptor (in-vector descriptors)] [index (in-naturals)])
+    (interpolate-mesh-attribute-value
+     descriptor
+     (vector-ref first-values index)
+     (vector-ref second-values index)
+     first-key second-key amount)))
+
+(define (interpolate-mesh-attribute-value descriptor first second first-key second-key amount)
+  (case (mesh-attribute3d-interpolation descriptor)
+    [(source-only)
+     (cond [(zero? amount) first]
+           [(= amount 1) second]
+           [else
+            (hasheq 'kind 'generated-attribute
+                    'name (mesh-attribute3d-name descriptor)
+                    'source-keys (vector first-key second-key)
+                    'source-values (vector first second)
+                    'fraction amount)])]
+    [(linear)
+     (attribute-linear-interpolate descriptor first second amount)]
+    [(normalized-linear)
+     (define raw (attribute-linear-interpolate descriptor first second amount))
+     (cond [(vec3? raw)
+            (if (positive? (vec3-length raw))
+                (vec3-normalize raw)
+                (mesh-attribute3d-default descriptor))]
+           [else
+            (raise-arguments-error 'slice-mesh3d
+                                   "a vec3? value for a normalized-linear attribute"
+                                   "name" (mesh-attribute3d-name descriptor)
+                                   "value" raw)])]
+    [else (error 'slice-mesh3d "unknown mesh attribute interpolation")]))
+
+(define (attribute-linear-interpolate descriptor first second amount)
+  (cond [(and (finite-real? first) (finite-real? second))
+         (+ (* (- 1 amount) first) (* amount second))]
+        [(and (vec2? first) (vec2? second)) (vec2-lerp first second amount)]
+        [(and (vec3? first) (vec3? second)) (vec3-lerp first second amount)]
+        [(and (rgba-color? first) (rgba-color? second))
+         (rgba-color-lerp first second amount)]
+        [else
+         (raise-arguments-error 'slice-mesh3d
+                                "linearly interpolable numeric, vec2, vec3, or rgba attribute values"
+                                "name" (mesh-attribute3d-name descriptor)
+                                "first" first "second" second)]))
+
+(define (slice-output-attributes descriptors point-values)
+  (for/list ([descriptor (in-vector descriptors)] [index (in-naturals)])
+    (mesh-attribute3d
+     (mesh-attribute3d-name descriptor)
+     (list->vector
+      (for/list ([values (in-list point-values)]) (vector-ref values index)))
+     (mesh-attribute3d-interpolation descriptor)
+     (mesh-attribute3d-default descriptor)
+     (mesh-attribute3d-semantic? descriptor))))
 
 (define (deduplicate-slice-points points)
   (cond [(null? points) '()]

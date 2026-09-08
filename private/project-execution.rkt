@@ -427,13 +427,11 @@
   (cond
     [(eq? declaration 'software) (thunk)]
     [else
-     (unless (current-process-is-gracket?)
-       (raise-arguments-error
-        'render-project!
-        "a GRacket-capable renderer process for an explicitly selected OpenGL backend"
-        "renderer3d" declaration
-        "hint"
-        "run the project with the Racket 9.3 gracket executable; the software backend remains the default"))
+     ;; The renderer creates the owned context below.  That concrete operation
+     ;; is the capability test: a `raco test` worker can have a GUI-capable
+     ;; runtime while `find-system-path` still calls its executable "racket".
+     ;; A launcher-name guard would reject that valid process before the backend
+     ;; can give its useful context-creation diagnostic.
      (define renderer-predicate
        (dynamic-require opengl-renderer-module 'opengl-renderer3d-spec?))
      (unless (renderer-predicate declaration)
@@ -459,10 +457,6 @@
         (parameterize ([current-view3d-renderer3d renderer])
           (thunk)))
       (lambda () (release-renderer! renderer)))]))
-
-(define (current-process-is-gracket?)
-  (regexp-match? #rx"(?i:gracket)"
-                 (path->string (find-system-path 'exec-file))))
 
 (define (project-frame-cache-key prepared prepared-label-layout)
   (define plan (prepared-project-plan prepared))

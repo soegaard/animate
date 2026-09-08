@@ -148,8 +148,9 @@
                                   #:function (lambda (point) (- (vec3-x point) 2))))))
   (check-= (car (event-times exponential)) (log 2) 1e-6)
 
-  ;; No sign change yields no event. An intentionally shallow bisection does
-  ;; preserve a hit but records its explicit maximum-iteration warning.
+  ;; A wholly nonzero sampled event yields no hit. An intentionally shallow
+  ;; bisection preserves its isolated-bracket hit and records the explicit
+  ;; maximum-iteration warning.
   (define absent
     (constant-x-trajectory origin3
                            (list (ode-event3d #:id 'outside #:terminal? #f
@@ -165,7 +166,7 @@
                 'maximum-iterations)
   (check-equal? (ode-trajectory3d-diagnostics-warnings
                  (ode-trajectory3d-diagnostics coarse-root))
-                (list (list 'event-maximum-iterations 'coarse 3/2)))
+                (list (list 'event-maximum-iterations 'coarse 23/16)))
 
   ;; Bad event behaviour fails deterministically during preparation rather
   ;; than being deferred to a rendering worker.

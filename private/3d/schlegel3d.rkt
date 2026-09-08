@@ -33,7 +33,8 @@
   (define centroid (polyhedral-face3d-centroid outer))
   (define viewpoint (vec3+ centroid (vec3-scale distance normal)))
   (define target (plane3 (vec3- centroid (vec3-scale margin normal)) normal))
-  (define vertices (mesh3d-vertices (polyhedral-complex3d-mesh complex)))
+  ;; Projection operates on the canonical, world-space analysis mesh.
+  (define vertices (mesh3d-vertices (polyhedral-complex3d-analysis-mesh complex)))
   (define projected
     (vector->immutable-vector
      (for/vector ([vertex (in-vector vertices)])

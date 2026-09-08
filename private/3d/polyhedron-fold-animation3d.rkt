@@ -47,9 +47,8 @@
 ;                          -> group3d?
 ;; Builds one direct mesh child for every polygonal face.  The child IDs are
 ;; the stable IDs carried by the prepared net, so an explicit face `front`
-;; lives at `(net front)`.  The source mesh must be untransformed: net frames
-;; currently describe its local coordinates, and silently baking a general
-;; scale or shear here would invalidate the prepared hinge geometry.
+;; lives at `(net front)`. Net frames describe the complex's explicit
+;; world-space analysis mesh, so transformed source meshes are valid too.
 (define (polyhedron-net3d-group complex net #:id id
                                 #:face-materials [face-materials #f])
   (unless (polyhedral-complex3d? complex)
@@ -58,12 +57,7 @@
     (raise-argument-error 'polyhedron-net3d-group "polyhedron-net3d?" net))
   (unless (symbol? id)
     (raise-argument-error 'polyhedron-net3d-group "symbol?" id))
-  (define source (polyhedral-complex3d-mesh complex))
-  (unless (equal? (spatial-transform source) identity-transform3)
-    (raise-arguments-error
-     'polyhedron-net3d-group
-     "a polyhedral complex whose source mesh has identity local transform"
-     "mesh-transform" (spatial-transform source)))
+  (define source (polyhedral-complex3d-analysis-mesh complex))
   (define faces (polyhedral-complex3d-faces complex))
   (define child-ids (polyhedron-net3d-face-child-ids net))
   (unless (= (vector-length faces) (vector-length child-ids))

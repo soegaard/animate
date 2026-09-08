@@ -43,6 +43,7 @@
                             #:normal-step [normal-step #f]
                             #:gradient [gradient #f]
                             #:iso-tolerance [iso-tolerance 1e-12]
+                            #:invalid-subdivision-depth [invalid-subdivision-depth 2]
                             #:on-invalid [on-invalid 'error])
   (unless (procedure? field)
     (raise-argument-error 'implicit-surface3d "procedure?" field))
@@ -72,8 +73,13 @@
     (raise-argument-error 'implicit-surface3d "(or/c #f procedure?) as #:gradient" gradient))
   (unless (and (finite-real? iso-tolerance) (positive? iso-tolerance))
     (raise-argument-error 'implicit-surface3d "positive finite #:iso-tolerance" iso-tolerance))
-  (unless (memq on-invalid '(error skip-cell))
-    (raise-argument-error 'implicit-surface3d "(or/c 'error 'skip-cell) as #:on-invalid" on-invalid))
+  (unless (memq on-invalid '(error skip-cell subdivide))
+    (raise-argument-error 'implicit-surface3d
+                          "(or/c 'error 'skip-cell 'subdivide) as #:on-invalid" on-invalid))
+  (unless (exact-nonnegative-integer? invalid-subdivision-depth)
+    (raise-argument-error 'implicit-surface3d
+                          "exact-nonnegative-integer? as #:invalid-subdivision-depth"
+                          invalid-subdivision-depth))
   (define xmin (first bounds)) (define xmax (second bounds))
   (define ymin (third bounds)) (define ymax (fourth bounds))
   (define zmin (fifth bounds)) (define zmax (sixth bounds))
@@ -85,6 +91,8 @@
   (define cache (make-hash))
   (define invalid-sample-count 0)
   (define invalid-warning? #f)
+  (define invalid-subdivision-count 0)
+  (define unresolved-invalid-cell-count 0)
   (define (invalid-sample point reason)
     (case on-invalid
       [(error)
@@ -94,13 +102,17 @@
        (set! invalid-sample-count (add1 invalid-sample-count))
        (set! invalid-warning? #t)
        (implicit-sample point #f)]))
-  (define (sample i j k)
-    (hash-ref! cache (vector i j k)
+  ;; Grid coordinates are exact rationals in [0,resolution].  Base cells use
+  ;; integers; locally subdivided invalid cells use dyadics.  One coordinate
+  ;; representation and cache therefore keeps an interface edge identical on
+  ;; either side of a subdivision boundary.
+  (define (sample index)
+    (hash-ref! cache index
                (lambda ()
                  (define point
-                   (vec3 (+ xmin (* (/ i resolution) (- xmax xmin)))
-                         (+ ymin (* (/ j resolution) (- ymax ymin)))
-                         (+ zmin (* (/ k resolution) (- zmax zmin)))))
+                   (vec3 (+ xmin (* (/ (vector-ref index 0) resolution) (- xmax xmin)))
+                         (+ ymin (* (/ (vector-ref index 1) resolution) (- ymax ymin)))
+                         (+ zmin (* (/ (vector-ref index 2) resolution) (- zmax zmin)))))
                  (define value
                    (with-handlers ([exn:fail?
                                     (lambda (exception)
@@ -131,7 +143,12 @@
   (define (sample-negative? entry index)
     (cond [(not (valid-sample? entry)) #f]
           [(exact-iso? entry)
-           (even? (+ (vector-ref index 0) (vector-ref index 1) (vector-ref index 2)))]
+           ;; Exact coordinates can be integers or reduced dyadics after an
+           ;; invalid-cell subdivision.  Their numerators give one canonical,
+           ;; traversal-independent symbolic side assignment.
+           (even? (+ (numerator (vector-ref index 0))
+                     (numerator (vector-ref index 1))
+                     (numerator (vector-ref index 2))))]
           [else (negative? (implicit-sample-value entry))]))
   (define (boundary-grid-edge? first-index second-index)
     (or (and (= (vector-ref first-index 0) 0) (= (vector-ref second-index 0) 0))
@@ -223,23 +240,21 @@
                  (when (boundary-grid-edge? first-index second-index)
                    (set! boundary-contact? #t))
                  index)))
-  (for* ([i (in-range resolution)] [j (in-range resolution)] [k (in-range resolution)])
-    (define cube-indices
-      (vector (vector i j k) (vector (add1 i) j k)
-              (vector i (add1 j) k) (vector (add1 i) (add1 j) k)
-              (vector i j (add1 k)) (vector (add1 i) j (add1 k))
-              (vector i (add1 j) (add1 k)) (vector (add1 i) (add1 j) (add1 k))))
-    (define cube-samples
-      (for/vector ([index (in-vector cube-indices)])
-        (sample (vector-ref index 0) (vector-ref index 1) (vector-ref index 2))))
-    (when (andmap valid-sample? (vector->list cube-samples))
-      (for ([tetra (in-list marching-tetrahedra)] [tetra-index (in-naturals)])
-        (define local-indices (for/list ([corner (in-list tetra)])
-                                (vector-ref cube-indices corner)))
-        (define local-samples (for/list ([corner (in-list tetra)])
-                                (vector-ref cube-samples corner)))
-        (define signs (map sample-negative? local-samples local-indices))
-        (unless (or (andmap values signs) (andmap not signs))
+  (define (cube-from-bounds x0 x1 y0 y1 z0 z1)
+    (vector (vector x0 y0 z0) (vector x1 y0 z0)
+            (vector x0 y1 z0) (vector x1 y1 z0)
+            (vector x0 y0 z1) (vector x1 y0 z1)
+            (vector x0 y1 z1) (vector x1 y1 z1)))
+  (define (cube-values cube-indices)
+    (for/vector ([index (in-vector cube-indices)]) (sample index)))
+  (define (emit-cube cube-indices cube-samples cube-label)
+    (for ([tetra (in-list marching-tetrahedra)] [tetra-index (in-naturals)])
+      (define local-indices
+        (for/list ([corner (in-list tetra)]) (vector-ref cube-indices corner)))
+      (define local-samples
+        (for/list ([corner (in-list tetra)]) (vector-ref cube-samples corner)))
+      (define signs (map sample-negative? local-samples local-indices))
+      (unless (or (andmap values signs) (andmap not signs))
         (define intersections '())
         (for ([pair (in-list tetra-edges)])
           (define first-local (first pair))
@@ -251,7 +266,7 @@
             (set! intersections
                   (cons (add-intersection (list-ref local-indices first-local) first-sample
                                           (list-ref local-indices second-local) second-sample
-                                          (vector i j k) tetra-index)
+                                          cube-label tetra-index)
                         intersections))))
         (define polygon (sort (remove-duplicates intersections) <))
         (when (>= (length polygon) 3)
@@ -265,9 +280,44 @@
               (set! triangles (cons triangle triangles))
               (set! triangle-provenance
                     (cons (hasheq 'kind 'implicit-tetrahedron
-                                  'cube (vector i j k) 'tetrahedron tetra-index
+                                  'cube cube-label 'tetrahedron tetra-index
                                   'fan-index fan-index)
-                          triangle-provenance)))))))))
+                          triangle-provenance))))))))
+  (define (process-cube cube-indices depth)
+    (define values (cube-values cube-indices))
+    (cond [(andmap valid-sample? (vector->list values))
+           (emit-cube cube-indices values
+                      (vector 'implicit-cell depth (vector-ref cube-indices 0)
+                              (vector-ref cube-indices 7)))]
+          [(and (eq? on-invalid 'subdivide)
+                (< depth invalid-subdivision-depth))
+           (set! invalid-subdivision-count (add1 invalid-subdivision-count))
+           (define first-index (vector-ref cube-indices 0))
+           (define last-index (vector-ref cube-indices 7))
+           (define x0 (vector-ref first-index 0))
+           (define y0 (vector-ref first-index 1))
+           (define z0 (vector-ref first-index 2))
+           (define x1 (vector-ref last-index 0))
+           (define y1 (vector-ref last-index 1))
+           (define z1 (vector-ref last-index 2))
+           (define xm (/ (+ x0 x1) 2))
+           (define ym (/ (+ y0 y1) 2))
+           (define zm (/ (+ z0 z1) 2))
+           (for* ([x-pair (in-list (list (cons x0 xm) (cons xm x1)))]
+                  [y-pair (in-list (list (cons y0 ym) (cons ym y1)))]
+                  [z-pair (in-list (list (cons z0 zm) (cons zm z1)))])
+             (process-cube
+              (cube-from-bounds (car x-pair) (cdr x-pair)
+                                (car y-pair) (cdr y-pair)
+                                (car z-pair) (cdr z-pair))
+              (add1 depth)))]
+          [else
+           (set! unresolved-invalid-cell-count
+                 (add1 unresolved-invalid-cell-count))]))
+  (for* ([i (in-range resolution)] [j (in-range resolution)] [k (in-range resolution)])
+    (process-cube
+     (cube-from-bounds i (add1 i) j (add1 j) k (add1 k))
+     0))
   (define final-vertices (vector->immutable-vector (list->vector (reverse vertices))))
   (define final-normals (vector->immutable-vector (list->vector (reverse normals))))
   (define final-triangles (vector->immutable-vector (list->vector (reverse triangles))))
@@ -285,13 +335,21 @@
                                               '(surface touches extraction boundary)
                                               '())
                                           (if invalid-warning?
-                                              '(invalid field samples skipped)
+                                              (if (eq? on-invalid 'subdivide)
+                                                  '(invalid field samples subdivided)
+                                                  '(invalid field samples skipped))
+                                              '())
+                                          (if (positive? unresolved-invalid-cell-count)
+                                              '(invalid cells remained after bounded subdivision)
                                               '()))))
   (define diagnostics
     (hasheq 'kind 'implicit
             'implicit diagnostics-value
             'boundary-contact? boundary-contact?
             'invalid-sample-count invalid-sample-count
+            'invalid-subdivision-count invalid-subdivision-count
+            'unresolved-invalid-cell-count unresolved-invalid-cell-count
+            'invalid-subdivision-depth invalid-subdivision-depth
             'on-invalid on-invalid
             'iso-tolerance iso-tolerance))
   (define mesh

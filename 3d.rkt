@@ -367,6 +367,9 @@
  (struct-out polyhedral-face-declaration3d)
  (struct-out polyhedral-face3d)
  polyhedral-complex3d?
+ polyhedral-complex3d-source-mesh
+ polyhedral-complex3d-analysis-mesh
+ polyhedral-complex3d-source-transform
  polyhedral-complex3d-mesh
  polyhedral-complex3d-topology
  polyhedral-complex3d-faces
@@ -406,12 +409,21 @@
  (struct-out edge-adjacency3d)
 
  ;; Surface protocol and adaptive sampling
+ gen:surface3d
+ surface3d?
  surface3d-kind
+ surface3d-local-mesh
  surface3d-mesh
  surface3d->mesh3d
  surface3d-local-bounds
  surface3d-diagnostics
  surface3d-provenance
+ surface3d-domain
+ surface3d-evaluate
+ surface3d-frame-at
+ (struct-out surface-domain3d)
+ (struct-out surface-diagnostics3d)
+ (struct-out surface-frame3d)
  (struct-out surface-mesh3d)
  (struct-out dyadic-coordinate)
  (struct-out uv-key)
@@ -537,7 +549,6 @@
  linear-transformation-diagram3d
 
  ;; Parametric surfaces and calculus helpers
- surface3d?
  surface3d-grid
  surface3d-u-range
  surface3d-v-range
@@ -669,6 +680,7 @@ cutaway3d
  ode-field3d-arity
  ode-field3d-cache-key
  ode-field3d-autonomous?
+ ode-field3d-parallel-safe?
  jacobian3d
  (struct-out jacobian3d-result)
  (struct-out equilibrium-solver3d)
@@ -717,6 +729,10 @@ cutaway3d
  ode-event3d-time-tolerance
  ode-event3d-maximum-iterations
  ode-event3d-cache-key
+ ode-event3d-parallel-safe?
+ ode-event3d-root-kind
+ ode-event3d-initial-subdivisions
+ ode-event3d-maximum-depth
  ode-event-hit3d?
  ode-event-hit3d-event-id
  ode-event-hit3d-time
@@ -756,6 +772,7 @@ cutaway3d
  ode-trajectory3d-checkpoint-every
  ode-trajectory3d-solver
  ode-trajectory3d-diagnostics
+ ode-trajectory3d-segments
  ode-trajectory3d-event-hits
  ode-trajectory3d-termination
  ode-trajectory3d-diagnostics?

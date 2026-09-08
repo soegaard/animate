@@ -13,7 +13,8 @@
 ;;; Imports and Exports
 ;;;
 
-(require racket/list
+(require racket/generic
+         racket/list
          "../color-style.rkt"
          "../geometry.rkt"
          "bounds3.rkt"
@@ -27,8 +28,13 @@
          "vec3.rkt")
 
 (provide parametric-surface3d
+         gen:surface3d
          surface3d?
          surface3d-kind
+         surface3d-local-mesh
+         surface3d-domain
+         surface3d-evaluate
+         surface3d-frame-at
          surface3d-mesh
          surface3d-local-bounds
          surface3d-diagnostics
@@ -58,7 +64,10 @@
          surface3d-with-scalar-data
          surface3d-scalar-function
          surface3d-scalar-derivative-x
-         surface3d-scalar-derivative-y)
+         surface3d-scalar-derivative-y
+         (struct-out surface-domain3d)
+         (struct-out surface-diagnostics3d)
+         (struct-out surface-frame3d))
 
 
 ;;;
@@ -66,6 +75,36 @@
 ;;;
 
 (struct scalar-surface-data (function derivative-x derivative-y) #:transparent)
+
+;; A surface domain owns the executable membership predicate.  Diagnostics
+;; therefore remain ordinary serializable data, suitable for snapshots and
+;; cache records, rather than accidentally carrying a closure from an authored
+;; trim field.
+(struct surface-domain3d (u-range v-range contains? cache-key)
+  #:transparent)
+
+;; `fields` is immutable descriptive data (usually a hash or a focused report
+;; structure); it must not contain the procedural `contains?` hook above.
+(struct surface-diagnostics3d (kind fields)
+  #:transparent)
+
+;; A retained local frame is the common answer for both regular and generated
+;; parametric surfaces.  Implicit surfaces, which have no UV evaluator, reject
+;; this query truthfully.
+(struct surface-frame3d (point tangent-u tangent-v normal)
+  #:transparent)
+
+;; This is the actual surface protocol.  New surface producers can implement
+;; it without joining a hand-maintained union in this module.
+(define-generics surface3d
+  (surface3d-kind surface3d)
+  (surface3d-local-mesh surface3d)
+  (surface3d-local-bounds surface3d)
+  (surface3d-diagnostics surface3d)
+  (surface3d-provenance surface3d)
+  (surface3d-domain surface3d)
+  (surface3d-evaluate surface3d u v)
+  (surface3d-frame-at surface3d u v))
 
 (struct surface3d-value
   (id transform opacity grid evaluator derivative-u derivative-v normals
@@ -84,7 +123,34 @@
      (unless (spatial-opacity? opacity)
        (raise-argument-error 'spatial-with-opacity "finite real in [0, 1]" opacity))
      (struct-copy surface3d-value surface [opacity opacity]))
-   (define (spatial-local-bounds surface) (surface3d-value-local-bounds surface))])
+   (define (spatial-local-bounds surface) (surface3d-value-local-bounds surface))]
+  #:methods gen:surface3d
+  [(define (surface3d-kind _surface) 'regular-parametric)
+   (define (surface3d-local-mesh surface)
+     (surface3d-value->local-mesh surface))
+   (define (surface3d-local-bounds surface)
+     (surface3d-value-local-bounds surface))
+   (define (surface3d-diagnostics surface)
+     (surface-diagnostics3d
+      'regular-parametric
+      (hasheq 'kind 'regular-parametric
+              'vertex-count (vector-length (surface3d-value-normals surface))
+              'triangle-count (vector-length
+                               (surface-grid-triangles (surface3d-value-grid surface))))))
+   (define (surface3d-provenance surface) (surface3d-local-mesh surface))
+   (define (surface3d-domain surface)
+     (surface-domain3d
+      (surface-range surface surface-grid-u-values 'surface3d-domain)
+      (surface-range surface surface-grid-v-values 'surface3d-domain)
+      #f
+      (vector 'regular-domain
+              (surface-grid-u-values (surface3d-value-grid surface))
+              (surface-grid-v-values (surface3d-value-grid surface)))))
+   (define (surface3d-evaluate surface u v)
+     (check-surface-parameter 'surface3d-evaluate surface u v)
+     (checked-evaluate 'surface3d-evaluate (surface3d-value-evaluator surface) u v))
+   (define (surface3d-frame-at surface u v)
+     (surface-frame-from-surface surface u v))])
 
 ;; surface3d-value represents a fixed-topology rectangular parametric surface.
 ;;  - grid        surface-grid? immutable u/v sample positions and topology.
@@ -96,7 +162,7 @@
 ;;               calculus helpers; parametric surfaces deliberately omit it.
 
 (struct generated-surface3d-value
-  (id transform opacity kind surface-mesh evaluator u-range v-range material
+  (id transform opacity kind surface-mesh evaluator u-range v-range domain material
       wireframe-color wireframe-width diagnostics provenance local-bounds)
   #:transparent
   #:methods gen:spatial-visual
@@ -112,39 +178,34 @@
        (raise-argument-error 'spatial-with-opacity "finite real in [0, 1]" opacity))
      (struct-copy generated-surface3d-value surface [opacity opacity]))
    (define (spatial-local-bounds surface)
-     (generated-surface3d-value-local-bounds surface))])
-
-;; surface3d is a protocol-shaped union. Regular rectangular surfaces retain
-;; their calculus grid; generated adaptive, trimmed, and implicit surfaces
-;; carry the common immutable lowering record instead.
-(define (surface3d? value)
-  (or (surface3d-value? value) (generated-surface3d-value? value)))
-
-(define (surface3d-kind surface)
-  (unless (surface3d? surface) (raise-argument-error 'surface3d-kind "surface3d?" surface))
-  (if (surface3d-value? surface)
-      'regular-parametric
-      (generated-surface3d-value-kind surface)))
-
-(define (surface3d-local-bounds surface)
-  (unless (surface3d? surface) (raise-argument-error 'surface3d-local-bounds "surface3d?" surface))
-  (if (surface3d-value? surface)
-      (surface3d-value-local-bounds surface)
-      (generated-surface3d-value-local-bounds surface)))
-
-(define (surface3d-diagnostics surface)
-  (unless (surface3d? surface) (raise-argument-error 'surface3d-diagnostics "surface3d?" surface))
-  (if (surface3d-value? surface)
-      (hasheq 'kind 'regular-parametric
-              'vertex-count (vector-length (surface3d-points surface))
-              'triangle-count (vector-length (surface-grid-triangles (surface3d-grid surface))))
+     (generated-surface3d-value-local-bounds surface))]
+  #:methods gen:surface3d
+  [(define (surface3d-kind surface) (generated-surface3d-value-kind surface))
+   (define (surface3d-local-mesh surface)
+     (generated-surface3d-value-surface-mesh surface))
+   (define (surface3d-local-bounds surface)
+     (generated-surface3d-value-local-bounds surface))
+   (define (surface3d-diagnostics surface)
+     (surface-diagnostics3d
+      (generated-surface3d-value-kind surface)
       (generated-surface3d-value-diagnostics surface)))
-
-(define (surface3d-provenance surface)
-  (unless (surface3d? surface) (raise-argument-error 'surface3d-provenance "surface3d?" surface))
-  (if (surface3d-value? surface)
-      (surface3d-mesh surface)
-      (generated-surface3d-value-provenance surface)))
+   (define (surface3d-provenance surface)
+     (generated-surface3d-value-provenance surface))
+   (define (surface3d-domain surface)
+     (generated-surface3d-value-domain surface))
+   (define (surface3d-evaluate surface u v)
+     (define evaluator (generated-surface3d-value-evaluator surface))
+     (unless evaluator
+       (raise-arguments-error 'surface3d-evaluate "a parametric surface"
+                              "surface-kind" (surface3d-kind surface)))
+     (check-generated-parameter 'surface3d-evaluate surface u v)
+     (checked-evaluate 'surface3d-evaluate evaluator u v))
+   (define (surface3d-frame-at surface u v)
+     (unless (generated-surface3d-value-evaluator surface)
+       (raise-arguments-error 'surface3d-frame-at
+                              "a generated parametric surface with a retained evaluator"
+                              "surface-kind" (surface3d-kind surface)))
+     (surface-frame-from-surface surface u v))])
 (define (surface3d-grid surface)
   (unless (surface3d-value? surface)
     (raise-arguments-error 'surface3d-grid "a regular fixed-grid surface"
@@ -265,16 +326,9 @@
 ; surface3d-position-at : surface3d? finite-real? finite-real? -> vec3?
 ;;   Evaluates the immutable surface's source evaluator within its parameter box.
 (define (surface3d-position-at surface u v)
-  (cond [(generated-surface3d-value? surface)
-         (define evaluator (generated-surface3d-value-evaluator surface))
-         (unless evaluator
-           (raise-arguments-error 'surface3d-position-at "a parametric surface"
-                                  "surface-kind" (surface3d-kind surface)))
-         (check-generated-parameter 'surface3d-position-at surface u v)
-         (checked-evaluate 'surface3d-position-at evaluator u v)]
-        [else
-         (check-surface-parameter 'surface3d-position-at surface u v)
-         (checked-evaluate 'surface3d-position-at (surface3d-value-evaluator surface) u v)]))
+  (unless (surface3d? surface)
+    (raise-argument-error 'surface3d-position-at "surface3d?" surface))
+  (surface3d-evaluate surface u v))
 
 ; surface3d-domain-contains? : surface3d? finite-real? finite-real? -> boolean?
 ;; Reports whether a parametric coordinate belongs to the retained domain.
@@ -283,15 +337,14 @@
     (raise-argument-error 'surface3d-domain-contains? "surface3d?" surface))
   (unless (and (finite-real? u) (finite-real? v))
     (raise-argument-error 'surface3d-domain-contains? "finite parameter coordinates" (vector u v)))
-  (define ranges?
-    (with-handlers ([exn:fail? (lambda (_exception) #f)])
-      (and (<= (first (surface3d-u-range surface)) u (second (surface3d-u-range surface)))
-           (<= (first (surface3d-v-range surface)) v (second (surface3d-v-range surface))))))
-  (and ranges?
-       (let ([diagnostics (surface3d-diagnostics surface)])
-         (define predicate
-           (and (hash? diagnostics) (hash-ref diagnostics 'domain-contains? #f)))
-         (if predicate (predicate u v) #t))))
+  (define domain (surface3d-domain surface))
+  (and domain
+       (<= (first (surface-domain3d-u-range domain)) u
+           (second (surface-domain3d-u-range domain)))
+       (<= (first (surface-domain3d-v-range domain)) v
+           (second (surface-domain3d-v-range domain)))
+       (let ([contains? (surface-domain3d-contains? domain)])
+         (or (not contains?) (contains? u v)))))
 
 ; surface3d-position-at? : surface3d? finite-real? finite-real? -> (or/c #f vec3?)
 ;; Evaluates a parameterization only inside its retained domain.
@@ -346,6 +399,14 @@
           (nearest-grid-normal surface u v))
       (vec3-normalize candidate)))
 
+;; `surface3d-frame-at` is the protocol-level query; the older tangent and
+;; normal helpers remain useful focused accessors for regular surfaces.
+(define (surface-frame-from-surface surface u v)
+  (surface-frame3d (surface3d-position-at surface u v)
+                   (surface3d-tangent-u-at surface u v)
+                   (surface3d-tangent-v-at surface u v)
+                   (surface3d-normal-at surface u v)))
+
 ; surface3d-scalar-function : surface3d? -> (or/c #f procedure?)
 ;;   Returns a function-surface height procedure, if one was declared.
 (define (surface3d-scalar-function surface)
@@ -371,44 +432,20 @@
 (define (surface3d->mesh3d surface)
   (unless (surface3d? surface)
     (raise-argument-error 'surface3d->mesh3d "surface3d?" surface))
-  (cond [(surface3d-value? surface)
-         (mesh3d #:id (spatial-id surface)
-                 #:vertices (surface3d-points surface)
-                 #:triangles (surface-grid-triangles (surface3d-grid surface))
-                 #:normals (surface3d-normals surface)
-                 #:colors (surface3d-colors surface)
-                 #:material (surface3d-material surface)
-                 #:transform (spatial-transform surface)
-                 #:opacity (spatial-opacity surface)
-                 #:wireframe-color (surface3d-value-wireframe-color surface)
-                 #:wireframe-width (surface3d-value-wireframe-width surface))]
-        [else (surface-mesh3d-mesh (generated-surface3d-value-surface-mesh surface))]))
+  ;; The protocol's local mesh is deliberately style/geometry only.  The
+  ;; standalone conversion is the one operation that restores the authored
+  ;; transform and opacity envelope.
+  (spatial-with-opacity
+   (spatial-with-transform (surface-mesh3d-mesh (surface3d-local-mesh surface))
+                           (spatial-transform surface))
+   (spatial-opacity surface)))
 
 ; surface3d-mesh : surface3d? -> surface-mesh3d?
 ;; Returns renderer geometry together with topology and sample provenance.
 (define (surface3d-mesh surface)
   (unless (surface3d? surface)
     (raise-argument-error 'surface3d-mesh "surface3d?" surface))
-  (cond [(generated-surface3d-value? surface)
-         (generated-surface3d-value-surface-mesh surface)]
-        [else
-         (define grid (surface3d-grid surface))
-         (surface-mesh3d
-          (surface3d->mesh3d surface)
-          (for*/vector ([u (in-vector (surface-grid-u-values grid))]
-                        [u-index (in-naturals)]
-                        [v (in-vector (surface-grid-v-values grid))]
-                        [v-index (in-naturals)])
-            (hasheq 'kind 'regular-grid 'u u 'v v
-                    'u-index u-index 'v-index v-index))
-          ;; A second construction gives every point/triangle a stable simple
-          ;; provenance record without changing the historic grid API.
-          (for/vector ([triangle (in-vector (surface-grid-triangles grid))]
-                       [index (in-naturals)])
-            (hasheq 'triangle index 'kind 'regular-grid))
-          (vector 'regular-grid (surface-grid-u-values grid) (surface-grid-v-values grid)
-                  (surface-grid-triangles grid))
-          (surface3d-diagnostics surface))]))
+  (surface3d-local-mesh surface))
 
 ; surface3d-with-colors : surface3d? (or/c #f vector?) -> surface3d?
 ;;   Replaces optional immutable per-vertex RGBA colour data.
@@ -535,6 +572,7 @@
                                        #:evaluator [evaluator #f]
                                        #:u-range [u-range #f]
                                        #:v-range [v-range #f]
+                                       #:domain [domain #f]
                                        #:diagnostics [diagnostics (surface-mesh3d-diagnostics surface-mesh)]
                                        #:provenance [provenance surface-mesh])
   (unless (symbol? kind)
@@ -556,14 +594,49 @@
     (raise-argument-error 'surface3d-from-generated-mesh "color-spec?" wireframe-color))
   (unless (or (not evaluator) (procedure? evaluator))
     (raise-argument-error 'surface3d-from-generated-mesh "(or/c #f procedure?)" evaluator))
+  (unless (or (not domain) (surface-domain3d? domain))
+    (raise-argument-error 'surface3d-from-generated-mesh
+                          "(or/c #f surface-domain3d?)" domain))
+  (define resolved-domain
+    (or domain
+        (and u-range v-range
+             (surface-domain3d
+              u-range v-range #f
+              (vector 'generated-domain kind u-range v-range)))))
   (define styled
     (surface-mesh-with-style surface-mesh id material
                              (mesh3d-colors (surface-mesh3d-mesh surface-mesh))
                              wireframe-color wireframe-width))
   (generated-surface3d-value
-   id transform opacity kind styled evaluator u-range v-range material
+   id transform opacity kind styled evaluator u-range v-range resolved-domain material
    wireframe-color wireframe-width diagnostics provenance
    (mesh3d-local-bounds (surface-mesh3d-mesh styled))))
+
+;; Produces the protocol's canonical local lowering: identity placement and
+;; full opacity, with surface style and immutable source provenance retained.
+(define (surface3d-value->local-mesh surface)
+  (define grid (surface3d-grid surface))
+  (surface-mesh3d
+   (mesh3d #:id (spatial-id surface)
+           #:vertices (surface3d-points surface)
+           #:triangles (surface-grid-triangles grid)
+           #:normals (surface3d-normals surface)
+           #:colors (surface3d-colors surface)
+           #:material (surface3d-material surface)
+           #:wireframe-color (surface3d-value-wireframe-color surface)
+           #:wireframe-width (surface3d-value-wireframe-width surface))
+   (for*/vector ([u-index (in-range (vector-length (surface-grid-u-values grid)))]
+                 [v-index (in-range (vector-length (surface-grid-v-values grid)))])
+     (hasheq 'kind 'regular-grid
+             'u (vector-ref (surface-grid-u-values grid) u-index)
+             'v (vector-ref (surface-grid-v-values grid) v-index)
+             'u-index u-index 'v-index v-index))
+   (for/vector ([triangle (in-vector (surface-grid-triangles grid))]
+                [index (in-naturals)])
+     (hasheq 'triangle index 'kind 'regular-grid))
+   (vector 'regular-grid (surface-grid-u-values grid) (surface-grid-v-values grid)
+           (surface-grid-triangles grid))
+   (surface3d-diagnostics surface)))
 
 (define (surface-mesh-with-style source id material colors wireframe-color wireframe-width)
   (define old (surface-mesh3d-mesh source))

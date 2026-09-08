@@ -315,7 +315,8 @@
 
 (define (build-net-layout complex faces face-edges root tree)
   (define topology (polyhedral-complex3d-topology complex))
-  (define vertices (mesh3d-vertices (polyhedral-complex3d-mesh complex)))
+  ;; Nets are constructed from the canonical, world-space analysis mesh.
+  (define vertices (mesh3d-vertices (polyhedral-complex3d-analysis-mesh complex)))
   (define root-face (vector-ref faces root))
   (define root-normal (polyhedral-face3d-normal root-face))
   (define maps (make-vector (vector-length faces) #f))

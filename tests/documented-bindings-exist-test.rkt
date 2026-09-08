@@ -45,7 +45,9 @@
                          mesh-topology3d-orientable? mesh3d-euler-characteristic
                          mesh3d-boundary-count mesh3d-component-invariants mesh3d-genus
                          polyhedral-complex3d polyhedral-complex3d?
-                         polyhedral-complex3d-mesh polyhedral-complex3d-topology
+                         polyhedral-complex3d-source-mesh polyhedral-complex3d-analysis-mesh
+                         polyhedral-complex3d-source-transform polyhedral-complex3d-mesh
+                         polyhedral-complex3d-topology
                          polyhedral-complex3d-faces polyhedral-complex3d-edge-to-faces
                          polyhedral-complex3d-vertex-to-faces polyhedral-complex3d-diagnostics
                          convex-hull3d convex-hull3d-result?
@@ -101,7 +103,11 @@
                          basis-vectors3d vector-arrow3d vector-components3d
                          linear-transformation-diagram3d
                          move-along-curve3d orient-along-curve3d
-                         surface3d? surface3d-grid surface3d-resolution
+                         surface3d? surface3d-kind surface3d-local-mesh surface3d-mesh
+                         surface3d->mesh3d surface3d-local-bounds surface3d-diagnostics
+                         surface3d-provenance surface3d-domain surface3d-evaluate surface3d-frame-at
+                         surface-domain3d surface-diagnostics3d surface-frame3d
+                         surface3d-grid surface3d-resolution
                          surface3d-position-at surface3d-tangent-u-at
                          surface3d-tangent-v-at surface3d-normal-at
                          parametric-surface3d function-surface3d
@@ -152,6 +158,7 @@
                          apply-homotopy3
                          ode-field3d ode-field3d? ode-field3d-procedure
                          ode-field3d-arity ode-field3d-cache-key ode-field3d-autonomous?
+                         ode-field3d-parallel-safe?
                          fixed-rk4-solver3d fixed-rk4-solver3d? fixed-rk4-solver3d-step-size
                          adaptive-rk45-solver3d adaptive-rk45-solver3d?
                          adaptive-rk45-solver3d-settings prepared-trajectory3d?
@@ -159,6 +166,9 @@
                          ode-event3d-direction ode-event3d-terminal?
                          ode-event3d-value-tolerance ode-event3d-time-tolerance
                          ode-event3d-maximum-iterations ode-event3d-cache-key
+                         ode-event3d-parallel-safe?
+                         ode-event3d-root-kind ode-event3d-initial-subdivisions
+                         ode-event3d-maximum-depth
                          ode-event-hit3d? ode-event-hit3d-event-id ode-event-hit3d-time
                          ode-event-hit3d-position ode-event-hit3d-value ode-event-hit3d-direction
                          ode-event-hit3d-segment-index ode-event-hit3d-iterations
@@ -182,7 +192,8 @@
                          trajectory-segment3d-arc-length trajectory-segment3d-bounds
                          ode-trajectory3d? ode-trajectory3d-time-range
                          ode-trajectory3d-step-size ode-trajectory3d-checkpoint-every
-                         ode-trajectory3d-solver ode-trajectory3d-diagnostics ode-trajectory3d-event-hits
+                         ode-trajectory3d-solver ode-trajectory3d-diagnostics ode-trajectory3d-segments
+                         ode-trajectory3d-event-hits
                          ode-trajectory3d-termination
                          ode-trajectory3d-diagnostics-termination-reason
                          ode-trajectory3d-diagnostics-field-evaluations

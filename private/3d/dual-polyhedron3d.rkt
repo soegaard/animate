@@ -79,7 +79,8 @@
     (raise-argument-error 'polar-dual3d "nonnegative finite real?" tolerance))
   (validate-dual-complex 'polar-dual3d complex)
   (define faces (polyhedral-complex3d-faces complex))
-  (define mesh (polyhedral-complex3d-mesh complex))
+  ;; Dual construction is defined in the canonical, world-space analysis mesh.
+  (define mesh (polyhedral-complex3d-analysis-mesh complex))
   (define vertices (mesh3d-vertices mesh))
   (define distances
     (for/vector ([face (in-vector faces)])
@@ -123,7 +124,7 @@
 
 (define (build-dual-result id complex dual-vertices base-diagnostics)
   (define topology (polyhedral-complex3d-topology complex))
-  (define primal-mesh (polyhedral-complex3d-mesh complex))
+  (define primal-mesh (polyhedral-complex3d-analysis-mesh complex))
   (define primal-centre (mesh-centroid primal-mesh))
   (define face-count (vector-length (polyhedral-complex3d-faces complex)))
   ;; Polygonal face positions have the same indexes as their output dual
