@@ -36,8 +36,15 @@
    path<?))
 
 (define (explicit-opengl-example? path)
-  (regexp-match? #px"animate/3d/opengl"
-                 (file->string path)))
+  (define source (file->string path))
+  ;; Most explicit backend examples import `animate/3d/opengl` directly.
+  ;; The lighting-inspector launcher imports the explicit OpenGL project
+  ;; instead, so it must receive the same GRacket-only treatment.  In
+  ;; particular, do not dynamically instantiate either form under headless
+  ;; `racket`: that is a real-context integration concern, not compilation.
+  (or (regexp-match? #px"animate/3d/opengl" source)
+      (regexp-match? #px"opengl-lighting-inspector\\.rkt$"
+                     (path->string path))))
 
 (module+ test
   (define paths (racket-example-paths))
