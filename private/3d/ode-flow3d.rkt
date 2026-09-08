@@ -968,10 +968,70 @@
                                     (adaptive-rk45-solver3d-settings solver)
                                     evaluations termination events cancellation-token)])))
 
+;; A trial may sample a field beyond a terminal event or a finite bounds
+;; boundary before the corresponding dense segment can be inspected.  If that
+;; sample fails, retrying a smaller trial lets accepted-step monitoring retain
+;; the earlier valid endpoint.  It does not make an arbitrary singular field
+;; safe: after the bounded backoff reaches the solver's minimum step, the
+;; ordinary field-error policy remains authoritative.
+(define (dense-backoff-needed? events termination)
+  (or (trajectory-termination3d-bounds termination)
+      (for/or ([event (in-list events)]) (ode-event3d-terminal? event))))
+
+(define dense-fixed-backoff-minimum-step3d 1e-12)
+
+(define (dense-fixed-trial-node3d field current step evaluations)
+  (define next-time (+ (prepared-trajectory-node3d-time current) step))
+  (define next-position
+    (dense-rk4-step3d field
+                       (prepared-trajectory-node3d-time current)
+                       (prepared-trajectory-node3d-position current)
+                       step evaluations))
+  (prepared-trajectory-node3d
+   next-time next-position
+   (call-field3d field next-time next-position evaluations)))
+
+(define (dense-fixed-trial-with-backoff3d field current step evaluations events termination)
+  (define minimum-step
+    (max dense-fixed-backoff-minimum-step3d (* (abs step) 1e-12)))
+  (let loop ([trial-step step])
+    (with-handlers
+        ([exn:fail:ode-field3d?
+          (lambda (exception)
+            (define next-step (/ trial-step 2))
+            (if (and (dense-backoff-needed? events termination)
+                     (>= (abs next-step) minimum-step))
+                (loop next-step)
+                (raise exception)))])
+      (dense-fixed-trial-node3d field current trial-step evaluations))))
+
+(define (dense-adaptive-trial-with-backoff3d field current step solver evaluations events termination)
+  (define minimum-step (adaptive-rk45-minimum-step solver))
+  (let loop ([trial-step step])
+    (with-handlers
+        ([exn:fail:ode-field3d?
+          (lambda (exception)
+            (define next-step (/ trial-step 2))
+            (if (and (dense-backoff-needed? events termination)
+                     (>= (abs next-step) minimum-step))
+                (loop next-step)
+                (raise exception)))])
+      (define-values (candidate endpoint-derivative error)
+        (ode-state-space-dormand-prince-step
+         vec3-ode-state-space
+         (lambda (field-time field-point)
+           (call-field3d field field-time field-point evaluations))
+         (prepared-trajectory-node3d-time current)
+         (prepared-trajectory-node3d-position current)
+         trial-step
+         (adaptive-rk45-relative-tolerance solver)
+         (adaptive-rk45-absolute-tolerance solver)))
+      (values trial-step candidate endpoint-derivative error))))
+
 (define (dense-fixed-series3d field initial target-time step-size evaluations termination
                               events cancellation-token)
   (define direction (if (< target-time (prepared-trajectory-node3d-time initial)) -1 1))
-  (let loop ([current initial] [reversed (list initial)] [steps '()])
+  (let loop ([current initial] [reversed (list initial)] [steps '()] [arc-so-far 0])
     ;; This is the boundary immediately before the next accepted fixed step.
     (when cancellation-token (check-cancellation cancellation-token))
     (define remaining (- target-time (prepared-trajectory-node3d-time current)))
@@ -996,18 +1056,11 @@
                             (list 'field-error (exn-message exception))))
                    (raise exception)))])
          (define step (* direction (min step-size (abs remaining))))
-         (define next-time (+ (prepared-trajectory-node3d-time current) step))
-         (define next-position
-           (dense-rk4-step3d field
-                              (prepared-trajectory-node3d-time current)
-                              (prepared-trajectory-node3d-position current)
-                              step evaluations))
          (define next
-           (prepared-trajectory-node3d
-            next-time next-position
-            (call-field3d field next-time next-position evaluations)))
-         (define-values (accepted terminal-candidate)
-           (dense-monitor-accepted-step3d events current next direction cancellation-token))
+           (dense-fixed-trial-with-backoff3d field current step evaluations events termination))
+         (define-values (accepted terminal-candidate step-arc)
+           (dense-monitor-accepted-step3d events termination arc-so-far
+                                          current next direction cancellation-token))
          (if terminal-candidate
              (let* ([new-step (abs (- (prepared-trajectory-node3d-time accepted)
                                       (prepared-trajectory-node3d-time current)))]
@@ -1017,9 +1070,13 @@
                (values (reverse new-reversed)
                        (dense-series-report3d
                         (length new-steps) 0 0 (reverse new-steps)
-                        'terminal-event accepted
+                        (dense-termination-candidate3d-reason terminal-candidate) accepted
                         (dense-termination-candidate3d-details terminal-candidate))))
-             (loop next (cons next reversed) (cons (abs step) steps))))])))
+             (loop next (cons next reversed)
+                   (cons (abs (- (prepared-trajectory-node3d-time next)
+                                 (prepared-trajectory-node3d-time current)))
+                         steps)
+                   (+ arc-so-far step-arc))))])))
 
 (define (dense-adaptive-series3d field initial target-time solver evaluations termination
                                  events cancellation-token)
@@ -1027,7 +1084,7 @@
   (let loop ([current initial]
              [step (* direction (adaptive-rk45-initial-step solver))]
              [reversed (list initial)] [accepted 0] [rejected 0]
-             [maximum-error 0] [steps '()])
+             [maximum-error 0] [steps '()] [arc-so-far 0])
     ;; Both accepted and rejected adaptive trials return here before another
     ;; solver step is attempted, so cancellation cannot install partial data.
     (when cancellation-token (check-cancellation cancellation-token))
@@ -1055,25 +1112,19 @@
            (* direction
               (min (abs remaining) (adaptive-rk45-maximum-step solver)
                    (max (adaptive-rk45-minimum-step solver) (abs step)))))
-         (define-values (candidate endpoint-derivative error)
-           (ode-state-space-dormand-prince-step
-            vec3-ode-state-space
-            (lambda (field-time field-point)
-              (call-field3d field field-time field-point evaluations))
-            (prepared-trajectory-node3d-time current)
-            (prepared-trajectory-node3d-position current)
-            trial-step
-            (adaptive-rk45-relative-tolerance solver)
-            (adaptive-rk45-absolute-tolerance solver)))
+         (define-values (actual-trial-step candidate endpoint-derivative error)
+           (dense-adaptive-trial-with-backoff3d
+            field current trial-step solver evaluations events termination))
          (define next-maximum-error (max maximum-error error))
          (cond
            [(<= error 1)
-           (define next
+            (define next
               (prepared-trajectory-node3d
-               (+ (prepared-trajectory-node3d-time current) trial-step)
+               (+ (prepared-trajectory-node3d-time current) actual-trial-step)
                candidate endpoint-derivative))
-            (define-values (accepted-node terminal-candidate)
-              (dense-monitor-accepted-step3d events current next direction cancellation-token))
+            (define-values (accepted-node terminal-candidate step-arc)
+              (dense-monitor-accepted-step3d events termination arc-so-far
+                                             current next direction cancellation-token))
             (cond
               [terminal-candidate
                (define actual-step
@@ -1086,28 +1137,31 @@
                (values (reverse terminal-reversed)
                        (dense-series-report3d
                         (+ accepted (if (= actual-step 0) 0 1)) rejected next-maximum-error
-                        (reverse terminal-steps) 'terminal-event accepted-node
+                        (reverse terminal-steps)
+                        (dense-termination-candidate3d-reason terminal-candidate) accepted-node
                         (dense-termination-candidate3d-details terminal-candidate)))]
               [(= (prepared-trajectory-node3d-time next) target-time)
                (values (reverse (cons next reversed))
                        (dense-series-report3d
                         (add1 accepted) rejected next-maximum-error
-                        (reverse (cons (abs trial-step) steps)) 'time-range #f #f))]
+                        (reverse (cons (abs actual-trial-step) steps)) 'time-range #f #f))]
               [else
                (loop next
-                     (* direction (adaptive-next-step-magnitude3d solver (abs trial-step) error))
+                     (* direction
+                        (adaptive-next-step-magnitude3d solver (abs actual-trial-step) error))
                      (cons next reversed) (add1 accepted) rejected next-maximum-error
-                     (cons (abs trial-step) steps))])]
+                     (cons (abs actual-trial-step) steps) (+ arc-so-far step-arc))])]
            [else
-            (when (<= (abs trial-step) (adaptive-rk45-minimum-step solver))
+            (when (<= (abs actual-trial-step) (adaptive-rk45-minimum-step solver))
               (raise-arguments-error
                'prepare-ode-trajectory3d
                "adaptive solver reached minimum-step before satisfying tolerance"
                "minimum-step" (adaptive-rk45-minimum-step solver)
                "error-ratio" error "time" (prepared-trajectory-node3d-time current)))
             (loop current
-                  (* direction (adaptive-rejected-step-magnitude3d solver (abs trial-step) error))
-                  reversed accepted (add1 rejected) next-maximum-error steps)]))])))
+                  (* direction
+                     (adaptive-rejected-step-magnitude3d solver (abs actual-trial-step) error))
+                  reversed accepted (add1 rejected) next-maximum-error steps arc-so-far)]))])))
 
 (define (dense-rk4-step3d field time point step evaluations)
   (ode-state-space-rk4-step
@@ -1233,7 +1287,7 @@
           (loop low middle low-value middle-value
                 next-best-time next-best-value (add1 iteration))])])))
 
-(struct dense-event-sample3d (time position value sign) #:transparent)
+(struct dense-event-sample3d (parameter time position value sign) #:transparent)
 
 (define (dense-event-kind-allowed? event kind endpoint?)
   ;; An endpoint zero remains observable for backward-compatible terminal
@@ -1244,25 +1298,98 @@
       (eq? (ode-event3d-root-kind event) kind)))
 
 (define (dense-sampled-event-hits3d event segment segment-index cancellation-token)
-  ;; Fixed initial dyadic samples expose more than one crossing in an accepted
-  ;; segment. The samples are retained only during preparation, and every
-  ;; bracket still refines through the same dense Hermite bisection routine.
+  ;; The initial dyadic grid cheaply exposes ordinary multiple crossings.
+  ;; Same-sign intervals are then subdivided only when their midpoint reveals
+  ;; a plausible missed crossing or contact.  In particular, a touching root
+  ;; need not happen to land on an initial sample.  `maximum-depth` bounds
+  ;; that additional search, while the sample cache ensures that neighbouring
+  ;; intervals and later hit construction never call an author event twice at
+  ;; the same point.
   (define subdivisions (ode-event3d-initial-subdivisions event))
+  (define maximum-depth (ode-event3d-maximum-depth event))
   (define t0 (trajectory-segment3d-t0 segment))
   (define duration (- (trajectory-segment3d-t1 segment) t0))
-  (define samples
+  (define cache (make-hash))
+  (define (sample-at parameter)
+    (hash-ref
+     cache parameter
+     (lambda ()
+       (when cancellation-token (check-cancellation cancellation-token))
+       (define time (+ t0 (* duration parameter)))
+       (define position (dense-segment-position3d segment time))
+       (define value (call-event3d event time position))
+       (define result
+         (dense-event-sample3d parameter time position value
+                               (event-sign3d event value)))
+       (hash-set! cache parameter result)
+       result)))
+  (define initial-samples
     (for/list ([index (in-range (add1 subdivisions))])
-      (when cancellation-token (check-cancellation cancellation-token))
-      (define time (+ t0 (* duration (/ index subdivisions))))
-      (define position (dense-segment-position3d segment time))
-      (define value (call-event3d event time position))
-      (dense-event-sample3d time position value (event-sign3d event value))))
+      (sample-at (/ index subdivisions))))
+  (define (crossing-between? lower upper)
+    (define lower-sign (dense-event-sample3d-sign lower))
+    (define upper-sign (dense-event-sample3d-sign upper))
+    (and (not (zero? lower-sign))
+         (not (zero? upper-sign))
+         (not (= lower-sign upper-sign))))
+  (define (midpoint-interesting? lower middle upper)
+    (define lower-sign (dense-event-sample3d-sign lower))
+    (define middle-sign (dense-event-sample3d-sign middle))
+    (define upper-sign (dense-event-sample3d-sign upper))
+    (define lower-value (dense-event-sample3d-value lower))
+    (define middle-value (dense-event-sample3d-value middle))
+    (define upper-value (dense-event-sample3d-value upper))
+    ;; Sign changes and sampled zeroes are conclusive.  With equal signs, a
+    ;; small interior magnitude or a substantial departure from linear
+    ;; endpoint behaviour is evidence of a pair of crossings or a grazing
+    ;; contact.  This cannot prove all roots of an arbitrary procedure, but
+    ;; is deterministic, catches ordinary hidden roots, and remains bounded.
+    (or (zero? middle-sign)
+        (not (= lower-sign middle-sign))
+        (not (= middle-sign upper-sign))
+        (< (abs middle-value)
+           (min (abs lower-value) (abs upper-value)))
+        (> (abs (- middle-value (/ (+ lower-value upper-value) 2)))
+           (/ (max (ode-event3d-value-tolerance event)
+                   (abs lower-value)
+                   (abs middle-value)
+                   (abs upper-value))
+              4))))
+  (define (isolate lower upper depth)
+    ;; Do not perturb the established crossing bracket when its endpoints
+    ;; already disagree: root refinement below should start with precisely
+    ;; that bracket.  Extra samples are only needed for otherwise invisible
+    ;; same-sign behaviour.
+    (cond [(or (zero? (dense-event-sample3d-sign lower))
+               (zero? (dense-event-sample3d-sign upper))
+               (crossing-between? lower upper)
+               (>= depth maximum-depth))
+           (list (cons lower upper))]
+          [else
+           (define middle
+             (sample-at
+              (/ (+ (dense-event-sample3d-parameter lower)
+                    (dense-event-sample3d-parameter upper))
+                 2)))
+           (if (midpoint-interesting? lower middle upper)
+               (append (isolate lower middle (add1 depth))
+                       (isolate middle upper (add1 depth)))
+               (list (cons lower upper)))]))
+  (define leaves
+    (append*
+     (for/list ([lower (in-list initial-samples)]
+                [upper (in-list (cdr initial-samples))])
+       (isolate lower upper 0))))
+  (define samples
+    (sort (hash-values cache) < #:key dense-event-sample3d-parameter))
   (define (sample index) (list-ref samples index))
+  (define sample-count (length samples))
   (define (sample-direction index)
     (define sign (dense-event-sample3d-sign (sample index)))
     (define lower-sign (if (zero? index) 0 (dense-event-sample3d-sign (sample (sub1 index)))))
     (define upper-sign
-      (if (= index subdivisions) 0 (dense-event-sample3d-sign (sample (add1 index)))))
+      (if (= index (sub1 sample-count)) 0
+          (dense-event-sample3d-sign (sample (add1 index)))))
     (cond [(and (not (zero? lower-sign)) (not (zero? upper-sign))
                 (= lower-sign upper-sign))
            'touching]
@@ -1273,12 +1400,15 @@
           [else (event-direction-from-signs3d lower-sign upper-sign)]))
   (define sample-hits
     (append*
-     (for/list ([index (in-range (add1 subdivisions))])
+     (for/list ([index (in-range sample-count)])
        (define current (sample index))
-       (define endpoint? (or (zero? index) (= index subdivisions)))
+       (define endpoint?
+         (or (zero? (dense-event-sample3d-parameter current))
+             (= (dense-event-sample3d-parameter current) 1)))
        (cond
          ;; Shared roots belong to the segment on their left.
-         [(and (zero? index) (positive? segment-index)) '()]
+         [(and (zero? (dense-event-sample3d-parameter current))
+               (positive? segment-index)) '()]
          [(not (zero? (dense-event-sample3d-sign current))) '()]
          [else
           (define direction (sample-direction index))
@@ -1293,9 +1423,9 @@
               '())]))))
   (define bracket-hits
     (append*
-     (for/list ([index (in-range subdivisions)])
-       (define lower (sample index))
-       (define upper (sample (add1 index)))
+     (for/list ([leaf (in-list leaves)])
+       (define lower (car leaf))
+       (define upper (cdr leaf))
        (define lower-sign (dense-event-sample3d-sign lower))
        (define upper-sign (dense-event-sample3d-sign upper))
        (cond [(or (zero? lower-sign) (zero? upper-sign)) '()]
@@ -1441,39 +1571,110 @@
            (ode-event-hit3d-provenance hit)))))
 
 ;; A solver may evaluate a trial endpoint beyond a terminal root, but it must
-;; never *accept* that endpoint.  Monitoring the Hermite trial segment here
-;; gives fixed RK4 and adaptive RK45 exactly the same terminal-event policy.
-;; The segment is ordered by physical time for event direction semantics; the
-;; `direction` argument still chooses the first hit in integration order.
-(define (dense-monitor-accepted-step3d events current candidate direction cancellation-token)
-  (cond
-    [(null? events) (values candidate #f)]
-    [else
-     (define current-time (prepared-trajectory-node3d-time current))
-     (define candidate-time (prepared-trajectory-node3d-time candidate))
-     (define chronological-nodes
-       (if (< current-time candidate-time)
-           (vector current candidate)
-           (vector candidate current)))
-     (define chronological-segments (dense-make-segments3d chronological-nodes))
-     (define hits
-       (dense-event-hits3d events chronological-nodes chronological-segments cancellation-token))
-     (define terminal
-       (dense-best-termination3d
-        direction
-        (dense-terminal-event-candidates3d
-         events hits (min current-time candidate-time) current-time
-         (max current-time candidate-time))))
-     (if terminal
-         (let* ([hit-time (dense-termination-candidate3d-time terminal)]
-                [segment (vector-ref chronological-segments 0)])
-           (values
-            (prepared-trajectory-node3d
-             hit-time
-             (dense-termination-candidate3d-position terminal)
-             (dense-segment-derivative3d segment hit-time))
-            terminal))
-         (values candidate #f))]))
+;; never *accept* that endpoint.  Monitoring one Hermite trial segment here
+;; gives fixed RK4 and adaptive RK45 the same event, bounds, arc-length, and
+;; low-speed policy.  The segment is ordered by physical time for event
+;; direction semantics; `direction` chooses the first candidate in the
+;; integration direction.
+(define (dense-termination-monitor-needed? events termination)
+  (or (pair? events)
+      (trajectory-termination3d-bounds termination)
+      (trajectory-termination3d-arc-length-limit termination)
+      (trajectory-termination3d-minimum-speed termination)))
+
+(define (dense-raw-step-segment3d first second)
+  ;; Monitoring deliberately avoids `dense-make-segments3d`: a trial needs
+  ;; its Hermite geometry, not a retained arc table.  This keeps the normal
+  ;; no-termination path as cheap as it was before accepted-step monitoring.
+  (trajectory-segment3d
+   (prepared-trajectory-node3d-time first)
+   (prepared-trajectory-node3d-time second)
+   (prepared-trajectory-node3d-position first)
+   (prepared-trajectory-node3d-position second)
+   (prepared-trajectory-node3d-derivative first)
+   (prepared-trajectory-node3d-derivative second)
+   0 #f #f))
+
+(define (dense-arc-limit-on-step3d limit arc-before segment current-time candidate-time direction)
+  (and limit
+       (let ([available (- limit arc-before)])
+         (cond [(negative? available)
+                (make-termination-candidate3d
+                 'arc-length-limit current-time
+                 (dense-segment-position3d segment current-time)
+                 (list 'arc-length limit 'already-reached))]
+               [else
+                (define (length-from-current time)
+                  (abs (- (dense-segment-arc-length-to3d segment time)
+                          (dense-segment-arc-length-to3d segment current-time))))
+                (if (<= (length-from-current candidate-time) available)
+                    #f
+                    (let loop ([near current-time] [far candidate-time] [iterations 48])
+                      (if (zero? iterations)
+                          (make-termination-candidate3d
+                           'arc-length-limit far
+                           (dense-segment-position3d segment far)
+                           (list 'arc-length limit 'dense-bisection))
+                          (let ([middle (/ (+ near far) 2)])
+                            (if (> (length-from-current middle) available)
+                                (loop near middle (sub1 iterations))
+                                (loop middle far (sub1 iterations)))))))]))))
+
+(define (dense-monitor-accepted-step3d events termination arc-before
+                                       current candidate direction cancellation-token)
+  (cond [(not (dense-termination-monitor-needed? events termination))
+         (values candidate #f 0)]
+        [else
+         (define current-time (prepared-trajectory-node3d-time current))
+         (define candidate-time (prepared-trajectory-node3d-time candidate))
+         (define chronological-nodes
+           (if (< current-time candidate-time)
+               (vector current candidate)
+               (vector candidate current)))
+         (define segment
+           (dense-raw-step-segment3d
+            (vector-ref chronological-nodes 0)
+            (vector-ref chronological-nodes 1)))
+         (define chronological-segments (vector segment))
+         (define lower-time (trajectory-segment3d-t0 segment))
+         (define upper-time (trajectory-segment3d-t1 segment))
+         (define hits
+           (if (null? events)
+               '()
+               (dense-event-hits3d events chronological-nodes chronological-segments
+                                   cancellation-token)))
+         (define step-arc
+           (if (trajectory-termination3d-arc-length-limit termination)
+               (dense-segment-arc-length-to3d segment upper-time)
+               0))
+         (define candidates
+           (append
+            (dense-terminal-event-candidates3d
+             events hits lower-time current-time upper-time)
+            (let ([bounds
+                   (dense-bounds-exit3d (trajectory-termination3d-bounds termination)
+                                        chronological-segments lower-time upper-time direction)])
+              (if bounds (list bounds) '()))
+            (let ([arc-limit
+                   (dense-arc-limit-on-step3d
+                    (trajectory-termination3d-arc-length-limit termination)
+                    arc-before segment current-time candidate-time direction)])
+              (if arc-limit (list arc-limit) '()))
+            (let ([low-speed
+                   (dense-low-speed3d (trajectory-termination3d-minimum-speed termination)
+                                      chronological-nodes chronological-segments
+                                      current-time candidate-time direction)])
+              (if low-speed (list low-speed) '()))))
+         (define terminal (dense-best-termination3d direction candidates))
+         (if terminal
+             (let ([hit-time (dense-termination-candidate3d-time terminal)])
+               (values
+                (prepared-trajectory-node3d
+                 hit-time
+                 (dense-termination-candidate3d-position terminal)
+                 (dense-segment-derivative3d segment hit-time))
+                terminal step-arc))
+             (values candidate #f step-arc))]))
 
 (define (dense-quadratic-roots-in-unit-interval3d a b c)
   ;; Roots of a*u^2 + b*u + c.  They are used only to split a Hermite
