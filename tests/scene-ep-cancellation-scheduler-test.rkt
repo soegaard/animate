@@ -61,6 +61,37 @@
   (preview-close! session))
 
 (module+ test
+  ;; Exact playback must wait for the bitmap that it requested, not merely for
+  ;; the controller's 120 Hz timer.  This producer is intentionally slower
+  ;; than that timer and does not cooperatively inspect its token until it
+  ;; returns.  The old scheduler ran its playhead to the final frame during
+  ;; this first sleep, continually marking the initial request superseded.
+  (define slow-starts (make-async-channel))
+  (define slow-exact
+    (open-preview-controller
+     (scene-wait (make-scene) 2) #:fps 2 #:prefetch 0 #:playback-policy 'exact
+     #:producer
+     (lambda (_document sample _spec _token)
+       (async-channel-put slow-starts (frame-sample-frame-index sample))
+       (sleep 1/10)
+       sample)
+     #:byte-size (lambda (_value) 1)))
+  (check-equal? (await slow-starts) 0)
+  (void (preview-play! slow-exact))
+  ;; The first render is still active.  Exact playback must neither advance nor
+  ;; cancel it simply because several controller ticks have elapsed.
+  (sleep 1/50)
+  (check-equal? (preview-current-frame slow-exact) 0)
+  (check-equal? (preview-canceled-request-count slow-exact) 0)
+  ;; Once frame 0 has been installed, only then may frame 1 begin.  It likewise
+  ;; remains the desired frame while its own slow render is in progress.
+  (check-equal? (await slow-starts) 1)
+  (sleep 1/50)
+  (check-equal? (preview-current-frame slow-exact) 1)
+  (check-equal? (preview-canceled-request-count slow-exact) 0)
+  (preview-close! slow-exact))
+
+(module+ test
   ;; Exact playback advances only after a frame becomes available. A simple
   ;; fake renderer lets the actor prove that semantic time is not tied to a
   ;; wall-clock timeout in this mode.

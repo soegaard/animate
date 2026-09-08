@@ -147,6 +147,7 @@
                             #:pixel-scale [pixel-scale 1]
                             #:cache-megabytes [cache-megabytes 128]
                             #:prefetch [prefetch 3]
+                            #:playback-policy [playback-policy 'realtime]
                             #:worker-mode [worker-mode 'in-process]
                             #:producer [producer #f]
                             #:waveform [wave #f]
@@ -161,6 +162,7 @@
      source #:fps fps #:start start #:section section #:camera camera
      #:renderers renderers #:pixel-scale pixel-scale
      #:cache-megabytes cache-megabytes #:prefetch prefetch
+     #:playback-policy playback-policy
      #:worker-mode worker-mode #:producer producer #:waveform wave
      #:audio-mute-available? audio-mute-available?
      #:audio-muted? audio-muted?
@@ -242,6 +244,11 @@
      #:pixel-scale (preview-spec-pixel-scale preview-specification)
      #:cache-megabytes (preview-spec-cache-megabytes preview-specification)
      #:prefetch (preview-spec-prefetch preview-specification)
+     ;; A retained OpenGL preview shares the GUI process and does not use a
+     ;; replaceable worker.  It can be much faster than software rendering yet
+     ;; still miss a 30 fps deadline. Exact playback makes every completed GPU
+     ;; frame visible rather than superseding it until the final frame wins.
+     #:playback-policy (if project-opengl-renderer 'exact 'realtime)
      #:worker-mode (if worker-producer 'subprocess 'in-process)
      #:waveform (project-preview-audio-runtime-waveform audio-runtime)
      #:audio-mute-available?

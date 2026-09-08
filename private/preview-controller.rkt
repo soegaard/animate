@@ -1152,7 +1152,15 @@
 ;; not after an elapsed wall-clock interval. This intentionally slows down
 ;; when rendering is expensive, while preserving every discrete frame.
 (define (advance-exact-playback! state jobs prefetch)
-  (when (controller-state-playing? state)
+  ;; Unlike realtime playback, exact playback is driven by rendered frames.
+  ;; The controller loop itself wakes at 120 Hz; advancing merely because that
+  ;; clock tick occurred would keep replacing a slow render and leave only the
+  ;; terminal frame visible.  `displayed-sample` changes only when the current
+  ;; request has supplied a bitmap (or a cache hit has installed one), so it is
+  ;; the precise acknowledgement needed before asking for the next frame.
+  (when (and (controller-state-playing? state)
+             (equal? (controller-state-current-sample state)
+                     (controller-state-displayed-sample state)))
     (define next-index (add1 (current-frame-index state)))
     (cond
       [(> next-index (controller-state-play-end-index state))

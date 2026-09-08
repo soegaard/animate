@@ -241,6 +241,7 @@
                              #:pixel-scale [pixel-scale 1]
                              #:cache-megabytes [cache-megabytes 128]
                              #:prefetch [prefetch 3]
+                             #:playback-policy [playback-policy 'realtime]
                              #:worker-mode [worker-mode 'in-process]
                              #:producer [producer #f]
                              #:waveform [wave #f]
@@ -2531,6 +2532,7 @@
      source #:fps fps #:start start #:section section #:camera camera
      #:renderers renderers #:pixel-scale pixel-scale
      #:cache-megabytes cache-megabytes #:prefetch prefetch
+     #:playback-policy playback-policy
      #:worker-mode worker-mode
      #:producer producer
      #:on-event
