@@ -134,7 +134,7 @@
   (define face-rings
     (for/vector ([vertex-index (in-range (vector-length (mesh3d-vertices primal-mesh)))])
       (ordered-incident-face-ring complex vertex-index)))
-  (define-values (triangles dual-face-records)
+  (define-values (triangles dual-face-records rejected-render-faces)
     (triangulate-dual-faces face-rings dual-vertices primal-mesh primal-centre))
   (define dual-mesh
     (mesh3d #:id id #:vertices dual-vertices
@@ -159,10 +159,12 @@
   (dual-polyhedron3d-result
    dual-mesh primal-face->dual-vertex primal-edge->dual-edge
    (vector->immutable-vector (list->vector dual-face-records))
-   (hash-set base-diagnostics
-             'primal-render-diagonal-count
-             (for/sum ([mapping (in-vector primal-edge->dual-edge)])
-               (if mapping 0 1)))))
+   (hash-set
+    (hash-set base-diagnostics
+              'primal-render-diagonal-count
+              (for/sum ([mapping (in-vector primal-edge->dual-edge)])
+                (if mapping 0 1)))
+    'rejected-render-faces rejected-render-faces)))
 
 ;; Each face surrounding one primal vertex has exactly two neighbours in the
 ;; face ring. The topology, rather than a camera-dependent angular sort,
@@ -223,40 +225,189 @@
 (define (triangulate-dual-faces face-rings dual-vertices primal-mesh primal-centre)
   (define triangles '())
   (define records '())
+  (define rejected '())
   (for ([ring (in-vector face-rings)] [primal-vertex-index (in-naturals)])
-    (define oriented-ring
-      (orient-dual-ring ring dual-vertices
-                        (vec3- (vector-ref (mesh3d-vertices primal-mesh) primal-vertex-index)
-                               primal-centre)))
+    (define triangulation
+      (validated-dual-face-triangulation
+       ring dual-vertices
+       (vec3- (vector-ref (mesh3d-vertices primal-mesh) primal-vertex-index)
+              primal-centre)))
+    (define oriented-ring (if triangulation (car triangulation) ring))
     (define start-index (length triangles))
-    (define face-triangles
-      (for/list ([index (in-range 1 (sub1 (length oriented-ring)))])
-        (vector-immutable (first oriented-ring)
-                          (list-ref oriented-ring index)
-                          (list-ref oriented-ring (add1 index)))))
+    (define face-triangles (if triangulation (cdr triangulation) '()))
     (set! triangles (append triangles face-triangles))
     (set! records
           (append records
-                  (list (dual-polyhedron-face3d
-                         primal-vertex-index primal-vertex-index
-                         (vector->immutable-vector
-                          (list->vector (build-list (length face-triangles)
-                                                    (lambda (offset) (+ start-index offset)))))
-                         (vector->immutable-vector (list->vector oriented-ring)))))))
-  (values triangles records))
+                  (list
+                   (dual-polyhedron-face3d
+                    primal-vertex-index primal-vertex-index
+                    (vector->immutable-vector
+                     (list->vector
+                      (build-list (length face-triangles)
+                                  (lambda (offset) (+ start-index offset)))))
+                    (vector->immutable-vector (list->vector oriented-ring))))))
+    (unless triangulation
+      (set! rejected
+            (append rejected
+                    (list
+                     (hasheq 'primal-vertex-index primal-vertex-index
+                             'reason 'invalid-projected-dual-polygon
+                             'boundary-vertex-indices
+                             (vector->immutable-vector (list->vector ring))))))))
+  (values triangles records
+          (vector->immutable-vector (list->vector rejected))))
 
-;; A ring can be traversed in either topological direction. Choose the one
-;; whose polygon normal points toward the primal vertex from the primal mesh
-;; centre, yielding outward combinatorial dual faces for ordinary convex inputs.
-(define (orient-dual-ring ring dual-vertices desired-normal)
-  (define first-point (vector-ref dual-vertices (first ring)))
-  (define second-point (vector-ref dual-vertices (second ring)))
-  (define third-point (vector-ref dual-vertices (third ring)))
-  (define normal (vec3-cross (vec3- second-point first-point)
-                             (vec3- third-point first-point)))
-  (if (negative? (vec3-dot normal desired-normal))
-      (cons (car ring) (reverse (cdr ring)))
-      ring))
+;; The cyclic face ring is mathematical dual topology. Rendering it is a
+;; distinct operation: project through a stable tangent basis, reject a
+;; collapsed or self-crossing projection, and use deterministic ear clipping.
+;; The dual result remains useful when a centroid embedding is not drawable.
+(define (validated-dual-face-triangulation ring dual-vertices desired-normal)
+  (define points (map (lambda (index) (vector-ref dual-vertices index)) ring))
+  (cond [(< (length points) 3) #f]
+        [else
+         (define normal
+           (cond [(positive? (vec3-length desired-normal))
+                  (vec3-normalize desired-normal)]
+                 [else (ring-normal points)]))
+         (cond [(not normal) #f]
+               [else
+                (define scale
+                  (max 1
+                       (for*/fold ([largest 0]) ([first (in-list points)]
+                                                   [second (in-list points)])
+                         (max largest (vec3-distance first second)))))
+                (define tolerance (* 1e-10 scale scale))
+                (define origin (car points))
+                (define seed
+                  (argmin (lambda (axis) (abs (vec3-dot normal axis)))
+                          (list x-axis3 y-axis3 z-axis3)))
+                (define u (vec3-normalize (vec3-cross seed normal)))
+                (define v (vec3-cross normal u))
+                (define projected
+                  (for/list ([point (in-list points)])
+                    (define offset (vec3- point origin))
+                    (vector (vec3-dot offset u) (vec3-dot offset v))))
+                (define signed-area (polygon-signed-area projected))
+                (cond [(or (<= (abs signed-area) tolerance)
+                           (projected-adjacent-duplicates? projected tolerance)
+                           (projected-self-intersecting? projected tolerance))
+                       #f]
+                      [else
+                       (define-values (oriented-ring oriented-projected)
+                         (if (negative? signed-area)
+                             (values (cons (car ring) (reverse (cdr ring)))
+                                     (cons (car projected) (reverse (cdr projected))))
+                             (values ring projected)))
+                       (define triangle-indexes
+                         (projected-ear-triangulation oriented-projected tolerance))
+                       (cond [(not triangle-indexes) #f]
+                             [else
+                              (define face-triangles
+                                (for/list ([triangle (in-list triangle-indexes)])
+                                  (vector-immutable
+                                   (list-ref oriented-ring (first triangle))
+                                   (list-ref oriented-ring (second triangle))
+                                   (list-ref oriented-ring (third triangle)))))
+                              ;; Projection alone is insufficient if the face
+                              ;; folds in world space. Every render triangle
+                              ;; must retain the chosen face orientation.
+                              (and (for/and ([triangle (in-list face-triangles)])
+                                     (define first-point (vector-ref dual-vertices (vector-ref triangle 0)))
+                                     (define second-point (vector-ref dual-vertices (vector-ref triangle 1)))
+                                     (define third-point (vector-ref dual-vertices (vector-ref triangle 2)))
+                                     (> (vec3-dot (vec3-cross (vec3- second-point first-point)
+                                                              (vec3- third-point first-point))
+                                                  normal)
+                                        tolerance))
+                                   (cons oriented-ring face-triangles))])])])]))
+
+(define (ring-normal points)
+  (define raw
+    (for/fold ([sum origin3]) ([point (in-list points)]
+                              [next (in-list (append (cdr points) (list (car points))))])
+      (vec3+ sum (vec3-cross point next))))
+  (and (positive? (vec3-length raw)) (vec3-normalize raw)))
+
+(define (projected-ear-triangulation points tolerance)
+  (let loop ([remaining (build-list (length points) values)] [triangles '()])
+    (cond [(= (length remaining) 3) (reverse (cons remaining triangles))]
+          [else
+           (define ear
+             (for/first ([position (in-range (length remaining))]
+                         #:when (projected-ear? points remaining position tolerance))
+               position))
+           (and ear
+                (let ([previous (list-ref remaining (modulo (sub1 ear) (length remaining)))]
+                      [current (list-ref remaining ear)]
+                      [next (list-ref remaining (modulo (add1 ear) (length remaining)))])
+                  (loop (append (take remaining ear) (drop remaining (add1 ear)))
+                        (cons (list previous current next) triangles))))])))
+
+(define (projected-ear? points indexes position tolerance)
+  (define count (length indexes))
+  (define previous (list-ref indexes (modulo (sub1 position) count)))
+  (define current (list-ref indexes position))
+  (define next (list-ref indexes (modulo (add1 position) count)))
+  (define first-point (list-ref points previous))
+  (define second-point (list-ref points current))
+  (define third-point (list-ref points next))
+  (and (> (cross2 first-point second-point third-point) tolerance)
+       (for/and ([index (in-list indexes)]
+                 #:unless (memv index (list previous current next)))
+         (not (point-in-projected-triangle? (list-ref points index)
+                                            first-point second-point third-point tolerance)))))
+
+(define (point-in-projected-triangle? point first second third tolerance)
+  (and (>= (cross2 first second point) (- tolerance))
+       (>= (cross2 second third point) (- tolerance))
+       (>= (cross2 third first point) (- tolerance))))
+
+(define (projected-adjacent-duplicates? points tolerance)
+  (for/or ([point (in-list points)]
+           [next (in-list (append (cdr points) (list (car points))))])
+    (<= (squared-distance2 point next) (* tolerance tolerance))))
+
+(define (projected-self-intersecting? points tolerance)
+  (define count (length points))
+  (for/or ([index (in-range count)])
+    (for/or ([other (in-range (add1 index) count)]
+             #:unless (or (= other (add1 index))
+                          (and (zero? index) (= other (sub1 count)))))
+      (proper-projected-segment-crossing?
+       (list-ref points index) (list-ref points (modulo (add1 index) count))
+       (list-ref points other) (list-ref points (modulo (add1 other) count))
+       tolerance))))
+
+(define (proper-projected-segment-crossing? first-a second-a first-b second-b tolerance)
+  (define a-first (cross2 first-a second-a first-b))
+  (define a-second (cross2 first-a second-a second-b))
+  (define b-first (cross2 first-b second-b first-a))
+  (define b-second (cross2 first-b second-b second-a))
+  (and (< (* a-first a-second) 0) (< (* b-first b-second) 0)
+       (> (abs a-first) tolerance) (> (abs a-second) tolerance)
+       (> (abs b-first) tolerance) (> (abs b-second) tolerance)))
+
+(define (polygon-signed-area points)
+  (/ (for/sum ([point (in-list points)]
+               [next (in-list (append (cdr points) (list (car points))))])
+       (- (* (vector-ref point 0) (vector-ref next 1))
+          (* (vector-ref point 1) (vector-ref next 0))))
+     2))
+
+(define (squared-distance2 first second)
+  (define dx (- (vector-ref first 0) (vector-ref second 0)))
+  (define dy (- (vector-ref first 1) (vector-ref second 1)))
+  (+ (* dx dx) (* dy dy)))
+
+(define (cross2 first second third)
+  (- (* (- (vector-ref second 0) (vector-ref first 0))
+        (- (vector-ref third 1) (vector-ref first 1)))
+     (* (- (vector-ref second 1) (vector-ref first 1))
+        (- (vector-ref third 0) (vector-ref first 0)))))
+
+(define (argmin score values)
+  (for/fold ([best (car values)]) ([value (in-list (cdr values))])
+    (if (< (score value) (score best)) value best)))
 
 
 ;;;

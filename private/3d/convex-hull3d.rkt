@@ -66,6 +66,9 @@
 ; convex-hull3d : (or/c list? vector?)
 ;   [#:id symbol?]
 ;   [#:tolerance (or/c 'automatic nonnegative-finite-real?)]
+;   [#:merge-tolerance (or/c #f nonnegative-finite-real?)]
+;   [#:orientation-tolerance (or/c #f nonnegative-finite-real?)]
+;   [#:coplanar-tolerance (or/c #f nonnegative-finite-real?)]
 ;   [#:coplanar (or/c 'merge 'triangulate)]
 ;   [#:on-degenerate (or/c 'report 'error)]
 ;   -> convex-hull3d-result?
@@ -74,10 +77,14 @@
 ;; source point (lexicographic/source-index tie break). This makes face order
 ;; and provenance deterministic without depending on hash iteration or thread
 ;; timing. Exact inputs use exact orientation determinants; inexact inputs use
-;; the reported scale-aware tolerance.
+;; the reported scale-aware orientation tolerance. `#:tolerance` remains the
+;; legacy shorthand for supplying all three explicit tolerances.
 (define (convex-hull3d points
                        #:id [id 'hull]
                        #:tolerance [tolerance 'automatic]
+                       #:merge-tolerance [merge-tolerance #f]
+                       #:orientation-tolerance [orientation-tolerance #f]
+                       #:coplanar-tolerance [coplanar-tolerance #f]
                        #:coplanar [coplanar 'merge]
                        #:on-degenerate [on-degenerate 'report])
   (unless (symbol? id)
@@ -87,15 +94,39 @@
     (raise-argument-error 'convex-hull3d
                           "'automatic or a nonnegative finite real tolerance"
                           tolerance))
+  (define (check-optional-tolerance keyword value)
+    (unless (or (not value)
+                (and (finite-real? value) (>= value 0)))
+      (raise-argument-error 'convex-hull3d
+                            (format "#f or a nonnegative finite real for ~a" keyword)
+                            value)))
+  (check-optional-tolerance '#:merge-tolerance merge-tolerance)
+  (check-optional-tolerance '#:orientation-tolerance orientation-tolerance)
+  (check-optional-tolerance '#:coplanar-tolerance coplanar-tolerance)
   (unless (memq coplanar '(merge triangulate))
     (raise-argument-error 'convex-hull3d "(or/c 'merge 'triangulate)" coplanar))
   (unless (memq on-degenerate '(report error))
     (raise-argument-error 'convex-hull3d "(or/c 'report 'error)" on-degenerate))
-  (define-values (unique-points duplicate-count) (normalize-points points tolerance))
-  (define tolerance-data (derive-tolerances unique-points tolerance))
-  (define linear-tolerance (first tolerance-data))
+  ;; A numeric legacy tolerance means exactly what it used to mean: use it for
+  ;; all three policies.  Explicit policy keywords override just their stage.
+  (define effective-merge-tolerance
+    (cond [merge-tolerance merge-tolerance]
+          [(eq? tolerance 'automatic) 0]
+          [else tolerance]))
+  (define requested-orientation-tolerance
+    (cond [orientation-tolerance orientation-tolerance]
+          [else tolerance]))
+  (define-values (unique-points duplicate-count)
+    (normalize-points points effective-merge-tolerance))
+  (define tolerance-data
+    (derive-tolerances unique-points requested-orientation-tolerance))
+  (define effective-orientation-tolerance (first tolerance-data))
   (define volume-tolerance (second tolerance-data))
   (define exact-input? (third tolerance-data))
+  (define effective-coplanar-tolerance
+    (cond [coplanar-tolerance coplanar-tolerance]
+          [(eq? tolerance 'automatic) effective-orientation-tolerance]
+          [else tolerance]))
   (define uncertain-count (box 0))
   (define (classify-volume value)
     (cond [(positive? value)
@@ -106,35 +137,36 @@
                (begin (unless exact-input? (set-box! uncertain-count (add1 (unbox uncertain-count)))) 0))]
           [else 0]))
   (define dimension-data
-    (affine-dimension unique-points linear-tolerance classify-volume))
+    (affine-dimension unique-points effective-orientation-tolerance classify-volume))
   (define dimension (first dimension-data))
   (define anchors (second dimension-data))
   (when (and (< dimension 3) (eq? on-degenerate 'error))
     (raise-arguments-error 'convex-hull3d
                            "a full-dimensional point set under the requested tolerance"
                            "dimension" dimension
-                           "tolerance" linear-tolerance))
+                           "tolerance" effective-orientation-tolerance))
   (define common-diagnostics
     (hasheq 'algorithm 'deterministic-incremental-quickhull
             'input-point-count (input-point-count points)
             'unique-point-count (length unique-points)
             'duplicate-point-count duplicate-count
-            'merge-tolerance (if (eq? tolerance 'automatic) 0 tolerance)
-            'orientation-tolerance linear-tolerance
+            'merge-tolerance effective-merge-tolerance
+            'orientation-tolerance effective-orientation-tolerance
             'volume-tolerance volume-tolerance
             'orientation-policy (if exact-input?
                                     'exact-determinants
                                     'scale-aware-tolerance)
             'uncertain-orientation-count (unbox uncertain-count)
+            'coplanar-tolerance effective-coplanar-tolerance
             'coplanar-policy coplanar))
   (cond [(zero? dimension)
          (degenerate-result id 0 unique-points anchors common-diagnostics)]
         [(= dimension 1)
          (degenerate-result id 1 unique-points anchors common-diagnostics)]
         [(= dimension 2)
-         (planar-result id unique-points anchors linear-tolerance common-diagnostics)]
+         (planar-result id unique-points anchors effective-orientation-tolerance common-diagnostics)]
         [else
-         (solid-result id unique-points anchors volume-tolerance linear-tolerance
+         (solid-result id unique-points anchors volume-tolerance effective-coplanar-tolerance
                        classify-volume coplanar common-diagnostics uncertain-count)]))
 
 
@@ -156,36 +188,61 @@
 
 (define (input-point-count points) (length (input-point-list points)))
 
-(define (normalize-points points requested-tolerance)
+(define (normalize-points points merge-tolerance)
+  ;; Mergeability is transitive: if a is close to b and b is close to c, all
+  ;; three belong to one cluster even if a and c are farther apart.  Work in
+  ;; canonical geometry/source-index order and union by lowest index, which
+  ;; makes the representative and its provenance independent of input order.
   (define ordered
-    (sort (for/list ([point (in-list (input-point-list points))] [index (in-naturals)])
-            (hull-source-point3d point (list index)))
-          hull-source-point3d<?))
-  (define merge-tolerance (if (eq? requested-tolerance 'automatic) 0 requested-tolerance))
-  (define clusters '())
-  (for ([candidate (in-list ordered)])
-    (define existing
-      (for/first ([cluster (in-list clusters)]
-                  #:when (or (equal? (hull-source-point3d-position candidate)
-                                      (hull-source-point3d-position cluster))
-                              (and (positive? merge-tolerance)
-                                   (<= (vec3-distance (hull-source-point3d-position candidate)
-                                                       (hull-source-point3d-position cluster))
-                                       merge-tolerance))))
-        cluster))
-    (cond [existing
-           (set! clusters
-                 (for/list ([cluster (in-list clusters)])
-                   (if (eq? cluster existing)
-                       (hull-source-point3d
-                        (hull-source-point3d-position cluster)
-                        (sort (append (hull-source-point3d-source-indices cluster)
-                                      (hull-source-point3d-source-indices candidate))
-                              <))
-                       cluster)))]
-          [else (set! clusters (append clusters (list candidate)))]))
-  (values (sort clusters hull-source-point3d<?)
-          (- (length ordered) (length clusters))))
+    (list->vector
+     (sort (for/list ([point (in-list (input-point-list points))] [index (in-naturals)])
+             (hull-source-point3d point (list index)))
+           hull-source-point3d<?)))
+  (define count (vector-length ordered))
+  (define parents (build-vector count values))
+  (define (find-root index)
+    (define parent (vector-ref parents index))
+    (cond [(= parent index) index]
+          [else
+           (define root (find-root parent))
+           (vector-set! parents index root)
+           root]))
+  (define (union! first second)
+    (define first-root (find-root first))
+    (define second-root (find-root second))
+    (unless (= first-root second-root)
+      (if (< first-root second-root)
+          (vector-set! parents second-root first-root)
+          (vector-set! parents first-root second-root))))
+  (define (mergeable? first second)
+    (define first-position
+      (hull-source-point3d-position (vector-ref ordered first)))
+    (define second-position
+      (hull-source-point3d-position (vector-ref ordered second)))
+    (or (equal? first-position second-position)
+        (and (positive? merge-tolerance)
+             (<= (vec3-distance first-position second-position) merge-tolerance))))
+  (for* ([first (in-range count)]
+         [second (in-range (add1 first) count)]
+         #:when (mergeable? first second))
+    (union! first second))
+  (define member-indices-by-root (make-hash))
+  (for ([index (in-range count)])
+    (hash-update! member-indices-by-root (find-root index)
+                  (lambda (members) (cons index members))
+                  '()))
+  (define clusters
+    (for/list ([root (in-list (sort (hash-keys member-indices-by-root) <))])
+      (define source-indices
+        (sort
+         (apply append
+                (for/list ([member (in-list (hash-ref member-indices-by-root root))])
+                  (hull-source-point3d-source-indices (vector-ref ordered member))))
+         <))
+      (hull-source-point3d
+       (hull-source-point3d-position (vector-ref ordered root))
+       source-indices)))
+  (values clusters (- count (length clusters))))
 
 (define (derive-tolerances points requested-tolerance)
   (define positions (map hull-source-point3d-position points))
@@ -385,7 +442,7 @@
 ;;; Three-dimensional incremental hull
 ;;;
 
-(define (solid-result id all-points anchors volume-tolerance linear-tolerance
+(define (solid-result id all-points anchors volume-tolerance coplanar-tolerance
                       classify-volume coplanar diagnostics uncertain-count)
   (define point-vector (vector->immutable-vector (list->vector all-points)))
   (define (point-at index) (hull-source-point3d-position (vector-ref point-vector index)))
@@ -422,7 +479,7 @@
     (faces->mesh id point-vector final-faces))
   (define groups
     (if (eq? coplanar 'merge)
-        (coplanar-groups mesh all-points linear-tolerance)
+        (coplanar-groups mesh all-points coplanar-tolerance)
         #()))
   (convex-hull3d-result
    3 mesh (source-index-vector hull-points) groups

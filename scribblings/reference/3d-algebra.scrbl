@@ -528,13 +528,20 @@ fabricated three-dimensional solid.}
 @defproc[(convex-hull3d [points (or/c vector? list?)]
                          [#:id id symbol? 'hull]
                          [#:tolerance tolerance (or/c 'automatic nonnegative-real?) 'automatic]
+                         [#:merge-tolerance merge-tolerance (or/c #f nonnegative-real?) #f]
+                         [#:orientation-tolerance orientation-tolerance (or/c #f nonnegative-real?) #f]
+                         [#:coplanar-tolerance coplanar-tolerance (or/c #f nonnegative-real?) #f]
                          [#:coplanar coplanar (or/c 'merge 'triangulate) 'merge]
                          [#:on-degenerate on-degenerate (or/c 'report 'error) 'report])
          convex-hull3d-result?]{Builds a deterministic convex hull. It retains
-original source indexes, merges exact duplicates, and also merges near points
-when a numeric @racket[tolerance] is supplied. The automatic tolerance merges
-only exact duplicates; it uses a scale-aware orientation threshold for inexact
-classification. Exact coordinates use exact determinant signs.
+original source indexes. @racket[#:merge-tolerance],
+@racket[#:orientation-tolerance], and @racket[#:coplanar-tolerance] control
+point clustering, degeneracy/orientation classification, and supporting-face
+grouping independently. A numeric legacy @racket[#:tolerance] supplies all
+three unless an explicit policy keyword overrides that stage. The automatic
+merge policy accepts only exact duplicates; automatic orientation uses a
+scale-aware threshold for inexact classification. Exact coordinates use exact
+determinant signs.
 
 The next outside point is chosen by greatest positive face distance, then
 stable coordinate/source order. @racket['merge] returns U-2 polygonal
@@ -548,8 +555,8 @@ count.}
 computational-geometry repair system: it does not resolve self-intersecting
 input, and inexact near-degenerate cases use the recorded scale-aware policy
 instead of a bigfloat/exact-predicate fallback. Near-duplicate clustering with
-an explicit tolerance is deterministic and representative-based; choose that
-tolerance deliberately. Concave hulls, Delaunay triangulation, and arbitrary
+an explicit tolerance is deterministic and transitive: a chain of close points
+forms one cluster even when its endpoints are not directly close. Concave hulls, Delaunay triangulation, and arbitrary
 polygon-with-hole operations are outside this stage.
 
 @subsection{Polyhedral duals}
@@ -566,7 +573,9 @@ vertex. Its render-triangle indexes refer to the mesh in the enclosing result.}
              [primal-vertex->dual-face vector?] [diagnostics hash?])
             #:transparent]{An immutable dual mesh and explicit primal-to-dual
 correspondence. A @racket[#f] edge mapping denotes a render diagonal inside one
-grouped primal polygonal face, which has no mathematical dual edge.}
+grouped primal polygonal face, which has no mathematical dual edge. Diagnostics
+contain @racket['rejected-render-faces] for polygonal cycles that are preserved
+as topology but cannot be safely triangulated for rendering.}
 @defproc[(combinatorial-dual3d [complex polyhedral-complex3d?]
                                 [#:id id symbol? 'combinatorial-dual])
          dual-polyhedron3d-result?]{Creates one dual vertex at each primal
@@ -585,8 +594,9 @@ polar dual.}
 
 @bold{Limitations.} Duals currently require simple planar U-2 faces and a
 closed orientable manifold. The combinatorial centroid embedding may overlap or
-self-intersect for a nonconvex polyhedron; it is intentionally data for later
-diagram/matching operations, not a convexity assertion. The polar operation has
+self-intersect for a nonconvex polyhedron; its exact polygonal cycle is still
+returned, but unsafe projected cycles are omitted from the render mesh and
+reported in diagnostics. The polar operation has
 no automatic centre-finding or nonconvex repair policy.
 
 @subsection{Schlegel diagrams and polyhedral nets}
