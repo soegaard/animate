@@ -191,8 +191,7 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: >-
-          RACKET="$(command -v racket)" &&
-          GRACKET="$(dirname "$RACKET")/gracket" &&
+          GRACKET="/Applications/Racket/bin/gracket" &&
           test -x "$GRACKET" &&
           env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 "$GRACKET" -l raco/main -- test
           tests/scene-3d-p-opengl-integration-test.rkt
