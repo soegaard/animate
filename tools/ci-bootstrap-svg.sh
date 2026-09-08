@@ -8,7 +8,7 @@ set -eu
 
 racket --version
 raco pkg catalog-show svg || true
-raco pkg remove --auto --batch --scope user svg || true
-raco pkg install --auto --batch --scope user --name svg \
+raco pkg remove --auto --batch --no-docs --scope user svg || true
+raco pkg install --auto --batch --no-docs --scope user --name svg \
   https://github.com/soegaard/svg.git
 raco pkg show svg

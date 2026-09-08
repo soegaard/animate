@@ -17,6 +17,15 @@
 
 (define-runtime-path opengl-module-path "../3d/opengl.rkt")
 
+; require-opengl-integration! : -> void?
+;;   Fails a designated real-context lane when its opt-in flag did not reach
+;;   the test process; ordinary headless suite runs remain deliberately inert.
+(define (require-opengl-integration!)
+  (when (equal? (getenv "ANIMATE_OPENGL_INTEGRATION_REQUIRED") "1")
+    (unless (equal? (getenv "ANIMATE_OPENGL_INTEGRATION") "1")
+      (error 'scene-3d-p-opengl-integration-test
+             "the required ANIMATE_OPENGL_INTEGRATION=1 flag was not received"))))
+
 (define default-test-camera
   (perspective-camera3d #:position (vec3 4 3 7) #:look-at origin3
                         #:vertical-field-of-view (/ pi 5)))
@@ -112,6 +121,9 @@
     (displayln (list label summary))))
 
 (module+ test
+; CI sets the companion requirement flag.  Thus a shell/environment error
+; cannot turn the real-context lane into a successful zero-test skip.
+  (require-opengl-integration!)
   (when (equal? (getenv "ANIMATE_OPENGL_INTEGRATION") "1")
     (define make-renderer (dynamic-require opengl-module-path 'opengl-renderer3d))
     (define renderer? (dynamic-require opengl-module-path 'opengl-renderer3d?))
@@ -129,6 +141,12 @@
        (check-true (renderer? renderer))
        (check-eq? (renderer3d-id renderer) 'opengl-racket)
        (check-true (hash? (renderer-info renderer)))
+; Construction succeeded with the default 'error fallback and this
+; context probe carries the implementation's actual GL version.  It
+; therefore rejects both software fallback and a merely-loadable
+; backend with no live context.
+       (check-true (pair? (hash-ref (renderer-info renderer) 'version #f)))
+       (check-true (string? (hash-ref (renderer-info renderer) 'renderer #f)))
        (define request (view3d->render3d-request (test-view) 128 96))
        (define preparation (renderer3d-prepare renderer request))
        (define first (renderer3d-render renderer preparation request))
