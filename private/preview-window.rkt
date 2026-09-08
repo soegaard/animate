@@ -17,6 +17,7 @@
          "affine-transform.rkt"
          "authoring-timeline.rkt"
          "camera.rkt"
+         "color-style.rkt"
          "frame-renderer.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
@@ -96,6 +97,54 @@
               (formula-assembly-visual? (car value))
               (formula-source-match? (cdr value))
               (cdr value)))))
+
+;; Inspector rows explain a rendered scene to an author; they are not a
+;; serialization format.  In particular, an inexact number should not expose
+;; the harmless binary rounding tail from a timing, a ray pick, or a lighting
+;; calculation.  Keep exact authored values (such as `2/5`) exact, while
+;; presenting measured values to four decimal places.
+(define (inspector-number->string value)
+  (if (and (real? value) (inexact? value) (finite-real? value))
+      (number->string (/ (round (* value 10000.0)) 10000.0))
+      (format "~a" value)))
+
+(define (inspector-value->string value)
+  (cond
+    [(not value) "none"]
+    [(string? value) value]
+    [(symbol? value) (symbol->string value)]
+    [(rgba-color? value)
+     (format "rgba(~a, ~a, ~a, ~a)"
+             (inspector-number->string (rgba-color-red value))
+             (inspector-number->string (rgba-color-green value))
+             (inspector-number->string (rgba-color-blue value))
+             (inspector-number->string (rgba-color-alpha value)))]
+    [(vec2? value)
+     (format "(~a, ~a)"
+             (inspector-number->string (vec2-x value))
+             (inspector-number->string (vec2-y value)))]
+    [(vec3? value)
+     (format "(~a, ~a, ~a)"
+             (inspector-number->string (vec3-x value))
+             (inspector-number->string (vec3-y value))
+             (inspector-number->string (vec3-z value)))]
+    [(vector? value)
+     (format "(~a)"
+             (string-join (for/list ([entry (in-vector value)])
+                            (inspector-value->string entry))
+                          ", "))]
+    [(list? value)
+     (format "(~a)" (string-join (map inspector-value->string value) ", "))]
+    [(hash? value)
+     (format "{~a}"
+             (string-join
+              (for/list ([key (in-list (sort (hash-keys value)
+                                          string<?
+                                          #:key (lambda (entry) (format "~a" entry))))])
+                (format "~a: ~a" key
+                        (inspector-value->string (hash-ref value key))))
+              ", "))]
+    [else (inspector-number->string value)]))
 
 (define (source-character-color formula selected-match index)
   (define mapping (formula-source-map formula))
@@ -1400,6 +1449,26 @@
   ;; an arbitrary rendered leaf.
   (define inspector-source-selection-box (box #f))
   (define inspector-section-choice #f)
+  (define copy-selection-box (box #f))
+  (define copy-inspector-action-box (box #f))
+  (define select-inspector-source-unit-box (box #f))
+  ;; `list-box%` may invoke its callback while it is being constructed.  The
+  ;; final updater is installed only after every dependent button exists.
+  (define inspector-action-updater-box (box #f))
+  ;; Put the selector before the potentially tall inspector body.  A footer
+  ;; beneath a long list could be below the initial viewport, and native choice
+  ;; menus near the window bottom do not have enough room to show every
+  ;; section.  The action buttons may still be added to this row later.
+  (define inspector-footer
+    (new horizontal-panel% [parent outer] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  (set! inspector-section-choice
+        (new choice% [parent inspector-footer] [label "Inspector section"] [choices '()]
+             [min-width 220]
+             [callback
+              (lambda (choice _event)
+                (display-inspector-section! (send choice get-selection)))]))
+  (send inspector-section-choice show #f)
   (define inspector-panel
     (new vertical-panel% [parent outer]
          [alignment '(left top)]
@@ -1412,7 +1481,11 @@
          [min-width 640]
          [min-height 110]
          [stretchable-width #t]
-         [stretchable-height #f]))
+         [stretchable-height #f]
+         [callback
+          (lambda (_list-box _event)
+            (define updater (unbox inspector-action-updater-box))
+            (when updater (updater)))]))
   (define formula-source-label
     (new message% [parent inspector-panel]
          [label "Formula source — click a mapped character"] ))
@@ -1491,8 +1564,8 @@
               (if material
                   (format "; ~a; roughness ~a; exponent ~a"
                           (material3d-lighting material)
-                          (material3d-roughness material)
-                          (material3d-specular-exponent material))
+                          (inspector-value->string (material3d-roughness material))
+                          (inspector-value->string (material3d-specular-exponent material)))
                   ""))
             (inspector-row
              (format "~a~a~a"
@@ -1637,21 +1710,28 @@
     (define picked-material
       (and pick
            (spatial-inspection-material (spatial-pick-inspection pick))))
+    ;; Lighting rows use the same compact, human-oriented notation as camera,
+    ;; topology, and render diagnostics.  This matters most for pick-derived
+    ;; fragment vectors, which otherwise expose binary floating-point tails.
+    (define lighting-value->string inspector-value->string)
     (define (rows-for-fields fields ordered)
       (append
        (for/list ([key (in-list ordered)] #:when (hash-has-key? fields key))
-         (inspector-row (symbol->string key) (hash-ref fields key) 'info '()))
+         (inspector-row (symbol->string key)
+                        (lighting-value->string (hash-ref fields key)) 'info '()))
        (for/list ([key (in-list (sort (filter (lambda (key) (not (member key ordered)))
                                        (hash-keys fields))
                                       symbol<?))])
-         (inspector-row (symbol->string key) (hash-ref fields key) 'info '()))))
+         (inspector-row (symbol->string key)
+                        (lighting-value->string (hash-ref fields key)) 'info '()))))
     (define material-section
       (and picked-material
            (let* ([report (material3d-inspection picked-material)]
                   [fields (material-inspection3d-fields report)])
              (inspector-section
               'lighting-material "Material"
-              (cons (inspector-row "selected path" (spatial-pick-path pick) 'info '())
+              (cons (inspector-row "selected path"
+                                   (lighting-value->string (spatial-pick-path pick)) 'info '())
                     (rows-for-fields
                      fields
                      '(base-colour normal-mode lighting-model ambient diffuse specular
@@ -1671,14 +1751,14 @@
                        (define fields (light-inspection3d-fields (light3d-inspection light)))
                        (cons (inspector-row
                               (format "~a light" (light3d-id light))
-                              (hash-ref fields 'type) 'info '())
+                              (lighting-value->string (hash-ref fields 'type)) 'info '())
                              (for/list ([key (in-list
                                              '(position direction colour intensity attenuation range
                                                         inner-angle outer-angle shadow))]
                                         #:when (hash-has-key? fields key))
                                (inspector-row
                                 (format "~a ~a" (light3d-id light) key)
-                                (hash-ref fields key) 'info '())))))
+                                (lighting-value->string (hash-ref fields key)) 'info '())))))
               #f))))
     (define fragment-section
       (and view picked-material pick
@@ -1697,16 +1777,20 @@
                             (define prefix (symbol->string (fragment-light-sample3d-id sample)))
                             (list
                              (inspector-row (format "~a direction" prefix)
-                                            (fragment-light-sample3d-direction sample) 'info '())
+                                            (lighting-value->string
+                                             (fragment-light-sample3d-direction sample)) 'info '())
                              (inspector-row (format "~a attenuation / cone" prefix)
-                                            (vector (fragment-light-sample3d-attenuation sample)
-                                                    (fragment-light-sample3d-cone sample)) 'info '())
+                                            (lighting-value->string
+                                             (vector (fragment-light-sample3d-attenuation sample)
+                                                     (fragment-light-sample3d-cone sample))) 'info '())
                              (inspector-row (format "~a diffuse / specular" prefix)
-                                            (vector (fragment-light-sample3d-diffuse-energy sample)
-                                                    (fragment-light-sample3d-specular-energy sample)) 'info '())
+                                            (lighting-value->string
+                                             (vector (fragment-light-sample3d-diffuse-energy sample)
+                                                     (fragment-light-sample3d-specular-energy sample))) 'info '())
                              (inspector-row (format "~a shadow" prefix)
-                                            (vector (fragment-light-sample3d-shadow-factor sample)
-                                                    (fragment-light-sample3d-shadow-state sample))
+                                            (lighting-value->string
+                                             (vector (fragment-light-sample3d-shadow-factor sample)
+                                                     (fragment-light-sample3d-shadow-state sample)))
                                             (if (eq? (fragment-light-sample3d-shadow-state sample)
                                                      'not-sampled)
                                                 'warning
@@ -1715,21 +1799,27 @@
                   [diagnostic-rows
                    (for/list ([diagnostic (in-list
                                             (fragment-lighting-report3d-diagnostics report))])
-                     (inspector-row "shadow diagnostic" diagnostic 'warning '()))])
+                     (inspector-row "shadow diagnostic"
+                                    (lighting-value->string diagnostic) 'warning '()))])
              (inspector-section
               'lighting-fragment "Fragment probe"
               (append
-               (list (inspector-row "world point" (fragment-lighting-report3d-world-point report)
+               (list (inspector-row "world point"
+                                    (lighting-value->string
+                                     (fragment-lighting-report3d-world-point report))
                                     'info '())
                      (inspector-row "normal / view vector"
-                                    (vector (fragment-lighting-report3d-normal report)
-                                            (fragment-lighting-report3d-view-direction report))
+                                    (lighting-value->string
+                                     (vector (fragment-lighting-report3d-normal report)
+                                             (fragment-lighting-report3d-view-direction report)))
                                     'info '()))
                sample-rows
                (list (inspector-row "pre-tone-map linear colour"
-                                    (fragment-lighting-report3d-pre-tone-map report) 'info '())
+                                    (lighting-value->string
+                                     (fragment-lighting-report3d-pre-tone-map report)) 'info '())
                      (inspector-row "final sRGB colour"
-                                    (fragment-lighting-report3d-final-srgb report) 'info '()))
+                                    (lighting-value->string
+                                     (fragment-lighting-report3d-final-srgb report)) 'info '()))
                diagnostic-rows)
               #f))))
     (filter values (list material-section light-section fragment-section)))
@@ -1769,16 +1859,21 @@
                         ", "))))
          (send inspector-rows append
                (list-control-label
-                (format "~a~a: ~s~a"
+                (format "~a~a: ~a~a"
                         severity-prefix
                         (inspector-row-label row)
-                        (inspector-row-value row)
+                        (inspector-value->string (inspector-row-value row))
                         action-suffix))))
        (when (null? (inspector-section-rows section))
          (send inspector-rows append "No rows in this inspector section."))]
       [else
        (send inspector-rows append
-             "Select a Visual, or pause in a string transition, to inspect its semantics.")]))
+             "Select a Visual, or pause in a string transition, to inspect its semantics.")])
+    ;; Refresh both action visibility and enabled state after replacing the
+    ;; rows.  This procedure is first called only after the updater has been
+    ;; installed below; the list-box constructor itself uses the guarded box
+    ;; callback above.
+    (update-inspector-action-controls!))
   (define (install-inspector-document! document)
     (set-box! inspector-document-box document)
     (define formula (inspector-document-formula document))
@@ -1815,31 +1910,25 @@
       (preview-select! session #f)
       (update-selection-message!)
       (send canvas refresh)))
-  ;; The section selector and the actions all operate on the current inspector
-  ;; document.  Keep them together in a compact footer instead of leaving the
-  ;; selector alone beneath the rows it controls.
-  (define inspector-footer
-    (new horizontal-panel% [parent outer] [alignment '(center center)]
-         [stretchable-width #t] [stretchable-height #f]))
-  (set! inspector-section-choice
-        (new choice% [parent inspector-footer] [label "Inspector section"] [choices '()]
-             [min-width 220]
-             [callback
-              (lambda (choice _event)
-                (display-inspector-section! (send choice get-selection)))]))
-  (send inspector-section-choice show #f)
-  (display-inspector-section! #f)
+  ;; The section selector is above the rows it controls; add its related
+  ;; actions to that compact row after their callbacks have been defined.
   (define copy-selection
     (new button% [parent inspector-footer] [label "Copy selected path"]
          [callback
           (lambda (_button _event)
             (define session (unbox controller-box))
             (when (and session (preview-transaction-session? session))
+              (define spatial (active-spatial-pick))
               (define selection (preview-selection session))
-              (when selection
+              (cond
+                [spatial
+                 (send the-clipboard set-clipboard-string
+                       (format "'~s" (spatial-pick-path spatial)) 0)]
+                [selection
                 ;; The GUI layer owns this side effect; the headless inspector
                 ;; represents a path only as immutable data.
-                (send the-clipboard set-clipboard-string (format "~s" selection) 0))))]))
+                 (send the-clipboard set-clipboard-string (format "~s" selection) 0)])))]))
+  (set-box! copy-selection-box copy-selection)
   (define copy-inspector-action
     (new button% [parent inspector-footer] [label "Copy inspector action"]
          [callback
@@ -1865,6 +1954,7 @@
                       set-clipboard-string
                       (format "~s" (inspector-action-command action))
                       0))))]))
+  (set-box! copy-inspector-action-box copy-inspector-action)
   (define select-inspector-source-unit
     (new button% [parent inspector-footer] [label "Select mapped source unit"]
          [callback
@@ -1895,6 +1985,59 @@
                    (update-selection-message!)
                    (send canvas refresh)]
                   [_ (void)]))))]))
+  (set-box! select-inspector-source-unit-box select-inspector-source-unit)
+  ;; These actions apply only to a selected row.  Hiding absent action kinds
+  ;; keeps a 3D probe header compact instead of offering formula-only controls
+  ;; that cannot affect it.  The spatial path button deliberately switches to
+  ;; the exact mesh path after a 3D click rather than copying its outer view.
+  (define (update-inspector-action-controls!)
+    (define rows (unbox inspector-rows-box))
+    (define selected-index (send inspector-rows get-selection))
+    (define selected-row
+      (and (exact-nonnegative-integer? selected-index)
+           (< selected-index (length rows))
+           (list-ref rows selected-index)))
+    (define (any-action? predicate)
+      (for/or ([row (in-list rows)])
+        (for/or ([action (in-list (inspector-row-actions row))])
+          (and (inspector-action-enabled? action) (predicate action)))))
+    (define (selected-action? predicate)
+      (and selected-row
+           (for/or ([action (in-list (inspector-row-actions selected-row))])
+             (and (inspector-action-enabled? action) (predicate action)))))
+    (define copy-button (unbox copy-selection-box))
+    (define copy-action-button (unbox copy-inspector-action-box))
+    (define source-button (unbox select-inspector-source-unit-box))
+    (define spatial (active-spatial-pick))
+    (define session (unbox controller-box))
+    (when copy-button
+      (send copy-button set-label (if spatial "Copy spatial path" "Copy selected path"))
+      (send copy-button enable
+            (or spatial
+                (and session (preview-transaction-session? session)
+                     (preview-selection session)))))
+    (when copy-action-button
+      (send copy-action-button
+            show
+            (any-action?
+             (lambda (action)
+               (regexp-match? #rx"^copy-" (symbol->string (inspector-action-id action))))))
+      (send copy-action-button
+            enable
+            (selected-action?
+             (lambda (action)
+               (regexp-match? #rx"^copy-" (symbol->string (inspector-action-id action)))))))
+    (when source-button
+      (send source-button
+            show
+            (any-action? (lambda (action) (eq? (inspector-action-id action)
+                                                 'select-source-unit))))
+      (send source-button
+            enable
+            (selected-action? (lambda (action) (eq? (inspector-action-id action)
+                                                      'select-source-unit))))))
+  (set-box! inspector-action-updater-box update-inspector-action-controls!)
+  (display-inspector-section! #f)
   (define diagnostics-panel
     (new vertical-panel% [parent outer]
          [alignment '(left top)]
