@@ -56,6 +56,11 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
+      # The ordinary suite intentionally exercises formula construction and
+      # project/media execution. `texlive-latex-extra` supplies the
+      # `standalone` class used by tagged formulas (and pulls in the base
+      # distribution); FFmpeg is required by the project fixtures.
+      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-extra
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
@@ -74,6 +79,10 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
+      # Documentation setup and the non-OpenGL example gate instantiate
+      # tagged formulas, so their TeX class dependencies must be present here
+      # as well as in the formula/media lane.
+      - run: sudo apt-get update && sudo apt-get install -y dvisvgm texlive-latex-extra
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
@@ -92,7 +101,9 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
-      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-base
+      # Tagged formulas use `\\documentclass{standalone}`, which is packaged
+      # in texlive-latex-extra rather than texlive-latex-base.
+      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-extra
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
@@ -115,7 +126,8 @@ jobs:
       - uses: Bogdanp/setup-racket@v1.11
         with:
           version: "9.3"
-      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-base
+      # Keep this lane aligned with the full-suite formula environment.
+      - run: sudo apt-get update && sudo apt-get install -y dvisvgm ffmpeg texlive-latex-extra
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
@@ -179,6 +191,8 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: >-
-          env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 gracket -l raco/main -- test
+          GRACKET="$(racket -e '(display (build-path (path-only (find-system-path (quote exec-file))) "gracket"))')" &&
+          test -x "$GRACKET" &&
+          env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 "$GRACKET" -l raco/main -- test
           tests/scene-3d-p-opengl-integration-test.rkt
           tests/scene-3d-p-opengl-project-integration-test.rkt
