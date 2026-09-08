@@ -915,11 +915,11 @@ viewport's final tone-map policy only when storing output pixels.
 
 @racket[emission] is added after ambient, diffuse, and specular terms and is
 therefore not reduced by shadows. @racket[casts-shadow?] and
-@racket[receives-shadow?] are durable material policy. The V8 software
-renderer includes only opaque mesh instances with @racket[casts-shadow?] in a
-depth map and applies receiver policy to diffuse and specular illumination.
-Transparent surfaces, strokes, markers, and billboards do not cast; they also
-do not receive a software-map lookup in this stage.
+@racket[receives-shadow?] are durable material policy. The V8 software and V9
+OpenGL renderers include only opaque mesh instances with
+@racket[casts-shadow?] in a depth map and apply receiver policy to diffuse and
+specular illumination. Transparent surfaces, strokes, markers, and billboards
+do not cast or receive a map lookup in this stage.
 }
 @defproc[(material3d? [value any/c]) boolean?]{Recognizes a material.}
 @defproc[(material3d-color [material material3d?]) rgba-color?]{Returns base colour and alpha.}
@@ -969,8 +969,8 @@ the only accepted current value is @racket[#f].}
          directional-light3d?]{Creates an opaque directional light. Its
 direction is the direction in which illumination travels, so a normal facing
 its negation receives diffuse light. The direction is normalized. A
-@racket[directional-shadow3d] makes the software renderer produce and sample
-one depth map; the OpenGL renderer remains unavailable until V9.}
+@racket[directional-shadow3d] makes both built-in opaque renderers produce and
+sample one depth map.}
 @defproc[(point-light3d [position vec3?]
                          [#:id id symbol? 'point]
                          [#:intensity intensity nonnegative-real? 1]
@@ -994,8 +994,8 @@ one depth map; the OpenGL renderer remains unavailable until V9.}
 direction points outward; inside @racket[inner-angle] illumination is full,
 outside @racket[outer-angle] it is zero, and the interval between uses the
 fixed smoothstep falloff. Angles are radians. A @racket[spot-shadow3d] is
-sampled by the V8 software renderer; OpenGL support remains V9. Point-light
-cube shadows remain deferred, so a point light accepts only @racket[#f].}
+sampled by both built-in opaque renderers. Point-light cube shadows remain
+deferred, so a point light accepts only @racket[#f].}
 @defproc[(ambient-light3d? [value any/c]) boolean?]{Recognizes ambient light.}
 @defproc[(ambient-light3d-id [light ambient-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(ambient-light3d-intensity [light ambient-light3d?]) nonnegative-real?]{Returns ambient intensity.}
@@ -1046,13 +1046,13 @@ cube shadows remain deferred, so a point light accepts only @racket[#f].}
                              [#:far far (or/c #f positive-real?) #f]
                              [#:prepared-bounds-key prepared-bounds-key (or/c #f symbol?) #f])
          shadow-settings3d?]{Creates immutable shadow-map settings. An explicit
-@racket[bounds] is a nonempty world-space shadow region. Without it, the V8
-software renderer fits the current opaque caster bounds and records that
-direct-frame fit in its private map diagnostics; this can shimmer as casters
-move. @racket[prepared-bounds-key] is retained for stable retained-renderer
-map identity and enables directional texel-centre snapping when named. Biases
-use the published @math{depth-bias + normal-bias(1-n\cdot l)} schema;
-@racket[pcf-radius] is the square PCF-kernel radius.}
+@racket[bounds] is a nonempty world-space shadow region. Without it, both
+renderers fit the current opaque caster bounds; this direct-frame fit can
+shimmer as casters move. @racket[prepared-bounds-key] is retained for stable
+retained-renderer map identity and enables directional texel-centre snapping
+when named. Biases use the published
+@math{depth-bias + normal-bias(1-n\cdot l)} schema; @racket[pcf-radius] is the
+square PCF-kernel radius.}
 @defproc[(shadow-settings3d? [value any/c]) boolean?]{Recognizes shadow settings.}
 @defproc[(shadow-settings3d-map-size [settings shadow-settings3d?]) exact-positive-integer?]{Returns map size.}
 @defproc[(shadow-settings3d-depth-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns constant receiver-depth bias.}
@@ -1116,14 +1116,17 @@ map. Directional maps use a square orthographic fit and named prepared bounds
 snap their centre to map texels; spots use the source, outward cone, and
 near/far/range policy.}
 
-@bold{Current limitation.} V8's portable software renderer creates one
-directional or spot depth map per descriptor and multiplies only diffuse and
-specular terms by its PCF result. Ambient and emission remain unchanged.
-Only opaque mesh instances cast or receive; transparent surfaces, strokes,
-markers, billboards, and point-light cube shadows are outside this stage.
-Direct-frame fitting can shimmer, and a too-small explicit region yields
-unshadowed outside samples. The OpenGL renderer still rejects shadow requests;
-V9 owns its depth-map pass.
+@bold{Current limitation.} The V8 software and V9 OpenGL renderers create one
+directional or spot depth map per descriptor and multiply only diffuse and
+specular terms by its PCF result. Ambient and emission remain unchanged. Only
+opaque mesh instances cast or receive; transparent surfaces, strokes, markers,
+billboards, and point-light cube shadows are outside this stage. Direct-frame
+fitting can shimmer, and a too-small explicit region yields unshadowed outside
+samples. V9 caches context-owned GPU maps by eligible casters, light
+pose/settings, and bounds, deliberately excluding viewing-camera motion.
+Its depth texture uses native projection depth, so a perspective camera can
+require different numerical bias tuning from V8's positive forward-depth
+reference.
 
 @defstruct*[light-attenuation3d ([mode (or/c 'constant 'inverse-square 'polynomial)]
                                   [parameters immutable-hash?]) #:transparent]{
@@ -1162,8 +1165,8 @@ rather than approximating finite sources as directional lights.
 
 @bold{Current limitation.} The OpenGL implementation has explicit fixed
 limits of four directional, eight point, and four spot lights per lit view.
-It rejects an over-limit frame before drawing; it has no finite-light shadows
-yet.
+It rejects an over-limit frame before drawing. V9 adds directional/spot maps,
+but point-light cube shadows remain deferred.
 
 @subsection{Finite-light animation}
 
@@ -1231,11 +1234,11 @@ and flip that normal toward the viewing side for a back face. This is a fixed
 illustration policy, rather than an inferred rendering accident.
 
 @bold{Current limitation.} The software path is the deterministic conformance
-reference. The OpenGL path now evaluates matching finite-light records, but it
-has fixed four-directional/eight-point/four-spot limits, no shadows, and no
-separate persistent finite-light buffer cache. Point/spot attenuation, range,
-and cone values are fixed during a V4 animation clip; only the exposed light
-fields are animated.
+reference. The OpenGL path evaluates matching finite-light records and V9
+directional/spot shadow maps, but it has fixed four-directional/eight-point/
+four-spot light limits and no separate persistent finite-light buffer cache.
+Point/spot attenuation, range, and cone values are fixed during a V4 animation
+clip; only the exposed light fields are animated.
 
 @subsection{Colour space and final output}
 
@@ -1503,10 +1506,10 @@ For runnable examples, see @filepath{examples/3d/wireframe-cube.rkt},
 
 @bold{Current limitation:} opaque mode is a software rasterizer for filled
 triangles. It has flat, unlit, and smooth shading, depth-aware transparency,
-spatial relations, and projected labels, but no texture mapping, no specular
-response, no shadows, order-independent transparency, or 3D picking. An
-ordinary two-dimensional traversal of a spatial child is rejected: use rooted
-3D animation paths or @racket[view3d-spatial-*].
+spatial relations, projected labels, specular response, and directional/spot
+shadows. It still has no texture mapping, order-independent transparency, or
+3D picking. An ordinary two-dimensional traversal of a spatial child is
+rejected: use rooted 3D animation paths or @racket[view3d-spatial-*].
 
 @section{Semantic spatial relations and projected labels}
 
@@ -3323,8 +3326,8 @@ explicitly support at most four directional lights, eight point lights, four
 spot lights, and eight clip planes; an over-limit request raises an error
 rather than silently dropping lights. Its maximum sample count is the live GL
 limit, although a one-sample framebuffer remains available. The software
-backend supports directional and spot maps in V8; the OpenGL backend still
-rejects those descriptor requests until V9.
+backend supports directional and spot maps in V8; the OpenGL backend supports
+the same descriptor kinds in V9 through a maximum of eight cached depth maps.
 
 @defstruct*[compiled-geometry3d
             ([key any/c] [mesh mesh3d?] [local-bounds aabb3?]
@@ -3542,9 +3545,9 @@ therefore requires @racket[#:workers 1]; it does not create threaded GPU
 workers. It uses FBO readback rather than direct OpenGL preview-canvas
 composition. It supports Lambert/Blinn--Phong materials and a packed finite
 light stream with fixed limits of four directional, eight point, and four spot
-lights. The OpenGL backend still preflights and rejects V7 descriptors; V9 adds
-their GPU map pass. There is no GPU
-picking, general mesh textures, shadows, persistent
+lights. The OpenGL backend supports V9 directional/spot maps through a
+context-owned bounded depth-texture cache. There is no GPU picking, general
+mesh textures, point-light cube shadows, persistent
 mapped buffers, PBO pipelining, compute/geometry shaders, or order-independent
 transparency. The software backend remains the portable default and conformance
 reference. Compare GPU/software pixels by tolerance: opaque interiors,

@@ -167,7 +167,12 @@ camera-independent map key. SCENE-3D-V8 makes those descriptors operational in
 the software reference renderer with fitted orthographic/perspective depth
 maps, biased square PCF, and opaque-mesh cast/receive policy. Direct
 current-frame fits report their status in map diagnostics; explicit bounds or
-prepared identities avoid camera-driven movement. OpenGL maps remain V9.
+prepared identities avoid camera-driven movement. SCENE-3D-V9 gives the
+optional OpenGL renderer matching directional/spot depth-map rendering and
+explicit square PCF. Its context-owned, byte-bounded cache keys maps by
+eligible caster content, shadow-light pose/settings, and bounds—not by the
+viewing camera—so camera-only motion reuses a map. GPU comparison uses native
+projection depth, so perspective bias values may need backend-specific tuning.
 Point-light cube shadows, transparent casters/receivers, strokes, markers, and
 billboards remain outside this roadmap slice.
 SCENE-3D-V4 adds immutable timeline requests for named-light intensity,

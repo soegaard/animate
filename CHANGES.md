@@ -2,6 +2,18 @@
 
 ## Unreleased — 3D Q/R/S foundations
 
+- Added SCENE-3D-V9 OpenGL directional and spot shadows. The retained GPU
+  renderer creates context-owned depth-texture framebuffers, renders eligible
+  opaque mesh casters in a depth pass, and applies explicit square PCF only to
+  receiver diffuse/specular terms. A byte-bounded LRU owns the map resources;
+  its identity excludes the viewing camera, so camera-only motion reuses a
+  map, while caster/light/settings/bounds changes regenerate one. Hardware
+  comparison uses projection-space depth: the named bias formula is retained,
+  but perspective bias magnitudes are not numerically interchangeable with the
+  software renderer's forward-depth values. Point-light cube maps, transparent
+  casters/receivers, strokes, markers, billboards, and GPU picking remain
+  outside V9.
+
 - Added SCENE-3D-V8 software directional and spot shadow maps. The reference
   renderer now fits deterministic orthographic/perspective light cameras,
   rasterizes opaque eligible meshes into immutable positive-depth maps, and
@@ -9,25 +21,22 @@
   diffuse and Blinn--Phong specular light. Emission and ambient remain
   unchanged. Explicit world-space bounds are supported; otherwise maps report
   their direct current-frame caster fit. Transparent meshes, strokes, markers,
-  billboards, point-light cube maps, persistent shadow-map caching, and OpenGL
-  shadow rendering remain outside V8.
+  billboards, and point-light cube maps remain outside V8.
 
 - Added SCENE-3D-V7's immutable directional/spot shadow descriptors and
   settings (map size, depth/normal bias, PCF radius, explicit bounds, and a
   prepared-bound key). `prepare-shadow-bounds3d` unions opaque caster bounds
   across an explicit sampled frame range and rejects a changing shadow-light
   pose. Future map identities exclude the view camera but include caster
-  geometry/transforms/policy, light pose/settings, and prepared bounds. Both
-  the OpenGL renderer deliberately rejects these descriptors during preflight
-  until V9 implements GPU maps; point-light cube shadows remain deferred.
+  geometry/transforms/policy, light pose/settings, and prepared bounds.
+  Point-light cube shadows remain deferred.
 
 - Added SCENE-3D-V6 OpenGL finite-light evaluation. The retained GPU renderer
   now supports named point and spot lights with the same attenuation, range,
   smoothstep-cone, Lambert, and Blinn--Phong rules as the software reference.
   Its ordered packed uniforms enforce fixed limits of four directional, eight
   point, and four spot lights before drawing. Light-only frames reuse geometry
-  cache entries. The OpenGL path still has no shadows or persistent finite-light
-  buffer cache.
+  cache entries. Persistent finite-light buffer caching remains future work.
 
 - Added SCENE-3D-V5's deterministic software point and spot lighting. The
   reference rasterizer now uses perspective-correct camera-space fragment

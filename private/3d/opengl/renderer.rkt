@@ -29,6 +29,8 @@
          "../ray-plane.rkt"
          "../renderer3d.rkt"
          "../renderer3d-statistics.rkt"
+         "../shadow-map3d.rkt"
+         "../shadow3d.rkt"
          "../software-renderer3d.rkt"
          "../vec3.rkt"
          "api.rkt"
@@ -41,6 +43,8 @@
          "gl-object.rkt"
          "matrix-pack.rkt"
          "readback.rkt"
+         "shadow-cache.rkt"
+         "shadow-framebuffer.rkt"
          "shader-program.rkt"
          "stroke-pass.rkt")
 
@@ -88,7 +92,7 @@
   #:transparent)
 
 (struct opengl-renderer3d-value
-  (spec host info geometry-cache framebuffer-cache programs statistics lock released?
+  (spec host info geometry-cache framebuffer-cache shadow-cache programs statistics lock released?
         fallback-renderer fallback-diagnostic
         context-creation-milliseconds shader-compilation-milliseconds
         geometry-upload-milliseconds frames)
@@ -151,13 +155,15 @@
           'ambient-light
           'directional-light
           'point-light
-          'spot-light)
+          'spot-light
+          'directional-shadow
+          'spot-shadow)
    (hasheq 'maximum-directional-lights 4
            'maximum-point-lights 8
            'maximum-spot-lights 4
-           'maximum-shadow-lights 0
+           'maximum-shadow-lights 8
            'maximum-clip-planes 8
-           'maximum-shadow-map-size 0
+           'maximum-shadow-map-size 4096
            ;; A non-multisample framebuffer remains valid at one sample even
            ;; when GL_MAX_SAMPLES is unavailable or reports zero.
            'maximum-samples (max 1 (opengl3d-info-maximum-samples info)))
@@ -169,7 +175,7 @@
                                   'non-ambient-lights 16
                                   'clip-planes 8)
            'unsupported-features
-           '(wireframe object-id specular emission directional-shadow spot-shadow))))
+           '(wireframe object-id specular emission))))
 
 ; opengl-renderer3d : [opengl-renderer3d-spec?] -> renderer3d?
 ;; The default `#:fallback 'error` intentionally makes an explicit OpenGL
@@ -182,7 +188,7 @@
         (lambda (exception)
           (if (eq? (opengl-renderer3d-spec-value-fallback spec) 'software)
               (opengl-renderer3d-value
-               spec #f #f #f #f #f (make-renderer3d-statistics-state)
+               spec #f #f #f #f #f #f (make-renderer3d-statistics-state)
                (make-semaphore 1) #f (retained-software-renderer3d)
                (format "OpenGL unavailable; explicit software fallback: ~a"
                        (exn-message exception))
@@ -211,6 +217,8 @@
      (make-gl-geometry-cache
       (* (opengl-renderer3d-spec-value-cache-megabytes spec) 1024 1024))
      (make-gl-framebuffer-cache)
+     (make-gl-shadow-cache
+      #:max-bytes (* (opengl-renderer3d-spec-value-cache-megabytes spec) 1024 1024))
      programs
      (make-renderer3d-statistics-state)
      (make-semaphore 1) #f #f #f
@@ -262,6 +270,10 @@
       'framebuffer-cache
       (if (opengl-renderer3d-value-framebuffer-cache renderer)
           (gl-framebuffer-cache-statistics (opengl-renderer3d-value-framebuffer-cache renderer))
+          (hasheq))
+      'shadow-cache
+      (if (opengl-renderer3d-value-shadow-cache renderer)
+          (gl-shadow-cache-statistics (opengl-renderer3d-value-shadow-cache renderer))
           (hasheq))))))
 
 (define (opengl-renderer3d-reset-statistics! renderer)
@@ -287,7 +299,10 @@
               (gl-context-host-call
                host
                (lambda ()
-                 (gl-geometry-cache-clear! (opengl-renderer3d-value-geometry-cache renderer))))
+                 (gl-geometry-cache-clear! (opengl-renderer3d-value-geometry-cache renderer))
+                 (gl-shadow-cache-clear/current!
+                  (opengl-renderer3d-value-shadow-cache renderer)
+                  (lambda (target) (gl-shadow-target-delete/current! target host)))))
               (gl-framebuffer-cache-clear!
                (opengl-renderer3d-value-framebuffer-cache renderer) host)
               (for ([program (in-hash-values (opengl-renderer3d-value-programs renderer))])
@@ -312,6 +327,8 @@
                                       (shader-path "mesh-lit.frag"))
           'depth (make-gl-shader-program host (shader-path "mesh.vert")
                                         (shader-path "depth.frag"))
+          'shadow (make-gl-shader-program host (shader-path "shadow.vert")
+                                          (shader-path "shadow.frag"))
           'stroke (make-gl-shader-program host (shader-path "stroke.vert")
                                          (shader-path "stroke.frag"))
           'billboard (make-gl-shader-program
@@ -437,11 +454,17 @@
                host
                (lambda ()
                  (ensure-geometry-resources/current! renderer compiled)
+                 ;; The map pass is intentionally before the main framebuffer
+                 ;; initialization. It owns its depth-only FBO and restores
+                 ;; colour/depth/cull state before this ordinary frame begins.
+                 (define shadow-samples
+                   (prepare-gl-shadow-maps/current! renderer compiled frame-spec))
                  (initialize-frame/current! target host compiled)
                  (define-values (opaque transparent depth-only)
                    (partition-instances compiled))
                  (for ([instance (in-list opaque)])
-                   (draw-instance/current! renderer compiled frame-spec instance #f))
+                   (draw-instance/current! renderer compiled frame-spec instance #f
+                                           #:shadow-samples shadow-samples))
                  (for ([instance (in-list depth-only)])
                    (draw-instance/current! renderer compiled frame-spec instance #t))
                  (draw-stroke-batches/current! renderer stroke-batches 'hidden)
@@ -597,6 +620,155 @@
           [else (set! transparent (append transparent (list instance)))]))
   (values opaque transparent depth-only))
 
+;; An entry stays valid across main-camera motion because its key contains only
+;; depth-map inputs: eligible caster geometry/placement/policy, shadow-light
+;; pose/settings, and the selected world-space bounds. The target itself is
+;; owned by the bounded cache and therefore never enters an authored view.
+(struct gl-shadow-sample (light-id target camera settings) #:transparent)
+
+(define (prepare-gl-shadow-maps/current! renderer compiled frame-spec)
+  (define lights (effective-frame-lights frame-spec))
+  (define caster-bounds (compiled-shadow-caster-bounds compiled))
+  (cond
+    [(aabb3-empty? caster-bounds) '()]
+    [else
+     (define descriptors
+       (filter (lambda (light) (light3d-shadow light)) lights))
+     (unless (<= (length descriptors) 8)
+       (raise-arguments-error 'opengl-renderer3d
+                              "at most eight directional/spot shadow maps"
+                              "shadow-light-count" (length descriptors)))
+     (for/list ([light (in-list descriptors)])
+       (define shadow (light3d-shadow light))
+       (define settings (shadow3d-settings shadow))
+       (define bounds (or (shadow-settings3d-bounds settings) caster-bounds))
+       (define camera (shadow-light-camera3d light settings bounds))
+       (define key (opengl-shadow-map-key compiled light settings bounds))
+       (define cache (opengl-renderer3d-value-shadow-cache renderer))
+       (define map-size (shadow-settings3d-map-size settings))
+       (define-values (entry _hit?)
+         (gl-shadow-cache-ensure/current!
+          cache key (* map-size map-size 4)
+          (lambda ()
+            (define target (make-gl-shadow-target/current!
+                            (opengl-renderer3d-value-host renderer) map-size))
+            (with-handlers
+                ([exn? (lambda (exception)
+                         (gl-shadow-target-delete/current!
+                          target (opengl-renderer3d-value-host renderer))
+                         (raise exception))])
+              (render-gl-shadow-map/current! renderer compiled camera target)
+              target))
+          (lambda (target)
+            (gl-shadow-target-delete/current! target
+                                              (opengl-renderer3d-value-host renderer)))))
+       (gl-shadow-sample (light3d-id light) (gl-shadow-cache-entry-target entry)
+                         camera settings))]))
+
+(define (effective-frame-lights frame-spec)
+  (if (null? (frame3d-spec-lights frame-spec))
+      default-lights3d
+      (frame3d-spec-lights frame-spec)))
+
+(define (compiled-shadow-caster-bounds compiled)
+  (define by-key (geometry-table compiled))
+  (for/fold ([result aabb3-empty])
+            ([instance (in-vector (compiled-view3d-instances compiled))])
+    (define geometry (hash-ref by-key (compiled-instance3d-geometry-key instance)))
+    (if (shadow-caster-instance? instance geometry)
+        (aabb3-union
+         result
+         (aabb3-transform (compiled-geometry3d-local-bounds geometry)
+                          (compiled-instance3d-world-transform instance)))
+        result)))
+
+(define (shadow-caster-instance? instance geometry)
+  (and (material3d-casts-shadow? (compiled-instance3d-material instance))
+       (instance-opaque? instance geometry)))
+
+(define (opengl-shadow-map-key compiled light settings bounds)
+  (vector-immutable
+   'animate-opengl-shadow-map-v1
+   (for/list ([instance (in-vector (compiled-view3d-instances compiled))])
+     (define material (compiled-instance3d-material instance))
+     (vector-immutable
+      (compiled-instance3d-geometry-key instance)
+      (compiled-instance3d-world-transform instance)
+      (compiled-instance3d-clip-planes instance)
+      (compiled-instance3d-surface-mode instance)
+      (compiled-instance3d-opacity instance)
+      (material3d-casts-shadow? material)
+      (material3d-receives-shadow? material)
+      (material3d-double-sided? material)
+      (rgba-color-alpha (material3d-color material))))
+   (if (directional-light3d? light)
+       (vector-immutable 'directional (directional-light3d-direction light))
+       (vector-immutable 'spot (spot-light3d-position light)
+                         (spot-light3d-direction light)
+                         (spot-light3d-range light)
+                         (spot-light3d-outer-angle light)))
+   settings bounds))
+
+(define (render-gl-shadow-map/current! renderer compiled camera target)
+  (define host (opengl-renderer3d-value-host renderer))
+  (gl-shadow-target-bind-draw/current! target host)
+  (glDisable GL_SCISSOR_TEST)
+  (glColorMask #f #f #f #f)
+  (glEnable GL_DEPTH_TEST)
+  (glDepthFunc GL_LEQUAL)
+  (glDepthMask #t)
+  (glDisable GL_BLEND)
+  (glEnable GL_CULL_FACE)
+  (glCullFace GL_BACK)
+  (glFrontFace GL_CCW)
+  (glEnable GL_POLYGON_OFFSET_FILL)
+  (glPolygonOffset 1.0 1.0)
+  (glClear (bitwise-ior GL_DEPTH_BUFFER_BIT))
+  (define map-frame (frame3d-spec camera '()
+                                  (gl-shadow-target-size target)
+                                  (gl-shadow-target-size target)))
+  (define by-key (geometry-table compiled))
+  (for ([instance (in-vector (compiled-view3d-instances compiled))])
+    (define geometry (hash-ref by-key (compiled-instance3d-geometry-key instance)))
+    (when (shadow-caster-instance? instance geometry)
+      (draw-shadow-instance/current! renderer compiled map-frame instance)))
+  ;; The main pass explicitly initializes all state it uses, but resetting the
+  ;; exceptional colour mask and polygon offset here keeps the depth pass safe
+  ;; for any future intermediate pass as well.
+  (glDisable GL_POLYGON_OFFSET_FILL)
+  (glColorMask #t #t #t #t)
+  (glBindVertexArray 0)
+  (glUseProgram 0)
+  (glBindFramebuffer GL_FRAMEBUFFER 0))
+
+(define (draw-shadow-instance/current! renderer compiled frame-spec instance)
+  (define host (opengl-renderer3d-value-host renderer))
+  (define geometry
+    (hash-ref (geometry-table compiled) (compiled-instance3d-geometry-key instance)))
+  (define material (compiled-instance3d-material instance))
+  (define variant
+    (packed-geometry-variant-for (compiled-geometry3d-mesh geometry)
+                                 (material3d-shading material)))
+  (define entry
+    (hash-ref (gl-geometry-cache-entries (opengl-renderer3d-value-geometry-cache renderer))
+              (cons (compiled-geometry3d-key geometry) variant)))
+  (gl-resource-check-current! (gl-geometry-entry-vao entry) host)
+  (define program (hash-ref (opengl-renderer3d-value-programs renderer) 'shadow))
+  (glUseProgram (gl-shader-program-id program))
+  (uniform-mat4! program "model" (affine3->gl-matrix (compiled-instance3d-world-transform instance)))
+  (uniform-mat4! program "viewProjection"
+                 (camera3d-view-projection-matrix (frame3d-spec-camera frame-spec) 1))
+  (upload-clip-uniforms/current! program (compiled-instance3d-clip-planes instance))
+  (if (material3d-double-sided? material)
+      (glDisable GL_CULL_FACE)
+      (glEnable GL_CULL_FACE))
+  (glBindVertexArray (gl-resource-id (gl-geometry-entry-vao entry)))
+  (if (gl-geometry-entry-index-buffer entry)
+      (glDrawElements GL_TRIANGLES (gl-geometry-entry-index-count entry) GL_UNSIGNED_INT 0)
+      (glDrawArrays GL_TRIANGLES 0 (gl-geometry-entry-index-count entry)))
+  (glBindVertexArray 0)
+  (glUseProgram 0))
+
 (define (instance-opaque? instance geometry)
   (define color (material3d-color (compiled-instance3d-material instance)))
   (and (= (compiled-instance3d-opacity instance) 1)
@@ -666,7 +838,8 @@
     (hash-ref (geometry-table compiled) (compiled-instance3d-geometry-key instance)))
   (vector-length (mesh3d-triangles (compiled-geometry3d-mesh geometry))))
 
-(define (draw-instance/current! renderer compiled frame-spec instance depth-only?)
+(define (draw-instance/current! renderer compiled frame-spec instance depth-only?
+                                #:shadow-samples [shadow-samples '()])
   (define host (opengl-renderer3d-value-host renderer))
   (define geometry
     (hash-ref (geometry-table compiled) (compiled-instance3d-geometry-key instance)))
@@ -690,7 +863,7 @@
   (upload-common-uniforms/current! program frame-spec instance material
                                    (compiled-geometry3d-mesh geometry))
   (unless depth-only?
-    (upload-light-uniforms/current! program frame-spec material))
+    (upload-light-uniforms/current! program frame-spec material shadow-samples))
   (if (material3d-double-sided? material)
       (glDisable GL_CULL_FACE)
       (glEnable GL_CULL_FACE))
@@ -698,6 +871,13 @@
   (if (gl-geometry-entry-index-buffer entry)
       (glDrawElements GL_TRIANGLES (gl-geometry-entry-index-count entry) GL_UNSIGNED_INT 0)
       (glDrawArrays GL_TRIANGLES 0 (gl-geometry-entry-index-count entry)))
+  ;; Shadow-map bindings deliberately remain live until a later pass replaces
+  ;; them. OpenGL captures the state for this draw, but macOS may defer the
+  ;; depth texture's residency validation until after Racket returns from the
+  ;; callback; unbinding immediately here can produce a false zero-texture
+  ;; diagnostic. Every mesh draw explicitly binds its maps (or sets count 0),
+  ;; and billboard/depth/stroke passes bind their own resources, so this does
+  ;; not introduce a cross-pass rendering dependency.
   (glBindVertexArray 0)
   (glUseProgram 0))
 
@@ -724,6 +904,11 @@
 (define (uniform-1i! program name value)
   (define location (uniform/current program name))
   (when (>= location 0) (glUniform1i location value)))
+
+(define (uniform-2f! program name x y)
+  (define location (uniform/current program name))
+  (when (>= location 0)
+    (glUniform2f location (exact->inexact x) (exact->inexact y))))
 
 (define (uniform-3f! program name x y z)
   (define location (uniform/current program name))
@@ -779,7 +964,7 @@
     (uniform-4f! program (format "clipPlanes[~a]" index) x y z offset)))
 
 (struct gl-light-record
-  (kind direction position color intensity attenuation-mode attenuation-a attenuation-b attenuation-c
+  (id kind direction position color intensity attenuation-mode attenuation-a attenuation-b attenuation-c
         attenuation-cutoff range inner-angle outer-angle)
   #:transparent)
 
@@ -807,6 +992,7 @@
         [(directional-light3d? light)
          (values red green blue
                  (cons (gl-light-record
+                        (directional-light3d-id light)
                         0 (directional-light3d-direction light) origin3
                         (directional-light3d-color light) (directional-light3d-intensity light)
                         0 1 0 0 -1 -1 0 0)
@@ -814,6 +1000,7 @@
         [(point-light3d? light)
          (values red green blue
                  (cons (finite-light->gl-record
+                        (point-light3d-id light)
                         1 (point-light3d-position light) origin3
                         (point-light3d-color light) (point-light3d-intensity light)
                         (point-light3d-attenuation light) (point-light3d-range light) 0 0)
@@ -821,6 +1008,7 @@
         [(spot-light3d? light)
          (values red green blue
                  (cons (finite-light->gl-record
+                        (spot-light3d-id light)
                         2 (spot-light3d-position light) (spot-light3d-direction light)
                         (spot-light3d-color light) (spot-light3d-intensity light)
                         (spot-light3d-attenuation light) (spot-light3d-range light)
@@ -830,7 +1018,7 @@
          (raise-argument-error 'opengl-renderer3d "light3d?" light)])))
   (values ambient-red ambient-green ambient-blue (reverse records)))
 
-(define (finite-light->gl-record kind position direction color intensity attenuation range inner outer)
+(define (finite-light->gl-record id kind position direction color intensity attenuation range inner outer)
   (define parameters (light-attenuation3d-parameters attenuation))
   (define-values (mode a b c cutoff)
     (case (light-attenuation3d-mode attenuation)
@@ -844,7 +1032,7 @@
                (hash-ref parameters 'quadratic) (or (hash-ref parameters 'cutoff) -1))]))
   ;; Inverse-square uses the `c` slot as its named reference distance; the
   ;; shader's polynomial mode uses all of a, b and c.
-  (gl-light-record kind direction position color intensity mode a b c cutoff
+  (gl-light-record id kind direction position color intensity mode a b c cutoff
                    (or range -1) inner outer))
 
 (define (check-gl-light-limits records)
@@ -866,7 +1054,7 @@
                            "light-count" (length records)))
   (void))
 
-(define (upload-light-uniforms/current! program frame-spec material)
+(define (upload-light-uniforms/current! program frame-spec material shadow-samples)
   (when (not (eq? (material3d-shading material) 'unlit))
     (uniform-1f! program "materialAmbient" (material3d-ambient material))
     (uniform-1f! program "materialDiffuse" (material3d-diffuse material))
@@ -920,7 +1108,57 @@
       (uniform-1f! program (format "nonAmbientLightInnerAngles[~a]" index)
                    (gl-light-record-inner-angle light))
       (uniform-1f! program (format "nonAmbientLightOuterAngles[~a]" index)
-                   (gl-light-record-outer-angle light)))))
+                   (gl-light-record-outer-angle light)))
+    (upload-gl-shadow-uniforms/current! program material selected shadow-samples)))
+
+;; Every sampled map is associated by its stable authored light id rather than
+;; by a positional coincidence in the light list.  `selected` is the packed
+;; non-ambient stream consumed by mesh-lit.frag; ambient lights therefore do
+;; not disturb the shader index recorded for a shadow map.
+(define (upload-gl-shadow-uniforms/current! program material selected shadow-samples)
+  (uniform-1i! program "materialReceivesShadow"
+               (if (material3d-receives-shadow? material) 1 0))
+  (define indexed-samples
+    (for/list ([sample (in-list shadow-samples)]
+               #:do [(define index
+                       (for/first ([record (in-list selected)] [index (in-naturals)]
+                                   #:when (eq? (gl-light-record-id record)
+                                               (gl-shadow-sample-light-id sample)))
+                         index))]
+               #:when index)
+      (cons index sample)))
+  (unless (<= (length indexed-samples) 8)
+    (raise-arguments-error 'opengl-renderer3d
+                           "at most eight shadow maps mapped to active lights"
+                           "shadow-map-count" (length indexed-samples)))
+  ;; Always upload zero for an empty list: uniforms belong to programs rather
+  ;; than draw calls, so leaving an old value would sample stale texture units.
+  (uniform-1i! program "shadowMapCount" (length indexed-samples))
+  (for ([indexed (in-list indexed-samples)] [slot (in-naturals)])
+    (define light-index (car indexed))
+    (define sample (cdr indexed))
+    (define target (gl-shadow-sample-target sample))
+    (define camera (gl-shadow-sample-camera sample))
+    (define settings (gl-shadow-sample-settings sample))
+    (define size (gl-shadow-target-size target))
+    (glActiveTexture (+ GL_TEXTURE0 slot))
+    (glBindTexture GL_TEXTURE_2D
+                   (gl-resource-id (gl-shadow-target-depth-texture target)))
+    (uniform-1i! program (format "shadowMap~a" slot) slot)
+    (uniform-1i! program (format "shadowMapLightIndices[~a]" slot) light-index)
+    (uniform-mat4! program (format "shadowViewProjections[~a]" slot)
+                   (camera3d-view-projection-matrix camera 1))
+    (uniform-2f! program (format "shadowTexelSizes[~a]" slot)
+                 (/ 1.0 size) (/ 1.0 size))
+    (uniform-1f! program (format "shadowDepthBiases[~a]" slot)
+                 (shadow-settings3d-depth-bias settings))
+    (uniform-1f! program (format "shadowNormalBiases[~a]" slot)
+                 (shadow-settings3d-normal-bias settings))
+    (uniform-1i! program (format "shadowPcfRadii[~a]" slot)
+                 (shadow-settings3d-pcf-radius settings)))
+  ;; The caller releases these explicit per-opaque-draw bindings only after
+  ;; the draw has sampled them. Leave unit zero active for ordinary callers.
+  (glActiveTexture GL_TEXTURE0))
 
 ;;;
 ;;; Local validation and statistics
