@@ -120,6 +120,23 @@
                                       z-axis3 (vec3 0 0 -1))
                 1)
 
+  ;; The semantic path moves the receiver toward the light before projection,
+  ;; rather than adding a backend-specific normalized-depth epsilon. On this
+  ;; unit camera the 1/50 world-unit move reproduces the intended near-contact
+  ;; outcome while keeping its unit explicit.
+  (define semantic-settings
+    (shadow-settings3d
+     #:map-size 2
+     #:bias (shadow-bias3d #:constant-depth-offset 1/50
+                           #:pcf-radius-texels 0)
+     #:bounds (shadow-settings3d-bounds unit-settings)))
+  (define semantic-map
+    (shadow-map3d 2 2 (vector-immutable 1 1 1 1) unit-camera semantic-settings
+                  (shadow-settings3d-bounds semantic-settings) (hasheq)))
+  (check-equal? (shadow-map3d-factor semantic-map (vec3 0 0 99/100)
+                                      z-axis3 (vec3 0 0 -1))
+                1)
+
   ;; The kernel is a square, including its centre. With only the central map
   ;; texel deep enough for this receiver, radius one returns exactly 1/9.
   (define pcf-settings

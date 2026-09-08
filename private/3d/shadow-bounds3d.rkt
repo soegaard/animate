@@ -188,7 +188,10 @@
   (define material (compiled-instance3d-material instance))
   (and (material3d-casts-shadow? material)
        (= (compiled-instance3d-opacity instance) 1)
-       (= (rgba-color-alpha (material3d-color material)) 1)))
+       (= (rgba-color-alpha
+           (color-spec->rgba-color (material3d-color material)
+                                   'shadow-caster-instance?))
+          1)))
 
 (define (bounds-in-light-space bounds light)
   (define-values (origin forward)

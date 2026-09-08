@@ -1,10 +1,10 @@
-# animate — SCENE-3D-P
+# animate — SCENE-3D-V
 
 > **Current prototype:** when the API improves, Animate updates its own
 > implementation, examples, tests, README, and manual together. Obsolete
 > spellings are removed instead of retained as compatibility shims.
 
-**Prototype version 1.22.0.**
+**Prototype version 1.23.0.**
 
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
@@ -161,20 +161,22 @@ cone, diffuse, and Blinn--Phong terms in linear light. The GPU path packs
 authored non-ambient lights in order and rejects frames exceeding four
 directional, eight point, or four spot lights—never silently treating a finite
 light as directional.
-SCENE-3D-V7 adds immutable directional/spot shadow descriptors, named bias and
-PCF settings, stable prepared caster bounds across sampled frame ranges, and a
-camera-independent map key. SCENE-3D-V8 makes those descriptors operational in
-the software reference renderer with fitted orthographic/perspective depth
-maps, biased square PCF, and opaque-mesh cast/receive policy. Direct
-current-frame fits report their status in map diagnostics; explicit bounds or
-prepared identities avoid camera-driven movement. SCENE-3D-V9 gives the
-optional OpenGL renderer matching directional/spot depth-map rendering and
-explicit square PCF. Its context-owned, byte-bounded cache keys maps by
-eligible caster content, shadow-light pose/settings, and bounds—not by the
-viewing camera—so camera-only motion reuses a map. GPU comparison uses native
-projection depth, so perspective bias values may need backend-specific tuning.
-Point-light cube shadows, transparent casters/receivers, strokes, markers, and
-billboards remain outside this roadmap slice.
+SCENE-3D-V7 adds immutable directional/spot shadow descriptors and stable
+prepared caster bounds across sampled frame ranges. Its current
+`shadow-bias3d` model uses world-normal, slope/texel, and toward-light offsets,
+so both backends project the same adjusted receiver position before PCF.
+Legacy normalized-depth bias keywords remain for image-compatible older scenes.
+SCENE-3D-V8 makes those descriptors operational in the software reference
+renderer with fitted orthographic/perspective depth maps and opaque-mesh
+cast/receive policy. Direct current-frame fits report their status in map
+diagnostics; explicit bounds or prepared identities avoid camera-driven
+movement. SCENE-3D-V9 gives the optional OpenGL renderer matching
+directional/spot depth-map rendering and explicit square PCF. Its
+context-owned, byte-bounded cache keys maps by eligible caster content,
+shadow-light pose/settings, and bounds—not by the viewing camera—so
+camera-only motion reuses a map. Point-light cube shadows, transparent
+casters/receivers, strokes, markers, and billboards remain outside this
+roadmap slice.
 SCENE-3D-V4 adds immutable timeline requests for named-light intensity,
 linear-light colour, finite-light position, spot aim, and spot cone values.
 Their endpoints are captured at each local clip start, so direct seeking and
@@ -750,7 +752,7 @@ styling, renderer-measured multiline rich text, addressable matrices/tables,
 deterministic traced loci, composable camera timing, reproducible
 section-oriented rendering metadata, and live endpoint-derived network edges.
 
-The current public package version is `1.22.0` (`SCENE-3D-P`). The public modules'
+The current public package version is `1.23.0` (`SCENE-3D-V`). The public modules'
 bindings are covered by the registered Scribble manual.
 
 ## Documentation source

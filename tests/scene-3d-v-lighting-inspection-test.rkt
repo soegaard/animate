@@ -35,6 +35,25 @@
   (check-equal? (hash-ref sun-fields 'id) 'sun)
   (check-equal? (hash-ref sun-fields 'type) 'directional)
   (check-equal? (hash-ref (hash-ref sun-fields 'shadow) 'map-size) 64)
+  (check-equal? (hash-ref (hash-ref sun-fields 'shadow) 'bias-model) 'legacy-depth)
+  (define semantic-sun
+    (directional-light3d
+     (vec3 0 0 -1) #:id 'semantic-sun
+     #:shadow
+     (directional-shadow3d
+      #:settings
+      (shadow-settings3d
+       #:bias (shadow-bias3d #:world-normal-offset 1/100
+                             #:slope-scale 1/2
+                             #:constant-depth-offset 1/500
+                             #:pcf-radius-texels 2)))))
+  (define semantic-shadow
+    (hash-ref (light-inspection3d-fields (light3d-inspection semantic-sun))
+              'shadow))
+  (check-equal? (hash-ref semantic-shadow 'bias-model) 'semantic-world)
+  (check-equal? (hash-ref (hash-ref semantic-shadow 'semantic-bias)
+                          'pcf-radius-texels)
+                2)
   (define lamp-fields (light-inspection3d-fields (light3d-inspection lamp)))
   (check-equal? (hash-ref lamp-fields 'type) 'spot)
   (check-equal? (hash-ref lamp-fields 'range) #f)

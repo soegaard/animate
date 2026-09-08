@@ -12,6 +12,7 @@
 (require racket/list
          racket/set
          "mesh3d.rkt"
+         "mesh-part-provenance3d.rkt"
          "mesh-topology3d.rkt"
          "net-overlap3d.rkt"
          "polyhedral-complex3d.rkt"
@@ -126,7 +127,9 @@
            'overlap-count (vector-length (net-layout-overlaps layout))
            'total-overlap-area (first score)
            'boundary-crossings (second score)
-           'net-diameter (third score))))
+           'net-diameter (third score)
+           'part-provenance
+           (net-part-provenance complex faces tree (net-layout-cuts layout)))))
 
 ; polyhedron-net3d-face-child-ids : polyhedron-net3d? -> immutable-vectorof symbol?
 ;; Returns the stable direct-child IDs expected by polyhedron net fold/unfold
@@ -157,6 +160,63 @@
      "unique symbolic polygonal face identities for a foldable net"
      "face-child-ids" ids))
   ids)
+
+(define (net-part-provenance complex faces tree cuts)
+  (define topology (polyhedral-complex3d-topology complex))
+  ;; Flattening duplicates a shared source vertex once for each polygonal face
+  ;; that owns it. The `(face-index local-boundary-index)` identity points into
+  ;; `polyhedron-net3d-flat-polygons` without pretending the copies were still
+  ;; one indexed mesh vertex.
+  (define vertex-entries
+    (vector->immutable-vector
+     (for/vector ([source-index
+                  (in-range (vector-length (mesh-topology3d-vertices topology)))])
+       (define copies
+         (apply append
+                (for/list ([face (in-vector faces)] [face-index (in-naturals)])
+                  (for/list ([vertex-index
+                              (in-vector (polyhedral-face3d-boundary-vertex-indices face))]
+                             [local-index (in-naturals)]
+                             #:when (= vertex-index source-index))
+                    (mesh-part-reference3d 'vertex (list face-index local-index))))))
+       (mesh-part-provenance-entry3d
+        (mesh-part-reference3d 'vertex source-index)
+        (vector->immutable-vector (list->vector copies))
+        (if (= (length copies) 1) 'preserved 'split)))))
+  (define tree-edges (list->set (map net-hinge3d-primal-edge tree)))
+  (define cut-edges (list->set (vector->list cuts)))
+  (define edge-entries
+    (vector->immutable-vector
+     (for/vector ([source-index
+                  (in-range (vector-length (mesh-topology3d-edges topology)))])
+       (define result-parts
+         (cond [(set-member? tree-edges source-index)
+                (vector->immutable-vector
+                 (vector (mesh-part-reference3d 'edge source-index)))]
+               [(set-member? cut-edges source-index)
+                (vector->immutable-vector
+                 (vector (mesh-part-reference3d 'edge source-index)))]
+               [else #()]))
+       (mesh-part-provenance-entry3d
+        (mesh-part-reference3d 'edge source-index)
+        result-parts
+        (cond [(set-member? tree-edges source-index) 'preserved]
+              [(set-member? cut-edges source-index) 'split]
+              [else 'discarded])))))
+  (define face-entries
+    (vector->immutable-vector
+     (for/vector ([face-index (in-range (vector-length faces))])
+       (mesh-part-provenance-entry3d
+        (mesh-part-reference3d 'face face-index)
+        (vector->immutable-vector
+         (vector (mesh-part-reference3d 'face face-index)))
+        'preserved))))
+  (make-mesh-part-provenance3d
+   #:vertices vertex-entries
+   #:edges edge-entries
+   #:faces face-entries
+   #:warnings
+   (vector-immutable 'net-vertex-copies-are-keyed-by-face-and-local-boundary-index)))
 
 
 ;;;

@@ -19,32 +19,36 @@ uniform int materialReceivesShadow;
 uniform vec3 cameraPosition;
 uniform vec3 ambientLight;
 // One packed sequence preserves the authored order of directional, point and
-// spot lights.  The renderer preflights the public 4/8/4 per-kind limits;
-// this total is their fixed shader storage.
-const int MAX_NON_AMBIENT_LIGHTS = 16;
+// spot lights. The Racket capability report injects the matching fixed array
+// bounds after #version, so shader storage and preflight cannot drift.
 uniform int nonAmbientLightCount;
-uniform int nonAmbientLightKinds[MAX_NON_AMBIENT_LIGHTS];
-uniform vec3 nonAmbientLightDirections[MAX_NON_AMBIENT_LIGHTS];
-uniform vec3 nonAmbientLightPositions[MAX_NON_AMBIENT_LIGHTS];
-uniform vec3 nonAmbientLightColors[MAX_NON_AMBIENT_LIGHTS];
-uniform float nonAmbientLightIntensities[MAX_NON_AMBIENT_LIGHTS];
-uniform int nonAmbientLightAttenuationModes[MAX_NON_AMBIENT_LIGHTS];
-uniform vec3 nonAmbientLightAttenuationABC[MAX_NON_AMBIENT_LIGHTS];
-uniform float nonAmbientLightCutoffs[MAX_NON_AMBIENT_LIGHTS];
-uniform float nonAmbientLightRanges[MAX_NON_AMBIENT_LIGHTS];
-uniform float nonAmbientLightInnerAngles[MAX_NON_AMBIENT_LIGHTS];
-uniform float nonAmbientLightOuterAngles[MAX_NON_AMBIENT_LIGHTS];
+uniform int nonAmbientLightKinds[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform vec3 nonAmbientLightDirections[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform vec3 nonAmbientLightPositions[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform vec3 nonAmbientLightColors[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform float nonAmbientLightIntensities[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform int nonAmbientLightAttenuationModes[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform vec3 nonAmbientLightAttenuationABC[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform float nonAmbientLightCutoffs[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform float nonAmbientLightRanges[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform float nonAmbientLightInnerAngles[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
+uniform float nonAmbientLightOuterAngles[ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS];
 
 // Shadow maps retain the authored non-ambient-light index. Eight is the
-// published 4-directional + 4-spot limit; point-light cube maps are deferred.
-const int MAX_SHADOW_MAPS = 8;
+// published directional + spot limit; point-light cube maps are deferred.
 uniform int shadowMapCount;
-uniform int shadowMapLightIndices[MAX_SHADOW_MAPS];
-uniform mat4 shadowViewProjections[MAX_SHADOW_MAPS];
-uniform vec2 shadowTexelSizes[MAX_SHADOW_MAPS];
-uniform float shadowDepthBiases[MAX_SHADOW_MAPS];
-uniform float shadowNormalBiases[MAX_SHADOW_MAPS];
-uniform int shadowPcfRadii[MAX_SHADOW_MAPS];
+uniform int shadowMapLightIndices[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform mat4 shadowViewProjections[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform vec2 shadowTexelSizes[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform int shadowBiasModes[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform float shadowWorldNormalOffsets[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform float shadowSlopeScales[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform float shadowConstantDepthOffsets[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform float shadowTexelWorldSizes[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+// Compatibility-only normalized-depth controls for pre-semantic-bias scenes.
+uniform float shadowDepthBiases[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform float shadowNormalBiases[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
+uniform int shadowPcfRadii[ANIMATE_OPENGL_MAX_SHADOW_MAPS];
 uniform sampler2DShadow shadowMap0;
 uniform sampler2DShadow shadowMap1;
 uniform sampler2DShadow shadowMap2;
@@ -54,7 +58,7 @@ uniform sampler2DShadow shadowMap5;
 uniform sampler2DShadow shadowMap6;
 uniform sampler2DShadow shadowMap7;
 uniform int clipCount;
-uniform vec4 clipPlanes[8];
+uniform vec4 clipPlanes[ANIMATE_OPENGL_MAX_CLIP_PLANES];
 
 out vec4 fragment;
 
@@ -115,17 +119,25 @@ float shadowCompareAt(int shadowIndex, vec2 uv, float referenceDepth) {
   return texture(shadowMap7, vec3(uv, referenceDepth));
 }
 
-// The map stores the native depth produced by exactly the same light
-// projection, so receiver depth is compared in clip-depth space. The public
-// depth/normal controls keep their published additive schema; they apply to
-// this backend's normalized depth representation. Subtracting the bias from
-// the comparison reference is equivalent to testing receiver <= map + bias.
+// Semantic bias moves the receiver in world space before it is projected by
+// either renderer.  The legacy branch keeps old scenes byte-compatible while
+// the shadow-settings API is migrated away from backend-specific depth units.
 float shadowFactor(int lightIndex, vec3 normal, vec3 lightDirection) {
   if (materialReceivesShadow == 0)
     return 1.0;
   for (int shadowIndex = 0; shadowIndex < shadowMapCount; ++shadowIndex) {
     if (shadowMapLightIndices[shadowIndex] == lightIndex) {
-      vec4 clip = shadowViewProjections[shadowIndex] * vec4(worldPosition, 1.0);
+      vec3 samplePosition = worldPosition;
+      if (shadowBiasModes[shadowIndex] != 0) {
+        float normalFactor = 1.0 - max(0.0, dot(normal, lightDirection));
+        float normalOffset = shadowWorldNormalOffsets[shadowIndex]
+                             + shadowSlopeScales[shadowIndex]
+                               * shadowTexelWorldSizes[shadowIndex]
+                               * normalFactor;
+        samplePosition += normal * normalOffset;
+        samplePosition += lightDirection * shadowConstantDepthOffsets[shadowIndex];
+      }
+      vec4 clip = shadowViewProjections[shadowIndex] * vec4(samplePosition, 1.0);
       if (clip.w <= 0.0)
         return 1.0;
       vec3 ndc = clip.xyz / clip.w;
@@ -133,9 +145,12 @@ float shadowFactor(int lightIndex, vec3 normal, vec3 lightDirection) {
         return 1.0;
       vec2 uv = ndc.xy * 0.5 + 0.5;
       float receiverDepth = ndc.z * 0.5 + 0.5;
-      float bias = shadowDepthBiases[shadowIndex]
-                   + shadowNormalBiases[shadowIndex]
-                     * (1.0 - max(0.0, dot(normal, lightDirection)));
+      float bias = 0.0;
+      if (shadowBiasModes[shadowIndex] == 0) {
+        bias = shadowDepthBiases[shadowIndex]
+               + shadowNormalBiases[shadowIndex]
+                 * (1.0 - max(0.0, dot(normal, lightDirection)));
+      }
       int radius = shadowPcfRadii[shadowIndex];
       vec2 texel = shadowTexelSizes[shadowIndex];
       float lit = 0.0;

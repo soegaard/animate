@@ -8,6 +8,7 @@
          rackunit
          "../3d.rkt"
          "../3d/render.rkt"
+         "../private/3d/opengl/limits.rkt"
          "../private/3d/opengl/shadow-cache.rkt")
 
 (define-runtime-path opengl-module-path "../3d/opengl.rkt")
@@ -37,11 +38,14 @@
                                                        #:look-at origin3
                                                        #:vertical-size 6)]
                      #:caster-z [caster-z 1]
-                     #:shadow? [shadow? #t])
+                     #:shadow? [shadow? #t]
+                     #:bias [bias #f])
   (define bounds (aabb3 (vec3 -3 -3 0) (vec3 3 3 caster-z)))
   (define settings
-    (shadow-settings3d #:map-size 128 #:pcf-radius 0
-                       #:depth-bias 1/100 #:normal-bias 0 #:bounds bounds))
+    (if bias
+        (shadow-settings3d #:map-size 128 #:bias bias #:bounds bounds)
+        (shadow-settings3d #:map-size 128 #:pcf-radius 0
+                           #:depth-bias 1/100 #:normal-bias 0 #:bounds bounds)))
   (view3d
    (list (square 'receiver 3 0 receiver-material)
          (square 'caster 1/3 caster-z caster-material))
@@ -102,13 +106,20 @@
   ;; them in the Racket 9.3 OpenGL context.
   (define mesh-shader (file->string mesh-lit-path))
   (for ([required (in-list
-                  '("MAX_SHADOW_MAPS = 8"
+                  '("ANIMATE_OPENGL_MAX_SHADOW_MAPS"
                     "materialReceivesShadow"
                     "shadowMapLightIndices"
                     "shadowViewProjections"
                     "shadowTexelSizes"
+                    "shadowBiasModes"
+                    "shadowWorldNormalOffsets"
+                    "shadowTexelWorldSizes"
                     "shadowFactor"))])
     (check-true (regexp-match? (regexp-quote required) mesh-shader)))
+  (check-equal? (opengl3d-limit 'shadow-maps) 8)
+  (check-true
+   (regexp-match? #rx"ANIMATE_OPENGL_MAX_SHADOW_MAPS 8"
+                  (opengl3d-shader-defines)))
   (check-true (regexp-match? #rx"gl_Position" (file->string shadow-vert-path)))
   (check-true (regexp-match? #rx"clipPlanes" (file->string shadow-frag-path)))
   (define request (view3d->render3d-request (shadow-view) 64 64))
@@ -153,6 +164,21 @@
        (check-true (<= (abs (- (red-at actual 20 probe-y)
                                (red-at lit 20 probe-y)))
                        12))
+       ;; This invokes the semantic, world-space bias path in the live shader.
+       ;; It need not have the legacy scene's pixels, but it must agree with
+       ;; the software interpretation at an interior receiver sample.
+       (define semantic-view
+         (shadow-view
+          #:bias (shadow-bias3d #:world-normal-offset 1/200
+                                #:slope-scale 1/2
+                                #:constant-depth-offset 1/1000
+                                #:pcf-radius-texels 0)))
+       (define semantic-software (render (software-renderer3d) semantic-view))
+       (define semantic-opengl (render renderer semantic-view))
+       (check-true
+        (<= (abs (- (red-at semantic-opengl probe-x probe-y)
+                    (red-at semantic-software probe-x probe-y)))
+            12))
        (define allocations
          (hash-ref (hash-ref (renderer-statistics renderer) 'shadow-cache) 'allocations))
        (render renderer (shadow-view

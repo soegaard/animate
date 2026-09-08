@@ -55,10 +55,31 @@
     (raise-argument-error 'make-gl-shader-program "path-string?" path))
   (file->string path))
 
+;; GLSL's #version directive has to precede every declaration. Limits shared
+;; by the Racket preflight and fragment shaders are therefore injected just
+;; after it, rather than prepended to the file source.
+(define (source-with-preamble source preamble)
+  (unless (string? preamble)
+    (raise-argument-error 'make-gl-shader-program "string? as #:fragment-preamble" preamble))
+  (cond [(string=? preamble "") source]
+        [else
+         (unless (regexp-match? #px"^#version " source)
+           (raise-arguments-error 'make-gl-shader-program
+                                  "GLSL source beginning with #version"
+                                  "source" source))
+         (define newline-index
+           (for/first ([index (in-range (string-length source))]
+                       #:when (char=? (string-ref source index) #\newline))
+             index))
+         (define end
+           (if newline-index (add1 newline-index) (string-length source)))
+         (string-append (substring source 0 end) preamble (substring source end))]))
+
 (define (make-gl-shader-program host vertex-path fragment-path
                                 #:attributes [attributes '(("position" . 0)
                                                          ("normal" . 1)
-                                                         ("color" . 2))])
+                                                         ("color" . 2))]
+                                #:fragment-preamble [fragment-preamble ""])
   (unless (gl-context-host? host)
     (raise-argument-error 'make-gl-shader-program "gl-context-host?" host))
   (unless (and (list? attributes)
@@ -70,7 +91,8 @@
                           "(listof (cons/c string? exact-nonnegative-integer?))"
                           attributes))
   (define vertex-source (file-source vertex-path))
-  (define fragment-source (file-source fragment-path))
+  (define fragment-source
+    (source-with-preamble (file-source fragment-path) fragment-preamble))
   (gl-context-host-call
    host
    (lambda ()

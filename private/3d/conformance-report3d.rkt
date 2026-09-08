@@ -50,6 +50,8 @@
   (define large-difference-components 0)
   (define different-pixels 0)
   (define alpha-only-pixels 0)
+  (define alpha-only-edge-pixels 0)
+  (define alpha-only-interior-pixels 0)
   (define edge-pixels 0)
   (define interior-pixels 0)
   (define edge-difference 0)
@@ -124,7 +126,10 @@
     (when pixel-different?
       (set! different-pixels (add1 different-pixels))
       (when (and alpha-different? (not rgb-different?))
-        (set! alpha-only-pixels (add1 alpha-only-pixels)))
+        (set! alpha-only-pixels (add1 alpha-only-pixels))
+        (if edge?
+            (set! alpha-only-edge-pixels (add1 alpha-only-edge-pixels))
+            (set! alpha-only-interior-pixels (add1 alpha-only-interior-pixels))))
       (set! changed-left (min changed-left x))
       (set! changed-top (min changed-top y))
       (set! changed-right (max changed-right x))
@@ -156,6 +161,8 @@
     'different-component-count different-components
     'large-difference-components large-difference-components
     'alpha-only-different-pixel-count alpha-only-pixels
+    'alpha-only-edge-pixel-count alpha-only-edge-pixels
+    'alpha-only-interior-pixel-count alpha-only-interior-pixels
     'difference-bounds
     (and (positive? different-pixels)
          (vector-immutable changed-left changed-top changed-right changed-bottom))

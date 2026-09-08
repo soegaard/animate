@@ -98,6 +98,20 @@
              'maximum-directional-lights)
    2)
 
+  ;; Material colours remain public `color-spec?` values until the renderer
+  ;; needs channels.  A named opaque colour must not make capability preflight
+  ;; either reject the frame or misclassify it as transparent.
+  (define named-color-request
+    (view3d->render3d-request
+     (view3d
+      (list (cube3d 2 #:id 'gold-cube
+                    #:material (material3d #:color "gold" #:shading 'flat)))
+      #:id 'named-colour #:width 4 #:height 3 #:render-mode 'opaque)
+     80 60))
+  (check-false
+   (set-member? (renderer3d-request-required-features named-color-request)
+                'transparency))
+
   ;; A limit violation is observed before preparation, and therefore cannot
   ;; become OpenGL shader-array truncation.
   (check-exn

@@ -44,6 +44,30 @@
   (check-exn exn:fail?
              (lambda () (shadow-settings3d #:bounds aabb3-empty)))
 
+  ;; Semantic bias is authored in world/texel units and therefore carries the
+  ;; same meaning in software and OpenGL. The older depth controls remain a
+  ;; deliberately separate compatibility path.
+  (define semantic-bias
+    (shadow-bias3d #:world-normal-offset 1/100
+                   #:slope-scale 3/2
+                   #:constant-depth-offset 1/500
+                   #:pcf-radius-texels 2))
+  (check-true (shadow-bias3d? semantic-bias))
+  (check-equal? (shadow-bias3d-world-normal-offset semantic-bias) 1/100)
+  (check-equal? (shadow-bias3d-slope-scale semantic-bias) 3/2)
+  (check-equal? (shadow-bias3d-constant-depth-offset semantic-bias) 1/500)
+  (check-equal? (shadow-bias3d-pcf-radius-texels semantic-bias) 2)
+  (check-exn exn:fail? (lambda () (shadow-bias3d #:slope-scale -1)))
+  (check-exn exn:fail? (lambda () (shadow-bias3d #:pcf-radius-texels 1/2)))
+  (define semantic-settings
+    (shadow-settings3d #:map-size 256 #:bias semantic-bias))
+  (check-eq? (shadow-settings3d-bias semantic-settings) semantic-bias)
+  (check-equal? (shadow-settings3d-pcf-radius semantic-settings) 1)
+  (check-exn
+   exn:fail?
+   (lambda ()
+     (shadow-settings3d #:bias semantic-bias #:depth-bias 1/100)))
+
   (define sun-shadow (directional-shadow3d #:settings settings))
   (define cone-shadow (spot-shadow3d #:settings settings))
   (check-true (directional-shadow3d? sun-shadow))

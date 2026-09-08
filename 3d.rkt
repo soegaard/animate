@@ -27,6 +27,7 @@
          "private/3d/spatial-group.rkt"
          "private/3d/spatial-path.rkt"
          "private/3d/mesh3d.rkt"
+         "private/3d/mesh-part-provenance3d.rkt"
          "private/3d/geometry-fingerprint3d.rkt"
          "private/3d/mesh-topology3d.rkt"
          "private/3d/polyhedral-complex3d.rkt"
@@ -335,6 +336,12 @@
  mesh3d-wireframe-color
  mesh3d-wireframe-width
  mesh3d-local-bounds
+ (struct-out mesh-part-reference3d)
+ (struct-out mesh-part-provenance-entry3d)
+ (struct-out mesh-part-provenance3d)
+ make-mesh-part-provenance3d
+ mesh-part-provenance3d-source-results
+ mesh-part-provenance3d-result-sources
  (struct-out geometry-key3d)
  (struct-out mesh3d-semantic-key3d)
  mesh3d-geometry-key
@@ -943,8 +950,15 @@ cutaway3d
  light-attenuation3d-factor
  spot-smoothstep3d
  spot-cone-factor3d
+ shadow-bias3d
+ shadow-bias3d?
+ shadow-bias3d-world-normal-offset
+ shadow-bias3d-slope-scale
+ shadow-bias3d-constant-depth-offset
+ shadow-bias3d-pcf-radius-texels
  shadow-settings3d
  shadow-settings3d?
+ shadow-settings3d-bias
  shadow-settings3d-map-size
  shadow-settings3d-depth-bias
  shadow-settings3d-normal-bias

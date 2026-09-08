@@ -3,7 +3,7 @@
 in vec3 worldPosition;
 
 uniform int clipCount;
-uniform vec4 clipPlanes[8];
+uniform vec4 clipPlanes[ANIMATE_OPENGL_MAX_CLIP_PLANES];
 
 void main() {
   for (int index = 0; index < clipCount; ++index) {

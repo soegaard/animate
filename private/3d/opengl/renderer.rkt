@@ -40,6 +40,7 @@
          "framebuffer.rkt"
          "geometry-cache.rkt"
          "geometry-pack.rkt"
+         "limits.rkt"
          "gl-object.rkt"
          "matrix-pack.rkt"
          "readback.rkt"
@@ -158,22 +159,15 @@
           'spot-light
           'directional-shadow
           'spot-shadow)
-   (hasheq 'maximum-directional-lights 4
-           'maximum-point-lights 8
-           'maximum-spot-lights 4
-           'maximum-shadow-lights 8
-           'maximum-clip-planes 8
-           'maximum-shadow-map-size 4096
-           ;; A non-multisample framebuffer remains valid at one sample even
-           ;; when GL_MAX_SAMPLES is unavailable or reports zero.
-           'maximum-samples (max 1 (opengl3d-info-maximum-samples info)))
+   (hash-set
+    (hash-set (opengl3d-capability-limits)
+              'maximum-shadow-map-size 4096)
+    ;; A non-multisample framebuffer remains valid at one sample even when
+    ;; GL_MAX_SAMPLES is unavailable or reports zero.
+    'maximum-samples (max 1 (opengl3d-info-maximum-samples info)))
    (hasheq 'backend 'opengl-racket
            'requested-samples (opengl-renderer3d-spec-value-samples spec)
-           'shader-limits (hasheq 'directional-lights 4
-                                  'point-lights 8
-                                  'spot-lights 4
-                                  'non-ambient-lights 16
-                                  'clip-planes 8)
+           'shader-limits opengl3d-limits
            'unsupported-features
            '(wireframe object-id specular emission))))
 
@@ -344,14 +338,14 @@
 (define (shader-path name) (build-path shader-directory name))
 
 (define (make-programs host)
-  (hasheq 'unlit (make-gl-shader-program host (shader-path "mesh.vert")
-                                        (shader-path "mesh-unlit.frag"))
-          'lit (make-gl-shader-program host (shader-path "mesh.vert")
-                                      (shader-path "mesh-lit.frag"))
-          'depth (make-gl-shader-program host (shader-path "mesh.vert")
-                                        (shader-path "depth.frag"))
-          'shadow (make-gl-shader-program host (shader-path "shadow.vert")
-                                          (shader-path "shadow.frag"))
+  (define fragment-preamble (opengl3d-shader-defines))
+  (define (make-program vertex fragment)
+    (make-gl-shader-program host (shader-path vertex) (shader-path fragment)
+                            #:fragment-preamble fragment-preamble))
+  (hasheq 'unlit (make-program "mesh.vert" "mesh-unlit.frag")
+          'lit (make-program "mesh.vert" "mesh-lit.frag")
+          'depth (make-program "mesh.vert" "depth.frag")
+          'shadow (make-program "shadow.vert" "shadow.frag")
           'stroke (make-gl-shader-program host (shader-path "stroke.vert")
                                          (shader-path "stroke.frag"))
           'billboard (make-gl-shader-program
@@ -674,7 +668,7 @@
 ;; depth-map inputs: eligible caster geometry/placement/policy, shadow-light
 ;; pose/settings, and the selected world-space bounds. The target itself is
 ;; owned by the bounded cache and therefore never enters an authored view.
-(struct gl-shadow-sample (light-id target camera settings) #:transparent)
+(struct gl-shadow-sample (light-id target camera settings bounds) #:transparent)
 
 (define (prepare-gl-shadow-maps/current! renderer compiled frame-spec)
   (define lights (effective-frame-lights frame-spec))
@@ -684,9 +678,9 @@
     [else
      (define descriptors
        (filter (lambda (light) (light3d-shadow light)) lights))
-     (unless (<= (length descriptors) 8)
+     (unless (<= (length descriptors) (opengl3d-limit 'shadow-maps))
        (raise-arguments-error 'opengl-renderer3d
-                              "at most eight directional/spot shadow maps"
+                              "a shadow count within the current shader's fixed limit"
                               "shadow-light-count" (length descriptors)))
      (for/list ([light (in-list descriptors)])
        (define shadow (light3d-shadow light))
@@ -713,7 +707,7 @@
             (gl-shadow-target-delete/current! target
                                               (opengl-renderer3d-value-host renderer)))))
        (gl-shadow-sample (light3d-id light) (gl-shadow-cache-entry-target entry)
-                         camera settings))]))
+                         camera settings bounds))]))
 
 (define (effective-frame-lights frame-spec)
   (if (null? (frame3d-spec-lights frame-spec))
@@ -750,7 +744,9 @@
       (material3d-casts-shadow? material)
       (material3d-receives-shadow? material)
       (material3d-double-sided? material)
-      (rgba-color-alpha (material3d-color material))))
+      (rgba-color-alpha
+       (color-spec->rgba-color (material3d-color material)
+                               'opengl-shadow-map-key))))
    (if (directional-light3d? light)
        (vector-immutable 'directional (directional-light3d-direction light))
        (vector-immutable 'spot (spot-light3d-position light)
@@ -820,7 +816,10 @@
   (glUseProgram 0))
 
 (define (instance-opaque? instance geometry)
-  (define color (material3d-color (compiled-instance3d-material instance)))
+  (define color
+    (color-spec->rgba-color
+     (material3d-color (compiled-instance3d-material instance))
+     'instance-opaque?))
   (and (= (compiled-instance3d-opacity instance) 1)
        (= (rgba-color-alpha color) 1)
        (or (not (mesh3d-colors (compiled-geometry3d-mesh geometry)))
@@ -999,8 +998,9 @@
   (upload-clip-uniforms/current! program (compiled-instance3d-clip-planes instance)))
 
 (define (upload-clip-uniforms/current! program clips)
-  (when (> (length clips) 8)
-    (raise-arguments-error 'opengl-renderer3d "at most eight user clip planes"
+  (when (> (length clips) (opengl3d-limit 'clip-planes))
+    (raise-arguments-error 'opengl-renderer3d
+                           "a clip-plane count within the current shader's fixed limit"
                            "clip-plane-count" (length clips)))
   (uniform-1i! program "clipCount" (length clips))
   (for ([clip (in-list clips)] [index (in-naturals)])
@@ -1019,12 +1019,6 @@
   (id kind direction position color intensity attenuation-mode attenuation-a attenuation-b attenuation-c
         attenuation-cutoff range inner-angle outer-angle)
   #:transparent)
-
-(define maximum-gl-directional-lights 4)
-(define maximum-gl-point-lights 8)
-(define maximum-gl-spot-lights 4)
-(define maximum-gl-non-ambient-lights
-  (+ maximum-gl-directional-lights maximum-gl-point-lights maximum-gl-spot-lights))
 
 ;; The mesh shader consumes one ordered stream instead of independently packed
 ;; arrays for each light kind.  Consequently a frame's non-ambient lights are
@@ -1092,17 +1086,18 @@
   (define point-count (count (lambda (record) (= (gl-light-record-kind record) 1)) records))
   (define spot-count (count (lambda (record) (= (gl-light-record-kind record) 2)) records))
   (for ([actual (in-list (list directional-count point-count spot-count))]
-        [maximum (in-list (list maximum-gl-directional-lights
-                                maximum-gl-point-lights
-                                maximum-gl-spot-lights))]
+        [maximum (in-list (list (opengl3d-limit 'directional-lights)
+                                (opengl3d-limit 'point-lights)
+                                (opengl3d-limit 'spot-lights)))]
         [kind (in-list '(directional point spot))])
     (unless (<= actual maximum)
       (raise-arguments-error 'opengl-renderer3d
                              "a light count within the current shader's fixed limit"
                              "light-kind" kind "count" actual "maximum" maximum)))
-  (unless (<= (length records) maximum-gl-non-ambient-lights)
+  (unless (<= (length records)
+              (hash-ref (opengl3d-capability-limits) 'non-ambient-lights))
     (raise-arguments-error 'opengl-renderer3d
-                           "at most sixteen non-ambient lights for the current shader"
+                           "a non-ambient light count within the current shader's fixed limit"
                            "light-count" (length records)))
   (void))
 
@@ -1182,7 +1177,7 @@
                          index))]
                #:when index)
       (cons index sample)))
-  (unless (<= (length indexed-samples) 8)
+  (unless (<= (length indexed-samples) (opengl3d-limit 'shadow-maps))
     (raise-arguments-error 'opengl-renderer3d
                            "at most eight shadow maps mapped to active lights"
                            "shadow-map-count" (length indexed-samples)))
@@ -1195,10 +1190,11 @@
   ;; point every slot there before real maps override the selected slots.
   ;; This keeps macOS from validating an inactive sampler against unit zero's
   ;; colour texture.
-  (glActiveTexture (+ GL_TEXTURE0 8))
+  (glActiveTexture (+ GL_TEXTURE0 (opengl3d-limit 'shadow-maps)))
   (glBindTexture GL_TEXTURE_2D (gl-resource-id fallback-shadow-texture))
-  (for ([slot (in-range 8)])
-    (uniform-1i! program (format "shadowMap~a" slot) 8))
+  (for ([slot (in-range (opengl3d-limit 'shadow-maps))])
+    (uniform-1i! program (format "shadowMap~a" slot)
+                 (opengl3d-limit 'shadow-maps)))
   ;; Always upload zero for an empty list: uniforms belong to programs rather
   ;; than draw calls, so leaving an old value would sample stale texture units.
   (uniform-1i! program "shadowMapCount" (length indexed-samples))
@@ -1208,6 +1204,7 @@
     (define target (gl-shadow-sample-target sample))
     (define camera (gl-shadow-sample-camera sample))
     (define settings (gl-shadow-sample-settings sample))
+    (define bounds (gl-shadow-sample-bounds sample))
     (define size (gl-shadow-target-size target))
     (glActiveTexture (+ GL_TEXTURE0 slot))
     (glBindTexture GL_TEXTURE_2D
@@ -1218,15 +1215,30 @@
                    (camera3d-view-projection-matrix camera 1))
     (uniform-2f! program (format "shadowTexelSizes[~a]" slot)
                  (/ 1.0 size) (/ 1.0 size))
+    (define bias (shadow-settings3d-bias settings))
+    (uniform-1i! program (format "shadowBiasModes[~a]" slot) (if bias 1 0))
+    (uniform-1f! program (format "shadowWorldNormalOffsets[~a]" slot)
+                 (if bias (shadow-bias3d-world-normal-offset bias) 0))
+    (uniform-1f! program (format "shadowSlopeScales[~a]" slot)
+                 (if bias (shadow-bias3d-slope-scale bias) 0))
+    (uniform-1f! program (format "shadowConstantDepthOffsets[~a]" slot)
+                 (if bias (shadow-bias3d-constant-depth-offset bias) 0))
+    (uniform-1f! program (format "shadowTexelWorldSizes[~a]" slot)
+                 (shadow-bounds-texel-world-size bounds size))
     (uniform-1f! program (format "shadowDepthBiases[~a]" slot)
                  (shadow-settings3d-depth-bias settings))
     (uniform-1f! program (format "shadowNormalBiases[~a]" slot)
                  (shadow-settings3d-normal-bias settings))
     (uniform-1i! program (format "shadowPcfRadii[~a]" slot)
-                 (shadow-settings3d-pcf-radius settings)))
+                 (shadow-settings3d-effective-pcf-radius settings)))
   ;; The caller releases these explicit per-opaque-draw bindings only after
   ;; the draw has sampled them. Leave unit zero active for ordinary callers.
   (glActiveTexture GL_TEXTURE0))
+
+(define (shadow-bounds-texel-world-size bounds map-size)
+  (define size (aabb3-size bounds))
+  (max (/ (vec3-x size) map-size)
+       (/ (vec3-y size) map-size)))
 
 ;;;
 ;;; Local validation and statistics

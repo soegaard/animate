@@ -1,6 +1,19 @@
 # Changes
 
-## Unreleased — 3D Q/R/S foundations
+## 1.23.0 — SCENE-3D-V
+
+- Completed the SCENE-3D-T/U/V corrective pass. Terminal trajectory monitoring,
+  event isolation, Hermite bounds, prepared arc-length queries, per-component
+  topology diagnostics, canonical analysis-space dual/net/Schlegel operations,
+  deterministic hull clustering, and shared part provenance are now covered by
+  focused regressions and canonical visual probes.
+
+- Completed the SCENE-3D-V conformance pass. Software/OpenGL comparisons now
+  report interior, edge, and alpha coverage separately; GLSL light and clip
+  limits share one authoritative record with preflight; actual V tests run in
+  both real-context lanes. Shadow descriptors now also accept semantic
+  world/texel `shadow-bias3d` values, while the former normalized-depth fields
+  remain documented compatibility controls.
 
 - Added SCENE-3D-V10's immutable material/light/fragment-lighting inspection
   model and preview inspector sections. A mesh click now exposes authored

@@ -9,7 +9,7 @@ uniform int useVertexColor;
 uniform vec3 materialEmission;
 uniform float materialEmissionStrength;
 uniform int clipCount;
-uniform vec4 clipPlanes[8];
+uniform vec4 clipPlanes[ANIMATE_OPENGL_MAX_CLIP_PLANES];
 
 out vec4 fragment;
 

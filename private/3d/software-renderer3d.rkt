@@ -479,11 +479,16 @@
   (define mesh (draw-mesh3d-command-mesh command))
   (and (material3d-casts-shadow? material)
        (= (draw-mesh3d-command-opacity command) 1)
-       (= (rgba-color-alpha (material3d-color material)) 1)
+       (= (rgba-color-alpha
+           (color-spec->rgba-color (material3d-color material)
+                                   'command-shadow-caster?))
+          1)
        (let ([colors (mesh3d-colors mesh)])
          (or (not colors)
              (for/and ([color (in-vector colors)])
-               (= (rgba-color-alpha color) 1))))))
+               (= (rgba-color-alpha
+                   (color-spec->rgba-color color 'command-shadow-caster?))
+                  1))))))
 
 ;; Converts the rasterizer's camera-local fragment position and normal back
 ;; to world space before consulting the immutable light map.  Ambient and

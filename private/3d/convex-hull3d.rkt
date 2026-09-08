@@ -12,6 +12,7 @@
          racket/math
          "../geometry.rkt"
          "mesh3d.rkt"
+         "mesh-part-provenance3d.rkt"
          "polyhedral-complex3d.rkt"
          "vec3.rkt")
 
@@ -356,7 +357,9 @@
   (convex-hull3d-result
    dimension mesh (source-index-vector vertices) #()
    (interior-index-vector all-points vertices)
-   (hash-set diagnostics 'dimension dimension)))
+   (hash-set
+    (hash-set diagnostics 'dimension dimension)
+    'part-provenance (hull-part-provenance all-points mesh vertices))))
 
 (define (planar-result id all-points anchors tolerance diagnostics)
   (define first-point (first anchors))
@@ -385,7 +388,9 @@
   (convex-hull3d-result
    2 mesh (source-index-vector polygon) #()
    (interior-index-vector all-points polygon)
-   (hash-set diagnostics 'dimension 2)))
+   (hash-set
+    (hash-set diagnostics 'dimension 2)
+    'part-provenance (hull-part-provenance all-points mesh polygon))))
 
 ;; Monotone-chain hull after a normal-aligned 2D projection. Equal/collinear
 ;; points on an edge are deliberately omitted from the polygon and remain in
@@ -484,8 +489,11 @@
   (convex-hull3d-result
    3 mesh (source-index-vector hull-points) groups
    (interior-index-vector all-points hull-points)
-   (hash-set (hash-set diagnostics 'dimension 3)
-             'uncertain-orientation-count (unbox uncertain-count))))
+   (hash-set
+    (hash-set
+     (hash-set diagnostics 'dimension 3)
+     'uncertain-orientation-count (unbox uncertain-count))
+    'part-provenance (hull-part-provenance all-points mesh hull-points))))
 
 (define (farthest-outside-point candidates faces point-at classify-volume)
   ;; Return `(point-index . visible-faces)` for the point whose greatest
@@ -616,6 +624,40 @@
 (define (source-index-vector points)
   (vector->immutable-vector
    (list->vector (map hull-source-point3d-primary points))))
+
+(define (hull-part-provenance all-points mesh selected-points)
+  (define output-index-by-point (make-hasheq))
+  (for ([point (in-list selected-points)] [index (in-naturals)])
+    (hash-set! output-index-by-point point index))
+  (define vertex-entries
+    (for*/list ([point (in-list all-points)]
+                [source-index (in-list (hull-source-point3d-source-indices point))])
+      (define output-index (hash-ref output-index-by-point point #f))
+      (define result-parts
+        (if output-index
+            (vector->immutable-vector
+             (vector (mesh-part-reference3d 'vertex output-index)))
+            #()))
+      (mesh-part-provenance-entry3d
+       (mesh-part-reference3d 'vertex source-index)
+       result-parts
+       (cond [(not output-index) 'discarded]
+             [(= (length (hull-source-point3d-source-indices point)) 1) 'preserved]
+             [else 'merged]))))
+  (define (generated-entries kind count)
+    (vector->immutable-vector
+     (for/vector ([index (in-range count)])
+       (mesh-part-provenance-entry3d
+        #f
+        (vector->immutable-vector (vector (mesh-part-reference3d kind index)))
+        'generated))))
+  (make-mesh-part-provenance3d
+   #:vertices (vector->immutable-vector (list->vector vertex-entries))
+   #:edges (generated-entries 'edge (vector-length (mesh3d-edges mesh)))
+   #:faces (generated-entries 'face (vector-length (mesh3d-triangles mesh)))
+   #:warnings
+   (vector->immutable-vector
+    (vector 'hull-edges-and-faces-are-derived-from-an-unstructured-point-set))))
 
 (define (interior-index-vector all-points selected-points)
   (define selected (make-hasheq))

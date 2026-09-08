@@ -7,7 +7,8 @@
          racket/set
          rackunit
          "../3d.rkt"
-         "../3d/render.rkt")
+         "../3d/render.rkt"
+         "../private/3d/opengl/limits.rkt")
 
 (define-runtime-path opengl-module-path "../3d/opengl.rkt")
 (define-runtime-path mesh-lit-path "../private/3d/opengl/shaders/mesh-lit.frag")
@@ -54,13 +55,20 @@
   ;; drift, while the lane below compiles and executes the shader on a GPU.
   (define shader (file->string mesh-lit-path))
   (for ([required (in-list
-                  '("MAX_NON_AMBIENT_LIGHTS = 16"
+                  '("ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS"
                     "nonAmbientLightKinds"
                     "nonAmbientLightPositions"
                     "nonAmbientLightAttenuationModes"
                     "finiteLightAttenuation"
                     "spotConeFactor"))])
     (check-true (regexp-match? (regexp-quote required) shader)))
+  (check-equal? (opengl3d-limit 'directional-lights) 4)
+  (check-equal? (opengl3d-limit 'point-lights) 8)
+  (check-equal? (opengl3d-limit 'spot-lights) 4)
+  (check-equal? (hash-ref (opengl3d-capability-limits) 'non-ambient-lights) 16)
+  (check-true
+   (regexp-match? #rx"ANIMATE_OPENGL_MAX_NON_AMBIENT_LIGHTS 16"
+                  (opengl3d-shader-defines)))
   (define request (view3d->render3d-request (finite-light-view) 64 64))
   (check-true (set-member? (renderer3d-request-required-features request) 'point-light))
   (check-true (set-member? (renderer3d-request-required-features request) 'spot-light))

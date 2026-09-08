@@ -319,7 +319,13 @@
   (for/or ([instance (in-vector (compiled-view3d-instances compiled))])
     (define material (compiled-instance3d-material instance))
     (or (< (compiled-instance3d-opacity instance) 1)
-        (< (rgba-color-alpha (material3d-color material)) 1)
+        ;; Materials retain the public `color-spec?` representation, so a
+        ;; named colour such as "gold" is still valid at this backend-neutral
+        ;; capability check.  Resolve only for the alpha comparison.
+        (< (rgba-color-alpha
+            (color-spec->rgba-color (material3d-color material)
+                                    'request-has-transparent-instance?))
+           1)
         (let* ([geometry-key (compiled-instance3d-geometry-key instance)]
                [geometry
                 (for/first ([candidate (in-vector (compiled-view3d-geometries compiled))]
@@ -329,7 +335,10 @@
                             (mesh3d-colors (compiled-geometry3d-mesh geometry)))])
           (and colors
                (for/or ([color (in-vector colors)])
-                 (< (rgba-color-alpha color) 1)))))))
+                 (< (rgba-color-alpha
+                     (color-spec->rgba-color color
+                                             'request-has-transparent-instance?))
+                    1)))))))
 
 (define (request-maximum-clip-plane-count compiled)
   (define (maximum vector accessor)

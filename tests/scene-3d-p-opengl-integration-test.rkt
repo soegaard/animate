@@ -13,6 +13,7 @@
          racket/path
          racket/runtime-path
          "../private/3d/conformance-report3d.rkt"
+         "../private/color-style.rkt"
          "../3d.rkt"
          "../3d/render.rkt")
 
@@ -89,6 +90,21 @@
    #:id 'billboard-world #:width 4 #:height 3 #:camera default-test-camera
    #:background "aliceblue" #:render-mode 'opaque))
 
+;; The background remains transparent here so alpha reaches the public ARGB
+;; boundary rather than being hidden by source-over against an opaque viewport.
+;; The central sample is safely inside the triangle, independent of coverage
+;; rules at its three rasterized edges.
+(define (transparent-alpha-view)
+  (define mesh
+    (mesh3d #:id 'alpha-surface
+            #:vertices (vector (vec3 -3 -3 0) (vec3 3 -3 0) (vec3 0 3 0))
+            #:triangles (vector (vector 0 1 2))
+            #:material (material3d #:color (rgba-color 64 160 240 1/2)
+                                   #:shading 'unlit)))
+  (view3d (list mesh) #:id 'transparent-alpha-world #:width 4 #:height 3
+          #:camera (orthographic-camera3d #:position (vec3 0 0 3) #:look-at origin3)
+          #:background (rgba-color 0 0 0 0) #:render-mode 'opaque))
+
 (define (render-bytes renderer view [width 128] [height 96])
   (define request (view3d->render3d-request view width height))
   (renderer3d-render-result-argb-bytes
@@ -105,13 +121,23 @@
           'maximum (hash-ref metrics 'maximum-component-error)
           'different-components (hash-ref metrics 'different-component-count)
           'large-difference-components (hash-ref metrics 'large-difference-components)
+          'alpha-only-different-pixels
+          (hash-ref metrics 'alpha-only-different-pixel-count)
+          'alpha-only-edge-pixels
+          (hash-ref metrics 'alpha-only-edge-pixel-count)
+          'alpha-only-interior-pixels
+          (hash-ref metrics 'alpha-only-interior-pixel-count)
           'edge (hash-ref metrics 'edge)
           'interior (hash-ref metrics 'interior)))
 
 (define (check-conform-to-software label expected actual
                                    #:mean-tolerance mean-tolerance
                                    #:maximum-tolerance maximum-tolerance
-                                   #:large-component-tolerance large-component-tolerance)
+                                   #:large-component-tolerance large-component-tolerance
+                                   #:edge-mean-tolerance edge-mean-tolerance
+                                   #:interior-mean-tolerance interior-mean-tolerance
+                                   #:alpha-only-edge-tolerance alpha-only-edge-tolerance
+                                   #:alpha-only-interior-tolerance alpha-only-interior-tolerance)
   (define summary (argb-difference-summary expected actual))
   ;; OpenGL and the software reference intentionally use different coverage
   ;; rasterizers. Opaque/antialiased marks and transparency therefore have
@@ -129,6 +155,27 @@
                   large-component-tolerance)
               (format "~a large ARGB component differences: ~e"
                       label (hash-ref summary 'large-difference-components)))
+  ;; Coverage differences may be noisy at a contour, but an interior lighting
+  ;; error or an alpha-only disagreement has a distinct semantic cause.
+  (check-true
+   (<= (hash-ref (hash-ref summary 'edge) 'mean-absolute-error)
+       edge-mean-tolerance)
+   (format "~a edge mean ARGB difference: ~e"
+           label (hash-ref (hash-ref summary 'edge) 'mean-absolute-error)))
+  (check-true
+   (<= (hash-ref (hash-ref summary 'interior) 'mean-absolute-error)
+       interior-mean-tolerance)
+   (format "~a interior mean ARGB difference: ~e"
+           label (hash-ref (hash-ref summary 'interior) 'mean-absolute-error)))
+  (check-true
+   (<= (hash-ref summary 'alpha-only-edge-pixels) alpha-only-edge-tolerance)
+   (format "~a alpha-only edge pixel differences: ~e"
+           label (hash-ref summary 'alpha-only-edge-pixels)))
+  (check-true
+   (<= (hash-ref summary 'alpha-only-interior-pixels)
+       alpha-only-interior-tolerance)
+   (format "~a alpha-only interior pixel differences: ~e"
+           label (hash-ref summary 'alpha-only-interior-pixels)))
   (when (equal? (getenv "ANIMATE_OPENGL_INTEGRATION_DEBUG") "1")
     (displayln (list label summary))))
 
@@ -187,17 +234,37 @@
         'opaque-strokes-and-markers
         (render-bytes software (test-view))
         baseline-bytes
-        #:mean-tolerance 1 #:maximum-tolerance 224 #:large-component-tolerance 64)
+        #:mean-tolerance 1 #:maximum-tolerance 224 #:large-component-tolerance 64
+        #:edge-mean-tolerance 24 #:interior-mean-tolerance 1/2
+        #:alpha-only-edge-tolerance 0 #:alpha-only-interior-tolerance 0)
        (check-conform-to-software
         'clipping-and-transparency
         (render-bytes software (clipped-transparent-view))
         (render-bytes renderer (clipped-transparent-view))
-        #:mean-tolerance 3 #:maximum-tolerance 160 #:large-component-tolerance 16)
+        #:mean-tolerance 3 #:maximum-tolerance 160 #:large-component-tolerance 16
+        #:edge-mean-tolerance 24 #:interior-mean-tolerance 1/2
+        #:alpha-only-edge-tolerance 0 #:alpha-only-interior-tolerance 0)
        (check-conform-to-software
         'textured-billboard
         (render-bytes software (billboard-view))
         (render-bytes renderer (billboard-view))
-        #:mean-tolerance 3 #:maximum-tolerance 224 #:large-component-tolerance 160)
+        #:mean-tolerance 3 #:maximum-tolerance 224 #:large-component-tolerance 160
+        #:edge-mean-tolerance 24 #:interior-mean-tolerance 1/2
+        #:alpha-only-edge-tolerance 0 #:alpha-only-interior-tolerance 0)
+       (define alpha-expected (render-bytes software (transparent-alpha-view)))
+       (define alpha-actual (render-bytes renderer (transparent-alpha-view)))
+       (check-conform-to-software
+        'transparent-alpha
+        alpha-expected alpha-actual
+        ;; Coverage is allowed to fall on opposite sides of an alpha edge;
+        ;; the interior alpha contract below remains exact.
+        #:mean-tolerance 2 #:maximum-tolerance 255 #:large-component-tolerance 256
+        #:edge-mean-tolerance 32 #:interior-mean-tolerance 1/2
+        #:alpha-only-edge-tolerance 128 #:alpha-only-interior-tolerance 0)
+       (define center-index (+ 64 (* 48 128)))
+       (define center-alpha (bytes-ref alpha-actual (* 4 center-index)))
+       (check-true (<= (abs (- center-alpha 128)) 1)
+                   (format "transparent-alpha center alpha: ~e" center-alpha))
        (define statistics (renderer-statistics renderer))
        (check-equal? (hash-ref statistics 'backend) 'opengl-racket)
        (check-equal? (hash-ref (hash-ref statistics 'framebuffer-cache) 'allocations) 1)

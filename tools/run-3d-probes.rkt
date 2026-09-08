@@ -59,7 +59,7 @@
 (define known-3d-probe-stages
   '(SCENE-3D-B SCENE-3D-C SCENE-3D-D SCENE-3D-E SCENE-3D-F SCENE-3D-G
     SCENE-3D-H SCENE-3D-I SCENE-3D-J SCENE-3D-K SCENE-3D-L SCENE-3D-M
-    SCENE-3D-N SCENE-3D-O SCENE-3D-P))
+    SCENE-3D-N SCENE-3D-O SCENE-3D-P SCENE-3D-T SCENE-3D-U SCENE-3D-V))
 
 (define stage-example-specifications
   ;; A binding is dynamically required only for the requested stage. This
@@ -195,7 +195,34 @@
          (list 'context-restart-repeat "Context restart repeat frame"
                "examples/3d/opengl-opaque-cube.rkt" 'make-demo-scene
                '(0)
-               "The companion real-context test releases and recreates the renderer, then compares this frame."))))
+               "The companion real-context test releases and recreates the renderer, then compares this frame."))
+   'SCENE-3D-T
+   (list (list 'event-aware-trajectory "Event-aware trajectory"
+               "examples/3d/event-aware-trajectory.rkt" 'make-demo-scene
+               '(0 5/2 5)
+               "Dense event roots and terminal trajectory endpoints remain stable at random-access samples.")
+         (list 'equilibrium-linearization "Saddle equilibrium linearization"
+               "examples/3d/equilibrium-linearization.rkt" 'make-demo-scene
+               '(0 2 4)
+               "Linearized eigenvectors and the prepared field agree through the animation."))
+   'SCENE-3D-U
+   (list (list 'fold-unfold-polyhedron "Cube net hinge rotations"
+               "examples/3d/fold-unfold-polyhedron.rkt" 'make-demo-scene
+               '(0 3 6)
+               "Face-local net transforms retain shared hinge identities at folded and flat endpoints.")
+         (list 'transform-matching-polyhedra "Topology-safe mesh matching"
+               "examples/3d/transform-matching-polyhedra.rkt" 'make-demo-scene
+               '(0 3 6)
+               "Compatible correspondences interpolate only proven part mappings; topology changes stay layered."))
+   'SCENE-3D-V
+   (list (list 'tone-map-emission "Linear-light tone mapping"
+               "examples/3d/tone-map-emission.rkt" 'make-demo-scene
+               '(0 3/2 3)
+               "Software probe frames expose the shared sRGB/linear/tone-map boundary used by both renderers.")
+         (list 'finite-lighting "Point and spot lighting"
+               "examples/3d/finite-lighting.rkt" 'make-demo-scene
+               '(0 3/2 3)
+               "Finite-light motion exercises the same material and light semantics used by the OpenGL conformance lane."))))
 
 ; stage->probes : symbol? -> (listof probe3d?)
 ;;   Instantiates the canonical visual probes registered for one 3D stage.
@@ -541,7 +568,7 @@
   (define upper (string-upcase text))
   (define candidate
     (string->symbol
-    (if (regexp-match? #rx"^SCENE-3D-[A-P]$" upper)
+    (if (regexp-match? #rx"^SCENE-3D-(?:[A-P]|[TUV])$" upper)
          upper
          (string-append "SCENE-" upper))))
   (unless (member candidate known-3d-probe-stages)

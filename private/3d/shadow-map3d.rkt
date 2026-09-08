@@ -48,13 +48,38 @@
 (define (make-shadow-map3d target camera settings bounds diagnostics)
   (unless (raster-target3d? target)
     (raise-argument-error 'make-shadow-map3d "raster-target3d?" target))
-  (shadow-map3d (raster-target3d-width target) (raster-target3d-height target)
+  (define width (raster-target3d-width target))
+  (define height (raster-target3d-height target))
+  (shadow-map3d width height
                 (vector->immutable-vector (vector-copy (raster-target3d-depth-values target)))
-                camera settings bounds diagnostics))
+                camera settings bounds
+                (shadow-map-diagnostics diagnostics settings bounds width height)))
 
-;; Bias is evaluated in the same positive forward-depth unit stored in the
-;; map.  Outside a map is explicitly unshadowed, as required for a finite
-;; fitted directional map and for spots beyond their selected far plane.
+(define (shadow-map-diagnostics diagnostics settings bounds width height)
+  (define bias (shadow-settings3d-bias settings))
+  (define extent (aabb3-size bounds))
+  (define texel-world-size
+    (max (/ (vec3-x extent) width) (/ (vec3-y extent) height)))
+  (hash-set
+   diagnostics 'shadow-bias
+   (if bias
+       (hasheq 'model 'semantic-world
+               'world-normal-offset (shadow-bias3d-world-normal-offset bias)
+               'slope-scale (shadow-bias3d-slope-scale bias)
+               'constant-depth-offset (shadow-bias3d-constant-depth-offset bias)
+               'pcf-radius-texels (shadow-bias3d-pcf-radius-texels bias)
+               'derived-texel-world-size texel-world-size)
+       (hasheq 'model 'legacy-depth
+               'depth-bias (shadow-settings3d-depth-bias settings)
+               'normal-bias (shadow-settings3d-normal-bias settings)
+               'pcf-radius (shadow-settings3d-pcf-radius settings)))))
+
+;; Bias is applied before projection.  New semantic `shadow-bias3d` values
+;; move the receiver in world space toward the light and along its normal;
+;; that is shared with the OpenGL shader.  The older normalized-depth fields
+;; retain their exact historic path for compatibility with existing scenes.
+;; Outside a map is explicitly unshadowed, as required for a finite fitted
+;; directional map and for spots beyond their selected far plane.
 (define (shadow-map3d-factor map world-position world-normal light-direction)
   (unless (shadow-map3d? map)
     (raise-argument-error 'shadow-map3d-factor "shadow-map3d?" map))
@@ -62,20 +87,29 @@
     (raise-argument-error 'shadow-map3d-factor "vec3? position, normal, and light direction"
                           (list world-position world-normal light-direction)))
   (define camera (shadow-map3d-camera map))
-  (define ndc (camera3d-project camera world-position #:aspect 1))
+  (define settings (shadow-map3d-settings map))
+  (define semantic-bias (shadow-settings3d-bias settings))
+  (define incoming (vec3-scale -1 (vec3-normalize light-direction)))
+  (define sample-position
+    (if semantic-bias
+        (semantic-bias-position map world-position world-normal incoming semantic-bias)
+        world-position))
+  (define ndc (camera3d-project camera sample-position #:aspect 1))
   (cond [(or (not ndc) (> (abs (vec2-x ndc)) 1) (> (abs (vec2-y ndc)) 1)) 1]
         [else
-         (define depth (camera3d-view-depth camera world-position))
-         (define settings (shadow-map3d-settings map))
-         (define incoming (vec3-scale -1 (vec3-normalize light-direction)))
-         (define bias (+ (shadow-settings3d-depth-bias settings)
-                         (* (shadow-settings3d-normal-bias settings)
-                            (- 1 (max 0 (vec3-dot (vec3-normalize world-normal) incoming))))))
+         (define depth (camera3d-view-depth camera sample-position))
+         (define legacy-depth-bias
+           (if semantic-bias
+               0
+               (+ (shadow-settings3d-depth-bias settings)
+                  (* (shadow-settings3d-normal-bias settings)
+                     (- 1 (max 0 (vec3-dot (vec3-normalize world-normal)
+                                             incoming)))))))
          (define center-x (inexact->exact (floor (* (shadow-map3d-width map)
                                                     (/ (+ (vec2-x ndc) 1) 2)))))
          (define center-y (inexact->exact (floor (* (shadow-map3d-height map)
                                                     (/ (- 1 (vec2-y ndc)) 2)))))
-         (define radius (shadow-settings3d-pcf-radius settings))
+         (define radius (shadow-settings3d-effective-pcf-radius settings))
          (define-values (lit samples)
            (for*/fold ([lit 0] [samples 0])
                       ([dy (in-range (- radius) (add1 radius))]
@@ -86,9 +120,27 @@
                       (<= 0 y) (< y (shadow-map3d-height map)))
                  (let ([stored (vector-ref (shadow-map3d-depth map)
                                            (+ x (* y (shadow-map3d-width map))))])
-                   (values (+ lit (if (<= depth (+ stored bias)) 1 0)) (add1 samples)))
+                   (values (+ lit (if (<= depth (+ stored legacy-depth-bias)) 1 0))
+                           (add1 samples)))
                  (values (+ lit 1) (add1 samples)))))
          (/ lit samples)]))
+
+(define (semantic-bias-position map position normal incoming bias)
+  (define bounds-size (aabb3-size (shadow-map3d-bounds map)))
+  ;; A conservative world-space texel length makes slope scaling independent
+  ;; of normalized depth or the projection matrix.  The exact derived value is
+  ;; reported with the prepared map diagnostics by its callers.
+  (define texel-world-size
+    (max (/ (vec3-x bounds-size) (shadow-map3d-width map))
+         (/ (vec3-y bounds-size) (shadow-map3d-height map))))
+  (define normal-factor
+    (- 1 (max 0 (vec3-dot (vec3-normalize normal) incoming))))
+  (define normal-offset
+    (+ (shadow-bias3d-world-normal-offset bias)
+       (* (shadow-bias3d-slope-scale bias) texel-world-size normal-factor)))
+  (vec3+
+   (vec3+ position (vec3-scale normal-offset (vec3-normalize normal)))
+   (vec3-scale (shadow-bias3d-constant-depth-offset bias) incoming)))
 
 ;; A light camera is fitted to a selected world-space bound. Directional maps
 ;; use a square orthographic footprint; a spot follows its authored cone.

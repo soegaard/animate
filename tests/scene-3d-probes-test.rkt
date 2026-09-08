@@ -11,10 +11,16 @@
    known-3d-probe-stages
    '(SCENE-3D-B SCENE-3D-C SCENE-3D-D SCENE-3D-E SCENE-3D-F SCENE-3D-G
      SCENE-3D-H SCENE-3D-I SCENE-3D-J SCENE-3D-K SCENE-3D-L SCENE-3D-M
-     SCENE-3D-N SCENE-3D-O SCENE-3D-P))
+     SCENE-3D-N SCENE-3D-O SCENE-3D-P SCENE-3D-T SCENE-3D-U SCENE-3D-V))
   (define m-probes (stage->probes 'SCENE-3D-M))
   (check-equal? (map probe3d-id m-probes) '(retained-renderer))
   (check-equal? (probe3d-times (car m-probes)) '(0 5/2 5))
+  (check-equal? (map probe3d-id (stage->probes 'SCENE-3D-T))
+                '(event-aware-trajectory equilibrium-linearization))
+  (check-equal? (map probe3d-id (stage->probes 'SCENE-3D-U))
+                '(fold-unfold-polyhedron transform-matching-polyhedra))
+  (check-equal? (map probe3d-id (stage->probes 'SCENE-3D-V))
+                '(tone-map-emission finite-lighting))
   (define temporary-root
     (make-temporary-file "animate-3d-probes-test-~a" 'directory))
   (dynamic-wind

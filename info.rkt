@@ -64,12 +64,12 @@
 
 ; version : string?
 ;;   Gives the prototype package version.
-(define version "1.22.0")
+(define version "1.23.0")
 
 ; pkg-desc : string?
 ;;   Describes the package in the Racket package catalog.
 (define pkg-desc
-  "SCENE-3D-P: immutable Racket animation toolkit with an optional retained OpenGL 3D backend")
+  "SCENE-3D-V: immutable Racket animation toolkit with a conformance-tested retained OpenGL 3D backend")
 
 ; license : symbol?
 ;;   Declares the package license.

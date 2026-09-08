@@ -237,8 +237,20 @@
 (define (shadow3d->datum shadow)
   (and shadow
        (let ([settings (shadow3d-settings shadow)])
+         (define bias (shadow-settings3d-bias settings))
          (hasheq 'kind (shadow3d-kind shadow)
                  'map-size (shadow-settings3d-map-size settings)
+                 'bias-model (if bias 'semantic-world 'legacy-depth)
+                 'semantic-bias
+                 (and bias
+                      (hasheq
+                       'world-normal-offset
+                       (shadow-bias3d-world-normal-offset bias)
+                       'slope-scale (shadow-bias3d-slope-scale bias)
+                       'constant-depth-offset
+                       (shadow-bias3d-constant-depth-offset bias)
+                       'pcf-radius-texels
+                       (shadow-bias3d-pcf-radius-texels bias)))
                  'depth-bias (shadow-settings3d-depth-bias settings)
                  'normal-bias (shadow-settings3d-normal-bias settings)
                  'pcf-radius (shadow-settings3d-pcf-radius settings)

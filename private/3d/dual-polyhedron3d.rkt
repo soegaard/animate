@@ -12,6 +12,7 @@
 (require racket/list
          "../geometry.rkt"
          "mesh3d.rkt"
+         "mesh-part-provenance3d.rkt"
          "mesh-topology3d.rkt"
          "polyhedral-complex3d.rkt"
          "vec3.rkt")
@@ -160,11 +161,16 @@
    dual-mesh primal-face->dual-vertex primal-edge->dual-edge
    (vector->immutable-vector (list->vector dual-face-records))
    (hash-set
-    (hash-set base-diagnostics
-              'primal-render-diagonal-count
-              (for/sum ([mapping (in-vector primal-edge->dual-edge)])
-                (if mapping 0 1)))
-    'rejected-render-faces rejected-render-faces)))
+    (hash-set
+     (hash-set base-diagnostics
+               'primal-render-diagonal-count
+               (for/sum ([mapping (in-vector primal-edge->dual-edge)])
+                 (if mapping 0 1)))
+     'rejected-render-faces rejected-render-faces)
+    'part-provenance
+    (dual-part-provenance primal-face->dual-vertex
+                          primal-edge->dual-edge dual-face-records
+                          rejected-render-faces))))
 
 ;; Each face surrounding one primal vertex has exactly two neighbours in the
 ;; face ring. The topology, rather than a camera-dependent angular sort,
@@ -439,6 +445,49 @@
   (vec3-scale (/ 1 (vector-length vertices))
               (for/fold ([sum origin3]) ([vertex (in-vector vertices)])
                 (vec3+ sum vertex))))
+
+(define (dual-part-provenance face->vertex edge->edge vertex->face rejected)
+  (define vertex-entries
+    (vector->immutable-vector
+     (for/vector ([face-index (in-range (length vertex->face))])
+       (mesh-part-provenance-entry3d
+        (mesh-part-reference3d 'vertex face-index)
+        (vector->immutable-vector
+         (vector (mesh-part-reference3d 'face face-index)))
+        'derived))))
+  (define edge-entries
+    (vector->immutable-vector
+     (for/vector ([source-edge-index (in-range (vector-length edge->edge))])
+       (define result-edge-index (vector-ref edge->edge source-edge-index))
+       (mesh-part-provenance-entry3d
+        (mesh-part-reference3d 'edge source-edge-index)
+        (if result-edge-index
+            (vector->immutable-vector
+             (vector (mesh-part-reference3d 'edge result-edge-index)))
+            #())
+        (if result-edge-index 'derived 'discarded)))))
+  (define face-entries
+    (vector->immutable-vector
+     (for/vector ([source-face-index (in-range (vector-length face->vertex))])
+       (mesh-part-provenance-entry3d
+        (mesh-part-reference3d 'face source-face-index)
+        (vector->immutable-vector
+         (vector (mesh-part-reference3d 'vertex
+                                      (vector-ref face->vertex source-face-index))))
+        'derived))))
+  (define warnings
+    (append
+     (if (for/or ([mapping (in-vector edge->edge)]) (not mapping))
+         (list 'primal-render-diagonals-have-no-dual-edge)
+         '())
+     (if (positive? (vector-length rejected))
+         (list 'some-dual-face-cycles-have-no-render-triangulation)
+         '())))
+  (make-mesh-part-provenance3d
+   #:vertices vertex-entries
+   #:edges edge-entries
+   #:faces face-entries
+   #:warnings (vector->immutable-vector (list->vector warnings))))
 
 (define (edge-key first second)
   (cons (min first second) (max first second)))

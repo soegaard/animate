@@ -62,7 +62,11 @@
                          light-attenuation3d constant-attenuation3d
                          inverse-square-attenuation3d polynomial-attenuation3d
                          light-attenuation3d-factor spot-smoothstep3d spot-cone-factor3d
+                         shadow-bias3d shadow-bias3d? shadow-bias3d-world-normal-offset
+                         shadow-bias3d-slope-scale shadow-bias3d-constant-depth-offset
+                         shadow-bias3d-pcf-radius-texels
                          shadow-settings3d shadow-settings3d? shadow-settings3d-map-size
+                         shadow-settings3d-bias
                          shadow-settings3d-depth-bias shadow-settings3d-normal-bias
                          shadow-settings3d-pcf-radius shadow-settings3d-bounds
                          shadow-settings3d-near shadow-settings3d-far

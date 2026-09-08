@@ -337,6 +337,37 @@ immutable render-geometry key, excluding material, placement, and semantic IDs.}
 @defproc[(mesh3d-semantic-key [mesh mesh3d?]) mesh3d-semantic-key3d?]{Returns
 the immutable semantic key. It is not a renderer cache key.}
 
+@defstruct*[mesh-part-reference3d
+            ([kind (or/c 'vertex 'edge 'face)] [id any/c]) #:transparent]{An
+immutable reference to one source or result mesh part. The kind is explicit so
+a topology-changing operation can accurately record cross-kind derivation,
+such as a primal face becoming a dual vertex.}
+@defstruct*[mesh-part-provenance-entry3d
+            ([source-part (or/c #f mesh-part-reference3d?)]
+             [result-parts vector?]
+             [relation (or/c 'preserved 'merged 'split 'generated 'discarded 'ambiguous 'derived)])
+            #:transparent]{One source-to-result multimap entry. A generated
+entry has no source; a discarded entry has no result parts.}
+@defstruct*[mesh-part-provenance3d
+            ([vertices vector?] [edges vector?] [faces vector?] [warnings vector?])
+            #:transparent]{Shared immutable provenance for a topology-changing
+mesh operation. Entries are grouped by source part kind; warnings document
+intentional identity loss or ambiguity.}
+@defproc[(make-mesh-part-provenance3d
+          [#:vertices vertices vector? #()]
+          [#:edges edges vector? #()]
+          [#:faces faces vector? #()]
+          [#:warnings warnings vector? #()]) mesh-part-provenance3d?]{Builds a
+validated provenance value.}
+@defproc[(mesh-part-provenance3d-source-results
+          [provenance mesh-part-provenance3d?]
+          [source mesh-part-reference3d?]) (or/c #f vector?)]{Looks up one
+source part's zero, one, or many result parts.}
+@defproc[(mesh-part-provenance3d-result-sources
+          [provenance mesh-part-provenance3d?]
+          [result mesh-part-reference3d?]) vector?]{Returns every source part
+that contributes to the specified result part.}
+
 @subsection{Navigable triangle topology}
 
 @defstruct*[mesh-vertex-topology3d
@@ -1118,10 +1149,28 @@ deferred, so a point light accepts only @racket[#f].}
 
 @subsection{Shadow descriptors and stable bounds}
 
+@defproc[(shadow-bias3d [#:world-normal-offset world-normal-offset nonnegative-real? 0]
+                          [#:slope-scale slope-scale nonnegative-real? 0]
+                          [#:constant-depth-offset constant-depth-offset nonnegative-real? 0]
+                          [#:pcf-radius-texels pcf-radius-texels exact-nonnegative-integer? 1])
+         shadow-bias3d?]{Creates renderer-neutral shadow bias. The three
+distances are world-space distances: @racket[world-normal-offset] moves a
+receiver along its normal, @racket[slope-scale] is multiplied by the derived
+world length of one shadow texel and the grazing-angle factor, and
+@racket[constant-depth-offset] moves it toward the light. The PCF radius is a
+texel count. Both the software and OpenGL renderers project this same adjusted
+receiver position before comparing the shadow map.}
+@defproc[(shadow-bias3d? [value any/c]) boolean?]{Recognizes semantic shadow bias.}
+@defproc[(shadow-bias3d-world-normal-offset [bias shadow-bias3d?]) nonnegative-real?]{Returns the world-normal offset.}
+@defproc[(shadow-bias3d-slope-scale [bias shadow-bias3d?]) nonnegative-real?]{Returns the dimensionless grazing-angle scale.}
+@defproc[(shadow-bias3d-constant-depth-offset [bias shadow-bias3d?]) nonnegative-real?]{Returns the world-space offset toward the light.}
+@defproc[(shadow-bias3d-pcf-radius-texels [bias shadow-bias3d?]) exact-nonnegative-integer?]{Returns the PCF radius in texels.}
+
 @defproc[(shadow-settings3d [#:map-size map-size exact-positive-integer? 1024]
-                             [#:depth-bias depth-bias nonnegative-real? 1/1000]
-                             [#:normal-bias normal-bias nonnegative-real? 1/100]
-                             [#:pcf-radius pcf-radius exact-nonnegative-integer? 1]
+                             [#:bias bias (or/c #f shadow-bias3d?) #f]
+                             [#:depth-bias depth-bias (or/c #f nonnegative-real?) #f]
+                             [#:normal-bias normal-bias (or/c #f nonnegative-real?) #f]
+                             [#:pcf-radius pcf-radius (or/c #f exact-nonnegative-integer?) #f]
                              [#:bounds bounds (or/c #f aabb3?) #f]
                              [#:near near (or/c #f positive-real?) #f]
                              [#:far far (or/c #f positive-real?) #f]
@@ -1131,14 +1180,16 @@ deferred, so a point light accepts only @racket[#f].}
 renderers fit the current opaque caster bounds; this direct-frame fit can
 shimmer as casters move. @racket[prepared-bounds-key] is retained for stable
 retained-renderer map identity and enables directional texel-centre snapping
-when named. Biases use the published
-@math{depth-bias + normal-bias(1-n\cdot l)} schema; @racket[pcf-radius] is the
-square PCF-kernel radius.}
+when named. New code should pass @racket[#:bias] and a @racket[shadow-bias3d]
+value. The depth/normal/PCF keywords are retained only for image-compatible
+legacy scenes and cannot be combined with @racket[#:bias]; their normalized
+depth units remain backend-specific.}
 @defproc[(shadow-settings3d? [value any/c]) boolean?]{Recognizes shadow settings.}
 @defproc[(shadow-settings3d-map-size [settings shadow-settings3d?]) exact-positive-integer?]{Returns map size.}
-@defproc[(shadow-settings3d-depth-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns constant receiver-depth bias.}
-@defproc[(shadow-settings3d-normal-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns slope-dependent receiver bias.}
-@defproc[(shadow-settings3d-pcf-radius [settings shadow-settings3d?]) exact-nonnegative-integer?]{Returns square PCF radius.}
+@defproc[(shadow-settings3d-bias [settings shadow-settings3d?]) (or/c #f shadow-bias3d?)]{Returns the semantic bias, or @racket[#f] for a legacy descriptor.}
+@defproc[(shadow-settings3d-depth-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns the legacy constant receiver-depth bias. New code should use @racket[shadow-settings3d-bias].}
+@defproc[(shadow-settings3d-normal-bias [settings shadow-settings3d?]) nonnegative-real?]{Returns the legacy slope-dependent receiver bias. New code should use @racket[shadow-settings3d-bias].}
+@defproc[(shadow-settings3d-pcf-radius [settings shadow-settings3d?]) exact-nonnegative-integer?]{Returns the legacy square PCF radius. New code should use @racket[shadow-settings3d-bias].}
 @defproc[(shadow-settings3d-bounds [settings shadow-settings3d?]) (or/c #f aabb3?)]{Returns explicit world-space shadow-region bounds, if any.}
 @defproc[(shadow-settings3d-near [settings shadow-settings3d?]) (or/c #f positive-real?)]{Returns optional light near plane.}
 @defproc[(shadow-settings3d-far [settings shadow-settings3d?]) (or/c #f positive-real?)]{Returns optional light far plane.}
@@ -1188,8 +1239,10 @@ the value is exposed for inspection and deterministic sampling.}
 @defproc[(shadow-map3d-factor [map shadow-map3d?] [world-position vec3?]
                                [world-normal vec3?] [light-direction vec3?])
          real?]{Returns the fraction of a square PCF kernel which is lit. It
-uses @racket[depth-bias + normal-bias*(1-max(0,n·l))]; samples outside the
-fitted map are lit.}
+projects the semantic @racket[shadow-bias3d] receiver offset when present;
+legacy descriptors use their historical
+@racket[depth-bias + normal-bias*(1-max(0,n·l))] comparison. Samples outside
+the fitted map are lit.}
 @defproc[(shadow-light-camera3d [light (or/c directional-light3d? spot-light3d?)]
                                 [settings shadow-settings3d?] [bounds aabb3?])
          camera3d?]{Fits the deterministic light camera used by the reference
@@ -1205,9 +1258,10 @@ billboards, and point-light cube shadows are outside this stage. Direct-frame
 fitting can shimmer, and a too-small explicit region yields unshadowed outside
 samples. V9 caches context-owned GPU maps by eligible casters, light
 pose/settings, and bounds, deliberately excluding viewing-camera motion.
-Its depth texture uses native projection depth, so a perspective camera can
-require different numerical bias tuning from V8's positive forward-depth
-reference.
+Semantic @racket[shadow-bias3d] values avoid backend-specific depth tuning by
+moving the receiver in world space before each renderer projects it. The
+legacy depth/normal fields retain their original backend-specific behavior for
+image compatibility.
 
 @defstruct*[light-attenuation3d ([mode (or/c 'constant 'inverse-square 'polynomial)]
                                   [parameters immutable-hash?]) #:transparent]{
@@ -1592,7 +1646,7 @@ shadows. It still has no texture mapping, order-independent transparency, or
 3D picking. An ordinary two-dimensional traversal of a spatial child is
 rejected: use rooted 3D animation paths or @racket[view3d-spatial-*].
 
-@section{Semantic spatial relations and projected labels}
+@section[#:tag "spatial-relations"]{Semantic spatial relations and projected labels}
 
 SCENE-3D-E adds derived spatial geometry without a mutable per-frame updater.
 A @racket[spatial-relation] is a spatial Visual declaration with a concrete
@@ -2545,7 +2599,7 @@ homotopy controls the complete intermediate geometry.}
 The canonical acceptance scene is
 @filepath{examples/3d/spatial-maps-and-homotopies.rkt}.
 
-@section{Prepared spatial ODE trajectories and vector fields}
+@section[#:tag "prepared-spatial-ode"]{Prepared spatial ODE trajectories and vector fields}
 
 SCENE-3D-T0/T1/T2/T3/T4 turns the earlier direct-time flow support into an
 immutable trajectory-data model with event-aware preparation, explicit
