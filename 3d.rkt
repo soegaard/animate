@@ -83,6 +83,8 @@
          "private/3d/material3d.rkt"
          "private/3d/color-space3d.rkt"
          "private/3d/light-attenuation3d.rkt"
+         "private/3d/shadow3d.rkt"
+         "private/3d/shadow-bounds3d.rkt"
          "private/3d/light-animation3d.rkt"
          "private/3d/light3d.rkt"
          "private/3d/spatial-dependency.rkt"
@@ -922,6 +924,29 @@ cutaway3d
  light-attenuation3d-factor
  spot-smoothstep3d
  spot-cone-factor3d
+ shadow-settings3d
+ shadow-settings3d?
+ shadow-settings3d-map-size
+ shadow-settings3d-depth-bias
+ shadow-settings3d-normal-bias
+ shadow-settings3d-pcf-radius
+ shadow-settings3d-bounds
+ shadow-settings3d-near
+ shadow-settings3d-far
+ shadow-settings3d-prepared-bounds-key
+ directional-shadow3d
+ directional-shadow3d?
+ directional-shadow3d-settings
+ spot-shadow3d
+ spot-shadow3d?
+ spot-shadow3d-settings
+ shadow3d?
+ shadow3d-kind
+ shadow3d-settings
+ (struct-out prepared-shadow-bounds3d)
+ prepare-shadow-bounds3d
+ prepared-shadow-bounds3d-key
+ shadow-map3d-identity
  ambient-light3d
  ambient-light3d?
  ambient-light3d-id

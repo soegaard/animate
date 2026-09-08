@@ -16,6 +16,7 @@
          "../color-style.rkt"
          "camera3d.rkt"
          "light3d.rkt"
+         "shadow3d.rkt"
          "material3d.rkt"
          "mesh3d.rkt"
          "projection3d.rkt"
@@ -215,7 +216,16 @@
               ;; finite-position lighting implementation deliberately follows
               ;; in V5, so no current renderer may approximate them.
               [(point-light3d? light) (need! 'point-light)]
-              [(spot-light3d? light) (need! 'spot-light)]))))
+              [(spot-light3d? light) (need! 'spot-light)]
+              [else (void)])
+        ;; Shadow descriptors are already meaningful authoring data in V7,
+        ;; but V8/V9 own rendering them.  Require the relevant capability now
+        ;; so neither existing renderer can silently treat a descriptor as a
+        ;; no-op before its shadow-map implementation exists.
+        (define shadow (light3d-shadow light))
+        (cond [(directional-shadow3d? shadow) (need! 'directional-shadow)]
+              [(spot-shadow3d? shadow) (need! 'spot-shadow)]
+              [else (void)]))))
   (define projection (camera3d-projection (frame3d-spec-camera frame)))
   (cond [(perspective-projection3d? projection) (need! 'perspective)]
         [(orthographic-projection3d? projection) (need! 'orthographic)])
@@ -255,7 +265,20 @@
               (for/sum ([light (in-list (effective-request-lights frame))])
                 (if (spot-light3d? light) 1 0))
               0)
-          'maximum-shadow-lights 0
+          'maximum-shadow-lights
+          (if (request-has-lit-instance? compiled)
+              (for/sum ([light (in-list (effective-request-lights frame))])
+                (if (light3d-shadow light) 1 0))
+              0)
+          'maximum-shadow-map-size
+          (if (request-has-lit-instance? compiled)
+              (for/fold ([maximum 0]) ([light (in-list (effective-request-lights frame))])
+                (define shadow (light3d-shadow light))
+                (if shadow
+                    (max maximum
+                         (shadow-settings3d-map-size (shadow3d-settings shadow)))
+                    maximum))
+              0)
           'maximum-clip-planes (request-maximum-clip-plane-count compiled)))
 
 (define (renderer3d-require-request-capabilities renderer request)

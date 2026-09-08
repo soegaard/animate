@@ -8,6 +8,7 @@
          "../color-style.rkt"
          "../geometry.rkt"
          "light-attenuation3d.rkt"
+         "shadow3d.rkt"
          "vec3.rkt")
 
 (provide ambient-light3d ambient-light3d? ambient-light3d-id
@@ -98,14 +99,15 @@
 (define (ambient-light3d #:id [id 'ambient] #:intensity [intensity 1]
                          #:color [color "white"] #:shadow [shadow #f])
   (check-id 'ambient-light3d id) (check-intensity 'ambient-light3d intensity)
-  (check-shadow 'ambient-light3d shadow)
+  (check-shadow 'ambient-light3d 'ambient shadow)
   (ambient-light3d-value id intensity (opaque-color 'ambient-light3d color) shadow))
 
 ; Direction travels away from the source. A surface facing `-direction` is lit.
 (define (directional-light3d direction #:id [id 'key] #:intensity [intensity 1]
                              #:color [color "white"] #:shadow [shadow #f])
   (check-id 'directional-light3d id) (check-direction 'directional-light3d direction)
-  (check-intensity 'directional-light3d intensity) (check-shadow 'directional-light3d shadow)
+  (check-intensity 'directional-light3d intensity)
+  (check-shadow 'directional-light3d 'directional shadow)
   (directional-light3d-value id (vec3-normalize direction) intensity
                               (opaque-color 'directional-light3d color) shadow))
 
@@ -115,7 +117,7 @@
                        #:range [range #f] #:shadow [shadow #f])
   (check-id 'point-light3d id) (check-position 'point-light3d position)
   (check-intensity 'point-light3d intensity) (check-attenuation 'point-light3d attenuation)
-  (check-range 'point-light3d range) (check-shadow 'point-light3d shadow)
+  (check-range 'point-light3d range) (check-shadow 'point-light3d 'point shadow)
   (point-light3d-value id position intensity (opaque-color 'point-light3d color)
                        attenuation range shadow))
 
@@ -128,7 +130,7 @@
   (check-direction 'spot-light3d direction) (check-intensity 'spot-light3d intensity)
   (check-cone-angles 'spot-light3d inner-angle outer-angle)
   (check-attenuation 'spot-light3d attenuation) (check-range 'spot-light3d range)
-  (check-shadow 'spot-light3d shadow)
+  (check-shadow 'spot-light3d 'spot shadow)
   (spot-light3d-value id position (vec3-normalize direction) intensity
                       (opaque-color 'spot-light3d color) inner-angle outer-angle
                       attenuation range shadow))
@@ -150,9 +152,23 @@
 (define (check-range who value)
   (unless (or (not value) (and (finite-real? value) (positive? value)))
     (raise-argument-error who "#f or positive finite real? as #:range" value)))
-(define (check-shadow who value)
-  (unless (not value)
-    (raise-arguments-error who "#f until V6 shadow descriptors are available" "shadow" value)))
+(define (check-shadow who kind value)
+  (cond [(not value) (void)]
+        [(and (eq? kind 'directional) (directional-shadow3d? value)) (void)]
+        [(and (eq? kind 'spot) (spot-shadow3d? value)) (void)]
+        [(eq? kind 'ambient)
+         (raise-arguments-error who "#f: ambient light has no directional shadow map"
+                                "shadow" value)]
+        [(eq? kind 'point)
+         (raise-arguments-error who "#f: point-light cube shadows are deferred"
+                                "shadow" value)]
+        [else
+         (raise-arguments-error
+          who
+          (case kind
+            [(directional) "#f or directional-shadow3d? as #:shadow"]
+            [(spot) "#f or spot-shadow3d? as #:shadow"])
+          "shadow" value)]))
 (define (check-cone-angles who inner-angle outer-angle)
   ;; Delegate the shared validation to the cone-factor implementation.
   (void (spot-cone-factor3d inner-angle outer-angle 0)))

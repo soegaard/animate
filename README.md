@@ -161,6 +161,12 @@ cone, diffuse, and Blinn--Phong terms in linear light. The GPU path packs
 authored non-ambient lights in order and rejects frames exceeding four
 directional, eight point, or four spot lights—never silently treating a finite
 light as directional.
+SCENE-3D-V7 adds immutable directional/spot shadow descriptors, named bias and
+PCF settings, stable prepared caster bounds across sampled frame ranges, and a
+camera-independent future-map key. At this stage a descriptor is deliberately
+preflighted as unsupported by both renderers rather than ignored: V8/V9 add
+software/OpenGL shadow maps. Opaque mesh surfaces cast by default; transparent
+surfaces, strokes, markers, and billboards do not cast in this roadmap slice.
 SCENE-3D-V4 adds immutable timeline requests for named-light intensity,
 linear-light colour, finite-light position, spot aim, and spot cone values.
 Their endpoints are captured at each local clip start, so direct seeking and

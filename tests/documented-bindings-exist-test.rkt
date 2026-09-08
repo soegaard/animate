@@ -60,6 +60,16 @@
                          light-attenuation3d constant-attenuation3d
                          inverse-square-attenuation3d polynomial-attenuation3d
                          light-attenuation3d-factor spot-smoothstep3d spot-cone-factor3d
+                         shadow-settings3d shadow-settings3d? shadow-settings3d-map-size
+                         shadow-settings3d-depth-bias shadow-settings3d-normal-bias
+                         shadow-settings3d-pcf-radius shadow-settings3d-bounds
+                         shadow-settings3d-near shadow-settings3d-far
+                         shadow-settings3d-prepared-bounds-key
+                         directional-shadow3d directional-shadow3d? directional-shadow3d-settings
+                         spot-shadow3d spot-shadow3d? spot-shadow3d-settings
+                         shadow3d? shadow3d-kind shadow3d-settings
+                         prepared-shadow-bounds3d prepared-shadow-bounds3d?
+                         prepare-shadow-bounds3d prepared-shadow-bounds3d-key shadow-map3d-identity
                          ambient-light3d directional-light3d point-light3d spot-light3d
                          light3d? light3d-id light3d-kind light3d-color
                          light3d-intensity light3d-shadow
