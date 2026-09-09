@@ -41,10 +41,13 @@
 
 (struct latex-formula-pict-renderer (appearance-cache)
   #:transparent
-  ;; Formula pixels depend on the ambient TeX and conversion toolchain.  Do
-  ;; not let a static Racket-side tag certify compatibility with a later run.
-  ;; The renderer remains usable; only persistent section reuse declines.
-  #:property prop:pict-renderer-cache-identity #f
+  ;; latex-pict maintains the external rendering cache across runs.  The
+  ;; semantic formula and camera already participate in a section identity,
+  ;; so this tag records the built-in adapter's own appearance contract.  A
+  ;; user who deliberately changes the TeX or conversion environment can
+  ;; clear Animate's persistent cache to regenerate its frames.
+  #:property prop:pict-renderer-cache-identity
+  '(latex-formula-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (formula-visual? visual))

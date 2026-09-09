@@ -88,8 +88,10 @@ Returns the renderer's declared immutable appearance datum, or @racket[#f] when
 it has none. The section renderer then remains able to render that renderer but
 does not persistently reuse a section in which that renderer is selected.
 An unselected optional renderer does not prevent reuse of unrelated frames.
-For example, the built-in LaTeX formula renderer intentionally has no
-persistent identity: TeX and conversion-tool versions are external inputs.
+The built-in LaTeX formula renderer has a stable identity, so its sections can
+be persistently reused. Its formula source and camera already participate in
+the section key. If the TeX or conversion environment is deliberately changed,
+remove Animate's persistent cache to regenerate those frames.
 }
 
 @defproc[(pict-renderer-list? [value any/c]) boolean?]{

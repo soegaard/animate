@@ -53,10 +53,12 @@
   (dynamic-wind
    void
    (lambda ()
-     ;; TeX/conversion toolchain state is external to the Racket renderer, so
-     ;; the formula renderer deliberately does not claim a persistent key.
-     (check-false
-      (pict-renderer-cache-identity default-latex-formula-pict-renderer))
+     ;; The built-in formula renderer has a stable adapter identity.  Formula
+     ;; source and camera state are already represented in the section key;
+     ;; users can clear the persistent cache after changing their TeX setup.
+     (check-equal?
+      (pict-renderer-cache-identity default-latex-formula-pict-renderer)
+      '(latex-formula-pict-renderer-v1))
      ;; An opaque custom renderer is always renderable, but never persisted.
      (define opaque (list (opaque-circle-renderer "red")))
      (check-false
