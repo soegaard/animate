@@ -31,12 +31,12 @@
          string-match-appearance-complete-at-x
          string-match-appearance-duration
          string-path
-         string-copy
-         string-copy?
-         string-copy-source-selector
-         string-copy-destination-selector
-         string-copy-route
-         string-copy-mode
+         formula-string-copy
+         formula-string-copy?
+         formula-string-copy-source-selector
+         formula-string-copy-destination-selector
+         formula-string-copy-route
+         formula-string-copy-mode
          (struct-out planned-string-match)
          (struct-out string-match-plan)
          string-match-plan-warnings
@@ -125,7 +125,7 @@
 ;; A source-addressed copy deliberately uses a separate type from a match: it
 ;; does not consume its source material. The destination must instead remain
 ;; unmatched after ordinary matching, exactly like `formula-part-copy`.
-(struct string-copy-data (source-selector destination-selector route mode)
+(struct formula-string-copy-data (source-selector destination-selector route mode)
   #:transparent
   #:guard
   (lambda (source-selector destination-selector route mode who)
@@ -139,19 +139,20 @@
       (raise-argument-error who "string-movement-mode?" mode))
     (values source-selector destination-selector route mode)))
 
-;; string-copy : source-selector? source-selector?
+;; formula-string-copy : source-selector? source-selector?
 ;;               [#:route (or/c #f formula-route?)]
-;;               [#:mode string-movement-mode?] -> string-copy?
-(define (string-copy source-selector destination-selector
+;;               [#:mode string-movement-mode?] -> formula-string-copy?
+;; The `formula-` prefix prevents a collision with racket/base's string-copy.
+(define (formula-string-copy source-selector destination-selector
                      #:route [route #f]
                      #:mode [mode 'auto])
-  (string-copy-data source-selector destination-selector route mode))
+  (formula-string-copy-data source-selector destination-selector route mode))
 
-(define string-copy? string-copy-data?)
-(define string-copy-source-selector string-copy-data-source-selector)
-(define string-copy-destination-selector string-copy-data-destination-selector)
-(define string-copy-route string-copy-data-route)
-(define string-copy-mode string-copy-data-mode)
+(define formula-string-copy? formula-string-copy-data?)
+(define formula-string-copy-source-selector formula-string-copy-data-source-selector)
+(define formula-string-copy-destination-selector formula-string-copy-data-destination-selector)
+(define formula-string-copy-route formula-string-copy-data-route)
+(define formula-string-copy-mode formula-string-copy-data-mode)
 
 
 ;;;

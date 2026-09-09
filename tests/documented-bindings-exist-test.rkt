@@ -39,6 +39,15 @@
                          formula-source-select source-occurrence
                          relation-visual))])
     (check-not-eq? (public-binding "../main.rkt" name) absent))
+  ;; Animate's former source-addressed string-copy constructor shadowed the
+  ;; ordinary racket/base string-copy. Its formula-specific replacement is
+  ;; public, while the common base name is deliberately absent.
+  (check-eq? (public-binding "../main.rkt" 'string-copy) absent)
+  (for ([name (in-list '(formula-string-copy formula-string-copy?
+                         formula-string-copy-source-selector
+                         formula-string-copy-destination-selector
+                         formula-string-copy-route formula-string-copy-mode))])
+    (check-not-eq? (public-binding "../main.rkt" name) absent))
   (for ([name (in-list '(scene-program? scene-block-spec? make-scene-program))])
     (check-not-eq? (public-binding "../authoring.rkt" name) absent))
   (for ([name (in-list '(open-program-preview open-scene-preview preview-available?

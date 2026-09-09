@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@(require (for-label (except-in racket/base angle string-copy) animate))
+@(require (for-label (except-in racket/base angle) animate))
 
 @title[#:tag "concept-immutable-scenes"]{Immutable Scenes and Arbitrary-Time Sampling}
 

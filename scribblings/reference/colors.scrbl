@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@(require (for-label (except-in racket/base angle string-copy tan)
+@(require (for-label (except-in racket/base angle tan)
                      animate
                      (except-in animate/colors
                                 rgba-color

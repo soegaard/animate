@@ -138,7 +138,7 @@
   ;; Mutable color strings are snapshotted by value for the cache key, so a
   ;; caller-side style mutation cannot leave a stale cached text raster behind.
   (define mutable-color
-    ;; `string-copy` is animate's source-addressed formula-copy constructor.
+    ;; `formula-string-copy` is Animate's source-addressed formula-copy constructor.
     ;; Construct the mutable Racket string directly here instead.
     (string #\g #\r #\a #\y))
   (define mutable-color-label

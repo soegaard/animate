@@ -1,5 +1,5 @@
 #lang scribble/manual
-@(require (for-label (except-in racket/base angle string-copy)
+@(require (for-label (except-in racket/base angle)
                      racket/class
                      racket/contract
                      racket/draw
@@ -1810,7 +1810,7 @@ occurrence.
 @defproc[(plan-matching-strings [source formula-assembly-visual?]
                                 [destination formula-assembly-visual?]
                                 [#:matches matches (listof string-match?) '()]
-                                [#:copies copies (listof string-copy?) '()])
+                                [#:copies copies (listof formula-string-copy?) '()])
          string-match-plan?]{
 
 Plans a deterministic source-addressed correspondence without rendering it.
@@ -1842,17 +1842,20 @@ the interval immediately preceding that deadline. This is useful for a moving
 @tt{+} that should become @tt{-} exactly as it passes an equality sign.
 }
 
-@defproc[(string-copy [source source-selector?]
-                      [destination source-selector?]
-                      [#:route route (or/c #f formula-route?) #f]
-                      [#:mode mode (or/c 'auto 'rigid 'glyphwise 'cross-fade) 'auto])
-         string-copy?]{
+@defproc[(formula-string-copy [source source-selector?]
+                              [destination source-selector?]
+                              [#:route route (or/c #f formula-route?) #f]
+                              [#:mode mode (or/c 'auto 'rigid 'glyphwise 'cross-fade) 'auto])
+         formula-string-copy?]{
 Declares a moving copy: the source remains present while an otherwise unmatched
-destination is introduced.
+destination is introduced. Its @racket[formula-] prefix avoids colliding with
+@racketmodname[racket/base]'s @racket[string-copy].
 }
 
 @defproc[(string-match? [value any/c]) boolean?]{Recognizes an explicit string correspondence.}
-@defproc[(string-copy? [value any/c]) boolean?]{Recognizes an explicit string copy.}
+@defproc[(formula-string-copy? [value any/c]) boolean?]{
+Recognizes an explicit source-addressed formula string copy.
+}
 @defproc[(string-match-plan? [value any/c]) boolean?]{Recognizes an immutable deterministic match plan.}
 @defproc[(string-match-plan->datum [plan string-match-plan?]) immutable-hash?]{
 Returns a transparent diagnostic representation of the planner's matches,
@@ -1866,7 +1869,7 @@ unmatched material, routes, and decision reasons.
           [#:key-map key-map (listof string-match?) '()]
           [#:protect-source protect-source (listof source-selector?) '()]
           [#:protect-destination protect-destination (listof source-selector?) '()]
-          [#:copies copies (listof string-copy?) '()]
+          [#:copies copies (listof formula-string-copy?) '()]
           [#:on-ambiguity on-ambiguity (or/c 'left-to-right 'error) 'left-to-right]
           [#:path-arc path-arc finite-real? 0]
           [#:mismatch-mode mismatch-mode (or/c 'fade 'fade-transform) 'fade])

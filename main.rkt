@@ -592,12 +592,12 @@
  string-match-appearance-complete-at-x
  string-match-appearance-duration
  string-path
- string-copy
- string-copy?
- string-copy-source-selector
- string-copy-destination-selector
- string-copy-route
- string-copy-mode
+ formula-string-copy
+ formula-string-copy?
+ formula-string-copy-source-selector
+ formula-string-copy-destination-selector
+ formula-string-copy-route
+ formula-string-copy-mode
  (struct-out planned-string-match)
  (struct-out string-match-plan)
  string-match-plan-warnings

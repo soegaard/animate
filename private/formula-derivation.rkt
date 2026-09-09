@@ -145,7 +145,7 @@
    'matching-strings protect-source source-selector? "source-selector?")
   (check-list-of
    'matching-strings protect-destination source-selector? "source-selector?")
-  (check-list-of 'matching-strings copies string-copy? "string-copy?")
+  (check-list-of 'matching-strings copies formula-string-copy? "formula-string-copy?")
   (unless (memq on-ambiguity '(left-to-right error))
     (raise-argument-error
      'matching-strings

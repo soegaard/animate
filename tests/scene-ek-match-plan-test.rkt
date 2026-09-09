@@ -247,7 +247,7 @@
       one-seven two-sevens
       #:copies
       (list
-       (string-copy
+       (formula-string-copy
         "7"
         (source-occurrence "7" 1)
         #:route (formula-arc #:angle 1/3))))

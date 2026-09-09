@@ -866,7 +866,7 @@
 ;                              [#:key-map (listof string-match?)]
 ;                              [#:protect-source (listof source-selector?)]
 ;                              [#:protect-destination (listof source-selector?)]
-;                              [#:copies (listof string-copy?)]
+;                              [#:copies (listof formula-string-copy?)]
 ;                              [#:on-ambiguity (or/c 'left-to-right 'error)]
 ;                              [#:path-arc finite-real?]
 ;                              [#:mismatch-mode (or/c 'fade 'fade-transform)]
@@ -893,7 +893,7 @@
      #:protect-source protect-source
      #:protect-destination protect-destination
      #:on-ambiguity on-ambiguity))
-  (check-string-copy-list 'transform-matching-strings copies)
+  (check-formula-string-copy-list 'transform-matching-strings copies)
   (define correspondence
     (string-match-plan->formula-correspondence plan))
   (with-animation-inspection
@@ -920,7 +920,7 @@
 ;                            [#:key-map (listof string-match?)]
 ;                            [#:protect-source (listof source-selector?)]
 ;                            [#:protect-destination (listof source-selector?)]
-;                            [#:copies (listof string-copy?)]
+;                            [#:copies (listof formula-string-copy?)]
 ;                            [#:on-ambiguity (or/c 'left-to-right 'error)]
 ;                            [#:path-arc finite-real?]
 ;                            [#:mismatch-mode (or/c 'fade 'fade-transform)]
@@ -963,7 +963,7 @@
      #:protect-source protect-source
      #:protect-destination protect-destination
      #:on-ambiguity on-ambiguity))
-  (check-string-copy-list 'rewrite-matching-strings copies)
+  (check-formula-string-copy-list 'rewrite-matching-strings copies)
   (define correspondence (string-match-plan->formula-correspondence plan))
   (define anchor-match
     (selector->single-part-match source destination anchor))
@@ -1139,18 +1139,18 @@
      (define source-names
        (selection->declared-part-names
         source
-        (formula-source-select source (string-copy-source-selector copy))))
+        (formula-source-select source (formula-string-copy-source-selector copy))))
      (define destination-names
        (selection->declared-part-names
         destination
         (formula-source-select destination
-                               (string-copy-destination-selector copy))))
+                               (formula-string-copy-destination-selector copy))))
      (unless (= (length source-names) (length destination-names))
        (raise-arguments-error
         'transform-matching-strings
         "copy selectors resolving to the same number of declared formula parts"
-        "source-selector" (string-copy-source-selector copy)
-        "destination-selector" (string-copy-destination-selector copy)
+        "source-selector" (formula-string-copy-source-selector copy)
+        "destination-selector" (formula-string-copy-destination-selector copy)
         "source-count" (length source-names)
         "destination-count" (length destination-names)))
      (for/list ([source-name (in-list source-names)]
@@ -1164,11 +1164,11 @@
        (formula-part-copy
         source-name
         destination-name
-        (or (string-copy-route copy) default-route))))))
+        (or (formula-string-copy-route copy) default-route))))))
 
-(define (check-string-copy-list who copies)
-  (unless (and (list? copies) (andmap string-copy? copies))
-    (raise-argument-error who "list of string-copy? values" copies)))
+(define (check-formula-string-copy-list who copies)
+  (unless (and (list? copies) (andmap formula-string-copy? copies))
+    (raise-argument-error who "list of formula-string-copy? values" copies)))
 
 ;; string-transition-options records author-level planner inputs separately
 ;; from the compiled correspondence.  The inspector can therefore explain a

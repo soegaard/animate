@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@(require (for-label (except-in racket/base angle string-copy)
+@(require (for-label (except-in racket/base angle)
                      racket/contract
                      racket/math
                      animate
