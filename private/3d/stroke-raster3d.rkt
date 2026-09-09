@@ -18,6 +18,7 @@
          "clipping3d.rkt"
          "raster-target3d.rkt"
          "stroke3d.rkt"
+         "viewport3d.rkt"
          "vec3.rkt")
 
 (provide (struct-out prepared-stroke-segment3d)
@@ -104,8 +105,8 @@
      ;; unusual camera implementation cannot leak #f into raster arithmetic.
      (cond [(or (not first-projected) (not second-projected)) '()]
            [else
-            (define first-screen (ndc->screen first-projected width height))
-            (define second-screen (ndc->screen second-projected width height))
+            (define first-screen (ndc3d->screen first-projected width height))
+            (define second-screen (ndc3d->screen second-projected width height))
             (define metric-length
               (if (eq? (stroke3d-dash-space style) 'screen)
                   (distance2 first-screen second-screen)
@@ -227,10 +228,6 @@
 (define (modulo-real value divisor)
   (- value (* divisor (floor (/ value divisor)))))
 
-(define (ndc->screen point width height)
-  (cons (* width (/ (+ (vec2-x point) 1) 2))
-        (* height (/ (- 1 (vec2-y point)) 2))))
-
 (define (distance2 first second)
   (sqrt (+ (sqr (- (car second) (car first)))
            (sqr (- (cdr second) (cdr first))))))
@@ -253,8 +250,8 @@
          (define first-projected (camera3d-project camera (vec3- midpoint offset) #:aspect aspect))
          (define second-projected (camera3d-project camera (vec3+ midpoint offset) #:aspect aspect))
          (if (and first-projected second-projected)
-             (max 1e-6 (distance2 (ndc->screen first-projected width height)
-                                  (ndc->screen second-projected width height)))
+             (max 1e-6 (distance2 (ndc3d->screen first-projected width height)
+                                  (ndc3d->screen second-projected width height)))
              0)]))
 
 (define (resolve-stroke-color style inherited-opacity)
@@ -319,8 +316,9 @@
       0
       (for*/fold ([written 0]) ([pixel-y (in-range top (add1 bottom))]
                              [pixel-x (in-range left (add1 right))])
-        (define point-x (+ pixel-x 1/2))
-        (define point-y (+ pixel-y 1/2))
+        (define center (pixel3d-center pixel-x pixel-y))
+        (define point-x (car center))
+        (define point-y (cdr center))
         (define progress (/ (+ (* (- point-x start-x) dx)
                                (* (- point-y start-y) dy))
                             length-squared))

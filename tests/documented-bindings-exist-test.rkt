@@ -122,6 +122,9 @@
                          surface3d? surface3d-kind surface3d-local-mesh surface3d-mesh
                          surface3d->mesh3d surface3d-local-bounds surface3d-diagnostics
                          surface3d-provenance surface3d-domain surface3d-evaluate surface3d-frame-at
+                         surface-mesh3d surface-mesh3d? surface-mesh3d-mesh
+                         surface-mesh3d-vertex-provenance surface-mesh3d-triangle-provenance
+                         surface-mesh3d-topology-key surface-mesh3d-diagnostics
                          surface-domain3d surface-diagnostics3d surface-frame3d
                          surface3d-grid surface3d-resolution
                          surface3d-position-at surface3d-tangent-u-at

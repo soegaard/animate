@@ -103,6 +103,8 @@
 (write-bitmap! "software.png" software)
 (write-bitmap! "opengl.png" opengl)
 (write-argb! "absolute-difference.png" (conformance-report3d-difference-argb report))
+(write-argb! "large-difference-mask.png"
+             (conformance-report3d-large-difference-mask-argb report))
 (write-argb! "edge-mask.png" (conformance-report3d-edge-mask-argb report))
 (write-argb! "interior-mask.png" (conformance-report3d-interior-mask-argb report))
 (write-histogram! (hash-ref (conformance-report3d-metrics report) 'histogram))

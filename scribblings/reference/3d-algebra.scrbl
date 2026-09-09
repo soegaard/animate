@@ -3108,6 +3108,13 @@ immutable spatial trajectory.}
 position at a supported time. Every prepared lookup reads only stored data.}
 @defproc[(ode-trajectory3d-time-range [trajectory ode-trajectory3d?])
          (cons/c finite-real? finite-real?)]{Returns its supported range.}
+@defproc[(trajectory-segment3d? [value any/c]) boolean?]{Recognizes one
+immutable dense segment retained by a prepared trajectory. Segment records are
+returned by @racket[ode-trajectory3d-segments]; clients inspect them but do not
+construct them directly.}
+@defproc[(trajectory-segment3d-bounds [segment trajectory-segment3d?]) aabb3?]{Returns
+the conservative bounds of the segment's cubic Hermite path. The box covers
+coordinate extrema in the interior as well as its endpoint positions.}
 @defproc[(ode-trajectory3d-segments [trajectory ode-trajectory3d?]) vector?]{Returns
 the immutable, increasing-time vector of dense @racket[trajectory-segment3d?]
 values. A segment's @racket[trajectory-segment3d-bounds] is an @racket[aabb3?]
@@ -3456,6 +3463,15 @@ of diagnostics.}
                              [tangent-v vec3?]
                              [normal vec3?])
   #:transparent]{A local parametric differential frame.}
+@defstruct*[surface-mesh3d ([mesh mesh3d?]
+                            [vertex-provenance vector?]
+                            [triangle-provenance vector?]
+                            [topology-key any/c]
+                            [diagnostics any/c])
+  #:transparent]{The immutable indexed lowering returned by
+@racket[surface3d-local-mesh]. Its provenance vectors are aligned with the
+mesh's vertices and render triangles; the topology key and diagnostics retain
+producer-specific inspection information.}
 @defthing[surface3d-domain-contains? procedure?]{Reports whether a parameter
 point is inside a surface's retained domain.}
 @defthing[surface3d-position-at? procedure?]{Returns a retained surface point

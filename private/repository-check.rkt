@@ -19,6 +19,8 @@
 
 (provide (struct-out repository-check)
          (struct-out repository-check-report)
+         check-source-tree!
+         check-installed-package!
          check-repository!)
 
 
@@ -44,29 +46,36 @@
 ;;; Repository Validation
 ;;;
 
-; check-repository! : [#:root path-string?] -> repository-check-report?
-;;   Runs the headless release checks, including a source-package smoke install.
-(define (check-repository! #:root [root (current-directory)])
+; check-source-tree! : [#:root path-string?] [#:archive-directory path-string?]
+;;                       -> repository-check-report?
+;;   Checks the working tree without changing the package that supplies this
+;;   command.  The generated archive is retained in archive-directory for the
+;;   independent installed-package phase.
+(define (check-source-tree! #:root [root (current-directory)]
+                            #:archive-directory [archive-directory #f])
   (unless (path-string? root)
-    (raise-argument-error 'check-repository! "path-string?" root))
+    (raise-argument-error 'check-source-tree! "path-string?" root))
   (define root-path
     (simplify-path (path->complete-path root)))
   (unless (directory-exists? root-path)
-    (raise-arguments-error 'check-repository!
+    (raise-arguments-error 'check-source-tree!
                            "an existing repository directory"
                            "root" root))
   (define raco-path (sibling-racket-tool "raco"))
-  (define scribble-path (sibling-racket-tool "scribble"))
+  (define racket-path (find-system-path 'exec-file))
+  (define temporary-archive? (not archive-directory))
   (define package-root
-    (make-temporary-file "animate-package-check-~a" 'directory))
-  (define user-root
-    (make-temporary-file "animate-package-user-~a" 'directory))
+    (if archive-directory
+        (simplify-path (path->complete-path archive-directory))
+        (make-temporary-file "animate-package-check-~a" 'directory)))
+  (unless (directory-exists? package-root)
+    (make-directory* package-root))
   (define documentation-root
     (make-temporary-file "animate-documentation-check-~a" 'directory))
   (dynamic-wind
    void
    (lambda ()
-     (define basic-checks
+     (define source-checks
        (list
         (run-check 'metadata
                    "version/module-boundary/example catalogue tests"
@@ -77,7 +86,8 @@
                          "tests/public-module-boundaries-test.rkt"
                          "tests/example-public-imports-test.rkt"
                          "tests/example-catalog-test.rkt"
-                         "tests/documented-bindings-exist-test.rkt"))
+                         "tests/documented-bindings-exist-test.rkt"
+                         "tests/documentation-public-tags-test.rkt"))
         (run-check 'compile
                    "compile public modules, tests, and Racket examples"
                    raco-path root-path
@@ -91,42 +101,50 @@
                    raco-path root-path
                    (list "test" "tests"))
         (run-check 'documentation
-                   "registered Scribble manual"
-                   scribble-path root-path
-                   (list "--htmls" "--dest" (path->string documentation-root)
-                         "scribblings/animate.scrbl"))))
-     (define package-check
-       (source-package-check raco-path root-path package-root user-root))
-     (repository-check-report root-path (append basic-checks (list package-check))))
+                   "registered Scribble manual with strict Animate-owned references"
+                   racket-path root-path
+                   (list "tools/check-documentation.rkt"
+                         (path->string documentation-root)))
+        (create-source-archive-check raco-path root-path package-root)))
+     (repository-check-report root-path source-checks))
    (lambda ()
-     (delete-directory/files package-root)
-     (delete-directory/files user-root)
-     (delete-directory/files documentation-root))))
+     (delete-directory/files documentation-root)
+     (when temporary-archive?
+       (delete-directory/files package-root)))))
 
-(define (run-check name detail executable root arguments)
-  (repository-check
-   name
-   (parameterize ([current-directory root])
-     (apply system* executable arguments))
-   detail))
-
-(define (source-package-check raco-path root package-root user-root)
-  (define archive
-    (build-path package-root "animate.zip"))
-  ;; `latex-pict` is a runtime dependency that is commonly supplied to this
-  ;; checkout as a local package via PLTCOLLECTS.  A deliberately fresh user
-  ;; package scope cannot consult that collection path (it would shadow the
-  ;; archive we are trying to test), and an offline check must not need a
-  ;; catalog merely to rediscover the same local package.  Install an explicit
-  ;; local source first when the current development environment provides one.
-  ;; The normal catalog-based path is unchanged when no such source is found.
+; check-installed-package! : #:archive path-string? #:user-home path-string?
+;;                             -> repository-check-report?
+;;   Installs only archive into a fresh package home.  Every check runs in an
+;;   isolated child Racket process, so a source-tree module identity can never
+;;   leak into the installed package validation.
+(define (check-installed-package! #:archive archive
+                                  #:user-home [user-home
+                                               (make-temporary-file
+                                                "animate-package-user-~a"
+                                                'directory)])
+  (unless (path-string? archive)
+    (raise-argument-error 'check-installed-package! "path-string?" archive))
+  (unless (path-string? user-home)
+    (raise-argument-error 'check-installed-package! "path-string?" user-home))
+  (define archive-path (simplify-path (path->complete-path archive)))
+  (unless (file-exists? archive-path)
+    (raise-arguments-error 'check-installed-package!
+                           "an existing source package archive"
+                           "archive" archive))
+  (define user-root (simplify-path (path->complete-path user-home)))
+  (when (directory-exists? user-root)
+    (unless (null? (directory-list user-root))
+      (raise-arguments-error
+       'check-installed-package!
+       "an empty fresh PLTUSERHOME directory"
+       "user-home" user-home)))
+  (unless (directory-exists? user-root)
+    (make-directory* user-root))
+  (define raco-path (sibling-racket-tool "raco"))
+  (define racket-path (find-system-path 'exec-file))
   (define local-dependency-sources
     (filter values
             (map find-local-package-source
-                 ;; Order each known local transitive dependency before its
-                 ;; dependent package.  The Poppler entries cover the
-                 ;; platform variants declared by racket-poppler; unavailable
-                 ;; variants simply yield #f and are not installed.
                  '("lexers-lib"
                    "parsers-lib"
                    "svg"
@@ -137,10 +155,79 @@
                    "poppler-win32-x86_64-2"
                    "racket-poppler"
                    "latex-pict"))))
-  (define archive-created?
-    (run-check 'package-create
-               "create a source package archive"
-               raco-path root
+  (define install-succeeded?
+    (parameterize ([current-environment-variables
+                    (fresh-package-environment user-root)])
+      (and (install-local-package-sources! raco-path local-dependency-sources)
+           (system* raco-path "pkg" "install" "--auto" "--scope" "user"
+                    (path->string archive-path))
+           (system* raco-path "setup" "--pkgs" "animate"))))
+  (define checks
+    (list
+     (repository-check
+      'package-install install-succeeded?
+      "install and set up the source archive in a fresh package home")
+     (repository-check
+      'package-public-modules
+      (and install-succeeded?
+           (parameterize ([current-environment-variables
+                           (fresh-package-environment user-root)])
+             (require-public-modules! racket-path)))
+      "require every public collection module from the archive")
+     (repository-check
+      'package-smoke
+      (and install-succeeded?
+           (parameterize ([current-environment-variables
+                           (fresh-package-environment user-root)])
+             (run-installed-package-smoke! racket-path)))
+      "run the package-owned installed smoke suite")
+     (repository-check
+      'package-module-identity
+      (and install-succeeded?
+           (parameterize ([current-environment-variables
+                           (fresh-package-environment user-root)])
+             (check-installed-fixture-identities! racket-path)))
+      "check fixture values against predicates from the installed host")))
+  (repository-check-report archive-path checks))
+
+; check-repository! : [#:root path-string?] -> repository-check-report?
+;;   Backwards-compatible composition for local use.  CI invokes the two
+;;   explicit operations with separate PLTUSERHOME directories instead.
+(define (check-repository! #:root [root (current-directory)])
+  (define package-root
+    (make-temporary-file "animate-package-check-~a" 'directory))
+  (define user-root
+    (make-temporary-file "animate-package-user-~a" 'directory))
+  (dynamic-wind
+   void
+   (lambda ()
+     (define source-report
+       (check-source-tree! #:root root #:archive-directory package-root))
+     (define package-report
+       (check-installed-package!
+        #:archive (build-path package-root "animate.zip")
+        #:user-home user-root))
+     (repository-check-report
+      (repository-check-report-root source-report)
+      (append (repository-check-report-checks source-report)
+              (repository-check-report-checks package-report))))
+   (lambda ()
+     (delete-directory/files package-root)
+     (delete-directory/files user-root))))
+
+(define (run-check name detail executable root arguments)
+  (repository-check
+   name
+   (parameterize ([current-directory root])
+     (apply system* executable arguments))
+   detail))
+
+(define (create-source-archive-check raco-path root package-root)
+  (define archive
+    (build-path package-root "animate.zip"))
+  (run-check 'package-create
+             "create a source package archive"
+             raco-path root
                ;; `--source` strips generated build products and honors the
                ;; package's `source-omit-files`. It is a flag, not an option
                ;; with an argument: the old command accidentally passed the
@@ -150,31 +237,9 @@
                ;; the package creator then tries to convert to a string for
                ;; the archive name. The normalized absolute checkout path has
                ;; the actual package basename (`animate`).
-               (list "pkg" "create" "--source" "--dest"
-                     (path->string package-root)
-                     (path->string root))))
-  (define install-succeeded?
-    (and (repository-check-ok? archive-created?)
-         (file-exists? archive)
-         (parameterize ([current-environment-variables
-                         (fresh-package-environment user-root)])
-           (and (install-local-package-sources! raco-path
-                                                 local-dependency-sources)
-                (apply system* raco-path
-                       (list "pkg" "install" "--auto" "--scope" "user"
-                             (path->string archive)))
-                (apply system* raco-path (list "setup" "--pkgs" "animate"))
-                ;; A source archive is coherent only when every documented
-                ;; public module imports from the fresh installation.
-                ;; Require each module in its own process, which produces a
-                ;; precise failing surface if one package boundary has a
-                ;; missing dependency. `animate/preview` is deliberately
-                ;; headless on require, so this exercises it without a GUI.
-                (require-public-modules! (find-system-path 'exec-file))))))
-  (repository-check
-   'package
-   install-succeeded?
-   "create, install, set up, and require a fresh source package"))
+             (list "pkg" "create" "--source" "--dest"
+                   (path->string package-root)
+                   (path->string root))))
 
 ;; require-public-modules! : path? -> boolean?
 ;; Runs a small isolated `require` for every documented public entry module.
@@ -182,6 +247,8 @@
 ;; source files, so a fresh archive catches collection-layout mistakes.
 (define (require-public-modules! racket-path)
   (for/and ([module-path (in-list '(animate
+                                    animate/3d
+                                    animate/3d/render
                                     animate/authoring
                                     animate/preview
                                     animate/render
@@ -190,6 +257,27 @@
     (system* racket-path
              "-e"
              (format "(require ~a)" module-path))))
+
+;; The smoke module and fixture live in the archive.  Unlike a workspace test
+;; path, the package-specific library reference below resolves solely through
+;; the isolated package database established above.
+(define (run-installed-package-smoke! racket-path)
+  (system* racket-path
+           "-e"
+           "(begin (require (lib \"private/installed-package-smoke.rkt\" \"animate\")) (run-installed-package-smoke!))"))
+
+(define (check-installed-fixture-identities! racket-path)
+  (system*
+   racket-path
+   "-e"
+   (string-append
+    "(begin "
+    "(require animate animate/authoring animate/3d) "
+    "(define fixture (quote (lib \"private/installed-package-fixture.rkt\" \"animate\"))) "
+    "(unless (scene? (dynamic-require fixture (quote installed-scene))) (error (quote fixture) \"scene identity mismatch\")) "
+    "(unless (scene-program? (dynamic-require fixture (quote installed-program))) (error (quote fixture) \"scene program identity mismatch\")) "
+    "(unless (formula-visual? (dynamic-require fixture (quote installed-formula))) (error (quote fixture) \"formula identity mismatch\")) "
+    "(unless (vec3? (dynamic-require fixture (quote installed-vector))) (error (quote fixture) \"vec3 identity mismatch\")))")))
 
 ;; install-local-package-sources! : path? (listof path?) -> boolean?
 ;; Installs the explicitly discovered local sources into the isolated user

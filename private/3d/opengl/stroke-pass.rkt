@@ -21,6 +21,7 @@
          "../software-renderer3d.rkt"
          "../stroke-raster3d.rkt"
          "../stroke3d.rkt"
+         "../viewport3d.rkt"
          "api.rkt"
          "matrix-pack.rkt"
          "shader-program.rkt")
@@ -129,8 +130,9 @@
   (define clip-w (vector-ref clip 3))
   ;; A prepared screen coordinate has a top-left origin; OpenGL NDC has +y
   ;; upward. Multiplication by the original clip w preserves its depth.
-  (append (list (* (- (* 2.0 (/ x width)) 1.0) clip-w)
-                (* (- 1.0 (* 2.0 (/ y height))) clip-w)
+  (define ndc (screen3d->ndc x y width height))
+  (append (list (* (car ndc) clip-w)
+                (* (cdr ndc) clip-w)
                 (vector-ref clip 2)
                 clip-w)
           (color-components color)))

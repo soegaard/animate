@@ -13,6 +13,7 @@
          "clipping3d.rkt"
          "marker3d.rkt"
          "raster-target3d.rkt"
+         "viewport3d.rkt"
          "vec3.rkt")
 
 (provide (struct-out prepared-point-marker3d)
@@ -37,7 +38,7 @@
   (define projected (camera3d-project-view camera view-position #:aspect aspect))
   (and (point-kept-by-clips? world-position clip-planes)
        projected
-       (let ([screen (ndc->screen projected width height)])
+       (let ([screen (ndc3d->screen projected width height)])
          (prepared-point-marker3d
           path (car screen) (cdr screen) (- (vec3-z view-position))
           (point-radius-pixels style world-position camera aspect width height)
@@ -57,8 +58,8 @@
   (define first-projected (and first-view (camera3d-project-view camera first-view #:aspect aspect)))
   (define second-projected (and second-view (camera3d-project-view camera second-view #:aspect aspect)))
   (and first-projected second-projected
-       (let* ([first-screen (ndc->screen first-projected width height)]
-              [second-screen (ndc->screen second-projected width height)]
+       (let* ([first-screen (ndc3d->screen first-projected width height)]
+              [second-screen (ndc3d->screen second-projected width height)]
               [dx (- (car second-screen) (car first-screen))]
               [dy (- (cdr second-screen) (cdr first-screen))]
               [length (sqrt (+ (* dx dx) (* dy dy)))])
@@ -138,8 +139,9 @@
   (define bottom (min (sub1 (raster-target3d-height target)) (inexact->exact (ceiling (+ y radius)))))
   (for*/fold ([written 0]) ([pixel-y (in-range top (add1 bottom))]
                          [pixel-x (in-range left (add1 right))])
-    (define dx (- (+ pixel-x 1/2) x))
-    (define dy (- (+ pixel-y 1/2) y))
+    (define center (pixel3d-center pixel-x pixel-y))
+    (define dx (- (car center) x))
+    (define dy (- (cdr center) y))
     (if (and (<= (+ (* dx dx) (* dy dy)) (* radius radius))
              (marker-depth-accepts? (point-style3d-depth-mode (prepared-point-marker3d-style marker))
                                     (point-style3d-depth-bias (prepared-point-marker3d-style marker))
@@ -170,8 +172,9 @@
                       (inexact->exact (ceiling (max tip-y (cdr first-base) (cdr second-base))))))
   (for*/fold ([written 0]) ([pixel-y (in-range top (add1 bottom))]
                          [pixel-x (in-range left (add1 right))])
+    (define center (pixel3d-center pixel-x pixel-y))
     (define inside?
-      (point-in-triangle? (+ pixel-x 1/2) (+ pixel-y 1/2)
+      (point-in-triangle? (car center) (cdr center)
                           (cons tip-x tip-y) first-base second-base))
     (if (and inside?
              (marker-depth-accepts? (arrow-style3d-depth-mode (prepared-arrow-marker3d-style marker))
@@ -222,12 +225,8 @@
   (define first (camera3d-project camera (vec3- point (vec3-scale half (camera3d-right camera))) #:aspect aspect))
   (define second (camera3d-project camera (vec3+ point (vec3-scale half (camera3d-right camera))) #:aspect aspect))
   (if (and first second)
-      (distance2 (ndc->screen first width height) (ndc->screen second width height))
+      (distance2 (ndc3d->screen first width height) (ndc3d->screen second width height))
       0))
-
-(define (ndc->screen point width height)
-  (cons (* width (/ (+ (vec2-x point) 1) 2))
-        (* height (/ (- 1 (vec2-y point)) 2))))
 
 (define (distance2 first second)
   (sqrt (+ (sqr (- (car second) (car first)))

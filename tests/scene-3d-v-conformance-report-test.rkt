@@ -25,6 +25,8 @@
   (check-equal? (hash-ref metrics 'different-pixel-count) 2)
   (check-equal? (hash-ref metrics 'different-component-count) 2)
   (check-equal? (hash-ref metrics 'large-difference-components) 0)
+  (check-equal? (hash-ref metrics 'large-difference-pixel-count) 0)
+  (check-equal? (hash-ref metrics 'large-difference-connected-component-count) 0)
   (check-equal? (hash-ref metrics 'alpha-only-different-pixel-count) 1)
   (check-equal? (+ (hash-ref metrics 'alpha-only-edge-pixel-count)
                    (hash-ref metrics 'alpha-only-interior-pixel-count))
@@ -35,8 +37,26 @@
   (check-equal? (vector-ref (hash-ref metrics 'histogram) 20) 1)
   (check-equal? (vector-ref (hash-ref metrics 'histogram) 40) 1)
   (check-true (immutable? (conformance-report3d-difference-argb report)))
+  (check-true (immutable? (conformance-report3d-large-difference-mask-argb report)))
   (check-true (immutable? (conformance-report3d-edge-mask-argb report)))
   (check-true (immutable? (conformance-report3d-interior-mask-argb report)))
+  ;; Large-error regions use four-neighbour connectivity, so diagonal pixels
+  ;; remain separately inspectable in a CI artifact.
+  (define large-actual (bytes-copy expected))
+  (bytes-set! large-actual 1 255)
+  (bytes-set! large-actual 13 255)
+  (define large-metrics
+    (conformance-report3d-metrics
+     (argb-conformance-report3d expected large-actual 2 2)))
+  (check-equal? (hash-ref large-metrics 'large-difference-components) 2)
+  (check-equal? (hash-ref large-metrics 'large-difference-pixel-count) 2)
+  (check-equal? (+ (hash-ref large-metrics 'large-difference-edge-pixel-count)
+                   (hash-ref large-metrics 'large-difference-interior-pixel-count))
+                2)
+  (check-equal? (hash-ref large-metrics 'large-difference-connected-component-count) 2)
+  (check-equal?
+   (vector-ref (hash-ref large-metrics 'large-difference-connected-components) 0)
+   (hasheq 'bounds '#(0 0 0 0) 'pixel-count 1))
   (check-exn exn:fail:contract?
              (lambda () (argb-conformance-report3d expected actual 0 2)))
   (check-exn exn:fail:contract?

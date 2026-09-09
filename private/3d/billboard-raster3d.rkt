@@ -18,6 +18,7 @@
          "camera3d.rkt"
          "clipping3d.rkt"
          "raster-target3d.rkt"
+         "viewport3d.rkt"
          "vec3.rkt")
 
 (provide (struct-out prepared-billboard-vertex3d)
@@ -37,7 +38,7 @@
     [(eq? (billboard-style3d-size-mode style) 'screen)
      (define projected (camera3d-project camera center #:aspect aspect))
      (and projected
-          (let* ([screen (ndc->screen projected width height)]
+          (let* ([screen (ndc3d->screen projected width height)]
                  [pixel-width (billboard-style3d-width style)]
                  [pixel-height (resolved-height style image)]
                  [half-width (/ pixel-width 2)]
@@ -70,7 +71,7 @@
        (for/list ([corner (in-list corners)] [tex (in-list uv)])
          (define projected (camera3d-project camera corner #:aspect aspect))
          (and projected
-              (let ([screen (ndc->screen projected width height)])
+              (let ([screen (ndc3d->screen projected width height)])
                 (prepared-billboard-vertex3d
                  (car screen) (cdr screen) (camera3d-view-depth camera corner)
                  (car tex) (cdr tex) corner)))))
@@ -115,10 +116,6 @@
   (for/and ([clip (in-list clips)])
     (define sign (if (eq? (clip-plane3d-keep clip) 'positive) 1 -1))
     (>= (* sign (plane-signed-distance (clip-plane3d-plane clip) point)) 0)))
-
-(define (ndc->screen point width height)
-  (cons (* width (/ (+ (vec2-x point) 1) 2))
-        (* height (/ (- 1 (vec2-y point)) 2))))
 
 (define (rasterize-prepared-billboards! target billboards pass)
   (for/sum ([billboard (in-list billboards)]

@@ -45,7 +45,7 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: raco make -l animate -l animate/3d -l animate/3d/render -l animate/authoring -l animate/preview -l animate/project -l animate/render
-      - run: raco test tests/version-coherence-test.rkt tests/documentation-structure-test.rkt tests/public-module-boundaries-test.rkt tests/example-public-imports-test.rkt tests/example-catalog-test.rkt tests/documented-bindings-exist-test.rkt
+      - run: raco test tests/version-coherence-test.rkt tests/documentation-structure-test.rkt tests/documentation-public-tags-test.rkt tests/public-module-boundaries-test.rkt tests/example-public-imports-test.rkt tests/example-catalog-test.rkt tests/documented-bindings-exist-test.rkt
 
   current-headless:
     name: Full headless suite
@@ -90,6 +90,7 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: raco setup --pkgs animate
+      - run: racket tools/check-documentation.rkt "$RUNNER_TEMP/animate-documentation"
       - run: raco test tests/all-examples-compile-test.rkt
 
   release-check:
@@ -107,15 +108,22 @@ jobs:
       - run: |
           pwd
           printf 'GITHUB_WORKSPACE=%s\n' "$GITHUB_WORKSPACE"
-          ./tools/ci-bootstrap-svg.sh
-          raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
-          raco pkg show animate
+          SOURCE_HOME="$RUNNER_TEMP/animate-source-home"
+          mkdir -p "$SOURCE_HOME"
+          env PLTUSERHOME="$SOURCE_HOME" ./tools/ci-bootstrap-svg.sh
+          env PLTUSERHOME="$SOURCE_HOME" raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
+          env PLTUSERHOME="$SOURCE_HOME" raco setup --pkgs animate
+          env PLTUSERHOME="$SOURCE_HOME" raco pkg show animate
       - run: |
-          raco pkg create --source --dest /tmp/animate-package "$GITHUB_WORKSPACE"
-          raco pkg remove --auto animate
-          raco pkg install --auto /tmp/animate-package/animate.zip
-          raco setup --pkgs animate
-      - run: raco animate check-repo
+          SOURCE_HOME="$RUNNER_TEMP/animate-source-home"
+          ARCHIVE_DIRECTORY="$RUNNER_TEMP/animate-package"
+          mkdir -p "$ARCHIVE_DIRECTORY"
+          env PLTUSERHOME="$SOURCE_HOME" raco animate check-source-tree "$ARCHIVE_DIRECTORY"
+      - run: |
+          SOURCE_HOME="$RUNNER_TEMP/animate-source-home"
+          PACKAGE_HOME="$RUNNER_TEMP/animate-package-home"
+          mkdir -p "$PACKAGE_HOME"
+          env PLTUSERHOME="$SOURCE_HOME" raco animate check-installed-package "$RUNNER_TEMP/animate-package/animate.zip" "$PACKAGE_HOME"
 
   latex-and-media:
     name: Formula and media integration
@@ -171,7 +179,7 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: >-
-          xvfb-run -a env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 gracket -l raco/main -- test
+          mkdir -p "$RUNNER_TEMP/animate-opengl-conformance" && xvfb-run -a env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 ANIMATE_OPENGL_CONFORMANCE_ARTIFACTS="$RUNNER_TEMP/animate-opengl-conformance" gracket -l raco/main -- test
           tests/scene-3d-p-opengl-integration-test.rkt
           tests/scene-3d-p-opengl-project-integration-test.rkt
           tests/scene-3d-v-capabilities-test.rkt
@@ -180,6 +188,12 @@ jobs:
           tests/scene-3d-v-opengl-lighting-test.rkt
           tests/scene-3d-v-opengl-shadows-test.rkt
           tests/scene-3d-v-output-semantics-test.rkt
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opengl-conformance-ubuntu
+          path: ${{ runner.temp }}/animate-opengl-conformance
+          if-no-files-found: ignore
 
   opengl-integration-macos:
     name: OpenGL integration / macOS
@@ -197,9 +211,8 @@ jobs:
           raco pkg install --auto --batch --name animate "$GITHUB_WORKSPACE"
           raco pkg show animate
       - run: >-
-          GRACKET="/Applications/Racket/bin/gracket" &&
-          test -x "$GRACKET" &&
-          env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 "$GRACKET" -l raco/main -- test
+          RACKET="$(command -v racket)" && GRACKET="$(dirname "$RACKET")/gracket" && test -x "$GRACKET" && mkdir -p "$RUNNER_TEMP/animate-opengl-conformance" &&
+          env ANIMATE_OPENGL_INTEGRATION=1 ANIMATE_OPENGL_INTEGRATION_REQUIRED=1 ANIMATE_OPENGL_CONFORMANCE_ARTIFACTS="$RUNNER_TEMP/animate-opengl-conformance" "$GRACKET" -l raco/main -- test
           tests/scene-3d-p-opengl-integration-test.rkt
           tests/scene-3d-p-opengl-project-integration-test.rkt
           tests/scene-3d-v-capabilities-test.rkt
@@ -208,3 +221,9 @@ jobs:
           tests/scene-3d-v-opengl-lighting-test.rkt
           tests/scene-3d-v-opengl-shadows-test.rkt
           tests/scene-3d-v-output-semantics-test.rkt
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opengl-conformance-macos
+          path: ${{ runner.temp }}/animate-opengl-conformance
+          if-no-files-found: ignore

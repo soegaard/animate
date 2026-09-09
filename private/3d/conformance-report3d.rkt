@@ -17,13 +17,15 @@
          conformance-report3d-width
          conformance-report3d-height
          conformance-report3d-difference-argb
+         conformance-report3d-large-difference-mask-argb
          conformance-report3d-edge-mask-argb
          conformance-report3d-interior-mask-argb
          conformance-report3d-metrics
          argb-conformance-report3d)
 
 (struct conformance-report3d
-  (width height difference-argb edge-mask-argb interior-mask-argb metrics)
+  (width height difference-argb large-difference-mask-argb edge-mask-argb
+         interior-mask-argb metrics)
   #:transparent)
 
 (define (argb-conformance-report3d expected actual width height)
@@ -41,13 +43,17 @@
      "width" width "height" height))
   (define pixel-count (* width height))
   (define difference (make-bytes component-count 0))
+  (define large-difference-mask (make-bytes component-count 0))
   (define edge-mask (make-bytes component-count 0))
   (define interior-mask (make-bytes component-count 0))
+  (define large-difference-pixels (make-vector pixel-count #f))
   (define histogram (make-vector 256 0))
   (define totals (make-vector 4 0))
   (define total-difference 0)
   (define different-components 0)
-  (define large-difference-components 0)
+  (define large-component-differences 0)
+  (define large-difference-edge-pixels 0)
+  (define large-difference-interior-pixels 0)
   (define different-pixels 0)
   (define alpha-only-pixels 0)
   (define alpha-only-edge-pixels 0)
@@ -87,9 +93,11 @@
     (define offset (pixel-offset x y))
     (define edge? (edge-pixel? x y))
     (define pixel-different? #f)
+    (define large-difference-pixel? #f)
     (define rgb-different? #f)
     (define alpha-different? #f)
     (bytes-set! difference offset 255)
+    (bytes-set! large-difference-mask offset 255)
     (bytes-set! edge-mask offset 255)
     (bytes-set! interior-mask offset 255)
     (for ([channel (in-range 4)])
@@ -105,7 +113,8 @@
             (set! alpha-different? #t)
             (set! rgb-different? #t)))
       (when (>= delta 128)
-        (set! large-difference-components (add1 large-difference-components)))
+        (set! large-component-differences (add1 large-component-differences))
+        (set! large-difference-pixel? #t))
       (when edge?
         (set! edge-difference (+ edge-difference delta))
         (set! edge-components (add1 edge-components)))
@@ -120,6 +129,14 @@
     (for ([channel (in-range 1 4)])
       (bytes-set! edge-mask (+ offset channel) mask-value)
       (bytes-set! interior-mask (+ offset channel) (- 255 mask-value)))
+    (when large-difference-pixel?
+      (vector-set! large-difference-pixels (+ x (* y width)) #t)
+      (for ([channel (in-range 1 4)])
+        (bytes-set! large-difference-mask (+ offset channel) 255))
+      (if edge?
+          (set! large-difference-edge-pixels (add1 large-difference-edge-pixels))
+          (set! large-difference-interior-pixels
+                (add1 large-difference-interior-pixels))))
     (if edge?
         (set! edge-pixels (add1 edge-pixels))
         (set! interior-pixels (add1 interior-pixels)))
@@ -135,6 +152,8 @@
       (set! changed-right (max changed-right x))
       (set! changed-bottom (max changed-bottom y))))
   (define ordered-differences (sort differences <))
+  (define large-components
+    (large-difference-components large-difference-pixels width height))
   (define (quantile proportion)
     (if (zero? component-count)
         0
@@ -145,6 +164,7 @@
   (conformance-report3d
    width height
    (bytes->immutable-bytes difference)
+   (bytes->immutable-bytes large-difference-mask)
    (bytes->immutable-bytes edge-mask)
    (bytes->immutable-bytes interior-mask)
    (hasheq
@@ -159,7 +179,14 @@
     'maximum-component-error (if (null? ordered-differences) 0 (last ordered-differences))
     'different-pixel-count different-pixels
     'different-component-count different-components
-    'large-difference-components large-difference-components
+    'large-difference-components large-component-differences
+    'large-difference-pixel-count
+    (for/sum ([different? (in-vector large-difference-pixels)])
+      (if different? 1 0))
+    'large-difference-edge-pixel-count large-difference-edge-pixels
+    'large-difference-interior-pixel-count large-difference-interior-pixels
+    'large-difference-connected-component-count (vector-length large-components)
+    'large-difference-connected-components large-components
     'alpha-only-different-pixel-count alpha-only-pixels
     'alpha-only-edge-pixel-count alpha-only-edge-pixels
     'alpha-only-interior-pixel-count alpha-only-interior-pixels
@@ -175,6 +202,51 @@
     (hasheq 'pixel-count interior-pixels
             'component-count interior-components
             'mean-absolute-error (mean interior-difference interior-components)))))
+
+;; Connected components are a four-neighbour partition of pixels containing
+;; one or more large (>= 128) ARGB component errors.  This is deliberately a
+;; separate measure from `large-difference-components`, which counts colour
+;; components and remains useful for the existing numeric tolerance checks.
+(define (large-difference-components pixels width height)
+  (define pixel-count (* width height))
+  (define visited (make-vector pixel-count #f))
+  (define queue (make-vector pixel-count 0))
+  (define components '())
+  (define (enqueue-neighbour! index tail)
+    (if (and (vector-ref pixels index) (not (vector-ref visited index)))
+        (begin
+          (vector-set! visited index #t)
+          (vector-set! queue tail index)
+          (add1 tail))
+        tail))
+  (for* ([y (in-range height)] [x (in-range width)])
+    (define start (+ x (* y width)))
+    (when (and (vector-ref pixels start) (not (vector-ref visited start)))
+      (vector-set! visited start #t)
+      (vector-set! queue 0 start)
+      (let loop ([head 0] [tail 1]
+                 [left x] [top y] [right x] [bottom y] [population 0])
+        (if (= head tail)
+            (set! components
+                  (cons (hasheq 'bounds (vector->immutable-vector
+                                         (vector left top right bottom))
+                                'pixel-count population)
+                        components))
+            (let* ([index (vector-ref queue head)]
+                   [px (remainder index width)]
+                   [py (quotient index width)]
+                   [tail (if (> px 0) (enqueue-neighbour! (sub1 index) tail) tail)]
+                   [tail (if (< px (sub1 width))
+                             (enqueue-neighbour! (add1 index) tail)
+                             tail)]
+                   [tail (if (> py 0) (enqueue-neighbour! (- index width) tail) tail)]
+                   [tail (if (< py (sub1 height))
+                             (enqueue-neighbour! (+ index width) tail)
+                             tail)])
+              (loop (add1 head) tail
+                    (min left px) (min top py) (max right px) (max bottom py)
+                    (add1 population)))))))
+  (vector->immutable-vector (list->vector (reverse components))))
 
 (define (check-dimensions who width height)
   (unless (and (exact-positive-integer? width) (exact-positive-integer? height))

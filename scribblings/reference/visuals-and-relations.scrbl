@@ -1764,10 +1764,12 @@ stable name, and mapped leaf paths can be inspected with the corresponding
 accessors.
 }
 
-@defproc[(visual-selection? [value any/c]) boolean?]{
-Recognizes an immutable root-relative selection of existing Visual leaves.
-Selections describe semantic paths; they are not synthetic group Visuals.
-}
+@defstruct*[visual-selection ([root visual-path?]
+                              [paths (listof list?)])
+  #:transparent]{An immutable root-relative selection of existing Visual
+leaves. Each member of @racket[paths] is a relative path of symbols below
+@racket[root]. Selections describe semantic paths; they are not synthetic
+group Visuals.}
 
 @defproc[(formula-source [formula formula-assembly-visual?]) string?]{
 
@@ -2576,7 +2578,7 @@ Returns the unscaled local world height.
 
 Creates an immutable full-fidelity static SVG Visual. @racket[source] is not
 opened until rendering; the default renderer delegates then to the catalog
-@racketmodname[svg/svg] package. That renderer supports substantially more SVG
+@tt{svg/svg} package. That renderer supports substantially more SVG
 than the semantic importer, including transforms, gradients, clipping, masks,
 text, local image references, CSS, and many static filters.
 

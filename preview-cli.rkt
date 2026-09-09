@@ -114,6 +114,40 @@
    (unless (andmap repository-check-ok?
                    (repository-check-report-checks report))
      (exit 1))]
+  [(and (pair? arguments) (equal? (car arguments) "check-source-tree")
+        (<= (length (cdr arguments)) 1))
+   (define archive-directory
+     (if (null? (cdr arguments))
+         #f
+         (cadr arguments)))
+   (define report
+     (if archive-directory
+         (check-source-tree! #:archive-directory archive-directory)
+         (check-source-tree!)))
+   (for ([entry (in-list (repository-check-report-checks report))])
+     (printf "~a: ~a — ~a\n"
+             (repository-check-name entry)
+             (if (repository-check-ok? entry) "ok" "failed")
+             (repository-check-detail entry)))
+   (unless (andmap repository-check-ok?
+                   (repository-check-report-checks report))
+     (exit 1))]
+  [(and (pair? arguments) (equal? (car arguments) "check-installed-package")
+        (or (= (length (cdr arguments)) 1)
+            (= (length (cdr arguments)) 2)))
+   (define archive (cadr arguments))
+   (define report
+     (if (= (length (cdr arguments)) 2)
+         (check-installed-package! #:archive archive #:user-home (caddr arguments))
+         (check-installed-package! #:archive archive)))
+   (for ([entry (in-list (repository-check-report-checks report))])
+     (printf "~a: ~a — ~a\n"
+             (repository-check-name entry)
+             (if (repository-check-ok? entry) "ok" "failed")
+             (repository-check-detail entry)))
+   (unless (andmap repository-check-ok?
+                   (repository-check-report-checks report))
+     (exit 1))]
   [(and (pair? arguments) (equal? (car arguments) "plan")
         (= (length (cdr arguments)) 2))
    (define module-path (cadr arguments))
@@ -202,7 +236,7 @@
   [else
    (raise-user-error
    'raco-animate
-   "usage: raco animate version | raco animate doctor | raco animate check-repo | raco animate plan|check PROJECT.rkt binding | raco animate render [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding | raco animate cache list PROJECT.rkt binding | raco animate cache clear [--domain formula|frames|segments|audio|waveform|source-program] PROJECT.rkt binding | raco animate preview [--fps N] [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding")])
+   "usage: raco animate version | raco animate doctor | raco animate check-source-tree [ARCHIVE-DIRECTORY] | raco animate check-installed-package ARCHIVE [FRESH-PLTUSERHOME] | raco animate check-repo | raco animate plan|check PROJECT.rkt binding | raco animate render [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding | raco animate cache list PROJECT.rkt binding | raco animate cache clear [--domain formula|frames|segments|audio|waveform|source-program] PROJECT.rkt binding | raco animate preview [--fps N] [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding")])
 
 (define (relaunch-with-gracket!)
   (define racket-executable (find-system-path 'exec-file))

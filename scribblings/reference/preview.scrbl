@@ -14,6 +14,15 @@
 controller API.  Requiring it does not initialize a GUI; opening a window does.
 It uses the same scene sampling and rendering semantics as final output.
 
+@defproc[(animation-inspection? [value any/c]) boolean?]{Recognizes an
+immutable active-animation inspection record re-exported by the preview API.}
+
+@defproc[(animation-inspection-kind [inspection animation-inspection?]) any/c]{Returns
+the animation request-family symbol retained by @racket[inspection].}
+
+@defproc[(animation-inspection-data [inspection animation-inspection?]) any/c]{Returns
+the immutable semantic explanation data retained by @racket[inspection].}
+
 @defproc[(preview-session? [value any/c]) boolean?]{
 Recognizes a live preview controller session.
 }
