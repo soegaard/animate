@@ -10,6 +10,7 @@
 ;; without an annotation-specific backend.
 
 (require (only-in racket/math pi)
+         (only-in "color-token.rkt" theme-axis theme-foreground)
          "dynamic-endpoint-geometry.rkt"
          "geometry.rkt"
          "group-visual.rkt"
@@ -57,7 +58,7 @@
              #:start-angle [start-angle 0]
              #:angle [sweep-angle (/ pi 2)]
              #:opacity [opacity 1]
-             #:stroke [stroke "black"]
+             #:stroke [stroke theme-axis]
              #:stroke-width [stroke-width 2])
   (check-symbol 'arc id)
   (check-point 'arc center)
@@ -91,7 +92,7 @@
                      #:rotation [rotation 0]
                      #:scale [scale 1]
                      #:opacity [opacity 1]
-                     #:stroke [stroke "black"]
+                     #:stroke [stroke theme-axis]
                      #:stroke-width [stroke-width 2])
   (unless (path-geometry? geometry)
     (raise-argument-error 'dashed-path "path-geometry?" geometry))
@@ -115,7 +116,7 @@
                      #:dash-length [dash-length 1/5]
                      #:gap-length [gap-length 1/8]
                      #:opacity [opacity 1]
-                     #:stroke [stroke "black"]
+                     #:stroke [stroke theme-axis]
                      #:stroke-width [stroke-width 2])
   (check-point 'dashed-line start)
   (check-point 'dashed-line end)
@@ -145,7 +146,7 @@
                #:radius [radius 1/3]
                #:reflex? [reflex? #f]
                #:opacity [opacity 1]
-               #:stroke [stroke "black"]
+               #:stroke [stroke theme-axis]
                #:stroke-width [stroke-width 2])
   (check-point 'angle-marker first)
   (check-point 'angle-marker vertex)
@@ -190,7 +191,7 @@
                      #:id id
                      #:size [size 1/3]
                      #:opacity [opacity 1]
-                     #:stroke [stroke "black"]
+                     #:stroke [stroke theme-axis]
                      #:stroke-width [stroke-width 2])
   (check-point 'right-angle first)
   (check-point 'right-angle vertex)
@@ -214,7 +215,7 @@
                        #:radius [radius 1/3]
                        #:reflex? [reflex? #f]
                        #:opacity [opacity 1]
-                       #:stroke [stroke "black"]
+                       #:stroke [stroke theme-axis]
                        #:stroke-width [stroke-width 2])
   (if (and (vec2? first) (vec2? vertex) (vec2? second))
       (angle-marker first vertex second
@@ -237,7 +238,7 @@
                              #:id id
                              #:size [size 1/3]
                              #:opacity [opacity 1]
-                             #:stroke [stroke "black"]
+                             #:stroke [stroke theme-axis]
                              #:stroke-width [stroke-width 2])
   (if (and (vec2? first) (vec2? vertex) (vec2? second))
       (right-angle first vertex second
@@ -267,7 +268,7 @@
                #:id id
                #:offset [offset 1/3]
                #:opacity [opacity 1]
-               #:stroke [stroke "black"]
+               #:stroke [stroke theme-axis]
                #:stroke-width [stroke-width 2])
   (brace-between start end #:id id #:offset offset #:opacity opacity
                  #:stroke stroke #:stroke-width stroke-width))
@@ -285,7 +286,7 @@
                               #:id id
                               #:offset [offset 1/3]
                               #:opacity [opacity 1]
-                              #:stroke [stroke "black"]
+                              #:stroke [stroke theme-axis]
                               #:stroke-width [stroke-width 2])
   (check-point 'brace-between start)
   (check-point 'brace-between end)
@@ -351,7 +352,7 @@
                        #:id id
                        #:offset [offset 1/3]
                        #:opacity [opacity 1]
-                       #:stroke [stroke "black"]
+                       #:stroke [stroke theme-axis]
                        #:stroke-width [stroke-width 2])
   (if (and (vec2? start) (vec2? end))
       (static-brace-between start end #:id id #:offset offset #:opacity opacity
@@ -380,9 +381,9 @@
                             #:offset [offset 1/3]
                             #:gap [gap 1/6]
                             #:font-size [font-size 1/4]
-                            #:color [color "black"]
+                            #:color [color theme-foreground]
                             #:opacity [opacity 1]
-                            #:stroke [stroke "black"]
+                            #:stroke [stroke theme-axis]
                             #:stroke-width [stroke-width 2])
   (unless (string? label)
     (raise-argument-error 'brace-label "string?" label))
@@ -412,9 +413,9 @@
                      #:offset [offset 1/3]
                      #:gap [gap 1/6]
                      #:font-size [font-size 1/4]
-                     #:color [color "black"]
+                     #:color [color theme-foreground]
                      #:opacity [opacity 1]
-                     #:stroke [stroke "black"]
+                     #:stroke [stroke theme-axis]
                      #:stroke-width [stroke-width 2])
   (if (and (vec2? start) (vec2? end))
       (static-brace-label start end label
@@ -444,7 +445,7 @@
                               #:id id
                               #:angle [sweep-angle (/ pi 2)]
                               #:opacity [opacity 1]
-                              #:stroke [stroke "black"]
+                              #:stroke [stroke theme-axis]
                               #:stroke-width [stroke-width 2]
                               #:tip-length [tip-length 3/10]
                               #:tip-width [tip-width 1/4])

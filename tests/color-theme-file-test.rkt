@@ -30,5 +30,24 @@
       (lambda (out) (write '(not-a-theme) out))
       #:exists 'truncate/replace)
      (check-exn exn:fail?
+                (lambda () (load-color-theme! path)))
+     ;; A data file is one bounded snapshot, not a stream of declarations.
+     ;; The reader accepts comments/whitespace but must reject a trailing form.
+     (call-with-output-file
+      path
+      (lambda (out)
+        (write (theme->datum animate-dark-theme) out)
+        (newline out)
+        (write '(trailing-datum) out))
+      #:exists 'truncate/replace)
+     (check-exn #px"exactly one theme datum"
+                (lambda () (load-color-theme! path)))
+     ;; Reader graph syntax is not part of the data format, irrespective of
+     ;; ambient reader parameters in a caller.
+     (call-with-output-file
+      path
+      (lambda (out) (display "#0=(animate-color-theme 1)" out))
+      #:exists 'truncate/replace)
+     (check-exn exn:fail?
                 (lambda () (load-color-theme! path))))
    (lambda () (when (file-exists? path) (delete-file path)))))

@@ -22,7 +22,7 @@
                         (mix srgb-linear premultiplied 1/2
                              (rgba 25 197 206 1)
                              (palette red-c))))
-  (check-exn #px"require a theme resolver"
+  (check-exn #px"explicit theme resolver"
              (lambda () (color-spec->rgba-color mixed)))
 
   ;; Exact endpoints return their normalized source or destination rather than

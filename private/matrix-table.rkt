@@ -16,6 +16,7 @@
 
 (require racket/list
          "affine-transform.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "geometry.rkt"
          "group-visual.rkt"
          "path-geometry.rkt"
@@ -113,7 +114,7 @@
                 #:brackets? [brackets? #t]
                 #:bracket-width [bracket-width 1/5]
                 #:bracket-gap [bracket-gap 1/10]
-                #:stroke [stroke "black"]
+                #:stroke [stroke theme-axis]
                 #:stroke-width [stroke-width 2])
   (define dimensions
     (check-grid 'matrix rows))
@@ -182,7 +183,7 @@
                #:cell-padding [cell-padding 1/5]
                #:column-gap [column-gap 0]
                #:row-gap [row-gap 0]
-               #:stroke [stroke "black"]
+               #:stroke [stroke theme-axis]
                #:stroke-width [stroke-width 2])
   (define dimensions
     (check-grid 'table rows))

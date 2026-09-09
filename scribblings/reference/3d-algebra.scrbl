@@ -1048,17 +1048,24 @@ One per-light term in a lighting probe. Ambient samples deliberately use
             ([world-point vec3?] [normal vec3?] [view-direction vec3?]
              [material material3d?] [light-samples list?]
              [pre-tone-map any/c] [final-srgb rgba-color?]
-             [diagnostics list?]) #:transparent]{
+             [diagnostics list?] [authored-lights list?]
+             [theme-id symbol?] [appearance-fingerprint bytes?]
+             [resolved-material material3d?] [resolved-lights list?]) #:transparent]{
 The complete pure fragment-lighting explanation: normalized geometry, each
 light's diffuse/specular/shadow term, the accumulated linear colour before
-tone mapping, final sRGB output, and any honest unavailable-data diagnostic.}
+tone mapping, final sRGB output, and any honest unavailable-data diagnostic.
+The material and lights fields retain authored specifications; the separate
+resolved fields record the concrete colours used for arithmetic.}
 @defproc[(fragment-lighting-inspection3d
           [material material3d?] [lights (listof light3d?)]
           [world-point vec3?] [normal vec3?] [camera-position vec3?]
           [#:tone-map tone-map tone-map3d? default-tone-map3d]
-          [#:shadow-factors shadow-factors immutable-hash? #hasheq()])
+          [#:shadow-factors shadow-factors immutable-hash? #hasheq()]
+          [#:theme theme color-theme? animate-light-theme])
          fragment-lighting-report3d?]{
-Recomputes the documented lighting equation from immutable authoring values.
+Recomputes the documented lighting equation from immutable authoring values
+under the selected immutable theme. Tokenized material and light colours are
+resolved once before numerical color-space calculations begin.
 @racket[shadow-factors] may supply a sampled fraction in @math{[0,1]} for each
 named shadowed light. The preview's @tt{Material}, @tt{Lights}, and
 @tt{Fragment probe} inspector sections use the same query after a mesh click.}
@@ -2364,6 +2371,13 @@ description.}
 geometry in the source mesh's local coordinates. Generated cut vertices reuse
 one source-edge registry and therefore interpolate the supported per-vertex
 normal and RGBA colour attributes consistently across neighbouring triangles.}
+@defproc[(vertex-color-lerp [first color-spec?] [second color-spec?]
+                            [amount finite-real?])
+         color-spec?]{Interpolates one mesh colour attribute in encoded-sRGB
+components with straight alpha. It is the spatial-attribute convention used by
+mesh slicing and deliberately differs from @racket[color-mix]'s default
+linear-light, premultiplied authoring blend. Tokens remain unresolved until a
+render context is selected.}
 @defproc[(slice-mesh-by-planes3d [mesh mesh3d?]
                                   [clips (listof (or/c plane3? clip-plane3d?))])
          mesh3d?]{Applies plane cuts in declaration order to produce actual
@@ -3713,17 +3727,20 @@ Extracts frame-varying camera, light, and viewport state.}
                                    [width exact-positive-integer?]
                                    [height exact-positive-integer?]
                                    [#:cancellation-token cancellation-token any/c #f]
-                                   [#:attachments attachments (listof symbol?) '(color)])
+                                   [#:attachments attachments (listof symbol?) '(color)]
+                                   [#:theme theme color-theme? #f])
          render3d-request?]{Conveniently compiles @racket[view] and packages
 the resulting compiled view, frame specification, and requested attachments.
 The canonical attachment names are @racket['color], @racket['linear-depth],
 @racket['object-id], and @racket['normal]. A renderer may return a superset,
-but cannot omit a requested attachment.}
+but cannot omit a requested attachment. The resulting request owns an immutable
+color-context snapshot. Without @racket[#:theme], it captures an enclosing
+render context when present, otherwise the built-in light theme.}
 @defstruct*[render3d-request
             ([compiled-view compiled-view3d?]
              [frame-spec frame3d-spec?]
              [attachments (listof symbol?)]
-             [cancellation-token any/c]) #:transparent]{
+             [cancellation-token any/c] [color-context any/c]) #:transparent]{
 One backend-local request. The cancellation field is either @racket[#f] or the
 preview's cooperative cancellation token; it is not serialised into scene
 state.

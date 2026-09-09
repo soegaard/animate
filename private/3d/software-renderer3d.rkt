@@ -50,6 +50,7 @@
          software-render-preparation?
          software-render-preparation-compiled-view
          software-render-preparation-frame-spec
+         software-render-preparation-color-context
          software-render-preparation-shadow-maps
          software-render-preparation-diagnostics
          software-render-result->bitmap)

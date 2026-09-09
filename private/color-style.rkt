@@ -89,7 +89,7 @@
     [(or (color-token? value) (color-expression? value))
      (raise-arguments-error
       who
-      "unresolved palette, role, series, mix, and alpha specifications require a theme resolver; theme resolution is not available yet"
+      "unresolved palette, role, series, mix, and alpha specifications require an explicit theme resolver; use resolve-color with a color-theme"
       "value" value)]
     [else
      (raise-argument-error

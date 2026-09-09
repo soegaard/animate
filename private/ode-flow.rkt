@@ -15,6 +15,7 @@
 
 (require racket/list
          "axes-visual.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "derived-visual.rkt"
          "geometry.rkt"
          "group-visual.rkt"
@@ -743,7 +744,7 @@
                        #:shape [shape 'circle]
                        #:size [size 1/5]
                        #:fill [fill "crimson"]
-                       #:stroke [stroke "black"]
+                       #:stroke [stroke theme-axis]
                        #:stroke-width [stroke-width 1]
                        #:opacity [opacity 1])
   (check-axes 'flow-particle axes)

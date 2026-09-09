@@ -4,7 +4,9 @@
 
 (require rackunit
          "../3d.rkt"
-         "../3d/render.rkt")
+         "../3d/render.rkt"
+         "../private/color-theme-data.rkt"
+         "../private/render-color-context.rkt")
 
 (define material (material3d #:color "steelblue" #:shading 'flat))
 
@@ -58,11 +60,14 @@
     (renderer3d-render renderer (renderer3d-prepare renderer request) request))
   (renderer3d-statistics-reset! renderer)
   (define first-request
-    (render3d-request first-compiled (view3d->frame3d-spec first-view 96 64) '(color) #f))
+    (render3d-request first-compiled (view3d->frame3d-spec first-view 96 64) '(color) #f
+                      (make-render-color-context animate-light-theme)))
   (define orbit-request
-    (render3d-request second-compiled (view3d->frame3d-spec second-view 96 64) '(color) #f))
+    (render3d-request second-compiled (view3d->frame3d-spec second-view 96 64) '(color) #f
+                      (make-render-color-context animate-light-theme)))
   (define moving-request
-    (render3d-request moved-compiled (view3d->frame3d-spec moved-view 96 64) '(color) #f))
+    (render3d-request moved-compiled (view3d->frame3d-spec moved-view 96 64) '(color) #f
+                      (make-render-color-context animate-light-theme)))
   (define _first-result (render first-request))
   (define _orbit-result (render orbit-request))
   (define _moving-result (render moving-request))

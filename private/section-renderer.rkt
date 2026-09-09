@@ -148,6 +148,11 @@
      output-directory))
   (check-cache-key 'render-timeline-section/report! cache-key)
   (check-asset-files 'render-timeline-section/report! asset-files)
+  ;; Select and validate one immutable appearance snapshot before looking at a
+  ;; manifest. An explicit source key never permits a stale hit to bypass an
+  ;; invalid theme, and key construction and pixel rendering share this exact
+  ;; context.
+  (define color-context (make-render-color-context theme))
   (define entry
     (timeline-section timeline section-or-name))
   (define source-indices
@@ -157,11 +162,14 @@
         (automatic-section-cache-key timeline entry
                                      #:fps fps #:camera camera
                                      #:renderers renderers
-                                     #:theme theme
+                                     #:color-context color-context
                                      #:asset-files asset-files)
         cache-key))
   (define expected-cache
-    (section-cache-datum entry fps source-indices effective-cache-key))
+    (section-cache-datum entry fps source-indices effective-cache-key
+                         #:camera camera
+                         #:renderers renderers
+                         #:color-context color-context))
   (define expected-paths
     (local-frame-paths output-directory (length source-indices)))
   (define cache-path
@@ -184,7 +192,7 @@
         #:renderers renderers
         #:clean? clean?
         #:workers workers
-        #:theme theme))
+        #:color-context color-context))
      (when effective-cache-key
        (write-section-cache! cache-path expected-cache))
      (section-render-report
@@ -193,18 +201,33 @@
       #f
       diagnostics)]))
 
-;; Stores the resolved cache fingerprint. Automatic and explicit keys share one
-;; manifest form, so changing modes cannot accidentally reuse stale PNGs.
-(define (section-cache-datum entry fps source-indices cache-key)
-  (list 'animate-section-cache-v3
+;; Stores caller/automatic source identity separately from mandatory render
+;; identity. An explicit key may describe opaque scene-producing code; it must
+;; never suppress the context and renderer information that determines pixels.
+(define (section-cache-datum entry fps source-indices source-key
+                             #:camera camera
+                             #:renderers renderers
+                             #:color-context color-context)
+  (list 'animate-section-cache-v4
         animate-version
         animate-stage
-        cache-key
+        source-key
         fps
         (authoring-section-name entry)
         (authoring-section-start entry)
         (authoring-section-end entry)
-        source-indices))
+        source-indices
+        (section-render-identity camera renderers color-context)))
+
+(define (section-render-identity camera renderers color-context)
+  (unless (render-color-context? color-context)
+    (raise-argument-error
+     'section-render-identity "render-color-context?" color-context))
+  (list 'animate-section-render-identity-v1
+        (render-color-context-appearance-fingerprint color-context)
+        (render-color-context-resolver-version color-context)
+        (format "~s" camera)
+        (format "~s" renderers)))
 
 ;; Reads a cache manifest conservatively; malformed/unreadable cache data is a
 ;; miss rather than an authoring error.
@@ -247,8 +270,12 @@
                                      #:fps fps
                                      #:camera camera
                                      #:renderers renderers
-                                     #:theme [theme animate-light-theme]
+                                     #:theme [theme #f]
+                                     #:color-context [color-context #f]
                                      #:asset-files asset-files)
+  (define selected-color-context
+    (select-section-render-color-context
+     'automatic-section-cache-key theme color-context))
   (define scene-representation
     (format "~s" (authored-timeline-scene timeline)))
   (if (scene-representation-has-opaque-procedure? scene-representation)
@@ -268,14 +295,29 @@
                     fps
                     (format "~s" camera)
                     (format "~s" renderers)
-                    (theme->datum theme)
-                    (color-theme-fingerprint theme)
-                    render-color-resolver-version
+                    (section-render-identity
+                     camera renderers selected-color-context)
                     (version)
                     asset-representation)])
         (string-append
          "auto:"
          (sha1 (open-input-string (format "~s" payload)))))))
+
+(define (select-section-render-color-context who theme color-context)
+  (when (and theme color-context)
+    (raise-arguments-error
+     who
+     "at most one of #:theme or #:color-context"
+     "theme" theme
+     "color-context" color-context))
+  (cond
+    [color-context
+     (unless (render-color-context? color-context)
+       (raise-argument-error who "render-color-context? as #:color-context"
+                             color-context))
+     color-context]
+    [theme (make-render-color-context theme)]
+    [else (make-render-color-context animate-light-theme)]))
 
 ;; Built-in rate functions are transparent semantic values, so their scene
 ;; representation has no procedure token. A printed name alone cannot prove the

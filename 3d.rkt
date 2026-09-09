@@ -622,6 +622,7 @@ clip3d-content
 clip3d-plane
 slice-mesh3d
 slice-mesh-by-planes3d
+vertex-color-lerp
 section3d?
  section3d-loops
  section3d-chains

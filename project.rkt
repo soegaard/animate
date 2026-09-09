@@ -997,6 +997,10 @@
 (define (project-3d-capability-demand prepared render)
   (define features (mutable-seteq))
   (define limits (make-hasheq))
+  ;; Capability discovery must interpret the same immutable color snapshot as
+  ;; the selected project render, including project-only roles and alpha.
+  (define color-context
+    (make-render-color-context (render-spec-theme render)))
   (define (merge-request! request)
     (for ([feature (in-set (renderer3d-request-required-features request))])
       (set-add! features feature))
@@ -1011,7 +1015,8 @@
       ;; Capability needs are independent of the outer viewport's pixel
       ;; dimensions.  One pixel avoids creating a render target while still
       ;; compiling the exact immutable spatial visual.
-      (merge-request! (view3d->render3d-request view 1 1))))
+      (merge-request!
+       (view3d->render3d-request view 1 1 #:color-context color-context))))
   (hasheq 'features (for/seteq ([feature (in-set features)]) feature)
           'limits (for/hasheq ([(limit value) (in-hash limits)])
                     (values limit value))))

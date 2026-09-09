@@ -127,10 +127,10 @@
     [(> coordinate (paint-stop-offset last-stop))
      (outside-result scale coordinate last-stop)]
     [else
-     (define left-index
-       (for/fold ([latest 0]) ([stop (in-vector stops)] [index (in-naturals)]
-                                #:when (<= (paint-stop-offset stop) coordinate))
-         index))
+     ;; Find the first offset strictly greater than `coordinate`, then use its
+     ;; predecessor. This upper-bound search preserves the documented rule
+     ;; that the final repeated stop wins without scanning every prior stop.
+     (define left-index (rightmost-stop-at-or-before stops coordinate))
      (define left (vector-ref stops left-index))
      (cond
        [(or (= left-index (sub1 (vector-length stops)))
@@ -143,6 +143,18 @@
                    (/ (- coordinate (paint-stop-offset left))
                       (- (paint-stop-offset right) (paint-stop-offset left)))
                    #:space (color-scale-value-space scale))])]))
+
+(define (rightmost-stop-at-or-before stops coordinate)
+  ;; `color-scale-at` has already handled coordinates outside the closed stop
+  ;; domain, so this upper bound always returns an index in the vector.
+  (let loop ([low 0] [high (vector-length stops)])
+    (if (= low high)
+        (sub1 low)
+        (let* ([middle (quotient (+ low high) 2)]
+               [offset (paint-stop-offset (vector-ref stops middle))])
+          (if (<= offset coordinate)
+              (loop (add1 middle) high)
+              (loop low middle))))))
 
 
 ;;;

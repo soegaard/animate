@@ -10,6 +10,7 @@
 
 (require racket/list
          "affine-transform.rkt"
+         (only-in "color-token.rkt" theme-foreground)
          "annotation-geometry.rkt"
          "axes-visual.rkt"
          "geometry.rkt"
@@ -49,7 +50,7 @@
                      #:id id
                      #:offset [offset (vec2 1/5 1/5)]
                      #:font-size [font-size 1/4]
-                     #:color [color "black"])
+                     #:color [color theme-foreground])
   (unless (string? label)
     (raise-argument-error 'graph-label "string?" label))
   (check-symbol 'graph-label id)

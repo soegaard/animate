@@ -10,8 +10,12 @@
 (require racket/list
          racket/math
          "../color-style.rkt"
+         "../color-theme.rkt"
+         "../color-theme-data.rkt"
+         "../render-color-context.rkt"
          "../geometry.rkt"
          "color-space3d.rkt"
+         "color-resolution3d.rkt"
          "light-attenuation3d.rkt"
          "light3d.rkt"
          "material3d.rkt"
@@ -42,7 +46,8 @@
 ;; respective representations. `diagnostics` calls out intentionally unknown
 ;; renderer facts, notably a descriptor with no supplied sampled map factor.
 (struct fragment-lighting-report3d
-  (world-point normal view-direction material light-samples pre-tone-map final-srgb diagnostics)
+  (world-point normal view-direction material light-samples pre-tone-map final-srgb diagnostics
+               authored-lights theme-id appearance-fingerprint resolved-material resolved-lights)
   #:transparent)
 
 (define (material3d-inspection material)
@@ -98,14 +103,15 @@
 
 ;; fragment-lighting-inspection3d : material3d? (listof light3d?) vec3? vec3?
 ;;                                 vec3? [#:tone-map tone-map3d?]
-;;                                 [#:shadow-factors immutable-hash?]
+;;                                 [#:shadow-factors immutable-hash?] [#:theme color-theme?]
 ;;                                 -> fragment-lighting-report3d?
 ;; `shadow-factors` maps light ids to an exact sampled fraction in [0,1]. A
 ;; shadow descriptor not represented in that hash stays numerically lit and is
 ;; marked `not-sampled`; a preview must never invent hidden renderer state.
 (define (fragment-lighting-inspection3d material lights world-point normal camera-position
                                         #:tone-map [tone-map default-tone-map3d]
-                                        #:shadow-factors [shadow-factors #hasheq()])
+                                        #:shadow-factors [shadow-factors #hasheq()]
+                                        #:theme [theme animate-light-theme])
   (unless (material3d? material)
     (raise-argument-error 'fragment-lighting-inspection3d "material3d?" material))
   (unless (and (list? lights) (andmap light3d? lights))
@@ -118,35 +124,46 @@
     (raise-argument-error 'fragment-lighting-inspection3d "tone-map3d?" tone-map))
   (unless (and (hash? shadow-factors) (immutable? shadow-factors))
     (raise-argument-error 'fragment-lighting-inspection3d "immutable-hash?" shadow-factors))
+  ;; Retain raw authoring data in the report, but resolve every numerical input
+  ;; once under one explicit snapshot before entering the lighting equation.
+  (define color-context (make-render-color-context theme))
+  (define resolved-material (resolve-material3d material color-context))
+  (define resolved-lights (resolve-lights3d lights color-context))
   (define unit-normal (safe-normalize normal z-axis3))
   (define view-direction (safe-normalize (vec3- camera-position world-point) z-axis3))
-  (define base (rgba-srgb->linear (material3d-color material)))
-  (define specular-colour (rgba-srgb->linear (material3d-specular-color material)))
-  (define emission (rgba-srgb->linear (material3d-emission material)))
+  (define base (rgba-srgb->linear (material3d-color resolved-material)))
+  (define specular-colour
+    (rgba-srgb->linear (material3d-specular-color resolved-material)))
+  (define emission (rgba-srgb->linear (material3d-emission resolved-material)))
   (define-values (samples diffuse-total specular-total diagnostics)
     (for/fold ([reversed '()]
                [diffuse-acc (linear-rgba3d 0 0 0 (linear-rgba3d-alpha base))]
                [specular-acc (linear-rgba3d 0 0 0 (linear-rgba3d-alpha base))]
                [diagnostics '()])
-              ([light (in-list lights)])
+              ([light (in-list resolved-lights)])
       (define-values (sample diffuse specular diagnostic)
-        (light-fragment-sample light material world-point unit-normal view-direction shadow-factors))
+        (light-fragment-sample light resolved-material world-point unit-normal view-direction shadow-factors))
       (values (cons sample reversed)
               (linear+ diffuse diffuse-acc)
               (linear+ specular specular-acc)
               (if diagnostic (cons diagnostic diagnostics) diagnostics))))
   (define pre-tone-map
-    (if (eq? (material3d-shading material) 'unlit)
-        (linear+ base (linear-scale emission (material3d-emission-strength material)))
+    (if (eq? (material3d-shading resolved-material) 'unlit)
+        (linear+ base (linear-scale emission (material3d-emission-strength resolved-material)))
         (linear+
          (linear+
           (linear* base diffuse-total)
           (linear* specular-colour specular-total))
-         (linear-scale emission (material3d-emission-strength material)))))
+         (linear-scale emission (material3d-emission-strength resolved-material)))))
   (fragment-lighting-report3d
    world-point unit-normal view-direction material (reverse samples) pre-tone-map
    (rgba-linear->srgb (tone-map3d-apply tone-map pre-tone-map))
-   (reverse diagnostics)))
+   (reverse diagnostics)
+   lights
+   (color-theme-id theme)
+   (render-color-context-appearance-fingerprint color-context)
+   resolved-material
+   resolved-lights))
 
 (define (light-fragment-sample light material point normal view-direction shadow-factors)
   (cond

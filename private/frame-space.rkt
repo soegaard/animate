@@ -20,6 +20,7 @@
 ;; Imports
 (require "affine-transform.rkt"
          "camera.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "geometry.rkt"
          "visual-model.rkt")
 
@@ -274,7 +275,7 @@
                  #:scale [scale 1]
                  #:opacity [opacity 1]
                  #:target-anchor [target-anchor 'center]
-                 #:connector-stroke [connector-stroke "black"]
+                 #:connector-stroke [connector-stroke theme-axis]
                  #:connector-width [connector-width 2])
   (check-frame-content 'callout content)
   (check-callout-target 'callout target)

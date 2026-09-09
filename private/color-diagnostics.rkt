@@ -30,13 +30,19 @@
 
 ;; color-contrast-ratio : rgba-color? rgba-color? -> real?
 ;; Computes WCAG relative-luminance contrast after compositing the foreground
-;; over the opaque background.  It is a useful pairwise review measure, not a
-;; certification of an exported video or of arbitrary viewing conditions.
+;; over an opaque background. A translucent background has no unique
+;; luminance without an additional canvas, so this small API rejects it rather
+;; than silently treating its stored RGB components as already composited.
 (define (color-contrast-ratio foreground background)
   (unless (rgba-color? foreground)
     (raise-argument-error 'color-contrast-ratio "rgba-color?" foreground))
   (unless (rgba-color? background)
     (raise-argument-error 'color-contrast-ratio "rgba-color?" background))
+  (unless (= (rgba-color-alpha background) 1)
+    (raise-arguments-error
+     'color-contrast-ratio
+     "an opaque background; composite a translucent background over an explicit canvas first"
+     "background" background))
   (define blended (composite-over foreground background))
   (define first (relative-luminance blended))
   (define second (relative-luminance background))
@@ -131,12 +137,12 @@
                     'target threshold
                     'use use))))
 
-;; The canonical hue and gray groups are ordered light-to-dark.  A luminance
-;; reversal is therefore reviewable regardless of hue, while auxiliary and
-;; warm-natural groups deliberately make no false monotonicity promise.
+;; Only the built-in named hue/gray ramps declare a light-to-dark semantic
+;; ordering. A custom five-item group is categorical until its API grows an
+;; explicit ramp declaration; list length alone is not a luminance promise.
 (define (ramp-reports theme)
   (for/list ([group (in-list (palette-groups (color-theme-palette theme)))]
-             #:when (= (length (cadr group)) 5))
+             #:when (declared-ramp-group? group))
     (define keys (cadr group))
     (define luminances
       (for/list ([key (in-list keys)])
@@ -150,6 +156,11 @@
                 (format "~a is light-to-dark by relative luminance" (car group))
                 (format "~a is not monotonic by relative luminance" (car group)))
             (hasheq 'group (car group) 'keys keys 'luminances luminances))))
+
+(define (declared-ramp-group? group)
+  (and (member (car group)
+               '(blue aqua green yellow gold red maroon purple gray))
+       (= (length (cadr group)) 5)))
 
 (define (series-reports theme minimum-contrast)
   (define series (theme-series theme))

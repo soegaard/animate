@@ -31,4 +31,4 @@
   (scene-wait (scene-add (make-scene) panel title note) 1))
 
 (module+ main
-  (run-demo "colors/custom-theme.rkt" make-demo-scene))
+  (run-demo "colors/custom-theme.rkt" make-demo-scene #:theme demo-theme))

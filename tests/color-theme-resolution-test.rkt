@@ -7,7 +7,8 @@
 ;; Exercises explicit resolution of literals, palette tokens, roles, and pure
 ;; expressions without invoking a renderer or global mutable theme.
 
-(require rackunit
+(require racket/list
+         rackunit
          "../colors.rkt")
 
 (module+ test
@@ -30,5 +31,27 @@
   (check-exn #px"theme containing the requested role"
              (lambda () (resolve-color (role-color 'missing-role)
                                        animate-light-theme)))
+  ;; A series can be consumed only after a theme has its completed categorical
+  ;; vector. Definitions may not depend on that vector, including through a
+  ;; nested alpha or mix expression.
+  (check-exn #px"series-color dependencies"
+             (lambda ()
+               (color-theme #:id 'invalid-role-series
+                            #:extends animate-light-theme
+                            #:roles (hash 'accent
+                                          (color-with-alpha (series-color 0) 1/2)))))
+  (check-exn #px"series-color dependencies"
+             (lambda ()
+               (color-theme #:id 'invalid-series-series
+                            #:extends animate-light-theme
+                            #:series (list (color-mix aqua-c (series-color 1) 1/2)))))
+  (define light-datum (theme->datum animate-light-theme))
+  (define duplicate-role-datum
+    (append (take light-datum 5)
+            (list (append (list-ref light-datum 5)
+                          (list (car (list-ref light-datum 5)))))
+            (drop light-datum 6)))
+  (check-exn #px"duplicate keys"
+             (lambda () (datum->theme duplicate-role-datum)))
   (check-equal? (datum->theme (theme->datum animate-dark-theme))
                 animate-dark-theme))

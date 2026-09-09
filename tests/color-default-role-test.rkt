@@ -22,6 +22,19 @@
   (check-eq? (text-visual-color
               (car (axes-number-labels coordinate-axes #:id-prefix 'label)))
              theme-foreground)
+  (check-eq? (visual-stroke-color (circle #:id 'circle)) theme-axis)
+  (check-eq? (visual-stroke-color (rectangle #:id 'rectangle)) theme-axis)
+  (check-eq? (visual-stroke-color (line (vec2 -1 0) (vec2 1 0) #:id 'line))
+             theme-axis)
+  (check-eq? (visual-stroke-color
+              (polygon (list (vec2 -1 -1) (vec2 1 -1) (vec2 0 1)) #:id 'polygon))
+             theme-axis)
+  (check-eq? (arrow-visual-stroke
+              (arrow (vec2 -1 0) (vec2 1 0) #:id 'arrow))
+             theme-axis)
+  (check-eq? (visual-stroke-color
+              (angle-marker (vec2 1 0) origin (vec2 0 1) #:id 'angle))
+             theme-axis)
 
   ;; Generic spatial constructors use surface and edge roles while preserving
   ;; their numerical geometry exactly.
@@ -40,5 +53,11 @@
   (check-eq? (text-visual-color branded) pure-blue)
   (check-equal? (resolve-color (text-visual-color branded) animate-light-theme)
                 (resolve-color (text-visual-color branded) animate-dark-theme))
+  (define explicit-black-line
+    (line (vec2 -1 0) (vec2 1 0) #:id 'black-line #:stroke "black"))
+  (check-equal? (resolve-color (visual-stroke-color explicit-black-line)
+                               animate-light-theme)
+                (resolve-color (visual-stroke-color explicit-black-line)
+                               animate-dark-theme))
   (check-not-equal? (resolve-color theme-foreground animate-light-theme)
                     (resolve-color theme-foreground animate-dark-theme)))

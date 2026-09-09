@@ -4,6 +4,7 @@
 
 (require rackunit
          "../3d.rkt"
+         "../colors.rkt"
          "../private/color-style.rkt")
 
 (module+ test
@@ -99,4 +100,29 @@
                 #:emission-strength 1/2))
   (define unlit-report
     (fragment-lighting-inspection3d unlit (list sun lamp) origin3 z-axis3 (vec3 0 0 4)))
-  (check-equal? (linear-rgba3d-alpha (fragment-lighting-report3d-pre-tone-map unlit-report)) 1))
+  (check-equal? (linear-rgba3d-alpha (fragment-lighting-report3d-pre-tone-map unlit-report)) 1)
+
+  ;; The pure inspector receives authored token fields but resolves every
+  ;; numerical material/light input under the explicit selected theme.
+  (define inspection-theme
+    (color-theme #:id 'inspection-theme #:extends animate-light-theme
+                 #:roles (hash 'accent "#4A66CC")))
+  (define token-material
+    (material3d #:color theme-accent #:specular-color theme-accent
+                #:emission theme-accent #:emission-strength 1/4
+                #:shading 'smooth #:lighting 'blinn-phong))
+  (define token-light (ambient-light3d #:id 'token-fill #:color theme-accent))
+  (define token-report
+    (fragment-lighting-inspection3d token-material (list token-light)
+                                   origin3 z-axis3 (vec3 0 0 4)
+                                   #:theme inspection-theme))
+  (define resolved-accent (resolve-color theme-accent inspection-theme))
+  (check-equal? (fragment-lighting-report3d-material token-report) token-material)
+  (check-equal? (fragment-lighting-report3d-authored-lights token-report) (list token-light))
+  (check-equal? (fragment-lighting-report3d-theme-id token-report) 'inspection-theme)
+  (check-equal? (material3d-color
+                 (fragment-lighting-report3d-resolved-material token-report))
+                resolved-accent)
+  (check-equal? (ambient-light3d-color
+                 (car (fragment-lighting-report3d-resolved-lights token-report)))
+                resolved-accent))

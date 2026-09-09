@@ -65,6 +65,9 @@
   '(background foreground muted axis grid surface surface-edge accent highlight
                selection warning success error))
 
+(define maximum-theme-definition-count 10000)
+(define maximum-theme-expression-depth 64)
+
 ;; color-theme : #:id symbol? #:palette color-palette? #:roles hash? ...
 ;;   Constructs and validates a complete immutable role-resolution snapshot.
 (define (color-theme #:id id
@@ -101,6 +104,22 @@
     (cond
       [(not series) (if parent (color-theme-value-series parent) '())]
       [else (normalize-series series 'color-theme)]))
+  (unless (<= (hash-count merged-roles) maximum-theme-definition-count)
+    (raise-arguments-error
+     'color-theme "at most the configured number of role definitions"
+     "maximum" maximum-theme-definition-count
+     "count" (hash-count merged-roles)))
+  (unless (<= (length normalized-series) maximum-theme-definition-count)
+    (raise-arguments-error
+     'color-theme "at most the configured number of series definitions"
+     "maximum" maximum-theme-definition-count
+     "count" (length normalized-series)))
+  ;; A theme's role and series definitions are resolved before its categorical
+  ;; series snapshot exists.  Series tokens therefore have no meaningful
+  ;; dependency direction here: accepting one used to reach the provisional
+  ;; `#f` vector and fail with an incidental vector contract error.  Reject the
+  ;; complete nested expression route at the authoring boundary instead.
+  (reject-series-dependencies! merged-roles normalized-series)
   ;; The provisional snapshot is immutable and is used only to validate all
   ;; role dependencies before the final resolved table is retained.
   (define provisional
@@ -325,7 +344,7 @@
     (call-with-output-bytes
      (lambda (out)
        (write
-        (list 'animate-color-theme-appearance-v1
+        (list 'animate-color-theme-appearance-v2
               (palette-appearance-datum (color-theme-value-palette theme))
               (for/list ([key (in-list (sort (hash-keys resolved-roles) symbol<?))])
                 (list key (rgba->datum (hash-ref resolved-roles key))))
@@ -355,18 +374,34 @@
      'datum->theme
      "an (animate-color-theme version id name palette roles series provenance) datum"
      "datum" datum))
+  (unless (exact-positive-integer? (list-ref fields 1))
+    (raise-arguments-error
+     'datum->theme
+     "an exact positive theme schema version"
+     "version" (list-ref fields 1)))
   (unless (= (list-ref fields 1) color-theme-schema-version)
     (raise-arguments-error
      'datum->theme
      "supported animate-color-theme schema version"
      "version" (list-ref fields 1)))
   (define roles
-    (make-immutable-hash
-     (for/list ([entry (in-list (checked-proper-list (list-ref fields 5) 'datum->theme))])
-       (define pair (checked-proper-list entry 'datum->theme))
-       (unless (and (= (length pair) 2) (symbol? (car pair)))
-         (raise-arguments-error 'datum->theme "(role-key color-spec-datum) entries" "entry" entry))
-       (cons (car pair) (datum->color-spec (cadr pair))))))
+    (let loop ([entries (checked-proper-list (list-ref fields 5) 'datum->theme)]
+               [index 0] [seen (hash)] [reversed '()])
+      (cond
+        [(null? entries) (make-immutable-hash (reverse reversed))]
+        [else
+         (define entry (car entries))
+         (define pair (checked-proper-list entry 'datum->theme))
+         (unless (and (= (length pair) 2) (symbol? (car pair)))
+           (raise-arguments-error
+            'datum->theme "(role-key color-spec-datum) entries" "entry" entry "index" index))
+         (define key (car pair))
+         (when (hash-has-key? seen key)
+           (raise-arguments-error
+            'datum->theme "role entries with no duplicate keys"
+            "role" key "first index" (hash-ref seen key) "duplicate index" index))
+         (loop (cdr entries) (add1 index) (hash-set seen key index)
+               (cons (cons key (datum->color-spec (cadr pair))) reversed))])))
   (define series
     (for/list ([entry (in-list (checked-proper-list (list-ref fields 6) 'datum->theme))])
       (datum->color-spec entry)))
@@ -405,6 +440,39 @@
     (raise-argument-error who "list? as #:series" series))
   (for/list ([spec (in-list series)])
     (normalize-color-spec spec who)))
+
+;; reject-series-dependencies! : immutable-hash? (listof color-spec?) -> void?
+;; The allowed graph is palette/literal -> role/series expressions. A
+;; `series-color` token can be consumed only after that entire graph has been
+;; completed, never while defining it.
+(define (reject-series-dependencies! roles series)
+  (for ([(key spec) (in-hash roles)])
+    (reject-series-dependency! 'role key spec '()))
+  (for ([spec (in-list series)] [index (in-naturals)])
+    (reject-series-dependency! 'series index spec '())))
+
+(define (reject-series-dependency! owner-kind owner spec route)
+  (when (> (length route) maximum-theme-expression-depth)
+    (raise-arguments-error
+     'color-theme "a color definition within the configured expression-depth budget"
+     "definition kind" owner-kind
+     "definition" owner
+     "maximum depth" maximum-theme-expression-depth))
+  (cond
+    [(series-color? spec)
+     (raise-arguments-error
+      'color-theme
+      "role and series definitions without series-color dependencies"
+      "definition kind" owner-kind
+      "definition" owner
+      "series index" (series-color-index spec)
+      "dependency route" (reverse (cons 'series-color route)))]
+    [(mix-color? spec)
+     (reject-series-dependency! owner-kind owner (mix-color-from spec) (cons 'mix-from route))
+     (reject-series-dependency! owner-kind owner (mix-color-to spec) (cons 'mix-to route))]
+    [(alpha-color? spec)
+     (reject-series-dependency! owner-kind owner (alpha-color-source spec) (cons 'alpha route))]
+    [else (void)]))
 
 ;; normalize-display-name : any/c symbol? -> string?
 ;;   Copies human-readable metadata into an immutable string.

@@ -39,6 +39,7 @@
          clip3d-plane
          slice-mesh3d
          slice-mesh-by-planes3d
+         vertex-color-lerp
          section3d?
          section3d-plane
          section3d-basis
@@ -468,12 +469,21 @@
 ;; Keep colour in the same edge-derived vertex record as position and normal.
 ;; Mesh colors remain authored semantic specifications until rendering
 ;; preparation, so an edge intersection records a mix expression rather than
-;; resolving a theme token while cutting geometry.
+;; resolving a theme token while cutting geometry. Spatial vertex attributes
+;; use encoded-sRGB, straight-alpha interpolation—the convention used by the
+;; existing CPU clipper and GPU varying—not author-directed color animation.
 (define (interpolate-color first second amount)
   (cond [(and first second)
-         (color-mix first second amount)]
+         (vertex-color-lerp first second amount)]
         [first first]
         [else second]))
+
+;; vertex-color-lerp : color-spec? color-spec? finite-real? -> color-spec?
+;; Interpolates a geometric mesh color attribute in the renderer's established
+;; encoded-sRGB, straight-alpha attribute space. Tokens remain symbolic until
+;; a request-owned render context resolves them.
+(define (vertex-color-lerp first second amount)
+  (color-mix first second amount #:space 'srgb #:alpha-mode 'straight))
 
 ;; The descriptor, not an ad-hoc field-name case, decides how every custom
 ;; vertex channel crosses a cut. This keeps UV/scalar data linear, reunitizes

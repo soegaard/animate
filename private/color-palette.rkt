@@ -179,20 +179,34 @@
      'datum->palette
      "an (animate-color-palette version id name palette-version colors groups provenance) datum"
      "datum" datum))
+  (unless (exact-positive-integer? (list-ref fields 1))
+    (raise-arguments-error
+     'datum->palette
+     "an exact positive palette schema version"
+     "version" (list-ref fields 1)))
   (unless (= (list-ref fields 1) color-palette-schema-version)
     (raise-arguments-error
      'datum->palette
      "supported animate-color-palette schema version"
      "version" (list-ref fields 1)))
   (define colors
-    (make-immutable-hash
-     (for/list ([entry (in-list (checked-proper-list (list-ref fields 5)
-                                                     'datum->palette))])
-       (define pair (checked-proper-list entry 'datum->palette))
-       (unless (and (= (length pair) 2) (symbol? (car pair)))
-         (raise-arguments-error 'datum->palette "(key rgba-datum) entries" "entry" entry))
-       (define rgba (datum->rgba (cadr pair)))
-       (cons (car pair) rgba))))
+    (let loop ([entries (checked-proper-list (list-ref fields 5) 'datum->palette)]
+               [index 0] [seen (hash)] [reversed '()])
+      (cond
+        [(null? entries) (make-immutable-hash (reverse reversed))]
+        [else
+         (define entry (car entries))
+         (define pair (checked-proper-list entry 'datum->palette))
+         (unless (and (= (length pair) 2) (symbol? (car pair)))
+           (raise-arguments-error
+            'datum->palette "(key rgba-datum) entries" "entry" entry "index" index))
+         (define key (color-token-key (palette-color (car pair))))
+         (when (hash-has-key? seen key)
+           (raise-arguments-error
+            'datum->palette "palette entries with no duplicate canonical keys"
+            "key" key "first index" (hash-ref seen key) "duplicate index" index))
+         (loop (cdr entries) (add1 index) (hash-set seen key index)
+               (cons (cons key (datum->rgba (cadr pair))) reversed))])))
   (color-palette #:id (list-ref fields 2)
                  #:display-name (list-ref fields 3)
                  #:version (list-ref fields 4)
@@ -231,18 +245,19 @@
     (hash-set result canonical-key (color-spec->rgba-color value who))))
 
 ;; merged-palette-keys : (or/c #f color-palette?) immutable-hash? -> (listof symbol?)
-;;   Preserves parent/catalog order and appends new custom keys deterministically.
+;; Presentation has one canonical order independent of extension history. The
+;; built-in catalog remains first; all additional keys follow in symbol order.
+;; This same sequence is serialized and fingerprinted, so equal palettes made
+;; through different parent chains have equal appearance identities.
 (define (merged-palette-keys parent colors)
   (define base
-    (if parent
-        (palette-keys parent)
-        (filter (lambda (key) (hash-has-key? colors key)) standard-palette-keys)))
-  (define new-keys
+    (filter (lambda (key) (hash-has-key? colors key)) standard-palette-keys))
+  (define custom-keys
     (sort (for/list ([key (in-hash-keys colors)]
                      #:unless (memq key base))
             key)
           symbol<?))
-  (append base new-keys))
+  (append base custom-keys))
 
 ;; normalize-palette-groups : any/c immutable-hash? symbol? -> list?
 ;;   Copies declarative group metadata and ensures listed keys have swatches.

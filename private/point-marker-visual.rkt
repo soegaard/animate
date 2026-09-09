@@ -16,6 +16,7 @@
 ;; Imports
 (require "affine-transform.rkt"
          "color-style.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "geometry.rkt"
          "path-geometry.rkt"
          "visual-model.rkt")
@@ -162,7 +163,7 @@
                       #:shape [shape 'circle]
                       #:size [size 1/5]
                       #:fill [fill "royalblue"]
-                      #:stroke [stroke "black"]
+                      #:stroke [stroke theme-axis]
                       #:stroke-width [stroke-width 1])
   (unless (symbol? identifier)
     (raise-argument-error 'point-marker "symbol?" identifier))

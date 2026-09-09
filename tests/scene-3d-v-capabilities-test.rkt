@@ -8,6 +8,7 @@
          rackunit
          "../3d.rkt"
          "../3d/render.rkt"
+         "../colors.rkt"
          "../main.rkt"
          "../project.rkt")
 
@@ -139,7 +140,31 @@
      (define report (check-project! (plan-project project #:directory temporary-root)))
      (check-true (project-check-report-ok? report))
      (check-false (directory-exists? output-root))
-     (check-false (directory-exists? cache-root)))
+     (check-false (directory-exists? cache-root))
+
+     ;; Preflight constructs its 3D requests with the project's immutable
+     ;; theme, so a role that exists only in that selected theme is valid
+     ;; before any renderer preparation or output directory is created.
+     (define custom-role-theme
+       (color-theme #:id 'preflight-custom-role #:extends animate-light-theme
+                    #:roles (hash 'brand-albedo "#4466CC")))
+     (define custom-role-view
+       (view3d
+        (list (cube3d 2 #:id 'brand-cube
+                      #:material (material3d #:color (role-color 'brand-albedo)
+                                             #:shading 'unlit)))
+        #:id 'brand-world #:width 4 #:height 3 #:render-mode 'opaque))
+     (define themed-project
+       (animate-project
+        #:id 'v0-theme-capabilities
+        #:source (scene-source (scene-wait (scene-add (make-scene) custom-role-view) 1))
+        #:render (render-spec #:fps 1 #:width 80 #:height 60 #:theme custom-role-theme)
+        #:output (output-spec #:root output-root #:name "themed" #:format 'png-sequence)
+        #:encoder (encoder-spec #:codec 'none)
+        #:cache (cache-spec #:root cache-root #:policy 'off)))
+     (check-true
+      (project-check-report-ok?
+       (check-project! (plan-project themed-project #:directory temporary-root)))))
    (lambda () (delete-directory/files temporary-root))))
 
 ;; The normal suite stays GUI-free. The OpenGL lane verifies the critical V0

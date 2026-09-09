@@ -122,7 +122,9 @@
                  (render3d-request-compiled-view request)
                  (render3d-request-frame-spec request)
                  (render-color-context-appearance-fingerprint
-                  (current-or-default-render-color-context)))
+                  (render3d-request-color-context request))
+                 (render-color-context-resolver-version
+                  (render3d-request-color-context request)))
          (renderer3d-fingerprint (opengl-renderer3d-value-fallback-renderer renderer) request)))
    (define (renderer3d-prepare renderer request)
      (ensure-live-renderer 'renderer3d-prepare renderer)
@@ -464,7 +466,7 @@
   ;; feature selection, and pixel size are camera dependent.
   (statistics-add! renderer 'spatial-compilations 1)
   (opengl-preparation compiled (render3d-request-frame-spec request) '()
-                      (current-or-default-render-color-context)))
+                      (render3d-request-color-context request)))
 
 (define (render-opengl renderer preparation request)
   (cond [(not (opengl-preparation? preparation))
@@ -486,6 +488,20 @@
             (define compiled (opengl-preparation-compiled preparation))
             (define frame-spec (opengl-preparation-frame-spec preparation))
             (define color-context (opengl-preparation-color-context preparation))
+            (unless (and (= (render-color-context-resolver-version color-context)
+                            (render-color-context-resolver-version
+                             (render3d-request-color-context request)))
+                         (equal? (render-color-context-appearance-fingerprint color-context)
+                                 (render-color-context-appearance-fingerprint
+                                  (render3d-request-color-context request))))
+              (raise-arguments-error
+               'renderer3d-render
+               "an OpenGL preparation made for the request's color context"
+               "preparation-appearance"
+               (render-color-context-appearance-fingerprint color-context)
+               "request-appearance"
+               (render-color-context-appearance-fingerprint
+                (render3d-request-color-context request))))
             (define host (opengl-renderer3d-value-host renderer))
             ;; Allocation goes through the host separately, before the draw
             ;; transaction.  The target survives camera-only frame changes.

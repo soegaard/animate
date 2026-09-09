@@ -1048,9 +1048,12 @@ itself; it must not pass a palette or role token directly to Pict or
 
 @defproc[(load-color-theme! [path path-string?]) color-theme?]{
 Reads a versioned, data-only theme datum from @racket[path] at the effectful
-render boundary. Animate validates it with @racket[datum->theme], records the
-file's content digest as provenance, and returns one immutable snapshot. It
-does not evaluate the file or retain a handle that a renderer could reread.
+render boundary. Animate reads at most 1 MiB once, hashes those exact bytes,
+then decodes exactly one datum under isolated data-reader settings. It validates
+the datum with @racket[datum->theme], records the matching digest as provenance,
+and returns one immutable snapshot. It rejects reader extensions, graph syntax,
+and trailing datums; it does not evaluate the file or retain a handle that a
+renderer could reread.
 }
 
 @defproc[(render-frames!
@@ -1377,8 +1380,11 @@ automatic caching is disabled conservatively. An explicit symbol/string remains
 available for an author-managed key; @racket[#f] disables caching and removes
 any existing section cache manifest. External dependencies are not discovered:
 declare them in @racket[asset-files] or use a deliberate explicit key.
-The selected theme's canonical datum, appearance fingerprint, and resolver
-version are always included in the automatic visual-content identity.
+Every enabled cache manifest separately records the selected theme's appearance
+fingerprint and resolver version, plus camera and renderer representations.
+This mandatory rendering identity applies even when @racket[cache-key] is an
+explicit symbol or string: that key identifies author-controlled source, not
+the appearance of its PNGs. @racket[#f] continues to disable caching.
 }
 
 @defproc[(render-timeline-section/report!

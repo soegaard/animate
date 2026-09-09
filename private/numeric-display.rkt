@@ -15,6 +15,7 @@
 (require racket/list
          racket/string
          "clipped-visual.rkt"
+         (only-in "color-token.rkt" theme-foreground)
          "geometry.rkt"
          "group-visual.rkt"
          "interpolation.rkt"
@@ -268,7 +269,7 @@
                  #:font-family [font-family 'default]
                  #:font-style [font-style 'normal]
                  #:font-weight [font-weight 'normal]
-                 #:color [color "black"]
+                 #:color [color theme-foreground]
                  #:horizontal-alignment [horizontal-alignment 'center]
                  #:vertical-alignment [vertical-alignment 'center]
                  #:grouping? [grouping? #f]
@@ -290,7 +291,7 @@
                         #:font-family [font-family 'default]
                         #:font-style [font-style 'normal]
                         #:font-weight [font-weight 'normal]
-                        #:color [color "black"]
+                        #:color [color theme-foreground]
                         #:horizontal-alignment [horizontal-alignment 'center]
                         #:vertical-alignment [vertical-alignment 'center]
                         #:decimal-places [decimal-places 2]
@@ -315,7 +316,7 @@
                            #:font-family [font-family 'default]
                            #:font-style [font-style 'normal]
                            #:font-weight [font-weight 'normal]
-                           #:color [color "black"]
+                           #:color [color theme-foreground]
                            #:horizontal-alignment [horizontal-alignment 'center]
                            #:vertical-alignment [vertical-alignment 'center]
                            #:significant-figures [significant-figures 3]
@@ -336,7 +337,7 @@
                             #:font-family [font-family 'default]
                             #:font-style [font-style 'normal]
                             #:font-weight [font-weight 'normal]
-                            #:color [color "black"]
+                            #:color [color theme-foreground]
                             #:horizontal-alignment [horizontal-alignment 'center]
                             #:vertical-alignment [vertical-alignment 'center]
                             #:significant-figures [significant-figures 3]
@@ -360,7 +361,7 @@
                          #:font-family [font-family 'default]
                          #:font-style [font-style 'normal]
                          #:font-weight [font-weight 'normal]
-                         #:color [color "black"]
+                         #:color [color theme-foreground]
                          #:horizontal-alignment [horizontal-alignment 'center]
                          #:vertical-alignment [vertical-alignment 'center]
                          #:max-denominator [max-denominator 1000]
@@ -382,7 +383,7 @@
                         #:font-family [font-family 'default]
                         #:font-style [font-style 'normal]
                         #:font-weight [font-weight 'normal]
-                        #:color [color "black"]
+                        #:color [color theme-foreground]
                         #:horizontal-alignment [horizontal-alignment 'center]
                         #:vertical-alignment [vertical-alignment 'center]
                         #:decimal-places [decimal-places 2]
@@ -417,7 +418,7 @@
                        #:font-family [font-family 'default]
                        #:font-style [font-style 'normal]
                        #:font-weight [font-weight 'normal]
-                       #:color [color "black"]
+                       #:color [color theme-foreground]
                        #:horizontal-alignment [horizontal-alignment 'center]
                        #:vertical-alignment [vertical-alignment 'center])
   (unless (memq kind '(auto integer decimal scientific significant rational complex))
@@ -584,7 +585,7 @@
                            #:font-family [font-family 'default]
                            #:font-style [font-style 'normal]
                            #:font-weight [font-weight 'normal]
-                           #:color [color "black"]
+                           #:color [color theme-foreground]
                            #:vertical-alignment [vertical-alignment 'center])
   (define source-id (parameter-target-id source 'parameter-display))
   (unless (symbol? id)
@@ -643,7 +644,7 @@
                                 #:font-family [font-family 'modern]
                                 #:font-style [font-style 'normal]
                                 #:font-weight [font-weight 'normal]
-                                #:color [color "black"]
+                                #:color [color theme-foreground]
                                 #:vertical-alignment [vertical-alignment 'center])
   (define source-id (parameter-target-id source 'rolling-number-display))
   (unless (symbol? id)

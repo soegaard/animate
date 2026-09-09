@@ -11,6 +11,7 @@
 
 (require racket/list
          "arrow-visual.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "derived-visual.rkt"
          "geometry.rkt"
          "layout-attachment.rkt"
@@ -364,7 +365,7 @@
 (define (line-between start end
                       #:id id
                       #:opacity [opacity 1]
-                      #:stroke [stroke "black"]
+                      #:stroke [stroke theme-axis]
                       #:stroke-width [stroke-width 2])
   (make-endpoint-definition
    'line start end #f id opacity stroke stroke-width 3/10 1/4 #f #f
@@ -376,7 +377,7 @@
 (define (segment-between start end
                          #:id id
                          #:opacity [opacity 1]
-                         #:stroke [stroke "black"]
+                         #:stroke [stroke theme-axis]
                          #:stroke-width [stroke-width 2])
   (line-between start end
                 #:id id
@@ -398,7 +399,7 @@
 (define (arrow-between start end
                        #:id id
                        #:opacity [opacity 1]
-                       #:stroke [stroke "black"]
+                       #:stroke [stroke theme-axis]
                        #:stroke-width [stroke-width 2]
                        #:tip-length [tip-length 3/10]
                        #:tip-width [tip-width 1/4]
@@ -419,7 +420,7 @@
                   #:id id
                   #:length [length 2]
                   #:opacity [opacity 1]
-                  #:stroke [stroke "black"]
+                  #:stroke [stroke theme-axis]
                   #:stroke-width [stroke-width 2]
                   #:tip-length [tip-length 3/10]
                   #:tip-width [tip-width 1/4]

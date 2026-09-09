@@ -18,6 +18,7 @@
 (require racket/generic
          "affine-transform.rkt"
          "color-style.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "geometry.rkt"
          "paint.rkt"
          "path-geometry.rkt")
@@ -371,7 +372,7 @@
                 #:opacity [opacity 1]
                 #:radius [radius 1]
                 #:fill [fill "dodgerblue"]
-                #:stroke [stroke "black"]
+                #:stroke [stroke theme-axis]
                 #:stroke-width [stroke-width 2])
   (check-visual-id 'circle id)
   (check-visual-position 'circle center)
@@ -471,7 +472,7 @@
                    #:width [width 2]
                    #:height [height 1]
                    #:fill [fill "goldenrod"]
-                   #:stroke [stroke "black"]
+                   #:stroke [stroke theme-axis]
                    #:stroke-width [stroke-width 2])
   (check-visual-id 'rectangle id)
   (check-visual-position 'rectangle center)
@@ -573,7 +574,7 @@
                           #:scale [scale 1]
                           #:opacity [opacity 1]
                           #:fill [fill #f]
-                          #:stroke [stroke "black"]
+                          #:stroke [stroke theme-axis]
                           #:stroke-width [stroke-width 2])
   (check-visual-id 'make-path-visual id)
   (check-visual-position 'make-path-visual center)
@@ -619,7 +620,7 @@
               #:rotation [rotation 0]
               #:scale [scale 1]
               #:opacity [opacity 1]
-              #:stroke [stroke "black"]
+              #:stroke [stroke theme-axis]
               #:stroke-width [stroke-width 2])
   (check-visual-position 'line start)
   (check-visual-position 'line end)
@@ -661,7 +662,7 @@
                  #:scale [scale 1]
                  #:opacity [opacity 1]
                  #:fill [fill "cornflowerblue"]
-                 #:stroke [stroke "black"]
+                 #:stroke [stroke theme-axis]
                  #:stroke-width [stroke-width 2])
   (define input-path
     (polygon-path vertices))

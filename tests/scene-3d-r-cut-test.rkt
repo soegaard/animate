@@ -185,12 +185,14 @@
   (define red-blue (colour-at 0 1/2))
   (check-true (rgba-color? red-green))
   (check-true (rgba-color? red-blue))
-  (check-= (rgba-color-red red-green) 187.51603067837462 1e-12)
-  (check-= (rgba-color-green red-green) 187.51603067837462 1e-12)
+  ;; Generated cut vertices preserve the renderer's encoded-sRGB attribute
+  ;; field. They must not use the linear-light, premultiplied authoring mix.
+  (check-= (rgba-color-red red-green) 127.5 1e-12)
+  (check-= (rgba-color-green red-green) 127.5 1e-12)
   (check-= (rgba-color-blue red-green) 0 1e-12)
-  (check-= (rgba-color-red red-blue) 187.51603067837462 1e-12)
+  (check-= (rgba-color-red red-blue) 127.5 1e-12)
   (check-= (rgba-color-green red-blue) 0 1e-12)
-  (check-= (rgba-color-blue red-blue) 187.51603067837462 1e-12)
+  (check-= (rgba-color-blue red-blue) 127.5 1e-12)
 
   ;; A welded cap reuses the exact cut-boundary positions, so it also retains
   ;; the already-interpolated side colour channel instead of dropping it.

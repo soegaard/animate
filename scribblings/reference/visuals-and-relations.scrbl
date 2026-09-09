@@ -1489,6 +1489,15 @@ bare @racket[latex-formula] has no part namespace. The Pict and tagged-SVG
 adapters apply the selected colour at their own rendering boundaries rather
 than relying on a generic outer recolouring operation.
 
+Generic lines, paths, and ordinary shape outlines use semantic axis ink by
+default; an explicit @racket["black"] remains literal black in every theme.
+Formula source is different: raw TeX and imported SVG can contain an author's
+own black or multicolour paint, and the adapters cannot reliably distinguish
+that from implicit default ink without altering the artifact. They therefore
+preserve unstyled formula paint. Use the explicit formula styling operations
+with @racket[theme-foreground] when a formula must follow a theme; selected
+formula parts continue to preserve all other source paint.
+
 Rendering a nonempty formula requires the @racketmodname[latex-pict] package,
 a working @tt{pdflatex}, Poppler, the requested document class, and every
 package named by the preamble. Model construction, scene sampling, and empty

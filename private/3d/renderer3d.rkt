@@ -94,31 +94,55 @@
 
 ;; The request excludes a raw view3d. Compilation captures camera-independent
 ;; data first, so a camera orbit affects only frame preparation.
-(struct render3d-request (compiled-view frame-spec attachments cancellation-token)
+(struct render3d-request (compiled-view frame-spec attachments cancellation-token color-context)
   #:transparent
   #:guard
-  (lambda (compiled-view frame-spec attachments cancellation-token who)
+  (lambda (compiled-view frame-spec attachments cancellation-token color-context who)
     (unless (compiled-view3d? compiled-view)
       (raise-argument-error who "compiled-view3d?" compiled-view))
     (unless (frame3d-spec? frame-spec)
       (raise-argument-error who "frame3d-spec?" frame-spec))
     (unless (or (not cancellation-token) (cancellation-token? cancellation-token))
       (raise-argument-error who "(or/c #f cancellation-token?)" cancellation-token))
+    (unless (render-color-context? color-context)
+      (raise-argument-error who "render-color-context?" color-context))
     (values compiled-view frame-spec (renderer3d-canonical-attachments attachments)
-            cancellation-token)))
+            cancellation-token color-context)))
 
 ; view3d->render3d-request : view3d? exact-positive-integer? exact-positive-integer?
 ;                            [#:cancellation-token (or/c #f cancellation-token?)]
 ;                            [#:attachments (listof (or/c 'color 'linear-depth 'object-id 'normal))]
+;                            [#:theme color-theme?]
+;                            [#:color-context render-color-context?]
 ;                            -> render3d-request?
 (define (view3d->render3d-request view width height #:cancellation-token [cancellation-token #f]
-                                  #:attachments [attachments '(color)])
+                                  #:attachments [attachments '(color)]
+                                  #:theme [theme #f]
+                                  #:color-context [color-context #f])
   (unless (view3d? view)
     (raise-argument-error 'view3d->render3d-request "view3d?" view))
   (render3d-request (compile-view3d/cached view)
                     (view3d->frame3d-spec view width height)
                     attachments
-                    cancellation-token))
+                    cancellation-token
+                    (select-request-color-context
+                     'view3d->render3d-request theme color-context)))
+
+(define (select-request-color-context who theme color-context)
+  (when (and theme color-context)
+    (raise-arguments-error who
+                           "at most one of #:theme or #:color-context"
+                           "theme" theme "color-context" color-context))
+  (cond
+    [color-context
+     (unless (render-color-context? color-context)
+       (raise-argument-error who "render-color-context? as #:color-context" color-context))
+     color-context]
+    [theme (make-render-color-context theme)]
+    ;; Capture a surrounding 2D render operation when one exists. Outside an
+    ;; adapter this is the documented built-in light theme, selected now rather
+    ;; than later during fingerprinting or preparation.
+    [else (current-or-default-render-color-context)]))
 
 (struct renderer3d-render-result (artifact)
   #:transparent
@@ -210,10 +234,16 @@
         [(flat) (need! 'flat-shading)]
         [(smooth) (need! 'smooth-shading)]
         [else (void)]))
-    (when (request-has-transparent-instance? compiled)
+    (when (request-has-transparent-instance? request)
       (need! 'transparency))
     (when (request-has-lit-instance? compiled)
-      (for ([light (in-list (effective-request-lights frame))])
+      ;; This is also the first backend-neutral validation of light tokens:
+      ;; alpha and custom role failures belong to request construction/context,
+      ;; not to a later renderer-specific upload.
+      (for ([light (in-list
+                    (resolve-lights3d
+                     (effective-request-lights frame)
+                     (render3d-request-color-context request)))])
         (cond [(ambient-light3d? light) (need! 'ambient-light)]
               [(directional-light3d? light) (need! 'directional-light)]
               ;; Values are part of the stable authored model in V3.  Their
@@ -317,8 +347,9 @@
     (not (eq? (material3d-shading (compiled-instance3d-material instance))
               'unlit))))
 
-(define (request-has-transparent-instance? compiled)
-  (define color-context (current-or-default-render-color-context))
+(define (request-has-transparent-instance? request)
+  (define compiled (render3d-request-compiled-view request))
+  (define color-context (render3d-request-color-context request))
   (for/or ([instance (in-vector (compiled-view3d-instances compiled))])
     (define material (compiled-instance3d-material instance))
     (or (< (compiled-instance3d-opacity instance) 1)
@@ -375,10 +406,12 @@
           ;; Geometry remains in its distinct retained cache, while this frame
           ;; key guarantees a theme switch cannot revive stale pixels.
           (render-color-context-appearance-fingerprint
-           (current-or-default-render-color-context))))
+           (render3d-request-color-context request))
+          (render-color-context-resolver-version
+           (render3d-request-color-context request))))
 
 (define (prepare-reference request)
-  (define color-context (current-or-default-render-color-context))
+  (define color-context (render3d-request-color-context request))
   (prepare-compiled-view3d-opaque
    (render3d-request-compiled-view request)
    (render3d-request-frame-spec request)
@@ -386,6 +419,18 @@
    #:color-context color-context))
 
 (define (render-reference preparation request statistics statistics-lock)
+  (unless (render-color-context-compatible?
+           (software-render-preparation-color-context preparation)
+           (render3d-request-color-context request))
+    (raise-arguments-error
+     'renderer3d-render
+     "a preparation made for the request's color context"
+     "preparation-appearance"
+     (render-color-context-appearance-fingerprint
+      (software-render-preparation-color-context preparation))
+     "request-appearance"
+     (render-color-context-appearance-fingerprint
+      (render3d-request-color-context request))))
   (define raster-start (current-inexact-milliseconds))
   (define rendered
     (render-prepared-view3d-opaque
@@ -648,7 +693,14 @@
     (compiled-view3d-transparency-mode compiled))
    (render3d-request-frame-spec request)
    (render3d-request-attachments request)
-   (render3d-request-cancellation-token request)))
+   (render3d-request-cancellation-token request)
+   (render3d-request-color-context request)))
+
+(define (render-color-context-compatible? first second)
+  (and (= (render-color-context-resolver-version first)
+          (render-color-context-resolver-version second))
+       (equal? (render-color-context-appearance-fingerprint first)
+               (render-color-context-appearance-fingerprint second))))
 
 (define (record-preparation-under-held-lock! statistics request preparation elapsed)
   (define diagnostics (software-render-preparation-diagnostics preparation))

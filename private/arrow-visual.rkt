@@ -17,6 +17,7 @@
 ;; Imports
 (require "affine-transform.rkt"
          "color-style.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "geometry.rkt"
          "path-geometry.rkt"
          "visual-model.rkt")
@@ -147,7 +148,7 @@
                #:rotation [rotation 0]
                #:scale [scale 1]
                #:opacity [opacity 1]
-               #:stroke [stroke "black"]
+               #:stroke [stroke theme-axis]
                #:stroke-width [stroke-width 2]
                #:tip-length [tip-length 3/10]
                #:tip-width [tip-width 1/4]

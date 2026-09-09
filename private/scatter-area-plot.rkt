@@ -15,6 +15,7 @@
 
 ;; Imports
 (require "axes-visual.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "function-graph.rkt"
          "geometry.rkt"
          "group-visual.rkt"
@@ -54,7 +55,7 @@
                       #:size [size 1/5]
                       #:opacity [opacity 1]
                       #:fill [fill "royalblue"]
-                      #:stroke [stroke "black"]
+                      #:stroke [stroke theme-axis]
                       #:stroke-width [stroke-width 1])
   (check-scatter-arguments axes
                            points

@@ -127,6 +127,8 @@ error policies for a coordinate outside the stop domain.
 @defproc[(color-scale-at [scale color-scale?] [coordinate finite-real?]) color-spec?]{
 Samples a scale while retaining a token or color expression until an explicit
 theme resolves it. At an exact endpoint it returns that normalized stop color.
+Lookup uses a logarithmic upper-bound search, so the final member of a run of
+equal offsets wins without changing hard-stop semantics.
 }
 
 @defproc[(sequential-color-scale [#:minimum minimum finite-real?]
@@ -224,7 +226,9 @@ Returns the literal swatch for a canonical palette key or a documented alias.
 An unknown key raises an exception rather than choosing a fallback color.
 }
 @defproc[(palette-keys [palette color-palette?]) (listof symbol?)]{
-Returns the complete deterministic key order.
+Returns the complete deterministic key order: the standard catalog first,
+then custom keys in canonical symbol order. The order does not depend on the
+parent-extension history used to construct an otherwise equal palette.
 }
 @defproc[(palette-groups [palette color-palette?]) list?]{
 Returns ordered @racket[(list group-id keys)] metadata for swatch browsers.
@@ -233,7 +237,9 @@ Returns ordered @racket[(list group-id keys)] metadata for swatch browsers.
 Produces a complete readable versioned palette datum.
 }
 @defproc[(datum->palette [datum any/c]) color-palette?]{
-Reads one complete palette datum without evaluating it.
+Reads one complete palette datum without evaluating it. It rejects malformed
+schema versions and duplicate keys, including aliases that normalize to the
+same palette entry.
 }
 
 @defthing[color-theme-schema-version exact-positive-integer?]{
@@ -251,7 +257,12 @@ The version number used by complete theme data read and written by this release.
 Creates a complete immutable theme snapshot. Standard roles are required for a
 root theme. A child copies its parent palette and roles, then applies supplied
 overrides. Role dependencies are resolved and validated at construction; direct
-or indirect cycles and missing role/token references are errors.
+or indirect cycles and missing role/token references are errors. Role and
+series definitions may refer to literals, palette tokens, roles, and
+expressions, but not @racket[series-color]: a categorical series token becomes
+valid only after the complete theme series has been constructed. Theme
+definitions are bounded to 10,000 roles or series entries and expression depth
+64, so invalid external data cannot create an unbounded dependency walk.
 }
 
 @defproc[(color-theme? [value any/c]) boolean?]{Recognizes a complete theme.}
@@ -277,13 +288,15 @@ but resolving a series token raises an error.
 @defproc[(color-theme-fingerprint [theme color-theme?]) bytes?]{
 Returns a deterministic appearance identity based on the complete palette,
 resolved roles, and resolved series. Display names and provenance do not alter
-this fingerprint.
+this fingerprint. Equal appearances have equal fingerprints regardless of hash
+insertion order or palette-extension history; series order remains significant.
 }
 @defproc[(theme->datum [theme color-theme?]) any/c]{
 Produces a complete readable versioned theme datum.
 }
 @defproc[(datum->theme [datum any/c]) color-theme?]{
-Reads one complete theme datum without evaluating it.
+Reads one complete theme datum without evaluating it. It rejects malformed
+schema versions and duplicate role declarations before constructing a hash.
 }
 @defproc[(resolve-color [color color-spec?] [theme color-theme?]) rgba-color?]{
 Resolves a literal, palette token, role token, categorical-series token, or supported expression under
@@ -324,8 +337,9 @@ always included so a copied literal is unambiguous.
 @defproc[(color-contrast-ratio [foreground rgba-color?]
                                 [background rgba-color?]) positive-real?]{
 Computes pairwise relative-luminance contrast after compositing the foreground
-over the background. This is a review aid, not a claim that every rendered
-video meets an accessibility standard.
+over an opaque background. A translucent background is rejected because this
+procedure has no canvas against which to composite it. This is a review aid,
+not a claim that every rendered video meets an accessibility standard.
 }
 
 @defproc[(color-theme-diagnostics
@@ -338,7 +352,9 @@ video meets an accessibility standard.
           [#:minimum-series-contrast minimum-series-contrast positive-real? 3])
          (listof immutable-hash?)]{
 Returns deterministic reports for requested role-pair contrast, nonmonotonic
-five-shade ramps, empty categorical series, and low-contrast category pairs.
+declared standard shade ramps, empty categorical series, and low-contrast
+category pairs. A custom five-item palette group is categorical metadata, not
+an implicit light-to-dark ramp declaration.
 Ordinary text is reviewed against a 4.5:1 target and meaningful graphics
 against 3:1. Missing palette entries, invalid aliases, cyclic roles, and
 expression-resolution failures are rejected when a palette, theme, or color

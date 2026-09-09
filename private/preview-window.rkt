@@ -18,6 +18,7 @@
          "authoring-timeline.rkt"
          "camera.rkt"
          "color-style.rkt"
+         "color-theme-data.rkt"
          "color-preview-inspection.rkt"
          "frame-renderer.rkt"
          "formula-part-transition.rkt"
@@ -1789,7 +1790,8 @@
                    (fragment-lighting-inspection3d
                     picked-material lights (spatial-pick-point pick) (spatial-pick-normal pick)
                     (camera3d-position (view3d-camera view))
-                    #:tone-map (view3d-tone-map view))]
+                    #:tone-map (view3d-tone-map view)
+                    #:theme (or theme animate-light-theme))]
                   [sample-rows
                    (apply append
                           (for/list ([sample (in-list

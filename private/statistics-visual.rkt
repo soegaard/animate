@@ -4,6 +4,7 @@
 ;; whose children are explicitly named for the usual nested scene operations.
 
 (require racket/list
+         (only-in "color-token.rkt" theme-foreground)
          "geometry.rkt"
          "group-visual.rkt"
          "text-visual.rkt"
@@ -160,7 +161,7 @@
                                 #:fill (color-at colors (+ (* (sub1 row-index) cols) (sub1 col-index)))
                                 #:stroke stroke #:stroke-width 1)
                       (plain-text (number->string value) #:id 'probability #:center (vec2 x y)
-                                  #:font-size 1/5 #:font-family 'modern #:color "black"))
+                                  #:font-size 1/5 #:font-family 'modern #:color theme-foreground))
                 #:id (sample-space-cell-id row-index col-index))))
      rows (range 1 (add1 (length rows)))))
   (group (list (group cells #:id 'cells)) #:id id #:center center))

@@ -38,5 +38,18 @@
 
   ;; Palette serialization has one complete canonical form.
   (check-equal? (datum->palette (palette->datum animate-palette)) animate-palette)
+  ;; Data declarations must reject aliases that collapse to the same canonical
+  ;; swatch key instead of silently retaining whichever hash entry appeared
+  ;; last.
+  (check-exn
+   #px"duplicate canonical keys"
+   (lambda ()
+     (datum->palette
+      '(animate-color-palette 1 duplicate "Duplicate" 1
+                              ((aqua-c (rgba 1 2 3 1))
+                               (aqua (rgba 4 5 6 1)))
+                              () #f))))
+  (check-exn exn:fail?
+             (lambda () (datum->palette '(animate-color-palette "one"))))
   (check-exn exn:fail:contract?
              (lambda () (datum->palette '(animate-color-palette 2)))) )
