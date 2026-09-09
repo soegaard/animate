@@ -752,24 +752,56 @@
      (transition-inspection-actions subject))])
 
 (define (transition-inspection-sections subject)
-  (for/list ([inspection (in-list (subject-transition-inspections subject))]
-             #:when (eq? (animation-inspection-kind inspection)
-                          'string-transition))
-    (define plan (hash-ref (animation-inspection-data inspection) 'plan))
-    (inspector-section
-     'string-matching
-     "String matching"
-     (append
-      (for/list ([match (in-list (string-match-plan-matches plan))]
-                 [index (in-naturals)])
-        (string-transition-match-row plan match index))
-      (unmatched-rows "unmatched source"
-                      (string-match-plan-unmatched-source plan))
-      (unmatched-rows "unmatched destination"
-                      (string-match-plan-unmatched-destination plan))
-      (for/list ([diagnostic (in-list (string-match-plan-diagnostics plan))])
-        (inspector-row "diagnostic" diagnostic 'warning '())))
-     (string-match-plan->datum plan))))
+  (append
+   (for/list ([inspection (in-list (subject-transition-inspections subject))]
+              #:when (eq? (animation-inspection-kind inspection)
+                           'string-transition))
+     (define plan (hash-ref (animation-inspection-data inspection) 'plan))
+     (inspector-section
+      'string-matching
+      "String matching"
+      (append
+       (for/list ([match (in-list (string-match-plan-matches plan))]
+                  [index (in-naturals)])
+         (string-transition-match-row plan match index))
+       (unmatched-rows "unmatched source"
+                       (string-match-plan-unmatched-source plan))
+       (unmatched-rows "unmatched destination"
+                       (string-match-plan-unmatched-destination plan))
+       (for/list ([diagnostic (in-list (string-match-plan-diagnostics plan))])
+         (inspector-row "diagnostic" diagnostic 'warning '())))
+      (string-match-plan->datum plan)))
+   (let ([effects (active-effect-inspections subject)])
+     (if (null? effects)
+         '()
+         (list
+          (inspector-section
+           'effects
+           "Effects"
+           (for/list ([inspection (in-list effects)])
+             (inspector-row
+              (symbol->string (animation-inspection-kind inspection))
+              (inspector-effect-data inspection)
+              'info
+              '()))
+           (for/list ([inspection (in-list effects)])
+             (hasheq 'kind (animation-inspection-kind inspection)
+                     'data (inspector-effect-data inspection)))))))))
+
+;; One generic effect section deliberately replaces effect-specific panes. The
+;; compiled inspection records are immutable semantic data; renderer handles,
+;; prepared Picts, and caches never cross this boundary.
+(define (active-effect-inspections subject)
+  (filter (lambda (inspection)
+            (not (eq? (animation-inspection-kind inspection)
+                      'string-transition)))
+          (subject-transition-inspections subject)))
+
+(define (inspector-effect-data inspection)
+  (define data (animation-inspection-data inspection))
+  (if (hash? data)
+      (immutable-hash-snapshot data)
+      data))
 
 (define (string-transition-match-row plan match index)
   (inspector-row

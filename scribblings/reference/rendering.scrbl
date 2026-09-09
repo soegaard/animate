@@ -139,6 +139,26 @@ font ascent and descent. These symmetric boxes keep the semantic anchor at the
 local Pict center, which is the placement convention used by groups and scene
 states.
 
+@racket[typewrite] and @racket[erase-text] use this same text renderer during
+their open clip intervals. For an unrotated, unit-scale text Visual, the
+renderer first shapes the complete final Pict---including rich spans, explicit
+line breaks, measured wrapping, and line alignment---then clips that one frozen
+layout by semantic text segments. It never renders a succession of shorter
+prefix strings, so an advancing reveal cannot change a line break or remeasure
+an earlier run. The standard Pict renderer deliberately rejects an interior
+text-reveal sample for a rotated or non-unit-scale source rather than silently
+using an axis-aligned approximation. Exact lifecycle endpoints remain the
+ordinary authored text Visual (or its absence for @racket[erase-text]).
+When requested, a cursor is drawn from the prepared final-layout segment
+frontier during an open partial clip. It is a renderer-local overlay rather
+than a semantic helper Visual, and disappears at either exact endpoint.
+
+Prepared text layouts are renderer-local resources. A preview or batch render
+that reuses a Pict renderer list also reuses its bounded text-raster cache; the
+cache key includes all layout-affecting text data and camera pixel scale, but
+excludes position and opacity. The semantic inspector exposes only the stable
+prepared-layout source key, never the renderer's cached Pict or bitmap.
+
 The built-in formula renderer chooses one of @tt{tex-math},
 @tt{tex-display-math}, and @tt{tex-real-display-math} from the semantic mode.
 It passes the immutable source, preamble, document-class options, and Preview

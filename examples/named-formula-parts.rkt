@@ -146,13 +146,13 @@
                 (scale-to destination-card 11/10)
                 (fade-to summary 1/2)
                 #:duration 1))
-  (define exit
+  (define leaving
     (scene-play emphasis
                 (fade-out source-card)
                 (fade-out destination-card)
                 (fade-out summary)
                 #:duration 3/2))
-  (scene-wait exit 1/2))
+  (scene-wait leaving 1/2))
 
 
 ;;;

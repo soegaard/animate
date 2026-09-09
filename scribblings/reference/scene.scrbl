@@ -876,6 +876,33 @@ does not infer continuous topology changes over the full time interval.
 Returns @racket[#t] for a request created by @racket[apply-homotopy].
 }
 
+@defproc[(apply-wave
+          [target (or/c visual? symbol? visual-path?)]
+          [#:direction direction vec2? (vec2 0 1)]
+          [#:amplitude amplitude (and/c finite-real? (>=/c 0)) 1/5]
+          [#:wavelength wavelength (and/c finite-real? positive?) 1]
+          [#:cycles cycles (and/c finite-real? (>=/c 0)) 1]
+          [#:phase phase finite-real? 0])
+         apply-wave-request?]{
+
+Creates a target-local sinusoidal path deformation. @racket[direction] is
+normalized in the target's immutable local affine frame; it selects both the
+wave-coordinate axis and displacement direction. The displacement amplitude is
+multiplied by a zero-at-both-ends sine-squared envelope, so each interior frame
+is sampled directly from the captured source geometry and the exact source
+Visual is restored at completion.
+
+The first implementation uses the established adaptive pointwise path mapper.
+It supports ordinary affine, world-space Visuals with exposed geometry and
+rejects derived and frame-space Visuals. Because it temporarily replaces the
+sampled target tree, it conflicts with simultaneous target movement, style,
+opacity, formula, and path writers.
+}
+
+@defproc[(apply-wave-request? [value any/c]) boolean?]{
+Returns @racket[#t] for a request created by @racket[apply-wave].
+}
+
 @defproc[(pointwise-jacobian
           [map-point (procedure-arity-includes/c 1)]
           [point vec2?]
@@ -1100,6 +1127,455 @@ removal request. In particular, it cannot be combined with same-target
 
 Returns @racket[#t] when @racket[value] is a request created by
 @racket[fade-out].
+}
+
+@defproc[(enter
+          [visual (and/c visual? affine-visual? opacity-visual?)]
+          [#:translation-offset translation-offset vec2? origin]
+          [#:scale-factor scale-factor any/c 1]
+          [#:rotation-offset rotation-offset finite-real? 0]
+          [#:opacity-factor opacity-factor (real-in 0 1) 0]
+          [#:about about (or/c 'center 'reference vec2?) 'center])
+         enter-request?]{
+
+Introduces an absent affine, opacity-aware @racket[visual] from a relative
+appearance. The translation offset is in the Visual's local reference frame;
+the scale factor is a nonnegative finite real or a @racket[vec2] with
+nonnegative components; rotation is additive; and opacity is the authored
+opacity multiplied by @racket[opacity-factor]. Consequently, the default
+appearance is invisible but the endpoint retains the Visual's authored opacity
+rather than assuming opacity one.
+
+@racket[#:about] is @racket['center], @racket['reference], or an explicit local
+@racket[vec2]. In this first affine implementation, the named choices both
+mean the Visual's stable local reference origin; the explicit point supplies a
+distinct pivot without renderer-measured layout. A zero scale factor denotes a
+semantic collapse. Since ordinary affine Visuals require positive authored
+scales, only interior samples use a small private positive scale; the
+invisible start and exact final Visual remain unambiguous.
+
+At its local start, the target identity is present with the relative
+appearance. At its exact local endpoint, the supplied @racket[visual] is
+restored regardless of easing. @racket[enter] writes scene presence and only
+the affine/opacity components whose factor or offset differs from identity.
+Thus an opacity-only entrance can run alongside a same-target rotation, while
+two requests that both change translation conflict normally. The target must
+be absent at the local start.
+}
+
+@defproc[(enter-request? [value any/c]) boolean?]{
+Recognizes an @racket[enter] request.
+}
+
+@defproc[(leave
+          [target (or/c visual? symbol? visual-path?)]
+          [#:translation-offset translation-offset vec2? origin]
+          [#:scale-factor scale-factor any/c 1]
+          [#:rotation-offset rotation-offset finite-real? 0]
+          [#:opacity-factor opacity-factor (real-in 0 1) 0]
+          [#:about about (or/c 'center 'reference vec2?) 'center]
+          [#:remove? remove? boolean? #t])
+         leave-request?]{
+
+Transforms a present affine, opacity-aware target toward the same relative
+appearance used by @racket[enter]. A direct Visual target is validated at
+construction; a symbol or nested Visual path is resolved and validated against
+the exact local start state. With the default @racket[#:remove? #t], the target
+remains present at interior samples and is absent exactly at the local endpoint.
+With @racket[#:remove? #f], it retains its identity and the concrete relative
+final appearance.
+
+Only changed affine/opacity components are written; scene presence is reserved
+only when removal is requested. This keeps, for example, an opacity-only leave
+compatible with a same-target movement while preserving ordinary conflict
+checks for components it changes. No endpoint relies on a prior sampled frame.
+}
+
+@defproc[(leave-request? [value any/c]) boolean?]{
+Recognizes a @racket[leave] request.
+}
+
+@defproc[(reveal-front? [value any/c]) boolean?]{
+Recognizes an immutable local hard-clip front constructed by
+@racket[linear-reveal-front] or @racket[radial-reveal-front]. A front contains
+no scene or renderer state.
+}
+
+@defproc[(linear-reveal-front
+          [direction vec2?]
+          [#:origin origin (or/c 'automatic vec2?) 'automatic]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20])
+         linear-reveal-front?]{
+
+Constructs a deterministic half-plane reveal front. @racket[direction] must be
+finite and nonzero and is normalized once at construction. @racket['automatic]
+uses the frozen layout-box center as the sweep reference; an explicit
+@racket[vec2] supplies a local reference point. Padding is a nonnegative
+fraction of the larger frozen-box dimension.
+}
+
+@defproc[(linear-reveal-front? [value any/c]) boolean?]{
+Recognizes a linear reveal front.
+}
+
+@defproc[(radial-reveal-front
+          [#:center center (or/c 'automatic vec2?) 'automatic]
+          [#:start-radius start-radius (and/c finite-real? (>=/c 0)) 0]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20])
+         radial-reveal-front?]{
+
+Constructs a deterministic radial reveal front. Its immutable polygonal disk
+is chosen conservatively so its endpoint covers every corner of the frozen
+layout box. @racket[#:start-radius] can make the initial clip nonempty.
+}
+
+@defproc[(radial-reveal-front? [value any/c]) boolean?]{
+Recognizes a radial reveal front.
+}
+
+@defproc[(reveal-front-path
+          [front reveal-front?]
+          [box layout-box?]
+          [progress (real-in 0 1)])
+         path-geometry?]{
+
+Returns the pure local clip path for a frozen @racket[box] at
+@racket[progress]. It is useful for deterministic testing and custom semantic
+clip composition. A zero-area front returns @racket[empty-path-geometry], not
+a degenerate polygon.
+}
+
+@defproc[(reveal-in
+          [visual (and/c visual? affine-visual? opacity-visual?)]
+          [front reveal-front?])
+         reveal-in-request?]{
+
+Introduces an absent Visual behind a local hard clip. At the local start, the
+target identity is present but its clip is empty. When the play clip compiles,
+the Pict layout adapter measures the Visual's untransformed local layout once;
+all later samples use that immutable box and the immutable @racket[front]. At
+the exact endpoint, the supplied @racket[visual] is restored and the temporary
+clip wrapper is gone.
+
+The effect clips local geometry and then applies the target's ordinary affine
+placement and opacity. It can therefore run with same-target movement,
+rotation, scaling, and opacity animation. It reserves scene presence and the
+clip-replaced style, path, formula, and pointwise-map components, which are
+rejected when overlapping rather than being made request-order dependent.
+Hard clipping currently requires the ordinary Pict rendering path.
+}
+
+@defproc[(reveal-in-request? [value any/c]) boolean?]{
+Recognizes a @racket[reveal-in] request.
+}
+
+@defproc[(reveal-out
+          [target (or/c visual? symbol? visual-path?)]
+          [front reveal-front?])
+         reveal-out-request?]{
+
+Clips a present target with @racket[front] in reverse. The exact source is
+visible at local time zero; interior samples use progressively smaller local
+clips; and the target is removed exactly at the structural endpoint. Direct
+Visual targets are validated immediately, while symbols and nested visual paths
+are resolved at the clip's local start. Layout freezing, component composition,
+and the Pict-renderer requirement are the same as for @racket[reveal-in].
+}
+
+@defproc[(reveal-out-request? [value any/c]) boolean?]{
+Recognizes a @racket[reveal-out] request.
+}
+
+@defproc[(wipe-in
+          [visual (and/c visual? affine-visual? opacity-visual?)]
+          [direction (or/c vec2? 'left 'right 'up 'down)]
+          [#:origin origin (or/c 'automatic vec2?) 'automatic]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20])
+         reveal-in-request?]{
+
+Returns @racket[reveal-in] with a @racket[linear-reveal-front]. Cardinal and
+nonzero vector directions use the same normalized spelling as @racket[slide-in].
+All timing, frozen-layout, and exact endpoint behavior is the generic reveal
+lifecycle behavior.
+}
+
+@defproc[(wipe-out
+          [target (or/c visual? symbol? visual-path?)]
+          [direction (or/c vec2? 'left 'right 'up 'down)]
+          [#:origin origin (or/c 'automatic vec2?) 'automatic]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20])
+         reveal-out-request?]{
+
+Returns @racket[reveal-out] with a @racket[linear-reveal-front].
+}
+
+@defproc[(iris-in
+          [visual (and/c visual? affine-visual? opacity-visual?)]
+          [#:center center (or/c 'automatic vec2?) 'automatic]
+          [#:start-radius start-radius (and/c finite-real? (>=/c 0)) 0]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20])
+         reveal-in-request?]{
+
+Returns @racket[reveal-in] with a @racket[radial-reveal-front].
+}
+
+@defproc[(iris-out
+          [target (or/c visual? symbol? visual-path?)]
+          [#:center center (or/c 'automatic vec2?) 'automatic]
+          [#:start-radius start-radius (and/c finite-real? (>=/c 0)) 0]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20])
+         reveal-out-request?]{
+
+Returns @racket[reveal-out] with a @racket[radial-reveal-front].
+}
+
+@defproc[(pulse
+          [target (or/c visual? symbol? visual-path?)]
+          [#:scale-factor scale-factor any/c 6/5]
+          [#:opacity-factor opacity-factor (real-in 0 1) 1]
+          [#:cycles cycles exact-positive-integer? 1]
+          [#:about about (or/c 'center 'reference vec2?) 'center])
+         pulse-request?]{
+
+Temporarily changes selected affine/opacity components of a present target
+through a deterministic squared-sine there-and-back envelope. The envelope is
+exactly zero at both clip endpoints, and the exact clip-start component values
+are restored at completion. @racket[#:cycles] is an exact positive integer.
+
+Only nonidentity components are written: a scale factor of one writes no scale,
+and an opacity factor of one writes no opacity. A pulse can therefore run with
+same-target movement when it does not write translation, but it conflicts with
+any overlapping request that writes one of its selected components. Direct
+Visual targets are checked immediately; symbol and nested-path targets are
+checked at the leaf's exact local start.
+}
+
+@defproc[(pulse-request? [value any/c]) boolean?]{
+Recognizes a @racket[pulse] request.
+}
+
+@defproc[(ripple
+          [target (or/c visual? symbol? visual-path? visual-selection?)]
+          [#:rings rings exact-positive-integer? 3]
+          [#:spacing spacing (and/c finite-real? (>=/c 0)) 1/5]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/5]
+          [#:color color any/c "gold"]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2]
+          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/4]
+          [#:id id (or/c #f symbol?) #f])
+         lagged-start-animation-request?]{
+
+Eagerly expands to a @racket[lagged-start] composition of @racket[rings]
+temporary, expanding outlines around @racket[target]. Each ring reads the
+target's renderer-measured bounds at its own sampled time, so it follows a
+concurrently moving, rotating, or scaled target without writing any target
+component. The outline starts absent, grows by @racket[spacing], fades to
+transparent, and is absent again at the exact local endpoint.
+
+The expansion uses the same source-order and timing semantics as
+@racket[stagger-map]. Its generated helpers have deterministic IDs. Give
+simultaneous ripple effects on the same target different explicit
+@racket[#:id] values; reusing one instance ID is rejected as a normal component
+conflict rather than producing helper collisions.
+}
+
+@defthing[default-confetti-palette (listof color-spec?)]{
+The immutable default palette used by @racket[confetti].
+}
+
+@defproc[(confetti
+          [origin-or-target (or/c vec2? visual? symbol? visual-path?)]
+          [#:count count exact-positive-integer? 24]
+          [#:seed seed exact-integer? 0]
+          [#:spread spread (and/c finite-real? (>=/c 0)) 2]
+          [#:height height (and/c finite-real? (>=/c 0)) 2]
+          [#:gravity gravity (and/c finite-real? (>=/c 0)) 3]
+          [#:palette palette (or/c (listof color-spec?) (vectorof color-spec?))
+                     default-confetti-palette]
+          [#:id id symbol? 'confetti])
+         confetti-request?]{
+
+Creates a deterministic temporary overlay of simple path pieces. The complete
+piece plan is generated at construction from @racket[seed], without reading or
+mutating global random state. A @racket[vec2] is a fixed launch point; a Visual,
+symbol, or path target is resolved to its world reference point once at the
+play clip's start. Consequently, the target is not rewritten and later target
+motion does not change an already compiled particle trajectory.
+
+Each piece follows a direct ballistic formula using @racket[spread],
+@racket[height], and @racket[gravity], so arbitrary-time sampling and forward
+playback produce the same frame. Helpers use deterministic child identities
+under @racket[id], appear only at interior samples, and are all removed exactly
+at completion. Reusing an @racket[id] in a simultaneous play is rejected as a
+normal component conflict. Inspection records the resolved origin, seed,
+generated count, and helper IDs.
+}
+
+@defproc[(confetti-request? [value any/c]) boolean?]{
+Recognizes a request created by @racket[confetti].
+}
+
+@defproc[(typewrite
+          [visual text-visual?]
+          [#:unit unit (or/c 'grapheme 'word 'line 'span) 'grapheme]
+          [#:cursor? cursor? boolean? #f]
+          [#:cursor-style cursor-style (or/c #f color-spec?) #f])
+         typewrite-request?]{
+
+Introduces an absent @racket[text-visual?] by advancing a discrete semantic
+front. The source is always retained as one immutable final layout; partial
+samples clip that final shaped presentation instead of creating shorter text
+prefixes. Thus a seek is a direct function of the requested clip time and the
+endpoint restores the authored @racket[visual] exactly.
+
+@racket[#:unit] controls whether the front advances by Unicode grapheme,
+whitespace-preserving word, line, or rich-text span intervals. A renderer must
+be able to associate those intervals with stable shaped fragments. The current
+Pict renderer prepares one frozen token layout for plain, rich, and wrapped
+text, then masks that final shaped presentation for interior samples. It
+currently reports a contract error for rotated or non-unit-scaled text instead
+of applying a rectangular mask with incorrect transformed geometry. Exact start
+and final samples remain valid for every @racket[text-visual?].
+
+With @racket[#:cursor? #t], the renderer adds a clip-local cursor at the
+prepared-layout reveal frontier. @racket[#:cursor-style] selects its colour;
+@racket[#f] uses the source text colour. The cursor is presentation only: it
+does not add a scene Visual or cache entry, and it is absent at the exact final
+sample that restores @racket[visual].
+}
+
+@defproc[(typewrite-request? [value any/c]) boolean?]{
+Recognizes a request created by @racket[typewrite].
+}
+
+@defproc[(erase-text
+          [target (or/c text-visual? symbol? visual-path?)]
+          [#:unit unit (or/c 'grapheme 'word 'line 'span) 'grapheme]
+          [#:cursor? cursor? boolean? #f]
+          [#:cursor-style cursor-style (or/c #f color-spec?) #f])
+         erase-text-request?]{
+
+Removes a present text Visual by moving the same discrete stable-layout front
+in reverse. The exact source remains visible at local progress zero; the target
+is removed at the exact endpoint, so no empty text Visual remains. Symbol and
+path targets are resolved at the leaf's local clip start and must then identify
+a @racket[text-visual?]. The renderer capability rule for interior partial
+states is the same as @racket[typewrite].
+
+@racket[#:cursor?] and @racket[#:cursor-style] have the same presentation
+meaning as for @racket[typewrite]. The exact initial source and exact removal
+endpoint do not contain a cursor; it appears only while an erasure has an
+interior partial text state.
+}
+
+@defproc[(erase-text-request? [value any/c]) boolean?]{
+Recognizes a request created by @racket[erase-text].
+}
+
+@defproc[(underline-sweep
+          [target (or/c text-visual? symbol?)]
+          [#:color color (or/c #f color-spec?) #f]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2]
+          [#:id id (or/c #f symbol?) #f]
+          [#:retain? retain? boolean? #t])
+         underline-sweep-request?]{
+
+Adds an inspectable ordinary path Visual that sweeps from the frozen text
+layout's left edge to its right edge. It is retained at completion by default;
+pass @racket[#:retain? #f] for a temporary helper. With no @racket[#:id], the
+deterministic helper identity is derived from the target; use distinct IDs for
+simultaneous underlines of the same target.
+
+This first underline slice accepts unrotated, unscaled text and snapshots the
+text box at local clip start. Consequently it is intentionally a frozen-layout
+decoration: simultaneous motion of the target does not move the line. Its
+default colour is the text Visual's outer colour.
+}
+
+@defproc[(underline-sweep-request? [value any/c]) boolean?]{
+Recognizes a request created by @racket[underline-sweep].
+}
+
+@defproc[(strike-through
+          [target (or/c text-visual? symbol?)]
+          [#:color color (or/c #f color-spec?) #f]
+          [#:stroke-width stroke-width (and/c finite-real? (>=/c 0)) 2]
+          [#:id id (or/c #f symbol?) #f]
+          [#:retain? retain? boolean? #t])
+         strike-through-request?]{
+
+Adds a separately inspectable swept line through the middle of a frozen text
+box. Its target, retained/temporary lifecycle, colour default, deterministic
+ID rules, and unrotated/unscaled frozen-layout restriction are the same as
+@racket[underline-sweep]. Underline and strike-through use different default
+helper identities and can therefore be deliberately composed.
+}
+
+@defproc[(strike-through-request? [value any/c]) boolean?]{
+Recognizes a request created by @racket[strike-through].
+}
+
+@defproc[(highlight-sweep
+          [target (or/c text-visual? symbol?)]
+          [#:color color color-spec? "#fff2a8"]
+          [#:padding padding (and/c finite-real? (>=/c 0)) 1/20]
+          [#:id id (or/c #f symbol?) #f]
+          [#:retain? retain? boolean? #f])
+         highlight-sweep-request?]{
+
+Sweeps a filled semantic rectangle behind an unrotated, unscaled text target's
+frozen clip-start text box. The highlight is temporary by default; pass
+@racket[#:retain? #t] to keep the final rectangle immediately behind the text
+in scene drawing order. Its default colour is @tt{#fff2a8}. The target and
+helper-ID rules are the same as @racket[underline-sweep].
+}
+
+@defproc[(highlight-sweep-request? [value any/c]) boolean?]{
+Recognizes a request created by @racket[highlight-sweep].
+}
+
+@defproc[(slide-in
+          [visual (and/c visual? affine-visual? opacity-visual?)]
+          [direction (or/c vec2? 'left 'right 'up 'down)]
+          [#:distance distance nonnegative-real? 2])
+         enter-request?]{
+
+Returns an @racket[enter] request whose source is @racket[distance] local
+world units from the authored endpoint in @racket[direction]. A cardinal symbol
+names the side where the Visual begins; a nonzero @racket[vec2] is normalized,
+so @racket[distance] always has the same units. The slide preserves authored
+opacity rather than adding a fade.
+}
+
+@defproc[(slide-out
+          [target (or/c visual? symbol? visual-path?)]
+          [direction (or/c vec2? 'left 'right 'up 'down)]
+          [#:distance distance nonnegative-real? 2])
+         leave-request?]{
+
+Returns a @racket[leave] request toward the named local side and removes the
+target at the exact endpoint. It preserves the clip-start opacity while the
+target slides away.
+}
+
+@defproc[(spin-in
+          [visual (and/c visual? affine-visual? opacity-visual?)]
+          [#:turns turns finite-real? 1])
+         enter-request?]{
+
+Returns an @racket[enter] request that rotates through signed
+@racket[turns] complete counter-clockwise turns before restoring the exact
+authored Visual. Its opacity behavior is the default @racket[enter] behavior.
+}
+
+@defproc[(shrink-out
+          [target (or/c visual? symbol? visual-path?)]
+          [#:about about (or/c 'center 'reference vec2?) 'center])
+         leave-request?]{
+
+Returns a @racket[leave] request with zero scale factor and unchanged opacity.
+It collapses toward @racket[about] at interior samples and removes the target
+exactly at completion.
 }
 
 @defproc[(morph-to [target (or/c path-visual? symbol?)]
@@ -1927,6 +2403,8 @@ semantic value as the @racket[#:easing] of @racket[timed] or
                          fade-to-request?
                          fade-in-request?
                          fade-out-request?
+                         enter-request?
+                         leave-request?
                          morph-to-request?
                          morph-to-normalized-request?
                          morph-to-aligned-request?
@@ -2004,6 +2482,8 @@ Returns @racket[#t] when @racket[value] is a request wrapper created by
                          fade-to-request?
                          fade-in-request?
                          fade-out-request?
+                         enter-request?
+                         leave-request?
                          morph-to-request?
                          morph-to-normalized-request?
                          morph-to-aligned-request?
@@ -2079,6 +2559,8 @@ Returns @racket[#t] when @racket[value] is a composition created by
                          fade-to-request?
                          fade-in-request?
                          fade-out-request?
+                         enter-request?
+                         leave-request?
                          morph-to-request?
                          morph-to-normalized-request?
                          morph-to-aligned-request?
@@ -2153,6 +2635,8 @@ Returns @racket[#t] when @racket[value] is a composition created by
                          fade-to-request?
                          fade-in-request?
                          fade-out-request?
+                         enter-request?
+                         leave-request?
                          morph-to-request?
                          morph-to-normalized-request?
                          morph-to-aligned-request?
@@ -2206,6 +2690,193 @@ children. Camera center and world-width overlap rules apply after expansion.
 
 Returns @racket[#t] when @racket[value] is a composition created by
 @racket[lagged-start].
+}
+
+@defproc[(stagger-map
+          [targets (or/c list? vector?)]
+          [make-request procedure?]
+          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/4]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward])
+         lagged-start-animation-request?]{
+
+Eagerly maps @racket[make-request] over a nonempty list or vector of targets,
+then returns the ordinary @racket[lagged-start] composition of the requests it
+produces. @racket[make-request] must accept either one argument
+@racket[target], or two arguments @racket[target] and @racket[source-index].
+When both arities are accepted, Animate uses the two-argument form. The source
+index is the zero-based position in the original collection.
+
+The factory runs exactly once per target, always in original source order.
+@racket[#:order 'reverse] reverses only the completed child request list, so it
+changes stagger scheduling but never factory evaluation order or source indexes.
+@racket[#:order 'forward] is the default. The factory must produce a valid
+ordinary composition child; its child-specific capability and conflict rules
+are preserved unchanged.
+
+@racket[stagger-map] adds no scheduler node or timing vocabulary: its
+@racket[#:lag-ratio] is passed directly to @racket[lagged-start]. Therefore it
+has the same intrinsic-span scaling, exact finalization, conflict checking, and
+arbitrary-time sampling behavior as an explicitly written @racket[lagged-start]
+tree. For example:
+
+@racketblock[
+(stagger-map targets
+             (lambda (target source-index)
+               (move-to target (vec2 (+ 2 source-index) 0)))
+             #:lag-ratio 1/5
+             #:order 'reverse)]
+}
+
+@defproc[(reveal-subsets
+          [targets (or/c list? vector?)]
+          [make-entry procedure?]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward]
+          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1]
+          [#:cumulative? cumulative? boolean? #t])
+         lagged-start-animation-request?]{
+
+Eagerly maps a one- or two-argument entry factory over a nonempty list or
+vector, with the same source-order evaluation and original zero-based indexes
+as @racket[stagger-map]. The result is an ordinary @racket[lagged-start]
+composition, not a specialized renderer effect.
+
+With @racket[#:cumulative? #t], every produced entry remains after it completes.
+With @racket[#f], each scheduled entry after the first begins a
+@racket[fade-out] of the previously scheduled source target. Thus a transition
+may briefly cross-fade two neighbors, but only the final scheduled target
+remains at the completed endpoint. This mode consequently retains
+@racket[fade-out]'s ordinary opacity-capability and conflict checks. Reverse
+order affects scheduling and which target remains; it never reverses factory
+evaluation.
+
+For example, this introduces direct Visuals one at a time in reverse source
+order:
+
+@racketblock[
+(reveal-subsets visuals enter
+                #:order 'reverse
+                #:lag-ratio 1
+                #:cumulative? #f)]
+}
+
+@defproc[(reveal-formula-parts
+          [formula formula-assembly-visual?]
+          [selections (or/c list? vector?)]
+          [make-request procedure?]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward]
+          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/5])
+         lagged-start-animation-request?]{
+
+Eagerly resolves ordered formula selections and maps @racket[make-request]
+over the resulting stable targets through @racket[stagger-map]. A selection
+may be a named formula part symbol, a complete visual path beginning with the
+supplied formula identity, or a nonempty root-relative @racket[visual-selection]
+rooted at that formula. The factory receives the concrete semantic target and
+the original source index when it accepts two arguments.
+
+This helper deliberately chooses no effect by name. For example, an author can
+make an ordinary semantic formula-part cascade with:
+
+@racketblock[
+(reveal-formula-parts equation
+                      '(x equals two)
+                      (lambda (part index)
+                        (indicate part #:color "gold"))
+                      #:lag-ratio 1/5)]
+
+All normal target validation, timing, conflict checking, and random-access
+sampling rules are inherited from the concrete requests returned by the
+factory.
+}
+
+@defproc[(animation-order? [value any/c]) boolean?]{
+Recognizes an immutable order policy for collection-expansion helpers.
+}
+
+@defproc[(forward-order) forward-order?]{
+Constructs the source order policy.
+}
+
+@defproc[(forward-order? [value any/c]) boolean?]{
+Recognizes a forward order policy.
+}
+
+@defproc[(reverse-order) reverse-order?]{
+Constructs the reverse source order policy.
+}
+
+@defproc[(reverse-order? [value any/c]) boolean?]{
+Recognizes a reverse order policy.
+}
+
+@defproc[(permutation-order [indices (or/c list? vector?)])
+         permutation-order?]{
+
+Constructs an immutable explicit ordering. Indices must be distinct exact
+nonnegative integers. @racket[resolve-animation-order] checks that the policy
+has exactly one in-range index for every target count before it is used.
+}
+
+@defproc[(permutation-order? [value any/c]) boolean?]{
+Recognizes an explicit permutation order policy.
+}
+
+@defproc[(shuffled-order [#:seed seed exact-integer? 0]) shuffled-order?]{
+
+Constructs a deterministic shuffle policy from an explicit exact-integer seed.
+It stores no random generator and never reads global random state.
+}
+
+@defproc[(shuffled-order? [value any/c]) boolean?]{
+Recognizes a seeded shuffle order policy.
+}
+
+@defproc[(resolve-animation-order
+          [order animation-order?]
+          [count exact-nonnegative-integer?])
+         vector?]{
+
+Resolves @racket[order] into an immutable vector of source indices for exactly
+@racket[count] targets. A policy can safely be reused with several counts when
+it remains valid for each one; explicit permutations report count/range errors
+instead of silently dropping or duplicating targets.
+}
+
+@defproc[(repeat-animation
+          [request any/c]
+          [count exact-positive-integer?])
+         succession-animation-request?]{
+
+Eagerly expands to @racket[count] copies of @racket[request] in ordinary
+@racket[succession]. Relative operations therefore accumulate from prior exact
+endpoints, while absolute requests naturally stabilize after their first copy.
+No runtime loop or reset is inserted.
+}
+
+@defproc[(ping-pong
+          [forward any/c]
+          [backward any/c]
+          [#:count count exact-positive-integer? 1])
+         succession-animation-request?]{
+
+Eagerly expands an explicit @racket[forward], @racket[backward] pair for each
+requested count. It does not infer a reverse operation from a destination
+request; exact return behavior is the author's explicit pair semantics.
+}
+
+@defproc[(camera-shake
+          [#:amplitude amplitude (and/c finite-real? (>=/c 0)) 1/10]
+          [#:samples samples exact-positive-integer? 12]
+          [#:seed seed exact-integer? 0]
+          [#:decay decay (or/c 'none 'linear 'smooth) 'linear])
+         succession-animation-request?]{
+
+Constructs an eager succession of primary-camera @racket[camera-pan-by]
+requests from a local deterministic pseudo-random offset plan. The plan begins
+and ends at zero, and each leaf is the difference of consecutive offsets, so
+the camera's exact final center equals its clip-start center. The explicit
+@racket[seed] is the complete source of variation; no global random state is
+read or changed. @racket[#:decay] controls the finite offset envelope.
 }
 
 @defproc[(style-to
@@ -2381,6 +3052,8 @@ included in frame sampling. Follow it with @racket[scene-wait] or
                          fade-to-request?
                          fade-in-request?
                          fade-out-request?
+                         enter-request?
+                         leave-request?
                          morph-to-request?
                          morph-to-normalized-request?
                          morph-to-aligned-request?
@@ -2439,11 +3112,13 @@ request's exact endpoint rather than the enclosing clip start. Sampling remains
 direct and does not depend on rendering prior frames.
 
 Structural introduction requests are installed only at their local start. A
-@racket[create] request adds an empty-path placeholder and @racket[fade-in] adds
-the complete Visual at opacity zero. Requests beginning at that same local time
+@racket[create] request adds an empty-path placeholder, @racket[fade-in] adds
+the complete Visual at opacity zero, and @racket[enter] adds an affine/opacity
+appearance proxy. Requests beginning at that same local time
 share the prepared state, so movement, rotation, scaling, opacity, and compatible
 geometry changes can still compose with an introduction exactly as in the
-historical simultaneous model. A @racket[fade-out] or @racket[uncreate] removal
+historical simultaneous model. A @racket[fade-out], @racket[uncreate], or
+@racket[leave] removal
 may not end while another animation of that target remains active; reintroduction
 at the exact removal boundary is allowed.
 
@@ -2483,7 +3158,9 @@ parts, and scene presence. Both @racket[move-to] and
 @racket[move-along-path] reserve translation. @racket[orient-along-path],
 @racket[rotate-to], and @racket[rotate-by] reserve rotation. A request can
 change more than one component:
-@racket[fade-in] and @racket[fade-out] change opacity and presence,
+@racket[fade-in] and @racket[fade-out] change opacity and presence;
+@racket[enter] changes presence plus only its nonidentity affine/opacity
+components; @racket[leave] does the same and reserves presence when it removes;
 @racket[create] and @racket[uncreate] change path geometry and presence, and
 @racket[transform-formula-parts] changes formula parts and reserves presence.
 
@@ -2514,9 +3191,11 @@ structural endpoint rules. For an untimed request the structural endpoint is the
 play-clip boundary; for a timed request it is the local interval endpoint. At
 that endpoint, a completed
 @racket[create] contains the complete original path, a completed
-@racket[fade-in] contains the supplied final opacity, and a completed
+@racket[fade-in] contains the supplied final opacity, a completed
+@racket[enter] contains its exact authored Visual, and a completed
 @racket[transform-formula-parts] contains the exact destination part list. A
-completed @racket[uncreate] or @racket[fade-out] removes its target. These rules
+completed @racket[uncreate], @racket[fade-out], or removing @racket[leave]
+removes its target. These rules
 apply even when easing does not map one to one. Such an easing procedure can
 therefore cause a discontinuity at the request endpoint.
 
@@ -2551,6 +3230,41 @@ does not apply camera animations. Camera values are sampled separately with
 @racket[scene-camera-at].
 }
 
+@defproc[(scene-animation-inspections-at
+          [scene scene?]
+          [time (and/c finite-real? (>=/c 0))])
+         (listof animation-inspection?)]{
+
+Returns the immutable inspection records retained for active animation leaves
+at @racket[time]. Inspection describes semantic planning data only: it never
+exposes renderer-private mutable resources. At an exact final scene endpoint,
+the final clip's retained records remain available even though its visual
+structural cleanup has already occurred.
+}
+
+@defproc[(animation-inspection? [value any/c]) boolean?]{
+Recognizes an immutable animation-inspection record.
+}
+
+@defproc[(animation-inspection-kind [inspection animation-inspection?]) any/c]{
+Returns the request-family symbol, such as @racket['enter], @racket['leave],
+@racket['reveal-in], @racket['reveal-out], or @racket['pulse].
+}
+
+@defproc[(animation-inspection-data [inspection animation-inspection?]) any/c]{
+Returns immutable semantic explanation data. For @racket[enter] and
+@racket[leave], the data records the target, lifecycle, authored relative
+factors, written components, collapse flag, and exact removal action.
+For hard-clip reveals, it records the target, lifecycle, immutable front,
+written components, and exact removal action; the renderer-private clip wrapper
+and frozen layout measurement are never exposed.
+For @racket[pulse], it records the target, cycle count, written components, and
+the exact source-restoration endpoint action.
+For @racket[confetti], it records the resolved launch origin, explicit seed,
+generated count, overlay identity, and deterministic helper IDs; no mutable
+renderer or random-generator state is exposed.
+}
+
 @defproc[(scene-camera-at [scene scene?]
                           [time (and/c finite-real? (>=/c 0))])
          camera?]{
@@ -2575,9 +3289,10 @@ Returns the total duration in seconds.
 
 Returns the state after all operations currently in the timeline. This is also
 the state returned by sampling the exact scene duration. A completed
-@racket[create] or @racket[fade-in] contributes its complete Visual. A completed
-@racket[uncreate] or @racket[fade-out] contributes no Visual for its target
-identity.
+@racket[create], @racket[fade-in], or @racket[enter] contributes its complete
+Visual. A completed @racket[uncreate], @racket[fade-out], or removing
+@racket[leave] contributes no Visual for its target identity. A retained
+@racket[leave] contributes its exact relative final appearance.
 }
 
 @defproc[(scene-current-camera [scene scene?]) camera?]{

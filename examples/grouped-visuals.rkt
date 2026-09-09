@@ -74,14 +74,14 @@
                 (scale-to assembly 3/2)
                 (fade-in assembly)
                 #:duration 2))
-  (define exit
+  (define leaving
     (scene-play entrance
                 (move-to assembly (vec2 5 0))
                 (rotate-by assembly 1)
                 (scale-to assembly 3/4)
                 (fade-out assembly)
                 #:duration 3/2))
-  (scene-wait exit 1/2))
+  (scene-wait leaving 1/2))
 
 
 ;;;

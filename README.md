@@ -2163,6 +2163,102 @@ example remains available as
 `examples/successive-animations.rkt`, and the SCENE-AN local-timing example as
 `examples/local-animation-timing.rkt`.
 
+The animation-composition roadmap begins with `stagger-map`: it eagerly maps a
+one- or two-argument request factory over a nonempty list or vector, then uses
+the established `lagged-start` timing. The factory always receives targets in
+source order; `#:order 'reverse` changes only scheduling order, while a
+two-argument factory receives the original zero-based source index. Run
+`examples/stagger-map.rkt` for a small reverse-scheduled example.
+
+`enter` and `leave` provide one exact lifecycle effect for combined local
+translation, scale, rotation, and opacity factors. `enter` leaves the authored
+Visual in place at the endpoint; `leave` removes it exactly there by default,
+or retains the relative endpoint with `#:remove? #f`. `slide-in`, `slide-out`,
+`spin-in`, and `shrink-out` are thin readable constructors over the same core.
+See `examples/enter-leave-effects.rkt` for both endpoint directions in one
+short animation.
+
+`reveal-subsets` is the child-level progressive-reveal counterpart: it eagerly
+maps an entry constructor over a list or vector with `stagger-map` source-order
+rules. Cumulative mode retains earlier children; noncumulative mode fades the
+previous scheduled child as the next one begins.
+
+For a geometric wipe or iris, use a pure `linear-reveal-front` or
+`radial-reveal-front` with `reveal-in` or `reveal-out`. The target's local Pict
+layout is frozen once at clip compilation, so random-access samples do not
+remeasure it. The temporary hard-clip wrapper composes with movement, rotation,
+scale, and opacity, then disappears at the exact enter endpoint; reverse
+reveals remove their target at the exact leave endpoint. `wipe-in`, `wipe-out`,
+`iris-in`, and `iris-out` are readable constructors over those generic fronts;
+see `examples/clip-reveals.rkt`.
+
+`pulse` is a target-writing, finite-cycle there-and-back effect. It restores
+the exact scale and opacity values at the clip boundary and conflicts only with
+components it actually changes, so a scale-only pulse can accompany movement.
+
+`ripple` eagerly lowers to staggered temporary outline rings. Every ring reads
+the target's renderer-measured bounds at its current sample time, so a ripple
+can follow a moving target without rewriting it; the deterministic helpers are
+absent at both endpoints. Use a distinct `#:id` when two ripples share one
+target. See `examples/ripple-effects.rkt` for a moving-target demonstration.
+
+`apply-wave` is a target-local sinusoidal deformation for ordinary affine
+Visuals with exposed geometry. It samples each frame directly from the
+clip-start source, has a zero displacement envelope at both endpoints, and
+restores that exact source at completion.
+
+`confetti` creates seed-explicit temporary path pieces from either a fixed
+point or a target's world reference point at clip start. Every ballistic piece
+is sampled directly from the immutable plan, so a seek produces the same frame
+as forward playback; all helpers are removed at completion. See
+`examples/deterministic-confetti.rkt`.
+
+`typewrite` introduces a `text-visual?` through semantic grapheme, word, line,
+or span fronts while retaining one frozen final text layout. Partial Pict
+samples clip the final shaped run instead of re-laying out prefixes, so glyphs
+do not shift during playback. The current Pict backend supports rich spans,
+explicit lines, and its measured word wrapping by masking that same final token
+layout. Rotated or non-unit-scaled text is reported as an explicit unsupported
+interior-layout capability rather than approximating it.
+`#:cursor? #t` adds a renderer-local cursor at the prepared reveal frontier;
+`#:cursor-style` can override the source text colour. The cursor is only an
+open-clip presentation overlay and is absent from the exact restored endpoint.
+
+`erase-text` is the paired reverse lifecycle for a present text visual. It
+uses the same semantic unit and frozen-layout rules, then removes the target
+exactly at the clip endpoint instead of leaving an empty text visual behind.
+Its optional cursor follows the same clip-local cleanup rule.
+
+`underline-sweep` creates a separately inspectable, deterministic path helper
+from a text visual's frozen clip-start bounds. It retains the completed line by
+default or can clean it up with `#:retain? #f`; the initial slice intentionally
+requires unrotated, unscaled text and does not follow simultaneous target
+motion.
+
+`strike-through` is the companion middle-line sweep. It has its own helper
+identity and can be composed with an underline under the same frozen-layout
+rules.
+
+`highlight-sweep` is the paired background decoration: it sweeps a semantic
+rectangle immediately behind the text in drawing order. It cleans up by
+default, or remains as a background highlight with `#:retain? #t`.
+
+`reveal-formula-parts` maps an explicit request factory over stable named or
+source-selected formula parts, then lowers the result through `stagger-map`.
+It does not impose a symbolic effect vocabulary, so the factory determines
+whether parts are indicated, moved, written, or handled by another concrete
+animation request.
+
+Mapped effects may use transparent `forward-order`, `reverse-order`,
+`permutation-order`, or seed-explicit `shuffled-order` policies. For temporal
+reuse, `repeat-animation` expands one request through ordinary succession, and
+`ping-pong` requires an explicit forward/backward pair rather than guessing an
+inverse for a destination-relative request.
+
+`camera-shake` is likewise an eager succession: an explicit seed creates a
+finite local camera-offset plan whose relative pan deltas telescope exactly to
+the original camera center.
+
 For the SCENE-AM correspondence example, run `examples/per-pair-match-penalties.rkt`.
 The lower panel there adds a large penalty to original pair `(0 . 0)`, so the global
 forced assignment swaps the two real destination identities and the curves cross.

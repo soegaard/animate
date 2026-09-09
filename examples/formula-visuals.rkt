@@ -84,7 +84,7 @@
                 (move-to inline-formula (vec2 -2 -5/2))
                 (scale-to inline-formula 3/2)
                 #:duration 1))
-  (define exit
+  (define leaving
     (scene-play emphasis
                 (move-to formula-card (vec2 6 1))
                 (rotate-by formula-card 1/4)
@@ -92,7 +92,7 @@
                 (fade-out formula-card)
                 (fade-out inline-formula)
                 #:duration 3/2))
-  (scene-wait exit 1/2))
+  (scene-wait leaving 1/2))
 
 
 ;;;

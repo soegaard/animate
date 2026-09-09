@@ -21,6 +21,8 @@
          "private/axes-visual.rkt"
          "private/dynamic-endpoint-geometry.rkt"
          "private/animation.rkt"
+         "private/animation-inspection.rkt"
+         "private/animation-order.rkt"
          "private/camera-animation.rkt"
          "private/camera-framing.rkt"
          "private/camera.rkt"
@@ -70,6 +72,7 @@
          "private/relation-resolver.rkt"
          "private/relation-visual.rkt"
          "private/rate-function.rkt"
+         "private/reveal-front.rkt"
          "private/scene-state.rkt"
          "private/scene.rkt"
          "private/shape-catalogue.rkt"
@@ -864,6 +867,49 @@
  fade-in-request?
  fade-out
  fade-out-request?
+ enter
+ enter-request?
+leave
+leave-request?
+reveal-in
+reveal-in-request?
+reveal-out
+reveal-out-request?
+wipe-in
+wipe-out
+iris-in
+iris-out
+pulse
+pulse-request?
+ripple
+confetti
+confetti-request?
+default-confetti-palette
+typewrite
+typewrite-request?
+erase-text
+erase-text-request?
+underline-sweep
+underline-sweep-request?
+strike-through
+strike-through-request?
+highlight-sweep
+highlight-sweep-request?
+apply-wave
+apply-wave-request?
+slide-in
+ slide-out
+ spin-in
+ shrink-out
+ animation-inspection?
+ animation-inspection-kind
+ animation-inspection-data
+ reveal-front?
+ linear-reveal-front
+ linear-reveal-front?
+ radial-reveal-front
+ radial-reveal-front?
+ reveal-front-path
  camera-view-pan-to
  camera-view-pan-to-request?
  camera-view-pan-by
@@ -941,9 +987,25 @@
  succession-animation-request?
  animation-group
  animation-group-animation-request?
- lagged-start
- lagged-start-animation-request?
- style-to
+lagged-start
+lagged-start-animation-request?
+animation-order?
+forward-order
+forward-order?
+reverse-order
+reverse-order?
+permutation-order
+permutation-order?
+shuffled-order
+shuffled-order?
+resolve-animation-order
+stagger-map
+reveal-subsets
+reveal-formula-parts
+repeat-animation
+ping-pong
+camera-shake
+style-to
  style-to-animation-request?
  light3d-intensity-to
  light3d-intensity-to-request?

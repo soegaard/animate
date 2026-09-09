@@ -16,7 +16,19 @@
   (dynamic-require module-path name (lambda () absent)))
 
 (module+ test
-  (for ([name (in-list '(circle vec2 scene-play scene-add make-scene
+  (for ([name (in-list '(circle vec2 scene-play scene-add make-scene stagger-map reveal-subsets
+                         enter leave reveal-in reveal-out reveal-formula-parts
+                         linear-reveal-front radial-reveal-front reveal-front-path
+                         wipe-in wipe-out iris-in iris-out
+                         pulse ripple confetti confetti-request? default-confetti-palette
+                         typewrite typewrite-request?
+                         erase-text erase-text-request?
+                         underline-sweep underline-sweep-request?
+                         strike-through strike-through-request?
+                         highlight-sweep highlight-sweep-request?
+                         apply-wave apply-wave-request?
+                         forward-order reverse-order permutation-order shuffled-order
+                         resolve-animation-order repeat-animation ping-pong camera-shake
                          move-to scene-sample formula-select
                          formula-source-select source-occurrence
                          relation-visual))])

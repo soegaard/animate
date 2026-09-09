@@ -89,7 +89,7 @@ module main:
     ~#{duration}: 1
   )
 
-  def exit = #{scene-play}(
+  def leaving = #{scene-play}(
     emphasis,
     #{move-to}(card, vec2(6, 1)),
     #{rotate-by}(card, 1/4),
@@ -100,7 +100,7 @@ module main:
     ~#{duration}: 3/2
   )
 
-  def demo = #{scene-wait}(exit, 1/2)
+  def demo = #{scene-wait}(leaving, 1/2)
 
   def frame_paths = #{render-frames!}(
     demo,

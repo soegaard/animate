@@ -29,6 +29,17 @@ examples use the standard Racket runtime.
 | [successive-animations](../rendered-examples/successive-animations.mp4) | Motion clips running one after another. |
 | [parallel-animation-groups](../rendered-examples/parallel-animation-groups.mp4) | Several requests sharing one time span. |
 | [lagged-start-animations](../rendered-examples/lagged-start-animations.mp4) | A staggered cascade of starts. |
+| [stagger-map](../rendered-examples/stagger-map.mp4) | A target collection mapped eagerly to staggered requests; source indexing is independent of reverse scheduling. |
+| [enter-leave-effects](../rendered-examples/enter-leave-effects.mp4) | Exact affine/opacity enter and leave with slide, spin, and shrink presets. |
+| [progressive-reveals](../rendered-examples/progressive-reveals.mp4) | Direct Visuals enter in a source-stable staggered subset reveal. |
+| [clip-reveals](../rendered-examples/clip-reveals.mp4) | Frozen-layout linear wipes and radial iris entry/leave effects. |
+| [transient-effects](../rendered-examples/transient-effects.mp4) | A target pulse composes with temporary, live-tracking ripple rings. |
+| [ripple-effects](../rendered-examples/ripple-effects.mp4) | Staggered temporary rings that track a moving target's live layout. |
+| [wave-effects](../rendered-examples/wave-effects.mp4) | A target-local sinusoidal deformation sampled from immutable source geometry. |
+| [deterministic-camera-shake](../rendered-examples/deterministic-camera-shake.mp4) | A seed-explicit finite camera-offset plan returns to the original view. |
+| [deterministic-confetti](../rendered-examples/deterministic-confetti.mp4) | Seeded, closed-form temporary particles with reproducible random-access frames. |
+| [typewriter-and-decorations](../rendered-examples/typewriter-and-decorations.mp4) | A prepared final text layout is typed, then highlighted and marked by semantic decorations. |
+| [effect-composition-stress](../rendered-examples/effect-composition-stress.mp4) | Independent lifecycle, mask, transient, text, wave, and particle effects compose in one scene. |
 | [duration-scaled-compositions](../rendered-examples/duration-scaled-compositions.mp4) | Nested clips sped up or slowed down by duration scaling. |
 | [animating-stroke-width](../rendered-examples/animating-stroke-width.mp4) | Lines changing cosmetic stroke thickness. |
 | [animating-colors](../rendered-examples/animating-colors.mp4) | Fill and stroke colors interpolating independently. |

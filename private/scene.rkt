@@ -23,11 +23,16 @@
 ;; Imports
 (require racket/list
          "animation.rkt"
+         "animation-order.rkt"
          "camera-animation.rkt"
          "camera.rkt"
+         "formula-parts-visual.rkt"
+         "formula-style.rkt"
          "geometry.rkt"
          "parameter.rkt"
-         "scene-state.rkt")
+         "scene-state.rkt"
+         "visual-selection.rkt"
+         "visual-model.rkt")
 
 ;; Exports
 (provide (struct-out scene)
@@ -39,6 +44,12 @@
          animation-group-animation-request?
          lagged-start
          lagged-start-animation-request?
+         stagger-map
+         reveal-subsets
+         reveal-formula-parts
+         repeat-animation
+         ping-pong
+         camera-shake
          style-to
          style-to-animation-request?
          make-scene
@@ -270,6 +281,200 @@
    (for/list ([request (in-list requests)])
      request)
    lag-ratio))
+
+; stagger-map : (or/c list? vector?) procedure?
+;               [#:lag-ratio nonnegative-real?]
+;               [#:order (or/c 'forward 'reverse animation-order?)]
+;               -> lagged-start-animation-request?
+;;   Eagerly maps a one- or two-argument request factory over an ordered
+;;   target collection, then delegates the completed children to lagged-start.
+;;   The factory always runs in source order; #:order changes only scheduling
+;;   order.  Choosing the two-argument call when both arities are accepted
+;;   makes the original source index available deterministically.
+(define (stagger-map targets make-request
+                     #:lag-ratio [lag-ratio 1/4]
+                     #:order [order 'forward])
+  (define source-targets
+    (normalize-stagger-targets targets 'stagger-map))
+  (check-nonnegative-time 'stagger-map lag-ratio)
+  (check-stagger-order order)
+  (define children
+    (call-stagger-factory source-targets make-request 'stagger-map))
+  (lagged-start
+   #:lag-ratio lag-ratio
+   (order-stagger-children children order)))
+
+; reveal-subsets : (or/c list? vector?) procedure?
+;                  [#:order (or/c 'forward 'reverse animation-order?)]
+;                  [#:lag-ratio nonnegative-real?]
+;                  [#:cumulative? boolean?]
+;                  -> lagged-start-animation-request?
+;; Eagerly maps an entry constructor over a concrete source collection. In
+;; cumulative mode it is exactly stagger-map. In one-at-a-time mode every
+;; scheduled entry after the first starts a matching fade-out of the prior
+;; scheduled target, while retaining the ordinary lagged-start timing model.
+(define (reveal-subsets targets make-entry
+                        #:order [order 'forward]
+                        #:lag-ratio [lag-ratio 1]
+                        #:cumulative? [cumulative? #t])
+  (define source-targets
+    (normalize-stagger-targets targets 'reveal-subsets))
+  (check-nonnegative-time 'reveal-subsets lag-ratio)
+  (check-stagger-order order 'reveal-subsets)
+  (unless (boolean? cumulative?)
+    (raise-argument-error 'reveal-subsets "boolean?" cumulative?))
+  (define entries
+    (call-stagger-factory source-targets make-entry 'reveal-subsets))
+  (cond
+    [cumulative?
+     (lagged-start
+      #:lag-ratio lag-ratio
+      (order-stagger-children entries order))]
+    [else
+     (define ordered-targets
+       (order-stagger-children source-targets order))
+     (define ordered-entries
+       (order-stagger-children entries order))
+     (lagged-start
+      #:lag-ratio lag-ratio
+      (for/list ([entry (in-list ordered-entries)]
+                 [previous-target
+                  (in-list (cons #f ordered-targets))])
+        (if previous-target
+            (animation-group entry (fade-out previous-target))
+            entry)))]))
+
+; reveal-formula-parts : formula-assembly-visual?
+;                        (or/c list? vector?) procedure?
+;                        [#:order (or/c 'forward 'reverse animation-order?)]
+;                        [#:lag-ratio nonnegative-real?]
+;                        -> lagged-start-animation-request?
+;; Resolves stable formula part names or root-relative semantic selections,
+;; then delegates the eager factory expansion and scheduling to stagger-map.
+;; It deliberately has no symbolic effect registry: callers choose the same
+;; concrete request factory used by every other mapped composition.
+(define (reveal-formula-parts formula selections make-request
+                              #:order [order 'forward]
+                              #:lag-ratio [lag-ratio 1/5])
+  (unless (formula-assembly-visual? formula)
+    (raise-argument-error
+     'reveal-formula-parts "formula-assembly-visual?" formula))
+  (define raw-selections
+    (normalize-stagger-targets selections 'reveal-formula-parts))
+  (define formula-root
+    (list (visual-id formula)))
+  (define targets
+    (for/list ([selection (in-list raw-selections)])
+      (cond
+        [(symbol? selection)
+         (formula-select formula selection)]
+        [(visual-selection? selection)
+         (unless (equal? (visual-selection-root selection) formula-root)
+           (raise-arguments-error
+            'reveal-formula-parts
+            "a semantic selection rooted at the supplied formula"
+            "formula-id" (visual-id formula)
+            "selection-root" (visual-selection-root selection)))
+         (when (visual-selection-empty? selection)
+           (raise-arguments-error
+            'reveal-formula-parts
+            "a nonempty semantic formula selection"
+            "selection" selection))
+         selection]
+        [(visual-path? selection)
+         (unless (and (pair? selection)
+                      (eq? (car selection) (visual-id formula)))
+           (raise-arguments-error
+            'reveal-formula-parts
+            "a formula part path beginning with the supplied formula identity"
+            "formula-id" (visual-id formula)
+            "selection" selection))
+         selection]
+        [else
+         (raise-argument-error
+          'reveal-formula-parts
+          "symbol?, visual-path?, or visual-selection?"
+          selection)])))
+  (stagger-map targets make-request #:order order #:lag-ratio lag-ratio))
+
+; repeat-animation : composition-child-request? exact-positive-integer?
+;                    -> succession-animation-request?
+;; Eagerly repeats one immutable request through ordinary succession. Each copy
+;; therefore compiles against the exact endpoint of its predecessor.
+(define (repeat-animation request count)
+  (unless (composition-child-request? request)
+    (raise-argument-error 'repeat-animation "composition-child-request?" request))
+  (unless (and (exact-integer? count) (positive? count))
+    (raise-argument-error 'repeat-animation "positive exact integer" count))
+  (apply succession (make-list count request)))
+
+; ping-pong : composition-child-request? composition-child-request?
+;             [#:count exact-positive-integer?] -> succession-animation-request?
+;; Pairs directions supplied explicitly by the author. No attempt is made to
+;; infer a reverse animation from a destination-relative request.
+(define (ping-pong forward backward #:count [count 1])
+  (unless (composition-child-request? forward)
+    (raise-argument-error 'ping-pong "composition-child-request?" forward))
+  (unless (composition-child-request? backward)
+    (raise-argument-error 'ping-pong "composition-child-request?" backward))
+  (unless (and (exact-integer? count) (positive? count))
+    (raise-argument-error 'ping-pong "positive exact integer" count))
+  (apply succession
+         (apply append
+                (make-list count (list forward backward)))))
+
+; camera-shake : [#:amplitude nonnegative-finite-real?]
+;                [#:samples exact-positive-integer?]
+;                [#:seed exact-integer?]
+;                [#:decay (or/c 'none 'linear 'smooth)]
+;                -> succession-animation-request?
+;; Eagerly produces relative camera deltas between deterministic offset samples.
+;; The first and final offsets are zero, so the primary camera's exact endpoint
+;; is its source center without mutable random or integration state.
+(define (camera-shake #:amplitude [amplitude 1/10]
+                      #:samples [samples 12]
+                      #:seed [seed 0]
+                      #:decay [decay 'linear])
+  (check-nonnegative-time 'camera-shake amplitude)
+  (unless (and (exact-integer? samples) (positive? samples))
+    (raise-argument-error 'camera-shake "positive exact integer" samples))
+  (unless (exact-integer? seed)
+    (raise-argument-error 'camera-shake "exact integer" seed))
+  (unless (memq decay '(none linear smooth))
+    (raise-argument-error 'camera-shake "(or/c 'none 'linear 'smooth)" decay))
+  (define offsets
+    (for/list ([index (in-range (add1 samples))])
+      (cond
+        [(or (zero? index) (= index samples)) origin]
+        [else (camera-shake-offset amplitude samples seed decay index)])))
+  (apply succession
+         (for/list ([from (in-list offsets)]
+                    [to (in-list (cdr offsets))])
+           (camera-pan-by (vec2- to from)))))
+
+(define camera-shake-modulus 2147483648)
+(define camera-shake-multiplier 1103515245)
+(define camera-shake-increment 12345)
+
+(define (camera-shake-random seed index salt)
+  (define state
+    (modulo (+ seed (* 2 index) salt) camera-shake-modulus))
+  (/ (modulo (+ (* camera-shake-multiplier state) camera-shake-increment)
+             camera-shake-modulus)
+     camera-shake-modulus))
+
+(define (camera-shake-offset amplitude samples seed decay index)
+  (define fraction (/ index samples))
+  (define envelope
+    (case decay
+      [(none) 1]
+      [(linear) (- 1 fraction)]
+      [(smooth)
+       (define inverse (- 1 fraction))
+       (* inverse inverse (- 3 (* 2 inverse)))]))
+  (define magnitude (* amplitude envelope))
+  (vec2 (* magnitude (- (* 2 (camera-shake-random seed index 0)) 1))
+        (* magnitude (- (* 2 (camera-shake-random seed index 1)) 1))))
 
 ; style-to : (or/c symbol? visual?)
 ;            [#:fill (or/c false/c color-spec?)]
@@ -1725,7 +1930,10 @@
 ;;   Reports whether request removes its whole top-level target at completion.
 (define (removing-animation-request? request)
   (or (fade-out-request? request)
-      (uncreate-request? request)))
+      (uncreate-request? request)
+      (reveal-out-request? request)
+      (and (leave-request? request)
+           (leave-request-remove-at-end? request))))
 
 ; intervals-overlap? : real? positive-real? real? positive-real? -> boolean?
 ;;   Reports positive-measure overlap; touching endpoints do not overlap.
@@ -1811,6 +2019,92 @@
            (list? (car animations)))
       (car animations)
       animations))
+
+; normalize-stagger-targets : any/c -> (listof any/c)
+;; Copies the source collection's spine before construction.  A concrete list
+;; makes source order explicit and prevents a mutable input vector from
+;; changing the target collection during factory evaluation.
+(define (normalize-stagger-targets targets [who 'stagger-map])
+  (cond
+    [(list? targets)
+     (when (null? targets)
+       (raise-arguments-error
+        who
+        "at least one target is required"
+        "targets" targets))
+     (for/list ([target (in-list targets)])
+       target)]
+    [(vector? targets)
+     (when (zero? (vector-length targets))
+       (raise-arguments-error
+        who
+        "at least one target is required"
+        "targets" targets))
+     (for/list ([target (in-vector targets)])
+       target)]
+    [else
+     (raise-argument-error who "list? or vector?" targets)]))
+
+; check-stagger-order : any/c -> void?
+(define (check-stagger-order order [who 'stagger-map])
+  (unless (or (memq order '(forward reverse))
+              (animation-order? order))
+    (raise-argument-error
+     who
+     "(or/c 'forward 'reverse animation-order?)"
+     order)))
+
+; call-stagger-factory : list? any/c -> (listof composition-child-request?)
+;; Calls the factory exactly once per source target, in source order.  If it
+;; accepts both one and two arguments, the two-argument form is deliberately
+;; selected so callers receive the stable original source index.
+(define (call-stagger-factory source-targets make-request [who 'stagger-map])
+  (unless (procedure? make-request)
+    (raise-argument-error who "procedure?" make-request))
+  (define accepts-one?
+    (procedure-arity-includes? make-request 1))
+  (define accepts-two?
+    (procedure-arity-includes? make-request 2))
+  (unless (or accepts-one? accepts-two?)
+    (raise-arguments-error
+     who
+     "request factory must accept one target argument or target and source-index arguments"
+     "make-request" make-request))
+  (for/list ([target (in-list source-targets)]
+             [source-index (in-naturals)])
+    (define request
+      (with-handlers ([exn:fail?
+                       (lambda (exception)
+                         (raise-arguments-error
+           who
+                          "request factory raised an exception"
+                          "source-index" source-index
+                          "target" target
+                          "exception-message" (exn-message exception)))])
+        (if accepts-two?
+            (make-request target source-index)
+            (make-request target))))
+    (unless (composition-child-request? request)
+      (raise-arguments-error
+       who
+       "request factory must produce a valid composition child"
+       "source-index" source-index
+       "target" target
+       "request" request))
+    request))
+
+; order-stagger-children : list? order-spec? -> list?
+;; The input is already concrete and source-ordered. Reordering here cannot
+;; affect factory evaluation or source indexes.
+(define (order-stagger-children children order)
+  (define plan
+    (cond
+      [(eq? order 'forward) (forward-order)]
+      [(eq? order 'reverse) (reverse-order)]
+      [else order]))
+  (for/list ([index (in-vector
+                     (resolve-animation-order plan (length children)))])
+    (list-ref children index)))
 
 ; check-scene-sample-arguments : symbol? any/c any/c -> void?
 ;;   Validates a scene and a time in its closed timeline interval.

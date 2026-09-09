@@ -54,13 +54,13 @@
      (rotate-by token 1)
      (fade-in token)
      #:duration 3/2))
-  (define exit
+  (define leaving
     (scene-play entrance
                 (fade-to panel 1)
                 (move-to token (vec2 5 0))
                 (fade-out guide)
                 #:duration 1))
-  (scene-wait exit 1/2))
+  (scene-wait leaving 1/2))
 
 
 ;;;

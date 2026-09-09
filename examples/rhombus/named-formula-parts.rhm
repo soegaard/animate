@@ -199,7 +199,7 @@ module main:
     ~#{duration}: 1
   )
 
-  def exit = #{scene-play}(
+  def leaving = #{scene-play}(
     emphasis,
     #{fade-out}(source_card),
     #{fade-out}(destination_card),
@@ -207,7 +207,7 @@ module main:
     ~#{duration}: 3/2
   )
 
-  def demo = #{scene-wait}(exit, 1/2)
+  def demo = #{scene-wait}(leaving, 1/2)
 
   def frame_paths = #{render-frames!}(
     demo,

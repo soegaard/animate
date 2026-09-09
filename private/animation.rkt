@@ -24,10 +24,13 @@
          "affine-transform.rkt"
          "arrow-visual.rkt"
          "animation-inspection.rkt"
+         "axes-visual.rkt"
          "camera-animation.rkt"
          "camera.rkt"
+         "clipped-visual.rkt"
          "color-style.rkt"
          "derived-visual.rkt"
+         "effect-random.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
          "formula-source-normalization.rkt"
@@ -41,9 +44,13 @@
          "paint.rkt"
          "pointwise-map.rkt"
          "rate-function.rkt"
+         "reveal-front.rkt"
          "relation-visual.rkt"
          "resolvable-visual.rkt"
          "scene-state.rkt"
+         "text-reveal-visual.rkt"
+         "text-segmentation.rkt"
+         "text-visual.rkt"
          "3d/affine3.rkt"
          "3d/affine-map3d-visual.rkt"
          "3d/camera3d-animation.rkt"
@@ -164,6 +171,41 @@
          fade-in-request?
          fade-out
          fade-out-request?
+         enter
+         enter-request?
+         leave
+         leave-request?
+         leave-request-remove-at-end?
+         reveal-in
+         reveal-in-request?
+         reveal-out
+         reveal-out-request?
+         wipe-in
+         wipe-out
+         iris-in
+         iris-out
+         pulse
+         pulse-request?
+         ripple
+         confetti
+         confetti-request?
+         default-confetti-palette
+         typewrite
+         typewrite-request?
+         erase-text
+         erase-text-request?
+         underline-sweep
+         underline-sweep-request?
+         strike-through
+         strike-through-request?
+         highlight-sweep
+         highlight-sweep-request?
+         apply-wave
+         apply-wave-request?
+         slide-in
+         slide-out
+         spin-in
+         shrink-out
          camera-view-pan-to
          camera-view-pan-to-request?
          camera-view-pan-by
@@ -388,6 +430,14 @@
 ;; toward a precomputed endpoint. The remaining fields have the same meaning
 ;; as for apply-pointwise-request.
 
+(struct apply-wave-request
+  (target-id direction amplitude wavelength cycles phase)
+  #:transparent)
+
+;; apply-wave-request is a target-local, time-dependent deformation. Unlike an
+;; arbitrary homotopy it has an explicitly zero endpoint envelope, allowing its
+;; compiler to restore the exact captured source Visual at completion.
+
 (struct stroke-width-to-request (target-id stroke-width)
   #:transparent)
 
@@ -428,6 +478,87 @@
 
 ;; fade-out-request represents an uncompiled opacity removal request.
 ;;  - target-id  symbol?  stable id of the opacity Visual removed at clip end.
+
+;; appearance-delta2d remains private until more than the lifecycle effects
+;; need authors to construct/reuse it directly. Every field is relative to the
+;; resolved Visual at the leaf's exact local start.
+(struct appearance-delta2d
+  (translation-offset scale-factor rotation-offset opacity-factor about)
+  #:transparent)
+
+(struct enter-request (visual delta)
+  #:transparent)
+
+;; enter-request introduces an absent affine/opacity Visual through one shared
+;; lifecycle-aware leaf. Its complete Visual is retained as the exact endpoint.
+
+(struct leave-request (target-id delta remove-at-end?)
+  #:transparent)
+
+;; leave-request transforms an existing affine/opacity Visual toward a relative
+;; appearance, then removes it or retains that appearance under its original ID.
+
+(struct reveal-in-request (visual front)
+  #:transparent)
+
+;; reveal-in-request introduces an absent affine/opacity Visual behind a frozen
+;; local hard-clip front. The authored Visual is restored exactly at completion.
+
+(struct reveal-out-request (target-id front)
+  #:transparent)
+
+;; reveal-out-request clips a resolved affine/opacity Visual in reverse and
+;; removes it exactly at the structural endpoint.
+
+(struct pulse-request (target-id delta cycles)
+  #:transparent)
+
+;; pulse-request is a target-writing transient: it samples only selected
+;; affine/opacity components through a deterministic endpoint-zero envelope.
+
+;; confetti-request represents one deterministic temporary overlay. The origin
+;; is either an immediate point or a deferred Visual address; all particle plan
+;; data is generated during construction from the explicit seed.
+(struct confetti-request
+  (origin seed count spread height gravity palette overlay-id pieces)
+  #:transparent)
+
+(struct confetti-piece
+  (id x-velocity y-velocity rotation spin color)
+  #:transparent)
+
+;; typewrite-request introduces one immutable text Visual in semantic units.
+;; The renderer receives only a frozen source and an integer reveal frontier;
+;; it is responsible for refusing layouts whose shaped fragments cannot be
+;; presented without reflowing the final text.
+(struct typewrite-request (visual unit segment-count cursor? cursor-style)
+  #:transparent)
+
+;; erase-text-request removes a present text Visual through the same immutable
+;; source segmentation protocol used by typewrite.
+(struct erase-text-request (target-id unit cursor? cursor-style)
+  #:transparent)
+
+;; underline-sweep-request adds one semantic line helper. Its source text is
+;; measured once at compilation, so simultaneous target motion is intentionally
+;; a frozen-start-layout effect rather than an order-dependent live attachment.
+(struct underline-sweep-request
+  (target-id overlay-id color stroke-width retain?)
+  #:transparent)
+
+;; strike-through-request is the middle-line counterpart of underline-sweep.
+;; It has distinct request and helper identities so the two decorations can be
+;; composed deliberately on the same text target.
+(struct strike-through-request
+  (target-id overlay-id color stroke-width retain?)
+  #:transparent)
+
+;; highlight-sweep-request introduces a filled helper immediately behind a
+;; root text target. Unlike the line decorations its default lifecycle is
+;; temporary, making retained highlighting an explicit author choice.
+(struct highlight-sweep-request
+  (target-id overlay-id color padding retain?)
+  #:transparent)
 
 ;; Secondary-camera requests target an ordinary frame-space camera-view Visual.
 ;; A follow request additionally reads one world-space target from the sampled
@@ -611,6 +742,13 @@
   (and (attention-request? value)
        (eq? (attention-request-kind value) 'show-passing-flash)))
 
+;; A ripple is expanded eagerly into ordinary lagged ring requests.  The ring
+;; request is private: authors receive the resulting composition tree, while
+;; the compiler gets one independent helper identity per ring.
+(struct ripple-ring-request
+  (target-id padding spacing color stroke-width overlay-id component)
+  #:transparent)
+
 (struct grow-request (visual kind)
   #:transparent)
 
@@ -736,6 +874,15 @@
 ;; geometry and sampled clip phase. It intentionally stores neither frame
 ;; history nor a mutable integrator-like state.
 
+(struct wave-animation
+  (target-id source source-world local->world world->local direction amplitude
+             wavelength cycles phase parent-map)
+  #:transparent)
+
+;; wave-animation maps immutable clip-start geometry in target-local
+;; coordinates, then rebases its world-space sampled result into a nested
+;; target's enclosing group when necessary.
+
 (struct stroke-width-animation (target-id from to)
   #:transparent)
 
@@ -780,6 +927,44 @@
 ;;  - to               opacity?  requested global opacity at clip end.
 ;;  - force-to-at-end? boolean?  whether structural completion installs to.
 ;;  - remove-at-end?   boolean?  whether structural completion removes Visual.
+
+(struct appearance-animation
+  (target-id source destination delta lifecycle remove-at-end? inspection)
+  #:transparent)
+
+;; appearance-animation samples every requested affine/opacity component from
+;; one compiled source/destination pair. Exact finalization installs destination
+;; or removes the target, so an interior proxy never leaks past its endpoint.
+
+(struct appearance-effect-inspection (kind data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind inspection)
+     (appearance-effect-inspection-kind inspection))
+   (define (animation-inspection-data inspection)
+     (appearance-effect-inspection-data inspection))])
+
+(struct reveal-animation
+  (target-id source front layout-box lifecycle inspection)
+  #:transparent)
+
+;; reveal-animation retains one local layout box captured at clip preparation.
+;; It never remeasures while a scene is sampled, including random-access and
+;; repeated frame renders.
+
+(struct reveal-effect-inspection (kind data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind inspection)
+     (reveal-effect-inspection-kind inspection))
+   (define (animation-inspection-data inspection)
+     (reveal-effect-inspection-data inspection))])
+
+(struct pulse-animation (target-id source delta cycles inspection)
+  #:transparent)
+
+;; pulse-animation retains its clip-start source and computes every interior
+;; sample from that immutable value, never from an earlier deformed frame.
 
 (struct path-morph-animation (target-id from to)
   #:transparent)
@@ -846,6 +1031,81 @@
 ;; renderer-measured box is resolved from the fully sampled scene state, so it
 ;; is never part of either structural endpoint and follows a simultaneous
 ;; motion, scale, rotation, or formula rewrite.
+
+(struct ripple-ring-animation
+  (overlay-id target-paths padding spacing color stroke-width)
+  #:transparent)
+
+;; Like attention-animation, a ripple ring reads its target at the sampled
+;; time.  Its helper is consequently an overlay, not a rewrite of the target.
+
+(struct confetti-animation (origin pieces gravity overlay-id inspection)
+  #:transparent)
+
+;; confetti-animation holds only a resolved launch point and immutable plan.
+;; Every interior sample evaluates the same closed-form ballistic trajectories.
+
+(struct confetti-effect-inspection (data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind _inspection) 'confetti)
+   (define (animation-inspection-data inspection)
+     (confetti-effect-inspection-data inspection))])
+
+(struct typewrite-effect-inspection (data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind _inspection) 'typewrite)
+   (define (animation-inspection-data inspection)
+     (typewrite-effect-inspection-data inspection))])
+
+(struct erase-text-effect-inspection (data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind _inspection) 'erase-text)
+   (define (animation-inspection-data inspection)
+     (erase-text-effect-inspection-data inspection))])
+
+(struct underline-effect-inspection (data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind _inspection) 'underline-sweep)
+   (define (animation-inspection-data inspection)
+     (underline-effect-inspection-data inspection))])
+
+(struct strike-through-effect-inspection (data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind _inspection) 'strike-through)
+   (define (animation-inspection-data inspection)
+     (strike-through-effect-inspection-data inspection))])
+
+(struct highlight-sweep-effect-inspection (data)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind _inspection) 'highlight-sweep)
+   (define (animation-inspection-data inspection)
+     (highlight-sweep-effect-inspection-data inspection))])
+
+(struct typewrite-animation
+  (target-id source unit segment-count cursor? cursor-style inspection)
+  #:transparent)
+
+(struct erase-text-animation
+  (target-id source unit segment-count cursor? cursor-style inspection)
+  #:transparent)
+
+(struct underline-sweep-animation
+  (overlay-id complete retain? inspection)
+  #:transparent)
+
+(struct strike-through-animation
+  (overlay-id complete retain? inspection)
+  #:transparent)
+
+(struct highlight-sweep-animation
+  (target-id overlay-id left right bottom top color retain? inspection)
+  #:transparent)
 
 (struct grow-animation (target-id source destination kind)
   #:transparent)
@@ -1134,6 +1394,51 @@
    homotopy
    samples adaptive? tolerance max-depth discontinuity-mode))
 
+; apply-wave : (or/c visual? symbol? visual-path?)
+;              [#:direction nonzero-finite-vec2?]
+;              [#:amplitude nonnegative-finite-real?]
+;              [#:wavelength positive-finite-real?]
+;              [#:cycles nonnegative-finite-real?]
+;              [#:phase finite-real?]
+;              -> apply-wave-request?
+;; Applies a target-local sinusoidal displacement. The phase envelope is zero
+;; at both ends, so no sampled deformation becomes the next frame's source and
+;; the finalizer can restore the exact clip-start Visual.
+(define (apply-wave target
+                    #:direction [direction (vec2 0 1)]
+                    #:amplitude [amplitude 1/5]
+                    #:wavelength [wavelength 1]
+                    #:cycles [cycles 1]
+                    #:phase [phase 0])
+  (unless (or (visual? target) (symbol? target) (visual-path? target))
+    (raise-argument-error
+     'apply-wave "(or/c visual? symbol? visual-path?)" target))
+  (unless (and (vec2? direction)
+               (finite-real? (vec2-x direction))
+               (finite-real? (vec2-y direction))
+               (not (and (zero? (vec2-x direction))
+                         (zero? (vec2-y direction)))))
+    (raise-argument-error 'apply-wave "nonzero finite vec2?" direction))
+  (unless (and (finite-real? amplitude) (not (negative? amplitude)))
+    (raise-argument-error 'apply-wave "nonnegative finite real?" amplitude))
+  (unless (and (finite-real? wavelength) (positive? wavelength))
+    (raise-argument-error 'apply-wave "positive finite real?" wavelength))
+  (unless (and (finite-real? cycles) (not (negative? cycles)))
+    (raise-argument-error 'apply-wave "nonnegative finite real?" cycles))
+  (unless (finite-real? phase)
+    (raise-argument-error 'apply-wave "finite real?" phase))
+  (apply-wave-request
+   (visual-target-id target 'apply-wave)
+   (wave-unit-vector direction)
+   amplitude wavelength cycles phase))
+
+(define (wave-unit-vector direction)
+  (define length
+    (sqrt (+ (* (vec2-x direction) (vec2-x direction))
+             (* (vec2-y direction) (vec2-y direction)))))
+  (vec2 (/ (vec2-x direction) length)
+        (/ (vec2-y direction) length)))
+
 ; stroke-width-to : (or/c symbol? (and/c visual? stroke-width-visual?))
 ;                   stroke-width?
 ;                   -> stroke-width-to-request?
@@ -1186,6 +1491,430 @@
 (define (fade-out target)
   (check-opacity-request-target 'fade-out target)
   (fade-out-request (visual-target-id target 'fade-out)))
+
+; enter : (and/c visual? affine-visual? opacity-visual?)
+;         [#:translation-offset vec2?]
+;         [#:scale-factor nonnegative-scale-factor?]
+;         [#:rotation-offset finite-real?]
+;         [#:opacity-factor unit-real?]
+;         [#:about (or/c 'center 'reference vec2?)]
+;         -> enter-request?
+;; Introduces visual from a relative affine/opacity appearance. The authored
+;; visual is installed exactly at completion rather than an interpolated copy.
+(define (enter visual
+               #:translation-offset [translation-offset origin]
+               #:scale-factor [scale-factor 1]
+               #:rotation-offset [rotation-offset 0]
+               #:opacity-factor [opacity-factor 0]
+               #:about [about 'center])
+  (check-appearance-visual 'enter visual)
+  (enter-request
+   visual
+   (make-appearance-delta
+    'enter translation-offset scale-factor rotation-offset opacity-factor about)))
+
+; leave : (or/c visual? symbol? visual-path?)
+;        [#:translation-offset vec2?]
+;        [#:scale-factor nonnegative-scale-factor?]
+;        [#:rotation-offset finite-real?]
+;        [#:opacity-factor unit-real?]
+;        [#:about (or/c 'center 'reference vec2?)]
+;        [#:remove? boolean?]
+;        -> leave-request?
+;; Transforms a resolved target toward a relative affine/opacity appearance.
+;; With #:remove? #t (the default), the target is absent exactly at completion.
+(define (leave target
+              #:translation-offset [translation-offset origin]
+              #:scale-factor [scale-factor 1]
+              #:rotation-offset [rotation-offset 0]
+              #:opacity-factor [opacity-factor 0]
+              #:about [about 'center]
+              #:remove? [remove? #t])
+  (check-appearance-target 'leave target)
+  (unless (boolean? remove?)
+    (raise-argument-error 'leave "boolean?" remove?))
+  (leave-request
+   (visual-target-id target 'leave)
+   (make-appearance-delta
+    'leave translation-offset scale-factor rotation-offset opacity-factor about)
+   remove?))
+
+; reveal-in : (and/c visual? affine-visual? opacity-visual?) reveal-front?
+;             -> reveal-in-request?
+;; Introduces visual behind a renderer-measured local hard-clip front. The
+;; layout is frozen once when its play clip is compiled, then every sample uses
+;; only immutable geometry from that snapshot.
+(define (reveal-in visual front)
+  (check-reveal-visual 'reveal-in visual)
+  (check-reveal-front 'reveal-in front)
+  (reveal-in-request visual front))
+
+; reveal-out : (or/c visual? symbol? visual-path?) reveal-front?
+;              -> reveal-out-request?
+;; Applies the same local hard-clip front in reverse and removes the target at
+;; the exact structural endpoint.
+(define (reveal-out target front)
+  (check-reveal-target 'reveal-out target)
+  (check-reveal-front 'reveal-out front)
+  (reveal-out-request
+   (visual-target-id target 'reveal-out)
+   front))
+
+; wipe-in : affine/opacity-visual? vec2? [#:origin ...] [#:padding ...]
+;           -> reveal-in-request?
+;; Convenience naming for a linear hard-clip entrance.
+(define (wipe-in visual direction
+                 #:origin [origin 'automatic]
+                 #:padding [padding 1/20])
+  (reveal-in visual
+             (linear-reveal-front
+              (wipe-direction 'wipe-in direction)
+              #:origin origin #:padding padding)))
+
+; wipe-out : reveal-target? vec2? [#:origin ...] [#:padding ...]
+;            -> reveal-out-request?
+;; Convenience naming for a reverse linear hard-clip lifecycle.
+(define (wipe-out target direction
+                  #:origin [origin 'automatic]
+                  #:padding [padding 1/20])
+  (reveal-out target
+              (linear-reveal-front
+               (wipe-direction 'wipe-out direction)
+               #:origin origin #:padding padding)))
+
+; iris-in : affine/opacity-visual? [#:center ...] [#:start-radius ...]
+;           [#:padding ...] -> reveal-in-request?
+;; Convenience naming for a radial hard-clip entrance.
+(define (iris-in visual
+                 #:center [center 'automatic]
+                 #:start-radius [start-radius 0]
+                 #:padding [padding 1/20])
+  (reveal-in visual
+             (radial-reveal-front #:center center
+                                  #:start-radius start-radius
+                                  #:padding padding)))
+
+; iris-out : reveal-target? [#:center ...] [#:start-radius ...]
+;            [#:padding ...] -> reveal-out-request?
+;; Convenience naming for a reverse radial hard-clip lifecycle.
+(define (iris-out target
+                  #:center [center 'automatic]
+                  #:start-radius [start-radius 0]
+                  #:padding [padding 1/20])
+  (reveal-out target
+              (radial-reveal-front #:center center
+                                   #:start-radius start-radius
+                                   #:padding padding)))
+
+; pulse : (or/c visual? symbol? visual-path?)
+;         [#:scale-factor nonnegative-scale-factor?]
+;         [#:opacity-factor unit-real?]
+;         [#:cycles positive-exact-integer?]
+;         [#:about appearance-about?]
+;         -> pulse-request?
+;; Temporarily scales and/or fades a current Visual through a deterministic
+;; there-and-back envelope. The exact endpoint is restored structurally.
+(define (pulse target
+               #:scale-factor [scale-factor 6/5]
+               #:opacity-factor [opacity-factor 1]
+               #:cycles [cycles 1]
+               #:about [about 'center])
+  (check-appearance-target 'pulse target)
+  (unless (and (exact-integer? cycles) (positive? cycles))
+    (raise-argument-error 'pulse "positive exact integer" cycles))
+  (pulse-request
+   (visual-target-id target 'pulse)
+   (make-appearance-delta 'pulse origin scale-factor 0 opacity-factor about)
+   cycles))
+
+;; default-confetti-palette : (listof color-spec?)
+;; A compact high-contrast palette for the deterministic confetti effect.
+(define default-confetti-palette
+  (list "gold" "tomato" "cornflowerblue" "mediumseagreen" "mediumorchid"))
+
+; confetti : (or/c vec2? visual? symbol? visual-path?)
+;            [#:count exact-positive-integer?]
+;            [#:seed exact-integer?]
+;            [#:spread nonnegative-finite-real?]
+;            [#:height nonnegative-finite-real?]
+;            [#:gravity nonnegative-finite-real?]
+;            [#:palette nonempty-color-spec-list-or-vector?]
+;            [#:id symbol?]
+;            -> confetti-request?
+;; Creates one temporary collection of closed-form particle paths. A point
+;; origin is retained immediately; a Visual target is resolved to its world
+;; reference point only when the surrounding scene play is compiled.
+(define (confetti origin-or-target
+                  #:count [count 24]
+                  #:seed [seed 0]
+                  #:spread [spread 2]
+                  #:height [height 2]
+                  #:gravity [gravity 3]
+                  #:palette [palette default-confetti-palette]
+                  #:id [id 'confetti])
+  (define origin-value
+    (confetti-origin 'confetti origin-or-target))
+  (unless (and (exact-integer? count) (positive? count))
+    (raise-argument-error 'confetti "positive exact integer" count))
+  (unless (exact-integer? seed)
+    (raise-argument-error 'confetti "exact integer" seed))
+  (for ([value (in-list (list spread height gravity))]
+        [name (in-list '(spread height gravity))])
+    (unless (and (finite-real? value) (not (negative? value)))
+      (raise-arguments-error 'confetti "nonnegative finite real?"
+                             (symbol->string name) value)))
+  (unless (symbol? id)
+    (raise-argument-error 'confetti "symbol?" id))
+  (define checked-palette (check-confetti-palette palette))
+  (confetti-request
+   origin-value seed count spread height gravity checked-palette id
+   (confetti-piece-plan id count seed spread height checked-palette)))
+
+(define (confetti-origin who value)
+  (cond [(vec2? value) value]
+        [(or (visual? value) (symbol? value) (visual-path? value))
+         (visual-target-id value who)]
+        [else
+         (raise-argument-error
+          who "(or/c vec2? visual? symbol? visual-path?)" value)]))
+
+(define (check-confetti-palette value)
+  (define colors
+    (cond [(list? value) value]
+          [(vector? value) (vector->list value)]
+          [else
+           (raise-argument-error
+            'confetti "nonempty list or vector of color-spec? values" value)]))
+  (unless (pair? colors)
+    (raise-argument-error
+     'confetti "nonempty list or vector of color-spec? values" value))
+  (for ([color (in-list colors)])
+    (unless (color-spec? color)
+      (raise-argument-error 'confetti "color-spec?" color)))
+  colors)
+
+(define (confetti-piece-plan overlay-id count seed spread height palette)
+  (for/list ([index (in-range count)])
+    (define random-value
+      (lambda (salt) (deterministic-effect-real seed index salt)))
+    (confetti-piece
+     (string->symbol (format "~a-piece-~a" overlay-id index))
+     (* spread (- (* 2 (random-value 0)) 1))
+     (* height (+ 1/2 (random-value 1)))
+     (* 2 pi (random-value 2))
+     (* 4 pi (- (* 2 (random-value 3)) 1))
+     (list-ref palette
+               (min (sub1 (length palette))
+                    (inexact->exact
+                     (floor (* (length palette) (random-value 4)))))))))
+
+; typewrite : text-visual? [#:unit text-segmentation-unit?]
+;             [#:cursor? boolean?] [#:cursor-style (or/c false/c color-spec?)]
+;             -> typewrite-request?
+;; Introduces a text Visual by a discrete, renderer-prepared reveal frontier.
+;; The complete immutable source Visual is the exact structural endpoint.
+;; `unit` selects semantic source intervals; the active renderer may reject an
+;; interior sample when it cannot present that unit without reflowing text.
+(define (typewrite visual
+                   #:unit [unit 'grapheme]
+                   #:cursor? [cursor? #f]
+                   #:cursor-style [cursor-style #f])
+  (unless (text-visual? visual)
+    (raise-argument-error 'typewrite "text-visual?" visual))
+  (unless (memq unit '(grapheme word line span))
+    (raise-argument-error
+     'typewrite
+     "(or/c 'grapheme 'word 'line 'span)"
+     unit))
+  (unless (boolean? cursor?)
+    (raise-argument-error 'typewrite "boolean? as #:cursor?" cursor?))
+  (unless (or (not cursor-style) (color-spec? cursor-style))
+    (raise-argument-error
+     'typewrite "#f or color-spec? as #:cursor-style" cursor-style))
+  (define segmentation
+    (segment-text-visual visual #:unit unit))
+  (typewrite-request visual
+                     unit
+                     (length (text-segmentation-segments segmentation))
+                     cursor?
+                     cursor-style))
+
+; erase-text : (or/c text-visual? symbol? visual-path?)
+;              [#:unit text-segmentation-unit?]
+;              [#:cursor? boolean?]
+;              [#:cursor-style (or/c false/c color-spec?)]
+;              -> erase-text-request?
+;; Removes a present text Visual by moving its discrete reveal frontier back to
+;; zero. The visual remains exactly its source at local progress zero and is
+;; absent at the exact endpoint.
+(define (erase-text target
+                    #:unit [unit 'grapheme]
+                    #:cursor? [cursor? #f]
+                    #:cursor-style [cursor-style #f])
+  (unless (or (text-visual? target) (symbol? target) (visual-path? target))
+    (raise-argument-error
+     'erase-text
+     "(or/c text-visual? symbol? visual-path?)"
+     target))
+  (unless (memq unit '(grapheme word line span))
+    (raise-argument-error
+     'erase-text
+     "(or/c 'grapheme 'word 'line 'span)"
+     unit))
+  (unless (boolean? cursor?)
+    (raise-argument-error 'erase-text "boolean? as #:cursor?" cursor?))
+  (unless (or (not cursor-style) (color-spec? cursor-style))
+    (raise-argument-error
+     'erase-text "#f or color-spec? as #:cursor-style" cursor-style))
+  (erase-text-request (visual-target-id target 'erase-text)
+                      unit
+                      cursor?
+                      cursor-style))
+
+; underline-sweep : (or/c text-visual? symbol?)
+;                   [#:color (or/c false/c color-spec?)]
+;                   [#:stroke-width nonnegative-finite-real?]
+;                   [#:id (or/c false/c symbol?)]
+;                   [#:retain? boolean?]
+;                   -> underline-sweep-request?
+;; Draws an inspectable semantic line from the frozen text layout's left edge
+;; to its right edge. The line remains at completion by default.
+(define (underline-sweep target
+                         #:color [color #f]
+                         #:stroke-width [stroke-width 2]
+                         #:id [id #f]
+                         #:retain? [retain? #t])
+  (unless (or (text-visual? target) (symbol? target))
+    (raise-argument-error
+     'underline-sweep
+     "(or/c text-visual? symbol?)"
+     target))
+  (unless (or (not color) (color-spec? color))
+    (raise-argument-error 'underline-sweep "(or/c #f color-spec?)" color))
+  (unless (and (finite-real? stroke-width) (not (negative? stroke-width)))
+    (raise-argument-error
+     'underline-sweep
+     "nonnegative finite real?"
+     stroke-width))
+  (unless (or (not id) (symbol? id))
+    (raise-argument-error 'underline-sweep "(or/c #f symbol?)" id))
+  (unless (boolean? retain?)
+    (raise-argument-error 'underline-sweep "boolean?" retain?))
+  (define target-id (visual-target-id target 'underline-sweep))
+  (underline-sweep-request
+   target-id
+   (or id (default-text-decoration-id 'underline target-id))
+   color
+   stroke-width
+   retain?))
+
+; strike-through : (or/c text-visual? symbol?)
+;                 [#:color (or/c false/c color-spec?)]
+;                 [#:stroke-width nonnegative-finite-real?]
+;                 [#:id (or/c false/c symbol?)]
+;                 [#:retain? boolean?]
+;                 -> strike-through-request?
+;; Draws a separate inspectable line through the frozen text box's middle.
+(define (strike-through target
+                        #:color [color #f]
+                        #:stroke-width [stroke-width 2]
+                        #:id [id #f]
+                        #:retain? [retain? #t])
+  (unless (or (text-visual? target) (symbol? target))
+    (raise-argument-error
+     'strike-through
+     "(or/c text-visual? symbol?)"
+     target))
+  (unless (or (not color) (color-spec? color))
+    (raise-argument-error 'strike-through "(or/c #f color-spec?)" color))
+  (unless (and (finite-real? stroke-width) (not (negative? stroke-width)))
+    (raise-argument-error
+     'strike-through
+     "nonnegative finite real?"
+     stroke-width))
+  (unless (or (not id) (symbol? id))
+    (raise-argument-error 'strike-through "(or/c #f symbol?)" id))
+  (unless (boolean? retain?)
+    (raise-argument-error 'strike-through "boolean?" retain?))
+  (define target-id (visual-target-id target 'strike-through))
+  (strike-through-request
+   target-id
+   (or id (default-text-decoration-id 'strike-through target-id))
+   color
+   stroke-width
+   retain?))
+
+; highlight-sweep : (or/c text-visual? symbol?)
+;                   [#:color color-spec?]
+;                   [#:padding nonnegative-finite-real?]
+;                   [#:id (or/c false/c symbol?)]
+;                   [#:retain? boolean?]
+;                   -> highlight-sweep-request?
+;; Sweeps a semantic rectangular highlight behind a frozen text box.
+(define (highlight-sweep target
+                         #:color [color "#fff2a8"]
+                         #:padding [padding 1/20]
+                         #:id [id #f]
+                         #:retain? [retain? #f])
+  (unless (or (text-visual? target) (symbol? target))
+    (raise-argument-error
+     'highlight-sweep
+     "(or/c text-visual? symbol?)"
+     target))
+  (unless (color-spec? color)
+    (raise-argument-error 'highlight-sweep "color-spec?" color))
+  (unless (and (finite-real? padding) (not (negative? padding)))
+    (raise-argument-error
+     'highlight-sweep
+     "nonnegative finite real?"
+     padding))
+  (unless (or (not id) (symbol? id))
+    (raise-argument-error 'highlight-sweep "(or/c #f symbol?)" id))
+  (unless (boolean? retain?)
+    (raise-argument-error 'highlight-sweep "boolean?" retain?))
+  (define target-id (visual-target-id target 'highlight-sweep))
+  (highlight-sweep-request
+   target-id
+   (or id (default-text-decoration-id 'highlight target-id))
+   color
+   padding
+   retain?))
+
+(define (default-text-decoration-id kind target-id)
+  (string->symbol (format "__~a-~a" kind target-id)))
+
+; slide-in : affine/opacity-visual? slide-direction? [#:distance nonnegative-real?]
+;            -> enter-request?
+;; A readability preset: `direction` names the local side from which the
+;; authored Visual begins. It deliberately preserves authored opacity rather
+;; than combining the slide with an implicit fade.
+(define (slide-in visual direction #:distance [distance 2])
+  (enter visual
+         #:translation-offset (slide-direction-offset 'slide-in direction distance)
+         #:opacity-factor 1))
+
+; slide-out : appearance-target? slide-direction? [#:distance nonnegative-real?]
+;             -> leave-request?
+;; A readability preset: `direction` names the local side toward which the
+;; target leaves. Its structural removal remains the normal leave endpoint.
+(define (slide-out target direction #:distance [distance 2])
+  (leave target
+        #:translation-offset (slide-direction-offset 'slide-out direction distance)
+        #:opacity-factor 1))
+
+; spin-in : affine/opacity-visual? [#:turns finite-real?] -> enter-request?
+;; Uses a signed number of complete counter-clockwise turns while retaining
+;; enter's exact authored endpoint and default opacity appearance.
+(define (spin-in visual #:turns [turns 1])
+  (unless (finite-real? turns)
+    (raise-argument-error 'spin-in "finite real?" turns))
+  (enter visual #:rotation-offset (* -2 pi turns)))
+
+; shrink-out : appearance-target? [#:about appearance-about?] -> leave-request?
+;; Collapses visibly to the chosen local pivot and removes only at the exact
+;; endpoint. Opacity remains authored throughout the shrink.
+(define (shrink-out target #:about [about 'center])
+  (leave target #:scale-factor 0 #:opacity-factor 1 #:about about))
 
 ; camera-view-pan-to : (or/c symbol? camera-view-visual?) vec2?
 ;;                      -> camera-view-pan-to-request?
@@ -1859,6 +2588,76 @@
    'show-passing-flash target 0 color stroke-width 'show-passing-flash
    #:parameter time-width))
 
+; ripple : (or/c visual? symbol? visual-path? visual-selection?)
+;          [#:rings positive-exact-integer?]
+;          [#:spacing nonnegative-finite-real?]
+;          [#:padding nonnegative-finite-real?]
+;          [#:color any/c]
+;          [#:stroke-width nonnegative-finite-real?]
+;          [#:lag-ratio nonnegative-finite-real?]
+;          [#:id (or/c false/c symbol?)]
+;          -> lagged-start-animation-request?
+;; Creates an eager, ordinary lagged composition of expanding temporary
+;; outlines.  Each ring has a unique helper identity, so a moving target can
+;; be read live by all of them without any write conflict on the target.
+(define (ripple target
+                #:rings [rings 3]
+                #:spacing [spacing 1/5]
+                #:padding [padding 1/5]
+                #:color [color "gold"]
+                #:stroke-width [stroke-width 2]
+                #:lag-ratio [lag-ratio 1/4]
+                #:id [id #f])
+  (define checked-target
+    (check-ripple-target target))
+  (unless (and (exact-integer? rings) (positive? rings))
+    (raise-argument-error 'ripple "positive exact integer" rings))
+  (for ([value (in-list (list spacing padding stroke-width lag-ratio))]
+        [name (in-list '(spacing padding stroke-width lag-ratio))])
+    (unless (and (finite-real? value) (not (negative? value)))
+      (raise-argument-error 'ripple "nonnegative finite real?" value)))
+  (unless (or (not id) (symbol? id))
+    (raise-argument-error 'ripple "(or/c #f symbol?)" id))
+  (define instance-id
+    (or id (ripple-instance-id checked-target)))
+  (define stagger-map
+    (dynamic-require scene-module 'stagger-map))
+  (stagger-map
+   (make-list rings checked-target)
+   (lambda (ring-target source-index)
+     (define overlay-id
+       (ripple-ring-id instance-id source-index))
+     (ripple-ring-request
+      ring-target padding spacing color stroke-width overlay-id overlay-id))
+   #:lag-ratio lag-ratio))
+
+(define (check-ripple-target target)
+  (unless (or (visual? target)
+              (symbol? target)
+              (visual-path? target)
+              (visual-selection? target))
+    (raise-argument-error
+     'ripple
+     "(or/c visual? symbol? visual-path? visual-selection?)"
+     target))
+  (when (and (visual-selection? target)
+             (visual-selection-empty? target))
+    (raise-arguments-error
+     'ripple
+     "a nonempty visual selection"
+     "selection" target))
+  (if (visual-selection? target)
+      target
+      (visual-target-id target 'ripple)))
+
+(define (ripple-instance-id target)
+  (string->symbol
+   (format "__ripple-~s" target)))
+
+(define (ripple-ring-id instance-id source-index)
+  (string->symbol
+   (format "~a-ring-~a" instance-id source-index)))
+
 ; wiggle : (or/c visual? symbol? visual-path?) ... -> succession-animation-request?
 ;; A deterministic rotation wiggle that returns exactly to the initial angle.
 ;; It is intentionally an ordinary composition so it combines with the
@@ -2098,6 +2897,85 @@
   (cond
     [(transform-formula-parts-request? request)
      (transform-formula-parts-request-inspection request)]
+    [(enter-request? request)
+     (appearance-inspection
+      'enter
+      (visual-id (enter-request-visual request))
+      (enter-request-delta request)
+      #f)]
+    [(leave-request? request)
+     (appearance-inspection
+      'leave
+      (leave-request-target-id request)
+      (leave-request-delta request)
+      (leave-request-remove-at-end? request))]
+    [(reveal-in-request? request)
+     (reveal-inspection
+      'reveal-in
+      (visual-id (reveal-in-request-visual request))
+      (reveal-in-request-front request)
+      #f)]
+    [(reveal-out-request? request)
+     (reveal-inspection
+      'reveal-out
+      (reveal-out-request-target-id request)
+      (reveal-out-request-front request)
+      #t)]
+    [(pulse-request? request)
+     (pulse-inspection
+      (pulse-request-target-id request)
+      (pulse-request-delta request)
+      (pulse-request-cycles request))]
+    [(confetti-request? request)
+     (confetti-effect-inspection
+      (hash 'origin (confetti-request-origin request)
+            'seed (confetti-request-seed request)
+            'count (confetti-request-count request)
+            'overlay-id (confetti-request-overlay-id request)
+            'helper-ids (map confetti-piece-id
+                             (confetti-request-pieces request))))]
+    [(typewrite-request? request)
+     (define segmentation
+       (segment-text-visual (typewrite-request-visual request)
+                            #:unit (typewrite-request-unit request)))
+     (typewrite-effect-inspection
+      (hash 'target-id (visual-id (typewrite-request-visual request))
+            'unit (typewrite-request-unit request)
+            'segment-count (typewrite-request-segment-count request)
+            'cursor? (typewrite-request-cursor? request)
+            'cursor-style (typewrite-request-cursor-style request)
+            'cursor-lifecycle 'open-clip-only
+            ;; This is semantic/cache-safe source identity, not a renderer
+            ;; object. The preview can explain which prepared text layout is
+            ;; active without retaining a Pict, bitmap, or drawing context.
+            'prepared-layout-key (text-segmentation-source-key segmentation)))]
+    [(erase-text-request? request)
+     (erase-text-effect-inspection
+      (hash 'target-id (erase-text-request-target-id request)
+            'unit (erase-text-request-unit request)
+            'lifecycle 'remove-at-end
+            'cursor? (erase-text-request-cursor? request)
+            'cursor-style (erase-text-request-cursor-style request)
+            'cursor-lifecycle 'open-clip-only))]
+    [(underline-sweep-request? request)
+     (underline-effect-inspection
+      (hash 'target-id (underline-sweep-request-target-id request)
+            'overlay-id (underline-sweep-request-overlay-id request)
+            'retain? (underline-sweep-request-retain? request)
+            'layout 'frozen-at-clip-start))]
+    [(strike-through-request? request)
+     (strike-through-effect-inspection
+      (hash 'target-id (strike-through-request-target-id request)
+            'overlay-id (strike-through-request-overlay-id request)
+            'retain? (strike-through-request-retain? request)
+            'layout 'frozen-at-clip-start))]
+    [(highlight-sweep-request? request)
+     (highlight-sweep-effect-inspection
+      (hash 'target-id (highlight-sweep-request-target-id request)
+            'overlay-id (highlight-sweep-request-overlay-id request)
+            'retain? (highlight-sweep-request-retain? request)
+            'layout 'frozen-at-clip-start
+            'drawing-order 'behind-target))]
     [else #f]))
 
 ; compiled-animation-inspection : compiled-animation? -> (or/c #f animation-inspection?)
@@ -2106,6 +2984,24 @@
   (cond
     [(formula-parts-transform-animation? animation)
      (formula-parts-transform-animation-inspection animation)]
+    [(appearance-animation? animation)
+     (appearance-animation-inspection animation)]
+    [(reveal-animation? animation)
+     (reveal-animation-inspection animation)]
+    [(pulse-animation? animation)
+     (pulse-animation-inspection animation)]
+    [(confetti-animation? animation)
+     (confetti-animation-inspection animation)]
+    [(typewrite-animation? animation)
+     (typewrite-animation-inspection animation)]
+    [(erase-text-animation? animation)
+     (erase-text-animation-inspection animation)]
+    [(underline-sweep-animation? animation)
+     (underline-sweep-animation-inspection animation)]
+    [(strike-through-animation? animation)
+     (strike-through-animation-inspection animation)]
+    [(highlight-sweep-animation? animation)
+     (highlight-sweep-animation-inspection animation)]
     [else #f]))
 
 ; create : (or/c path-visual? relation-visual? spatial-path?) -> animation-request?
@@ -2293,7 +3189,40 @@
        (check-absent-introduction-target prepared-state id 'fade-in)
        (scene-state-add
         prepared-state
-        (replace-visual-opacity 'scene-play visual 0))]
+       (replace-visual-opacity 'scene-play visual 0))]
+    [(enter-request? request)
+     (define visual (enter-request-visual request))
+     (define id (visual-id visual))
+     (check-absent-introduction-target prepared-state id 'enter)
+     (scene-state-add
+      prepared-state
+      (appearance-relative-visual visual (enter-request-delta request)))]
+    [(reveal-in-request? request)
+     (define visual (reveal-in-request-visual request))
+     (define id (visual-id visual))
+     (check-absent-introduction-target prepared-state id 'reveal-in)
+     ;; An empty semantic clip keeps the target structurally present from the
+     ;; local start without measuring or rendering it yet. Compilation captures
+     ;; the one stable layout box used by every later sample.
+     (scene-state-add
+      prepared-state
+      (reveal-wrap-visual visual empty-path-geometry))]
+    [(typewrite-request? request)
+     (define visual (typewrite-request-visual request))
+     (define id (visual-id visual))
+     (check-absent-introduction-target prepared-state id 'typewrite)
+     ;; The wrapper is a renderer-facing presentation state only. It retains
+     ;; the authored source exactly, so finalization can restore it without a
+     ;; substring reconstruction or a layout-dependent reverse conversion.
+     (scene-state-add
+      prepared-state
+      (make-text-reveal-visual visual
+                                (typewrite-request-unit request)
+                                0
+                                (typewrite-request-segment-count request)
+                                #:cursor? (typewrite-request-cursor? request)
+                                #:cursor-style
+                                (typewrite-request-cursor-style request)))]
     [(grow-request? request)
      (define visual (grow-request-visual request))
      (define id (visual-id visual))
@@ -2458,6 +3387,78 @@
    (apply-homotopy-request-max-depth request)
    (apply-homotopy-request-discontinuity-mode request)
    parent-map))
+
+(define (compile-apply-wave-request state request)
+  (define target-id
+    (apply-wave-request-target-id request))
+  (define path
+    (visual-target-path target-id 'apply-wave))
+  (define source
+    (scene-state-ref state target-id))
+  (when (resolvable-visual? source)
+    (raise-arguments-error
+     'scene-play
+     "a derived Visual cannot be waved directly; wave its ordinary inputs or output"
+     "visual-id" (visual-id source)))
+  (when (frame-space-visual? source)
+    (raise-arguments-error
+     'scene-play
+     "apply-wave maps world-space Visuals, not frame-space overlays"
+     "visual-id" (visual-id source)))
+  (define source-world
+    (scene-state-resolved-world-ref state target-id))
+  (unless (affine-visual? source-world)
+    (raise-arguments-error
+     'scene-play
+     "an affine Visual with a target-local coordinate frame"
+     "visual-path" path
+     "visual" source-world))
+  (unless (wave-geometry-capable? source-world)
+    (raise-arguments-error
+     'scene-play
+     "a Visual containing path, circle, rectangle, axes, or arrow geometry for apply-wave"
+     "visual-path" path
+     "visual" source-world))
+  (define local->world
+    (affine-transform->affine2 (visual-transform source-world)))
+  (define world->local
+    (affine2-invert local->world))
+  (unless world->local
+    (raise-arguments-error
+     'scene-play
+     "a nonsingular target-local affine frame for apply-wave"
+     "visual-path" path
+     "transform" (visual-transform source-world)))
+  (define parent-map
+    (scene-state-parent-affine-map state target-id))
+  (unless (affine2-invert parent-map)
+    (raise-arguments-error
+     'scene-play
+     "a nonsingular enclosing affine map for a nested apply-wave request"
+     "visual-path" path
+     "parent-map" parent-map))
+  (wave-animation
+   target-id source source-world local->world world->local
+   (apply-wave-request-direction request)
+   (apply-wave-request-amplitude request)
+   (apply-wave-request-wavelength request)
+   (apply-wave-request-cycles request)
+   (apply-wave-request-phase request)
+   parent-map))
+
+(define (wave-geometry-capable? visual)
+  (cond
+    [(or (path-visual? visual)
+         (circle-visual? visual)
+         (rectangle-visual? visual)
+         (axes-visual? visual)
+         (arrow-visual? visual))
+     #t]
+    [(affine-map-visual? visual)
+     (wave-geometry-capable? (affine-map-visual-content visual))]
+    [(group-visual? visual)
+     (ormap wave-geometry-capable? (group-visual-children visual))]
+    [else #f]))
 
 ;; Secondary camera leaves compile against the camera stored in their target
 ;; frame-space Visual. The normal scene camera is unaffected.
@@ -3151,6 +4152,20 @@
      (if spatial-flash
          (compile-spatial-curve-animation-request state spatial-flash)
          (compile-attention-request state request))]
+    [(ripple-ring-request? request)
+     (compile-ripple-ring-request state request)]
+    [(confetti-request? request)
+     (compile-confetti-request state request)]
+    [(typewrite-request? request)
+     (compile-typewrite-request state request)]
+    [(erase-text-request? request)
+     (compile-erase-text-request state request)]
+    [(underline-sweep-request? request)
+     (compile-underline-sweep-request state request)]
+    [(strike-through-request? request)
+     (compile-strike-through-request state request)]
+    [(highlight-sweep-request? request)
+     (compile-highlight-sweep-request state request)]
     [(spatial-curve-animation-request? request)
      (compile-spatial-curve-animation-request state request)]
     [(spatial-surface-animation-request? request)
@@ -3175,6 +4190,8 @@
      (compile-apply-pointwise-request state request)]
     [(apply-homotopy-request? request)
      (compile-apply-homotopy-request state request)]
+    [(apply-wave-request? request)
+     (compile-apply-wave-request state request)]
     [(or (camera-view-pan-to-request? request)
          (camera-view-pan-by-request? request)
          (camera-view-zoom-to-request? request)
@@ -3365,6 +4382,60 @@
                         0
                         #f
                         #t)]
+    [(enter-request? request)
+     (define destination (enter-request-visual request))
+     (check-appearance-visual 'enter destination)
+     (appearance-animation
+     target-id
+      visual
+      destination
+      (enter-request-delta request)
+      'enter
+      #f
+      (appearance-inspection
+       'enter target-id (enter-request-delta request) #f))]
+    [(leave-request? request)
+     (check-appearance-visual 'leave visual)
+     (define delta (leave-request-delta request))
+     (appearance-animation
+      target-id
+      visual
+      (appearance-relative-visual visual delta)
+      delta
+      'leave
+      (leave-request-remove-at-end? request)
+      (appearance-inspection
+       'leave target-id delta (leave-request-remove-at-end? request)))]
+    [(reveal-in-request? request)
+     (define destination (reveal-in-request-visual request))
+     (check-reveal-visual 'reveal-in destination)
+     (define front (reveal-in-request-front request))
+     (reveal-animation
+      target-id
+      destination
+      front
+      (reveal-local-layout-box destination)
+      'reveal-in
+      (reveal-inspection 'reveal-in target-id front #f))]
+    [(reveal-out-request? request)
+     (check-reveal-visual 'reveal-out visual)
+     (define front (reveal-out-request-front request))
+     (reveal-animation
+      target-id
+      visual
+      front
+      (reveal-local-layout-box visual)
+      'reveal-out
+      (reveal-inspection 'reveal-out target-id front #t))]
+    [(pulse-request? request)
+     (check-appearance-visual 'pulse visual)
+     (define delta (pulse-request-delta request))
+     (pulse-animation
+      target-id
+      visual
+      delta
+      (pulse-request-cycles request)
+      (pulse-inspection target-id delta (pulse-request-cycles request)))]
     [(morph-to-request? request)
      (check-path-morph-target visual 'morph-to)
      (define from-path
@@ -4198,6 +5269,262 @@
    (attention-request-stroke-width request)
    (attention-request-parameter request)))
 
+(define (compile-ripple-ring-request state request)
+  (define target
+    (ripple-ring-request-target-id request))
+  (define target-paths
+    (if (visual-selection? target)
+        (visual-selection-absolute-paths target)
+        (list (visual-target-path target 'ripple))))
+  (for ([target-path (in-list target-paths)])
+    (unless (scene-state-has? state target-path)
+      (raise-arguments-error
+       'ripple
+       "a Visual present at every requested selection path in the scene"
+       "target-path" target-path)))
+  (define overlay-id
+    (ripple-ring-request-overlay-id request))
+  (check-absent-introduction-target state overlay-id 'ripple)
+  (ripple-ring-animation
+   overlay-id
+   target-paths
+   (ripple-ring-request-padding request)
+   (ripple-ring-request-spacing request)
+   (ripple-ring-request-color request)
+   (ripple-ring-request-stroke-width request)))
+
+(define (compile-confetti-request state request)
+  (define overlay-id (confetti-request-overlay-id request))
+  (check-absent-introduction-target state overlay-id 'confetti)
+  (define origin-source (confetti-request-origin request))
+  (define resolved-origin
+    (if (vec2? origin-source)
+        origin-source
+        (let ([target-path (visual-target-path origin-source 'confetti)])
+          (unless (scene-state-has? state target-path)
+            (raise-arguments-error
+             'confetti
+             "a target Visual present at the confetti clip start"
+             "target-path" target-path))
+          (visual-position
+           (scene-state-resolved-world-ref state target-path)))))
+  (confetti-animation
+   resolved-origin
+   (confetti-request-pieces request)
+   (confetti-request-gravity request)
+   overlay-id
+   (confetti-effect-inspection
+    (hash 'origin resolved-origin
+          'seed (confetti-request-seed request)
+          'count (confetti-request-count request)
+          'overlay-id overlay-id
+          'helper-ids (map confetti-piece-id
+                           (confetti-request-pieces request))))))
+
+(define (compile-typewrite-request state request)
+  (define source (typewrite-request-visual request))
+  (define target-id (visual-id source))
+  (define staged (scene-state-ref state target-id))
+  (unless (text-reveal-visual? staged)
+    (raise-arguments-error
+     'typewrite
+     "the typewrite start-state wrapper installed by scene-play"
+     "visual-id" target-id
+     "actual" staged))
+  (typewrite-animation
+   target-id
+   source
+   (typewrite-request-unit request)
+   (typewrite-request-segment-count request)
+   (typewrite-request-cursor? request)
+   (typewrite-request-cursor-style request)
+   (typewrite-effect-inspection
+    (hash 'target-id target-id
+          'unit (typewrite-request-unit request)
+          'segment-count (typewrite-request-segment-count request)
+          'cursor? (typewrite-request-cursor? request)
+          'cursor-style (typewrite-request-cursor-style request)
+          'cursor-lifecycle 'open-clip-only
+          'prepared-layout-key
+          (text-segmentation-source-key
+           (segment-text-visual source
+                                #:unit (typewrite-request-unit request)))))))
+
+(define (compile-erase-text-request state request)
+  (define target-id (erase-text-request-target-id request))
+  (define source (scene-state-ref state target-id))
+  (unless (text-visual? source)
+    (raise-arguments-error
+     'erase-text
+     "a present text-visual? target at the clip start"
+     "target-id" target-id
+     "actual" source))
+  (define segmentation
+    (segment-text-visual source #:unit (erase-text-request-unit request)))
+  (define segment-count
+    (length (text-segmentation-segments segmentation)))
+  (erase-text-animation
+   target-id
+   source
+   (erase-text-request-unit request)
+   segment-count
+   (erase-text-request-cursor? request)
+   (erase-text-request-cursor-style request)
+   (erase-text-effect-inspection
+    (hash 'target-id target-id
+          'unit (erase-text-request-unit request)
+          'segment-count segment-count
+          'lifecycle 'remove-at-end
+          'cursor? (erase-text-request-cursor? request)
+          'cursor-style (erase-text-request-cursor-style request)
+          'cursor-lifecycle 'open-clip-only
+          'prepared-layout-key (text-segmentation-source-key segmentation)))))
+
+(define (compile-underline-sweep-request state request)
+  (define target-id (underline-sweep-request-target-id request))
+  (define source (scene-state-ref state target-id))
+  (unless (text-visual? source)
+    (raise-arguments-error
+     'underline-sweep
+     "a present text-visual? target at the clip start"
+     "target-id" target-id
+     "actual" source))
+  ;; The ordinary layout API gives the same renderer-derived world-space box
+  ;; used by existing reveal and attention effects. Restricting this first
+  ;; semantic line slice to untransformed text prevents a nominally horizontal
+  ;; helper from silently detaching under a source rotation or local scaling.
+  (unless (and (zero? (visual-rotation source))
+               (equal? (visual-scale source) (vec2 1 1)))
+    (raise-arguments-error
+     'underline-sweep
+     "an unrotated, unscaled text Visual for this frozen-layout line effect"
+     "target-id" target-id
+     "rotation" (visual-rotation source)
+     "scale" (visual-scale source)))
+  (define overlay-id (underline-sweep-request-overlay-id request))
+  (check-absent-introduction-target state overlay-id 'underline-sweep)
+  (define box (renderer-layout-box source))
+  (define left
+    (let ([box-left ((relative-layout-procedure 'layout-box-left) box)])
+      box-left))
+  (define right
+    (let ([box-right ((relative-layout-procedure 'layout-box-right) box)])
+      box-right))
+  (define bottom
+    (let ([box-bottom ((relative-layout-procedure 'layout-box-bottom) box)])
+      box-bottom))
+  (define underline-y
+    (- bottom (/ (text-visual-font-size source) 8)))
+  (define color
+    (or (underline-sweep-request-color request)
+        (text-visual-color source)))
+  (define complete
+    (line (vec2 left underline-y)
+          (vec2 right underline-y)
+          #:id overlay-id
+          #:stroke color
+          #:stroke-width (underline-sweep-request-stroke-width request)))
+  (underline-sweep-animation
+   overlay-id
+   complete
+   (underline-sweep-request-retain? request)
+   (underline-effect-inspection
+    (hash 'target-id target-id
+          'overlay-id overlay-id
+          'retain? (underline-sweep-request-retain? request)
+          'layout 'frozen-at-clip-start
+          'start (vec2 left underline-y)
+          'end (vec2 right underline-y)))))
+
+(define (compile-strike-through-request state request)
+  (define target-id (strike-through-request-target-id request))
+  (define source (scene-state-ref state target-id))
+  (unless (text-visual? source)
+    (raise-arguments-error
+     'strike-through
+     "a present text-visual? target at the clip start"
+     "target-id" target-id
+     "actual" source))
+  (unless (and (zero? (visual-rotation source))
+               (equal? (visual-scale source) (vec2 1 1)))
+    (raise-arguments-error
+     'strike-through
+     "an unrotated, unscaled text Visual for this frozen-layout line effect"
+     "target-id" target-id
+     "rotation" (visual-rotation source)
+     "scale" (visual-scale source)))
+  (define overlay-id (strike-through-request-overlay-id request))
+  (check-absent-introduction-target state overlay-id 'strike-through)
+  (define box (renderer-layout-box source))
+  (define left ((relative-layout-procedure 'layout-box-left) box))
+  (define right ((relative-layout-procedure 'layout-box-right) box))
+  (define bottom ((relative-layout-procedure 'layout-box-bottom) box))
+  (define top ((relative-layout-procedure 'layout-box-top) box))
+  (define strike-y (/ (+ bottom top) 2))
+  (define color
+    (or (strike-through-request-color request)
+        (text-visual-color source)))
+  (define complete
+    (line (vec2 left strike-y)
+          (vec2 right strike-y)
+          #:id overlay-id
+          #:stroke color
+          #:stroke-width (strike-through-request-stroke-width request)))
+  (strike-through-animation
+   overlay-id
+   complete
+   (strike-through-request-retain? request)
+   (strike-through-effect-inspection
+    (hash 'target-id target-id
+          'overlay-id overlay-id
+          'retain? (strike-through-request-retain? request)
+          'layout 'frozen-at-clip-start
+          'start (vec2 left strike-y)
+          'end (vec2 right strike-y)))))
+
+(define (compile-highlight-sweep-request state request)
+  (define target-id (highlight-sweep-request-target-id request))
+  (define source (scene-state-ref state target-id))
+  (unless (text-visual? source)
+    (raise-arguments-error
+     'highlight-sweep
+     "a present text-visual? target at the clip start"
+     "target-id" target-id
+     "actual" source))
+  (unless (and (zero? (visual-rotation source))
+               (equal? (visual-scale source) (vec2 1 1)))
+    (raise-arguments-error
+     'highlight-sweep
+     "an unrotated, unscaled text Visual for this frozen-layout rectangle effect"
+     "target-id" target-id
+     "rotation" (visual-rotation source)
+     "scale" (visual-scale source)))
+  (define overlay-id (highlight-sweep-request-overlay-id request))
+  (check-absent-introduction-target state overlay-id 'highlight-sweep)
+  (define box (renderer-layout-box source))
+  (define padding (highlight-sweep-request-padding request))
+  (define left (- ((relative-layout-procedure 'layout-box-left) box) padding))
+  (define right (+ ((relative-layout-procedure 'layout-box-right) box) padding))
+  (define bottom (- ((relative-layout-procedure 'layout-box-bottom) box) padding))
+  (define top (+ ((relative-layout-procedure 'layout-box-top) box) padding))
+  (unless (and (< left right) (< bottom top))
+    (raise-arguments-error
+     'highlight-sweep
+     "a text layout with positive width and height"
+     "target-id" target-id
+     "layout-bounds" (list left bottom right top)))
+  (highlight-sweep-animation
+   target-id overlay-id left right bottom top
+   (highlight-sweep-request-color request)
+   (highlight-sweep-request-retain? request)
+   (highlight-sweep-effect-inspection
+    (hash 'target-id target-id
+          'overlay-id overlay-id
+          'retain? (highlight-sweep-request-retain? request)
+          'layout 'frozen-at-clip-start
+          'drawing-order 'behind-target
+          'bounds (vector left bottom right top)))))
+
 (define (attention-overlay-id target-paths kind)
   (string->symbol
    (format "__~a-~s" kind target-paths)))
@@ -4239,6 +5566,40 @@
 
 (define (renderer-layout-box-center box)
   ((relative-layout-procedure 'layout-box-center) box))
+
+; reveal-local-layout-box : affine/opacity-visual? -> layout-box?
+;; Measures local content, not its current world placement. The result is held
+;; by the compiled lifecycle leaf, so playback never performs a layout query.
+(define (reveal-local-layout-box visual)
+  (renderer-layout-box
+   (visual-with-transform visual identity-affine-transform)))
+
+; reveal-restore-presentation : affine/opacity-visual? affine/opacity-visual?
+;                               -> affine/opacity-visual?
+;; Applies the current compatible affine/opacity components to the authored
+;; source. This intentionally does not inspect clipped-visual?, so a user
+;; supplied clip remains ordinary content inside a reveal wrapper.
+(define (reveal-restore-presentation source presentation)
+  (visual-with-opacity
+   (visual-with-transform source (visual-transform presentation))
+   (visual-opacity presentation)))
+
+; reveal-wrap-visual : affine/opacity-visual? path-geometry?
+;                      [affine/opacity-visual?] -> clipped-visual?
+;; Keeps source geometry in local coordinates and places the semantic wrapper
+;; with the current compatible presentation state.
+(define (reveal-wrap-visual source path [presentation source])
+  (define displayed
+    (reveal-restore-presentation source presentation))
+  (define transform (visual-transform displayed))
+  (clip-visual
+   (visual-with-transform source identity-affine-transform)
+   path
+   #:id (visual-id source)
+   #:center (affine-transform-translation transform)
+   #:rotation (affine-transform-rotation transform)
+   #:scale (affine-transform-scale transform)
+   #:opacity (visual-opacity displayed)))
 
 (define (rounded-rectangle-path half-width half-height)
   (define radius
@@ -4334,6 +5695,23 @@
      (if (visual-selection? target)
          (list (car (visual-selection-root target)))
          (list target))]
+    [(ripple-ring-request? request)
+     (define target (ripple-ring-request-target-id request))
+     (if (visual-selection? target)
+         (list (car (visual-selection-root target)))
+         (list target))]
+    [(confetti-request? request)
+     (list (confetti-request-overlay-id request))]
+    [(typewrite-request? request)
+     (list (visual-id (typewrite-request-visual request)))]
+    [(erase-text-request? request)
+     (list (erase-text-request-target-id request))]
+    [(underline-sweep-request? request)
+     (list (underline-sweep-request-overlay-id request))]
+    [(strike-through-request? request)
+     (list (strike-through-request-overlay-id request))]
+    [(highlight-sweep-request? request)
+     (list (highlight-sweep-request-overlay-id request))]
     [else (list (animation-request-target-id request))]))
 
 ; animation-request-component-target-id : animation-request? -> any/c
@@ -4385,12 +5763,25 @@
       (apply-affine-request? value)
       (apply-pointwise-request? value)
       (apply-homotopy-request? value)
+      (apply-wave-request? value)
       (stroke-width-to-request? value)
       (fill-color-to-request? value)
       (stroke-color-to-request? value)
       (fade-to-request? value)
       (fade-in-request? value)
       (fade-out-request? value)
+      (enter-request? value)
+      (leave-request? value)
+      (reveal-in-request? value)
+      (reveal-out-request? value)
+      (pulse-request? value)
+      (ripple-ring-request? value)
+      (confetti-request? value)
+      (typewrite-request? value)
+      (erase-text-request? value)
+      (underline-sweep-request? value)
+      (strike-through-request? value)
+      (highlight-sweep-request? value)
       (camera-view-pan-to-request? value)
       (camera-view-pan-by-request? value)
       (camera-view-zoom-to-request? value)
@@ -4520,6 +5911,8 @@
      (apply-pointwise-request-target-id request)]
     [(apply-homotopy-request? request)
      (apply-homotopy-request-target-id request)]
+    [(apply-wave-request? request)
+     (apply-wave-request-target-id request)]
     [(stroke-width-to-request? request)
      (stroke-width-to-request-target-id request)]
     [(fill-color-to-request? request)
@@ -4532,6 +5925,33 @@
      (visual-id (fade-in-request-visual request))]
     [(fade-out-request? request)
      (fade-out-request-target-id request)]
+    [(enter-request? request)
+     (visual-id (enter-request-visual request))]
+    [(leave-request? request)
+     (leave-request-target-id request)]
+    [(reveal-in-request? request)
+     (visual-id (reveal-in-request-visual request))]
+    [(reveal-out-request? request)
+     (reveal-out-request-target-id request)]
+    [(pulse-request? request)
+     (pulse-request-target-id request)]
+    [(ripple-ring-request? request)
+     (define target (ripple-ring-request-target-id request))
+     (if (visual-selection? target)
+         (car (visual-selection-root target))
+         target)]
+    [(confetti-request? request)
+     (confetti-request-overlay-id request)]
+    [(typewrite-request? request)
+     (visual-id (typewrite-request-visual request))]
+    [(erase-text-request? request)
+     (erase-text-request-target-id request)]
+    [(underline-sweep-request? request)
+     (underline-sweep-request-overlay-id request)]
+    [(strike-through-request? request)
+     (strike-through-request-overlay-id request)]
+    [(highlight-sweep-request? request)
+     (highlight-sweep-request-overlay-id request)]
     [(camera-view-pan-to-request? request)
      (camera-view-pan-to-request-target-id request)]
     [(camera-view-pan-by-request? request)
@@ -4695,6 +6115,12 @@
      ;; complete ordinary Visual tree during the clip.
      '(translation rotation scale stroke-width fill-color stroke-color opacity
                    path-geometry formula-parts pointwise-map)]
+    [(apply-wave-request? request)
+     ;; The wave uses the same source-to-sampled-path protocol as a homotopy.
+     ;; It restores the exact source at completion, but cannot share a target
+     ;; with another writer while its interior replacement is active.
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts pointwise-map)]
     [(stroke-width-to-request? request)
      '(stroke-width)]
     [(fill-color-to-request? request)
@@ -4706,6 +6132,26 @@
     [(or (fade-in-request? request)
          (fade-out-request? request))
      '(opacity presence)]
+    [(enter-request? request)
+     (appearance-request-components
+      (enter-request-delta request)
+      #t)]
+    [(leave-request? request)
+     (appearance-request-components
+      (leave-request-delta request)
+      (leave-request-remove-at-end? request))]
+    [(or (reveal-in-request? request)
+         (reveal-out-request? request))
+     ;; The wrapper exposes affine placement and opacity, so those components
+     ;; deliberately remain compatible. It does not expose path/style/formula
+     ;; replacement protocols; declaring them here rejects an otherwise
+     ;; order-dependent overlap at clip validation time.
+     '(stroke-width fill-color stroke-color path-geometry formula-parts
+                    affine-map pointwise-map presence reveal-front)]
+    [(pulse-request? request)
+     (appearance-request-components
+      (pulse-request-delta request)
+      #f)]
     [(or (camera-view-pan-to-request? request)
          (camera-view-pan-by-request? request)
          (camera-view-follow-request? request))
@@ -4749,6 +6195,25 @@
      '(presence)]
     [(attention-request? request)
      '(attention)]
+    [(ripple-ring-request? request)
+     (list (ripple-ring-request-component request))]
+    [(confetti-request? request)
+     '(confetti)]
+    [(typewrite-request? request)
+     ;; Its interior wrapper substitutes the whole text Visual. Reserving the
+     ;; full ordinary-Visual surface makes simultaneous effects explicit rather
+     ;; than dependent on request order.
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts presence text-reveal)]
+    [(erase-text-request? request)
+     '(translation rotation scale stroke-width fill-color stroke-color opacity
+                   path-geometry formula-parts presence text-reveal)]
+    [(underline-sweep-request? request)
+     '(underline-sweep)]
+    [(strike-through-request? request)
+     '(strike-through)]
+    [(highlight-sweep-request? request)
+     '(highlight-sweep)]
     [(grow-request? request)
      '(translation rotation scale opacity presence)]
     [(draw-border-then-fill-request? request)
@@ -4879,6 +6344,7 @@
       (affine-map-animation? value)
       (pointwise-map-animation? value)
       (homotopy-map-animation? value)
+      (wave-animation? value)
       (stroke-width-animation? value)
       (fill-color-animation? value)
       (stroke-color-animation? value)
@@ -4888,12 +6354,22 @@
       (camera-view-fit-animation? value)
       (camera3d-compiled-animation? value)
       (opacity-animation? value)
+      (appearance-animation? value)
+      (reveal-animation? value)
+      (pulse-animation? value)
       (path-morph-animation? value)
       (normalized-path-morph-animation? value)
       (transform-shape-animation? value)
       (transform-matching-visuals-animation? value)
       (transform-from-copy-animation? value)
       (attention-animation? value)
+      (ripple-ring-animation? value)
+      (confetti-animation? value)
+      (typewrite-animation? value)
+      (erase-text-animation? value)
+      (underline-sweep-animation? value)
+      (strike-through-animation? value)
+      (highlight-sweep-animation? value)
       (grow-animation? value)
       (border-fill-animation? value)
       (formula-parts-transform-animation? value)
@@ -4941,6 +6417,8 @@
      (apply-pointwise-map-animation state animation progress)]
     [(homotopy-map-animation? animation)
      (apply-homotopy-map-animation state animation progress)]
+    [(wave-animation? animation)
+     (apply-wave-animation state animation progress)]
     [(stroke-width-animation? animation)
      (apply-stroke-width-animation state animation progress)]
     [(fill-color-animation? animation)
@@ -4959,6 +6437,12 @@
      (apply-camera3d-compiled-animation state animation progress)]
     [(opacity-animation? animation)
      (apply-opacity-animation state animation progress)]
+    [(appearance-animation? animation)
+     (apply-appearance-animation state animation progress)]
+    [(reveal-animation? animation)
+     (apply-reveal-animation state animation progress)]
+    [(pulse-animation? animation)
+     (apply-pulse-animation state animation progress)]
     [(path-morph-animation? animation)
      (apply-path-morph-animation state animation progress)]
     [(normalized-path-morph-animation? animation)
@@ -4971,6 +6455,20 @@
      (apply-transform-from-copy-animation state animation progress)]
     [(attention-animation? animation)
      (apply-attention-animation state animation progress)]
+    [(ripple-ring-animation? animation)
+     (apply-ripple-ring-animation state animation progress)]
+    [(confetti-animation? animation)
+     (apply-confetti-animation state animation progress)]
+    [(typewrite-animation? animation)
+     (apply-typewrite-animation state animation progress)]
+    [(erase-text-animation? animation)
+     (apply-erase-text-animation state animation progress)]
+    [(underline-sweep-animation? animation)
+     (apply-underline-sweep-animation state animation progress)]
+    [(strike-through-animation? animation)
+     (apply-strike-through-animation state animation progress)]
+    [(highlight-sweep-animation? animation)
+     (apply-highlight-sweep-animation state animation progress)]
     [(grow-animation? animation)
      (apply-grow-animation state animation progress)]
     [(border-fill-animation? animation)
@@ -5828,6 +7326,71 @@
          (homotopy-map-animation-target-id animation)
          replacement))))
 
+; apply-wave-animation : scene-state? wave-animation? finite-real? -> scene-state?
+;; Samples the wave directly from immutable clip-start geometry. The coordinate
+;; used for wavelength is target-local, while the resulting point is mapped
+;; back through the captured affine frame before the normal nested rebase.
+(define (apply-wave-animation state animation progress)
+  (cond
+    [(zero? progress) state]
+    [(= progress 1)
+     (scene-state-update
+      state
+      (wave-animation-target-id animation)
+      (wave-animation-source animation))]
+    [else
+     (define envelope
+       (let ([sine (sin (* pi progress))]) (* sine sine)))
+     (define local->world
+       (wave-animation-local->world animation))
+     (define world->local
+       (wave-animation-world->local animation))
+     (define direction
+       (wave-animation-direction animation))
+     (define amplitude
+       (wave-animation-amplitude animation))
+     (define wavelength
+       (wave-animation-wavelength animation))
+     (define cycles
+       (wave-animation-cycles animation))
+     (define phase
+       (wave-animation-phase animation))
+     (define (wave-point world-point)
+       (define local-point
+         (affine2-apply-point world->local world-point))
+       (define coordinate
+         (+ (* (vec2-x local-point) (vec2-x direction))
+            (* (vec2-y local-point) (vec2-y direction))))
+       (define displacement
+         (* amplitude envelope
+            (sin (+ (* 2 pi
+                       (- (/ coordinate wavelength)
+                          (* cycles progress)))
+                    phase))))
+       (affine2-apply-point
+        local->world
+        (vec2+ local-point (vec2-scale displacement direction))))
+     (define world-result
+       (pointwise-map-visual
+        (wave-animation-source-world animation)
+        wave-point
+        1
+        #:samples 24
+        #:adaptive? #t
+        #:tolerance 1/32
+        #:max-depth 8
+        #:discontinuities 'split))
+     (define parent-map
+       (wave-animation-parent-map animation))
+     (define replacement
+       (if (equal? parent-map identity-affine2)
+           world-result
+           (affine-map world-result (affine2-invert parent-map))))
+     (scene-state-update
+      state
+      (wave-animation-target-id animation)
+      replacement)]))
+
 ; apply-stroke-width-animation : scene-state? stroke-width-animation?
 ;                                finite-real? -> scene-state?
 ;;   Applies one compiled cosmetic stroke-width transition at progress.
@@ -6035,6 +7598,139 @@
     (real-lerp (opacity-animation-from animation)
                (opacity-animation-to animation)
                progress))))
+
+; apply-appearance-animation : scene-state? appearance-animation? finite-real?
+;;                              -> scene-state?
+;; Samples all modified affine/opacity components from one captured pair rather
+;; than chaining per-component updates. Exact endpoints retain the original
+;; source/destination Visual values held by the compiled leaf.
+(define (apply-appearance-animation state animation progress)
+  (define id (appearance-animation-target-id animation))
+  (define current (scene-state-ref state id))
+  (scene-state-update
+   state
+   id
+   (appearance-sample-visual
+    current
+    (appearance-animation-source animation)
+    (appearance-animation-destination animation)
+    (appearance-animation-delta animation)
+    progress)))
+
+; apply-reveal-animation : scene-state? reveal-animation? unit-real?
+;                           -> scene-state?
+;; Applies a local clip to whichever affine/opacity state earlier compatible
+;; requests have produced in this sample. This makes translation, rotation,
+;; scale, and opacity composition independent of request order.
+(define (apply-reveal-animation state animation progress)
+  (define id (reveal-animation-target-id animation))
+  (cond
+    [(zero? progress) state]
+    [(and (= progress 1)
+          (eq? (reveal-animation-lifecycle animation) 'reveal-in))
+     (scene-state-update
+      state
+      id
+      (reveal-restore-presentation
+       (reveal-animation-source animation)
+       (scene-state-ref state id)))]
+    [else
+     (define current (scene-state-ref state id))
+     (define local-progress
+       (if (eq? (reveal-animation-lifecycle animation) 'reveal-out)
+           (- 1 progress)
+           progress))
+     (scene-state-update
+      state
+      id
+      (reveal-wrap-visual
+       (reveal-animation-source animation)
+       (reveal-front-path
+        (reveal-animation-front animation)
+        (reveal-animation-layout-box animation)
+        local-progress)
+       current))]))
+
+; apply-pulse-animation : scene-state? pulse-animation? unit-real?
+;                         -> scene-state?
+;; Every phase is sampled from the captured source. Components not requested by
+;; the pulse remain in `current`, so independent movement stays compositional.
+(define (apply-pulse-animation state animation progress)
+  (define id (pulse-animation-target-id animation))
+  (define current (scene-state-ref state id))
+  (scene-state-update
+   state
+   id
+   (appearance-sample-visual
+    current
+    (pulse-animation-source animation)
+    (appearance-relative-visual
+     (pulse-animation-source animation)
+     (pulse-animation-delta animation))
+    (pulse-animation-delta animation)
+    (pulse-envelope progress (pulse-animation-cycles animation)))))
+
+(define (pulse-envelope progress cycles)
+  (cond
+    [(or (zero? progress) (= progress 1)) 0]
+    [else
+     (define wave (sin (* pi cycles progress)))
+     (* wave wave)]))
+
+; appearance-sample-visual : visual? visual? visual? appearance-delta2d?
+;                            unit-real? -> visual?
+;; Applies only the components declared by the lifecycle delta. This is what
+;; lets an opacity-only enter coexist with a simultaneous rotation or movement
+;; without request ordering deciding the rendered result.
+(define (appearance-sample-visual current source destination delta progress)
+  (define sampled current)
+  (define source-transform (visual-transform source))
+  (define destination-transform (visual-transform destination))
+  (define with-translation
+    (if (appearance-affects-translation? delta)
+        (visual-with-position
+         sampled
+         (appearance-component-sample
+          (affine-transform-translation source-transform)
+          (affine-transform-translation destination-transform)
+          progress
+          vec2-lerp))
+        sampled))
+  (define with-rotation
+    (if (zero? (appearance-delta2d-rotation-offset delta))
+        with-translation
+        (visual-with-rotation
+         with-translation
+         (appearance-component-sample
+          (affine-transform-rotation source-transform)
+          (affine-transform-rotation destination-transform)
+          progress
+          real-lerp))))
+  (define with-scale
+    (if (equal? (appearance-delta2d-scale-factor delta) (vec2 1 1))
+        with-rotation
+        (visual-with-scale
+         with-rotation
+         (appearance-component-sample
+          (affine-transform-scale source-transform)
+          (affine-transform-scale destination-transform)
+          progress
+          vec2-lerp))))
+  (if (= (appearance-delta2d-opacity-factor delta) 1)
+      with-scale
+      (visual-with-opacity
+       with-scale
+       (appearance-component-sample
+        (visual-opacity source)
+        (visual-opacity destination)
+        progress
+        real-lerp))))
+
+(define (appearance-component-sample source destination progress interpolate)
+  (cond
+    [(zero? progress) source]
+    [(= progress 1) destination]
+    [else (interpolate source destination progress)]))
 
 ; apply-path-morph-animation : scene-state? path-morph-animation?
 ;                              finite-real? -> scene-state?
@@ -6434,8 +8130,260 @@
             (vec2+ center (vec2-scale end-radius direction))
             #:id (string->symbol (format "~a-ray-~a" id index))
             #:stroke color #:stroke-width stroke-width))
-    #:id id)
+   #:id id)
    (- 1 progress)))
+
+; apply-ripple-ring-animation : scene-state? ripple-ring-animation? finite-real?
+;                               -> scene-state?
+;; Samples one live-layout ripple ring. The public ripple constructor lowers a
+;; finite collection of these leaves through lagged-start, which gives each
+;; ring its own local clock while keeping helper cleanup local and exact.
+(define (apply-ripple-ring-animation state animation progress)
+  (define overlay-id
+    (ripple-ring-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(or (zero? progress) (= progress 1))
+     without-prior-overlay]
+    [else
+     (define target-paths
+       (ripple-ring-animation-target-paths animation))
+     (for ([target-path (in-list target-paths)])
+       (unless (scene-state-has? without-prior-overlay target-path)
+         (raise-arguments-error
+          'ripple
+          "a target Visual present at every requested selection path while sampled"
+          "target-path" target-path)))
+     (define targets
+       (for/list ([target-path (in-list target-paths)])
+         (scene-state-resolved-world-ref without-prior-overlay target-path)))
+     (define target-box (renderer-layout-boxes targets))
+     (unless target-box
+       (raise-arguments-error
+        'ripple
+        "a nonempty selection of renderer-measurable Visuals"
+        "target-paths" target-paths))
+     (define outline
+       (make-attention-outline
+        overlay-id
+        target-box
+        (ripple-ring-animation-padding animation)
+        (ripple-ring-animation-color animation)
+        (ripple-ring-animation-stroke-width animation)))
+     (define expansion
+       (+ 1 (* (ripple-ring-animation-spacing animation) progress)))
+     (define sampled
+     (visual-with-opacity
+        (visual-with-scale outline expansion)
+        (* (visual-opacity outline) (- 1 progress))))
+     (scene-state-add without-prior-overlay sampled)]))
+
+; apply-confetti-animation : scene-state? confetti-animation? finite-real?
+;                            -> scene-state?
+;; Adds the immutable particle plan only for interior samples. Motion is the
+;; direct ballistic formula, so seeking frames does not accumulate integration
+;; error or depend on playback history.
+(define (apply-confetti-animation state animation progress)
+  (define overlay-id (confetti-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(or (zero? progress) (= progress 1)) without-prior-overlay]
+    [else
+     (scene-state-add
+      without-prior-overlay
+      (group
+       (for/list ([piece (in-list (confetti-animation-pieces animation))])
+         (confetti-piece-visual
+          piece
+          (confetti-animation-origin animation)
+          (confetti-animation-gravity animation)
+          progress))
+       #:id overlay-id))]))
+
+; apply-typewrite-animation : scene-state? typewrite-animation? finite-real?
+;                              -> scene-state?
+;; The visible count is a direct function of clip progress.  It never depends
+;; on playback order; the source visual is installed exactly at progress one.
+(define (apply-typewrite-animation state animation progress)
+  (define source (typewrite-animation-source animation))
+  (define segment-count (typewrite-animation-segment-count animation))
+  (define revealed-count
+    (cond [(<= progress 0) 0]
+          [(>= progress 1) segment-count]
+          [else
+           (min segment-count
+                (inexact->exact
+                 (floor (* progress segment-count))))]))
+  (scene-state-update
+   state
+   (typewrite-animation-target-id animation)
+   (if (= revealed-count segment-count)
+       source
+       (make-text-reveal-visual source
+                                 (typewrite-animation-unit animation)
+                                 revealed-count
+                                 segment-count
+                                 #:cursor? (typewrite-animation-cursor? animation)
+                                 #:cursor-style
+                                 (typewrite-animation-cursor-style animation)))))
+
+; apply-erase-text-animation : scene-state? erase-text-animation? finite-real?
+;                               -> scene-state?
+;; Reverse text visibility is also a direct function of time. At progress one
+;; the target disappears structurally; no empty text Visual survives.
+(define (apply-erase-text-animation state animation progress)
+  (define target-id (erase-text-animation-target-id animation))
+  (cond
+    [(>= progress 1)
+     (if (scene-state-has? state target-id)
+         (scene-state-remove state target-id)
+         state)]
+    [else
+     (define segment-count (erase-text-animation-segment-count animation))
+     (define revealed-count
+       (if (<= progress 0)
+           segment-count
+           (min segment-count
+                (inexact->exact
+                 (ceiling (* (- 1 progress) segment-count))))))
+     (scene-state-update
+      state
+      target-id
+      (if (= revealed-count segment-count)
+          (erase-text-animation-source animation)
+          (make-text-reveal-visual
+           (erase-text-animation-source animation)
+           (erase-text-animation-unit animation)
+           revealed-count
+           segment-count
+           #:cursor? (erase-text-animation-cursor? animation)
+           #:cursor-style
+           (erase-text-animation-cursor-style animation))))]))
+
+; apply-underline-sweep-animation : scene-state? underline-sweep-animation?
+;                                    finite-real? -> scene-state?
+;; The helper is a normal path Visual. A direct partial geometry makes seeking
+;; and repeated sampling independent of prior display frames.
+(define (apply-underline-sweep-animation state animation progress)
+  (define overlay-id (underline-sweep-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(<= progress 0) without-prior-overlay]
+    [else
+     (define complete (underline-sweep-animation-complete animation))
+     (scene-state-add
+      without-prior-overlay
+      (path-visual-with-path
+       complete
+       (path-geometry-partial (path-visual-path complete) 0 progress)))]))
+
+; apply-strike-through-animation : scene-state? strike-through-animation?
+;                                  finite-real? -> scene-state?
+(define (apply-strike-through-animation state animation progress)
+  (define overlay-id (strike-through-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(<= progress 0) without-prior-overlay]
+    [else
+     (define complete (strike-through-animation-complete animation))
+     (scene-state-add
+      without-prior-overlay
+      (path-visual-with-path
+       complete
+       (path-geometry-partial (path-visual-path complete) 0 progress)))]))
+
+; apply-highlight-sweep-animation : scene-state? highlight-sweep-animation?
+;                                   finite-real? -> scene-state?
+;; Inserts the rectangle immediately behind the target rather than appending
+;; it as a foreground overlay. This is a drawing-order property of the
+;; immutable scene state, not a renderer-specific alpha trick.
+(define (apply-highlight-sweep-animation state animation progress)
+  (define overlay-id (highlight-sweep-animation-overlay-id animation))
+  (define without-prior-overlay
+    (if (scene-state-has? state overlay-id)
+        (scene-state-remove state overlay-id)
+        state))
+  (cond
+    [(<= progress 0) without-prior-overlay]
+    [else
+     (scene-state-add-before
+      without-prior-overlay
+      (make-highlight-sweep-visual animation progress)
+      (highlight-sweep-animation-target-id animation))]))
+
+(define (make-highlight-sweep-visual animation progress)
+  (define left (highlight-sweep-animation-left animation))
+  (define right (highlight-sweep-animation-right animation))
+  (define bottom (highlight-sweep-animation-bottom animation))
+  (define top (highlight-sweep-animation-top animation))
+  (define width (* (- right left) progress))
+  (rectangle
+   #:id (highlight-sweep-animation-overlay-id animation)
+   #:width width
+   #:height (- top bottom)
+   #:center (vec2 (+ left (/ width 2)) (/ (+ bottom top) 2))
+   #:fill (highlight-sweep-animation-color animation)
+   #:stroke #f
+   #:stroke-width 0))
+
+; scene-state-add-before : scene-state? visual? symbol? -> scene-state?
+;; Adds a fresh root Visual without changing the target's relative drawing
+;; order among the pre-existing scene items.
+(define (scene-state-add-before state visual before-id)
+  (unless (scene-state-has? state before-id)
+    (raise-arguments-error
+     'highlight-sweep
+     "a target Visual still present while the highlight is sampled"
+     "target-id" before-id))
+  (define added (scene-state-add state visual))
+  (define (insert-before ids)
+    (cond [(null? ids)
+           (raise-arguments-error
+            'scene-state-add-before
+            "a target root ID present in the scene drawing order"
+            "target-id" before-id)]
+          [(eq? (car ids) before-id)
+           (cons (visual-id visual) ids)]
+          [else
+           (cons (car ids) (insert-before (cdr ids)))]))
+  (scene-state
+   (scene-state-visuals-by-id added)
+   (insert-before (scene-state-drawing-order state))
+   (scene-state-values-by-id added)))
+
+(define (confetti-piece-visual piece origin-value gravity progress)
+  (define x
+    (+ (vec2-x origin-value) (* (confetti-piece-x-velocity piece) progress)))
+  (define y
+    (+ (vec2-y origin-value)
+       (* (confetti-piece-y-velocity piece) progress)
+       (* -1/2 gravity progress progress)))
+  (visual-with-position
+   (polygon
+    (list (vec2 -1/12 -1/24)
+          (vec2 1/12 -1/24)
+          (vec2 1/12 1/24)
+          (vec2 -1/12 1/24))
+    #:id (confetti-piece-id piece)
+    #:rotation (+ (confetti-piece-rotation piece)
+                  (* (confetti-piece-spin piece) progress))
+    #:opacity (- 1 progress)
+    #:fill (confetti-piece-color piece)
+    #:stroke #f
+    #:stroke-width 0)
+   (vec2 x y)))
 
 (define (make-passing-flash id target progress time-width color stroke-width)
   (unless (path-visual? target)
@@ -6469,6 +8417,80 @@
             #:end-tip? (arrow-visual-end-tip? visual))]
     [else
      (raise-argument-error 'grow-start-visual "supported grow kind" kind)]))
+
+; appearance-relative-visual : affine/opacity-visual? appearance-delta2d?
+;;                               -> affine/opacity-visual?
+;; Produces the relative endpoint used at enter start or leave end. Translation
+;; offsets are in the Visual's local reference frame. Scaling and rotation are
+;; about an explicit local point (or the stable local reference origin).
+(define (appearance-relative-visual visual delta)
+  (check-appearance-visual 'appearance-relative-visual visual)
+  (define destination-transform (visual-transform visual))
+  (define destination-scale (affine-transform-scale destination-transform))
+  (define relative-scale
+    (appearance-effective-scale
+     (vec2* destination-scale (appearance-delta2d-scale-factor delta))))
+  (define relative-rotation
+    (+ (affine-transform-rotation destination-transform)
+       (appearance-delta2d-rotation-offset delta)))
+  (define about (appearance-about-point delta))
+  (define anchored-destination-point
+    (affine-transform-apply-point destination-transform about))
+  (define relative-with-origin
+    (make-affine-transform #:rotation relative-rotation #:scale relative-scale))
+  (define anchor-preserving-translation
+    (vec2-
+     anchored-destination-point
+     (affine-transform-apply-vector relative-with-origin about)))
+  (define local-translation
+    (affine-transform-apply-vector
+     destination-transform
+     (appearance-delta2d-translation-offset delta)))
+  (define relative-transform
+    (make-affine-transform
+     #:translation (vec2+ anchor-preserving-translation local-translation)
+     #:rotation relative-rotation
+     #:scale relative-scale))
+  (visual-with-opacity
+   (visual-with-transform visual relative-transform)
+   (* (visual-opacity visual) (appearance-delta2d-opacity-factor delta))))
+
+(define (appearance-inspection kind target-id delta remove-at-end?)
+  (appearance-effect-inspection
+   kind
+   (hasheq 'target target-id
+           'lifecycle kind
+           'translation-offset (appearance-delta2d-translation-offset delta)
+           'scale-factor (appearance-delta2d-scale-factor delta)
+           'rotation-offset (appearance-delta2d-rotation-offset delta)
+           'opacity-factor (appearance-delta2d-opacity-factor delta)
+           'about (appearance-delta2d-about delta)
+           'collapsed? (or (zero? (vec2-x (appearance-delta2d-scale-factor delta)))
+                            (zero? (vec2-y (appearance-delta2d-scale-factor delta))))
+           'written-components
+           (appearance-request-components
+            delta
+            (or (eq? kind 'enter) remove-at-end?))
+           'remove-at-end? remove-at-end?)))
+
+(define (reveal-inspection kind target-id front remove-at-end?)
+  (reveal-effect-inspection
+   kind
+   (hasheq 'target target-id
+           'lifecycle kind
+           'front front
+           'written-components
+           '(stroke-width fill-color stroke-color path-geometry formula-parts
+                          affine-map pointwise-map presence reveal-front)
+           'remove-at-end? remove-at-end?)))
+
+(define (pulse-inspection target-id delta cycles)
+  (appearance-effect-inspection
+   'pulse
+   (hasheq 'target target-id
+           'cycles cycles
+           'written-components (appearance-request-components delta #f)
+           'endpoint-action 'restore-source)))
 
 (define (apply-grow-animation state animation progress)
   (define id (grow-animation-target-id animation))
@@ -6985,6 +9007,39 @@
        'scene-play
        visual
        (opacity-animation-to animation)))]
+    [(appearance-animation? animation)
+     (if (appearance-animation-remove-at-end? animation)
+         (scene-state-remove state (appearance-animation-target-id animation))
+         (scene-state-update
+          state
+          (appearance-animation-target-id animation)
+          (appearance-sample-visual
+           (scene-state-ref state (appearance-animation-target-id animation))
+           (appearance-animation-source animation)
+           (appearance-animation-destination animation)
+           (appearance-animation-delta animation)
+           1)))]
+    [(reveal-animation? animation)
+     (define id (reveal-animation-target-id animation))
+     (if (eq? (reveal-animation-lifecycle animation) 'reveal-out)
+         (scene-state-remove state id)
+         (scene-state-update
+          state
+          id
+          (reveal-restore-presentation
+           (reveal-animation-source animation)
+           (scene-state-ref state id))))]
+    [(pulse-animation? animation)
+     (define id (pulse-animation-target-id animation))
+     (scene-state-update
+      state
+      id
+      (appearance-sample-visual
+       (scene-state-ref state id)
+       (pulse-animation-source animation)
+       (pulse-animation-source animation)
+       (pulse-animation-delta animation)
+       0))]
     [(transform-shape-animation? animation)
      (define cleaned-state
        (if (scene-state-has?
@@ -7029,6 +9084,62 @@
      (if (scene-state-has? state (attention-animation-overlay-id animation))
          (scene-state-remove state (attention-animation-overlay-id animation))
          state)]
+    [(ripple-ring-animation? animation)
+     (if (scene-state-has? state (ripple-ring-animation-overlay-id animation))
+         (scene-state-remove state (ripple-ring-animation-overlay-id animation))
+         state)]
+    [(confetti-animation? animation)
+     (if (scene-state-has? state (confetti-animation-overlay-id animation))
+         (scene-state-remove state (confetti-animation-overlay-id animation))
+         state)]
+    [(typewrite-animation? animation)
+     (scene-state-update
+      state
+      (typewrite-animation-target-id animation)
+      (typewrite-animation-source animation))]
+    [(erase-text-animation? animation)
+     (if (scene-state-has? state (erase-text-animation-target-id animation))
+         (scene-state-remove state (erase-text-animation-target-id animation))
+         state)]
+    [(underline-sweep-animation? animation)
+     (if (underline-sweep-animation-retain? animation)
+         (scene-state-add
+          (if (scene-state-has? state (underline-sweep-animation-overlay-id animation))
+              (scene-state-remove state (underline-sweep-animation-overlay-id animation))
+              state)
+          (underline-sweep-animation-complete animation))
+         (if (scene-state-has? state (underline-sweep-animation-overlay-id animation))
+             (scene-state-remove state (underline-sweep-animation-overlay-id animation))
+             state))]
+    [(strike-through-animation? animation)
+     (if (strike-through-animation-retain? animation)
+         (scene-state-add
+          (if (scene-state-has? state (strike-through-animation-overlay-id animation))
+              (scene-state-remove state (strike-through-animation-overlay-id animation))
+              state)
+          (strike-through-animation-complete animation))
+         (if (scene-state-has? state (strike-through-animation-overlay-id animation))
+             (scene-state-remove state (strike-through-animation-overlay-id animation))
+             state))]
+    [(highlight-sweep-animation? animation)
+     (define cleared-state
+       (if (scene-state-has? state (highlight-sweep-animation-overlay-id animation))
+           (scene-state-remove state (highlight-sweep-animation-overlay-id animation))
+           state))
+     (if (and (highlight-sweep-animation-retain? animation)
+              (scene-state-has?
+               cleared-state
+               (highlight-sweep-animation-target-id animation)))
+         (scene-state-add-before
+          cleared-state
+          (make-highlight-sweep-visual animation 1)
+          (highlight-sweep-animation-target-id animation))
+         cleared-state)]
+    [(wave-animation? animation)
+     (scene-state-update
+      state
+      (wave-animation-target-id animation)
+      (wave-animation-source animation))]
     [(formula-parts-transform-animation? animation)
      (define id
        (formula-parts-transform-animation-target-id animation))
@@ -7227,6 +9338,168 @@
   (path-geometry-point-at path start)
   (path-geometry-point-at path end)
   (void))
+
+(define appearance-minimum-scale 1/1000)
+
+; appearance-scale-factor? : any/c -> boolean?
+;; Unlike ordinary authored affine scales, lifecycle effects accept zero as a
+;; semantic collapse endpoint. Interior samples use appearance-minimum-scale.
+(define (appearance-scale-factor? value)
+  (or (and (finite-real? value)
+           (not (negative? value)))
+      (and (vec2? value)
+           (finite-real? (vec2-x value))
+           (finite-real? (vec2-y value))
+           (not (negative? (vec2-x value)))
+           (not (negative? (vec2-y value))))))
+
+; appearance-scale-factor->vec2 : appearance-scale-factor? -> vec2?
+(define (appearance-scale-factor->vec2 value)
+  (unless (appearance-scale-factor? value)
+    (raise-argument-error
+     'appearance-scale-factor->vec2
+     "nonnegative finite real or vec2 with nonnegative components"
+     value))
+  (if (vec2? value) value (vec2 value value)))
+
+; appearance-effective-scale : vec2? -> vec2?
+;; Keeps the authored affine protocol strict while representing a semantic zero
+;; collapse through an invisible endpoint/proxy and a named interior epsilon.
+(define (appearance-effective-scale scale)
+  (vec2 (if (zero? (vec2-x scale)) appearance-minimum-scale (vec2-x scale))
+        (if (zero? (vec2-y scale)) appearance-minimum-scale (vec2-y scale))))
+
+; appearance-opacity-factor? : any/c -> boolean?
+(define (appearance-opacity-factor? value)
+  (and (finite-real? value) (<= 0 value 1)))
+
+; appearance-about? : any/c -> boolean?
+(define (appearance-about? value)
+  (or (memq value '(center reference)) (vec2? value)))
+
+; slide-direction-offset : symbol? (or/c vec2? slide-direction-symbol?)
+;                           nonnegative-finite-real? -> vec2?
+;; Normalizes vector directions so distance remains a world-unit quantity.
+;; Cardinal symbols keep the common storytelling spelling concise.
+(define (slide-direction-offset who direction distance)
+  (unless (and (finite-real? distance) (not (negative? distance)))
+    (raise-argument-error who "nonnegative finite real?" distance))
+  (define raw-direction
+    (cond
+      [(vec2? direction) direction]
+      [(eq? direction 'left) (vec2 -1 0)]
+      [(eq? direction 'right) (vec2 1 0)]
+      [(eq? direction 'up) (vec2 0 1)]
+      [(eq? direction 'down) (vec2 0 -1)]
+      [else
+       (raise-argument-error
+        who
+        "(or/c vec2? 'left 'right 'up 'down)"
+        direction)]))
+  (unless (and (finite-real? (vec2-x raw-direction))
+               (finite-real? (vec2-y raw-direction)))
+    (raise-argument-error who "vec2 with finite components" direction))
+  (define scale
+    (max (abs (vec2-x raw-direction)) (abs (vec2-y raw-direction))))
+  (unless (positive? scale)
+    (raise-arguments-error who "a nonzero slide direction" "direction" direction))
+  (define scaled-x (/ (vec2-x raw-direction) scale))
+  (define scaled-y (/ (vec2-y raw-direction) scale))
+  (define magnitude (sqrt (+ (* scaled-x scaled-x) (* scaled-y scaled-y))))
+  (vec2 (* distance (/ scaled-x magnitude))
+        (* distance (/ scaled-y magnitude))))
+
+; wipe-direction : symbol? (or/c vec2? wipe-direction-symbol?) -> vec2?
+;; Shares the documented cardinal/vector spelling with slide effects while a
+;; reveal front itself continues to receive one normalized vector.
+(define (wipe-direction who direction)
+  (slide-direction-offset who direction 1))
+
+; appearance-about-point : appearance-delta2d? -> vec2?
+;; Affine Visuals currently expose their stable local reference origin directly.
+;; For the initial 2D lifecycle API both named anchors therefore mean that
+;; reference point; an explicit local vec2 supplies a distinct pivot without
+;; renderer-measured layout dependencies.
+(define (appearance-about-point delta)
+  (define about (appearance-delta2d-about delta))
+  (if (vec2? about) about origin))
+
+; make-appearance-delta : symbol? any/c any/c any/c any/c any/c
+;;                          -> appearance-delta2d?
+(define (make-appearance-delta who translation-offset scale-factor
+                               rotation-offset opacity-factor about)
+  (unless (vec2? translation-offset)
+    (raise-argument-error who "vec2?" translation-offset))
+  (unless (appearance-scale-factor? scale-factor)
+    (raise-argument-error
+     who
+     "nonnegative finite real or vec2 with nonnegative components"
+     scale-factor))
+  (unless (finite-real? rotation-offset)
+    (raise-argument-error who "finite real?" rotation-offset))
+  (unless (appearance-opacity-factor? opacity-factor)
+    (raise-argument-error who "finite real in the closed unit interval" opacity-factor))
+  (unless (appearance-about? about)
+    (raise-argument-error who "(or/c 'center 'reference vec2?)" about))
+  (appearance-delta2d
+   translation-offset
+   (appearance-scale-factor->vec2 scale-factor)
+   rotation-offset
+   opacity-factor
+   about))
+
+; appearance-request-components : appearance-delta2d? boolean? -> (listof symbol?)
+;; Declares only target components that differ from identity, plus presence for
+;; structural introduction/removal. This keeps opacity-only lifecycle effects
+;; compatible with independent translations or rotations.
+(define (appearance-affects-translation? delta)
+  (or (not (equal? (appearance-delta2d-translation-offset delta) origin))
+      (and (not (equal? (appearance-about-point delta) origin))
+           (or (not (equal? (appearance-delta2d-scale-factor delta) (vec2 1 1)))
+               (not (zero? (appearance-delta2d-rotation-offset delta)))))))
+
+(define (appearance-request-components delta presence?)
+  (append
+   (if (appearance-affects-translation? delta) '(translation) '())
+   (if (equal? (appearance-delta2d-scale-factor delta) (vec2 1 1))
+       '()
+       '(scale))
+   (if (zero? (appearance-delta2d-rotation-offset delta))
+       '()
+       '(rotation))
+   (if (= (appearance-delta2d-opacity-factor delta) 1)
+       '()
+       '(opacity))
+   (if presence? '(presence) '())))
+
+; check-appearance-visual : symbol? any/c -> void?
+(define (check-appearance-visual who visual)
+  (unless (and (visual? visual)
+               (affine-visual? visual)
+               (opacity-visual? visual))
+    (raise-argument-error
+     who
+     "Visual supporting affine placement and opacity"
+     visual)))
+
+; check-appearance-target : symbol? any/c -> void?
+(define (check-appearance-target who target)
+  (unless (or (visual? target) (symbol? target) (visual-path? target))
+    (raise-argument-error who "(or/c visual? symbol? visual-path?)" target))
+  (when (visual? target)
+    (check-appearance-visual who target))
+  (visual-target-id target who)
+  (void))
+
+(define (check-reveal-visual who visual)
+  (check-appearance-visual who visual))
+
+(define (check-reveal-target who target)
+  (check-appearance-target who target))
+
+(define (check-reveal-front who front)
+  (unless (reveal-front? front)
+    (raise-argument-error who "reveal-front?" front)))
 
 ; check-animation-scale : symbol? any/c -> void?
 ;;   Raises an argument error unless scale is positive and finite.

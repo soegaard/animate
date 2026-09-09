@@ -22,6 +22,36 @@ lines and upright numeric labels from an existing coordinate object. These
 constructors produce immutable snapshots. Changing the source axes or number
 line later does not update an already constructed grid or label list.
 
+@section[#:tag "effects-cookbook"]{Composing Exact Enter/Leave and Text Effects}
+
+The effects vocabulary is ordinary scene composition, so it has no playback
+history: sampling a frame directly has the same result as reaching it through
+Play. Use @racket[enter] to install a new affine Visual from a relative
+appearance, and @racket[leave] to remove a resolved Visual through the paired
+relative appearance. The final endpoints are exact: @racket[enter] retains the
+author's original Visual, while the default @racket[leave] removes its target.
+
+@racketblock[
+(define card
+  (rectangle #:id 'card #:width 3 #:height 2 #:fill "gold" #:stroke "sienna"))
+
+(scene-play
+ (scene-add (make-scene) card)
+ (succession
+  (pulse 'card #:scale-factor 6/5)
+  (leave 'card #:translation-offset (vec2 0 1) #:opacity-factor 0))
+ #:duration 2)
+]
+
+For text, @racket[typewrite] accepts a complete @racket[rich-text] Visual and
+reveals its final measured layout by grapheme, word, line, or span. Rich spans
+and wrapped paragraphs therefore keep their final line breaks while the effect
+advances. The current Pict renderer rejects interior samples for rotated or
+non-unit-scale text instead of reflowing a transformed prefix. See
+@filepath{examples/typewriter-and-decorations.rkt} for a complete renderable
+example, and @filepath{tools/benchmark-fx.rkt} for the non-gating rich-text
+preparation measurement.
+
 @defproc[(number-line [range axis-range?]
                       [#:id identifier symbol?]
                       [#:center center vec2? origin]

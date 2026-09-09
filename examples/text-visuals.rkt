@@ -92,7 +92,7 @@
                 (fade-to left-label 2/5)
                 (fade-to right-label 2/5)
                 #:duration 1))
-  (define exit
+  (define leaving
     (scene-play emphasis
                 (move-to card (vec2 6 1))
                 (rotate-by card 1/4)
@@ -101,7 +101,7 @@
                 (fade-out left-label)
                 (fade-out right-label)
                 #:duration 3/2))
-  (scene-wait exit 1/2))
+  (scene-wait leaving 1/2))
 
 
 ;;;

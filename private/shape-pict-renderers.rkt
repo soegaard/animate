@@ -31,6 +31,7 @@
                   pict-height
                   pict->bitmap
                   pict-width
+                  pin-over
                   scale
                   text)
          (only-in pict [rectangle pict-rectangle])
@@ -39,7 +40,8 @@
                   make-brush
                   make-color
                   make-font
-                  make-pen)
+                  make-pen
+                  region%)
          "affine-transform.rkt"
          "arrow-visual.rkt"
          "axes-visual.rkt"
@@ -59,6 +61,9 @@
          "renderer-resources.rkt"
          "svg-pict-renderer.rkt"
          "tagged-formula-pict-renderer.rkt"
+         "text-layout-preparation.rkt"
+         "text-reveal-visual.rkt"
+         "text-segmentation.rkt"
          "text-visual.rkt"
          "3d/view3d-pict-renderer.rkt"
          "visual-model.rkt")
@@ -142,14 +147,346 @@
   #:transparent
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
-     (text-visual? visual))
+     (or (text-visual? visual)
+         (text-reveal-visual? visual)))
    (define (pict-renderer-render renderer visual camera)
-     (text-visual->pict visual
-                        camera
-                        (text-pict-renderer-raster-cache renderer)))])
+     (cond [(text-visual? visual)
+            (text-visual->pict visual
+                               camera
+                               (text-pict-renderer-raster-cache renderer))]
+           [else
+            (text-reveal-visual->pict
+             renderer visual camera)]))]
+  #:methods gen:text-layout-preparer
+  [(define (text-layout-preparer-supports? _renderer visual _camera)
+     (text-visual? visual))
+   (define (text-layout-preparer-prepare renderer visual camera)
+     (prepare-pict-text-layout renderer visual camera))])
 
 ;; text-pict-renderer renders immutable plain, paragraph, and rich text Visuals
 ;; with Pict fonts.
+
+(define (prepare-pict-text-layout renderer visual camera)
+  (unless (text-visual? visual)
+    (raise-argument-error 'prepare-pict-text-layout "text-visual?" visual))
+  (define graphemes (segment-text-visual visual #:unit 'grapheme))
+  (define lines (segment-text-visual visual #:unit 'line))
+  ;; This calls the same frozen whole-layout path used by ordinary text
+  ;; rendering, so the snapshot cache identity includes the active camera and
+  ;; every layout-affecting text style input.
+  (define full-pict
+    (text-visual->pict visual camera (text-pict-renderer-raster-cache renderer)))
+  (define stable-fragments?
+    (pict-stable-fragment-layout? visual))
+  (define clusters
+    (if stable-fragments?
+        (pict-prepared-grapheme-clusters visual camera full-pict graphemes)
+        (list->vector
+         (for/list ([segment (in-list (text-segmentation-segments graphemes))])
+           ;; The Pict adapter freezes whole shaped layouts, but its public
+           ;; drawing interface cannot expose reliable per-grapheme bounds for
+           ;; ligatures or cross-run kerning in general rich/wrapped text.
+           ;; Report that limitation explicitly instead of fabricating bounds
+           ;; from successively reflowed substrings.
+           (prepared-text-cluster segment #f #f)))))
+  (prepared-text-layout
+   (text-segmentation-source-key graphemes)
+   (text-segmentation-segments lines)
+   clusters
+   (vector 0 0 (pict-width full-pict) (pict-height full-pict))
+   (vector (pict-ascent full-pict) (pict-descent full-pict))
+   (vector 'pict (camera-scale camera))
+   (hash 'stable-layout? #t
+         'stable-fragments? stable-fragments?
+         'reason (if stable-fragments?
+                     'pict-frozen-token-layout
+                     'pict-whole-layout-only))))
+
+(define (text-reveal-visual->pict renderer visual camera)
+  (define source (text-reveal-visual-source visual))
+  (define complete
+    (text-visual->pict source camera (text-pict-renderer-raster-cache renderer)))
+  (define requested-count
+    (text-reveal-visual-revealed-count visual))
+  (define segment-count
+    (text-reveal-visual-segment-count visual))
+  (define (with-cursor presented visible-clusters)
+    (if (text-reveal-visual-cursor? visual)
+        (text-reveal-cursor-pict
+         presented
+         source
+         visible-clusters
+         (text-reveal-visual-cursor-style visual))
+        presented))
+  (cond
+    [(zero? requested-count)
+     (with-cursor (clip-pict-to-leading-width complete 0) '())]
+    [(= requested-count segment-count)
+     complete]
+    [else
+     (define layout (prepare-pict-text-layout renderer source camera))
+     (unless (prepared-text-layout-stable-fragments? layout)
+       (raise-arguments-error
+        'typewrite
+        "a text Visual with stable shaped-fragment support from the active renderer"
+        "visual" source
+        "renderer-diagnostics" (prepared-text-layout-diagnostics layout)))
+     (define segments
+       (text-segmentation-segments
+        (segment-text-visual source
+                             #:unit (text-reveal-visual-unit visual))))
+     (define reveal-source-end
+       (text-segment-source-end
+        (list-ref segments (sub1 (min requested-count (length segments))))))
+     (define visible-clusters
+       (for/list ([cluster (in-vector (prepared-text-layout-clusters layout))]
+                  #:when (<= (text-segment-source-end
+                              (prepared-text-cluster-segment cluster))
+                             reveal-source-end))
+         cluster))
+     (with-cursor
+      (clip-pict-to-cluster-bounds complete visible-clusters)
+      visible-clusters)]))
+
+;; text-reveal-cursor-pict : pict? text-visual?
+;;                            (listof prepared-text-cluster?) any/c -> pict?
+;; Draws a two-device-pixel marker at the final-layout reveal frontier.  The
+;; source Pict remains the complete frozen layout; the cursor is merely a
+;; renderer-local overlay, never a second semantic Visual or cache handle.
+(define (text-reveal-cursor-pict source visual clusters style)
+  (define last-bounds
+    (for/fold ([latest #f]) ([cluster (in-list clusters)])
+      (define bounds (prepared-text-cluster-bounds cluster))
+      (if (vector? bounds) bounds latest)))
+  (define raw-x (if last-bounds (vector-ref last-bounds 2) 0))
+  (define raw-top (if last-bounds (vector-ref last-bounds 1) 0))
+  (define raw-bottom (if last-bounds
+                         (vector-ref last-bounds 3)
+                         (pict-height source)))
+  (define cursor-width (max 1 (min 2 (pict-width source))))
+  (define cursor-height
+    (max 1 (min (pict-height source) (- raw-bottom raw-top))))
+  (define cursor-x
+    (max 0 (min (- (pict-width source) cursor-width) raw-x)))
+  (define cursor-y
+    (max 0 (min (- (pict-height source) cursor-height) raw-top)))
+  (pin-over
+   source cursor-x cursor-y
+   (colorize
+    (filled-rectangle cursor-width cursor-height)
+    (draw-color-spec (or style (text-visual-color visual))))))
+
+(define (clip-pict-to-leading-width source width)
+  (define clipped-width
+    (max 0 (min (pict-width source) width)))
+  (dc
+   (lambda (drawing-context x y)
+     (define old-region (send drawing-context get-clipping-region))
+     (define clip-region (new region% [dc drawing-context]))
+     (send clip-region set-rectangle x y clipped-width (pict-height source))
+     (when old-region (send clip-region intersect old-region))
+     (dynamic-wind
+       (lambda () (send drawing-context set-clipping-region clip-region))
+       (lambda () (draw-pict source drawing-context x y))
+       (lambda () (send drawing-context set-clipping-region old-region))))
+   (pict-width source)
+   (pict-height source)
+   (pict-ascent source)
+   (pict-descent source)))
+
+;; clip-pict-to-cluster-bounds : pict? (listof prepared-text-cluster?) -> pict?
+;; Draws only a union of prepared, final-layout glyph rectangles.  Each
+;; rectangle is a mask over the one frozen final Pict, so rich styling and line
+;; wrapping cannot reflow while a typewriter advances through its source.
+(define (clip-pict-to-cluster-bounds source clusters)
+  (dc
+   (lambda (drawing-context x y)
+     (define old-region (send drawing-context get-clipping-region))
+     (define clip-region (new region% [dc drawing-context]))
+     (for ([cluster (in-list clusters)])
+       (define bounds (prepared-text-cluster-bounds cluster))
+       (when (vector? bounds)
+         (define cluster-region (new region% [dc drawing-context]))
+         (send cluster-region set-rectangle
+               (+ x (vector-ref bounds 0))
+               (+ y (vector-ref bounds 1))
+               (max 0 (- (vector-ref bounds 2) (vector-ref bounds 0)))
+               (max 0 (- (vector-ref bounds 3) (vector-ref bounds 1))))
+         (send clip-region union cluster-region)))
+     (when old-region (send clip-region intersect old-region))
+     (dynamic-wind
+       (lambda () (send drawing-context set-clipping-region clip-region))
+       (lambda () (draw-pict source drawing-context x y))
+       (lambda () (send drawing-context set-clipping-region old-region))))
+   (pict-width source)
+   (pict-height source)
+   (pict-ascent source)
+   (pict-descent source)))
+
+;; The Pict backend forms a whole final local layout first.  It can then expose
+;; stable token placements for rich spans, explicit lines, and its deterministic
+;; word-wrapping pass. Rotation and non-unit scale remain intentionally refused:
+;; their Pict transforms change the local clip geometry and need a polygonal
+;; rather than rectangular masking protocol.
+(define (pict-stable-fragment-layout? visual)
+  (and (zero? (visual-rotation visual))
+       (equal? (visual-scale visual) (vec2 1 1))))
+
+(define (pict-prepared-grapheme-clusters visual camera full-pict graphemes)
+  (if (text-direct-single-run? visual)
+      (pict-prepared-direct-grapheme-clusters visual camera full-pict graphemes)
+      (pict-prepared-paragraph-grapheme-clusters visual camera full-pict graphemes)))
+
+(define (text-direct-single-run? visual)
+  (and (= (length (text-visual-spans visual)) 1)
+       (not (text-visual-width visual))
+       (not (text-string-has-line-break?
+             (text-span-content (car (text-visual-spans visual)))))))
+
+(define (pict-prepared-direct-grapheme-clusters visual camera full-pict graphemes)
+  (define span (car (text-visual-spans visual)))
+  (define content (text-visual-content visual))
+  (define content-pict
+    (text-span-content->pict visual span content camera))
+  (define content-width (pict-width content-pict))
+  (define text-start-x
+    (case (text-visual-horizontal-alignment visual)
+      [(left) content-width]
+      [(center right) 0]))
+  (define maximum-x (pict-width full-pict))
+  (define segments (text-segmentation-segments graphemes))
+  (define previous-ends
+    (let loop ([remaining segments] [previous-end 0] [reversed '()])
+      (cond [(null? remaining) (reverse reversed)]
+            [else
+             (loop (cdr remaining)
+                   (text-segment-source-end (car remaining))
+                   (cons previous-end reversed))])))
+  (list->vector
+   (for/list ([segment (in-list segments)]
+              [previous-end (in-list previous-ends)])
+     (define prefix-width
+       (pict-width
+        (text-span-content->pict
+         visual span
+         (substring content 0 (text-segment-source-end segment))
+         camera)))
+     (define previous-width
+       (pict-width
+        (text-span-content->pict
+         visual span
+         (substring content 0 previous-end)
+         camera)))
+     (prepared-text-cluster
+      segment
+      (vector (min maximum-x (+ text-start-x previous-width))
+              0
+              (min maximum-x (+ text-start-x prefix-width))
+              (pict-height full-pict))
+      (vector (pict-ascent full-pict) (pict-descent full-pict))))))
+
+;; pict-prepared-paragraph-grapheme-clusters : text-visual? camera? pict?
+;;                                                   text-segmentation?
+;;                                                -> (vectorof prepared-text-cluster?)
+;; Associates semantic graphemes with rectangles in the *final* rich/paragraph
+;; layout. A token's prefix measurement only chooses a clip edge inside its
+;; already-shaped final token Pict; it is never itself drawn.
+(define (pict-prepared-paragraph-grapheme-clusters visual camera full-pict graphemes)
+  (define paragraph-layout (text-paragraph-layout-for visual camera))
+  (define content-pict
+    (text-paragraph-layout->pict paragraph-layout visual))
+  (define-values (anchor-x anchor-y)
+    (text-content-anchor-offset visual content-pict))
+  (define placements
+    (text-paragraph-layout-placements paragraph-layout visual))
+  ;; A Unicode grapheme normally lies within one layout token.  It may,
+  ;; however, cross a rich-span boundary (for example a base character in one
+  ;; span followed by a combining mark in the next).  Retain that one semantic
+  ;; grapheme and collect every final-layout token it intersects instead of
+  ;; dropping its geometry or splitting it into styled code-point fragments.
+  (define (placements-for segment)
+    (for/list ([placement (in-list placements)]
+               #:do [(define token (text-layout-placement-token placement))]
+               #:when (and (< (text-layout-token-source-start token)
+                              (text-segment-source-end segment))
+                           (< (text-segment-source-start segment)
+                              (text-layout-token-source-end token))))
+      placement))
+  (define (fragment-bounds placement segment)
+    (define token (text-layout-placement-token placement))
+    (define complete-content (text-visual-content visual))
+    (define token-start (text-layout-token-source-start token))
+    (define token-end (text-layout-token-source-end token))
+    (define fragment-start (max token-start (text-segment-source-start segment)))
+    (define fragment-end (min token-end (text-segment-source-end segment)))
+    (define token-source (substring complete-content token-start token-end))
+    (define local-start (- fragment-start token-start))
+    (define local-end (- fragment-end token-start))
+    (define previous-width
+      (pict-width
+       (text-span-content->pict visual
+                                (text-layout-token-span token)
+                                (substring token-source 0 local-start)
+                                camera)))
+    (define prefix-width
+      (pict-width
+       (text-span-content->pict visual
+                                (text-layout-token-span token)
+                                (substring token-source 0 local-end)
+                                camera)))
+    (define left (+ anchor-x (text-layout-placement-x placement) previous-width))
+    (define right (+ anchor-x (text-layout-placement-x placement) prefix-width))
+    (define top (+ anchor-y (text-layout-placement-y placement)))
+    (define bottom (+ top (pict-height (text-layout-token-pict token))))
+    (vector (max 0 left) (max 0 top)
+            (min (pict-width full-pict) right)
+            (min (pict-height full-pict) bottom)))
+  (define (union-fragment-bounds fragments)
+    (cond
+      [(null? fragments) (vector 0 0 0 0)]
+      [else
+       (vector (apply min (map (lambda (bounds) (vector-ref bounds 0)) fragments))
+               (apply min (map (lambda (bounds) (vector-ref bounds 1)) fragments))
+               (apply max (map (lambda (bounds) (vector-ref bounds 2)) fragments))
+               (apply max (map (lambda (bounds) (vector-ref bounds 3)) fragments)))]))
+  (list->vector
+   (for/list ([segment (in-list (text-segmentation-segments graphemes))])
+     (define matching-placements (placements-for segment))
+     (cond
+       [(pair? matching-placements)
+        (prepared-text-cluster
+         segment
+         (union-fragment-bounds
+          (map (lambda (placement) (fragment-bounds placement segment))
+               matching-placements))
+         (vector (pict-ascent full-pict) (pict-descent full-pict)))]
+       [else
+        ;; Explicit newlines and wrapping-trimmed whitespace deliberately have
+        ;; no painted area. They retain an empty cluster so source-frontier
+        ;; accounting remains exact while the next painted grapheme can appear
+        ;; on its prepared line without a re-layout.
+        (prepared-text-cluster
+         segment
+         (vector 0 0 0 0)
+         (vector (pict-ascent full-pict) (pict-descent full-pict)))]))))
+
+;; text-content-anchor-offset : text-visual? pict? -> real? real?
+;; Mirrors anchor-pict's placement policy so prepared content coordinates land
+;; in the frozen text Pict's coordinate system.
+(define (text-content-anchor-offset visual content-pict)
+  (define width (pict-width content-pict))
+  (define height (pict-height content-pict))
+  (values
+   (case (text-visual-horizontal-alignment visual)
+     [(left) width]
+     [(center right) 0])
+   (case (text-visual-vertical-alignment visual)
+     [(top) height]
+     [(center bottom) 0]
+     [(baseline)
+      (- (max (pict-ascent content-pict)
+              (pict-descent content-pict))
+         (pict-ascent content-pict))])))
 
 
 ;;;
@@ -544,7 +881,18 @@
              keys))
            (values #f #f))])))
 
-(struct text-layout-token (kind pict) #:transparent)
+(struct text-layout-token (kind pict span source-start source-end) #:transparent)
+
+;; A paragraph layout keeps the exact token stream used to produce its final
+;; Pict.  The text-layout preparation protocol uses these placements to mask
+;; the already-shaped final bitmap; it never substitutes a shorter source
+;; string and consequently never asks the line breaker to run again.
+(struct text-paragraph-layout
+  (lines line-picts maximum-ascent maximum-descent line-advance
+         layout-width layout-height)
+  #:transparent)
+
+(struct text-layout-placement (token x y) #:transparent)
 
 ;; text-content->pict : text-visual? camera? -> pict?
 ;; Keeps the old direct Pict route for one unwrapped run, while paragraphs and
@@ -599,13 +947,31 @@
 ;; baseline is the first line's baseline, so it can align with a neighbouring
 ;; formula or label through the existing anchored-pict protocol.
 (define (text-paragraph->pict visual camera)
+  (define layout (text-paragraph-layout-for visual camera))
+  (text-paragraph-layout->pict layout visual))
+
+;; text-paragraph-layout-for : text-visual? camera? -> text-paragraph-layout?
+;; Computes the one token/line layout shared by normal rendering and prepared
+;; typewriter geometry.  Keeping this as data is what makes wrapped and rich
+;; text safe: the rendered Pict and its reveal mask come from the same line
+;; breaks, baseline choices, and inline styles.
+(define (text-paragraph-layout-for visual camera)
   (define maximum-width
     (and (text-visual-width visual)
          (camera-length->pixels camera (text-visual-width visual))))
   (define tokens
-    (apply append
-           (for/list ([span (in-list (text-visual-spans visual))])
-             (text-span->layout-tokens visual span camera))))
+    (let loop ([remaining (text-visual-spans visual)]
+               [source-offset 0]
+               [reversed '()])
+      (cond
+        [(null? remaining) (apply append (reverse reversed))]
+        [else
+         (define span (car remaining))
+         (loop (cdr remaining)
+               (+ source-offset (string-length (text-span-content span)))
+               (cons (text-span->layout-tokens
+                      visual span camera source-offset)
+                     reversed))])))
   (define default-line-pict
     (text-span-content->pict visual
                              (text-span "")
@@ -627,6 +993,18 @@
   (define layout-width (max 1 (apply max (map pict-width line-picts))))
   (define layout-height
     (+ natural-height (* (sub1 (length line-picts)) line-advance)))
+  (text-paragraph-layout
+   lines line-picts maximum-ascent maximum-descent line-advance
+   layout-width layout-height))
+
+;; text-paragraph-layout->pict : text-paragraph-layout? text-visual? -> pict?
+;; Draws the fixed layout without revisiting text measurement or wrapping.
+(define (text-paragraph-layout->pict layout visual)
+  (define line-picts (text-paragraph-layout-line-picts layout))
+  (define maximum-ascent (text-paragraph-layout-maximum-ascent layout))
+  (define line-advance (text-paragraph-layout-line-advance layout))
+  (define layout-width (text-paragraph-layout-layout-width layout))
+  (define layout-height (text-paragraph-layout-layout-height layout))
   (dc
    (lambda (drawing-context x y)
      (for ([line (in-list line-picts)]
@@ -645,11 +1023,48 @@
    maximum-ascent
    (- layout-height maximum-ascent)))
 
+;; text-paragraph-layout-placements : text-paragraph-layout? text-visual?
+;;                                     -> (listof text-layout-placement?)
+;; Positions every renderable token in final local Pict coordinates.
+(define (text-paragraph-layout-placements layout visual)
+  (define maximum-ascent (text-paragraph-layout-maximum-ascent layout))
+  (define line-advance (text-paragraph-layout-line-advance layout))
+  (define layout-width (text-paragraph-layout-layout-width layout))
+  (apply append
+         (for/list ([line (in-list (text-paragraph-layout-lines layout))]
+                    [line-pict (in-list (text-paragraph-layout-line-picts layout))]
+                    [index (in-naturals)])
+           (define y
+             (+ (- maximum-ascent (pict-ascent line-pict))
+                (* index line-advance)))
+           (define initial-x
+             (line-layout-x (text-visual-line-alignment visual)
+                            layout-width
+                            (pict-width line-pict)))
+           (reverse
+            (let loop ([remaining line]
+                       [x initial-x]
+                       [reversed '()])
+              (cond
+                [(null? remaining) reversed]
+                [else
+                 (define token (car remaining))
+                 (loop (cdr remaining)
+                       (+ x (pict-width (text-layout-token-pict token)))
+                       (cons
+                        (text-layout-placement
+                         token
+                         x
+                         (+ y
+                            (- (pict-ascent line-pict)
+                               (pict-ascent (text-layout-token-pict token)))))
+                        reversed))]))))))
+
 ;; text-span->layout-tokens : text-visual? text-span? camera?
 ;;                              -> (listof text-layout-token?)
 ;; The token stream separates explicit line breaks, collapsible wrapping spaces,
 ;; and visible words without inspecting or altering Unicode word characters.
-(define (text-span->layout-tokens visual span camera)
+(define (text-span->layout-tokens visual span camera [source-offset 0])
   (define content (text-span-content span))
   (define length (string-length content))
   (define tokens-reversed '())
@@ -659,7 +1074,10 @@
           (cons (text-layout-token
                  kind
                  (and (not (eq? kind 'break))
-                      (text-span-content->pict visual span piece camera)))
+                      (text-span-content->pict visual span piece camera))
+                 span
+                 (+ source-offset start)
+                 (+ source-offset end))
                 tokens-reversed)))
   (let loop ([index 0])
     (cond
