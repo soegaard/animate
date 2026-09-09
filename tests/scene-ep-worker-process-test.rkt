@@ -67,35 +67,37 @@
    (lambda () (preview-worker-stop! worker))))
 
 (module+ test
-  ;; Two controller lanes can safely borrow separate module workers.  The
-  ;; workers render in independent Racket processes; this is intentionally not
-  ;; implemented with two racket/draw threads in the parent process.
+  ;; Controller lanes can safely borrow separate module workers. The workers
+  ;; render in independent Racket processes; returned PNG frames are decoded
+  ;; one at a time in the parent because the macOS native decoder is not
+  ;; thread-safe.
   (define pool
     (make-project-worker-producer fixture 'worker-scene
                                   #:fingerprint 'worker-pool-test
-                                  #:workers 2))
+                                  #:workers 10))
   (dynamic-wind
    void
    (lambda ()
      (define completed (make-async-channel))
      (define document (make-preview-document (make-scene)))
      (define spec (make-preview-render-spec #:fps 2 #:pixel-scale 1/4))
-     (for ([frame (in-list '(0 1))])
+     (for ([frame (in-range 10)])
        (thread
         (lambda ()
+          (define sample (frame-sample (modulo frame 2) 2))
           (define request
             (preview-render-request #:id (add1 frame)
                                     #:document-generation 0
                                     #:render-generation 0
-                                    #:sample (frame-sample frame 2)
+                                    #:sample sample
                                     #:quality full-preview-quality
                                     #:priority 0))
           (async-channel-put
            completed
            (project-worker-producer-produce
-            pool document (frame-sample frame 2) spec
+            pool document sample spec
             (preview-render-request-cancellation-token request))))))
-     (for ([ignored (in-range 2)])
+     (for ([ignored (in-range 10)])
        (define bitmap (sync/timeout 15 completed))
        (check-true (is-a? bitmap bitmap%))))
    (lambda () (project-worker-producer-close! pool))))

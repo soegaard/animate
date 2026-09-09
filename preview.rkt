@@ -128,10 +128,10 @@
 (define-runtime-path preview-window-path "private/preview-window.rkt")
 (define-runtime-path opengl-renderer-module "3d/opengl.rkt")
 
-;; Module-backed software previews have independent renderer processes. Two
-;; lanes overlap prefetched frames without making the preview's memory or CPU
-;; demand surprising on ordinary laptops.
-(define project-software-preview-render-workers 2)
+;; Module-backed software previews have independent renderer processes. Ten
+;; lanes keep a ten-core machine busy while the bounded bitmap cache prevents
+;; the queued work from growing without limit.
+(define project-software-preview-render-workers 10)
 
 (define (ensure-preview-gui who)
   ;; Keeping this non-initializing check avoids a headless worker crashing while

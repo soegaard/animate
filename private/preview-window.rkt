@@ -14,6 +14,7 @@
          racket/gui/base
          racket/match
          racket/string
+         mrlib/tab-choice
          "affine-transform.rkt"
          "authoring-timeline.rkt"
          "camera.rkt"
@@ -318,9 +319,6 @@
   ;; window mirrors its immutable status only for painting; it never derives
   ;; loop boundaries from a rendered bitmap or frame number.
   (define loop-range-box (box #f))
-  ;; Production diagnostics are optional UI chrome. Their contents are an
-  ;; immutable controller snapshot, never a second mutable clock or renderer.
-  (define diagnostics-panel-box (box #f))
   (define frame
     (new
      (class frame%
@@ -333,8 +331,8 @@
            (preview-close! session))
          (inner (void) on-close)))
      [label title]
-     [width 900]
-     [height 650]))
+     [width 1400]
+     [height 800]))
   (define menu-bar (new menu-bar% [parent frame]))
   (define animate-menu (new menu% [parent menu-bar] [label "Animate"]))
   (define pixel-scale-menu
@@ -394,17 +392,38 @@
        [parent spatial-selection-menu]
        [label "Use selection as REPL scratch values"]
        [callback (lambda (_item _event) (install-spatial-selection-in-repl!))])
-  ;; The preview has a canvas, three transport rows, a timeline, and optional
-  ;; inspector panels.  Their minimum heights can exceed a laptop-sized frame.
-  ;; A plain panel silently clips its lower children in that case, leaving only
-  ;; part of the transport visible.  Keep the content top-aligned and provide
-  ;; a native scrollbar whenever it overflows, so every control remains
-  ;; reachable without requiring a maximised window.
+  ;; The workspace keeps the video and its transport together on the left.
+  ;; Inspector and production diagnostics share the right sidebar instead of
+  ;; extending the window vertically below the timeline.
   (define outer
-    (new vertical-panel%
+    (new horizontal-panel%
          [parent frame]
+         [alignment '(left top)]))
+  (define workspace
+    (new vertical-panel%
+         [parent outer]
          [style '(auto-vscroll)]
-         [alignment '(center top)]))
+         [alignment '(center top)]
+         [min-width 640]
+         [stretchable-width #t]
+         [stretchable-height #t]))
+  (define sidebar
+    (new vertical-panel%
+         [parent outer]
+         [alignment '(left top)]
+         [min-width 480]
+         [stretchable-width #f]
+         [stretchable-height #t]))
+  (define sidebar-tabs
+    ;; `auto-tab-panel%` adds a one-child-at-a-time content panel beneath the
+    ;; native tabs.  A plain `tab-panel%` only reports tab selection; hiding
+    ;; its sibling children leaves their layout slots in place.
+    (new auto-tab-panel%
+         [parent sidebar]
+         [choices '("Inspector" "Diagnostics")]
+         [stretchable-width #t]
+         [stretchable-height #t]))
+  (send sidebar-tabs set-selection 0)
   (define bitmap-box (box #f))
   ;; The active view is selected by the most recent drag/wheel gesture. It is
   ;; not a semantic scene selection and therefore never competes with the
@@ -724,7 +743,7 @@
   (define canvas
     (new
      (class canvas%
-       (super-new [parent outer]
+       (super-new [parent workspace]
                   [min-width 640]
                   [min-height 400]
                   [stretchable-width #t]
@@ -1259,9 +1278,15 @@
   ;; separate rows. This keeps each strip short enough that the primary block,
   ;; section, and cue selectors stay visible in a narrow window.
   (define control-rows
-    (new vertical-panel% [parent outer] [alignment '(center center)]
+    (new vertical-panel% [parent workspace] [alignment '(center center)]
          [stretchable-width #t] [stretchable-height #f]))
   (define controls
+    (new horizontal-panel% [parent control-rows] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  (define preview-options-controls
+    (new horizontal-panel% [parent control-rows] [alignment '(center center)]
+         [stretchable-width #t] [stretchable-height #f]))
+  (define navigation-controls
     (new horizontal-panel% [parent control-rows] [alignment '(center center)]
          [stretchable-width #t] [stretchable-height #f]))
   (define range-controls
@@ -1275,7 +1300,7 @@
   ;; reserves the timeline's visual position directly below the controls.
   ;; That keeps the scrubber visible when an inspector section grows tall.
   (define timeline-holder
-    (new vertical-panel% [parent outer] [alignment '(center center)]
+    (new vertical-panel% [parent workspace] [alignment '(center center)]
          [stretchable-width #t] [stretchable-height #f]))
   (define backward
     (new button% [parent controls] [label "◀"]
@@ -1302,7 +1327,7 @@
                               (cons "2×" 2)))
   (define speed-choice
     (new choice%
-         [parent controls]
+         [parent preview-options-controls]
          [label "speed"]
          [choices (map car speed-options)]
          [callback
@@ -1313,13 +1338,34 @@
               (preview-set-playback-speed!
                session (cdr (list-ref speed-options index)))))]))
   (send speed-choice set-selection 1)
+  ;; Module-backed project previews pre-create a bounded pool of isolated
+  ;; renderer processes. This menu changes how many receive new frame jobs;
+  ;; lower values take effect as active jobs finish and never discard cached
+  ;; frames. In-process and OpenGL previews deliberately remain single-lane.
+  (define software-worker-options
+    (for/list ([count (in-range 1 (add1 render-workers))])
+      (format "~a" count)))
+  (define software-worker-choice
+    (new choice%
+         [parent preview-options-controls]
+         [label "software workers"]
+         [choices software-worker-options]
+         [callback
+          (lambda (choice _event)
+            (define session (unbox controller-box))
+            (define index (send choice get-selection))
+            (when (and session (exact-nonnegative-integer? index))
+              (preview-set-render-worker-count! session (add1 index))))]))
+  (send software-worker-choice set-selection (sub1 render-workers))
+  (send software-worker-choice show
+        (and (eq? worker-mode 'subprocess) (> render-workers 1)))
   (define zoom-options (list (cons "1×" 1)
                              (cons "2×" 2)
                              (cons "4×" 4)
                              (cons "8×" 8)))
   (define zoom-choice
     (new choice%
-         [parent controls]
+         [parent preview-options-controls]
          [label "timeline zoom"]
          [choices (map car zoom-options)]
          [callback
@@ -1412,16 +1458,6 @@
   (define play-b
     (new button% [parent comparison-controls] [label "Play B"]
          [callback (lambda (_button _event) (play-comparison-range! 'b))]))
-  (define show-diagnostics
-    (new check-box%
-         [parent comparison-controls]
-         [label "Diagnostics"]
-         [value #f]
-         [callback
-          (lambda (checkbox _event)
-            (define panel (unbox diagnostics-panel-box))
-            (when panel
-              (send panel show (send checkbox get-value))))]))
   ;; Mute is intentionally a project-audio control, not a controller command.
   ;; It does not stop or retime visual playback, request a new bitmap, or
   ;; invalidate any cache.  A project without an available audio monitor keeps
@@ -1436,7 +1472,6 @@
             (when (audio-mute-available?)
               (set-audio-muted! (send checkbox get-value))))]))
   (send mute-audio enable (and (audio-mute-available?) #t))
-  (define selection-message (new message% [parent outer] [label "selection: none"]))
   ;; The inspector is deliberately a view of an immutable inspector document.
   ;; Selecting a section merely changes which existing rows are displayed: it
   ;; never asks the bitmap renderer for another semantic sample or changes a
@@ -1461,12 +1496,19 @@
   ;; `list-box%` may invoke its callback while it is being constructed.  The
   ;; final updater is installed only after every dependent button exists.
   (define inspector-action-updater-box (box #f))
+  (define inspector-panel
+    (new vertical-panel% [parent (send sidebar-tabs get-panel 0)]
+         [alignment '(left top)]
+         [stretchable-width #t]
+         [stretchable-height #t]))
+  (define selection-message
+    (new message% [parent inspector-panel] [label "selection: none"]))
   ;; Put the selector before the potentially tall inspector body.  A footer
   ;; beneath a long list could be below the initial viewport, and native choice
   ;; menus near the window bottom do not have enough room to show every
   ;; section.  The action buttons may still be added to this row later.
   (define inspector-footer
-    (new horizontal-panel% [parent outer] [alignment '(center center)]
+    (new horizontal-panel% [parent inspector-panel] [alignment '(center center)]
          [stretchable-width #t] [stretchable-height #f]))
   (set! inspector-section-choice
         (new choice% [parent inspector-footer] [label "Inspector section"] [choices '()]
@@ -1475,19 +1517,14 @@
               (lambda (choice _event)
                 (display-inspector-section! (send choice get-selection)))]))
   (send inspector-section-choice show #f)
-  (define inspector-panel
-    (new vertical-panel% [parent outer]
-         [alignment '(left top)]
-         [stretchable-width #t]
-         [stretchable-height #f]))
   (define inspector-rows
     (new list-box% [parent inspector-panel]
          [label "Inspector"]
          [choices '()]
-         [min-width 640]
+         [min-width 400]
          [min-height 110]
          [stretchable-width #t]
-         [stretchable-height #f]
+         [stretchable-height #t]
          [callback
           (lambda (_list-box _event)
             (define updater (unbox inspector-action-updater-box))
@@ -1499,7 +1536,7 @@
     (new
      (class canvas%
        (super-new [parent inspector-panel]
-                  [min-width 640]
+                  [min-width 400]
                   [min-height 32]
                   [stretchable-width #t]
                   [stretchable-height #f]
@@ -2069,20 +2106,18 @@
   (set-box! inspector-action-updater-box update-inspector-action-controls!)
   (display-inspector-section! #f)
   (define diagnostics-panel
-    (new vertical-panel% [parent outer]
+    (new vertical-panel% [parent (send sidebar-tabs get-panel 1)]
          [alignment '(left top)]
          [stretchable-width #t]
-         [stretchable-height #f]))
-  (set-box! diagnostics-panel-box diagnostics-panel)
-  (send diagnostics-panel show #f)
+         [stretchable-height #t]))
   (define diagnostics-rows
     (new list-box% [parent diagnostics-panel]
          [label "Production diagnostics"]
          [choices '()]
-         [min-width 640]
+         [min-width 400]
          [min-height 110]
          [stretchable-width #t]
-         [stretchable-height #f]))
+         [stretchable-height #t]))
   (define (install-diagnostics! session)
     ;; This function runs only in the GUI eventspace, after the controller has
     ;; published an immutable event. Querying it here cannot recursively block
@@ -2113,7 +2148,7 @@
       (send diagnostics-rows append
             (format "~a: ~a" (car entry) (cdr entry)))))
   (define section-choice
-    (new choice% [parent controls] [label "section"] [choices '()]
+    (new choice% [parent navigation-controls] [label "section"] [choices '()]
          [callback
           (lambda (choice _event)
             (define session (unbox controller-box))
@@ -2129,7 +2164,7 @@
                                          (send choice get-string selected-index)))))]))
   (send section-choice show #f)
   (define block-choice
-    (new choice% [parent controls] [label "block"] [choices '()]
+    (new choice% [parent navigation-controls] [label "block"] [choices '()]
          [min-width 180]
          [callback
           (lambda (choice _event)
@@ -2146,7 +2181,7 @@
   ;; control out of ordinary scene/timeline previews until then.
   (send block-choice show #f)
   (define cue-choice
-    (new choice% [parent controls] [label "cue"] [choices '()]
+    (new choice% [parent navigation-controls] [label "cue"] [choices '()]
          [callback
           (lambda (choice _event)
             (define session (unbox controller-box))
@@ -2281,14 +2316,26 @@
          (define playhead (x-at (preview-timeline-cursor model)))
          (send dc set-pen (make-pen #:color "white" #:width 2))
          (send dc draw-line playhead 0 playhead height))
+       (define (move-playhead! time)
+         (define model (unbox timeline-model-box))
+         (set-box! timeline-model-box (preview-timeline-seek model time)))
+       ;; A drag asks for a cheap, replaceable bitmap. A click is committed on
+       ;; mouse-up and asks for a full-quality seek instead; the controller can
+       ;; then render the clicked frame and its following frames concurrently.
+       (define (scrub-event! event)
+         (define session (unbox controller-box))
+         (define time (event-time event))
+         (move-playhead! time)
+         (when session
+           (preview-scrub! session time))
+         (send this refresh))
        (define (seek-event! event)
          (define session (unbox controller-box))
+         (define time (event-time event))
+         (move-playhead! time)
          (when session
-           (define time (event-time event))
-           (define model (unbox timeline-model-box))
-           (set-box! timeline-model-box (preview-timeline-seek model time))
-           (preview-scrub! session time)
-           (send this refresh)))
+           (preview-seek! session time))
+         (send this refresh))
        (define (event-time event)
          (define-values (width _height) (send this get-client-size))
          (define model (unbox timeline-model-box))
@@ -2321,16 +2368,27 @@
                   (set! range-start (event-time event)))
                 (begin
                   (set! dragging? #t)
-                  (seek-event! event)))]
+                  ;; Stop transport promptly, but defer expensive rendering
+                  ;; until it is clear whether this is a click or a drag.
+                  (let ([session (unbox controller-box)])
+                    (when session (preview-pause! session)))
+                  (move-playhead! (event-time event))
+                  (send this refresh)))]
            [(left-up)
             (when range-dragging? (select-range-event! event))
+            ;; A click has not rendered yet; a drag has made draft requests.
+            ;; In either case, commit the final position at full quality with
+            ;; eager look-ahead when the mouse is released.
+            (when dragging?
+              (seek-event! event))
             (set! dragging? #f)
             (set! range-dragging? #f)
             (set! range-start #f)]
            [(motion)
             (cond
               [range-dragging? (select-range-event! event)]
-              [dragging? (seek-event! event)])]
+              [dragging?
+               (scrub-event! event)])]
            [else (void)])
          (super on-event event)))))
   (define model
@@ -2539,6 +2597,9 @@
           index))
       (when speed-index
         (send speed-choice set-selection speed-index))
+      (when (and (eq? worker-mode 'subprocess) (> render-workers 1))
+        (define worker-count (preview-render-worker-count session))
+        (send software-worker-choice set-selection (sub1 worker-count)))
       (define audio-available? (audio-mute-available?))
       (send mute-audio enable audio-available?)
       (when audio-available?

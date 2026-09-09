@@ -41,6 +41,13 @@
 
 (define-runtime-path worker-main-path "preview-worker-main.rkt")
 
+;; `read-bitmap` delegates PNG decoding to the native drawing toolkit.  On
+;; macOS in Racket 9.3, concurrent decodes can corrupt its atomic-mode state
+;; ("not in atomic mode to end").  Project workers still render in separate
+;; processes; only the short parent-side conversion from returned PNG bytes to
+;; a `bitmap%` is serialized.
+(define worker-frame-png-decode-lock (make-semaphore 1))
+
 (struct exn:fail:preview-worker-timed-out exn:fail (request-id)
   #:transparent)
 
@@ -238,8 +245,12 @@
             [(and (worker-frame-complete? response)
                   (= (worker-frame-complete-request-id response)
                      (preview-render-request-id request)))
-             (values (read-bitmap
-                      (open-input-bytes (worker-frame-complete-png-bytes response)))
+             (values (call-with-semaphore
+                      worker-frame-png-decode-lock
+                      (lambda ()
+                        (read-bitmap
+                         (open-input-bytes
+                          (worker-frame-complete-png-bytes response)))))
                      (worker-frame-complete-diagnostics response))]
             [(and (worker-frame-failed? response)
                   (= (worker-frame-failed-request-id response)

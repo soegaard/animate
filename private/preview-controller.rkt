@@ -55,6 +55,8 @@
          preview-step!
          preview-play!
          preview-play-range!
+         preview-render-worker-count
+         preview-set-render-worker-count!
          preview-playback-speed
          preview-set-playback-speed!
          preview-loop-range
@@ -361,6 +363,22 @@
 (define (preview-play-range! session start end)
   (send-controller-command 'preview-play-range! session 'play-range (list start end)))
 
+;; preview-render-worker-count : preview-session? -> exact-positive-integer?
+;; The count is a concurrency limit. A subprocess project preview pre-creates
+;; its bounded worker pool, so changing this number adjusts the next jobs
+;; without invalidating already rendered cache entries.
+(define (preview-render-worker-count session)
+  (send-controller-command 'preview-render-worker-count session 'render-workers '()))
+
+;; preview-set-render-worker-count! : preview-session? exact-positive-integer?
+;;                                      -> preview-status?
+(define (preview-set-render-worker-count! session count)
+  (unless (exact-positive-integer? count)
+    (raise-argument-error 'preview-set-render-worker-count!
+                          "exact-positive-integer?" count))
+  (send-controller-command 'preview-set-render-worker-count!
+                           session 'set-render-workers (list count)))
+
 (define (preview-playback-speed session)
   (send-controller-command 'preview-playback-speed session 'playback-speed '()))
 
@@ -553,6 +571,7 @@
          (void)]
         [(status) (state-status state)]
         [(playback-policy) (controller-state-playback-policy state)]
+        [(render-workers) (controller-state-render-workers state)]
         [(playback-speed) (controller-state-playback-speed state)]
         [(loop-range) (controller-state-loop-range state)]
         [(quality-policy) (controller-state-quality-policy state)]
@@ -576,6 +595,23 @@
          (set-controller-state-playback-speed! state speed)
          (when (controller-state-playing? state)
            (restart-playback-clock! state))
+         (emit! state 'status #f #f)
+         (state-status state)]
+        [(set-render-workers)
+         (match-arguments 'set-render-workers (controller-command-arguments command) 1)
+         (define count (car (controller-command-arguments command)))
+         (unless (and (exact-positive-integer? count)
+                      (<= count (length workers)))
+           (raise-arguments-error
+            'preview-set-render-worker-count!
+            "a positive worker count no greater than this preview's worker pool"
+            "count" count
+            "maximum" (length workers)))
+         ;; Lowering the limit never throws away useful work: existing jobs
+         ;; finish, and subsequent jobs obey the new cap. Raising it fills the
+         ;; newly available lanes from the current look-ahead queue at once.
+         (set-controller-state-render-workers! state count)
+         (start-next-job! state jobs)
          (emit! state 'status #f #f)
          (state-status state)]
         [(set-loop-range)
@@ -615,7 +651,11 @@
            (car (controller-command-arguments command))
            (controller-state-render-spec state)))
          (set-controller-state-error! state #f)
-         (request-current! state jobs prefetch)
+         ;; An exact seek is a committed inspection point, unlike a drag
+         ;; scrub below. Start its look-ahead immediately so the renderer
+         ;; lanes prepare the frames most likely to be played next while this
+         ;; full-quality frame is still rendering.
+         (request-current! state jobs prefetch #:eager-prefetch? #t)
          (state-status state)]
         [(seek-time)
          (match-arguments 'seek-time (controller-command-arguments command) 1)
@@ -629,7 +669,7 @@
            (controller-state-document state)
            (car (controller-command-arguments command))))
          (set-controller-state-error! state #f)
-         (request-current! state jobs prefetch)
+         (request-current! state jobs prefetch #:eager-prefetch? #t)
          (state-status state)]
         [(scrub-frame)
          (match-arguments 'scrub-frame (controller-command-arguments command) 1)
@@ -858,7 +898,7 @@
 ;;; Scheduling and Generations
 ;;;
 
-(define (request-current! state jobs prefetch)
+(define (request-current! state jobs prefetch #:eager-prefetch? [eager-prefetch? #f])
   (define sample (controller-state-current-sample state))
   (define render-spec (active-render-spec state))
   (define key (current-key state))
@@ -866,10 +906,15 @@
   (define cached (preview-cache-ref! (controller-state-cache state) key missing))
   (cond
     [(not (eq? cached missing))
+     (define newly-displayed?
+       (not (equal? sample (controller-state-displayed-sample state))))
      (set-controller-state-current-bitmap! state cached)
      (set-controller-state-displayed-sample! state sample)
      (emit! state 'frame-ready cached #f)
-     (schedule-prefetch! state jobs prefetch)
+     ;; A cached playback frame advances the rolling cache horizon exactly
+     ;; once. Repeating Play while already paused on this same frame does not
+     ;; extend the horizon again.
+     (schedule-prefetch! state jobs prefetch #:extend-horizon? newly-displayed?)
      ;; Exact playback advances on the next actor tick. Deferring it avoids
      ;; recursive cache-hit rendering when a short loop is entirely cached.
      (void)]
@@ -891,28 +936,63 @@
                                            render-spec
                                            (if (controller-state-playing? state) 1 0))
                    #:high? #t)
+     ;; For an explicit seek, frame A+1 and its successors are useful before
+     ;; frame A itself has completed.  The high-priority A job still occupies
+     ;; the first available lane; remaining isolated workers can fill the
+     ;; cache in parallel.  Playback does not use this eager path, avoiding
+     ;; needless work that would immediately be superseded by its next tick.
+     (when eager-prefetch?
+       (schedule-prefetch! state jobs prefetch))
      (start-next-job! state jobs)
      (emit! state 'rendering #f #f)]))
 
-(define (schedule-prefetch! state jobs prefetch)
+(define (schedule-prefetch! state jobs prefetch
+                            #:extend-horizon? [extend-horizon? #f])
   (when (and (positive? prefetch)
-             (frame-sample? (controller-state-current-sample state)))
-    (define sample (controller-state-current-sample state))
-    (define fps (frame-sample-fps sample))
+             (>= (last-frame-index state) 0))
+    ;; A click preserves its exact semantic time as a `time-sample`; its
+    ;; prefetch anchor is nevertheless the corresponding video-grid frame.
+    ;; A frame sample simply yields its own index here.
+    (define fps (preview-render-spec-fps (controller-state-render-spec state)))
     (define document (controller-state-document state))
     (define spec (active-render-spec state))
-    (for ([index (in-range (add1 (frame-sample-frame-index sample))
-                           (add1 (min (last-frame-index state)
-                                      (+ (frame-sample-frame-index sample) prefetch))))])
-      (define next-sample (frame-sample index fps))
-      (define key
-        (make-preview-frame-key document
-                                (controller-state-render-generation state)
-                                next-sample spec))
+    (define current-index (current-frame-index state))
+    (define last-index (last-frame-index state))
+    (define (key-at index)
+      (make-preview-frame-key
+       document
+       (controller-state-render-generation state)
+       (frame-sample index fps)
+       spec))
+    (define (enqueue-at! index)
+      (define key (key-at index))
       (define missing (gensym 'preview-cache-missing))
       (when (eq? (preview-cache-ref! (controller-state-cache state) key missing) missing)
-        (enqueue-job! state (make-render-job! state key document next-sample spec 4)
+        (enqueue-job! state
+                      (make-render-job! state key document (frame-sample index fps) spec 4)
                       #:high? #f)))
+    ;; Establish the ordinary look-ahead window first. It gives a fresh seek
+    ;; enough jobs to occupy the available renderer lanes immediately.
+    (for ([index (in-range (add1 current-index)
+                           (add1 (min last-index (+ current-index prefetch))))])
+      (enqueue-at! index))
+    ;; Once the current frame becomes visible, append one frame after the
+    ;; contiguous cached-or-queued run. Thus, if A through A+k are already
+    ;; ready or being prepared, A+k+1 enters the queue. This is a rolling
+    ;; horizon: the next displayed playback frame extends it again, while a
+    ;; repeated request for the same displayed frame does not.
+    (when extend-horizon?
+      (let loop ([index (add1 current-index)])
+        (when (<= index last-index)
+          (define key (key-at index))
+          (define missing (gensym 'preview-cache-missing))
+          (if (or (not (eq? (preview-cache-ref! (controller-state-cache state)
+                                             key
+                                             missing)
+                             missing))
+                  (hash-has-key? (controller-state-pending state) key))
+              (loop (add1 index))
+              (enqueue-at! index)))))
     (start-next-job! state jobs)))
 
 (define (enqueue-job! state job #:high? high?)
@@ -1049,7 +1129,7 @@
         (controller-state-current-sample state))
        (set-controller-state-error! state #f)
        (emit! state 'frame-ready (render-result-value result) #f)
-       (schedule-prefetch! state jobs prefetch)
+       (schedule-prefetch! state jobs prefetch #:extend-horizon? #t)
        (void))])
   (when (hash? (render-result-diagnostics result))
     (set-controller-state-last-render-diagnostics!

@@ -36,8 +36,13 @@ not an author error.  A project-worker timeout is reported as
 the current frame is requested again.  The last good bitmap stays visible
 through that recovery.
 
-Clicking or dragging the playhead in the production timeline seeks to an exact
-semantic time. Shift-dragging marks a half-open review range. @tt{Play range}
+Clicking the playhead seeks to that exact time at full quality. The preview
+also starts rendering the following prefetched frames, so @tt{Play} can reuse
+them. Each displayed playback frame adds one frame after the cached or queued
+run, keeping the cache ready ahead of the playhead. Dragging first shows
+cheaper draft frames while the pointer is moving, then renders the final
+position at full quality and starts the same look-ahead when the mouse button
+is released. Shift-dragging marks a half-open review range. @tt{Play range}
 reviews it once; @tt{Loop range} stores it in the headless controller and
 repeats it from the same absolute semantic times. The @tt{block}, @tt{section},
 and @tt{cue} selectors jump to the corresponding authored location when that

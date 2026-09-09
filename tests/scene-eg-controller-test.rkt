@@ -127,9 +127,58 @@
   ;; frames one and two instead of keeping one behind a serial worker.
   (check-equal? (sort (list (await parallel-starts) (await parallel-starts)) <)
                 '(1 2))
-  ;; There is one more queued prefetch frame. Release all three before closing
-  ;; so this controlled fake producer cannot hold a controller thread.
-  (for ([ignored (in-range 3)])
+  (check-equal? (preview-render-worker-count parallel-session) 2)
+  ;; A lower menu/API choice preserves in-flight jobs and limits only new
+  ;; work. It is therefore safe to make while the cache is being filled.
+  (void (preview-set-render-worker-count! parallel-session 1))
+  (check-equal? (preview-render-worker-count parallel-session) 1)
+  ;; The displayed initial frame extends the horizon by one more job. Release
+  ;; all four before closing so this controlled fake cannot hold a controller
+  ;; thread.
+  (for ([ignored (in-range 4)])
     (async-channel-put parallel-releases 'continue))
   (sleep 1/20)
-  (preview-close! parallel-session))
+  (preview-close! parallel-session)
+
+  ;; An exact time seek is what the timeline click sends. Its target and first
+  ;; video-grid look-ahead frame occupy both lanes immediately; the controller
+  ;; does not wait for the target bitmap before beginning A+1.
+  (define eager-starts (make-async-channel))
+  (define eager-releases (make-async-channel))
+  (define eager-session
+    (open-preview-controller
+     (scene-wait (make-scene) 3)
+     #:fps 2 #:start 5/2 #:prefetch 3 #:render-workers 2
+     #:producer
+     (lambda (_document sample _spec _cancellation-token)
+       (cond
+         [(time-sample? sample)
+          (if (= (time-sample-time sample) 5/2)
+              sample
+              (begin
+                (async-channel-put eager-starts 'clicked-time)
+                (async-channel-get eager-releases)
+                sample))]
+         [else
+          (define frame (frame-sample-frame-index sample))
+          (begin
+            (async-channel-put eager-starts frame)
+            (async-channel-get eager-releases)
+            frame)]))
+     #:byte-size (lambda (_value) 1)))
+  ;; Starting at the final frame avoids an initial look-ahead queue.
+  (void (preview-seek! eager-session 1/2))
+  (define initial-eager-starts (list (await eager-starts) (await eager-starts)))
+  (check-not-false (member 'clicked-time initial-eager-starts))
+  (check-not-false (member 2 initial-eager-starts))
+  ;; When the clicked frame becomes visible, the scheduler adds the next frame
+  ;; after the queued A+1..A+3 run. It keeps the cache horizon moving instead
+  ;; of waiting for playback to reach the next frame first.
+  (for ([ignored (in-range 5)])
+    (async-channel-put eager-releases 'continue))
+  (check-equal? (sort (list (await eager-starts)
+                            (await eager-starts)
+                            (await eager-starts)) <)
+                '(3 4 5))
+  (sleep 1/20)
+  (preview-close! eager-session))

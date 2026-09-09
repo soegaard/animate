@@ -83,10 +83,11 @@ GRacket (or @tt{raco animate preview}) rather than a headless Racket process.
          preview-session?]{
 
 Prepares and opens an immutable project declaration. A module-binding source
-uses two restartable software-renderer subprocesses, so queued independent
-frames can use two CPU cores. Direct Scene or timeline sources use cooperative
-in-process cancellation. An OpenGL project keeps one serialized graphics
-context.
+uses ten restartable software-renderer subprocesses, so queued independent
+frames can use up to ten CPU cores. The @tt{software workers} preview menu
+selects how many of those lanes receive new work. Direct Scene or timeline sources use
+cooperative in-process cancellation. An OpenGL project keeps one serialized
+graphics context.
 }
 
 @defproc[(preview-color-theme [session preview-session?]) color-theme?]{
@@ -105,6 +106,20 @@ the previous theme can never be installed as a result for the new theme.
 @defproc[(preview-scrub! [session preview-session?] [time real?]) void?]{
 Seeks during a drag.  Older pending scrub work is superseded and the current
 time first uses the preview's draft quality.
+}
+
+@defproc[(preview-render-worker-count [session preview-session?])
+         exact-positive-integer?]{
+Returns the number of renderer lanes that may receive new work concurrently.
+}
+
+@defproc[(preview-set-render-worker-count! [session preview-session?]
+                                            [count exact-positive-integer?])
+         preview-status?]{
+Sets the renderer-lane limit, up to the session's pre-created worker pool.
+Existing jobs finish; the new limit applies when the scheduler chooses its next
+jobs. Module-backed project previews expose this as the @tt{software workers}
+menu.
 }
 
 @defproc[(preview-play! [session preview-session?]) void?]{Starts playback.}
