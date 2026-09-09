@@ -41,7 +41,10 @@
 
 (struct latex-formula-pict-renderer (appearance-cache)
   #:transparent
-  #:property prop:pict-renderer-cache-identity '(animate-latex-formula-pict-renderer-v1)
+  ;; Formula pixels depend on the ambient TeX and conversion toolchain.  Do
+  ;; not let a static Racket-side tag certify compatibility with a later run.
+  ;; The renderer remains usable; only persistent section reuse declines.
+  #:property prop:pict-renderer-cache-identity #f
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (formula-visual? visual))

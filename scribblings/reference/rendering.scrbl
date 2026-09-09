@@ -86,7 +86,10 @@ state. A renderer that has no stable declaration simply omits the property.
 
 Returns the renderer's declared immutable appearance datum, or @racket[#f] when
 it has none. The section renderer then remains able to render that renderer but
-does not persistently reuse the section output.
+does not persistently reuse a section in which that renderer is selected.
+An unselected optional renderer does not prevent reuse of unrelated frames.
+For example, the built-in LaTeX formula renderer intentionally has no
+persistent identity: TeX and conversion-tool versions are external inputs.
 }
 
 @defproc[(pict-renderer-list? [value any/c]) boolean?]{
@@ -1075,6 +1078,9 @@ renderer could reread. Before reading, it accepts only the declarative
 list/symbol/number/string/Boolean grammar emitted by @racket[theme->datum],
 with bounded nesting, nodes, and token lengths; reader-dispatch forms such as
 sized vectors, hashes, and datum comments are rejected before they can expand.
+Ordinary and vertical-bar-quoted symbols emitted by @racket[write] are both
+accepted, including escaped punctuation and Unicode role names; reader
+abbreviations and dotted lists are not part of the file grammar.
 }
 
 @defproc[(render-frames!
@@ -1402,16 +1408,19 @@ available for an author-managed key; @racket[#f] disables caching and removes
 any existing section cache manifest. External dependencies are not discovered:
 declare them in @racket[asset-files] or use a deliberate explicit key.
 Every enabled cache manifest separately records the selected theme's appearance
-fingerprint and resolver version, plus semantic camera, declared renderer
-identities, and the declared backend used by an opaque @racket[view3d]
-viewport. An unidentifiable ambient 3D backend disables persistent reuse rather
-than being guessed from its printed representation.
+fingerprint and resolver version, plus a versioned primitive camera datum,
+declared renderer identities, and the actual backend used by an opaque
+@racket[view3d] viewport. The OpenGL identity includes its driver/profile and
+shader-source digests; an OpenGL request that uses software fallback instead
+uses that fallback renderer's identity. An unidentifiable ambient backend
+disables persistent reuse rather than being guessed from its printed
+representation.
 This mandatory rendering identity applies even when @racket[cache-key] is an
 explicit symbol or string: that key identifies author-controlled source, not
 the appearance of its PNGs. @racket[#f] continues to disable caching.
 Custom Pict renderers without a declared immutable cache identity remain
-renderable but deliberately disable persistent section reuse; Animate never
-guesses their identity from a printed closure or object.
+renderable but deliberately disable persistent reuse whenever they are selected;
+Animate never guesses their identity from a printed closure or object.
 }
 
 @defproc[(render-timeline-section/report!

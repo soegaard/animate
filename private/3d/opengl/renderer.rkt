@@ -37,6 +37,7 @@
          "../vec3.rkt"
          "api.rkt"
          "billboard-pass.rkt"
+         "cache-identity.rkt"
          "capabilities.rkt"
          "context-host.rkt"
          "framebuffer.rkt"
@@ -105,10 +106,14 @@
   #:property prop:renderer3d-cache-identity
   (lambda (renderer)
     (define spec (opengl-renderer3d-value-spec renderer))
-    (list 'animate-opengl-renderer3d-v1
-          (opengl-renderer3d-spec-value-samples spec)
-          (opengl-renderer3d-spec-value-cache-megabytes spec)
-          (opengl-renderer3d-spec-value-fallback spec)))
+    (if (opengl-renderer3d-value-host renderer)
+        (make-opengl-live-cache-identity
+         (opengl-renderer3d-spec-value-samples spec)
+         (opengl-cache-identity-info (opengl-renderer3d-value-info renderer))
+         (shader-cache-digests (opengl-renderer3d-value-programs renderer)))
+        (make-opengl-fallback-cache-identity
+         (renderer3d-cache-identity
+          (opengl-renderer3d-value-fallback-renderer renderer)))))
   #:methods gen:renderer3d
   [(define (renderer3d-id renderer)
      (if (opengl-renderer3d-value-host renderer) 'opengl-racket 'software))
@@ -398,6 +403,26 @@
     (values name
             (vector (gl-shader-program-vertex-digest program)
                     (gl-shader-program-fragment-digest program)))))
+
+;; These immutable lists are intentionally distinct from the per-frame
+;; fingerprint's compact mutable vectors.  Persistent manifests must survive
+;; `write`/`read` and must not accidentally carry implementation structs.
+(define (shader-cache-digests programs)
+  (for/list ([name (in-list (sort (hash-keys programs) symbol<?))])
+    (define program (hash-ref programs name))
+    (list name
+          (bytes->immutable-bytes (gl-shader-program-vertex-digest program))
+          (bytes->immutable-bytes (gl-shader-program-fragment-digest program)))))
+
+(define (opengl-cache-identity-info info)
+  (list (immutable-opengl-identity-string (opengl3d-info-vendor info))
+        (immutable-opengl-identity-string (opengl3d-info-renderer info))
+        (opengl3d-info-version info)
+        (opengl3d-info-glsl-version info)
+        (opengl3d-info-profile info)))
+
+(define (immutable-opengl-identity-string value)
+  (if (string? value) (string->immutable-string value) value))
 
 (define (opengl-fingerprint-info info)
   (vector (opengl3d-info-vendor info)

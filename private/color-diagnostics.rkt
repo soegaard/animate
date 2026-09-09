@@ -24,6 +24,9 @@
          color-theme-datum-diagnostics
          color-resolution-diagnostics)
 
+(define maximum-series-contrast-comparisons 4096)
+(define maximum-series-contrast-warnings 128)
+
 
 ;;;
 ;;; Contrast
@@ -187,9 +190,10 @@
        (= (length (cadr group)) 5)))
 
 (define (series-reports theme minimum-contrast canvas)
-  (define series (theme-series theme))
+  (define series (list->vector (theme-series theme)))
+  (define count (vector-length series))
   (cond
-    [(null? series)
+    [(zero? count)
      (list (report 'categorical-series 'warning
                    "theme has no categorical series; series-color cannot resolve"
                    #hasheq()))]
@@ -199,20 +203,51 @@
                    (hasheq 'use 'categorical-series
                            'canvas-policy 'required)))]
     [else
-     (for*/list ([left-index (in-range (length series))]
-                 [right-index (in-range (add1 left-index) (length series))]
-                 #:do [(define ratio
-                         (color-contrast-ratio
-                          (composite-over (list-ref series left-index) canvas)
-                          (composite-over (list-ref series right-index) canvas)))]
-                 #:when (< ratio minimum-contrast))
-       (report 'categorical-pair 'warning
-               (format "series entries ~a and ~a have contrast ~a:1"
-                       left-index right-index (rounded ratio))
-               (hasheq 'first-index left-index
-                       'second-index right-index
-                       'ratio ratio
-                       'target minimum-contrast)))]))
+     (define pairs-possible (/ (* count (sub1 count)) 2))
+     (define pairs-examined 0)
+     (define warnings-found 0)
+     (define retained-reversed '())
+     ;; A vector gives constant-time indexed access.  The explicit bounds keep
+     ;; a high-cardinality palette from creating a quadratic report or an
+     ;; unbounded inspector payload while preserving deterministic pair order.
+     (for* ([left-index (in-range count)]
+            [right-index (in-range (add1 left-index) count)]
+            #:break (>= pairs-examined maximum-series-contrast-comparisons))
+       (define ratio
+         (color-contrast-ratio
+          (composite-over (vector-ref series left-index) canvas)
+          (composite-over (vector-ref series right-index) canvas)))
+       (set! pairs-examined (add1 pairs-examined))
+       (when (< ratio minimum-contrast)
+         (set! warnings-found (add1 warnings-found))
+         (when (< (length retained-reversed) maximum-series-contrast-warnings)
+           (set! retained-reversed
+                 (cons
+                  (report 'categorical-pair 'warning
+                          (format "series entries ~a and ~a have contrast ~a:1"
+                                  left-index right-index (rounded ratio))
+                          (hasheq 'first-index left-index
+                                  'second-index right-index
+                                  'ratio ratio
+                                  'target minimum-contrast))
+                  retained-reversed)))))
+     (define warnings-retained (length retained-reversed))
+     (define truncated?
+       (or (< pairs-examined pairs-possible)
+           (< warnings-retained warnings-found)))
+     (append
+      (reverse retained-reversed)
+      (list
+       (report 'categorical-series-summary
+               (if (positive? warnings-found) 'warning 'info)
+               (if truncated?
+                   "categorical-series contrast review was bounded; see retained warnings and counts"
+                   "categorical-series contrast review examined every pair")
+               (hasheq 'pairs-possible pairs-possible
+                       'pairs-examined pairs-examined
+                       'warnings-found warnings-found
+                       'warnings-retained warnings-retained
+                       'truncated? truncated?))))]))
 
 (define (diagnostic-background theme canvas)
   (opaque-background

@@ -384,7 +384,10 @@ If a requested background or the theme background is translucent, a supplied
 opaque @racket[canvas] gives the compositing basis. Without one, the valid theme
 still returns a @racket['contrast-undetermined] report instead of being treated
 as malformed. Returned invalid-datum reports retain a bounded immutable summary
-of input, never the caller's mutable datum.
+of input, never the caller's mutable datum. Categorical-series comparisons use
+a fixed review budget. Their warning rows are followed by a
+@racket['categorical-series-summary] report containing possible and examined
+pair counts, found and retained warning counts, and a @racket['truncated?] flag.
 }
 
 @defproc[(color-theme-datum-diagnostics [datum any/c])

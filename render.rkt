@@ -101,9 +101,14 @@
     (set! nodes (add1 nodes))
     (when (> nodes maximum-color-theme-reader-nodes)
       (fail "a theme datum within the configured reader-node budget" position)))
-  (define (delimiter? byte)
-    (or (member byte '(9 10 13 32 40 41 91 93 59 34))
-        (= byte 35)))
+  ;; This is a deliberately small lexical scanner, not a second reader.  It
+  ;; recognizes the three reader forms emitted by `write` for our data grammar:
+  ;; ordinary atoms, strings, and |quoted symbols|.  Delimiters inside a quoted
+  ;; symbol are ordinary symbol spelling, not lists or comments.
+  (define (ordinary-delimiter? byte)
+    (member byte '(9 10 13 32 40 41 91 93 59 34 124)))
+  (define (whitespace? byte) (member byte '(9 10 13 32)))
+  (define (abbreviation-byte? byte) (member byte '(39 44 96))) ; ', , and `
   (let loop ([position 0] [depth 0])
     (cond
       [(= position length)
@@ -112,7 +117,7 @@
       [else
        (define byte (bytes-ref snapshot position))
        (cond
-         [(member byte '(9 10 13 32)) (loop (add1 position) depth)]
+         [(whitespace? byte) (loop (add1 position) depth)]
          [(= byte 59) ; ordinary line comment
           (let comment-loop ([index (add1 position)])
             (cond [(or (= index length) (= (bytes-ref snapshot index) 10))
@@ -141,22 +146,62 @@
                          [(= current 92) (string-loop (add1 index) (add1 token-length) #t)]
                          [(= current 34) (loop (add1 index) depth)]
                          [else (string-loop (add1 index) (add1 token-length) #f)])]))]
+         [(= byte 124) ; |...| quoted symbol, including writer escapes
+          (count-node! position)
+          (let quoted-symbol-loop ([index (add1 position)] [token-length 0]
+                                   [escaped? #f])
+            (when (> token-length maximum-color-theme-token-bytes)
+              (fail "a quoted symbol within the configured token-length budget" index))
+            (cond [(= index length)
+                   (fail "a terminated quoted symbol in a theme datum" position)]
+                  [else
+                   (define current (bytes-ref snapshot index))
+                   (cond [escaped?
+                          (quoted-symbol-loop (add1 index) (add1 token-length) #f)]
+                         [(= current 92)
+                          (quoted-symbol-loop (add1 index) (add1 token-length) #t)]
+                         [(= current 124) (loop (add1 index) depth)]
+                         [else
+                          (quoted-symbol-loop (add1 index) (add1 token-length) #f)])]))]
          [(= byte 35)
           ;; Theme files may use only the Boolean sentinels emitted by
           ;; theme->datum. In particular #(...), #hash, #s and #; are rejected
           ;; before Racket's reader can allocate or discard their payloads.
           (if (and (< (add1 position) length)
-                   (memv (bytes-ref snapshot (add1 position)) '(116 102)))
+                   (memv (bytes-ref snapshot (add1 position)) '(116 102))
+                   (or (= (+ position 2) length)
+                       (ordinary-delimiter? (bytes-ref snapshot (+ position 2)))))
               (begin (count-node! position) (loop (+ position 2) depth))
               (fail "the declarative theme-file grammar without reader dispatch forms" position))]
+         [(abbreviation-byte? byte)
+          (fail "the declarative theme-file grammar without reader abbreviations" position)]
          [else
           (count-node! position)
-          (let token-loop ([index position] [token-length 0])
+          (let token-loop ([index position] [token-length 0] [escaped? #f])
             (when (> token-length maximum-color-theme-token-bytes)
               (fail "a theme token within the configured token-length budget" index))
-            (cond [(or (= index length) (delimiter? (bytes-ref snapshot index)))
+            (cond [(= index length)
+                   (when escaped?
+                     (fail "a completed escaped theme token" position))
+                   (when (and (= token-length 1)
+                              (= (bytes-ref snapshot position) 46)) ; standalone .
+                     (fail "the declarative theme-file grammar without dotted lists" position))
                    (loop index depth)]
-                  [else (token-loop (add1 index) (add1 token-length))]))])])))
+                  [escaped? (token-loop (add1 index) (add1 token-length) #f)]
+                  [(= (bytes-ref snapshot index) 92)
+                   ;; Racket's writer may use an ordinary atom escape for a
+                   ;; vertical bar (for example `role\|bar`).
+                   (token-loop (add1 index) (add1 token-length) #t)]
+                  [(or
+                       (ordinary-delimiter? (bytes-ref snapshot index)))
+                   (when (and (= token-length 1)
+                              (= (bytes-ref snapshot position) 46)) ; standalone .
+                     (fail "the declarative theme-file grammar without dotted lists" position))
+                   (loop index depth)]
+                  [(abbreviation-byte? (bytes-ref snapshot index))
+                   (fail "the declarative theme-file grammar without reader abbreviations"
+                         index)]
+                  [else (token-loop (add1 index) (add1 token-length) #f)]))])])))
 
 (define (read-one-color-theme-datum snapshot path)
   (define input (open-input-bytes snapshot))

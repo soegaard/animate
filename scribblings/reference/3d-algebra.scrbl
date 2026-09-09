@@ -3595,7 +3595,9 @@ omits the property.}
 declared backend appearance identity or @racket[#f]. An opaque
 @racket[view3d] Pict adapter treats @racket[#f] conservatively: section-output
 caching is disabled rather than reusing pixels rendered with an ambient custom
-backend.}
+backend. The built-in OpenGL backend identifies a live driver/profile and its
+compiled shader-source digests; when configured to fall back, it delegates this
+identity to the software renderer that actually produced the pixels.}
 @defproc[(renderer3d-capabilities-of [renderer renderer3d?])
          renderer3d-capabilities?]{Returns the backend's immutable declared
 feature set, limits, and diagnostics.}

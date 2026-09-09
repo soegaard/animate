@@ -273,17 +273,22 @@
 (define color-spec-schema-version 1)
 (define maximum-color-spec-datum-nodes 100000)
 
-; color-spec->datum : color-spec? -> immutable-datum?
+; color-spec->datum : color-spec? [#:count-node! procedure?] -> immutable-datum?
 ;;   Converts a color specification to a versioned, evaluator-free datum tree.
-(define (color-spec->datum color)
-  (define nodes 0)
-  (define (count-node!)
-    (set! nodes (add1 nodes))
-    (when (> nodes maximum-color-spec-datum-nodes)
-      (raise-arguments-error
-       'color-spec->datum
-       "a color expression whose serialized tree fits the configured node budget"
-       "maximum nodes" maximum-color-spec-datum-nodes)))
+(define (color-spec->datum color #:count-node! [shared-count-node! #f])
+  (define count-node!
+    (or shared-count-node!
+        (let ([nodes 0])
+          (lambda ()
+            (set! nodes (add1 nodes))
+            (when (> nodes maximum-color-spec-datum-nodes)
+              (raise-arguments-error
+               'color-spec->datum
+               "a color expression whose serialized tree fits the configured node budget"
+               "maximum nodes" maximum-color-spec-datum-nodes))))))
+  (unless (procedure? count-node!)
+    (raise-argument-error 'color-spec->datum "procedure? as #:count-node!"
+                          count-node!))
   `(animate-color-spec ,color-spec-schema-version
                        ,(color-spec->body (normalize-color-spec color
                                                                   'color-spec->datum)

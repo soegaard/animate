@@ -2,7 +2,8 @@
 
 ;;; Corrective contracts for contrast assumptions and group classification
 
-(require rackunit
+(require racket/list
+         rackunit
          "../colors.rkt")
 
 (module+ test
@@ -56,6 +57,31 @@
              (lambda ()
                (color-theme-diagnostics animate-light-theme
                                         #:minimum-series-contrast +inf.0)))
+
+  ;; High-cardinality series diagnostics retain a deterministic bounded prefix
+  ;; and make the omitted work explicit instead of constructing every pair.
+  (define large-series-theme
+    (color-theme #:id 'large-series-diagnostics #:extends animate-light-theme
+                 #:series (make-list 100 theme-accent)))
+  (define large-series-reports
+    (color-theme-diagnostics large-series-theme))
+  (define large-series-summary
+    (for/first ([entry (in-list large-series-reports)]
+                #:when (eq? (hash-ref entry 'kind)
+                             'categorical-series-summary))
+      entry))
+  (define large-series-details (hash-ref large-series-summary 'details))
+  (check-equal? (hash-ref large-series-details 'pairs-possible) 4950)
+  (check-equal? (hash-ref large-series-details 'pairs-examined) 4096)
+  (check-equal? (hash-ref large-series-details 'warnings-found) 4096)
+  (check-equal? (hash-ref large-series-details 'warnings-retained) 128)
+  (check-true (hash-ref large-series-details 'truncated?))
+  (define first-retained-pair
+    (for/first ([entry (in-list large-series-reports)]
+                #:when (eq? (hash-ref entry 'kind) 'categorical-pair))
+      entry))
+  (check-equal? (hash-ref (hash-ref first-retained-pair 'details) 'first-index) 0)
+  (check-equal? (hash-ref (hash-ref first-retained-pair 'details) 'second-index) 1)
 
   ;; Invalid-input reports contain a small immutable description, not the
   ;; caller's mutable source value.

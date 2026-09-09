@@ -5,10 +5,13 @@
 (require racket/class
          racket/draw
          racket/file
+         racket/port
          rackunit
          (only-in pict filled-ellipse)
          "../authoring.rkt"
          "../main.rkt"
+         (only-in "../private/latex-formula-pict-renderer.rkt"
+                  default-latex-formula-pict-renderer)
          (only-in "../3d/render.rkt"
                   current-view3d-renderer3d
                   software-renderer3d)
@@ -50,6 +53,10 @@
   (dynamic-wind
    void
    (lambda ()
+     ;; TeX/conversion toolchain state is external to the Racket renderer, so
+     ;; the formula renderer deliberately does not claim a persistent key.
+     (check-false
+      (pict-renderer-cache-identity default-latex-formula-pict-renderer))
      ;; An opaque custom renderer is always renderable, but never persisted.
      (define opaque (list (opaque-circle-renderer "red")))
      (check-false
@@ -79,6 +86,46 @@
      (check-false (section-render-report-cache-hit? blue-first))
      (check-not-equal? red-pixel
                        (center-argb (car (section-render-report-paths blue-first))))
+     ;; Camera identity is a versioned reader datum, not the transparent
+     ;; camera struct.  An equivalent reconstruction therefore finds the
+     ;; manifest, while every pixel-affecting view change misses.
+     (define camera-a
+       (make-camera #:width 80 #:height 60 #:world-width 4
+                    #:center (vec2 1 2) #:background "white"))
+     (define camera-first
+       (render-timeline-section/report!
+        timeline 'only root #:fps 1 #:renderers red #:camera camera-a
+        #:cache-key 'camera-source))
+     (check-false (section-render-report-cache-hit? camera-first))
+     (define camera-manifest
+       (call-with-input-file
+        (build-path root ".animate-section-cache.rktd") read))
+     (define manifest-round-trip
+       (call-with-output-bytes
+        (lambda (out) (write camera-manifest out))))
+     (check-equal? (read (open-input-bytes manifest-round-trip)) camera-manifest)
+     (check-true
+      (section-render-report-cache-hit?
+       (render-timeline-section/report!
+        timeline 'only root #:fps 1 #:renderers red
+        #:camera (make-camera #:width 80 #:height 60 #:world-width 4
+                              #:center (vec2 1 2) #:background "white")
+        #:cache-key 'camera-source)))
+     (for ([changed-camera
+            (in-list
+             (list (make-camera #:width 80 #:height 60 #:world-width 4
+                                #:center (vec2 2 2) #:background "white")
+                   (make-camera #:width 80 #:height 60 #:world-width 5
+                                #:center (vec2 1 2) #:background "white")
+                   (make-camera #:width 81 #:height 60 #:world-width 4
+                                #:center (vec2 1 2) #:background "white")
+                   (make-camera #:width 80 #:height 61 #:world-width 4
+                                #:center (vec2 1 2) #:background "white")))])
+       (check-false
+        (section-render-report-cache-hit?
+         (render-timeline-section/report!
+          timeline 'only root #:fps 1 #:renderers red #:camera changed-camera
+          #:cache-key 'camera-source))))
      ;; The built-in renderer list includes the opaque view3d adapter. Its
      ;; dynamic backend is part of the render identity, even when this tiny
      ;; scene happens not to contain a viewport. That conservatively prevents

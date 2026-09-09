@@ -16,6 +16,7 @@
 
 ;; Imports
 (require "geometry.rkt"
+         "color-style.rkt"
          (only-in "color-token.rkt" theme-background))
 
 ;; Exports
@@ -27,6 +28,7 @@
          camera-background
          make-camera
          default-camera
+         camera-cache-identity
          camera-scale
          camera-world-height
          camera-length->pixels
@@ -83,6 +85,24 @@
 ;;   Gives the default 1280 by 720 camera.
 (define default-camera
   (make-camera))
+
+;; camera-cache-identity : camera? -> (or/c immutable-datum? #f)
+;; Produces the printer-independent portion of a persistent render-cache key.
+;; A camera deliberately accepts any draw backend background value, but only a
+;; semantic colour specification can be stored portably.  An opaque native
+;; drawing colour remains renderable and simply declines persistent caching.
+(define (camera-cache-identity value)
+  (unless (camera? value)
+    (raise-argument-error 'camera-cache-identity "camera?" value))
+  (define background (camera-background value))
+  (and (color-spec? background)
+       (list 'animate-camera-cache-v1
+             (camera-width value)
+             (camera-height value)
+             (camera-world-width value)
+             (vec2-x (camera-center value))
+             (vec2-y (camera-center value))
+             (color-spec->datum background))))
 
 
 ;;;

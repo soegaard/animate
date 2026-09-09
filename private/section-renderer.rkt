@@ -20,11 +20,15 @@
          file/sha1
          "../version.rkt"
          "authoring-timeline.rkt"
+         "camera.rkt"
          "color-theme-data.rkt"
          "color-theme.rkt"
          "render-color-context.rkt"
          "pict-renderer.rkt"
          "png-renderer.rkt"
+         "scene.rkt"
+         "scene-frame-grid.rkt"
+         "scene-state.rkt"
          "shape-pict-renderers.rkt")
 
 (provide write-subtitles!
@@ -168,6 +172,7 @@
         cache-key))
   (define expected-cache
     (section-cache-datum entry fps source-indices effective-cache-key
+                         #:scene (authored-timeline-scene timeline)
                          #:camera camera
                          #:renderers renderers
                          #:color-context color-context))
@@ -206,39 +211,91 @@
 ;; identity. An explicit key may describe opaque scene-producing code; it must
 ;; never suppress the context and renderer information that determines pixels.
 (define (section-cache-datum entry fps source-indices source-key
+                             #:scene scene
                              #:camera camera
                              #:renderers renderers
                              #:color-context color-context)
   (define render-identity
-    (section-render-identity camera renderers color-context))
-  (and render-identity
-       (list 'animate-section-cache-v5
-             animate-version
-             animate-stage
-             source-key
-             fps
-             (authoring-section-name entry)
-             (authoring-section-start entry)
-             (authoring-section-end entry)
-             source-indices
-             render-identity)))
+    (section-render-identity camera renderers color-context
+                             #:scene scene
+                             #:source-indices source-indices
+                             #:fps fps))
+  (define datum
+    (and render-identity
+         (list 'animate-section-cache-v6
+               animate-version
+               animate-stage
+               (immutable-cache-source-key source-key)
+               fps
+               (authoring-section-name entry)
+               (authoring-section-start entry)
+               (authoring-section-end entry)
+               source-indices
+               render-identity)))
+  ;; A manifest is data, not an accidental serialization of implementation
+  ;; structs.  Returning #f here makes an opaque cache component a safe miss.
+  (and datum (persistent-cache-datum? datum) datum))
 
-(define (section-render-identity camera renderers color-context)
+(define (immutable-cache-source-key value)
+  (if (string? value) (string->immutable-string value) value))
+
+(define (section-render-identity camera renderers color-context
+                                 #:scene [scene #f]
+                                 #:source-indices [source-indices '()]
+                                 #:fps [fps 30])
   (unless (render-color-context? color-context)
     (raise-argument-error
      'section-render-identity "render-color-context?" color-context))
   (define renderer-identities
     (for/list ([renderer (in-list renderers)])
-      (pict-renderer-cache-identity renderer)))
-  (and (andmap values renderer-identities)
-       (list 'animate-section-render-identity-v2
+      (or (pict-renderer-cache-identity renderer)
+          ;; An opaque renderer that never wins selection for a frame cannot
+          ;; affect this section's pixels.  This lets an ordinary section use
+          ;; a cache even when the default renderer list contains an optional
+          ;; external-tool renderer.  If it is selected even once, #f retains
+          ;; the conservative no-cache policy.
+          (and scene
+               (not (renderer-selected-for-section?
+                     renderer renderers scene source-indices fps))
+               'animate-unused-opaque-pict-renderer-v1))))
+  (define camera-identity
+    (and camera (camera-cache-identity camera)))
+  (and (or (not camera) camera-identity)
+       (andmap values renderer-identities)
+       (list 'animate-section-render-identity-v3
              (render-color-context-appearance-fingerprint color-context)
              (render-color-context-resolver-version color-context)
-             ;; Camera values are immutable semantic records in the supported
-             ;; API. They remain in their native representation rather than a
-             ;; printer-dependent string.
-             camera
+             camera-identity
              renderer-identities)))
+
+(define (renderer-selected-for-section? renderer renderers scene source-indices fps)
+  (for/or ([frame-index (in-list source-indices)])
+    (define state
+      (scene-sample scene (frame-index->time frame-index #:fps fps)))
+    (for/or ([visual (in-list (scene-state-resolved-visuals-in-drawing-order state))])
+      (eq? renderer (find-supporting-pict-renderer visual renderers)))))
+
+;; Only plain immutable reader data may cross the render-process boundary.
+;; This duplicates the intentionally private renderer-identity grammar at the
+;; enclosing manifest boundary, where camera and section fields also appear.
+(define (persistent-cache-datum? value)
+  (cond [(or (null? value) (boolean? value) (symbol? value) (keyword? value)
+             (char? value) (number? value)) #t]
+        [(string? value) (immutable? value)]
+        [(bytes? value) (immutable? value)]
+        [(pair? value)
+         (and (persistent-cache-datum? (car value))
+              (persistent-cache-datum? (cdr value)))]
+        [(vector? value)
+         (and (immutable? value)
+              (for/and ([item (in-vector value)])
+                (persistent-cache-datum? item)))]
+        [(hash? value)
+         (and (immutable? value)
+              (for/and ([(key item) (in-hash value)])
+                (and (persistent-cache-datum? key)
+                     (persistent-cache-datum? item))))]
+        [else #f]))
 
 ;; Reads a cache manifest conservatively; malformed/unreadable cache data is a
 ;; miss rather than an authoring error.
@@ -290,7 +347,11 @@
   (define scene-representation
     (format "~s" (authored-timeline-scene timeline)))
   (define render-identity
-    (section-render-identity camera renderers selected-color-context))
+    (section-render-identity
+     camera renderers selected-color-context
+     #:scene (authored-timeline-scene timeline)
+     #:source-indices (timeline-section-frame-indices timeline entry #:fps fps)
+     #:fps fps))
   (if (or (not render-identity)
           (scene-representation-has-opaque-procedure? scene-representation))
       #f
@@ -307,7 +368,6 @@
                     (authoring-section-start entry)
                     (authoring-section-end entry)
                     fps
-                    camera
                     render-identity
                     (version)
                     asset-representation)])

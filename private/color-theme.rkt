@@ -67,6 +67,7 @@
 
 (define maximum-theme-definition-count 10000)
 (define maximum-theme-expression-depth 64)
+(define maximum-theme-serialization-nodes 100000)
 
 ;; color-theme : #:id symbol? #:palette color-palette? #:roles hash? ...
 ;;   Constructs and validates a complete immutable role-resolution snapshot.
@@ -395,14 +396,27 @@
 ;;   Converts a complete normalized theme to a readable evaluator-free datum.
 (define (theme->datum theme)
   (check-theme 'theme->datum theme)
+  ;; One theme can contain many independently rooted expressions.  They share
+  ;; a single serialization allowance so splitting an expansion across roles
+  ;; cannot bypass the same resource limit used for one colour expression.
+  (define serialized-nodes 0)
+  (define (count-node!)
+    (set! serialized-nodes (add1 serialized-nodes))
+    (when (> serialized-nodes maximum-theme-serialization-nodes)
+      (raise-arguments-error
+       'theme->datum
+       "theme color expressions whose combined serialized tree fits the configured node budget"
+       "maximum nodes" maximum-theme-serialization-nodes
+       "serialized nodes" serialized-nodes)))
   `(animate-color-theme ,color-theme-schema-version
                         ,(color-theme-value-id theme)
                         ,(color-theme-value-display-name theme)
                         ,(palette->datum (color-theme-value-palette theme))
                         ,(for/list ([key (in-list (theme-role-keys theme))])
-                           (list key (color-spec->datum (theme-ref theme key))))
+                           (list key (color-spec->datum (theme-ref theme key)
+                                                        #:count-node! count-node!)))
                         ,(for/list ([spec (in-list (color-theme-value-series theme))])
-                           (color-spec->datum spec))
+                           (color-spec->datum spec #:count-node! count-node!))
                         ,(color-theme-value-provenance theme)))
 
 ;; datum->theme : any/c -> color-theme?
@@ -487,44 +501,68 @@
 ;; `series-color` token can be consumed only after that entire graph has been
 ;; completed, never while defining it.
 (define (reject-series-dependencies! roles series)
-  (define visited (make-hasheq))
+  ;; Store each immutable subexpression's maximum descendant depth once.  A
+  ;; boolean visited set is unsound here: a deep second route to a previously
+  ;; visited shared node must still count that node's whole subtree.
+  (define summaries (make-hasheq))
   (define visited-count 0)
-  (define (visit owner-kind owner spec route)
-    ;; Check depth before consulting the shared-node memo. A node first seen
-    ;; shallowly must still fail when a later dependency route reaches it too
-    ;; deeply.
-    (when (> (length route) maximum-theme-expression-depth)
+  ;; Each summary is (cons maximum-height route-to-series-or-#f).  Keeping the
+  ;; route beside the height means a shared binary expression is traversed once
+  ;; even when it contains no forbidden series token.
+  (define (summary spec)
+    (hash-ref!
+     summaries spec
+     (lambda ()
+       (set! visited-count (add1 visited-count))
+       (when (> visited-count maximum-theme-definition-count)
+         (raise-arguments-error
+          'color-theme "a color-definition graph within the configured node budget"
+          "maximum nodes" maximum-theme-definition-count))
+       (cond
+         [(series-color? spec) (cons 0 '(series-color))]
+         [(mix-color? spec)
+          (define from-summary (summary (mix-color-from spec)))
+          (define to-summary (summary (mix-color-to spec)))
+          (cons (add1 (max (car from-summary) (car to-summary)))
+                (or (and (cdr from-summary)
+                         (cons 'mix-from (cdr from-summary)))
+                    (and (cdr to-summary)
+                         (cons 'mix-to (cdr to-summary)))))]
+         [(alpha-color? spec)
+          (define source-summary (summary (alpha-color-source spec)))
+          (cons (add1 (car source-summary))
+                (and (cdr source-summary)
+                     (cons 'alpha (cdr source-summary))))]
+         [else (cons 0 #f)]))))
+  (define (check-root owner-kind owner spec)
+    (define root-summary (summary spec))
+    (when (> (car root-summary) maximum-theme-expression-depth)
       (raise-arguments-error
        'color-theme "a color definition within the configured expression-depth budget"
        "definition kind" owner-kind
        "definition" owner
        "maximum depth" maximum-theme-expression-depth))
-    (unless (hash-ref visited spec #f)
-      (hash-set! visited spec #t)
-      (set! visited-count (add1 visited-count))
-      (when (> visited-count maximum-theme-definition-count)
-        (raise-arguments-error
-         'color-theme "a color-definition graph within the configured node budget"
-         "maximum nodes" maximum-theme-definition-count))
-      (cond
-        [(series-color? spec)
-         (raise-arguments-error
-          'color-theme
-          "role and series definitions without series-color dependencies"
-          "definition kind" owner-kind
-          "definition" owner
-          "series index" (series-color-index spec)
-          "dependency route" (reverse (cons 'series-color route)))]
-        [(mix-color? spec)
-         (visit owner-kind owner (mix-color-from spec) (cons 'mix-from route))
-         (visit owner-kind owner (mix-color-to spec) (cons 'mix-to route))]
-        [(alpha-color? spec)
-         (visit owner-kind owner (alpha-color-source spec) (cons 'alpha route))]
-        [else (void)])))
-  (for ([(key spec) (in-hash roles)])
-    (visit 'role key spec '()))
+    (define route (cdr root-summary))
+    (when route
+      (raise-arguments-error
+       'color-theme
+       "role and series definitions without series-color dependencies"
+       "definition kind" owner-kind
+       "definition" owner
+       "series index" (series-color-index (series-at-route spec route))
+       "dependency route" route)))
+  (for ([key (in-list (sort (hash-keys roles) symbol<?))])
+    (check-root 'role key (hash-ref roles key)))
   (for ([spec (in-list series)] [index (in-naturals)])
-    (visit 'series index spec '())))
+    (check-root 'series index spec)))
+
+(define (series-at-route spec route)
+  (cond [(series-color? spec) spec]
+        [(eq? (car route) 'mix-from)
+         (series-at-route (mix-color-from spec) (cdr route))]
+        [(eq? (car route) 'mix-to)
+         (series-at-route (mix-color-to spec) (cdr route))]
+        [else (series-at-route (alpha-color-source spec) (cdr route))]))
 
 ;; normalize-display-name : any/c symbol? -> string?
 ;;   Copies human-readable metadata into an immutable string.

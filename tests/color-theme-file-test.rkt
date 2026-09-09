@@ -42,6 +42,34 @@
       #:exists 'truncate/replace)
      (check-exn #px"exactly one theme datum"
                 (lambda () (load-color-theme! path)))
+     ;; `write` quotes reader-sensitive but portable role symbols with bars.
+     ;; The bounded scanner must treat every delimiter in that spelling as
+     ;; symbol text and leave the ordinary reader to recover the same datum.
+     (define unusual-role-keys
+       (map string->symbol
+            '("role with space" "role;semicolon" "role#hash" "role(paren)"
+              "role|bar" "role\\slash" "роль-色")))
+     (define unusual-theme
+       (color-theme #:id 'quoted-role-theme #:extends animate-light-theme
+                    #:roles
+                    (for/hash ([key (in-list unusual-role-keys)])
+                      (values key theme-accent))))
+     (call-with-output-file
+      path
+      (lambda (out) (write (theme->datum unusual-theme) out))
+      #:exists 'truncate/replace)
+     (define unusual-loaded (load-color-theme! path))
+     (for ([key (in-list unusual-role-keys)])
+       (check-equal? (theme-ref unusual-loaded key) theme-accent))
+     ;; The compact grammar has no reader abbreviations or dotted pairs.
+     (call-with-output-file path
+       (lambda (out) (display "'(animate-color-theme)" out))
+       #:exists 'truncate/replace)
+     (check-exn exn:fail? (lambda () (load-color-theme! path)))
+     (call-with-output-file path
+       (lambda (out) (display "(animate-color-theme . 1)" out))
+       #:exists 'truncate/replace)
+     (check-exn exn:fail? (lambda () (load-color-theme! path)))
      ;; Reader graph syntax is not part of the data format, irrespective of
      ;; ambient reader parameters in a caller.
      (call-with-output-file
