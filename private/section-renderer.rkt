@@ -28,7 +28,6 @@
          "png-renderer.rkt"
          "scene.rkt"
          "scene-frame-grid.rkt"
-         "scene-state.rkt"
          "shape-pict-renderers.rkt")
 
 (provide write-subtitles!
@@ -216,10 +215,7 @@
                              #:renderers renderers
                              #:color-context color-context)
   (define render-identity
-    (section-render-identity camera renderers color-context
-                             #:scene scene
-                             #:source-indices source-indices
-                             #:fps fps))
+    (section-render-identity camera renderers color-context))
   (define datum
     (and render-identity
          (list 'animate-section-cache-v6
@@ -239,25 +235,17 @@
 (define (immutable-cache-source-key value)
   (if (string? value) (string->immutable-string value) value))
 
-(define (section-render-identity camera renderers color-context
-                                 #:scene [scene #f]
-                                 #:source-indices [source-indices '()]
-                                 #:fps [fps 30])
+(define (section-render-identity camera renderers color-context)
   (unless (render-color-context? color-context)
     (raise-argument-error
      'section-render-identity "render-color-context?" color-context))
   (define renderer-identities
     (for/list ([renderer (in-list renderers)])
-      (or (pict-renderer-cache-identity renderer)
-          ;; An opaque renderer that never wins selection for a frame cannot
-          ;; affect this section's pixels.  This lets an ordinary section use
-          ;; a cache even when the default renderer list contains an optional
-          ;; external-tool renderer.  If it is selected even once, #f retains
-          ;; the conservative no-cache policy.
-          (and scene
-               (not (renderer-selected-for-section?
-                     renderer renderers scene source-indices fps))
-               'animate-unused-opaque-pict-renderer-v1))))
+      ;; Rendering dispatch can recurse into groups and other composites.
+      ;; Do not attempt to reproduce that traversal here: every supplied
+      ;; renderer must declare its immutable appearance identity before a
+      ;; section can be persistently reused.
+      (pict-renderer-cache-identity renderer)))
   (define camera-identity
     (and camera (camera-cache-identity camera)))
   (and (or (not camera) camera-identity)
@@ -267,13 +255,6 @@
              (render-color-context-resolver-version color-context)
              camera-identity
              renderer-identities)))
-
-(define (renderer-selected-for-section? renderer renderers scene source-indices fps)
-  (for/or ([frame-index (in-list source-indices)])
-    (define state
-      (scene-sample scene (frame-index->time frame-index #:fps fps)))
-    (for/or ([visual (in-list (scene-state-resolved-visuals-in-drawing-order state))])
-      (eq? renderer (find-supporting-pict-renderer visual renderers)))))
 
 ;; Only plain immutable reader data may cross the render-process boundary.
 ;; This duplicates the intentionally private renderer-identity grammar at the
@@ -347,11 +328,7 @@
   (define scene-representation
     (format "~s" (authored-timeline-scene timeline)))
   (define render-identity
-    (section-render-identity
-     camera renderers selected-color-context
-     #:scene (authored-timeline-scene timeline)
-     #:source-indices (timeline-section-frame-indices timeline entry #:fps fps)
-     #:fps fps))
+    (section-render-identity camera renderers selected-color-context))
   (if (or (not render-identity)
           (scene-representation-has-opaque-procedure? scene-representation))
       #f

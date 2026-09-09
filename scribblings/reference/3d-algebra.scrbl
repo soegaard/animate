@@ -3857,7 +3857,9 @@ straight-alpha ARGB result used by the Pict compositor.
          opengl-renderer3d-spec?]{Declares an explicit backend configuration.
 @racket['error] rejects an unavailable context. @racket['software] is the only
 deliberate fallback policy and is reported in backend statistics; no request
-silently changes backend.}
+silently changes backend. The requested sample count is clamped to the live
+driver's maximum before rendering. Diagnostics report both the requested and
+effective counts, and persistent cache identity uses the effective count.}
 @defproc[(opengl-renderer3d-spec? [value any/c]) boolean?]{Recognizes an
 OpenGL backend declaration.}
 @defproc[(opengl-renderer3d [spec opengl-renderer3d-spec?
@@ -3872,7 +3874,9 @@ lived hidden context to test availability. It is a real capability probe, not
 a package-presence test.}
 @defproc[(opengl-renderer3d-info [renderer opengl-renderer3d?]) immutable-hash?]{
 Returns serializable GL version, GLSL version, vendor, renderer, profile,
-limits, required-capability, and optional-feature diagnostics.}
+limits, required-capability, and optional-feature diagnostics. Its optional
+backend diagnostic data includes both requested and effective multisample
+counts.}
 @defproc[(opengl-renderer3d-statistics [renderer opengl-renderer3d?]) immutable-hash?]{
 Returns backend counters plus geometry-cache and framebuffer-cache information.}
 @defproc[(opengl-renderer3d-reset-statistics! [renderer opengl-renderer3d?]) void?]{

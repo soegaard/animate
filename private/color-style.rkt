@@ -14,7 +14,8 @@
          "color-space.rkt"
          "oklab.rkt"
          "color-token.rkt"
-         "color-expression.rkt")
+         "color-expression.rkt"
+         "color-serialization-budget.rkt")
 
 (provide (struct-out rgba-color)
          rgb-color
@@ -272,27 +273,65 @@
 ;;   Identifies the externally readable color-specification datum format.
 (define color-spec-schema-version 1)
 (define maximum-color-spec-datum-nodes 100000)
+;; Every expression node produces no more than eleven body nodes: a five-atom
+;; literal/mix wrapper has six list cells plus five atoms. The version wrapper
+;; adds six more nodes, so seventeen nodes per expression node is a safe
+;; conservative preflight bound. It keeps recursive construction below any
+;; shared complete-output allowance before exact datum accounting runs.
+(define maximum-serialized-nodes-per-color-expression-node 17)
 
-; color-spec->datum : color-spec? [#:count-node! procedure?] -> immutable-datum?
+; color-spec->datum : color-spec? [#:count-node! procedure?]
+;                     [#:serialization-budget color-serialization-budget?]
+;                     -> immutable-datum?
 ;;   Converts a color specification to a versioned, evaluator-free datum tree.
-(define (color-spec->datum color #:count-node! [shared-count-node! #f])
+(define (color-spec->datum color
+                           #:count-node! [shared-count-node! #f]
+                           #:serialization-budget [serialization-budget #f])
+  (when (and shared-count-node! serialization-budget)
+    (raise-arguments-error
+     'color-spec->datum
+     "at most one internal serialization accounting mechanism"
+     "#:count-node!" shared-count-node!
+     "#:serialization-budget" serialization-budget))
+  (when (and serialization-budget
+             (not (color-serialization-budget? serialization-budget)))
+    (raise-argument-error 'color-spec->datum
+                          "color-serialization-budget? as #:serialization-budget"
+                          serialization-budget))
+  (define maximum-expression-nodes
+    (if serialization-budget
+        (quotient (color-serialization-budget-remaining-nodes serialization-budget)
+                  maximum-serialized-nodes-per-color-expression-node)
+        maximum-color-spec-datum-nodes))
   (define count-node!
     (or shared-count-node!
         (let ([nodes 0])
           (lambda ()
             (set! nodes (add1 nodes))
-            (when (> nodes maximum-color-spec-datum-nodes)
+            (when (> nodes maximum-expression-nodes)
               (raise-arguments-error
                'color-spec->datum
                "a color expression whose serialized tree fits the configured node budget"
-               "maximum nodes" maximum-color-spec-datum-nodes))))))
+               "maximum nodes" maximum-expression-nodes))))))
   (unless (procedure? count-node!)
     (raise-argument-error 'color-spec->datum "procedure? as #:count-node!"
                           count-node!))
-  `(animate-color-spec ,color-spec-schema-version
-                       ,(color-spec->body (normalize-color-spec color
-                                                                  'color-spec->datum)
-                                          count-node!)))
+  (define datum
+    `(animate-color-spec ,color-spec-schema-version
+                         ,(color-spec->body (normalize-color-spec color
+                                                                    'color-spec->datum)
+                                            count-node!)))
+  (cond [serialization-budget
+         (color-serialization-budget-count-datum! serialization-budget datum)]
+        [shared-count-node! (void)]
+        [else
+         ;; Standalone output also has the complete datum budget: expression
+         ;; nodes alone do not account for wrapper pairs or large atoms.
+         (color-serialization-budget-count-datum!
+          (make-color-serialization-budget 'color-spec->datum
+                                            #:maximum-nodes maximum-color-spec-datum-nodes)
+          datum)])
+  datum)
 
 ; datum->color-spec : any/c [#:maximum-depth exact-positive-integer?]
 ;                    -> color-spec?

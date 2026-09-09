@@ -17,6 +17,19 @@
     '((surface "vertex-a" "fragment-changed")
       (stroke "vertex-b" "fragment-b")))
   (define live-a (make-opengl-live-cache-identity 4 implementation-a shaders-a))
+  (check-equal? (opengl-effective-samples 4 8) 4)
+  (check-equal? (opengl-effective-samples 16 8) 8)
+  (check-equal? (opengl-effective-samples 16 1) 1)
+  ;; Persistent identity names the effective sample count. Requests that clamp
+  ;; to the same count share pixels and therefore a cache entry.
+  (check-equal? (make-opengl-live-cache-identity
+                 (opengl-effective-samples 16 4) implementation-a shaders-a)
+                (make-opengl-live-cache-identity
+                 (opengl-effective-samples 4 4) implementation-a shaders-a))
+  (check-not-equal? (make-opengl-live-cache-identity
+                     (opengl-effective-samples 16 4) implementation-a shaders-a)
+                    (make-opengl-live-cache-identity
+                     (opengl-effective-samples 2 4) implementation-a shaders-a))
   (check-equal? live-a
                 (make-opengl-live-cache-identity 4 implementation-a shaders-a))
   (check-not-equal? live-a
@@ -29,6 +42,6 @@
   ;; capacity or a requested-but-unavailable OpenGL configuration.
   (check-equal?
    (make-opengl-fallback-cache-identity '(animate-software-renderer3d-v1 reference))
-   '(animate-opengl-renderer3d-cache-v2
+   '(animate-opengl-renderer3d-cache-v3
      backend software-fallback
      delegate (animate-software-renderer3d-v1 reference))))

@@ -15,6 +15,7 @@
 ;; Imports
 (require "color-style.rkt"
          "color-token.rkt"
+         "color-serialization-budget.rkt"
          "color-palette-data.rkt")
 
 ;; Exports
@@ -156,18 +157,54 @@
 ;;; Deterministic Data Conversion
 ;;;
 
-;; palette->datum : color-palette? -> datum?
+;; palette->datum : color-palette?
+;;                   [#:serialization-budget color-serialization-budget?]
+;;                   -> datum?
 ;;   Converts a palette to a readable, deterministic, versioned data tree.
-(define (palette->datum palette)
+(define (palette->datum palette #:serialization-budget [serialization-budget #f])
   (check-palette 'palette->datum palette)
+  (define budget
+    (or serialization-budget
+        (make-color-serialization-budget 'palette->datum)))
+  (unless (color-serialization-budget? budget)
+    (raise-argument-error 'palette->datum
+                          "color-serialization-budget? as #:serialization-budget"
+                          budget))
+  (define keys (palette-keys palette))
+  (define groups (color-palette-value-groups palette))
+  ;; Account for the root's list cells and direct atomic fields now. Descendant
+  ;; color entries and groups are counted as they are produced, so an enormous
+  ;; shallow palette cannot first allocate a complete export tree.
+  (count-list-container! budget 8)
+  (for ([value (in-list (list 'animate-color-palette
+                              color-palette-schema-version
+                              (color-palette-value-id palette)
+                              (color-palette-value-display-name palette)
+                              (color-palette-value-version palette)
+                              (color-palette-value-provenance palette)))])
+    (color-serialization-budget-count-atom! budget value))
+  (count-list-container! budget (length keys))
+  (define colors
+    (for/list ([key (in-list keys)])
+      (define entry (list key (rgba->datum (palette-ref palette key))))
+      (color-serialization-budget-count-datum! budget entry)
+      entry))
+  (count-list-container! budget (length groups))
+  (for ([group (in-list groups)])
+    (color-serialization-budget-count-datum! budget group))
   `(animate-color-palette ,color-palette-schema-version
                           ,(color-palette-value-id palette)
                           ,(color-palette-value-display-name palette)
                           ,(color-palette-value-version palette)
-                          ,(for/list ([key (in-list (palette-keys palette))])
-                             (list key (rgba->datum (palette-ref palette key))))
-                          ,(color-palette-value-groups palette)
+                          ,colors
+                          ,groups
                           ,(color-palette-value-provenance palette)))
+
+;; A proper list's serialized shape has one pair node per element and a null
+;; terminator. Children are deliberately counted separately by the caller.
+(define (count-list-container! budget count)
+  (for ([ignored (in-range (add1 count))])
+    (color-serialization-budget-count-node! budget)))
 
 ;; datum->palette : any/c -> color-palette?
 ;;   Reads a complete declarative palette without evaluating external input.

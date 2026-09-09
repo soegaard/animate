@@ -23,6 +23,28 @@
                    (color-theme-fingerprint animate-dark-theme))
      (check-true (regexp-match? #rx"sha1"
                                 (color-theme-provenance loaded)))
+     ;; The public writer always uses the portable, canonical spelling rather
+     ;; than inheriting a caller's preferences for braces or long booleans.
+     (parameterize ([print-pair-curly-braces #t]
+                    [print-boolean-long-form #t])
+       (write-color-theme! animate-dark-theme path))
+     (define canonically-written (load-color-theme! path))
+     (check-equal? (color-theme-fingerprint canonically-written)
+                   (color-theme-fingerprint animate-dark-theme))
+     (check-false (regexp-match? #rx"#false|#true|[{}]"
+                                 (file->string path)))
+     ;; The reader accepts the ordinary alternate spellings produced by
+     ;; Racket's writer.  This snapshot contains both long Booleans and curly
+     ;; pairs when their parameters are enabled by a caller.
+     (parameterize ([print-pair-curly-braces #t]
+                    [print-boolean-long-form #t])
+       (call-with-output-file
+        path
+        (lambda (out) (write (theme->datum animate-dark-theme) out))
+        #:exists 'truncate/replace))
+     (define alternate-written (load-color-theme! path))
+     (check-equal? (color-theme-fingerprint alternate-written)
+                   (color-theme-fingerprint animate-dark-theme))
      ;; The effectful boundary feeds the datum decoder, so malformed input is
      ;; rejected without evaluating any file content.
      (call-with-output-file
@@ -85,5 +107,32 @@
       (lambda (out) (display "#1000000(0)" out))
       #:exists 'truncate/replace)
      (check-exn exn:fail?
+                (lambda () (load-color-theme! path)))
+     ;; A Boolean spelling must end at a real datum delimiter. Do not mistake
+     ;; dispatch-like tokens for the accepted long Boolean forms.
+     (call-with-output-file
+      path
+      (lambda (out) (display "#trueX" out))
+      #:exists 'truncate/replace)
+     (check-exn #px"reader dispatch forms"
+                (lambda () (load-color-theme! path)))
+     ;; The scanner tracks actual delimiter kinds, rather than merely a depth
+     ;; counter, and rejects malformed input before the general reader sees it.
+     (call-with-output-file
+      path
+      (lambda (out) (display "({])" out))
+      #:exists 'truncate/replace)
+     (check-exn #px"matching list delimiters"
+                (lambda () (load-color-theme! path)))
+     ;; Curly pairs are a normal reader spelling and consume the same bounded
+     ;; nesting budget as parentheses and square brackets.
+     (call-with-output-file
+      path
+      (lambda (out)
+        (for ([ignored (in-range 129)]) (display "{" out))
+        (display "theme" out)
+        (for ([ignored (in-range 129)]) (display "}" out)))
+      #:exists 'truncate/replace)
+     (check-exn #px"reader-depth"
                 (lambda () (load-color-theme! path))))
    (lambda () (when (file-exists? path) (delete-file path)))))

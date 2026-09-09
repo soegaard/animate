@@ -239,9 +239,12 @@
       (reverse retained-reversed)
       (list
        (report 'categorical-series-summary
-               (if (positive? warnings-found) 'warning 'info)
+               ;; A bounded prefix cannot establish that every omitted pair
+               ;; passes. Surface that incomplete review even when the prefix
+               ;; itself happened to contain no low-contrast pairs.
+               (if (or truncated? (positive? warnings-found)) 'warning 'info)
                (if truncated?
-                   "categorical-series contrast review was bounded; see retained warnings and counts"
+                   "categorical-series contrast review is incomplete; see examined and possible pair counts"
                    "categorical-series contrast review examined every pair")
                (hasheq 'pairs-possible pairs-possible
                        'pairs-examined pairs-examined

@@ -182,8 +182,8 @@ The version number carried by @racket[color-spec->datum] values.
 @defproc[(color-spec->datum [color color-spec?]) any/c]{
 Produces a readable, versioned datum. For example, a palette reference is
 written as @racket['(animate-color-spec 1 (palette aqua-c))]. Serialization
-uses a finite output-node budget, so a shared expression graph cannot expand
-without bound into this tree-shaped external format.
+uses finite output-node and atom-size budgets, so a shared expression graph
+cannot expand without bound into this tree-shaped external format.
 }
 
 @defproc[(datum->color-spec [datum any/c]
@@ -247,7 +247,8 @@ parent-extension history used to construct an otherwise equal palette.
 Returns ordered @racket[(list group-id keys)] metadata for swatch browsers.
 }
 @defproc[(palette->datum [palette color-palette?]) any/c]{
-Produces a complete readable versioned palette datum.
+Produces a complete readable versioned palette datum. Output has the same
+finite node and atom-size limits used by complete theme export.
 }
 @defproc[(datum->palette [datum any/c]) color-palette?]{
 Reads one complete palette datum without evaluating it. It rejects malformed
@@ -308,7 +309,10 @@ insertion order, palette-extension history, or ordinary printer preferences;
 series order remains significant.
 }
 @defproc[(theme->datum [theme color-theme?]) any/c]{
-Produces a complete readable versioned theme datum.
+Produces a complete readable versioned theme datum. One shared finite budget
+covers the palette, group membership, role expressions, categorical series,
+and metadata atoms, so splitting a large declaration across those sections
+does not bypass the export limit.
 }
 @defproc[(datum->theme [datum any/c]) color-theme?]{
 Reads one complete theme datum without evaluating it. It rejects malformed
@@ -388,6 +392,8 @@ of input, never the caller's mutable datum. Categorical-series comparisons use
 a fixed review budget. Their warning rows are followed by a
 @racket['categorical-series-summary] report containing possible and examined
 pair counts, found and retained warning counts, and a @racket['truncated?] flag.
+An incomplete bounded review is a warning even when every examined pair passed;
+the omitted pairs have not been checked.
 }
 
 @defproc[(color-theme-datum-diagnostics [datum any/c])

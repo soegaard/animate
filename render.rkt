@@ -37,7 +37,8 @@
          (except-out (all-from-out "private/project-execution.rkt")
                      current-project-artifact-opener)
          render-color->draw-color
-         load-color-theme!)
+         load-color-theme!
+         write-color-theme!)
 
 ;; render-color->draw-color : color-spec? -> color%
 ;; Converts a custom renderer's semantic color with the immutable context
@@ -50,6 +51,27 @@
 (define maximum-color-theme-reader-depth 128)
 (define maximum-color-theme-reader-nodes 100000)
 (define maximum-color-theme-token-bytes 4096)
+
+;; write-color-theme! : color-theme? path-string? -> path-string?
+;; Writes the canonical portable spelling for a complete theme datum. The
+;; reader also accepts ordinary long Booleans and curly pairs, but output does
+;; not depend on a caller's printer preferences.
+(define (write-color-theme! theme path)
+  (unless (color-theme? theme)
+    (raise-argument-error 'write-color-theme! "color-theme?" theme))
+  (unless (path-string? path)
+    (raise-argument-error 'write-color-theme! "path-string?" path))
+  (call-with-output-file
+   path
+   (lambda (output)
+     (parameterize ([print-pair-curly-braces #f]
+                    [print-boolean-long-form #f]
+                    [print-graph #f]
+                    [print-reader-abbreviations #f])
+       (write (theme->datum theme) output)
+       (newline output)))
+   #:exists 'truncate/replace)
+  path)
 
 ;; load-color-theme! : path-string? -> color-theme?
 ;; Reads one bounded, versioned data-only theme file at the effectful render
@@ -106,33 +128,53 @@
   ;; ordinary atoms, strings, and |quoted symbols|.  Delimiters inside a quoted
   ;; symbol are ordinary symbol spelling, not lists or comments.
   (define (ordinary-delimiter? byte)
-    (member byte '(9 10 13 32 40 41 91 93 59 34 124)))
+    (member byte '(9 10 13 32 40 41 91 93 123 125 59 34 124)))
   (define (whitespace? byte) (member byte '(9 10 13 32)))
   (define (abbreviation-byte? byte) (member byte '(39 44 96))) ; ', , and `
-  (let loop ([position 0] [depth 0])
+  (define (opening-delimiter-close byte)
+    (case byte [(40) 41] [(91) 93] [(123) 125] [else #f]))
+  (define (closing-delimiter? byte) (member byte '(41 93 125)))
+  (define (bytes-at? position spelling)
+    (and (<= (+ position (bytes-length spelling)) length)
+         (for/and ([index (in-range (bytes-length spelling))])
+           (= (bytes-ref snapshot (+ position index))
+              (bytes-ref spelling index)))))
+  (define (boolean-token-length position)
+    (for/or ([spelling (in-list (list #"#true" #"#false" #"#t" #"#f"))])
+      (define spelling-length (bytes-length spelling))
+      (and (bytes-at? position spelling)
+           (or (= (+ position spelling-length) length)
+               (ordinary-delimiter?
+                (bytes-ref snapshot (+ position spelling-length))))
+           spelling-length)))
+  (let loop ([position 0] [delimiters '()] [depth 0])
     (cond
       [(= position length)
-       (unless (zero? depth)
+       (unless (null? delimiters)
          (fail "balanced list delimiters in a theme datum" position))]
       [else
        (define byte (bytes-ref snapshot position))
        (cond
-         [(whitespace? byte) (loop (add1 position) depth)]
+         [(whitespace? byte) (loop (add1 position) delimiters depth)]
          [(= byte 59) ; ordinary line comment
           (let comment-loop ([index (add1 position)])
             (cond [(or (= index length) (= (bytes-ref snapshot index) 10))
-                   (loop index depth)]
+                   (loop index delimiters depth)]
                   [else (comment-loop (add1 index))]))]
-         [(or (= byte 40) (= byte 91))
+         [(opening-delimiter-close byte)
           (count-node! position)
+          (define next-delimiters
+            (cons (opening-delimiter-close byte) delimiters))
           (define next-depth (add1 depth))
           (when (> next-depth maximum-color-theme-reader-depth)
             (fail "a theme datum within the configured reader-depth budget" position))
-          (loop (add1 position) next-depth)]
-         [(or (= byte 41) (= byte 93))
-          (when (zero? depth)
+          (loop (add1 position) next-delimiters next-depth)]
+         [(closing-delimiter? byte)
+          (when (null? delimiters)
             (fail "balanced list delimiters in a theme datum" position))
-          (loop (add1 position) (sub1 depth))]
+          (unless (= byte (car delimiters))
+            (fail "matching list delimiters in a theme datum" position))
+          (loop (add1 position) (cdr delimiters) (sub1 depth))]
          [(= byte 34)
           (count-node! position)
           (let string-loop ([index (add1 position)] [token-length 0] [escaped? #f])
@@ -144,7 +186,7 @@
                    (define current (bytes-ref snapshot index))
                    (cond [escaped? (string-loop (add1 index) (add1 token-length) #f)]
                          [(= current 92) (string-loop (add1 index) (add1 token-length) #t)]
-                         [(= current 34) (loop (add1 index) depth)]
+                         [(= current 34) (loop (add1 index) delimiters depth)]
                          [else (string-loop (add1 index) (add1 token-length) #f)])]))]
          [(= byte 124) ; |...| quoted symbol, including writer escapes
           (count-node! position)
@@ -160,18 +202,18 @@
                           (quoted-symbol-loop (add1 index) (add1 token-length) #f)]
                          [(= current 92)
                           (quoted-symbol-loop (add1 index) (add1 token-length) #t)]
-                         [(= current 124) (loop (add1 index) depth)]
+                         [(= current 124) (loop (add1 index) delimiters depth)]
                          [else
                           (quoted-symbol-loop (add1 index) (add1 token-length) #f)])]))]
          [(= byte 35)
           ;; Theme files may use only the Boolean sentinels emitted by
-          ;; theme->datum. In particular #(...), #hash, #s and #; are rejected
+          ;; theme->datum. Both short and long Boolean writer spellings are
+          ;; admitted. In particular #(...), #hash, #s and #; are rejected
           ;; before Racket's reader can allocate or discard their payloads.
-          (if (and (< (add1 position) length)
-                   (memv (bytes-ref snapshot (add1 position)) '(116 102))
-                   (or (= (+ position 2) length)
-                       (ordinary-delimiter? (bytes-ref snapshot (+ position 2)))))
-              (begin (count-node! position) (loop (+ position 2) depth))
+          (define boolean-length (boolean-token-length position))
+          (if boolean-length
+              (begin (count-node! position)
+                     (loop (+ position boolean-length) delimiters depth))
               (fail "the declarative theme-file grammar without reader dispatch forms" position))]
          [(abbreviation-byte? byte)
           (fail "the declarative theme-file grammar without reader abbreviations" position)]
@@ -186,7 +228,7 @@
                    (when (and (= token-length 1)
                               (= (bytes-ref snapshot position) 46)) ; standalone .
                      (fail "the declarative theme-file grammar without dotted lists" position))
-                   (loop index depth)]
+                   (loop index delimiters depth)]
                   [escaped? (token-loop (add1 index) (add1 token-length) #f)]
                   [(= (bytes-ref snapshot index) 92)
                    ;; Racket's writer may use an ordinary atom escape for a
@@ -197,7 +239,7 @@
                    (when (and (= token-length 1)
                               (= (bytes-ref snapshot position) 46)) ; standalone .
                      (fail "the declarative theme-file grammar without dotted lists" position))
-                   (loop index depth)]
+                   (loop index delimiters depth)]
                   [(abbreviation-byte? (bytes-ref snapshot index))
                    (fail "the declarative theme-file grammar without reader abbreviations"
                          index)]

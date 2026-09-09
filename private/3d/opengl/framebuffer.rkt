@@ -5,6 +5,7 @@
 ;;;
 
 (require "api.rkt"
+         "cache-identity.rkt"
          "context-host.rkt"
          "gl-object.rkt")
 
@@ -55,11 +56,6 @@
 (define (target-key width height samples identity)
   (vector width height samples identity))
 
-(define (requested-samples->actual requested maximum)
-  (cond [(<= requested 1) 1]
-        [(<= maximum 1) 1]
-        [else (max 1 (min requested maximum))]))
-
 ; gl-framebuffer-cache-ensure! : cache host width height samples max-samples -> target
 ;; Called outside the host's context.  FBO allocation itself is serialized and
 ;; current through gl-context-host-call.
@@ -73,7 +69,7 @@
       (raise-argument-error 'gl-framebuffer-cache-ensure! "exact-positive-integer?" value)))
   (unless (exact-nonnegative-integer? maximum-samples)
     (raise-argument-error 'gl-framebuffer-cache-ensure! "exact-nonnegative-integer?" maximum-samples))
-  (define samples (requested-samples->actual requested-samples maximum-samples))
+  (define samples (opengl-effective-samples requested-samples maximum-samples))
   (define key (target-key width height samples (gl-context-host-identity host)))
   (define existing (hash-ref (gl-framebuffer-cache-entries cache) key #f))
   (or (and existing

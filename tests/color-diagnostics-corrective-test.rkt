@@ -83,6 +83,23 @@
   (check-equal? (hash-ref (hash-ref first-retained-pair 'details) 'first-index) 0)
   (check-equal? (hash-ref (hash-ref first-retained-pair 'details) 'second-index) 1)
 
+  ;; A clean bounded prefix is still incomplete. The summary must not claim
+  ;; informational success merely because no examined pair crossed this
+  ;; deliberately permissive threshold.
+  (define clean-prefix-reports
+    (color-theme-diagnostics large-series-theme #:minimum-series-contrast 1))
+  (define clean-prefix-summary
+    (for/first ([entry (in-list clean-prefix-reports)]
+                #:when (eq? (hash-ref entry 'kind)
+                             'categorical-series-summary))
+      entry))
+  (check-eq? (hash-ref clean-prefix-summary 'severity) 'warning)
+  (check-true (regexp-match? #rx"incomplete"
+                             (hash-ref clean-prefix-summary 'message)))
+  (check-equal? (hash-ref (hash-ref clean-prefix-summary 'details)
+                          'warnings-found)
+                0)
+
   ;; Invalid-input reports contain a small immutable description, not the
   ;; caller's mutable source value.
   (define invalid-input (vector 'mutable 'input))

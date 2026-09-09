@@ -108,7 +108,9 @@
     (define spec (opengl-renderer3d-value-spec renderer))
     (if (opengl-renderer3d-value-host renderer)
         (make-opengl-live-cache-identity
-         (opengl-renderer3d-spec-value-samples spec)
+         (opengl-effective-samples
+          (opengl-renderer3d-spec-value-samples spec)
+          (opengl3d-info-maximum-samples (opengl-renderer3d-value-info renderer)))
          (opengl-cache-identity-info (opengl-renderer3d-value-info renderer))
          (shader-cache-digests (opengl-renderer3d-value-programs renderer)))
         (make-opengl-fallback-cache-identity
@@ -186,6 +188,10 @@
     'maximum-samples (max 1 (opengl3d-info-maximum-samples info)))
    (hasheq 'backend 'opengl-racket
            'requested-samples (opengl-renderer3d-spec-value-samples spec)
+           'effective-samples
+           (opengl-effective-samples
+            (opengl-renderer3d-spec-value-samples spec)
+            (opengl3d-info-maximum-samples info))
            'shader-limits opengl3d-limits
            'unsupported-features
            '(wireframe object-id specular emission))))
@@ -269,7 +275,17 @@
 (define (opengl-renderer3d-info renderer)
   (ensure-opengl-renderer 'opengl-renderer3d-info renderer)
   (or (and (opengl-renderer3d-value-info renderer)
-           (opengl3d-info->datum (opengl-renderer3d-value-info renderer)))
+           (hash-set*
+            (opengl3d-info->datum (opengl-renderer3d-value-info renderer))
+            'requested-samples
+            (opengl-renderer3d-spec-value-samples
+             (opengl-renderer3d-value-spec renderer))
+            'effective-samples
+            (opengl-effective-samples
+             (opengl-renderer3d-spec-value-samples
+              (opengl-renderer3d-value-spec renderer))
+             (opengl3d-info-maximum-samples
+              (opengl-renderer3d-value-info renderer)))))
       (hasheq 'backend 'software
               'warning (opengl-renderer3d-value-fallback-diagnostic renderer))))
 
@@ -292,6 +308,18 @@
               'geometry-upload-milliseconds
               (opengl-renderer3d-value-geometry-upload-milliseconds renderer)
               'fallback-warning (opengl-renderer3d-value-fallback-diagnostic renderer))
+      'sample-diagnostics
+      (if (opengl-renderer3d-value-info renderer)
+          (hasheq 'requested-samples
+                  (opengl-renderer3d-spec-value-samples
+                   (opengl-renderer3d-value-spec renderer))
+                  'effective-samples
+                  (opengl-effective-samples
+                   (opengl-renderer3d-spec-value-samples
+                    (opengl-renderer3d-value-spec renderer))
+                   (opengl3d-info-maximum-samples
+                    (opengl-renderer3d-value-info renderer))))
+          (hasheq))
       'geometry-cache
       (if (opengl-renderer3d-value-geometry-cache renderer)
           (gl-geometry-cache-statistics (opengl-renderer3d-value-geometry-cache renderer))
@@ -632,6 +660,10 @@
                linear-depth #f #f (frame3d-spec-camera frame-spec)
                (hasheq 'backend 'opengl-racket
                        'samples (gl-framebuffer-target-samples target)
+                       'requested-samples
+                       (opengl-renderer3d-spec-value-samples
+                        (opengl-renderer3d-value-spec renderer))
+                       'effective-samples (gl-framebuffer-target-samples target)
                        'attachments requested
                        'renderer-info (opengl3d-info->datum (opengl-renderer3d-value-info renderer))
                        'geometry-cache (gl-geometry-cache-statistics

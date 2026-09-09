@@ -19,7 +19,8 @@
          "color-style.rkt"
          "color-token.rkt"
          "color-expression.rkt"
-         "color-palette.rkt")
+         "color-palette.rkt"
+         "color-serialization-budget.rkt")
 
 ;; Exports
 (provide color-theme
@@ -396,28 +397,48 @@
 ;;   Converts a complete normalized theme to a readable evaluator-free datum.
 (define (theme->datum theme)
   (check-theme 'theme->datum theme)
-  ;; One theme can contain many independently rooted expressions.  They share
-  ;; a single serialization allowance so splitting an expansion across roles
-  ;; cannot bypass the same resource limit used for one colour expression.
-  (define serialized-nodes 0)
-  (define (count-node!)
-    (set! serialized-nodes (add1 serialized-nodes))
-    (when (> serialized-nodes maximum-theme-serialization-nodes)
-      (raise-arguments-error
-       'theme->datum
-       "theme color expressions whose combined serialized tree fits the configured node budget"
-       "maximum nodes" maximum-theme-serialization-nodes
-       "serialized nodes" serialized-nodes)))
+  ;; One shared allowance covers every part of the external tree. In
+  ;; particular, a palette or group cannot evade the expression budget just
+  ;; because it is shallow, and a large atom cannot hide behind one node.
+  (define budget
+    (make-color-serialization-budget
+     'theme->datum #:maximum-nodes maximum-theme-serialization-nodes))
+  (define role-keys (theme-role-keys theme))
+  (define series (color-theme-value-series theme))
+  (count-list-container! budget 8)
+  (for ([value (in-list (list 'animate-color-theme
+                              color-theme-schema-version
+                              (color-theme-value-id theme)
+                              (color-theme-value-display-name theme)
+                              (color-theme-value-provenance theme)))])
+    (color-serialization-budget-count-atom! budget value))
+  (define palette-datum
+    (palette->datum (color-theme-value-palette theme)
+                    #:serialization-budget budget))
+  (count-list-container! budget (length role-keys))
+  (define roles
+    (for/list ([key (in-list role-keys)])
+      ;; The `(key color-spec-datum)` wrapper is part of the serialized theme;
+      ;; the color spec's own call contributes its complete nested tree.
+      (count-list-container! budget 2)
+      (color-serialization-budget-count-atom! budget key)
+      (list key (color-spec->datum (theme-ref theme key)
+                                   #:serialization-budget budget))))
+  (count-list-container! budget (length series))
+  (define series-data
+    (for/list ([spec (in-list series)])
+      (color-spec->datum spec #:serialization-budget budget)))
   `(animate-color-theme ,color-theme-schema-version
                         ,(color-theme-value-id theme)
                         ,(color-theme-value-display-name theme)
-                        ,(palette->datum (color-theme-value-palette theme))
-                        ,(for/list ([key (in-list (theme-role-keys theme))])
-                           (list key (color-spec->datum (theme-ref theme key)
-                                                        #:count-node! count-node!)))
-                        ,(for/list ([spec (in-list (color-theme-value-series theme))])
-                           (color-spec->datum spec #:count-node! count-node!))
+                        ,palette-datum
+                        ,roles
+                        ,series-data
                         ,(color-theme-value-provenance theme)))
+
+(define (count-list-container! budget count)
+  (for ([ignored (in-range (add1 count))])
+    (color-serialization-budget-count-node! budget)))
 
 ;; datum->theme : any/c -> color-theme?
 ;;   Reads a complete theme datum without evaluating its contents.

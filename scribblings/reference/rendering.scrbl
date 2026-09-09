@@ -86,8 +86,10 @@ state. A renderer that has no stable declaration simply omits the property.
 
 Returns the renderer's declared immutable appearance datum, or @racket[#f] when
 it has none. The section renderer then remains able to render that renderer but
-does not persistently reuse a section in which that renderer is selected.
-An unselected optional renderer does not prevent reuse of unrelated frames.
+does not persistently reuse a section supplied with that renderer. This
+conservative rule also covers renderers selected by a child inside a group or
+another composite Visual; Animate does not guess whether an opaque renderer is
+unused.
 The built-in LaTeX formula renderer has a stable identity, so its sections can
 be persistently reused. Its formula source and camera already participate in
 the section key. If the TeX or conversion environment is deliberately changed,
@@ -1078,11 +1080,21 @@ and returns one immutable snapshot. It rejects reader extensions, graph syntax,
 and trailing datums; it does not evaluate the file or retain a handle that a
 renderer could reread. Before reading, it accepts only the declarative
 list/symbol/number/string/Boolean grammar emitted by @racket[theme->datum],
-with bounded nesting, nodes, and token lengths; reader-dispatch forms such as
-sized vectors, hashes, and datum comments are rejected before they can expand.
-Ordinary and vertical-bar-quoted symbols emitted by @racket[write] are both
-accepted, including escaped punctuation and Unicode role names; reader
-abbreviations and dotted lists are not part of the file grammar.
+with bounded nesting, nodes, and token lengths; parentheses, square brackets,
+and curly pairs must match. Short and long Boolean spellings are accepted.
+Reader-dispatch forms such as sized vectors, hashes, and datum comments are
+rejected before they can expand. Ordinary and vertical-bar-quoted symbols
+emitted by @racket[write] are both accepted, including escaped punctuation and
+Unicode role names; reader abbreviations and dotted lists are not part of the
+file grammar.
+}
+
+@defproc[(write-color-theme! [theme color-theme?] [path path-string?]) path-string?]{
+
+Writes @racket[theme] as one portable, versioned theme datum at @racket[path]
+and returns @racket[path]. The output always uses the canonical ordinary list
+and short-Boolean spelling, independent of the caller's current printer
+parameters. The result can be read by @racket[load-color-theme!].
 }
 
 @defproc[(render-frames!
@@ -1421,8 +1433,9 @@ This mandatory rendering identity applies even when @racket[cache-key] is an
 explicit symbol or string: that key identifies author-controlled source, not
 the appearance of its PNGs. @racket[#f] continues to disable caching.
 Custom Pict renderers without a declared immutable cache identity remain
-renderable but deliberately disable persistent reuse whenever they are selected;
-Animate never guesses their identity from a printed closure or object.
+renderable but deliberately disable persistent reuse for a section supplied
+with them. Animate never guesses their identity from a printed closure or
+object, nor does it infer that they are unused from only a top-level Visual.
 }
 
 @defproc[(render-timeline-section/report!

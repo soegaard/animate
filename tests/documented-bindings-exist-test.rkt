@@ -58,7 +58,7 @@
                          preview-color-theme preview-set-color-theme!))])
     (check-not-eq? (public-binding "../preview.rkt" name) absent))
   (for ([name (in-list '(render-frames! encode-mp4! render-color->draw-color
-                         load-color-theme!))])
+                         load-color-theme! write-color-theme!))])
     (check-not-eq? (public-binding "../render.rkt" name) absent))
   (for ([name (in-list '(animate-project? plan-project prepare-project!
                          prepare-project-label-layout3d
