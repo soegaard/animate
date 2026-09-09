@@ -17,6 +17,7 @@
 
 ;; Imports
 (require "affine-transform.rkt"
+         (only-in "color-token.rkt" theme-foreground)
          "geometry.rkt"
          "visual-model.rkt")
 
@@ -231,7 +232,7 @@
                     #:font-family [font-family 'default]
                     #:font-style [font-style 'normal]
                     #:font-weight [font-weight 'normal]
-                    #:color [color "black"]
+                    #:color [color theme-foreground]
                     #:horizontal-alignment [horizontal-alignment 'center]
                     #:vertical-alignment [vertical-alignment 'center])
   (define checked-content
@@ -259,7 +260,7 @@
                    #:font-family [font-family 'default]
                    #:font-style [font-style 'normal]
                    #:font-weight [font-weight 'normal]
-                   #:color [color "black"]
+                   #:color [color theme-foreground]
                    #:horizontal-alignment [horizontal-alignment 'center]
                    #:vertical-alignment [vertical-alignment 'center]
                    #:width [width #f]
@@ -286,7 +287,7 @@
                    #:font-family [font-family 'default]
                    #:font-style [font-style 'normal]
                    #:font-weight [font-weight 'normal]
-                   #:color [color "black"]
+                   #:color [color theme-foreground]
                    #:horizontal-alignment [horizontal-alignment 'center]
                    #:vertical-alignment [vertical-alignment 'center]
                    #:width [width #f]

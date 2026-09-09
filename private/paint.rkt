@@ -101,12 +101,10 @@
     (raise-argument-error 'paint-lerp "paint?" to))
   (unless (and (finite-real? progress) (<= 0 progress 1))
     (raise-argument-error 'paint-lerp "finite real in [0, 1]" progress))
-  (cond [(zero? progress) from]
-        [(= progress 1) to]
+  (cond [(zero? progress) (paint-endpoint from)]
+        [(= progress 1) (paint-endpoint to)]
         [(and (color-spec? from) (color-spec? to))
-         (rgba-color-lerp (color-spec->rgba-color from 'paint-lerp)
-                          (color-spec->rgba-color to 'paint-lerp)
-                          progress)]
+         (color-mix from to progress)]
         [(and (linear-gradient-paint? from) (linear-gradient-paint? to))
          (linear-gradient-paint
           (vec2-lerp (linear-gradient-paint-start from)
@@ -129,16 +127,12 @@
                       (radial-gradient-paint-stops to) progress))]
         [(and (checker-pattern-paint? from) (checker-pattern-paint? to))
          (checker-pattern-paint
-          (rgba-color-lerp (color-spec->rgba-color (checker-pattern-paint-first from)
-                                                   'paint-lerp)
-                           (color-spec->rgba-color (checker-pattern-paint-first to)
-                                                   'paint-lerp)
-                           progress)
-          (rgba-color-lerp (color-spec->rgba-color (checker-pattern-paint-second from)
-                                                   'paint-lerp)
-                           (color-spec->rgba-color (checker-pattern-paint-second to)
-                                                   'paint-lerp)
-                           progress)
+          (color-mix (checker-pattern-paint-first from)
+                     (checker-pattern-paint-first to)
+                     progress)
+          (color-mix (checker-pattern-paint-second from)
+                     (checker-pattern-paint-second to)
+                     progress)
           (real-lerp (checker-pattern-paint-cell-size from)
                      (checker-pattern-paint-cell-size to) progress))]
         [else
@@ -157,9 +151,16 @@
   (for/list ([from (in-list first)] [to (in-list second)])
     (paint-stop
      (real-lerp (paint-stop-offset from) (paint-stop-offset to) progress)
-     (rgba-color-lerp (color-spec->rgba-color (paint-stop-color from) 'paint-lerp)
-                      (color-spec->rgba-color (paint-stop-color to) 'paint-lerp)
-                      progress))))
+     (color-mix (paint-stop-color from) (paint-stop-color to) progress))))
+
+;; Color endpoints normalize immediately, while structured paint endpoints
+;; remain the exact authored paint values.  The latter preserves existing
+;; geometry identity and lets a caller distinguish an unchanged gradient from
+;; an interior interpolated gradient.
+(define (paint-endpoint value)
+  (if (color-spec? value)
+      (normalize-color-spec value 'paint-lerp)
+      value))
 
 (define (check-gradient-points who first second)
   (for ([point (in-list (list first second))] [name (in-list '(start end))])

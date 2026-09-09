@@ -5,7 +5,8 @@
 ;;;
 
 (require rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../colors.rkt")
 
 (module+ test
   (define (visual-at scene time id)
@@ -157,7 +158,7 @@
                (scene-play (scene-add (make-scene) unfilled)
                            (fill-color-to 'unfilled "red"))))
 
-  ;; Interior samples are renderer-independent RGBA values, but exact boundaries
+  ;; Interior samples retain an unresolved semantic mix, while exact boundaries
   ;; preserve the caller's original textual endpoints.
   (define fill-scene
     (scene-play
@@ -166,7 +167,7 @@
      #:duration 4))
   (check-equal? (visual-fill-color (visual-at fill-scene 0 'dot)) "red")
   (check-equal? (visual-fill-color (visual-at fill-scene 2 'dot))
-                (rgba-color 255/2 0 255/2 1))
+                (color-mix "red" "blue" 1/2))
   (check-equal? (visual-fill-color (visual-at fill-scene 4 'dot)) "blue")
 
   (define alpha-scene
@@ -177,7 +178,7 @@
      (fill-color-to 'alpha "transparent")
      #:duration 2))
   (check-equal? (visual-fill-color (visual-at alpha-scene 1 'alpha))
-                (rgba-color 255/2 0 0 1/2))
+                (color-mix (rgba-color 255 0 0 1) "transparent" 1/2))
   (check-equal? (visual-fill-color (visual-at alpha-scene 2 'alpha))
                 "transparent")
 
@@ -198,9 +199,9 @@
   (check-equal? (visual-opacity parallel-mid) 3/4)
   (check-equal? (visual-stroke-width parallel-mid) 6)
   (check-equal? (visual-fill-color parallel-mid)
-                (rgba-color 255/2 0 255/2 1))
+                (color-mix "red" "blue" 1/2))
   (check-equal? (visual-stroke-color parallel-mid)
-                (rgba-color 255/2 215/2 0 1))
+                (color-mix "black" "gold" 1/2))
 
   ;; Same-component overlaps conflict. Fill and stroke remain independent.
   (check-exn
@@ -233,7 +234,7 @@
      #:duration 4))
   (check-equal? (visual-fill-color (visual-at sequential-fills 2 'dot)) "white")
   (check-equal? (visual-fill-color (visual-at sequential-fills 3 'dot))
-                (rgba-color 255/2 255/2 255 1))
+                (color-mix "white" "blue" 1/2))
   (check-equal? (visual-fill-color (visual-at sequential-fills 4 'dot)) "blue")
 
   (define locally-timed-stroke
@@ -244,7 +245,7 @@
   (check-equal? (visual-stroke-color (visual-at locally-timed-stroke 1/2 'vector))
                 "black")
   (check-equal? (visual-stroke-color (visual-at locally-timed-stroke 2 'vector))
-                (rgba-color 255/2 0 0 1))
+                (color-mix "black" "red" 1/2))
   (check-equal? (visual-stroke-color (visual-at locally-timed-stroke 3 'vector))
                 "red")
 
@@ -263,9 +264,9 @@
     (visual-at introduction-scene 1 'introduced))
   (check-equal? (visual-opacity introduced-mid) 1/2)
   (check-equal? (visual-fill-color introduced-mid)
-                (rgba-color 255/2 0 255/2 1))
+                (color-mix "red" "blue" 1/2))
   (check-equal? (visual-stroke-color introduced-mid)
-                (rgba-color 255/2 215/2 0 1))
+                (color-mix "black" "gold" 1/2))
 
   ;; Third-party semantic Visuals can opt into either protocol independently.
   (struct color-marker (id position fill stroke)
@@ -293,7 +294,7 @@
       (stroke-color-to custom "white"))
      #:duration 2))
   (check-equal? (visual-fill-color (visual-at custom-scene 1 'custom))
-                (rgba-color 255/2 0 255/2 1))
+                (color-mix "red" "blue" 1/2))
   (check-equal? (visual-stroke-color (visual-at custom-scene 2 'custom)) "white")
 
   (struct invalid-fill-marker (id position fill)

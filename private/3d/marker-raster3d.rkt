@@ -7,6 +7,7 @@
 (require racket/list
          racket/math
          "../color-style.rkt"
+         "../render-color-context.rkt"
          "../geometry.rkt"
          "affine3.rkt"
          "camera3d.rkt"
@@ -233,7 +234,8 @@
            (sqr (- (cdr second) (cdr first))))))
 
 (define (resolve-color source opacity)
-  (define color (color-spec->rgba-color source 'marker-raster3d))
+  (define color
+    (resolve-color-in-context source (current-or-default-render-color-context)))
   (rgba-color (rgba-color-red color) (rgba-color-green color) (rgba-color-blue color)
               (* opacity (rgba-color-alpha color))))
 

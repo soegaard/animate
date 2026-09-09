@@ -15,6 +15,7 @@
 
 (require racket/list
          "../color-style.rkt"
+         (only-in "../color-token.rkt" theme-surface-edge)
          "../geometry.rkt"
          "bounds3.rkt"
          "material3d.rkt"
@@ -224,7 +225,7 @@
                 #:material [material default-material3d]
                 #:transform [transform identity-transform3]
                 #:opacity [opacity 1]
-                #:wireframe-color [wireframe-color "steelblue"]
+                #:wireframe-color [wireframe-color theme-surface-edge]
                 #:wireframe-width [wireframe-width 2])
   (unless (symbol? id)
     (raise-argument-error 'mesh3d "symbol?" id))

@@ -4,18 +4,33 @@
 ;;; Semantic Color Styles
 ;;;
 
-;; Defines renderer-independent RGBA colors and deterministic conversion from
-;; common textual color specifications. This module intentionally has no
-;; racket/draw, pict, bitmap, filesystem, process, or browser dependencies.
+;; Defines literal RGBA colors plus the pure facade for unresolved palette,
+;; role, mix, and alpha specifications. This module intentionally has no
+;; racket/draw, pict, bitmap, filesystem, process, browser, or theme-state
+;; dependencies.
 
 (require racket/string
-         "geometry.rkt")
+         "geometry.rkt"
+         "color-space.rkt"
+         "oklab.rkt"
+         "color-token.rkt"
+         "color-expression.rkt")
 
 (provide (struct-out rgba-color)
          rgb-color
+         literal-color-spec?
          color-spec?
          color-spec->rgba-color
-         rgba-color-lerp)
+         rgba-color-lerp
+         rgba-color-mix
+         color-mix
+         color-with-alpha
+         color-opacity
+         color-expression?
+         normalize-color-spec
+         color-spec-schema-version
+         color-spec->datum
+         datum->color-spec)
 
 ;; rgba-color stores sRGB component values independently from any drawing backend.
 ;; Red, green, and blue are finite reals in [0,255]; alpha is in [0,1].
@@ -44,13 +59,20 @@
 (define (rgb-color red green blue)
   (rgba-color red green blue 1))
 
-; color-spec? : any/c -> boolean?
-;;   Reports whether value is a semantic color or a supported textual color.
-(define (color-spec? value)
+; literal-color-spec? : any/c -> boolean?
+;;   Reports whether value is a semantic RGBA color or supported literal string.
+(define (literal-color-spec? value)
   (or (rgba-color? value)
       (and (string? value)
            (string-color->rgba-color value)
            #t)))
+
+; color-spec? : any/c -> boolean?
+;;   Reports whether value is a literal, token, or unresolved color expression.
+(define (color-spec? value)
+  (or (literal-color-spec? value)
+      (color-token? value)
+      (color-expression? value)))
 
 ; color-spec->rgba-color : any/c [symbol?] -> rgba-color?
 ;;   Resolves a semantic or textual color to renderer-independent RGBA channels.
@@ -64,11 +86,93 @@
           who
           "supported color name, #RGB[A], #RRGGBB[AA], or rgba-color?"
           value))]
+    [(or (color-token? value) (color-expression? value))
+     (raise-arguments-error
+      who
+      "unresolved palette, role, series, mix, and alpha specifications require a theme resolver; theme resolution is not available yet"
+      "value" value)]
     [else
      (raise-argument-error
       who
       "supported color name, #RGB[A], #RRGGBB[AA], or rgba-color?"
       value)]))
+
+; color-mix : color-spec? color-spec? finite-real?
+;             [#:space interpolation-space?]
+;             [#:alpha-mode alpha-mode?]
+;             -> color-spec?
+;;   Builds an unresolved color mix, preserving exact normalized endpoints.
+(define (color-mix from to amount
+                   #:space [space 'srgb-linear]
+                   #:alpha-mode [alpha-mode 'premultiplied])
+  (define normalized-from (normalize-color-spec from 'color-mix))
+  (define normalized-to (normalize-color-spec to 'color-mix))
+  (check-unit-interval amount 'color-mix "amount")
+  (unless (memq space '(srgb srgb-linear oklab))
+    (raise-argument-error
+     'color-mix
+     "one of 'srgb, 'srgb-linear, or 'oklab"
+     space))
+  (unless (memq alpha-mode '(premultiplied straight))
+    (raise-argument-error
+     'color-mix
+     "one of 'premultiplied or 'straight"
+     alpha-mode))
+  (cond
+    [(zero? amount) normalized-from]
+    [(= amount 1) normalized-to]
+    [(equal? normalized-from normalized-to) normalized-from]
+    [(and (rgba-color? normalized-from) (rgba-color? normalized-to))
+     ;; A literal-only mix is theme-independent and can be folded safely.
+     ;; Token-bearing expressions deliberately remain symbolic.
+     (rgba-color-mix normalized-from normalized-to amount
+                     #:space space #:alpha-mode alpha-mode)]
+    [else (make-mix-color normalized-from normalized-to amount space alpha-mode)]))
+
+; color-with-alpha : color-spec? finite-real? -> color-spec?
+;;   Replaces a color's alpha, folding a theme-independent literal result.
+(define (color-with-alpha color alpha)
+  (define normalized-color (normalize-color-spec color 'color-with-alpha))
+  (check-unit-interval alpha 'color-with-alpha "alpha")
+  (cond [(rgba-color? normalized-color)
+         (rgba-color (rgba-color-red normalized-color)
+                     (rgba-color-green normalized-color)
+                     (rgba-color-blue normalized-color)
+                     alpha)]
+        [else (make-alpha-color normalized-color 'replace alpha)]))
+
+; color-opacity : color-spec? finite-real? -> color-spec?
+;;   Multiplies a color's alpha, folding theme-independent literal results.
+(define (color-opacity color factor)
+  (define normalized-color (normalize-color-spec color 'color-opacity))
+  (check-unit-interval factor 'color-opacity "factor")
+  (cond [(= factor 1) normalized-color]
+        [(rgba-color? normalized-color)
+         (rgba-color (rgba-color-red normalized-color)
+                     (rgba-color-green normalized-color)
+                     (rgba-color-blue normalized-color)
+                     (* (rgba-color-alpha normalized-color) factor))]
+        [else (make-alpha-color normalized-color 'multiply factor)]))
+
+; normalize-color-spec : any/c symbol? -> color-spec?
+;;   Converts mutable literal strings immediately and retains immutable values.
+(define (normalize-color-spec color who)
+  (cond
+    [(rgba-color? color) color]
+    [(string? color)
+     (or (string-color->rgba-color color)
+         (raise-argument-error who "color-spec?" color))]
+    [(or (color-token? color) (color-expression? color)) color]
+    [else (raise-argument-error who "color-spec?" color)]))
+
+; check-unit-interval : any/c symbol? string? -> void?
+;;   Raises a contract error unless value is a finite real in the unit interval.
+(define (check-unit-interval value who label)
+  (unless (and (finite-real? value) (<= 0 value 1))
+    (raise-arguments-error
+     who
+     "value must be a finite real in [0, 1]"
+     label value)))
 
 ; rgba-color-lerp : rgba-color? rgba-color? finite-real? -> rgba-color?
 ;;   Interpolates semantic sRGB and alpha components componentwise.
@@ -96,8 +200,254 @@
       (clamp-channel (real-lerp (rgba-color-blue from) (rgba-color-blue to) progress))
       (clamp-unit (real-lerp (rgba-color-alpha from) (rgba-color-alpha to) progress)))]))
 
+;; rgba-color-mix : rgba-color? rgba-color? finite-real?
+;;                  [#:space interpolation-space?]
+;;                  [#:alpha-mode alpha-mode?] -> rgba-color?
+;; Evaluates a fully literal mix.  It is the shared numerical implementation
+;; used by color-expression resolution and safe literal-only folding.
+(define (rgba-color-mix from to amount
+                        #:space [space 'srgb-linear]
+                        #:alpha-mode [alpha-mode 'premultiplied])
+  (unless (rgba-color? from)
+    (raise-argument-error 'rgba-color-mix "rgba-color?" from))
+  (unless (rgba-color? to)
+    (raise-argument-error 'rgba-color-mix "rgba-color?" to))
+  (check-unit-interval amount 'rgba-color-mix "amount")
+  (unless (memq space '(srgb srgb-linear oklab))
+    (raise-argument-error 'rgba-color-mix "one of 'srgb, 'srgb-linear, or 'oklab" space))
+  (unless (memq alpha-mode '(premultiplied straight))
+    (raise-argument-error 'rgba-color-mix "one of 'premultiplied or 'straight" alpha-mode))
+  (cond [(zero? amount) from]
+        [(= amount 1) to]
+        [else
+         (define first-components (rgba-components-in-space from space))
+         (define second-components (rgba-components-in-space to space))
+         (define result-alpha (real-lerp (rgba-color-alpha from)
+                                         (rgba-color-alpha to)
+                                         amount))
+         (define result-components
+           (for/list ([first (in-list first-components)]
+                      [second (in-list second-components)])
+             (case alpha-mode
+               [(straight) (real-lerp first second amount)]
+               [(premultiplied)
+                (if (zero? result-alpha)
+                    0
+                    (/ (real-lerp (* first (rgba-color-alpha from))
+                                  (* second (rgba-color-alpha to))
+                                  amount)
+                       result-alpha))])))
+         (rgba-from-space-components result-components result-alpha space)]))
+
+(define (rgba-components-in-space color space)
+  (define encoded
+    (list (/ (rgba-color-red color) 255.0)
+          (/ (rgba-color-green color) 255.0)
+          (/ (rgba-color-blue color) 255.0)))
+  (case space
+    [(srgb) encoded]
+    [(srgb-linear) (map srgb-channel->linear encoded)]
+    [(oklab) (linear-rgb->oklab (map srgb-channel->linear encoded))]))
+
+(define (rgba-from-space-components components alpha space)
+  (define encoded
+    (case space
+      [(srgb) components]
+      [(srgb-linear) (map linear-channel->srgb components)]
+      [(oklab) (map linear-channel->srgb
+                    (oklab->gamut-mapped-linear-rgb components))]))
+  (apply rgba-color
+         (append (map (lambda (component) (* 255 (clamp-unit component))) encoded)
+                 (list (clamp-unit alpha)))))
+
 (define (clamp-channel value) (min 255 (max 0 value)))
 (define (clamp-unit value) (min 1 (max 0 value)))
+
+
+;;;
+;;; Versioned Color-Specification Data
+;;;
+
+;; color-spec-schema-version : exact-positive-integer?
+;;   Identifies the externally readable color-specification datum format.
+(define color-spec-schema-version 1)
+
+; color-spec->datum : color-spec? -> immutable-datum?
+;;   Converts a color specification to a versioned, evaluator-free datum tree.
+(define (color-spec->datum color)
+  `(animate-color-spec ,color-spec-schema-version
+                       ,(color-spec->body (normalize-color-spec color
+                                                                  'color-spec->datum))))
+
+; datum->color-spec : any/c [#:maximum-depth exact-positive-integer?]
+;                    -> color-spec?
+;;   Reads a bounded versioned color specification without evaluating input data.
+(define (datum->color-spec datum #:maximum-depth [maximum-depth 64])
+  (unless (and (exact-positive-integer? maximum-depth))
+    (raise-argument-error
+     'datum->color-spec
+     "exact-positive-integer?"
+     maximum-depth))
+  (decode-versioned-color-spec datum maximum-depth (hasheq)))
+
+; color-spec->body : color-spec? -> immutable-datum?
+;;   Serializes a normalized specification to the body under the version header.
+(define (color-spec->body color)
+  (cond
+    [(rgba-color? color)
+     `(rgba ,(rgba-color-red color)
+            ,(rgba-color-green color)
+            ,(rgba-color-blue color)
+            ,(rgba-color-alpha color))]
+    [(palette-token? color)
+     `(palette ,(palette-token-key color))]
+    [(role-token? color)
+     `(role ,(role-token-key color))]
+    [(series-color? color)
+     `(series ,(series-color-index color))]
+    [(mix-color? color)
+     `(mix ,(mix-color-space color)
+           ,(mix-color-alpha-mode color)
+           ,(mix-color-amount color)
+           ,(color-spec->body (mix-color-from color))
+           ,(color-spec->body (mix-color-to color)))]
+    [(alpha-color? color)
+     `(alpha ,(alpha-color-operation color)
+             ,(alpha-color-amount color)
+             ,(color-spec->body (alpha-color-source color)))]
+    [else
+     (raise-arguments-error
+      'color-spec->datum
+      "color specification has an unsupported internal representation"
+      "value" color)]))
+
+; decode-versioned-color-spec : any/c exact-positive-integer? hasheq? -> color-spec?
+;;   Validates the version wrapper before decoding the bounded color-expression tree.
+(define (decode-versioned-color-spec datum maximum-depth ancestors)
+  (define fields (proper-list-elements datum 'datum->color-spec))
+  (unless (and fields (= (length fields) 3))
+    (raise-arguments-error
+     'datum->color-spec
+     "a three-element (animate-color-spec version body) datum"
+     "datum" datum))
+  (unless (eq? (car fields) 'animate-color-spec)
+    (raise-arguments-error
+     'datum->color-spec
+     "datum beginning with 'animate-color-spec"
+     "datum" datum))
+  (unless (equal? (cadr fields) color-spec-schema-version)
+    (raise-arguments-error
+     'datum->color-spec
+     "supported animate-color-spec schema version"
+     "version" (cadr fields)))
+  (decode-color-body (caddr fields) maximum-depth ancestors))
+
+; decode-color-body : any/c exact-nonnegative-integer? hasheq? -> color-spec?
+;;   Decodes one expression node while rejecting cyclic or excessive input trees.
+(define (decode-color-body body remaining-depth ancestors)
+  (when (negative? remaining-depth)
+    (raise-arguments-error
+     'datum->color-spec
+     "color specification within the configured maximum depth"
+     "maximum depth exceeded at" body))
+  (when (and (pair? body) (hash-has-key? ancestors body))
+    (raise-arguments-error
+     'datum->color-spec
+     "acyclic color-specification datum"
+     "cyclic value" body))
+  (define next-ancestors
+    (if (pair? body) (hash-set ancestors body #t) ancestors))
+  (define fields (proper-list-elements body 'datum->color-spec))
+  (unless (and fields (pair? fields) (symbol? (car fields)))
+    (raise-arguments-error
+     'datum->color-spec
+     "well-formed color-specification datum"
+     "datum" body))
+  (case (car fields)
+    [(rgba)
+     (unless (= (length fields) 5)
+       (raise-arguments-error
+        'datum->color-spec
+        "(rgba red green blue alpha)"
+        "datum" body))
+     (rgba-color (cadr fields) (caddr fields) (cadddr fields) (car (cddddr fields)))]
+    [(palette)
+     (unless (and (= (length fields) 2) (symbol? (cadr fields)))
+       (raise-arguments-error
+        'datum->color-spec
+        "(palette canonical-key)"
+        "datum" body))
+     (palette-color (cadr fields))]
+    [(role)
+     (unless (and (= (length fields) 2) (symbol? (cadr fields)))
+       (raise-arguments-error
+        'datum->color-spec
+        "(role nonempty-symbol)"
+        "datum" body))
+     (role-color (cadr fields))]
+    [(series)
+     (unless (and (= (length fields) 2)
+                  (exact-nonnegative-integer? (cadr fields)))
+       (raise-arguments-error
+        'datum->color-spec
+        "(series exact-nonnegative-index)"
+        "datum" body))
+     (series-color (cadr fields))]
+    [(mix)
+     (unless (= (length fields) 6)
+       (raise-arguments-error
+        'datum->color-spec
+        "(mix space alpha-mode amount from to)"
+        "datum" body))
+     (color-mix (decode-color-body (list-ref fields 4)
+                                   (sub1 remaining-depth)
+                                   next-ancestors)
+                (decode-color-body (list-ref fields 5)
+                                   (sub1 remaining-depth)
+                                   next-ancestors)
+                (list-ref fields 3)
+                #:space (list-ref fields 1)
+                #:alpha-mode (list-ref fields 2))]
+    [(alpha)
+     (unless (= (length fields) 4)
+       (raise-arguments-error
+        'datum->color-spec
+        "(alpha replace-or-multiply amount source)"
+        "datum" body))
+     (define operation (list-ref fields 1))
+     (unless (memq operation '(replace multiply))
+       (raise-argument-error
+        'datum->color-spec
+        "'replace or 'multiply alpha operation"
+        operation))
+     (define source (decode-color-body (list-ref fields 3)
+                                       (sub1 remaining-depth)
+                                       next-ancestors))
+     (if (eq? operation 'replace)
+         (color-with-alpha source (list-ref fields 2))
+         (color-opacity source (list-ref fields 2)))]
+    [else
+     (raise-arguments-error
+      'datum->color-spec
+      "rgba, palette, role, series, mix, or alpha color specification"
+      "tag" (car fields))]))
+
+; proper-list-elements : any/c symbol? -> (or/c list? #f)
+;;   Returns a proper list's elements while rejecting improper and cyclic pairs.
+(define (proper-list-elements value who)
+  (let loop ([rest value] [reversed '()] [seen (hasheq)])
+    (cond
+      [(null? rest) (reverse reversed)]
+      [(not (pair? rest)) #f]
+      [(hash-has-key? seen rest)
+       (raise-arguments-error
+        who
+        "acyclic proper-list datum"
+        "cyclic value" value)]
+      [else
+       (loop (cdr rest)
+             (cons (car rest) reversed)
+             (hash-set seen rest #t))])))
 
 ;; X11-style named colors used by Racket drawing backends. Keys are stored
 ;; in normalized lowercase form so spaced/hyphenated spellings share a key.
@@ -727,6 +1077,7 @@
         "tan2" #xEE9A49
         "tan3" #xCD853F
         "tan4" #x8B5A2B
+        "teal" #x008080
         "thistle" #xD8BFD8
         "thistle1" #xFFE1FF
         "thistle2" #xEED2EE

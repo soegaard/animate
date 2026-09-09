@@ -10,6 +10,7 @@
 
 (require (only-in racket/math pi sqr)
          "arrow-visual.rkt"
+         (only-in "color-token.rkt" theme-surface theme-axis)
          "geometry.rkt"
          "group-visual.rkt"
          "path-geometry.rkt"
@@ -43,8 +44,8 @@
                  #:rotation [rotation 0]
                  #:scale [scale 1]
                  #:opacity [opacity 1]
-                 #:fill [fill "cornflowerblue"]
-                 #:stroke [stroke "black"]
+                 #:fill [fill theme-surface]
+                 #:stroke [stroke theme-axis]
                  #:stroke-width [stroke-width 2])
   (check-symbol 'ellipse id)
   (check-point 'ellipse center)
@@ -68,8 +69,8 @@
                  #:rotation [rotation 0]
                  #:scale [scale 1]
                  #:opacity [opacity 1]
-                 #:fill [fill "cornflowerblue"]
-                 #:stroke [stroke "black"]
+                 #:fill [fill theme-surface]
+                 #:stroke [stroke theme-axis]
                  #:stroke-width [stroke-width 2])
   (check-symbol 'annulus id)
   (check-point 'annulus center)
@@ -98,8 +99,8 @@
                 #:rotation [rotation 0]
                 #:scale [scale 1]
                 #:opacity [opacity 1]
-                #:fill [fill "cornflowerblue"]
-                #:stroke [stroke "black"]
+                #:fill [fill theme-surface]
+                #:stroke [stroke theme-axis]
                 #:stroke-width [stroke-width 2])
   (check-symbol 'sector id)
   (check-point 'sector center)
@@ -132,8 +133,8 @@
                          #:rotation [rotation 0]
                          #:scale [scale 1]
                          #:opacity [opacity 1]
-                         #:fill [fill "cornflowerblue"]
-                         #:stroke [stroke "black"]
+                         #:fill [fill theme-surface]
+                         #:stroke [stroke theme-axis]
                          #:stroke-width [stroke-width 2])
   (check-symbol 'regular-polygon id)
   (check-point 'regular-polygon center)
@@ -164,7 +165,7 @@
               #:scale [scale 1]
               #:opacity [opacity 1]
               #:fill [fill "gold"]
-              #:stroke [stroke "black"]
+              #:stroke [stroke theme-axis]
               #:stroke-width [stroke-width 2])
   (check-symbol 'star id)
   (check-point 'star center)
@@ -199,8 +200,8 @@
                            #:rotation [rotation 0]
                            #:scale [scale 1]
                            #:opacity [opacity 1]
-                           #:fill [fill "cornflowerblue"]
-                           #:stroke [stroke "black"]
+                           #:fill [fill theme-surface]
+                           #:stroke [stroke theme-axis]
                            #:stroke-width [stroke-width 2])
   (check-symbol 'rounded-rectangle id)
   (check-point 'rounded-rectangle center)
@@ -239,7 +240,7 @@
                             #:id id
                             #:angle [sweep-angle (/ pi 2)]
                             #:opacity [opacity 1]
-                            #:stroke [stroke "black"]
+                            #:stroke [stroke theme-axis]
                             #:stroke-width [stroke-width 2])
   (check-point 'arc-between-points start)
   (check-point 'arc-between-points end)
@@ -279,7 +280,7 @@
                       #:id id
                       #:angle [sweep-angle (/ pi 2)]
                       #:opacity [opacity 1]
-                      #:stroke [stroke "black"]
+                      #:stroke [stroke theme-axis]
                       #:stroke-width [stroke-width 2]
                       #:tip-length [tip-length 3/10]
                       #:tip-width [tip-width 1/4])
@@ -318,7 +319,7 @@
                       #:rotation [rotation 0]
                       #:scale [scale 1]
                       #:opacity [opacity 1]
-                      #:stroke [stroke "black"]
+                      #:stroke [stroke theme-axis]
                       #:stroke-width [stroke-width 2]
                       #:tip-length [tip-length 3/10]
                       #:tip-width [tip-width 1/4])

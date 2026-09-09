@@ -15,6 +15,7 @@
 
 (require racket/list
          racket/math
+         (only-in "../color-token.rkt" theme-surface)
          "../geometry.rkt"
          "affine3.rkt"
          "curve3d.rkt"
@@ -66,7 +67,7 @@
 ;;   Creates one uniformly configured solid mesh and supplies smooth normals.
 (define (make-solid id vertices triangles
                     #:material [material #f]
-                    #:color [color "cornflowerblue"]
+                    #:color [color theme-surface]
                     #:transform [transform identity-transform3]
                     #:opacity [opacity 1]
                     #:vertex-ids [vertex-ids #f]
@@ -168,7 +169,7 @@
 ; box3d : finite-real? finite-real? finite-real? #:id symbol? ... -> mesh3d?
 ;;   Creates an origin-centred axis-aligned rectangular solid.
 (define (box3d width height depth #:id id
-               #:material [material #f] #:color [color "cornflowerblue"]
+               #:material [material #f] #:color [color theme-surface]
                #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'box3d id)
   (for ([value (in-list (list width height depth))]) (check-positive 'box3d value))
@@ -189,7 +190,7 @@
 ; cube3d : finite-real? #:id symbol? ... -> mesh3d?
 ;;   Creates an origin-centred cube with equal edge lengths.
 (define (cube3d side #:id id
-                #:material [material #f] #:color [color "cornflowerblue"]
+                #:material [material #f] #:color [color theme-surface]
                 #:transform [transform identity-transform3] #:opacity [opacity 1])
   (box3d side side side #:id id #:material material #:color color
          #:transform transform #:opacity opacity))
@@ -198,7 +199,7 @@
 ;;           #:id symbol? ... -> mesh3d?
 ;;   Creates a regular polygonal prism aligned with the z axis.
 (define (prism3d sides #:id id #:radius [radius 1] #:height [height 2]
-                 #:material [material #f] #:color [color "cornflowerblue"]
+                 #:material [material #f] #:color [color theme-surface]
                  #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'prism3d id) (check-segments 'prism3d sides) (check-positive 'prism3d radius)
   (check-positive 'prism3d height)
@@ -213,7 +214,7 @@
 ;;   Creates a latitude-longitude sphere with stable pole and ring samples.
 (define (sphere3d radius #:id id #:latitude-segments [latitudes 24]
                   #:longitude-segments [longitudes 48]
-                  #:material [material #f] #:color [color "cornflowerblue"]
+                  #:material [material #f] #:color [color theme-surface]
                   #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'sphere3d id) (check-positive 'sphere3d radius)
   (check-segments 'sphere3d latitudes 2) (check-segments 'sphere3d longitudes)
@@ -254,7 +255,7 @@
 ;;   Creates a capped circular cylinder aligned with the z axis.
 (define (cylinder3d radius height #:id id #:segments [segments 48]
                     #:caps? [caps? #t] #:material [material #f]
-                    #:color [color "cornflowerblue"] #:transform [transform identity-transform3]
+                    #:color [color theme-surface] #:transform [transform identity-transform3]
                     #:opacity [opacity 1])
   (check-id 'cylinder3d id) (check-positive 'cylinder3d radius)
   (check-positive 'cylinder3d height) (check-segments 'cylinder3d segments)
@@ -267,7 +268,7 @@
 ; cone3d : finite-real? finite-real? #:id symbol? ... -> mesh3d?
 ;;   Creates a capped cone with its apex on positive z and base centred at z=0.
 (define (cone3d radius height #:id id #:segments [segments 48] #:caps? [caps? #t]
-                #:material [material #f] #:color [color "cornflowerblue"]
+                #:material [material #f] #:color [color theme-surface]
                 #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'cone3d id) (check-positive 'cone3d radius) (check-positive 'cone3d height)
   (check-segments 'cone3d segments)
@@ -295,7 +296,7 @@
 ;;   Creates a z-axis torus with major radius from origin to tube centre.
 (define (torus3d major-radius minor-radius #:id id #:major-segments [major 48]
                 #:minor-segments [minor 20] #:material [material #f]
-                #:color [color "cornflowerblue"] #:transform [transform identity-transform3]
+                #:color [color theme-surface] #:transform [transform identity-transform3]
                 #:opacity [opacity 1])
   (check-id 'torus3d id) (check-positive 'torus3d major-radius)
   (check-positive 'torus3d minor-radius) (check-segments 'torus3d major)
@@ -322,7 +323,7 @@
 
 ; tetrahedron3d : finite-real? #:id symbol? ... -> mesh3d?
 ;;   Creates a regular tetrahedron centred at the origin.
-(define (tetrahedron3d radius #:id id #:material [material #f] #:color [color "cornflowerblue"]
+(define (tetrahedron3d radius #:id id #:material [material #f] #:color [color theme-surface]
                       #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'tetrahedron3d id) (check-positive 'tetrahedron3d radius)
   (define scale (/ radius (sqrt 3)))
@@ -334,7 +335,7 @@
 
 ; octahedron3d : finite-real? #:id symbol? ... -> mesh3d?
 ;;   Creates a regular octahedron with vertices on coordinate axes.
-(define (octahedron3d radius #:id id #:material [material #f] #:color [color "cornflowerblue"]
+(define (octahedron3d radius #:id id #:material [material #f] #:color [color theme-surface]
                      #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'octahedron3d id) (check-positive 'octahedron3d radius)
   (make-solid id (vector (vec3 radius 0 0) (vec3 (- radius) 0 0)
@@ -346,7 +347,7 @@
 
 ; icosahedron3d : finite-real? #:id symbol? ... -> mesh3d?
 ;;   Creates a regular icosahedron normalized to the requested vertex radius.
-(define (icosahedron3d radius #:id id #:material [material #f] #:color [color "cornflowerblue"]
+(define (icosahedron3d radius #:id id #:material [material #f] #:color [color theme-surface]
                      #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'icosahedron3d id) (check-positive 'icosahedron3d radius)
   (define phi (/ (+ 1 (sqrt 5)) 2))
@@ -365,7 +366,7 @@
 ; polyhedron3d : (vectorof vec3?) (vectorof index-triple?) #:id symbol? ... -> mesh3d?
 ;;   Validates arbitrary explicit triangular polyhedron topology.
 (define (polyhedron3d vertices triangles #:id id #:material [material #f]
-                      #:color [color "cornflowerblue"] #:transform [transform identity-transform3]
+                      #:color [color theme-surface] #:transform [transform identity-transform3]
                       #:opacity [opacity 1])
   (check-id 'polyhedron3d id)
   (make-solid id vertices triangles #:material material #:color color
@@ -380,7 +381,7 @@
 ;;   Extrudes one simple xy-plane contour through a noncoplanar vector. Caps use
 ;; deterministic ear clipping; holes and self-intersections are rejected.
 (define (extrude3d contour #:id id #:vector [direction (vec3 0 0 1)] #:caps? [caps? #t]
-                   #:material [material #f] #:color [color "cornflowerblue"]
+                   #:material [material #f] #:color [color theme-surface]
                    #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'extrude3d id)
   (unless (vec3? direction) (raise-argument-error 'extrude3d "vec3?" direction))
@@ -422,7 +423,7 @@
 ;; the endpoint disks; partial turns leave their radial cut faces open.
 (define (revolve3d profile #:id id #:axis [axis 'z] #:angle [angle (* 2 pi)]
                    #:segments [segments 96] #:caps? [caps? #t]
-                   #:material [material #f] #:color [color "cornflowerblue"]
+                   #:material [material #f] #:color [color theme-surface]
                    #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'revolve3d id) (check-segments 'revolve3d segments)
   (unless (memq axis '(x y z)) (raise-argument-error 'revolve3d "(or/c 'x 'y 'z)" axis))
@@ -475,7 +476,7 @@
 ;;   Sweeps a simple closed planar profile along a sampled curve with a
 ;; deterministic parallel-transport frame. Caps are supported by ear clipping.
 (define (sweep3d profile curve #:id id #:caps? [caps? #t]
-                 #:material [material #f] #:color [color "cornflowerblue"]
+                 #:material [material #f] #:color [color theme-surface]
                  #:transform [transform identity-transform3] #:opacity [opacity 1])
   (check-id 'sweep3d id)
   (unless (curve3d? curve) (raise-argument-error 'sweep3d "curve3d?" curve))
@@ -632,7 +633,7 @@
 ; mesh3d-merge : (sequenceof mesh3d?) #:id symbol? -> mesh3d?
 ;;   Bakes a deterministic sequence of compatible meshes into one local mesh.
 (define (mesh3d-merge meshes #:id id #:material [material #f]
-                      #:color [color "cornflowerblue"])
+                      #:color [color theme-surface])
   (check-id 'mesh3d-merge id)
   (unless (or (list? meshes) (vector? meshes))
     (raise-argument-error 'mesh3d-merge "(or/c list? vector?)" meshes))

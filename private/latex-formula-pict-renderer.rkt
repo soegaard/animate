@@ -25,6 +25,7 @@
          "formula-style.rkt"
          "formula-visual.rkt"
          "pict-renderer.rkt"
+         "render-color-context.rkt"
          "renderer-resources.rkt"
          "visual-model.rkt")
 
@@ -101,7 +102,11 @@
         (formula-visual-vertical-alignment visual)
         (visual-scale visual)
         (visual-rotation visual)
-        (camera-scale camera)))
+        (camera-scale camera)
+        ;; The cache stores its final recolored Pict, so cache by the immutable
+        ;; appearance snapshot rather than a mutable process-wide selection.
+        (render-color-context-appearance-fingerprint
+         (current-or-default-render-color-context))))
 
 ; formula-visual->pict/using : formula-visual? camera?
 ;                              (-> formula-visual? pict?)
@@ -179,7 +184,9 @@
 ;; semantics as the ordinary path/text renderers.
 (define (formula-style-draw-color color)
   (define resolved
-    (color-spec->rgba-color color 'formula-style-draw-color))
+    (resolve-color-in-context
+     color
+     (current-or-default-render-color-context)))
   (make-color (inexact->exact (round (rgba-color-red resolved)))
               (inexact->exact (round (rgba-color-green resolved)))
               (inexact->exact (round (rgba-color-blue resolved)))

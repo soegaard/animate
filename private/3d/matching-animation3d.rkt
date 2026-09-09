@@ -358,12 +358,9 @@
           #:opacity (real-lerp (spatial-opacity source)
                                 (spatial-opacity destination) progress)
           #:wireframe-color
-          (rgba-color-lerp
-           (color-spec->rgba-color (mesh3d-wireframe-color source)
-                                   'mesh3d-matching-sample)
-           (color-spec->rgba-color (mesh3d-wireframe-color destination)
-                                   'mesh3d-matching-sample)
-           progress)
+          (color-mix (mesh3d-wireframe-color source)
+                     (mesh3d-wireframe-color destination)
+                     progress)
           #:wireframe-width
           (real-lerp (mesh3d-wireframe-width source)
                      (mesh3d-wireframe-width destination) progress))]))
@@ -623,15 +620,13 @@
   (define to (mesh3d-colors destination))
   (and from to
        (for/vector ([color (in-vector from)] [index (in-naturals)])
-         (rgba-color-lerp
-          (color-spec->rgba-color color 'mesh3d-matching-sample)
-          (color-spec->rgba-color (vector-ref to (vector-ref vertex-map index))
-                                  'mesh3d-matching-sample)
-          progress))))
+         (color-mix color
+                    (vector-ref to (vector-ref vertex-map index))
+                    progress))))
 
 (define (interpolate-material from to progress)
   (material3d
-   #:color (rgba-color-lerp (material3d-color from) (material3d-color to) progress)
+   #:color (color-mix (material3d-color from) (material3d-color to) progress)
    ;; All currently rendered shading choices are discrete semantics.  Snapping
    ;; at the midpoint avoids synthesizing an undocumented fourth mode.
    #:shading (if (< progress 1/2) (material3d-shading from) (material3d-shading to))
@@ -639,10 +634,10 @@
    #:ambient (real-lerp (material3d-ambient from) (material3d-ambient to) progress)
    #:diffuse (real-lerp (material3d-diffuse from) (material3d-diffuse to) progress)
    #:specular (real-lerp (material3d-specular from) (material3d-specular to) progress)
-   #:specular-color (rgba-color-lerp (material3d-specular-color from)
-                                     (material3d-specular-color to) progress)
+   #:specular-color (color-mix (material3d-specular-color from)
+                               (material3d-specular-color to) progress)
    #:roughness (real-lerp (material3d-roughness from) (material3d-roughness to) progress)
-   #:emission (rgba-color-lerp (material3d-emission from) (material3d-emission to) progress)
+   #:emission (color-mix (material3d-emission from) (material3d-emission to) progress)
    #:emission-strength (real-lerp (material3d-emission-strength from)
                                   (material3d-emission-strength to) progress)
    #:double-sided? (if (< progress 1/2)

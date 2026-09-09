@@ -15,6 +15,7 @@
          (only-in pict pict->bitmap)
          "../main.rkt"
          "../authoring.rkt"
+         "color-theme.rkt"
          "camera.rkt"
          "ode-flow.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers scene-state->pict)
@@ -27,6 +28,16 @@
 (define loaded-scene #f)
 (define loaded-fingerprint #f)
 (define loaded-generation #f)
+(define decoded-themes (make-hash))
+
+;; A theme is immutable and identified by its complete transmitted datum. The
+;; worker validates it once per appearance revision, then reuses the frozen
+;; snapshot for later frames without touching a source file or global catalog.
+(define (request-theme request)
+  (define datum (worker-render-frame-theme-datum request))
+  (hash-ref!
+   decoded-themes datum
+   (lambda () (datum->theme datum))))
 
 (define (send-response value)
   (write value)
@@ -109,7 +120,8 @@
             #:camera
             (camera-with-supersampling
              scaled-camera (worker-render-frame-supersample request))
-            #:renderers default-pict-renderers)
+            #:renderers default-pict-renderers
+            #:theme (request-theme request))
            'smoothed))))))
   (define output (string->path (worker-render-frame-output-path request)))
   (define parent (path-only output))

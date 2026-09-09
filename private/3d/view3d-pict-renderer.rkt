@@ -18,6 +18,7 @@
          (only-in racket/draw dc-path% make-brush make-color make-pen region%)
          "../camera.rkt"
          "../color-style.rkt"
+         "../render-color-context.rkt"
          "../geometry.rkt"
          "../pict-renderer.rkt"
          "../visual-model.rkt"
@@ -167,14 +168,16 @@
   (max 1 (inexact->exact (round value))))
 
 (define (draw-color-spec color)
-  (define resolved (color-spec->rgba-color color 'view3d-pict-renderer))
+  (define resolved
+    (resolve-color-in-context color (current-or-default-render-color-context)))
   (make-color (color-byte (rgba-color-red resolved))
               (color-byte (rgba-color-green resolved))
               (color-byte (rgba-color-blue resolved))
               (rgba-color-alpha resolved)))
 
 (define (rgba-with-opacity color opacity)
-  (define resolved (color-spec->rgba-color color 'view3d-pict-renderer))
+  (define resolved
+    (resolve-color-in-context color (current-or-default-render-color-context)))
   (make-color (color-byte (rgba-color-red resolved))
               (color-byte (rgba-color-green resolved))
               (color-byte (rgba-color-blue resolved))

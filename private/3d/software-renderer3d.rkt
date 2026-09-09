@@ -6,6 +6,7 @@
          racket/list
          racket/draw
          "../color-style.rkt"
+         "../render-color-context.rkt"
          "../preview-cancellation.rkt"
          "../visual-model.rkt"
          "affine3.rkt"
@@ -13,6 +14,7 @@
          "billboard-raster3d.rkt"
          "bounds3.rkt"
          "camera3d.rkt"
+         "color-resolution3d.rkt"
          "clipping3d.rkt"
          "compiled-view3d.rkt"
          "edge-style3d.rkt"
@@ -71,7 +73,7 @@
                  overlay-strokes hidden-points visible-points overlay-points
                  hidden-arrows visible-arrows overlay-arrows
                  hidden-billboards visible-billboards overlay-billboards
-                 lights shadow-maps diagnostics)
+                 lights shadow-maps diagnostics color-context)
   #:transparent)
 
 ;; The normal Pict protocol deliberately stays renderer-neutral.  Preview's
@@ -95,10 +97,13 @@
 ;; buffer and are alpha composited far-to-near.
 (define (render-view3d-opaque view width height
                                #:cancellation-token
-                               [cancellation-token (current-software-render-cancellation-token)])
+                               [cancellation-token (current-software-render-cancellation-token)]
+                               #:color-context
+                               [color-context (current-or-default-render-color-context)])
   (render-prepared-view3d-opaque
    (prepare-view3d-opaque view width height
-                           #:cancellation-token cancellation-token)
+                           #:cancellation-token cancellation-token
+                           #:color-context color-context)
    #:cancellation-token cancellation-token))
 
 ; prepare-view3d-opaque : view3d? exact-positive-integer? exact-positive-integer?
@@ -110,7 +115,9 @@
 ;; `render-prepared-view3d-opaque` instead.
 (define (prepare-view3d-opaque view width height
                                #:cancellation-token
-                               [cancellation-token (current-software-render-cancellation-token)])
+                               [cancellation-token (current-software-render-cancellation-token)]
+                               #:color-context
+                               [color-context (current-or-default-render-color-context)])
   (unless (and (procedure? view3d?) (view3d? view))
     (raise-argument-error 'prepare-view3d-opaque "view3d?" view))
   (unless (exact-positive-integer? width)
@@ -120,7 +127,8 @@
   (prepare-compiled-view3d-opaque
    (compile-view3d view)
    (view3d->frame3d-spec view width height)
-   #:cancellation-token cancellation-token))
+   #:cancellation-token cancellation-token
+   #:color-context color-context))
 
 ; prepare-compiled-view3d-opaque : compiled-view3d? frame3d-spec?
 ;                                  [#:cancellation-token (or/c #f cancellation-token?)]
@@ -129,31 +137,40 @@
 (define (prepare-compiled-view3d-opaque compiled frame-spec
                                          #:cancellation-token
                                          [cancellation-token
-                                          (current-software-render-cancellation-token)])
+                                          (current-software-render-cancellation-token)]
+                                         #:color-context
+                                         [color-context (current-or-default-render-color-context)])
   (unless (compiled-view3d? compiled)
     (raise-argument-error 'prepare-compiled-view3d-opaque "compiled-view3d?" compiled))
   (unless (frame3d-spec? frame-spec)
     (raise-argument-error 'prepare-compiled-view3d-opaque "frame3d-spec?" frame-spec))
+  (unless (render-color-context? color-context)
+    (raise-argument-error 'prepare-compiled-view3d-opaque "render-color-context?" color-context))
   (when cancellation-token (check-cancellation cancellation-token))
-  (define commands (compiled-view3d->draw-mesh3d-commands compiled))
-  (define camera (frame3d-spec-camera frame-spec))
-  (define aspect (/ (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec)))
-  (define lights
-    (if (null? (frame3d-spec-lights frame-spec))
-        default-lights3d
-        (frame3d-spec-lights frame-spec)))
-  (unless (andmap light3d? lights)
-    (raise-arguments-error 'prepare-compiled-view3d-opaque "a list of light3d? values"
-                           "lights" lights))
+  ;; Parameterize the older stroke/marker preparation helpers as well.  Their
+  ;; public model values still retain specs, while this one frame consistently
+  ;; sees the immutable context captured by the renderer request.
+  (parameterize ([current-render-color-context color-context])
+   (define commands (compiled-view3d->draw-mesh3d-commands compiled))
+   (define camera (frame3d-spec-camera frame-spec))
+   (define aspect (/ (frame3d-spec-width frame-spec) (frame3d-spec-height frame-spec)))
+   (define lights
+     (if (null? (frame3d-spec-lights frame-spec))
+         default-lights3d
+         (frame3d-spec-lights frame-spec)))
+   (unless (andmap light3d? lights)
+     (raise-arguments-error 'prepare-compiled-view3d-opaque "a list of light3d? values"
+                            "lights" lights))
+   (define resolved-lights (resolve-lights3d lights color-context))
   ;; Raster triangles carry camera-local positions. Rotate normals/directions
   ;; and transform finite-light positions into that same space once per
   ;; prepared frame, so point/spot distance, cones, and Blinn--Phong are
   ;; invariant under camera motion.
-  (define view-lights (lights->view-space camera lights))
+   (define view-lights (lights->view-space camera resolved-lights))
   (define-values (prepared source-count clipped-count)
-    (prepare-commands commands camera aspect cancellation-token))
+    (prepare-commands commands camera aspect cancellation-token color-context))
   (define shadow-maps
-    (prepare-software-shadow-maps compiled commands lights cancellation-token))
+    (prepare-software-shadow-maps compiled commands resolved-lights cancellation-token color-context))
   (define depth-only
     (filter (lambda (triangle) (eq? (prepared-triangle3d-surface-mode triangle) 'depth-only))
             prepared))
@@ -286,7 +303,8 @@
     (+ curve-source-count edge-source-count)
     (length all-prepared-strokes)
     (* 2 (length all-prepared-strokes))
-    0 0 0 silhouette-edge-count crease-edge-count boundary-edge-count)))
+    0 0 0 silhouette-edge-count crease-edge-count boundary-edge-count)
+   color-context)))
 
 ; render-prepared-view3d-opaque : software-render-preparation?
 ;                                  [#:cancellation-token (or/c #f cancellation-token?)]
@@ -303,13 +321,16 @@
     (raise-argument-error 'render-prepared-view3d-opaque
                           "software-render-preparation?" preparation))
   (when cancellation-token (check-cancellation cancellation-token))
-  (define frame-spec (software-render-preparation-frame-spec preparation))
-  (define compiled (software-render-preparation-compiled-view preparation))
-  (define target
-    (make-raster-target3d (frame3d-spec-width frame-spec)
-                          (frame3d-spec-height frame-spec)
-                          (compiled-view3d-background compiled)
-                          #:tone-map (compiled-view3d-tone-map compiled)))
+  (parameterize ([current-render-color-context
+                  (software-render-preparation-color-context preparation)])
+   (define frame-spec (software-render-preparation-frame-spec preparation))
+   (define compiled (software-render-preparation-compiled-view preparation))
+   (define target
+     (make-raster-target3d (frame3d-spec-width frame-spec)
+                           (frame3d-spec-height frame-spec)
+                           (resolve-color3d (compiled-view3d-background compiled)
+                                            (software-render-preparation-color-context preparation))
+                           #:tone-map (compiled-view3d-tone-map compiled)))
   (define shadow-factor
     (make-shadow-factor (frame3d-spec-camera frame-spec)
                         (software-render-preparation-shadow-maps preparation)))
@@ -372,7 +393,7 @@
     (rasterize-prepared-billboards!
      target (software-render-preparation-overlay-billboards preparation) 'always))
   (define initial-diagnostics (software-render-preparation-diagnostics preparation))
-  (software-render-result
+   (software-render-result
    target
    (software-render-diagnostics
     (software-render-diagnostics-command-count initial-diagnostics)
@@ -393,13 +414,13 @@
     (+ overlay-stroke-pixels overlay-point-pixels overlay-arrow-pixels overlay-billboard-pixels)
     (software-render-diagnostics-silhouette-edge-count initial-diagnostics)
     (software-render-diagnostics-crease-edge-count initial-diagnostics)
-    (software-render-diagnostics-boundary-edge-count initial-diagnostics))))
+    (software-render-diagnostics-boundary-edge-count initial-diagnostics)))))
 
 (struct prepared-triangle3d
   (raster material opaque? depth command-index order owner surface-mode)
   #:transparent)
 
-(define (prepare-commands commands camera aspect cancellation-token)
+(define (prepare-commands commands camera aspect cancellation-token color-context)
   (define prepared '())
   (define source-count 0)
   (define clipped-count 0)
@@ -408,7 +429,7 @@
   (for ([command (in-list commands)])
     (when cancellation-token (check-cancellation cancellation-token))
     (define-values (triangles source clipped)
-      (prepare-command command camera aspect cancellation-token next-order next-owner))
+      (prepare-command command camera aspect cancellation-token next-order next-owner color-context))
     (set! prepared (append prepared triangles))
     (set! source-count (+ source-count source))
     (set! clipped-count (+ clipped-count clipped))
@@ -421,8 +442,8 @@
 ;; affirmative caster policy participate.  Strokes, markers, billboards and
 ;; translucent meshes deliberately never reach `commands`, so cannot become
 ;; accidental casters.
-(define (prepare-software-shadow-maps compiled commands lights cancellation-token)
-  (define caster-bounds (commands-shadow-caster-bounds commands))
+(define (prepare-software-shadow-maps compiled commands lights cancellation-token color-context)
+  (define caster-bounds (commands-shadow-caster-bounds commands color-context))
   (cond
     [(aabb3-empty? caster-bounds) '()]
     [else
@@ -438,7 +459,7 @@
        (define bounds (or (shadow-settings3d-bounds settings) caster-bounds))
        (define light-camera (shadow-light-camera3d light settings bounds))
        (define-values (prepared _source-count _clipped-count)
-         (prepare-commands commands light-camera 1 cancellation-token))
+         (prepare-commands commands light-camera 1 cancellation-token color-context))
        (define casters
          (filter (lambda (triangle)
                    (and (prepared-triangle3d-opaque? triangle)
@@ -464,9 +485,9 @@
                  (shadow-settings3d-prepared-bounds-key settings)
                  'caster-triangle-count (length casters)))))]))
 
-(define (commands-shadow-caster-bounds commands)
+(define (commands-shadow-caster-bounds commands color-context)
   (for/fold ([result aabb3-empty]) ([command (in-list commands)])
-    (if (command-shadow-caster? command)
+    (if (command-shadow-caster? command color-context)
         (aabb3-union
          result
          (aabb3-transform
@@ -474,20 +495,19 @@
           (draw-mesh3d-command-world-transform command)))
         result)))
 
-(define (command-shadow-caster? command)
+(define (command-shadow-caster? command color-context)
   (define material (draw-mesh3d-command-material command))
   (define mesh (draw-mesh3d-command-mesh command))
   (and (material3d-casts-shadow? material)
        (= (draw-mesh3d-command-opacity command) 1)
        (= (rgba-color-alpha
-           (color-spec->rgba-color (material3d-color material)
-                                   'command-shadow-caster?))
+           (resolve-color3d (material3d-color material) color-context))
           1)
        (let ([colors (mesh3d-colors mesh)])
          (or (not colors)
              (for/and ([color (in-vector colors)])
                (= (rgba-color-alpha
-                   (color-spec->rgba-color color 'command-shadow-caster?))
+                   (resolve-color3d color color-context))
                   1))))))
 
 ;; Converts the rasterizer's camera-local fragment position and normal back
@@ -597,9 +617,9 @@
             (+ creases (count (lambda (edge) (eq? (prepared-feature-edge3d-kind edge) 'crease)) selected))
             (+ boundaries (count (lambda (edge) (eq? (prepared-feature-edge3d-kind edge) 'boundary)) selected)))))
 
-(define (prepare-command command camera aspect cancellation-token first-order first-owner)
+(define (prepare-command command camera aspect cancellation-token first-order first-owner color-context)
   (define mesh (draw-mesh3d-command-mesh command))
-  (define material (draw-mesh3d-command-material command))
+  (define material (resolve-material3d (draw-mesh3d-command-material command) color-context))
   (unless (material3d? material)
     (raise-arguments-error 'render-view3d-opaque "a mesh with material3d?"
                            "mesh-path" (draw-mesh3d-command-path command)
@@ -642,7 +662,7 @@
            (clip-vertex3d
             (affine3-apply-point (draw-mesh3d-command-world-transform command) point)
             vertex-normal
-            (rgba-with-opacity authored-color (draw-mesh3d-command-opacity command))
+            (rgba-with-opacity authored-color (draw-mesh3d-command-opacity command) color-context)
             source)))
        (define clipped-world
          (for/fold ([polygon world-polygon])
@@ -737,8 +757,8 @@
                      (clip-vertex3d-color second-vertex) progress)
    (clip-vertex3d-source first-vertex)))
 
-(define (rgba-with-opacity color opacity)
-  (define resolved (color-spec->rgba-color color 'render-view3d-opaque))
+(define (rgba-with-opacity color opacity color-context)
+  (define resolved (resolve-color3d color color-context))
   (rgba-color (rgba-color-red resolved) (rgba-color-green resolved)
               (rgba-color-blue resolved) (* opacity (rgba-color-alpha resolved))))
 

@@ -10,6 +10,7 @@
 ;; screen or world width for its target.
 
 (require "../color-style.rkt"
+         (only-in "../color-token.rkt" theme-surface-edge)
          "../geometry.rkt")
 
 (provide stroke3d
@@ -65,7 +66,7 @@
 ;; mode, width is the full physical diameter.  The explicit dash-space option
 ;; is useful for a physical tube-like line with deliberately screen-constant
 ;; dashes, but the default always follows width mode.
-(define (stroke3d #:color [color "steelblue"]
+(define (stroke3d #:color [color theme-surface-edge]
                   #:width [width 2]
                   #:width-mode [width-mode 'screen]
                   #:cap [cap 'round]

@@ -4,7 +4,8 @@
 
 (require rackunit
          "../main.rkt"
-         "../3d.rkt")
+         "../3d.rkt"
+         "../colors.rkt")
 
 (define (within? actual expected [epsilon 1e-10])
   (<= (abs (- actual expected)) epsilon))
@@ -47,13 +48,13 @@
   (check-equal? late-first late-second)
   (check-equal? (directional-light3d-intensity (light-at intensity-scene 2 'key)) 3)
 
-  ;; V2's colour-space declaration applies to animation: red-to-blue passes
-  ;; through a bright linear-light magenta instead of display-space #800080.
+  ;; The semantic sample records the declared linear-light transition.  An
+  ;; explicit rendering context resolves it later, rather than scene sampling
+  ;; forcing a numerical color early.
   (define colour-scene
     (scene-play base-scene #:duration 1 (light3d-color-to 'world 'key "blue")))
   (define midpoint-colour (directional-light3d-color (light-at colour-scene 1/2 'key)))
-  (check-= (rgba-color-red midpoint-colour) 187.51603067837462 1e-10)
-  (check-= (rgba-color-blue midpoint-colour) 187.51603067837462 1e-10)
+  (check-equal? midpoint-colour (color-mix "red" "blue" 1/2))
   (check-equal? (directional-light3d-color (light-at colour-scene 0 'key))
                 (directional-light3d-color (car (cdr initial-lights))))
   (check-equal? (directional-light3d-color (light-at colour-scene 1 'key))

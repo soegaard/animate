@@ -11,6 +11,7 @@
 ;; accidental early clamp from silently discarding emitted or specular energy.
 
 (require "../color-style.rkt"
+         "../color-space.rkt"
          "../geometry.rkt")
 
 (provide (struct-out linear-rgba3d)
@@ -38,19 +39,6 @@
       (raise-arguments-error who "a finite alpha in [0, 1]" "alpha" alpha))
     (values red green blue alpha)))
 
-;; The IEC 61966-2-1 sRGB transfer curve.  Both public channel helpers use
-;; normalized channels in [0,1]; semantic `rgba-color` values use [0,255] and
-;; are converted by the two RGBA helpers below.
-(define (srgb-channel->linear channel)
-  (check-unit-channel 'srgb-channel->linear channel)
-  (cond [(<= channel 0.04045) (/ channel 12.92)]
-        [else (expt (/ (+ channel 0.055) 1.055) 2.4)]))
-
-(define (linear-channel->srgb channel)
-  (check-unit-channel 'linear-channel->srgb channel)
-  (cond [(<= channel 0.0031308) (* channel 12.92)]
-        [else (- (* 1.055 (expt channel (/ 1.0 2.4))) 0.055)]))
-
 (define (rgba-srgb->linear color)
   (unless (rgba-color? color)
     (raise-argument-error 'rgba-srgb->linear "rgba-color?" color))
@@ -67,7 +55,11 @@
   (for ([channel (in-list (list (linear-rgba3d-red color)
                                 (linear-rgba3d-green color)
                                 (linear-rgba3d-blue color)))])
-    (check-unit-channel 'rgba-linear->srgb channel))
+    (unless (<= 0 channel 1)
+      (raise-arguments-error
+       'rgba-linear->srgb
+       "linear channels in [0, 1]; tone-map before display conversion"
+       "channel" channel)))
   (rgba-color (* 255 (linear-channel->srgb (linear-rgba3d-red color)))
               (* 255 (linear-channel->srgb (linear-rgba3d-green color)))
               (* 255 (linear-channel->srgb (linear-rgba3d-blue color)))
@@ -125,7 +117,3 @@
                  (map-channel (linear-rgba3d-green color))
                  (map-channel (linear-rgba3d-blue color))
                  (linear-rgba3d-alpha color)))
-
-(define (check-unit-channel who channel)
-  (unless (and (finite-real? channel) (<= 0 channel 1))
-    (raise-argument-error who "finite real in [0, 1]" channel)))

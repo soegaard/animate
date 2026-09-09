@@ -4,7 +4,8 @@
 
 (require rackunit
          "../3d.rkt"
-         "../private/color-style.rkt")
+         "../private/color-style.rkt"
+         (only-in "../colors.rkt" resolve-color animate-light-theme))
 
 (module+ test
   (define cube (cube3d 2 #:id 'cube))
@@ -184,12 +185,12 @@
   (define red-blue (colour-at 0 1/2))
   (check-true (rgba-color? red-green))
   (check-true (rgba-color? red-blue))
-  (check-= (rgba-color-red red-green) 255/2 1e-12)
-  (check-= (rgba-color-green red-green) 255/2 1e-12)
+  (check-= (rgba-color-red red-green) 187.51603067837462 1e-12)
+  (check-= (rgba-color-green red-green) 187.51603067837462 1e-12)
   (check-= (rgba-color-blue red-green) 0 1e-12)
-  (check-= (rgba-color-red red-blue) 255/2 1e-12)
+  (check-= (rgba-color-red red-blue) 187.51603067837462 1e-12)
   (check-= (rgba-color-green red-blue) 0 1e-12)
-  (check-= (rgba-color-blue red-blue) 255/2 1e-12)
+  (check-= (rgba-color-blue red-blue) 187.51603067837462 1e-12)
 
   ;; A welded cap reuses the exact cut-boundary positions, so it also retains
   ;; the already-interpolated side colour channel instead of dropping it.
@@ -208,4 +209,4 @@
                   (vector-length (mesh3d-vertices solid)))
     (define tomato (color-spec->rgba-color "tomato"))
     (check-true (for/and ([color (in-vector (mesh3d-colors solid))])
-                  (equal? (color-spec->rgba-color color) tomato)))))
+                  (equal? (resolve-color color animate-light-theme) tomato)))))

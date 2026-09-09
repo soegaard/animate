@@ -9,6 +9,7 @@
 ;; order, tetrahedron order, and shared edge keys are all deterministic.
 
 (require racket/list
+         (only-in "../color-token.rkt" theme-surface theme-surface-edge)
          "../geometry.rkt"
          "material3d.rkt"
          "mesh3d.rkt"
@@ -35,10 +36,10 @@
                             #:resolution [resolution 24]
                             #:level [level 0]
                             #:id id
-                            #:material [material (material3d #:color "mediumpurple" #:shading 'smooth)]
+                            #:material [material (material3d #:color theme-surface #:shading 'smooth)]
                             #:transform [transform identity-transform3]
                             #:opacity [opacity 1]
-                            #:wireframe-color [wireframe-color "mediumpurple"]
+                            #:wireframe-color [wireframe-color theme-surface-edge]
                             #:wireframe-width [wireframe-width 1]
                             #:normal-step [normal-step #f]
                             #:gradient [gradient #f]

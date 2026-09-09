@@ -11,6 +11,7 @@
          "formula-visual.rkt"
          "latex-formula-pict-renderer.rkt"
          "pict-renderer.rkt"
+         "render-color-context.rkt"
          "renderer-resources.rkt"
          "tagged-formula.rkt")
 
@@ -84,7 +85,10 @@
 ;; outranks any TeX-originating presentation attribute: selected formula parts
 ;; have one caller-selected colour.
 (define (tagged-formula-style-element color)
-  (define rgba (color-spec->rgba-color color 'tagged-formula-style-element))
+  (define rgba
+    (resolve-color-in-context
+     color
+     (current-or-default-render-color-context)))
   (define css-color
     (format "rgba(~a,~a,~a,~a)"
             (inexact-channel (rgba-color-red rgba))

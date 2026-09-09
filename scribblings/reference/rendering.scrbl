@@ -7,6 +7,7 @@
                      racket/math
                      (only-in pict pict?)
                      animate
+                     (except-in animate/colors tan)
                      animate/authoring
                      animate/preview
                      animate/render
@@ -68,6 +69,7 @@ their opacity, nested composites, and the complete Visual's scale and rotation.
 It must not apply the Visual's containing-system translation or global opacity.
 The high-level adapter applies global opacity afterward and the parent adapter
 places the result.
+
 }
 
 @defproc[(pict-renderer-list? [value any/c]) boolean?]{
@@ -896,7 +898,8 @@ Recognizes a @racket[transform-from-copy] animation request.
                        [camera camera?]
                        [#:renderers renderers
                                     pict-renderer-list?
-                                    default-pict-renderers])
+                                    default-pict-renderers]
+                       [#:theme theme (or/c false/c color-theme?) #f])
          pict?]{
 
 Selects the first explicit supporting renderer and validates its local Pict.
@@ -927,6 +930,10 @@ or @racket[scene->pict].
 
 If no renderer supports the concrete Visual, an exception is raised. Invalid
 custom support, render, or opacity-protocol results also raise exceptions.
+
+When @racket[theme] is supplied, the adapter captures that immutable theme in
+the returned Pict, including delayed drawing callbacks and recursive children.
+Without it, the built-in light theme supplies the direct-render default.
 }
 
 @defproc[(scene-state->pict
@@ -934,7 +941,8 @@ custom support, render, or opacity-protocol results also raise exceptions.
           [#:camera camera camera? default-camera]
           [#:renderers renderers
                        pict-renderer-list?
-                       default-pict-renderers])
+                       default-pict-renderers]
+          [#:theme theme (or/c false/c color-theme?) #f])
          pict?]{
 
 Creates a fixed-size Pict for @racket[state]. It fills the background, resolves
@@ -946,6 +954,9 @@ position and recursively applies its own child order. A formula assembly also
 occupies one top-level position and applies its separate local part order. A
 zero-opacity Visual remains in semantic order but contributes no visible
 pixels.
+
+The selected @racket[theme] is one immutable color snapshot for the complete
+state traversal, including renderer-aware layout and nested Pict callbacks.
 }
 
 @defproc[(scene->pict
@@ -955,9 +966,8 @@ pixels.
           [#:renderers renderers
                        pict-renderer-list?
                        default-pict-renderers]
-          [#:prepared-label-layout prepared-label-layout
-                                    (or/c false/c prepared-label-layout3d?)
-                                    #f])
+          [#:supersample supersample exact-positive-integer? 1]
+          [#:theme theme (or/c false/c color-theme?) #f])
          pict?]{
 
 Samples @racket[scene] at @racket[time] and converts the resulting scene state
@@ -967,6 +977,9 @@ When @racket[camera] is @racket[#f], the Visual state and scene camera are
 sampled together using one easing evaluation. Supplying a camera is a static
 override: the supplied camera is used instead of the scene-camera timeline for
 this conversion.
+
+@racket[theme] selects one immutable rendering context without changing the
+Scene or its sampled Visuals.
 }
 
 @defproc[(scene-frame-count [scene scene?]
@@ -994,7 +1007,12 @@ check whether the index is in range for one.
           [#:camera camera (or/c camera? false/c) #f]
           [#:renderers renderers
                        pict-renderer-list?
-                       default-pict-renderers])
+                       default-pict-renderers]
+          [#:supersample supersample exact-positive-integer? 1]
+          [#:theme theme (or/c false/c color-theme?) #f]
+          [#:prepared-label-layout prepared-label-layout
+                                    (or/c false/c prepared-label-layout3d?)
+                                    #f])
          (is-a?/c bitmap%)]{
 
 Renders one in-range scene frame to an aligned bitmap. Valid frame indices run
@@ -1005,6 +1023,9 @@ When @racket[camera] is @racket[#f], the camera is sampled from the scene at the
 frame time. A supplied camera is used as one fixed override for the frame.
 A prepared layout is selected by the frame's source index; labels without a
 slot in that table retain direct layout.
+
+@racket[theme] selects one immutable context for this frame. It does not alter
+the sampled Scene or any Visual stored in it.
 }
 
 @section[#:tag "output"]{PNG and MP4 Output}
@@ -1013,6 +1034,24 @@ slot in that table retain direct layout.
 
 The procedures in this section perform external effects. Their names end in
 @litchar{!} according to the project house style.
+
+@defproc[(render-color->draw-color [color any/c]) color%]{
+
+Converts an authored color specification to a @racket[color%] for a custom
+Pict renderer. Use it only while Animate is calling the renderer; the current
+render pass supplies its explicit immutable theme context. A renderer that
+deliberately accepts only literal colors should validate that restriction
+itself; it must not pass a palette or role token directly to Pict or
+@racketmodname[racket/draw]. For standalone color queries, use
+@racket[resolve-color] with an explicit theme instead.
+}
+
+@defproc[(load-color-theme! [path path-string?]) color-theme?]{
+Reads a versioned, data-only theme datum from @racket[path] at the effectful
+render boundary. Animate validates it with @racket[datum->theme], records the
+file's content digest as provenance, and returns one immutable snapshot. It
+does not evaluate the file or retain a handle that a renderer could reread.
+}
 
 @defproc[(render-frames!
           [scene scene?]
@@ -1024,6 +1063,8 @@ The procedures in this section perform external effects. Their names end in
                        default-pict-renderers]
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
+          [#:supersample supersample exact-positive-integer? 1]
+          [#:theme theme (or/c false/c color-theme?) #f]
           [#:prepared-label-layout prepared-label-layout
                                     (or/c false/c prepared-label-layout3d?)
                                     #f])
@@ -1038,6 +1079,10 @@ When @racket[camera] is @racket[#f], each frame samples the camera stored in the
 scene timeline. Supplying a camera uses that one static view for every frame and
 ignores camera pan or zoom requests during rendering. Pixel dimensions remain
 fixed either way.
+
+When @racket[theme] is supplied, @racket[render-frames!] snapshots it before
+creating any renderer workers. All frames in that request therefore use the
+same immutable theme context.
 
 When a sampled scene contains a nonempty formula, including a nonempty part of
 a formula assembly, and the built-in formula renderer is selected, frame
@@ -1316,6 +1361,7 @@ The report's paths and per-frame times are ordered by the local output number.
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
+          [#:theme theme color-theme? animate-light-theme]
           [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
           [#:asset-files asset-files (listof path-string?) null])
          (listof path?)]{
@@ -1331,6 +1377,8 @@ automatic caching is disabled conservatively. An explicit symbol/string remains
 available for an author-managed key; @racket[#f] disables caching and removes
 any existing section cache manifest. External dependencies are not discovered:
 declare them in @racket[asset-files] or use a deliberate explicit key.
+The selected theme's canonical datum, appearance fingerprint, and resolver
+version are always included in the automatic visual-content identity.
 }
 
 @defproc[(render-timeline-section/report!
@@ -1342,6 +1390,7 @@ declare them in @racket[asset-files] or use a deliberate explicit key.
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
+          [#:theme theme color-theme? animate-light-theme]
           [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
           [#:asset-files asset-files (listof path-string?) null])
          section-render-report?]{
@@ -1368,6 +1417,7 @@ frames. The two lists have the same order and length.
           [#:fps fps exact-positive-integer?]
           [#:camera camera (or/c camera? false/c)]
           [#:renderers renderers pict-renderer-list?]
+          [#:theme theme color-theme? animate-light-theme]
           [#:asset-files asset-files (listof path-string?)])
          (or/c false/c string?)]{
 
@@ -1684,6 +1734,7 @@ visual-only files made by @racket[encode-mp4!] meet that requirement.
           [#:camera camera (or/c camera? false/c) #f]
           [#:renderers renderers pict-renderer-list? default-pict-renderers]
           [#:workers workers exact-positive-integer? 1]
+          [#:theme theme color-theme? animate-light-theme]
           [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
           [#:asset-files asset-files (listof path-string?) null]
           [#:subtitle-file subtitle-file
@@ -1707,6 +1758,8 @@ boundary: it fingerprints declared assets but cannot discover arbitrary files,
 font/TeX inputs, or an FFmpeg build, and cannot safely hash procedures. Use
 @racket[#:asset-files], a versioned explicit key, or @racket[#f] according to
 the production's dependency model.
+The selected immutable theme is forwarded to each section and is part of every
+section and partial-movie visual identity.
 }
 
 @subsection{Project execution}

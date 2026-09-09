@@ -15,6 +15,7 @@
          racket/string
          racket/system
          "authoring-timeline.rkt"
+         "color-theme-data.rkt"
          "section-renderer.rkt"
          "scene.rkt"
          "shape-pict-renderers.rkt"
@@ -198,6 +199,7 @@
                               #:camera [camera #f]
                               #:renderers [renderers default-pict-renderers]
                               #:workers [workers 1]
+                              #:theme [theme animate-light-theme]
                               #:cache-key [cache-key 'auto]
                               #:asset-files [asset-files '()]
                               #:subtitle-file [subtitle-file 'auto]
@@ -260,10 +262,11 @@
          #:camera camera
          #:renderers renderers
          #:workers workers
+         #:theme theme
          #:cache-key cache-key
          #:asset-files asset-files))
       (define effective-key
-        (resolve-section-cache-key timeline entry cache-key fps camera renderers asset-files))
+        (resolve-section-cache-key timeline entry cache-key fps camera renderers theme asset-files))
       (define partial-manifest
         (build-path partial-root
                     (format "section-~a.cache.rktd"
@@ -311,12 +314,13 @@
                              "left-section" (authoring-section-name left)
                              "right-section" (authoring-section-name right)))))
 
-(define (resolve-section-cache-key timeline entry cache-key fps camera renderers asset-files)
+(define (resolve-section-cache-key timeline entry cache-key fps camera renderers theme asset-files)
   (if (eq? cache-key 'auto)
       (automatic-section-cache-key timeline entry
                                    #:fps fps
                                    #:camera camera
                                    #:renderers renderers
+                                   #:theme theme
                                    #:asset-files asset-files)
       cache-key))
 

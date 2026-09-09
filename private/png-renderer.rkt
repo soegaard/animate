@@ -20,6 +20,7 @@
          racket/path
          "camera.rkt"
          "frame-renderer.rkt"
+         "render-color-context.rkt"
          "scene-frame-grid.rkt"
          "ode-flow.rkt"
          "3d/ode-flow3d.rkt"
@@ -71,6 +72,7 @@
 ;                  [#:clean? boolean?]
 ;                  [#:workers exact-positive-integer?]
 ;                  [#:supersample exact-positive-integer?]
+;                  [#:theme color-theme?]
 ;                  -> (listof path?)
 ;; Writes every sampled scene frame as a numbered PNG file. Paths stay in
 ;; frame-index order even when workers render files concurrently.
@@ -81,6 +83,7 @@
                         #:clean? [clean? #t]
                         #:workers [workers 1]
                         #:supersample [supersample 1]
+                        #:theme [theme #f]
                         #:prepared-label-layout [prepared-label-layout #f])
   (render-diagnostics-paths
    (render-frames/report! scene
@@ -91,6 +94,7 @@
                           #:clean? clean?
                           #:workers workers
                           #:supersample supersample
+                          #:theme theme
                           #:prepared-label-layout prepared-label-layout)))
 
 ;; render-diagnostics contains the deterministic output paths, actual worker
@@ -115,6 +119,7 @@
 ;                         [#:clean? boolean?]
 ;                         [#:workers exact-positive-integer?]
 ;                         [#:supersample exact-positive-integer?]
+;                         [#:theme color-theme?]
 ;                         -> render-diagnostics?
 ;; Writes frames just as render-frames! does, returning output and performance
 ;; diagnostics instead of only paths.
@@ -125,7 +130,10 @@
                                #:clean? [clean? #t]
                                #:workers [workers 1]
                                #:supersample [supersample 1]
+                               #:theme [theme #f]
                                #:prepared-label-layout [prepared-label-layout #f])
+  (define color-context
+    (select-png-render-color-context 'render-frames! theme))
   (define frame-count
     (scene-frame-count scene #:fps fps))
   (unless (path-string? output-directory)
@@ -154,6 +162,7 @@
    #:clean? clean?
    #:workers workers
    #:supersample supersample
+   #:color-context color-context
    #:prepared-label-layout prepared-label-layout))
 
 ; render-frame-indices! : scene? (listof exact-nonnegative-integer?) path-string?
@@ -163,6 +172,7 @@
 ;                         [#:clean? boolean?]
 ;                         [#:workers exact-positive-integer?]
 ;                         [#:supersample exact-positive-integer?]
+;                         [#:theme color-theme?]
 ;                         -> (listof path?)
 ;; Renders selected scene-frame indices in the supplied order, naming the
 ;; output locally from frame-000000.png. This keeps a rendered timeline section
@@ -174,6 +184,7 @@
                                #:clean? [clean? #t]
                                #:workers [workers 1]
                                #:supersample [supersample 1]
+                               #:theme [theme #f]
                                #:prepared-label-layout [prepared-label-layout #f])
   (render-diagnostics-paths
    (render-frame-indices/report!
@@ -184,6 +195,7 @@
     #:clean? clean?
     #:workers workers
     #:supersample supersample
+    #:theme theme
     #:prepared-label-layout prepared-label-layout)))
 
 ; render-frame-indices/report! : scene? (listof exact-nonnegative-integer?)
@@ -197,7 +209,12 @@
                                       #:clean? [clean? #t]
                                       #:workers [workers 1]
                                       #:supersample [supersample 1]
+                                      #:theme [theme #f]
+                                      #:color-context [color-context #f]
                                       #:prepared-label-layout [prepared-label-layout #f])
+  (define selected-color-context
+    (select-png-render-color-context
+     'render-frame-indices! theme color-context))
   (define available-frame-count
     (scene-frame-count scene #:fps fps))
   (unless (and (list? frame-indices)
@@ -257,6 +274,7 @@
                               supersample
                               ode-frame-samples
                               ode3d-frame-samples
+                              selected-color-context
                               prepared-label-layout))
   (define after-counters
     (default-pict-renderer-cache-counters renderers))
@@ -290,7 +308,7 @@
 ;; lists are rebuilt in the requested global-frame order after all work ends.
 (define (render-frame-index-jobs! scene frame-indices output-directory fps camera renderers workers
                                   supersample ode-frame-samples ode3d-frame-samples
-                                  prepared-label-layout)
+                                  color-context prepared-label-layout)
   (define frame-count
     (length frame-indices))
   (define active-workers
@@ -336,6 +354,7 @@
                                  #:camera camera
                                  #:renderers renderers
                                  #:supersample supersample
+                                 #:color-context color-context
                                  #:prepared-label-layout prepared-label-layout))))))
     (pending-frame local-index path bitmap started-at))
   (define (save-pending-frame! pending)
@@ -421,6 +440,26 @@
   (and (> active-workers 1)
        make-parallel-thread-pool/proc
        parallel-thread-pool-close/proc))
+
+;; select-png-render-color-context : symbol? any/c any/c
+;;                                    -> render-color-context?
+;; Forms one immutable snapshot before a worker pool is created. Every frame
+;; in one PNG request therefore sees the same theme even on another worker.
+(define (select-png-render-color-context who theme [color-context #f])
+  (when (and theme color-context)
+    (raise-arguments-error
+     who
+     "at most one of #:theme or #:color-context"
+     "theme" theme
+     "color-context" color-context))
+  (cond
+    [color-context
+     (unless (render-color-context? color-context)
+       (raise-argument-error who "render-color-context? as #:color-context"
+                             color-context))
+     color-context]
+    [theme (make-render-color-context theme)]
+    [else (current-or-default-render-color-context)]))
 
 ; frame-index->path : path-string? exact-nonnegative-integer? -> path?
 ;;   Converts frame-index to its zero-padded PNG output path.

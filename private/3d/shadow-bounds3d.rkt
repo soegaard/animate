@@ -12,6 +12,7 @@
 
 (require racket/list
          "../color-style.rkt"
+         "../render-color-context.rkt"
          "affine3.rkt"
          "bounds3.rkt"
          "compiled-view3d.rkt"
@@ -189,8 +190,9 @@
   (and (material3d-casts-shadow? material)
        (= (compiled-instance3d-opacity instance) 1)
        (= (rgba-color-alpha
-           (color-spec->rgba-color (material3d-color material)
-                                   'shadow-caster-instance?))
+           (resolve-color-in-context
+            (material3d-color material)
+            (current-or-default-render-color-context)))
           1)))
 
 (define (bounds-in-light-space bounds light)

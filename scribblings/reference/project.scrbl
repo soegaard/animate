@@ -3,6 +3,7 @@
 @(require (for-label (except-in racket/base angle string-copy)
                      animate
                      animate/authoring
+                     (except-in animate/colors tan)
                      animate/project
                      animate/render
                      animate/3d
@@ -66,7 +67,8 @@ Declares an in-memory source-program source.
                       [#:height height exact-positive-integer? 720]
                       [#:renderer3d renderer3d any/c 'software]
                       [#:supersample supersample exact-positive-integer? 1]
-                      [#:workers workers exact-positive-integer? 1])
+                      [#:workers workers exact-positive-integer? 1]
+                      [#:theme theme color-theme? animate-light-theme])
          render-spec?]{
 Describes final raster quality.  Renderer and camera fields have defaults too;
 see @racket[render-spec] in the contract reference for the complete set.
@@ -79,6 +81,20 @@ project declaration.}
 
 @defproc[(render-spec? [value any/c]) boolean?]{Recognizes a final-render configuration.}
 
+@defproc[(render-spec-theme [specification render-spec?]) color-theme?]{
+Returns the complete immutable theme snapshot selected for final rendering.
+The project plan records its canonical datum, appearance fingerprint, resolver
+version, and provenance, so replay does not depend on a locally named palette.
+}
+
+@defproc[(render-spec-with-theme [specification render-spec?]
+                                 [theme color-theme?])
+         render-spec?]{
+Returns a copy with only the selected theme changed. This is useful for an
+explicit command-line or build-system appearance override; raster dimensions,
+renderers, worker policy, and quality remain unchanged.
+}
+
 @defproc[(preview-spec [#:fps fps exact-positive-integer? 30]
                        [#:pixel-scale pixel-scale positive? 1]
                        [#:cache-megabytes cache-megabytes exact-nonnegative-integer? 128]
@@ -89,6 +105,14 @@ Describes preview quality, bitmap-cache budget, and optional audio monitoring.
 }
 
 @defproc[(preview-spec? [value any/c]) boolean?]{Recognizes a preview configuration.}
+
+The @racket[raco animate] command accepts the global prefix options
+@tt{--theme animate-light}, @tt{--theme animate-dark}, or
+@tt{--theme-file PATH} before @tt{plan}, @tt{render}, or @tt{preview}. The two options are mutually exclusive. A theme file
+contains the versioned datum accepted by @racket[datum->theme]; it is read as
+data rather than evaluated. Its digest and decoded snapshot become part of the
+prepared render identity, so workers never reread the file midway through a
+render.
 
 @defproc[(output-spec [#:root root path-string? "media"]
                       [#:name name string? "animation"]

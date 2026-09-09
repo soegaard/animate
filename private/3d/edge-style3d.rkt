@@ -10,6 +10,7 @@
 ;; renderer preparing a specific camera frame.
 
 (require (only-in racket/math pi)
+         (only-in "../color-token.rkt" theme-surface-edge)
          "../geometry.rkt"
          "stroke3d.rkt")
 
@@ -37,7 +38,7 @@
 ;                [#:crease-angle finite-nonnegative-real?]
 ;                [#:surface (or/c 'visible 'depth-only 'none)] -> edge-style3d?
 (define (edge-style3d #:edges [edges 'feature]
-                      #:visible [visible (stroke3d #:color "black" #:width 2 #:depth-mode 'test)]
+                      #:visible [visible (stroke3d #:color theme-surface-edge #:width 2 #:depth-mode 'test)]
                       #:hidden [hidden #f]
                       #:crease-angle [crease-angle (/ pi 6)]
                       #:surface [surface 'visible])

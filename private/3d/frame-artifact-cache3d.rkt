@@ -9,6 +9,7 @@
 ;; all consumers in one scene/pict pass share exactly one rendered artifact.
 
 (require racket/list
+         "../render-color-context.rkt"
          "../preview-cancellation.rkt"
          "frame-artifact3d.rkt"
          "renderer3d.rkt"
@@ -99,7 +100,12 @@
              [by-renderer
               (hash-ref! (frame-artifact-cache-by-content cache) content-key make-weak-hasheq)]
              [entries (hash-ref! by-renderer renderer make-hash)]
-             [key (vector width height (view3d-camera view))]
+             [key (vector width height (view3d-camera view)
+                          ;; The adapter cache owns pixels, not geometry. A
+                          ;; distinct appearance fingerprint must therefore
+                          ;; select a new frame artifact for the same view.
+                          (render-color-context-appearance-fingerprint
+                           (current-or-default-render-color-context)))]
              [found
               (for/first ([entry (in-list (hash-ref entries key '()))]
                           #:when (renderer3d-attachment-set-satisfies?

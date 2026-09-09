@@ -297,7 +297,10 @@ In @racket['wireframe] mode the stable edge order remains visible. In
 @racket['opaque] mode triangles are flattened in declared order, clipped,
 depth-tested, and shaded with @racket[material]. Flat and smooth materials use
 the declared face or interpolated vertex normals respectively; per-vertex
-colours are interpolated perspective-correctly.
+colours are interpolated perspective-correctly. Material, wireframe, and
+per-vertex colours are @racket[color-spec?] values, so literals, theme roles,
+and colour expressions remain part of the immutable mesh and resolve together
+when a renderer prepares a frame.
 
 Optional semantic ID vectors are immutable vectors of unique symbols, aligned
 with vertices, edges, and declared triangle faces respectively. They describe
@@ -936,23 +939,26 @@ broad-phase candidate query, not a narrow-phase proof of intersection.}
 
 @section{Materials and lights}
 
-@defproc[(material3d [#:color color any/c "cornflowerblue"]
+@defproc[(material3d [#:color color color-spec? "cornflowerblue"]
                       [#:shading shading (or/c 'unlit 'flat 'smooth) 'flat]
                       [#:lighting lighting (or/c 'lambert 'blinn-phong) 'lambert]
                       [#:ambient ambient nonnegative-real? 1]
                       [#:diffuse diffuse nonnegative-real? 1]
                       [#:specular specular nonnegative-real? 0]
-                      [#:specular-color specular-color any/c "white"]
+                      [#:specular-color specular-color color-spec? "white"]
                       [#:roughness roughness (and/c positive-real? (<=/c 1)) 1]
-                      [#:emission emission any/c "black"]
+                      [#:emission emission color-spec? "black"]
                       [#:emission-strength emission-strength nonnegative-real? 0]
                       [#:double-sided? double-sided? boolean? #f]
                       [#:casts-shadow? casts-shadow? boolean? #t]
                       [#:receives-shadow? receives-shadow? boolean? #t]
                       [#:wireframe? wireframe? boolean? #f])
          material3d?]{
-Constructs an immutable surface material. @racket['unlit] uses its base
-colour and then adds @racket[emission * emission-strength], without consulting
+Constructs an immutable surface material. Its three colour fields retain
+@racket[color-spec?] values, including theme roles and expressions; all are
+resolved once from the frame's selected theme before either built-in renderer
+classifies opacity or shades fragments. @racket['unlit] uses its base colour
+and then adds @racket[emission * emission-strength], without consulting
 lights. @racket['flat] evaluates one face normal using ambient and directional
 lights; @racket['smooth] interpolates supplied vertex normals. @racket['lambert]
 uses ambient plus diffuse illumination. @racket['blinn-phong] additionally
@@ -977,28 +983,28 @@ specular illumination. Transparent surfaces, strokes, markers, and billboards
 do not cast or receive a map lookup in this stage.
 }
 @defproc[(material3d? [value any/c]) boolean?]{Recognizes a material.}
-@defproc[(material3d-color [material material3d?]) rgba-color?]{Returns base colour and alpha.}
+@defproc[(material3d-color [material material3d?]) color-spec?]{Returns the retained base colour specification.}
 @defproc[(material3d-shading [material material3d?]) (or/c 'unlit 'flat 'smooth)]{Returns its active shading mode.}
 @defproc[(material3d-lighting [material material3d?]) (or/c 'lambert 'blinn-phong)]{Returns its lighting model.}
 @defproc[(material3d-ambient [material material3d?]) nonnegative-real?]{Returns ambient coefficient.}
 @defproc[(material3d-diffuse [material material3d?]) nonnegative-real?]{Returns diffuse coefficient.}
 @defproc[(material3d-specular [material material3d?]) nonnegative-real?]{Returns specular coefficient.}
-@defproc[(material3d-specular-color [material material3d?]) rgba-color?]{Returns the highlight colour.}
+@defproc[(material3d-specular-color [material material3d?]) color-spec?]{Returns the retained highlight colour specification.}
 @defproc[(material3d-roughness [material material3d?]) (and/c positive-real? (<=/c 1))]{Returns roughness.}
 @defproc[(material3d-specular-exponent [material material3d?]) positive-real?]{Returns
 the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial inspector.}
-@defproc[(material3d-emission [material material3d?]) rgba-color?]{Returns the additive emission colour.}
+@defproc[(material3d-emission [material material3d?]) color-spec?]{Returns the retained additive emission colour specification.}
 @defproc[(material3d-emission-strength [material material3d?]) nonnegative-real?]{Returns emission strength.}
 @defproc[(material3d-double-sided? [material material3d?]) boolean?]{Reports whether back-face culling is disabled for this mesh.}
 @defproc[(material3d-casts-shadow? [material material3d?]) boolean?]{Returns shadow-caster policy. Only opaque mesh instances with true policy enter a V8 software depth map.}
 @defproc[(material3d-receives-shadow? [material material3d?]) boolean?]{Returns whether an opaque mesh receiver applies V8's software shadow factor.}
 @defproc[(material3d-wireframe? [material material3d?]) boolean?]{Returns retained wireframe intent.}
-@defproc[(material3d-with-color [material material3d?] [color any/c]) material3d?]{Returns
+@defproc[(material3d-with-color [material material3d?] [color color-spec?]) material3d?]{Returns
 @racket[material] with only its base colour replaced.}
 @defproc[(material3d-with-roughness [material material3d?]
                                      [roughness (and/c positive-real? (<=/c 1))])
          material3d?]{Returns @racket[material] with only its roughness replaced.}
-@defproc[(material3d-with-emission [material material3d?] [emission any/c]
+@defproc[(material3d-with-emission [material material3d?] [emission color-spec?]
                                    [#:strength strength nonnegative-real?
                                     (material3d-emission-strength material)])
          material3d?]{Returns @racket[material] with emission fields replaced.}
@@ -1068,25 +1074,27 @@ owned.
 
 @defproc[(ambient-light3d [#:id id symbol? 'ambient]
                            [#:intensity intensity nonnegative-real? 1]
-                           [#:color color any/c "white"]
+                           [#:color color color-spec? "white"]
                            [#:shadow shadow #f #f])
-         ambient-light3d?]{Creates uniform opaque ambient illumination with a
-stable authored identifier. Shadow descriptors are reserved for a later stage;
-the only accepted current value is @racket[#f].}
+         ambient-light3d?]{Creates uniform ambient illumination with a stable
+authored identifier. The colour specification must resolve to opaque under the
+frame's theme. Shadow descriptors are reserved for a later stage; the only
+accepted current value is @racket[#f].}
 @defproc[(directional-light3d [direction vec3?]
                                [#:id id symbol? 'key]
                                [#:intensity intensity nonnegative-real? 1]
-                               [#:color color any/c "white"]
+                               [#:color color color-spec? "white"]
                                [#:shadow shadow (or/c #f directional-shadow3d?) #f])
-         directional-light3d?]{Creates an opaque directional light. Its
-direction is the direction in which illumination travels, so a normal facing
+         directional-light3d?]{Creates a directional light whose colour must
+resolve to opaque under the frame's theme. Its direction is the direction in
+which illumination travels, so a normal facing
 its negation receives diffuse light. The direction is normalized. A
 @racket[directional-shadow3d] makes both built-in opaque renderers produce and
 sample one depth map.}
 @defproc[(point-light3d [position vec3?]
                          [#:id id symbol? 'point]
                          [#:intensity intensity nonnegative-real? 1]
-                         [#:color color any/c "white"]
+                         [#:color color color-spec? "white"]
                          [#:attenuation attenuation light-attenuation3d?
                           (inverse-square-attenuation3d)]
                          [#:range range (or/c #f positive-real?) #f]
@@ -1095,7 +1103,7 @@ sample one depth map.}
 @defproc[(spot-light3d [position vec3?] [direction vec3?]
                         [#:id id symbol? 'spot]
                         [#:intensity intensity nonnegative-real? 1]
-                        [#:color color any/c "white"]
+                        [#:color color color-spec? "white"]
                         [#:inner-angle inner-angle nonnegative-real? 0]
                         [#:outer-angle outer-angle positive-real? @math{pi/4}]
                         [#:attenuation attenuation light-attenuation3d?
@@ -1111,20 +1119,20 @@ deferred, so a point light accepts only @racket[#f].}
 @defproc[(ambient-light3d? [value any/c]) boolean?]{Recognizes ambient light.}
 @defproc[(ambient-light3d-id [light ambient-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(ambient-light3d-intensity [light ambient-light3d?]) nonnegative-real?]{Returns ambient intensity.}
-@defproc[(ambient-light3d-color [light ambient-light3d?]) rgba-color?]{Returns opaque ambient colour.}
+@defproc[(ambient-light3d-color [light ambient-light3d?]) color-spec?]{Returns the retained ambient colour specification.}
 @defproc[(ambient-light3d-shadow [light ambient-light3d?]) #f]{Returns reserved shadow policy.}
 @defproc[(directional-light3d? [value any/c]) boolean?]{Recognizes directional light.}
 @defproc[(directional-light3d-id [light directional-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(directional-light3d-direction [light directional-light3d?]) vec3?]{Returns normalized travel direction.}
 @defproc[(directional-light3d-intensity [light directional-light3d?]) nonnegative-real?]{Returns directional intensity.}
-@defproc[(directional-light3d-color [light directional-light3d?]) rgba-color?]{Returns opaque directional colour.}
+@defproc[(directional-light3d-color [light directional-light3d?]) color-spec?]{Returns the retained directional colour specification.}
 @defproc[(directional-light3d-shadow [light directional-light3d?])
          (or/c #f directional-shadow3d?)]{Returns attached shadow intent.}
 @defproc[(point-light3d? [value any/c]) boolean?]{Recognizes a point light.}
 @defproc[(point-light3d-id [light point-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(point-light3d-position [light point-light3d?]) vec3?]{Returns position.}
 @defproc[(point-light3d-intensity [light point-light3d?]) nonnegative-real?]{Returns intensity.}
-@defproc[(point-light3d-color [light point-light3d?]) rgba-color?]{Returns opaque colour.}
+@defproc[(point-light3d-color [light point-light3d?]) color-spec?]{Returns the retained colour specification.}
 @defproc[(point-light3d-attenuation [light point-light3d?]) light-attenuation3d?]{Returns attenuation policy.}
 @defproc[(point-light3d-range [light point-light3d?]) (or/c #f positive-real?)]{Returns optional cutoff range.}
 @defproc[(point-light3d-shadow [light point-light3d?]) #f]{Returns reserved shadow policy.}
@@ -1133,7 +1141,7 @@ deferred, so a point light accepts only @racket[#f].}
 @defproc[(spot-light3d-position [light spot-light3d?]) vec3?]{Returns position.}
 @defproc[(spot-light3d-direction [light spot-light3d?]) vec3?]{Returns normalized outward direction.}
 @defproc[(spot-light3d-intensity [light spot-light3d?]) nonnegative-real?]{Returns intensity.}
-@defproc[(spot-light3d-color [light spot-light3d?]) rgba-color?]{Returns opaque colour.}
+@defproc[(spot-light3d-color [light spot-light3d?]) color-spec?]{Returns the retained colour specification.}
 @defproc[(spot-light3d-inner-angle [light spot-light3d?]) nonnegative-real?]{Returns full-cone angle in radians.}
 @defproc[(spot-light3d-outer-angle [light spot-light3d?]) positive-real?]{Returns cutoff-cone angle in radians.}
 @defproc[(spot-light3d-attenuation [light spot-light3d?]) light-attenuation3d?]{Returns attenuation policy.}
@@ -1143,7 +1151,7 @@ deferred, so a point light accepts only @racket[#f].}
 @defproc[(light3d? [value any/c]) boolean?]{Recognizes any authored light.}
 @defproc[(light3d-id [light light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(light3d-kind [light light3d?]) (or/c 'ambient 'directional 'point 'spot)]{Returns its kind.}
-@defproc[(light3d-color [light light3d?]) rgba-color?]{Returns opaque light colour.}
+@defproc[(light3d-color [light light3d?]) color-spec?]{Returns the retained light colour specification, which must resolve to opaque for rendering.}
 @defproc[(light3d-intensity [light light3d?]) nonnegative-real?]{Returns intensity.}
 @defproc[(light3d-shadow [light light3d?]) (or/c #f shadow3d?)]{Returns attached shadow intent, if any.}
 

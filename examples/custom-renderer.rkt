@@ -66,11 +66,13 @@
    (filled-rectangle size
                      thickness
                      #:draw-border? #f
-                     #:color (cross-visual-fill cross))
+                     #:color
+                     (render-color->draw-color (cross-visual-fill cross)))
    (filled-rectangle thickness
                      size
                      #:draw-border? #f
-                     #:color (cross-visual-fill cross))))
+                     #:color
+                     (render-color->draw-color (cross-visual-fill cross)))))
 
 
 ;;;

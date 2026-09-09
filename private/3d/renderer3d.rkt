@@ -14,7 +14,9 @@
          racket/set
          "../preview-cancellation.rkt"
          "../color-style.rkt"
+         "../render-color-context.rkt"
          "camera3d.rkt"
+         "color-resolution3d.rkt"
          "light3d.rkt"
          "shadow3d.rkt"
          "material3d.rkt"
@@ -316,6 +318,7 @@
               'unlit))))
 
 (define (request-has-transparent-instance? compiled)
+  (define color-context (current-or-default-render-color-context))
   (for/or ([instance (in-vector (compiled-view3d-instances compiled))])
     (define material (compiled-instance3d-material instance))
     (or (< (compiled-instance3d-opacity instance) 1)
@@ -323,8 +326,7 @@
         ;; named colour such as "gold" is still valid at this backend-neutral
         ;; capability check.  Resolve only for the alpha comparison.
         (< (rgba-color-alpha
-            (color-spec->rgba-color (material3d-color material)
-                                    'request-has-transparent-instance?))
+            (resolve-color3d (material3d-color material) color-context))
            1)
         (let* ([geometry-key (compiled-instance3d-geometry-key instance)]
                [geometry
@@ -336,8 +338,7 @@
           (and colors
                (for/or ([color (in-vector colors)])
                  (< (rgba-color-alpha
-                     (color-spec->rgba-color color
-                                             'request-has-transparent-instance?))
+                     (resolve-color3d color color-context))
                     1)))))))
 
 (define (request-maximum-clip-plane-count compiled)
@@ -369,13 +370,20 @@
   ;; same authoring identity. Compiled geometry keys establish that separately.
   (vector 'animate-software-renderer3d-v2
           (render3d-request-compiled-view request)
-          (render3d-request-frame-spec request)))
+          (render3d-request-frame-spec request)
+          ;; Prepared colours and alpha-pass membership are render products.
+          ;; Geometry remains in its distinct retained cache, while this frame
+          ;; key guarantees a theme switch cannot revive stale pixels.
+          (render-color-context-appearance-fingerprint
+           (current-or-default-render-color-context))))
 
 (define (prepare-reference request)
+  (define color-context (current-or-default-render-color-context))
   (prepare-compiled-view3d-opaque
    (render3d-request-compiled-view request)
    (render3d-request-frame-spec request)
-   #:cancellation-token (render3d-request-cancellation-token request)))
+   #:cancellation-token (render3d-request-cancellation-token request)
+   #:color-context color-context))
 
 (define (render-reference preparation request statistics statistics-lock)
   (define raster-start (current-inexact-milliseconds))

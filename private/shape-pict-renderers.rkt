@@ -57,7 +57,9 @@
                   [path-visual->pict generic-path-visual->pict])
          "path-geometry.rkt"
          "paint.rkt"
+         "paint-pict.rkt"
          "pict-renderer.rkt"
+         "render-color-context.rkt"
          "renderer-resources.rkt"
          "svg-pict-renderer.rkt"
          "tagged-formula-pict-renderer.rkt"
@@ -889,7 +891,12 @@
               (text-visual-line-alignment visual)
               (visual-scale visual)
               (visual-rotation visual)
-              (camera-scale camera)))))
+              (camera-scale camera)
+              ;; A frozen glyph bitmap contains resolved colors.  Appearance,
+              ;; not a theme's metadata identity, therefore partitions this
+              ;; renderer-local cache.
+              (render-color-context-appearance-fingerprint
+               (current-or-default-render-color-context))))))
 
 ; text-color-cache-key : any/c -> (values boolean? any/c)
 ;;   Snapshots common immutable/cache-safe text color specifications. Unknown
@@ -897,6 +904,8 @@
 ;;   leave a stale raster behind; they are still frozen locally on every render.
 (define (text-color-cache-key color)
   (cond
+    [(color-spec? color)
+     (values #t (color-spec->datum color))]
     [(string? color)
      (values #t (string->immutable-string color))]
     [(or (symbol? color)
@@ -990,7 +999,8 @@
                #:size-in-pixels? #t))
   (define colored-pict
     (colorize (text content font)
-              (or (text-span-color span) (text-visual-color visual))))
+              (draw-color-spec
+               (or (text-span-color span) (text-visual-color visual)))))
   (if (= direct-pixel-size requested-pixel-size)
       colored-pict
       (scale colored-pict
@@ -1344,17 +1354,8 @@
 ;;   Converts semantic rgba-color values only at the Pict/draw adapter boundary.
 ;;   Existing renderer-native strings and false style sentinels pass through.
 (define (draw-color-spec color)
-  (define resolved
-    (cond
-      [(rgba-color? color) color]
-      [(and (string? color) (color-spec? color))
-       (color-spec->rgba-color color 'draw-color-spec)]
-      [else #f]))
-  (if resolved
-      (make-color (color-channel->byte (rgba-color-red resolved))
-                  (color-channel->byte (rgba-color-green resolved))
-                  (color-channel->byte (rgba-color-blue resolved))
-                  (rgba-color-alpha resolved))
+  (if (color-spec? color)
+      (paint->draw-color color)
       color))
 
 ; color-channel->byte : finite-real? -> byte?

@@ -909,7 +909,7 @@
 ;; compatible gradients, and compatible checker patterns interpolate directly.
 
 (struct stroke-color-animation
-  (target-id from-spec from-color to-spec to-color)
+  (target-id from-spec to-spec)
   #:transparent)
 
 ;; stroke-color-animation is the corresponding semantic stroke-color transition.
@@ -4371,9 +4371,7 @@
      (stroke-color-animation
       target-id
       from-spec
-      (color-spec->rgba-color from-spec 'scene-play)
-      to-spec
-      (color-spec->rgba-color to-spec 'scene-play))]
+      to-spec)]
     [(fade-to-request? request)
      (check-opacity-animation-target visual 'fade-to)
      (opacity-animation target-id
@@ -7641,9 +7639,9 @@
       [(= progress 1)
        (stroke-color-animation-to-spec animation)]
       [else
-       (rgba-color-lerp (stroke-color-animation-from-color animation)
-                        (stroke-color-animation-to-color animation)
-                        progress)]))
+       (color-mix (stroke-color-animation-from-spec animation)
+                  (stroke-color-animation-to-spec animation)
+                  progress)]))
   (scene-state-update
    state
    id
@@ -9088,19 +9086,13 @@
 (define (write-fade-color color progress)
   (cond [(not color) #f]
         [(color-spec? color)
-         (define rgba (color-spec->rgba-color color 'write-in))
-         (rgba-color (rgba-color-red rgba)
-                     (rgba-color-green rgba)
-                     (rgba-color-blue rgba)
-                     (* (rgba-color-alpha rgba) (clamp-unit progress)))]
+         (color-opacity color (clamp-unit progress))]
         [(= progress 1) color]
         [else #f]))
 
 (define (write-color-lerp from to progress)
   (cond [(and (color-spec? from) (color-spec? to))
-         (rgba-color-lerp (color-spec->rgba-color from 'write-in)
-                          (color-spec->rgba-color to 'write-in)
-                          (clamp-unit progress))]
+         (color-mix from to (clamp-unit progress))]
         [(= progress 1) to]
         [else from]))
 

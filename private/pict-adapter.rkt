@@ -29,6 +29,8 @@
                   draw-pict
                   frame
                   filled-rectangle
+                  pict-ascent
+                  pict-descent
                   pict-height
                   pict-width
                   pin-over
@@ -46,6 +48,7 @@
          "arrow-visual.rkt"
          "axes-visual.rkt"
          "camera.rkt"
+         "color-style.rkt"
          "derived-visual.rkt"
          "relation-visual.rkt"
          "resolvable-visual.rkt"
@@ -59,7 +62,10 @@
          "pict-renderer.rkt"
          "point-marker-visual.rkt"
          "path-geometry.rkt"
+         "paint-pict.rkt"
          "scene-state.rkt"
+         "render-color-context.rkt"
+         "renderer-resources.rkt"
          "3d/frame-artifact-cache3d.rkt"
          "3d/label-layout3d.rkt"
          "3d/label-placement3d.rkt"
@@ -81,6 +87,64 @@
 ;; same frame-artifact cache identity without storing renderer state in scenes.
 (define current-resolved-view3d-by-id (make-parameter (hasheq)))
 
+;; A context-capturing wrapper is itself a Pict. Reusing it keeps the older
+;; position-only text/Pict identity contract while still ensuring that a
+;; delayed draw re-installs the snapshot that produced its colors. The bounded
+;; cache lives entirely in the effectful adapter layer, never in a Scene.
+(define captured-color-pict-cache
+  (make-renderer-resource-cache #:max-entries 512))
+
+;; select-render-color-context : symbol? any/c any/c -> render-color-context?
+;; Selects one immutable context for a public rendering entry point.  A caller
+;; may name a theme or pass a previously captured context, but not both: doing
+;; so would make cache identity and resolution precedence ambiguous.
+(define (select-render-color-context who theme color-context)
+  (when (and theme color-context)
+    (raise-arguments-error
+     who
+     "at most one of #:theme or #:color-context"
+     "theme" theme
+     "color-context" color-context))
+  (cond
+    [color-context
+     (unless (render-color-context? color-context)
+       (raise-argument-error who "render-color-context? as #:color-context"
+                             color-context))
+     color-context]
+    [theme (make-render-color-context theme)]
+    [else (current-or-default-render-color-context)]))
+
+;; pict-with-render-color-context : pict? render-color-context? -> pict?
+;; Captures a render context in the returned delayed Pict callback.  Pict
+;; assembly may outlive the dynamic extent of an entry point, so merely
+;; parameterizing construction would otherwise let an unrelated later theme
+;; affect a deferred draw.
+(define (pict-with-render-color-context source color-context)
+  (renderer-resource-cache-ref!
+   captured-color-pict-cache
+   (list 'pict-with-render-color-context
+         source
+         (render-color-context-appearance-fingerprint color-context)
+         (render-color-context-resolver-version color-context))
+   (lambda ()
+     (values
+      (dc (lambda (drawing-context x y)
+            (parameterize ([current-render-color-context color-context])
+              (draw-pict source drawing-context x y)))
+          (pict-width source)
+          (pict-height source)
+          (pict-ascent source)
+          (pict-descent source))
+      0))))
+
+;; draw-color-or-native : any/c render-color-context? -> any/c
+;; Converts semantic color specifications at the Pict boundary while retaining
+;; legacy renderer-native camera background values such as "white".
+(define (draw-color-or-native color color-context)
+  (if (color-spec? color)
+      (paint->draw-color color color-context)
+      color))
+
 
 ;;;
 ;;; Visual Conversion
@@ -88,20 +152,29 @@
 
 ; visual->pict : visual? camera?
 ;                [#:renderers (listof pict-renderer?)]
+;                [#:theme color-theme?]
+;                [#:color-context render-color-context?]
 ;                -> pict?
 ;;   Converts visual through renderer dispatch or recursive composite composition.
 (define (visual->pict visual camera
-                      #:renderers [renderers default-pict-renderers])
+                      #:renderers [renderers default-pict-renderers]
+                      #:theme [theme #f]
+                      #:color-context [color-context #f])
   (unless (visual? visual)
     (raise-argument-error 'visual->pict "visual?" visual))
   (unless (camera? camera)
     (raise-argument-error 'visual->pict "camera?" camera))
   (check-pict-renderer-list 'visual->pict renderers)
-  (define render-camera
-    (visual-render-camera visual camera))
-  (define rendered-pict
-    (render-visual-or-composite visual render-camera renderers))
-  (apply-semantic-opacity visual rendered-pict))
+  (define selected-color-context
+    (select-render-color-context 'visual->pict theme color-context))
+  (parameterize ([current-render-color-context selected-color-context])
+    (define render-camera
+      (visual-render-camera visual camera))
+    (define rendered-pict
+      (render-visual-or-composite visual render-camera renderers))
+    (pict-with-render-color-context
+     (apply-semantic-opacity visual rendered-pict)
+     selected-color-context)))
 
 ; visual-render-camera : visual? camera? -> camera?
 ;;   Returns the world camera or the stable frame camera selected by visual.
@@ -766,11 +839,15 @@
 ; scene-state->pict : scene-state?
 ;                     [#:camera camera?]
 ;                     [#:renderers (listof pict-renderer?)]
+;                     [#:theme color-theme?]
+;                     [#:color-context render-color-context?]
 ;                     -> pict?
 ;;   Converts state to a fixed-size pict in drawing order.
 (define (scene-state->pict state
                            #:camera [camera default-camera]
                            #:renderers [renderers default-pict-renderers]
+                           #:theme [theme #f]
+                           #:color-context [color-context #f]
                            ;; A prepared layout is for this exact sampled
                            ;; frame.  Its stable item slots may cover one
                            ;; viewport while labels in every other viewport
@@ -786,11 +863,16 @@
      'scene-state->pict
      "#f or label-layout3d? as #:prepared-label-layout"
      prepared-layout))
-  (define background
-    (filled-rectangle (camera-width camera)
-                      (camera-height camera)
-                      #:draw-border? #f
-                      #:color (camera-background camera)))
+  (define selected-color-context
+    (select-render-color-context 'scene-state->pict theme color-context))
+  (define composed
+    (parameterize ([current-render-color-context selected-color-context])
+      (define background
+        (filled-rectangle (camera-width camera)
+                          (camera-height camera)
+                          #:draw-border? #f
+                          #:color (draw-color-or-native (camera-background camera)
+                                                        selected-color-context)))
   (define layout-cache (make-hash))
   (define active-layout-paths (box '()))
   (define resolved-visuals (scene-state-resolved-visuals-in-drawing-order state))
@@ -828,7 +910,8 @@
            state visual (list (visual-id visual)) camera renderers layout-cache
            active-layout-paths))
         (place-scene-visual-on-pict frame state resolved-for-layout camera renderers
-                                    #:authored visual)))))
+                                    #:authored visual))))))
+  (pict-with-render-color-context composed selected-color-context))
 
 ;; scene-projected-label-layout-candidates : scene-state? (listof visual?) camera?
 ;;                                            (listof pict-renderer?)
@@ -874,6 +957,7 @@
 ;; scene-projected-label-layout-items3d : scene-state? camera?
 ;;                                           (listof pict-renderer?)
 ;;                                           [#:view (or/c #f symbol?)]
+;;                                           [#:theme color-theme?]
 ;;                                           -> (listof label-layout-item3d?)
 ;; Produces exactly the immutable items used by the final compositor, without
 ;; doing its direct placement pass.  Project preparation uses this operation
@@ -881,7 +965,9 @@
 ;; occlusion/visibility rendering: measuring a label must not create a live
 ;; renderer artifact or depend on the preceding displayed frame.
 (define (scene-projected-label-layout-items3d state camera renderers
-                                              #:view [view-id #f])
+                                              #:view [view-id #f]
+                                              #:theme [theme #f]
+                                              #:color-context [color-context #f])
   (unless (scene-state? state)
     (raise-argument-error 'scene-projected-label-layout-items3d "scene-state?" state))
   (unless (camera? camera)
@@ -889,19 +975,23 @@
   (check-pict-renderer-list 'scene-projected-label-layout-items3d renderers)
   (unless (or (not view-id) (symbol? view-id))
     (raise-argument-error 'scene-projected-label-layout-items3d "#f or symbol? as #:view" view-id))
-  (define visuals (scene-state-resolved-visuals-in-drawing-order state))
-  (define resolved-views
-    (for/hasheq ([visual (in-list visuals)] #:when (view3d? visual))
-      (values (visual-id visual) visual)))
-  (parameterize
-      ([current-resolved-view3d-by-id resolved-views]
-       [current-frame-artifact-cache (make-frame-artifact-cache)])
-    (for/list ([entry (in-list
-                       (projected-label-layout-entries
-                        state (flatten-projected-labels visuals) camera renderers))]
-               #:when (or (not view-id)
-                          (eq? (projected-label-view (car entry)) view-id)))
-      (cdr entry))))
+  (define selected-color-context
+    (select-render-color-context
+     'scene-projected-label-layout-items3d theme color-context))
+  (parameterize ([current-render-color-context selected-color-context])
+    (define visuals (scene-state-resolved-visuals-in-drawing-order state))
+    (define resolved-views
+      (for/hasheq ([visual (in-list visuals)] #:when (view3d? visual))
+        (values (visual-id visual) visual)))
+    (parameterize
+        ([current-resolved-view3d-by-id resolved-views]
+         [current-frame-artifact-cache (make-frame-artifact-cache)])
+      (for/list ([entry (in-list
+                         (projected-label-layout-entries
+                          state (flatten-projected-labels visuals) camera renderers))]
+                 #:when (or (not view-id)
+                            (eq? (projected-label-view (car entry)) view-id)))
+        (cdr entry)))))
 
 ;; `labels` is the complete flattened list.  Its index is the stable source
 ;; slot, rather than an index local to a selected view, so a label in another
@@ -1253,7 +1343,10 @@
     (filled-rectangle (camera-width inset-camera)
                       (camera-height inset-camera)
                       #:draw-border? #f
-                      #:color (camera-background inset-camera)))
+                      #:color
+                      (draw-color-or-native
+                       (camera-background inset-camera)
+                       (current-or-default-render-color-context))))
   ;; `pin-over` preserves the background extent but does not itself establish
   ;; a drawing clip.  A view is a viewport, so discard the portions of a large
   ;; target that lie outside the inset camera canvas before scaling it.
@@ -1638,7 +1731,10 @@
           (lambda ()
             (send drawing-context
                   set-pen
-                  (make-pen #:color stroke
+                  (make-pen #:color
+                            (draw-color-or-native
+                             stroke
+                             (current-or-default-render-color-context))
                             #:width width
                             #:style 'solid
                             #:cap 'round

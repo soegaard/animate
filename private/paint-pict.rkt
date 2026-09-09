@@ -15,13 +15,15 @@
                   radial-gradient%)
          "color-style.rkt"
          "geometry.rkt"
-         "paint.rkt")
+         "paint.rkt"
+         "render-color-context.rkt")
 
 (provide paint->draw-color
          make-paint-brush)
 
-(define (paint->draw-color color)
-  (define rgba (color-spec->rgba-color color 'paint->draw-color))
+(define (paint->draw-color color
+                           [color-context (current-or-default-render-color-context)])
+  (define rgba (resolve-color-in-context color color-context))
   (make-color (color-channel->byte (rgba-color-red rgba))
               (color-channel->byte (rgba-color-green rgba))
               (color-channel->byte (rgba-color-blue rgba))
@@ -32,11 +34,13 @@
 ;; Visual affine transforms instead of being fixed to the video frame. Native
 ;; stipple brushes do not expose that transform, so checker patterns currently
 ;; retain a device-aligned tile (documented as a renderer limitation).
-(define (make-paint-brush paint map-point)
+(define (make-paint-brush paint map-point
+                          #:color-context [color-context
+                                           (current-or-default-render-color-context)])
   (cond [(not paint)
          (make-brush #:color "black" #:style 'transparent)]
         [(color-spec? paint)
-         (make-brush #:color (paint->draw-color paint) #:style 'solid)]
+         (make-brush #:color (paint->draw-color paint color-context) #:style 'solid)]
         [(linear-gradient-paint? paint)
          (define start (map-point (linear-gradient-paint-start paint)))
          (define end (map-point (linear-gradient-paint-end paint)))
@@ -47,7 +51,8 @@
           (new linear-gradient%
                [x0 (vec2-x start)] [y0 (vec2-y start)]
                [x1 (vec2-x end)] [y1 (vec2-y end)]
-               [stops (paint-stops->draw-stops (linear-gradient-paint-stops paint))]))]
+               [stops (paint-stops->draw-stops (linear-gradient-paint-stops paint)
+                                               color-context)]))]
         [(radial-gradient-paint? paint)
          (define focal (map-point (radial-gradient-paint-focal-center paint)))
          (define center (map-point (radial-gradient-paint-center paint)))
@@ -73,18 +78,20 @@
           (new radial-gradient%
                [x0 (vec2-x focal)] [y0 (vec2-y focal)] [r0 focal-radius-scale]
                [x1 (vec2-x center)] [y1 (vec2-y center)] [r1 radius-scale]
-               [stops (paint-stops->draw-stops (radial-gradient-paint-stops paint))]))]
+               [stops (paint-stops->draw-stops (radial-gradient-paint-stops paint)
+                                               color-context)]))]
         [(checker-pattern-paint? paint)
          (make-brush #:color "black" #:style 'solid
-                     #:stipple (checker-bitmap paint map-point))]
+                     #:stipple (checker-bitmap paint map-point color-context))]
         [else
          (raise-argument-error 'make-paint-brush "paint? or #f" paint)]))
 
-(define (paint-stops->draw-stops stops)
+(define (paint-stops->draw-stops stops color-context)
   (for/list ([stop (in-list stops)])
-    (list (paint-stop-offset stop) (paint->draw-color (paint-stop-color stop)))))
+    (list (paint-stop-offset stop)
+          (paint->draw-color (paint-stop-color stop) color-context))))
 
-(define (checker-bitmap paint map-point)
+(define (checker-bitmap paint map-point color-context)
   (define mapped-origin (map-point origin))
   (define cell-end
     (map-point (vec2 (checker-pattern-paint-cell-size paint) 0)))
@@ -104,7 +111,8 @@
                #:color (paint->draw-color
                         (if (even? (+ row column))
                             (checker-pattern-paint-first paint)
-                            (checker-pattern-paint-second paint)))
+                            (checker-pattern-paint-second paint))
+                        color-context)
                #:style 'solid))
         (send drawing-context draw-rectangle (* column cell-pixels)
               (* row cell-pixels) cell-pixels cell-pixels)))

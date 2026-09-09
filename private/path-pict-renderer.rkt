@@ -19,6 +19,7 @@
          "paint-pict.rkt"
          "path-geometry.rkt"
          "pict-renderer.rkt"
+         "render-color-context.rkt"
          "visual-model.rkt")
 
 (provide (struct-out path-pict-renderer)
@@ -37,6 +38,7 @@
 (define maximum-default-pict-stroke-width 255)
 
 (define (path-visual->pict visual camera)
+  (define color-context (current-or-default-render-color-context))
   (define pixel-geometry
     (path-visual->pixel-geometry visual camera))
   (if (path-geometry-empty? pixel-geometry)
@@ -49,16 +51,17 @@
                       (path-pict-half-extents pixel-geometry
                                               (path-visual-stroke-width visual))])
           (dc (lambda (drawing-context x y)
-                (draw-path-geometry! drawing-context
-                                     pixel-geometry
-                                     (+ x half-width)
-                                     (+ y half-height)
-                                     (path-visual-fill visual)
-                                     (path-visual-stroke visual)
-                                     (path-visual-stroke-width visual)
-                                     (path-paint-point-mapper visual camera
-                                                              (+ x half-width)
-                                                              (+ y half-height))))
+                (parameterize ([current-render-color-context color-context])
+                  (draw-path-geometry! drawing-context
+                                       pixel-geometry
+                                       (+ x half-width)
+                                       (+ y half-height)
+                                       (path-visual-fill visual)
+                                       (path-visual-stroke visual)
+                                       (path-visual-stroke-width visual)
+                                       (path-paint-point-mapper visual camera
+                                                                (+ x half-width)
+                                                                (+ y half-height)))))
               (* 2 half-width)
               (* 2 half-height))))))
 
@@ -185,20 +188,9 @@
           (+ y-offset (* -1 pixel-scale (vec2-y transformed))))))
 
 (define (draw-color-spec color)
-  (define resolved
-    (cond [(rgba-color? color) color]
-          [(and (string? color) (color-spec? color))
-           (color-spec->rgba-color color 'draw-color-spec)]
-          [else #f]))
-  (if resolved
-      (make-color (color-channel->byte (rgba-color-red resolved))
-                  (color-channel->byte (rgba-color-green resolved))
-                  (color-channel->byte (rgba-color-blue resolved))
-                  (rgba-color-alpha resolved))
+  (if (color-spec? color)
+      (paint->draw-color color)
       color))
-
-(define (color-channel->byte channel)
-  (inexact->exact (round channel)))
 
 (define (closed-path-pen-cap-and-join)
   (define pen (make-closed-path-pen "black" 2))

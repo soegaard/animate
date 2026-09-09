@@ -15,6 +15,8 @@
 ;; Imports
 (require "affine-transform.rkt"
          "axes-visual.rkt"
+         "color-style.rkt"
+         (only-in "color-token.rkt" theme-grid theme-foreground)
          "geometry.rkt"
          "number-line-visual.rkt"
          "path-geometry.rkt"
@@ -39,7 +41,7 @@
                          #:y-grid? [y-grid? #t]
                          #:include-zero? [include-zero? #f]
                          #:opacity [opacity 1]
-                         #:stroke [stroke "lightgray"]
+                         #:stroke [stroke theme-grid]
                          #:stroke-width [stroke-width 1])
   (check-axes 'axes-grid-lines axes)
   (unless (symbol? identifier)
@@ -52,8 +54,8 @@
     (raise-argument-error 'axes-grid-lines "boolean?" include-zero?))
   (unless (opacity? opacity)
     (raise-argument-error 'axes-grid-lines "opacity?" opacity))
-  (unless (string? stroke)
-    (raise-argument-error 'axes-grid-lines "string?" stroke))
+  (unless (color-spec? stroke)
+    (raise-argument-error 'axes-grid-lines "color-spec?" stroke))
   (check-nonnegative-finite-real
    'axes-grid-lines "stroke-width" stroke-width)
   (define x-values
@@ -111,7 +113,7 @@
                             #:id-prefix identifier-prefix
                             #:include-zero? [include-zero? #f]
                             #:font-size [font-size 3/10]
-                            #:color [color "black"]
+                            #:color [color theme-foreground]
                             #:x-gap [x-gap 1/10]
                             #:y-gap [y-gap 1/10]
                             #:number->string
@@ -190,7 +192,7 @@
                                    #:id-prefix identifier-prefix
                                    #:include-zero? [include-zero? #t]
                                    #:font-size [font-size 3/10]
-                                   #:color [color "black"]
+                                   #:color [color theme-foreground]
                                    #:gap [gap 1/10]
                                    #:number->string
                                    [number->label default-number->label])
@@ -336,8 +338,8 @@
      who
      "font size must be a positive finite real"
      "font-size" font-size))
-  (unless (string? color)
-    (raise-argument-error who "string?" color))
+  (unless (color-spec? color)
+    (raise-argument-error who "color-spec?" color))
   (unless (and (procedure? formatter)
                (procedure-arity-includes? formatter 1))
     (raise-argument-error

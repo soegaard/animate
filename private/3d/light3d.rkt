@@ -174,10 +174,13 @@
   (void (spot-cone-factor3d inner-angle outer-angle 0)))
 (define (opaque-color who value)
   (unless (color-spec? value) (raise-argument-error who "color-spec?" value))
-  (define resolved (color-spec->rgba-color value who))
-  (unless (= (rgba-color-alpha resolved) 1)
-    (raise-arguments-error who "an opaque light color" "color" value))
-  resolved)
+  (define normalized (normalize-color-spec value who))
+  ;; A literal can be checked immediately.  Token and expression opacity is
+  ;; deliberately validated after resolution under a specific theme.
+  (when (and (rgba-color? normalized)
+             (not (= (rgba-color-alpha normalized) 1)))
+    (raise-arguments-error who "an opaque literal light color" "color" value))
+  normalized)
 
 ;; Empty `#:lights` uses these stable, distinct identities.
 (define default-lights3d

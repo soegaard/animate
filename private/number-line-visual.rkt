@@ -15,6 +15,7 @@
 ;; Imports
 (require "affine-transform.rkt"
          "color-style.rkt"
+         (only-in "color-token.rkt" theme-axis)
          "axes-visual.rkt"
          "geometry.rkt"
          "path-geometry.rkt"
@@ -153,7 +154,7 @@
                      #:scale [scale-factor 1]
                      #:opacity [opacity 1]
                      #:length [length 10]
-                     #:stroke [stroke "black"]
+                     #:stroke [stroke theme-axis]
                      #:stroke-width [stroke-width 2]
                      #:tick-size [tick-size 1/5]
                      #:tip-length [tip-length 2/5]
@@ -176,11 +177,8 @@
   (unless (opacity? opacity)
     (raise-argument-error 'number-line "opacity?" opacity))
   (check-positive-finite-real 'number-line "length" length)
-  (unless (or (string? stroke) (rgba-color? stroke))
-    (raise-argument-error
-     'number-line
-     "(or/c string? rgba-color?)"
-     stroke))
+  (unless (color-spec? stroke)
+    (raise-argument-error 'number-line "color-spec?" stroke))
   (check-nonnegative-finite-real
    'number-line "stroke-width" stroke-width)
   (check-nonnegative-finite-real 'number-line "tick-size" tick-size)

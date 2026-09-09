@@ -15,9 +15,11 @@
          racket/set
          ffi/vector
          "../../color-style.rkt"
+         "../../render-color-context.rkt"
          "../affine3.rkt"
          "../bounds3.rkt"
          "../camera3d.rkt"
+         "../color-resolution3d.rkt"
          "../color-space3d.rkt"
          "../clipping3d.rkt"
          "../compiled-view3d.rkt"
@@ -89,7 +91,7 @@
 ;; A preparation holds no GL handle.  Its geometry descriptors are immutable
 ;; author-independent data; cache lookup happens when the retained renderer
 ;; submits a frame, always inside its serialized context owner.
-(struct opengl-preparation (compiled frame-spec unsupported-primitives)
+(struct opengl-preparation (compiled frame-spec unsupported-primitives color-context)
   #:transparent)
 
 (struct opengl-renderer3d-value
@@ -118,7 +120,9 @@
                  ;; The request value ensures distinct semantic frame inputs
                  ;; never share a result cache.  No transient GLuint appears.
                  (render3d-request-compiled-view request)
-                 (render3d-request-frame-spec request))
+                 (render3d-request-frame-spec request)
+                 (render-color-context-appearance-fingerprint
+                  (current-or-default-render-color-context)))
          (renderer3d-fingerprint (opengl-renderer3d-value-fallback-renderer renderer) request)))
    (define (renderer3d-prepare renderer request)
      (ensure-live-renderer 'renderer3d-prepare renderer)
@@ -397,8 +401,9 @@
 (define (delete-buffer id) (glDeleteBuffers 1 (u32vector id)))
 (define (delete-vertex-array id) (glDeleteVertexArrays 1 (u32vector id)))
 
-(define (make-gl-geometry-entry/current! host geometry variant)
-  (define packed (pack-compiled-geometry3d geometry variant))
+(define (make-gl-geometry-entry/current! host geometry variant color-context)
+  (define packed (pack-compiled-geometry3d geometry variant
+                                             #:color-context color-context))
   (define vao #f)
   (define vertex-buffer #f)
   (define index-buffer #f)
@@ -439,7 +444,7 @@
     (glVertexAttribPointer 2 4 GL_FLOAT #f stride (* 6 4))
     (glBindVertexArray 0)
     (gl-geometry-entry
-     (compiled-geometry3d-key geometry) variant vao vertex-buffer index-buffer
+     (gl-packed-geometry-key packed) variant vao vertex-buffer index-buffer
      (if index-buffer (gl-packed-geometry-index-count packed)
          (gl-packed-geometry-vertex-count packed))
      (gl-packed-geometry-byte-size packed) 0 (gl-context-host-identity host)
@@ -458,7 +463,8 @@
   ;; prepared afresh per frame below, precisely because their clipping, dashes,
   ;; feature selection, and pixel size are camera dependent.
   (statistics-add! renderer 'spatial-compilations 1)
-  (opengl-preparation compiled (render3d-request-frame-spec request) '()))
+  (opengl-preparation compiled (render3d-request-frame-spec request) '()
+                      (current-or-default-render-color-context)))
 
 (define (render-opengl renderer preparation request)
   (cond [(not (opengl-preparation? preparation))
@@ -479,6 +485,7 @@
                "renderer" 'opengl-racket))
             (define compiled (opengl-preparation-compiled preparation))
             (define frame-spec (opengl-preparation-frame-spec preparation))
+            (define color-context (opengl-preparation-color-context preparation))
             (define host (opengl-renderer3d-value-host renderer))
             ;; Allocation goes through the host separately, before the draw
             ;; transaction.  The target survives camera-only frame changes.
@@ -489,15 +496,18 @@
                (opengl-renderer3d-spec-value-samples (opengl-renderer3d-value-spec renderer))
                (opengl3d-info-maximum-samples (opengl-renderer3d-value-info renderer))))
             (define stroke-batches
-              (prepare-opengl-stroke-batches compiled frame-spec))
+              (parameterize ([current-render-color-context color-context])
+                (prepare-opengl-stroke-batches compiled frame-spec)))
             (define billboards
-              (prepare-opengl-billboards compiled frame-spec))
+              (parameterize ([current-render-color-context color-context])
+                (prepare-opengl-billboards compiled frame-spec)))
             (define start (current-inexact-milliseconds))
             (define-values (linear-rgba raw-depth instance-count triangle-count)
               (gl-context-host-call
                host
                (lambda ()
-                 (ensure-geometry-resources/current! renderer compiled)
+                 (parameterize ([current-render-color-context color-context])
+                  (ensure-geometry-resources/current! renderer compiled)
                  ;; The map pass is intentionally before the main framebuffer
                  ;; initialization. It owns its depth-only FBO and restores
                  ;; colour/depth/cull state before this ordinary frame begins.
@@ -518,12 +528,12 @@
                  (draw-transparent/current! renderer compiled frame-spec transparent)
                  (draw-stroke-batches/current! renderer stroke-batches 'always)
                  (draw-billboards/current! renderer billboards 'always frame-spec)
-                 (values (gl-framebuffer-target-read-linear-rgba! target host)
-                         (and (member 'linear-depth requested)
-                              (gl-framebuffer-target-read-depth! target host))
-                         (length (vector->list (compiled-view3d-instances compiled)))
-                         (for/sum ([instance (in-vector (compiled-view3d-instances compiled))])
-                           (triangle-count-for compiled instance))))))
+                  (values (gl-framebuffer-target-read-linear-rgba! target host)
+                          (and (member 'linear-depth requested)
+                               (gl-framebuffer-target-read-depth! target host))
+                          (length (vector->list (compiled-view3d-instances compiled)))
+                          (for/sum ([instance (in-vector (compiled-view3d-instances compiled))])
+                            (triangle-count-for compiled instance)))))))
             (define raster-end (current-inexact-milliseconds))
             (define argb-start (current-inexact-milliseconds))
             (define argb
@@ -573,8 +583,8 @@
 (define (initialize-frame/current! target host compiled)
   (define background
     (rgba-srgb->linear
-     (color-spec->rgba-color (compiled-view3d-background compiled)
-                             'opengl-renderer3d)))
+     (resolve-color-in-context (compiled-view3d-background compiled)
+                               (current-or-default-render-color-context))))
   (gl-framebuffer-target-bind-draw! target host)
   (glDisable GL_SCISSOR_TEST)
   (glEnable GL_DEPTH_TEST)
@@ -634,10 +644,14 @@
       (packed-geometry-variant-for
        (compiled-geometry3d-mesh geometry)
        (material3d-shading (compiled-instance3d-material instance))))
+    (define resource-key
+      (packed-geometry-appearance-key
+       geometry (current-or-default-render-color-context)))
     (define-values (_entry hit?)
       (gl-geometry-cache-ensure!
-       cache (compiled-geometry3d-key geometry) variant
-       (lambda () (make-gl-geometry-entry/current! host geometry variant))))
+       cache resource-key variant
+       (lambda () (make-gl-geometry-entry/current!
+                   host geometry variant (current-or-default-render-color-context)))))
     (statistics-add! renderer (if hit? 'geometry-cache-hits 'geometry-cache-misses) 1))
   (when (> (gl-geometry-cache-uploads cache) uploads-before)
     (set-opengl-renderer3d-value-geometry-upload-milliseconds!
@@ -710,9 +724,11 @@
                          camera settings bounds))]))
 
 (define (effective-frame-lights frame-spec)
-  (if (null? (frame3d-spec-lights frame-spec))
-      default-lights3d
-      (frame3d-spec-lights frame-spec)))
+  (resolve-lights3d
+   (if (null? (frame3d-spec-lights frame-spec))
+       default-lights3d
+       (frame3d-spec-lights frame-spec))
+   (current-or-default-render-color-context)))
 
 (define (compiled-shadow-caster-bounds compiled)
   (define by-key (geometry-table compiled))
@@ -745,8 +761,9 @@
       (material3d-receives-shadow? material)
       (material3d-double-sided? material)
       (rgba-color-alpha
-       (color-spec->rgba-color (material3d-color material)
-                               'opengl-shadow-map-key))))
+       (resolve-color-in-context
+        (material3d-color material)
+        (current-or-default-render-color-context)))))
    (if (directional-light3d? light)
        (vector-immutable 'directional (directional-light3d-direction light))
        (vector-immutable 'spot (spot-light3d-position light)
@@ -797,7 +814,9 @@
                                  (material3d-shading material)))
   (define entry
     (hash-ref (gl-geometry-cache-entries (opengl-renderer3d-value-geometry-cache renderer))
-              (cons (compiled-geometry3d-key geometry) variant)))
+              (cons (packed-geometry-appearance-key
+                     geometry (current-or-default-render-color-context))
+                    variant)))
   (gl-resource-check-current! (gl-geometry-entry-vao entry) host)
   (define program (hash-ref (opengl-renderer3d-value-programs renderer) 'shadow))
   (glUseProgram (gl-shader-program-id program))
@@ -817,15 +836,16 @@
 
 (define (instance-opaque? instance geometry)
   (define color
-    (color-spec->rgba-color
+    (resolve-color-in-context
      (material3d-color (compiled-instance3d-material instance))
-     'instance-opaque?))
+     (current-or-default-render-color-context)))
   (and (= (compiled-instance3d-opacity instance) 1)
        (= (rgba-color-alpha color) 1)
        (or (not (mesh3d-colors (compiled-geometry3d-mesh geometry)))
            (for/and ([vertex-color (in-vector (mesh3d-colors (compiled-geometry3d-mesh geometry)))])
              (= (rgba-color-alpha
-                 (color-spec->rgba-color vertex-color 'opengl-renderer3d)) 1)))))
+                 (resolve-color-in-context
+                  vertex-color (current-or-default-render-color-context))) 1)))))
 
 (define (draw-transparent/current! renderer compiled frame-spec transparent)
   (when (pair? transparent)
@@ -892,13 +912,17 @@
   (define host (opengl-renderer3d-value-host renderer))
   (define geometry
     (hash-ref (geometry-table compiled) (compiled-instance3d-geometry-key instance)))
-  (define material (compiled-instance3d-material instance))
+  (define material
+    (resolve-material3d (compiled-instance3d-material instance)
+                        (current-or-default-render-color-context)))
   (define variant
     (packed-geometry-variant-for (compiled-geometry3d-mesh geometry)
                                  (material3d-shading material)))
   (define entry
     (hash-ref (gl-geometry-cache-entries (opengl-renderer3d-value-geometry-cache renderer))
-              (cons (compiled-geometry3d-key geometry) variant)))
+              (cons (packed-geometry-appearance-key
+                     geometry (current-or-default-render-color-context))
+                    variant)))
   (unless (equal? (gl-geometry-entry-context-identity entry)
                   (gl-context-host-identity host))
     (raise-arguments-error 'draw-instance/current! "geometry from the current GL context"

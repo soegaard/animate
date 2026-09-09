@@ -7,6 +7,7 @@
 (require racket/list
          ffi/vector
          "../../color-style.rkt"
+         "../../render-color-context.rkt"
          "../compiled-view3d.rkt"
          "../mesh3d.rkt"
          "../vec3.rkt"
@@ -14,6 +15,7 @@
 
 (provide (struct-out gl-packed-geometry)
          pack-compiled-geometry3d
+         packed-geometry-appearance-key
          packed-geometry-variant-for
          gl-packed-geometry-byte-size)
 
@@ -35,8 +37,8 @@
       'smooth-indexed
       'flat-expanded))
 
-(define (colour-components colour)
-  (define resolved (color-spec->rgba-color colour 'pack-compiled-geometry3d))
+(define (colour-components colour color-context)
+  (define resolved (resolve-color-in-context colour color-context))
   (list (/ (rgba-color-red resolved) 255.0)
         (/ (rgba-color-green resolved) 255.0)
         (/ (rgba-color-blue resolved) 255.0)
@@ -50,11 +52,32 @@
                 (vec3-x normal) (vec3-y normal) (vec3-z normal))
           colour))
 
-; pack-compiled-geometry3d : compiled-geometry3d? variant -> gl-packed-geometry?
+;; Per-vertex colour is interleaved with position and normal in this first GL
+;; layout.  Its resolved appearance therefore becomes part of the VBO key;
+;; positions, indices and normals retain their original compiled-geometry key
+;; and are unaffected by a material-only theme change.
+(define (packed-geometry-appearance-key geometry color-context)
+  (unless (compiled-geometry3d? geometry)
+    (raise-argument-error 'packed-geometry-appearance-key "compiled-geometry3d?" geometry))
+  (unless (render-color-context? color-context)
+    (raise-argument-error 'packed-geometry-appearance-key "render-color-context?" color-context))
+  (define mesh (compiled-geometry3d-mesh geometry))
+  (if (mesh3d-colors mesh)
+      (vector-immutable
+       (compiled-geometry3d-key geometry)
+       'vertex-colours
+       (render-color-context-appearance-fingerprint color-context))
+      (compiled-geometry3d-key geometry)))
+
+; pack-compiled-geometry3d : compiled-geometry3d? variant
+;                            [#:color-context render-color-context?]
+;                            -> gl-packed-geometry?
 ;; The packed resource contains only immutable geometry attributes.  Material,
 ;; object transform, camera, light, and opacity remain uniforms/instances and
 ;; therefore cannot cause an upload cache miss.
-(define (pack-compiled-geometry3d geometry variant)
+(define (pack-compiled-geometry3d geometry variant
+                                  #:color-context
+                                  [color-context (current-or-default-render-color-context)])
   (unless (compiled-geometry3d? geometry)
     (raise-argument-error 'pack-compiled-geometry3d "compiled-geometry3d?" geometry))
   (unless (memq variant '(smooth-indexed flat-expanded))
@@ -71,14 +94,16 @@
      (unless normals
        (raise-arguments-error 'pack-compiled-geometry3d
                               "vertex normals for smooth indexed packing"
-                              "geometry-key" (compiled-geometry3d-key geometry)))
+                          "geometry-key" (compiled-geometry3d-key geometry)))
+  (unless (render-color-context? color-context)
+    (raise-argument-error 'pack-compiled-geometry3d "render-color-context?" color-context))
      (define packed-values
        (append*
         (for/list ([point (in-vector vertices)] [normal (in-vector normals)]
                    [index (in-naturals)])
           (vertex-components point normal
                              (if colours
-                                 (colour-components (vector-ref colours index))
+                                 (colour-components (vector-ref colours index) color-context)
                                  white-components)))))
      (define indices
        (apply u32vector
@@ -86,7 +111,7 @@
                (for/list ([triangle (in-vector (mesh3d-triangles mesh))])
                  (vector->list triangle)))))
      (define packed (apply f32vector (map finite-real->float32 packed-values)))
-     (gl-packed-geometry (compiled-geometry3d-key geometry) variant packed indices
+     (gl-packed-geometry (packed-geometry-appearance-key geometry color-context) variant packed indices
                          (vector-length vertices) (* triangle-count 3) has-colours?
                          (+ (* bytes-per-float (f32vector-length packed))
                             (* 4 (u32vector-length indices))))]
@@ -107,9 +132,9 @@
               ;; simply keeps resource packing total and deterministic.
               (or face-normal fallback-normal)
               (if colours
-                  (colour-components (vector-ref colours index))
+                  (colour-components (vector-ref colours index) color-context)
                   white-components)))))))
      (define packed (apply f32vector (map finite-real->float32 packed-values)))
-     (gl-packed-geometry (compiled-geometry3d-key geometry) variant packed #f
+     (gl-packed-geometry (packed-geometry-appearance-key geometry color-context) variant packed #f
                          (* triangle-count 3) 0 has-colours?
                          (* bytes-per-float (f32vector-length packed)))]))

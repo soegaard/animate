@@ -20,6 +20,9 @@
          file/sha1
          "../version.rkt"
          "authoring-timeline.rkt"
+         "color-theme-data.rkt"
+         "color-theme.rkt"
+         "render-color-context.rkt"
          "png-renderer.rkt"
          "shape-pict-renderers.rkt")
 
@@ -111,6 +114,7 @@
                                   #:renderers [renderers default-pict-renderers]
                                   #:clean? [clean? #t]
                                   #:workers [workers 1]
+                                  #:theme [theme animate-light-theme]
                                   #:cache-key [cache-key 'auto]
                                   #:asset-files [asset-files '()])
   (section-render-report-paths
@@ -121,6 +125,7 @@
     #:renderers renderers
     #:clean? clean?
     #:workers workers
+    #:theme theme
     #:cache-key cache-key
     #:asset-files asset-files)))
 
@@ -133,6 +138,7 @@
                                          #:renderers [renderers default-pict-renderers]
                                          #:clean? [clean? #t]
                                          #:workers [workers 1]
+                                         #:theme [theme animate-light-theme]
                                          #:cache-key [cache-key 'auto]
                                          #:asset-files [asset-files '()])
   (unless (path-string? output-directory)
@@ -151,6 +157,7 @@
         (automatic-section-cache-key timeline entry
                                      #:fps fps #:camera camera
                                      #:renderers renderers
+                                     #:theme theme
                                      #:asset-files asset-files)
         cache-key))
   (define expected-cache
@@ -176,7 +183,8 @@
         #:camera camera
         #:renderers renderers
         #:clean? clean?
-        #:workers workers))
+        #:workers workers
+        #:theme theme))
      (when effective-cache-key
        (write-section-cache! cache-path expected-cache))
      (section-render-report
@@ -239,6 +247,7 @@
                                      #:fps fps
                                      #:camera camera
                                      #:renderers renderers
+                                     #:theme [theme animate-light-theme]
                                      #:asset-files asset-files)
   (define scene-representation
     (format "~s" (authored-timeline-scene timeline)))
@@ -259,6 +268,9 @@
                     fps
                     (format "~s" camera)
                     (format "~s" renderers)
+                    (theme->datum theme)
+                    (color-theme-fingerprint theme)
+                    render-color-resolver-version
                     (version)
                     asset-representation)])
         (string-append

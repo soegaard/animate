@@ -10,6 +10,7 @@
 ;; mathematical pen strokes during an orbit or dolly.
 
 (require "../color-style.rkt"
+         (only-in "../color-token.rkt" theme-accent)
          "../geometry.rkt"
          "bounds3.rkt"
          "spatial-visual.rkt"
@@ -60,7 +61,7 @@
 
 (define (point-style3d #:size [size 8]
                        #:size-mode [size-mode 'screen]
-                       #:color [color "cornflowerblue"]
+                       #:color [color theme-accent]
                        #:opacity [opacity 1]
                        #:depth-mode [depth-mode 'test]
                        #:depth-bias [depth-bias 1e-5])

@@ -15,7 +15,8 @@
 ;;;
 
 ;; Imports
-(require "geometry.rkt")
+(require "geometry.rkt"
+         (only-in "color-token.rkt" theme-background))
 
 ;; Exports
 (provide camera?
@@ -63,7 +64,7 @@
                      #:height [height 720]
                      #:world-width [world-width 14]
                      #:center [center origin]
-                     #:background [background "white"])
+                     #:background [background theme-background])
   (unless (exact-positive-integer? width)
     (raise-argument-error 'make-camera "exact-positive-integer?" width))
   (unless (exact-positive-integer? height)

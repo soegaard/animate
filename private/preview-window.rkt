@@ -18,6 +18,7 @@
          "authoring-timeline.rkt"
          "camera.rkt"
          "color-style.rkt"
+         "color-preview-inspection.rkt"
          "frame-renderer.rkt"
          "formula-part-transition.rkt"
          "formula-parts-visual.rkt"
@@ -238,6 +239,7 @@
                              #:section [section #f]
                              #:camera [camera #f]
                              #:renderers [renderers default-pict-renderers]
+                             #:theme [theme #f]
                              #:pixel-scale [pixel-scale 1]
                              #:cache-megabytes [cache-megabytes 128]
                              #:prefetch [prefetch 3]
@@ -290,7 +292,8 @@
          (preview-set-render-spec!
           session
           (make-preview-render-spec #:fps fps #:camera camera #:renderers renderers
-                                    #:pixel-scale scale)))]))
+                                    #:pixel-scale scale
+                                    #:theme (preview-color-theme session))))]))
   ;; Program previews currently expose named blocks rather than authored
   ;; timeline sections.  Keep the generic section controls inert in that
   ;; case, instead of sending an invalid jump command to the controller.
@@ -1705,6 +1708,7 @@
   ;; is deliberately reported as such rather than guessed from the bitmap.
   (define (lighting-inspection-sections)
     (define session (unbox controller-box))
+    (define theme (and session (preview-color-theme session)))
     (define view-id (active-spatial-view-id))
     (define view (and session view-id (resolved-inspection-view session view-id)))
     (define pick (active-spatial-pick))
@@ -1731,14 +1735,29 @@
                   [fields (material-inspection3d-fields report)])
              (inspector-section
               'lighting-material "Material"
-              (cons (inspector-row "selected path"
-                                   (lighting-value->string (spatial-pick-path pick)) 'info '())
-                    (rows-for-fields
-                     fields
-                     '(base-colour normal-mode lighting-model ambient diffuse specular
-                                   specular-colour roughness derived-specular-exponent
-                                   emission emission-strength double-sided?
-                                   casts-shadow? receives-shadow?)))
+              (append
+               (list (inspector-row "selected path"
+                                    (lighting-value->string (spatial-pick-path pick)) 'info '()))
+               (if theme
+                   (append
+                    (color-inspection-rows "base colour / lighting input"
+                                           (material3d-color picked-material) theme
+                                           #:owner-path (spatial-pick-path pick)
+                                           #:style-field 'material-color)
+                    (color-inspection-rows "specular colour"
+                                           (material3d-specular-color picked-material) theme
+                                           #:owner-path (spatial-pick-path pick)
+                                           #:style-field 'material-specular-color)
+                    (color-inspection-rows "emission" (material3d-emission picked-material) theme
+                                           #:owner-path (spatial-pick-path pick)
+                                           #:style-field 'material-emission))
+                   '())
+               (rows-for-fields
+                fields
+                '(normal-mode lighting-model ambient diffuse specular
+                              roughness derived-specular-exponent
+                              emission-strength double-sided?
+                              casts-shadow? receives-shadow?)))
               #f))))
     (define light-section
       (and view
@@ -1834,7 +1853,11 @@
               (if topology (list topology) '()))
             (let ([dynamics (dynamical-inspection-section)])
               (if dynamics (list dynamics) '()))
-            (lighting-inspection-sections)))
+            (lighting-inspection-sections)
+            (let ([session (unbox controller-box)])
+              (if session
+                  (list (color-theme-inspector-section (preview-color-theme session)))
+                  '()))))
   (define (display-inspector-section! index)
     (define document (unbox inspector-document-box))
     (define sections (available-inspector-sections document))
@@ -1951,9 +1974,12 @@
                 ;; Actions remain immutable semantic commands in the inspector
                 ;; model. The GUI performs only the explicitly requested
                 ;; clipboard side effect.
+                (define command (inspector-action-command action))
                 (send the-clipboard
                       set-clipboard-string
-                      (format "~s" (inspector-action-command action))
+                      (match command
+                        [`(copy-text ,value) #:when (string? value) value]
+                        [_ (format "~s" command)])
                       0))))]))
   (set-box! copy-inspector-action-box copy-inspector-action)
   (define select-inspector-source-unit
@@ -2529,8 +2555,9 @@
       (set-window-model-handling?! model #f)))
   (define session
     (open-preview-controller
-     source #:fps fps #:start start #:section section #:camera camera
-     #:renderers renderers #:pixel-scale pixel-scale
+          source #:fps fps #:start start #:section section #:camera camera
+          #:renderers renderers #:pixel-scale pixel-scale
+          #:theme theme
      #:cache-megabytes cache-megabytes #:prefetch prefetch
      #:playback-policy playback-policy
      #:worker-mode worker-mode

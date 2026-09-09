@@ -8,6 +8,7 @@
          "../camera.rkt"
          "../pict-adapter.rkt"
          "../pict-renderer.rkt"
+         "../render-color-context.rkt"
          "../scene-frame-grid.rkt"
          "../scene.rkt"
          "label-layout3d.rkt")
@@ -108,6 +109,7 @@
                                       #:camera [camera #f]
                                       #:renderers [renderers default-pict-renderers]
                                       #:supersample [supersample 1]
+                                      #:theme [theme #f]
                                       #:switch-penalty [switch-penalty 0]
                                       #:movement-penalty [movement-penalty 0])
   (unless (scene? scn)
@@ -129,6 +131,13 @@
      'prepare-scene-label-layout3d
      "exact-positive-integer? as #:supersample"
      supersample))
+  ;; Capture the selected theme once before measurements begin.  A label's
+  ;; rendered bounds may depend on a token-coloured template; a prepared table
+  ;; must therefore never be measured under a later ambient theme.
+  (define color-context
+    (if theme
+        (make-render-color-context theme)
+        (current-or-default-render-color-context)))
   (define available (scene-frame-count scn #:fps fps))
   (unless (andmap (lambda (frame) (< frame available)) frames)
     (raise-arguments-error
@@ -147,7 +156,8 @@
         (camera-with-supersampling sampled-camera supersample))
       (list frame
             (scene-projected-label-layout-items3d
-             state render-camera renderers #:view view-id)
+             state render-camera renderers #:view view-id
+             #:color-context color-context)
             render-camera)))
   ;; Direction choices live in screen space.  A trajectory can only be reused
   ;; with one viewport size, so reject a camera timeline that changes it rather

@@ -16,6 +16,8 @@
          (only-in pict pict->bitmap)
          "authoring-timeline.rkt"
          "camera.rkt"
+         "color-theme.rkt"
+         "color-theme-data.rkt"
          "frame-renderer.rkt"
          "ode-flow.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers scene-state->pict)
@@ -71,6 +73,8 @@
          preview-section-names
          preview-refresh!
          preview-set-render-spec!
+         preview-color-theme
+         preview-set-color-theme!
          preview-camera3d-overrides
          preview-set-camera3d-override!
          preview-clear-camera3d-override!
@@ -201,6 +205,7 @@
                                  #:renderers [renderers default-pict-renderers]
                                  #:pixel-scale [pixel-scale 1]
                                  #:supersample [supersample 1]
+                                 #:theme [theme #f]
                                  #:cache-megabytes [cache-megabytes 128]
                                  #:prefetch [prefetch 3]
                                  #:playback-policy [playback-policy 'realtime]
@@ -238,7 +243,8 @@
                           settle-milliseconds))
   (define spec
     (make-preview-render-spec #:fps fps #:camera camera #:renderers renderers
-                              #:pixel-scale pixel-scale #:supersample supersample))
+                              #:pixel-scale pixel-scale #:supersample supersample
+                              #:theme (or theme animate-light-theme)))
   (define document (make-preview-document source))
   (define initial-sample
     (initial-preview-sample document spec start section))
@@ -403,6 +409,22 @@
 
 (define (preview-set-render-spec! session render-spec)
   (send-controller-command 'preview-set-render-spec! session 'set-render-spec (list render-spec)))
+
+;; preview-color-theme : preview-session? -> color-theme?
+;; Returns the immutable theme snapshot currently selected for preview frames.
+(define (preview-color-theme session)
+  (preview-render-spec-theme
+   (send-controller-command 'preview-color-theme session 'render-spec '())))
+
+;; preview-set-color-theme! : preview-session? color-theme? -> preview-status?
+;; Replaces the preview's complete immutable theme snapshot. The controller
+;; advances its render generation, so bitmap and worker results from the old
+;; appearance cannot be displayed after this call returns.
+(define (preview-set-color-theme! session theme)
+  (unless (color-theme? theme)
+    (raise-argument-error 'preview-set-color-theme! "color-theme?" theme))
+  (send-controller-command 'preview-set-color-theme!
+                           session 'set-color-theme (list theme)))
 
 ; preview-camera3d-overrides : preview-session? -> immutable-hash?
 ;;   Returns the preview-only inspection cameras keyed by view3d ID.
@@ -690,6 +712,7 @@
          (jump-to-cue! state (car (controller-command-arguments command)) jobs prefetch)
          (state-status state)]
         [(section-names) (preview-document-section-names (controller-state-document state))]
+        [(render-spec) (controller-state-render-spec state)]
         [(refresh)
          (invalidate-render! state)
          (request-current! state jobs prefetch)
@@ -708,6 +731,28 @@
            (controller-state-document state)
            (controller-state-current-sample state)
            spec))
+         (invalidate-render! state)
+         (request-current! state jobs prefetch)
+         (state-status state)]
+        [(set-color-theme)
+         (match-arguments 'set-color-theme (controller-command-arguments command) 1)
+         (define theme (car (controller-command-arguments command)))
+         (unless (color-theme? theme)
+           (raise-argument-error 'preview-set-color-theme! "color-theme?" theme))
+         (define prior (controller-state-render-spec state))
+         (define replacement
+           (make-preview-render-spec
+            #:fps (preview-render-spec-fps prior)
+            #:camera (preview-render-spec-camera prior)
+            #:renderers (preview-render-spec-renderers prior)
+            #:pixel-scale (preview-render-spec-pixel-scale prior)
+            #:supersample (preview-render-spec-supersample prior)
+            #:theme theme
+            #:camera3d-overrides
+            (preview-render-spec-camera3d-overrides prior)))
+         (set-controller-state-render-spec! state replacement)
+         (set-controller-state-current-quality! state (full-quality-for replacement))
+         (set-controller-state-scrubbing?! state #f)
          (invalidate-render! state)
          (request-current! state jobs prefetch)
          (state-status state)]
@@ -1353,7 +1398,8 @@
                               (preview-camera-with-supersampling
                                preview-camera
                                (preview-render-spec-supersample render-spec))
-                              #:renderers (preview-render-spec-renderers render-spec))
+                              #:renderers (preview-render-spec-renderers render-spec)
+                              #:theme (preview-render-spec-theme render-spec))
            'smoothed)))))))
 
 (define (camera-at-pixel-scale camera pixel-scale)
@@ -1471,6 +1517,7 @@
    #:renderers (preview-render-spec-renderers base)
    #:pixel-scale (preview-quality-pixel-scale quality)
    #:supersample (preview-quality-supersample quality)
+   #:theme (preview-render-spec-theme base)
    #:camera3d-overrides (preview-render-spec-camera3d-overrides base)))
 
 ;; replace-camera3d-overrides! switches only the inspection layer.  Its own
@@ -1485,6 +1532,7 @@
      #:renderers (preview-render-spec-renderers prior)
      #:pixel-scale (preview-render-spec-pixel-scale prior)
      #:supersample (preview-render-spec-supersample prior)
+     #:theme (preview-render-spec-theme prior)
      #:camera3d-overrides overrides))
   (set-controller-state-render-spec! state replacement)
   (set-controller-state-current-quality! state (full-quality-for replacement))

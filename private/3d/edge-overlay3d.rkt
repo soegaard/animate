@@ -10,6 +10,7 @@
 
 (require (only-in racket/generic define/generic)
          (only-in racket/math pi)
+         (only-in "../color-token.rkt" theme-surface-edge)
          "edge-style3d.rkt"
          "mesh3d.rkt"
          "spatial-visual.rkt"
@@ -53,7 +54,7 @@
 ; with-edges3d : mesh3d? ... -> edge-overlay3d?
 (define (with-edges3d mesh
                       #:edges [edges 'feature]
-                      #:visible [visible (stroke3d #:color "black" #:width 2 #:depth-mode 'test)]
+                      #:visible [visible (stroke3d #:color theme-surface-edge #:width 2 #:depth-mode 'test)]
                       #:hidden [hidden #f]
                       #:crease-angle [crease-angle (/ pi 6)]
                       #:surface [surface 'visible])

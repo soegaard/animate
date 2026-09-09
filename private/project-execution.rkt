@@ -22,12 +22,16 @@
          file/sha1
          "../main.rkt"
          "../authoring.rkt"
+         (only-in "../colors.rkt"
+                  color-theme-fingerprint
+                  theme->datum)
          "../project.rkt"
          "../version.rkt"
          "3d/label-layout3d.rkt"
          "3d/label-layout-preparation3d.rkt"
          "3d/renderer3d.rkt"
          "png-renderer.rkt"
+         "render-color-context.rkt"
          "section-renderer.rkt"
          "doctor.rkt"
          "video-assembly.rkt"
@@ -393,25 +397,27 @@
      (if (eq? (render-spec-renderers render) 'default)
          (keyword-apply
           render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:workers)
+          '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:theme #:workers)
           (list (project-render-camera prepared)
                 #t
                 (render-spec-fps render)
                 prepared-label-layout
                 (render-spec-supersample render)
+                (render-spec-theme render)
                 (render-spec-workers render))
           (list (prepared-project-scene prepared)
                 (prepared-project-target-frame-indices prepared)
                 frame-root))
          (keyword-apply
           render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:workers)
+          '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:theme #:workers)
           (list (project-render-camera prepared)
                 #t
                 (render-spec-fps render)
                 prepared-label-layout
                 (render-spec-renderers render)
                 (render-spec-supersample render)
+                (render-spec-theme render)
                 (render-spec-workers render))
           (list (prepared-project-scene prepared)
                 (prepared-project-target-frame-indices prepared)
@@ -508,6 +514,14 @@
                      'three-dimensional
                      (stable-cache-datum (render-spec-renderer3d render)))
    'renderer-options (stable-cache-datum (render-spec-renderer-options render))
+   ;; A theme can change every token-backed pixel. Retain its complete datum
+   ;; for auditable cache manifests and its appearance fingerprint for compact
+   ;; equality; provenance stays visible without becoming appearance identity.
+   'color-theme
+   (hasheq 'datum (theme->datum (render-spec-theme render))
+           'appearance-fingerprint
+           (color-theme-fingerprint (render-spec-theme render))
+           'resolver-version render-color-resolver-version)
    ;; A prepared table changes selected placement boxes, so it is part of the
    ;; PNG identity even though its computation happens before worker creation.
    ;; Convert only its immutable primitive contents to a readable datum; cache

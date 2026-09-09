@@ -5,7 +5,8 @@
 ;;;
 
 (require rackunit
-         "../main.rkt")
+         "../main.rkt"
+         "../colors.rkt")
 
 (module+ test
   (define (visual-at scene time id)
@@ -45,9 +46,9 @@
   (check-equal? (visual-stroke-width full-start) 2)
   (check-equal? (visual-opacity full-start) 1)
   (check-equal? (visual-fill-color full-mid)
-                (rgba-color 255/2 0 255/2 1))
+                (color-mix "red" "blue" 1/2))
   (check-equal? (visual-stroke-color full-mid)
-                (rgba-color 255/2 215/2 0 1))
+                (color-mix "black" "gold" 1/2))
   (check-equal? (visual-stroke-width full-mid) 6)
   (check-equal? (visual-opacity full-mid) 3/4)
   (check-equal? (visual-fill-color full-end) "blue")
@@ -140,7 +141,7 @@
   (check-equal? (visual-opacity independent-mid) 3/4)
   (check-equal? (visual-stroke-width independent-mid) 6)
   (check-equal? (visual-fill-color independent-mid)
-                (rgba-color 255/2 0 255/2 1))
+                (color-mix "red" "blue" 1/2))
 
   ;; Expansion happens before conflict checking, so primitive and unified
   ;; requests collide only on properties actually present in style-to.
@@ -194,7 +195,7 @@
   (check-equal? (visual-fill-color successive-boundary) "blue")
   (check-equal? (visual-stroke-width successive-mid-second) 8)
   (check-equal? (visual-fill-color successive-mid-second)
-                (rgba-color 0 255/2 255/2 1))
+                (color-mix "blue" "green" 1/2))
   (check-equal? (visual-stroke-width
                  (visual-at successive-style-scene 4 'dot))
                 10)

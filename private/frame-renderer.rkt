@@ -20,6 +20,7 @@
          "camera.rkt"
          "ode-flow.rkt"
          "pict-adapter.rkt"
+         "render-color-context.rkt"
          "scene-frame-grid.rkt"
          "scene.rkt"
          "3d/label-layout-preparation3d.rkt"
@@ -38,14 +39,19 @@
 ;               [#:camera (or/c camera? false/c)]
 ;               [#:renderers (listof pict-renderer?)]
 ;               [#:supersample exact-positive-integer?]
+;               [#:theme color-theme?]
 ;               -> pict?
 ;;   Converts the scene state at time using its camera or a static override.
 ;;   supersample increases raster resolution without changing the visible world.
 (define (scene->pict scene time
                      #:camera [camera #f]
                      #:renderers [renderers default-pict-renderers]
-                     #:supersample [supersample 1])
+                     #:supersample [supersample 1]
+                     #:theme [theme #f]
+                     #:color-context [color-context #f])
   (check-supersample 'scene->pict supersample)
+  (define selected-color-context
+    (select-frame-render-color-context 'scene->pict theme color-context))
   (cond
     [(not camera)
      (define-values (state sampled-camera)
@@ -53,12 +59,12 @@
      (scene-state->prepared-pict
       state
       (camera-with-supersampling sampled-camera supersample)
-      renderers #f)]
+      renderers #f selected-color-context)]
     [(camera? camera)
      (scene-state->prepared-pict
       (scene-sample scene time)
       (camera-with-supersampling camera supersample)
-      renderers #f)]
+      renderers #f selected-color-context)]
     [else
      (raise-argument-error
       'scene->pict
@@ -68,15 +74,18 @@
 ;; Prepares every semantic ODE particle in this one immutable scene state
 ;; before adapters resolve visual relations.  This is the direct single-frame
 ;; counterpart of the batch preparation used by the PNG renderer.
-(define (scene-state->prepared-pict state camera renderers prepared-layout)
+(define (scene-state->prepared-pict state camera renderers prepared-layout
+                                    color-context)
   (define (render-with-3d-samples)
     (if (ode3d-frame-samples-active?)
         (scene-state->pict state #:camera camera #:renderers renderers
+                            #:color-context color-context
                             #:prepared-label-layout prepared-layout)
         (call-with-ode3d-frame-samples
          (prepare-ode3d-frame-samples (list state))
          (lambda ()
            (scene-state->pict state #:camera camera #:renderers renderers
+                               #:color-context color-context
                                #:prepared-label-layout prepared-layout)))))
   (if (ode-frame-samples-active?)
       (render-with-3d-samples)
@@ -89,6 +98,7 @@
 ;                       [#:camera (or/c camera? false/c)]
 ;                       [#:renderers (listof pict-renderer?)]
 ;                       [#:supersample exact-positive-integer?]
+;                       [#:theme color-theme?]
 ;                       -> bitmap%
 ;;   Converts one in-range scene frame using its camera or a static override.
 (define (scene-frame->bitmap scene frame-index
@@ -96,8 +106,13 @@
                              #:camera [camera #f]
                              #:renderers [renderers default-pict-renderers]
                              #:supersample [supersample 1]
+                             #:theme [theme #f]
+                             #:color-context [color-context #f]
                              #:prepared-label-layout [prepared-layout #f])
   (check-supersample 'scene-frame->bitmap supersample)
+  (define selected-color-context
+    (select-frame-render-color-context
+     'scene-frame->bitmap theme color-context))
   (unless (or (not camera) (camera? camera))
     (raise-argument-error
      'scene-frame->bitmap
@@ -128,7 +143,8 @@
     (camera-with-supersampling sampled-camera supersample)
     renderers
     (and prepared-layout
-         (prepared-label-layout3d-ref prepared-layout frame-index)))
+         (prepared-label-layout3d-ref prepared-layout frame-index))
+    selected-color-context)
    ;; Unlike 'aligned, 'smoothed does not adjust an animated Visual's
    ;; fractional pixel position to the device grid.  Cairo still antialiases
    ;; vector edges, while motion remains spatially continuous.
@@ -138,6 +154,27 @@
 ;;;
 ;;; Validation
 ;;;
+
+;; select-frame-render-color-context : symbol? any/c any/c
+;;                                      -> render-color-context?
+;; Chooses the immutable context for a frame boundary.  This private helper
+;; parallels the adapter's lower-level selector so `scene->pict` and
+;; `scene-frame->bitmap` have the same unambiguous `#:theme` contract.
+(define (select-frame-render-color-context who theme color-context)
+  (when (and theme color-context)
+    (raise-arguments-error
+     who
+     "at most one of #:theme or #:color-context"
+     "theme" theme
+     "color-context" color-context))
+  (cond
+    [color-context
+     (unless (render-color-context? color-context)
+       (raise-argument-error who "render-color-context? as #:color-context"
+                             color-context))
+     color-context]
+    [theme (make-render-color-context theme)]
+    [else (current-or-default-render-color-context)]))
 
 ; check-supersample : symbol? any/c -> void?
 ;;   Raises unless supersample is an integral raster-resolution multiplier.

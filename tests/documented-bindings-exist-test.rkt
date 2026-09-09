@@ -41,14 +41,44 @@
     (check-not-eq? (public-binding "../main.rkt" name) absent))
   (for ([name (in-list '(scene-program? scene-block-spec? make-scene-program))])
     (check-not-eq? (public-binding "../authoring.rkt" name) absent))
-  (for ([name (in-list '(open-program-preview preview-available?))])
+  (for ([name (in-list '(open-program-preview open-scene-preview preview-available?
+                         preview-color-theme preview-set-color-theme!))])
     (check-not-eq? (public-binding "../preview.rkt" name) absent))
-  (for ([name (in-list '(render-frames! encode-mp4!))])
+  (for ([name (in-list '(render-frames! encode-mp4! render-color->draw-color
+                         load-color-theme!))])
     (check-not-eq? (public-binding "../render.rkt" name) absent))
   (for ([name (in-list '(animate-project? plan-project prepare-project!
                          prepare-project-label-layout3d
-                         project-target-section project-plan->datum))])
+                         project-target-section project-plan->datum
+                         render-spec-theme render-spec-with-theme))])
     (check-not-eq? (public-binding "../project.rkt" name) absent))
+  (for ([name (in-list '(literal-color-spec? palette-color role-color series-color
+                         color-token? color-token-kind color-token-key
+                         series-color? series-color-index
+                         color-expression? color-mix color-with-alpha color-opacity
+                         color-inspection? inspect-color rgba-color->hex
+                         color-contrast-ratio color-theme-diagnostics
+                         color-theme-datum-diagnostics color-resolution-diagnostics
+                         color-scale color-scale? color-scale-stops color-scale-space
+                         color-scale-outside color-scale-at
+                         sequential-color-scale diverging-color-scale
+                         scientific-color-scale? scientific-color-scale-kind
+                         scientific-color-scale-minimum scientific-color-scale-maximum
+                         scientific-color-scale-midpoint scientific-color-scale-missing
+                         scientific-color-scale-outside scientific-color-scale-at
+                         color-spec-schema-version color-spec->datum datum->color-spec
+                         color-palette-schema-version color-palette color-palette?
+                         color-palette-id color-palette-display-name color-palette-version
+                         color-palette-provenance palette-ref palette-keys palette-groups
+                         palette->datum datum->palette
+                         color-theme-schema-version color-theme color-theme?
+                         color-theme-id color-theme-display-name color-theme-palette
+                         color-theme-provenance theme-ref theme-role-keys theme-series
+                         color-theme-fingerprint theme->datum datum->theme resolve-color
+                         animate-palette animate-palette-checksum
+                         animate-light-theme animate-dark-theme
+                         blue-a aqua-c gray-e theme-accent pure-cyan))])
+    (check-not-eq? (public-binding "../colors.rkt" name) absent))
   (for ([name (in-list '(vec3 linear3 axis-angle affine3 make-transform3
                          aabb3 ray3 plane3
                          ray3-triangle-hit? ray3-intersect-triangle

@@ -18,6 +18,7 @@
 ;; Imports
 (require "affine-transform.rkt"
          "color-style.rkt"
+         (only-in "color-token.rkt" theme-axis)
          (only-in "arrow-visual.rkt" arrowhead-subpath)
          "geometry.rkt"
          "path-geometry.rkt"
@@ -282,7 +283,7 @@
               #:y-log-base [y-log-base 10]
               #:x-length [x-length 12]
               #:y-length [y-length 6]
-              #:stroke [stroke "black"]
+              #:stroke [stroke theme-axis]
               #:stroke-width [stroke-width 2]
               #:tick-size [tick-size 3/20]
               #:tip-length [tip-length 3/10]

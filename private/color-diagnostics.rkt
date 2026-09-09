@@ -1,0 +1,218 @@
+#lang racket/base
+
+;;;
+;;; Pure Color and Theme Diagnostics
+;;;
+
+;; Diagnostics report review facts.  They never repair authored colors or
+;; mutate a theme, so rendering remains an explicit author decision.
+
+
+;;;
+;;; Imports and Exports
+;;;
+
+(require racket/list
+         "color-inspection.rkt"
+         "color-palette.rkt"
+         "color-style.rkt"
+         "color-theme.rkt")
+
+(provide color-contrast-ratio
+         color-theme-diagnostics
+         color-theme-datum-diagnostics
+         color-resolution-diagnostics)
+
+
+;;;
+;;; Contrast
+;;;
+
+;; color-contrast-ratio : rgba-color? rgba-color? -> real?
+;; Computes WCAG relative-luminance contrast after compositing the foreground
+;; over the opaque background.  It is a useful pairwise review measure, not a
+;; certification of an exported video or of arbitrary viewing conditions.
+(define (color-contrast-ratio foreground background)
+  (unless (rgba-color? foreground)
+    (raise-argument-error 'color-contrast-ratio "rgba-color?" foreground))
+  (unless (rgba-color? background)
+    (raise-argument-error 'color-contrast-ratio "rgba-color?" background))
+  (define blended (composite-over foreground background))
+  (define first (relative-luminance blended))
+  (define second (relative-luminance background))
+  (/ (+ (max first second) 1/20)
+     (+ (min first second) 1/20)))
+
+
+;;;
+;;; Theme Reports
+;;;
+
+;; color-theme-diagnostics : color-theme?
+;;                           [#:ordinary-text-pairs (listof (cons/c symbol? symbol?))]
+;;                           [#:graphic-pairs (listof (cons/c symbol? symbol?))]
+;;                           [#:minimum-series-contrast positive-real?]
+;;                           -> (listof immutable-hash?)
+;; Returns deterministic, immutable reports for role contrast, categorical
+;; distinguishability, empty series, and monotonic reviewed shade ramps.  The
+;; constructors themselves reject missing palette entries, invalid aliases,
+;; cyclic roles, and failed expression resolution; callers receive those as
+;; precise construction errors before a valid color-theme value exists.
+(define (color-theme-diagnostics
+         theme
+         #:ordinary-text-pairs [ordinary-text-pairs '((foreground . background))]
+         #:graphic-pairs [graphic-pairs '((axis . background) (accent . background))]
+         #:minimum-series-contrast [minimum-series-contrast 3])
+  (unless (color-theme? theme)
+    (raise-argument-error 'color-theme-diagnostics "color-theme?" theme))
+  (unless (and (real? minimum-series-contrast) (positive? minimum-series-contrast))
+    (raise-argument-error 'color-theme-diagnostics "positive real? as #:minimum-series-contrast"
+                          minimum-series-contrast))
+  (check-role-pairs 'color-theme-diagnostics ordinary-text-pairs)
+  (check-role-pairs 'color-theme-diagnostics graphic-pairs)
+  (append (contrast-reports theme ordinary-text-pairs 9/2 'ordinary-text)
+          (contrast-reports theme graphic-pairs 3 'meaningful-graphic)
+          (ramp-reports theme)
+          (series-reports theme minimum-series-contrast)))
+
+;; color-theme-datum-diagnostics : any/c -> (listof immutable-hash?)
+;; Reads an untrusted complete theme datum without evaluating it and translates
+;; construction failures into one pure review report.  A valid datum returns
+;; the same review rows as color-theme-diagnostics.  This makes missing
+;; entries, invalid key spelling, and cyclic role declarations inspectable by
+;; a file-import UI without weakening the constructor's strict validation.
+(define (color-theme-datum-diagnostics datum)
+  (with-handlers ([exn:fail?
+                   (lambda (error)
+                     (list
+                      (report (theme-error-kind (exn-message error))
+                              'error
+                              (exn-message error)
+                              (hasheq 'datum datum))))])
+    (color-theme-diagnostics (datum->theme datum))))
+
+;; color-resolution-diagnostics : color-spec? color-theme?
+;;                                 -> (listof immutable-hash?)
+;; Resolves one arbitrary authored field without drawing it. It turns an
+;; unresolved expression failure (for example, a series token under an empty
+;; series) into data suitable for an inspector or import report.
+(define (color-resolution-diagnostics color theme)
+  (unless (color-spec? color)
+    (raise-argument-error 'color-resolution-diagnostics "color-spec?" color))
+  (unless (color-theme? theme)
+    (raise-argument-error 'color-resolution-diagnostics "color-theme?" theme))
+  (with-handlers ([exn:fail?
+                   (lambda (error)
+                     (list
+                      (report 'expression-resolution-failure 'error
+                              (exn-message error)
+                              (hasheq 'authored (color-spec->datum color)
+                                      'theme-id (color-theme-id theme)))) )])
+    (define inspection (inspect-color color theme))
+    (list (report 'resolution 'info
+                  (format "resolves to ~a" (hash-ref inspection 'resolved-hex))
+                  (hasheq 'authored (hash-ref inspection 'authored)
+                          'resolved-hex (hash-ref inspection 'resolved-hex))))))
+
+(define (contrast-reports theme pairs threshold use)
+  (for/list ([pair (in-list pairs)])
+    (define foreground-key (car pair))
+    (define background-key (cdr pair))
+    (define ratio
+      (color-contrast-ratio (resolve-color-in-theme (theme-ref theme foreground-key) theme)
+                            (resolve-color-in-theme (theme-ref theme background-key) theme)))
+    (report 'contrast
+            (if (>= ratio threshold) 'info 'warning)
+            (format "~a against ~a has contrast ~a:1"
+                    foreground-key background-key (rounded ratio))
+            (hasheq 'foreground foreground-key
+                    'background background-key
+                    'ratio ratio
+                    'target threshold
+                    'use use))))
+
+;; The canonical hue and gray groups are ordered light-to-dark.  A luminance
+;; reversal is therefore reviewable regardless of hue, while auxiliary and
+;; warm-natural groups deliberately make no false monotonicity promise.
+(define (ramp-reports theme)
+  (for/list ([group (in-list (palette-groups (color-theme-palette theme)))]
+             #:when (= (length (cadr group)) 5))
+    (define keys (cadr group))
+    (define luminances
+      (for/list ([key (in-list keys)])
+        (relative-luminance (palette-ref (color-theme-palette theme) key))))
+    (define monotonic?
+      (for/and ([left (in-list luminances)] [right (in-list (cdr luminances))])
+        (>= left right)))
+    (report 'shade-ramp
+            (if monotonic? 'info 'warning)
+            (if monotonic?
+                (format "~a is light-to-dark by relative luminance" (car group))
+                (format "~a is not monotonic by relative luminance" (car group)))
+            (hasheq 'group (car group) 'keys keys 'luminances luminances))))
+
+(define (series-reports theme minimum-contrast)
+  (define series (theme-series theme))
+  (cond
+    [(null? series)
+     (list (report 'categorical-series 'warning
+                   "theme has no categorical series; series-color cannot resolve"
+                   #hasheq()))]
+    [else
+     (for*/list ([left-index (in-range (length series))]
+                 [right-index (in-range (add1 left-index) (length series))]
+                 #:do [(define ratio
+                         (color-contrast-ratio (list-ref series left-index)
+                                               (list-ref series right-index)))]
+                 #:when (< ratio minimum-contrast))
+       (report 'categorical-pair 'warning
+               (format "series entries ~a and ~a have contrast ~a:1"
+                       left-index right-index (rounded ratio))
+               (hasheq 'first-index left-index
+                       'second-index right-index
+                       'ratio ratio
+                       'target minimum-contrast)))]))
+
+(define (report kind severity message details)
+  (make-immutable-hash
+   (list (cons 'kind kind)
+         (cons 'severity severity)
+         (cons 'message (string->immutable-string message))
+         (cons 'details details))))
+
+(define (theme-error-kind message)
+  (cond [(regexp-match? #rx"missing (role|key)" message) 'missing-entry]
+        [(regexp-match? #rx"cycle" message) 'cyclic-role]
+        [(regexp-match? #rx"palette key|canonical" message) 'invalid-alias]
+        [else 'configuration-error]))
+
+(define (check-role-pairs who pairs)
+  (unless (and (list? pairs)
+               (andmap (lambda (pair)
+                         (and (pair? pair) (symbol? (car pair)) (symbol? (cdr pair))))
+                       pairs))
+    (raise-argument-error who "list of (cons/c symbol? symbol?)" pairs)))
+
+(define (composite-over foreground background)
+  (define alpha (rgba-color-alpha foreground))
+  (rgba-color (+ (* alpha (rgba-color-red foreground))
+                 (* (- 1 alpha) (rgba-color-red background)))
+              (+ (* alpha (rgba-color-green foreground))
+                 (* (- 1 alpha) (rgba-color-green background)))
+              (+ (* alpha (rgba-color-blue foreground))
+                 (* (- 1 alpha) (rgba-color-blue background)))
+              1))
+
+(define (relative-luminance color)
+  (+ (* 0.2126 (srgb-channel->linear (rgba-color-red color)))
+     (* 0.7152 (srgb-channel->linear (rgba-color-green color)))
+     (* 0.0722 (srgb-channel->linear (rgba-color-blue color)))))
+
+(define (srgb-channel->linear component)
+  (define encoded (/ component 255.0))
+  (if (<= encoded 0.04045)
+      (/ encoded 12.92)
+      (expt (/ (+ encoded 0.055) 1.055) 2.4)))
+
+(define (rounded value)
+  (/ (round (* value 100)) 100.0))

@@ -3,6 +3,7 @@
 @(require (for-label (except-in racket/base angle string-copy)
                      animate
                      animate/authoring
+                     (except-in animate/colors tan)
                      animate/project
                      animate/preview))
 
@@ -25,6 +26,22 @@ the immutable semantic explanation data retained by @racket[inspection].}
 
 @defproc[(preview-session? [value any/c]) boolean?]{
 Recognizes a live preview controller session.
+}
+
+@defproc[(preview-status? [value any/c]) boolean?]{
+Recognizes the immutable status snapshot returned by preview configuration and
+transport operations.
+}
+
+@defproc[(open-scene-preview [source (or/c scene? authored-timeline?)]
+                             [#:fps fps exact-positive-integer? 30]
+                             [#:theme theme (or/c false/c color-theme?) #f]
+                             [#:pixel-scale pixel-scale positive? 1]
+                             [#:title title string? "Animate"])
+         preview-session?]{
+Opens an interactive preview with one immutable content-theme snapshot. The
+theme affects rendered scene pixels only: canvas handles, inspector text, and
+operating-system widgets retain their editor UI appearance.
 }
 
 @defproc[(inspector-subject? [value any/c]) boolean?]{
@@ -62,6 +79,19 @@ GRacket (or @tt{raco animate preview}) rather than a headless Racket process.
 Prepares and opens an immutable project declaration.  A module-binding source
 uses a restartable subprocess renderer; direct Scene or timeline sources use
 cooperative in-process cancellation.
+}
+
+@defproc[(preview-color-theme [session preview-session?]) color-theme?]{
+Returns the immutable theme snapshot selected for this session's video content.
+}
+
+@defproc[(preview-set-color-theme! [session preview-session?]
+                                   [theme color-theme?])
+         preview-status?]{
+Changes only the preview content theme. The session keeps its semantic time,
+selection, audio position, and inspection-camera overrides, but advances its
+render generation and uses separately keyed frame-cache entries. A bitmap from
+the previous theme can never be installed as a result for the new theme.
 }
 
 @defproc[(preview-scrub! [session preview-session?] [time real?]) void?]{

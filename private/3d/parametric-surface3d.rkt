@@ -16,6 +16,7 @@
 (require racket/generic
          racket/list
          "../color-style.rkt"
+         (only-in "../color-token.rkt" theme-surface theme-surface-edge)
          "../geometry.rkt"
          "bounds3.rkt"
          "material3d.rkt"
@@ -250,10 +251,10 @@
                               #:id id
                               #:derivative-u [derivative-u #f]
                               #:derivative-v [derivative-v #f]
-                              #:material [material (material3d #:color "steelblue" #:shading 'smooth)]
+                              #:material [material (material3d #:color theme-surface #:shading 'smooth)]
                               #:transform [transform identity-transform3]
                               #:opacity [opacity 1]
-                              #:wireframe-color [wireframe-color "steelblue"]
+                              #:wireframe-color [wireframe-color theme-surface-edge]
                               #:wireframe-width [wireframe-width 1]
                               #:scalar-data [scalar-data #f])
   (unless (symbol? id) (raise-argument-error 'parametric-surface3d "symbol?" id))
@@ -448,7 +449,7 @@
   (surface3d-local-mesh surface))
 
 ; surface3d-with-colors : surface3d? (or/c #f vector?) -> surface3d?
-;;   Replaces optional immutable per-vertex RGBA colour data.
+;;   Replaces optional immutable per-vertex semantic colour data.
 (define (surface3d-with-colors surface colors)
   (unless (surface3d? surface)
     (raise-argument-error 'surface3d-with-colors "surface3d?" surface))
@@ -567,7 +568,7 @@
                                        #:opacity [opacity 1]
                                        #:material [material (mesh3d-material
                                                              (surface-mesh3d-mesh surface-mesh))]
-                                       #:wireframe-color [wireframe-color "steelblue"]
+                                       #:wireframe-color [wireframe-color theme-surface-edge]
                                        #:wireframe-width [wireframe-width 1]
                                        #:evaluator [evaluator #f]
                                        #:u-range [u-range #f]
@@ -731,10 +732,16 @@
         [else
          (vector->immutable-vector
           (for/vector ([color (in-vector colors)])
-            (unless (and (color-spec? color)
-                         (= (rgba-color-alpha (color-spec->rgba-color color who)) 1))
-              (raise-argument-error who "opaque color-spec?" color))
-            (color-spec->rgba-color color who)))]))
+            (unless (color-spec? color)
+              (raise-argument-error who "color-spec?" color))
+            ;; Literal transparent vertex colours remain unsupported by the
+            ;; current opaque mesh path.  A token or expression is retained
+            ;; here and checked after explicit-theme preparation instead.
+            (define normalized (normalize-color-spec color who))
+            (when (and (rgba-color? normalized)
+                       (not (= (rgba-color-alpha normalized) 1)))
+              (raise-argument-error who "opaque literal color-spec?" color))
+            normalized))]))
 
 (define (checked-evaluate who procedure u v)
   (define point (procedure u v))
@@ -860,8 +867,8 @@
                  progress))))
 
 (define (interpolate-material source destination progress)
-  (material3d #:color (rgba-color-lerp (material3d-color source)
-                                        (material3d-color destination) progress)
+  (material3d #:color (color-mix (material3d-color source)
+                                  (material3d-color destination) progress)
               #:shading (material3d-shading source)
               #:lighting (material3d-lighting source)
               #:ambient (material3d-ambient source)
@@ -884,7 +891,7 @@
          (vector->immutable-vector
           (for/vector ([source-color (in-vector source-colors)]
                        [destination-color (in-vector destination-colors)])
-            (rgba-color-lerp source-color destination-color progress)))]
+            (color-mix source-color destination-color progress)))]
         [else
          (raise-arguments-error 'surface3d-interpolate
                                 "both surfaces either with or without per-vertex colors"

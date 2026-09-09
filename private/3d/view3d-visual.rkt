@@ -17,6 +17,7 @@
 (require (only-in racket/generic define/generic)
          "../affine-transform.rkt"
          "../color-style.rkt"
+         (only-in "../color-token.rkt" theme-background)
          "../geometry.rkt"
          "../visual-model.rkt"
          "affine3.rkt"
@@ -167,7 +168,7 @@
                 #:opacity [opacity 1]
                 #:camera [camera (perspective-camera3d)]
                 #:lights [lights '()]
-                #:background [background "white"]
+                #:background [background theme-background]
                 #:tone-map [tone-map default-tone-map3d]
                 #:render-mode [render-mode 'wireframe]
                 #:transparency-mode [transparency-mode 'triangle-sorted])

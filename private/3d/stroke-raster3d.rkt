@@ -12,6 +12,7 @@
 (require racket/list
          racket/math
          "../color-style.rkt"
+         "../render-color-context.rkt"
          "../geometry.rkt"
          "affine3.rkt"
          "camera3d.rkt"
@@ -255,7 +256,9 @@
              0)]))
 
 (define (resolve-stroke-color style inherited-opacity)
-  (define source (color-spec->rgba-color (stroke3d-color style) 'prepare-stroke3d-segments))
+  (define source
+    (resolve-color-in-context (stroke3d-color style)
+                              (current-or-default-render-color-context)))
   (rgba-color (rgba-color-red source) (rgba-color-green source) (rgba-color-blue source)
               (* inherited-opacity (stroke3d-opacity style) (rgba-color-alpha source))))
 

@@ -12,6 +12,7 @@
          raco/command-name
          "private/doctor.rkt"
          "private/repository-check.rkt"
+         "colors.rkt"
          "project.rkt"
          "render.rkt"
          "preview.rkt"
@@ -25,6 +26,15 @@
 (define section #f)
 (define frame #f)
 (define range #f)
+(define theme-name #f)
+(define theme-file #f)
+
+;; The command line intentionally exposes a fixed reviewed catalog. It never
+;; consults a mutable global palette registry or silently falls back when an
+;; author misspells an appearance choice.
+(define built-in-themes
+  (hasheq 'animate-light animate-light-theme
+          'animate-dark animate-dark-theme))
 
 ;; `racket/cmdline` stops option parsing once it reaches #:args, whereas the
 ;; useful command spelling is `cache clear --domain segments PROJECT BINDING`.
@@ -75,8 +85,31 @@
                  (unless (and (real? start) (real? end) (<= 0 start) (< start end))
                  (raise-user-error 'raco-animate "--range expects finite START:END with 0 <= START < END"))
                  (set! range (cons start end))]
+   [("--theme") value "Use the built-in animate-light or animate-dark theme."
+                (set! theme-name (string->symbol value))]
+   [("--theme-file") value "Read a versioned color-theme datum file."
+                     (set! theme-file value)]
    #:args (command . rest)
    (cons command rest)))
+
+(when (and theme-name theme-file)
+  (raise-user-error 'raco-animate "--theme and --theme-file are mutually exclusive"))
+
+(define command-theme
+  (cond
+    [theme-file (load-color-theme! theme-file)]
+    [theme-name
+     (hash-ref
+      built-in-themes theme-name
+      (lambda ()
+        (raise-user-error
+         'raco-animate
+         (format "unknown theme ~a; available themes: ~a"
+                 theme-name
+                 (string-join
+                  (map symbol->string (sort (hash-keys built-in-themes) symbol<?))
+                  ", ")))))]
+    [else #f]))
 
 (define (load-project-argument module-path binding-string)
   (define binding (string->symbol binding-string))
@@ -84,7 +117,18 @@
   (unless (animate-project? value)
     (raise-arguments-error 'raco-animate "a binding whose value is animate-project?"
                            "binding" binding "value" value))
-  value)
+  (if command-theme
+      (animate-project
+       #:id (animate-project-id value)
+       #:source (animate-project-source value)
+       #:render (render-spec-with-theme (animate-project-render value) command-theme)
+       #:preview (animate-project-preview value)
+       #:output (animate-project-output value)
+       #:encoder (animate-project-encoder value)
+       #:cache (animate-project-cache value)
+       #:assets (animate-project-assets value)
+       #:metadata (animate-project-metadata value))
+      value))
 
 (define (requested-target)
   (define choices
@@ -152,14 +196,7 @@
         (= (length (cdr arguments)) 2))
    (define module-path (cadr arguments))
    (define binding (string->symbol (caddr arguments)))
-   (define project
-     (dynamic-require module-path binding))
-   (unless (animate-project? project)
-     (raise-arguments-error
-      'raco-animate
-      "a binding whose value is animate-project?"
-      "binding" binding
-      "value" project))
+   (define project (load-project-argument module-path (symbol->string binding)))
    (write (project-plan->datum (plan-project project)))
    (newline)]
   [(and (pair? arguments) (equal? (car arguments) "check")
@@ -224,8 +261,11 @@
    (define value (dynamic-require source-path binding))
    (define session
      (if (animate-project? value)
-         (open-project-preview value #:target (requested-target))
-         (open-program-preview source-path binding #:auto-reload? auto-reload? #:fps fps)))
+         (open-project-preview
+          (load-project-argument source-path (symbol->string binding))
+          #:target (requested-target))
+         (open-program-preview source-path binding #:auto-reload? auto-reload? #:fps fps
+                               #:theme command-theme)))
    (when (and block (not (animate-project? value))) (preview-jump-to-block! session block))
    ;; Do not wait here.  In GRacket this module's top-level evaluation runs in
    ;; the GUI eventspace; a `sleep` loop starves painting, callbacks and the
@@ -236,7 +276,7 @@
   [else
    (raise-user-error
    'raco-animate
-   "usage: raco animate version | raco animate doctor | raco animate check-source-tree [ARCHIVE-DIRECTORY] | raco animate check-installed-package ARCHIVE [FRESH-PLTUSERHOME] | raco animate check-repo | raco animate plan|check PROJECT.rkt binding | raco animate render [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding | raco animate cache list PROJECT.rkt binding | raco animate cache clear [--domain formula|frames|segments|audio|waveform|source-program] PROJECT.rkt binding | raco animate preview [--fps N] [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding")])
+   "usage: raco animate [--theme animate-light|animate-dark | --theme-file THEME.rktd] COMMAND ...; commands: version | doctor | check-source-tree [ARCHIVE-DIRECTORY] | check-installed-package ARCHIVE [FRESH-PLTUSERHOME] | check-repo | plan|check PROJECT.rkt binding | render [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding | cache list PROJECT.rkt binding | cache clear [--domain formula|frames|segments|audio|waveform|source-program] PROJECT.rkt binding | preview [--fps N] [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding")])
 
 (define (relaunch-with-gracket!)
   (define racket-executable (find-system-path 'exec-file))

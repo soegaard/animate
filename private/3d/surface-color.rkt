@@ -5,8 +5,8 @@
 ;;;
 
 ;; Declares deterministic per-vertex colour fields over a fixed surface grid.
-;; Colours are semantic RGBA values; the opaque renderer rejects transparency
-;; before rasterization just as it does for materials.
+;; Colours remain semantic specifications.  A later rendering-preparation
+;; boundary resolves those specifications under an explicit theme.
 
 
 ;;;
@@ -54,8 +54,8 @@
                                  #:high [high "gold"])
   (unless (surface3d? surface) (raise-argument-error 'surface-color-by-scalar "surface3d?" surface))
   (unless (procedure? scalar) (raise-argument-error 'surface-color-by-scalar "procedure?" scalar))
-  (define low-color (resolved-color 'surface-color-by-scalar low))
-  (define high-color (resolved-color 'surface-color-by-scalar high))
+  (define low-color (normalized-color 'surface-color-by-scalar low))
+  (define high-color (normalized-color 'surface-color-by-scalar high))
   (define values
     (for/vector ([point (in-vector (surface3d-points surface))])
       (define value (scalar point))
@@ -68,8 +68,8 @@
   (surface3d-with-colors
    surface
    (for/vector ([value (in-vector values)])
-     (rgba-color-lerp low-color high-color
-                      (if (= minimum maximum) 1/2 (/ (- value minimum) (- maximum minimum)))))))
+     (color-mix low-color high-color
+                (if (= minimum maximum) 1/2 (/ (- value minimum) (- maximum minimum)))))))
 
 
 ;;;
@@ -87,8 +87,8 @@
   (unless (surface3d? surface) (raise-argument-error 'surface-checkerboard "surface3d?" surface))
   (unless (and (exact-positive-integer? u-cells) (exact-positive-integer? v-cells))
     (raise-argument-error 'surface-checkerboard "positive exact cell counts" (list u-cells v-cells)))
-  (define first-color (resolved-color 'surface-checkerboard first))
-  (define second-color (resolved-color 'surface-checkerboard second))
+  (define first-color (normalized-color 'surface-checkerboard first))
+  (define second-color (normalized-color 'surface-checkerboard second))
   (define u-range (surface3d-u-range surface))
   (define v-range (surface3d-v-range surface))
   (define grid (surface3d-grid surface))
@@ -133,8 +133,8 @@
 ;;; Local Helpers
 ;;;
 
-(define (resolved-color who color)
-  (color-spec->rgba-color color who))
+(define (normalized-color who color)
+  (normalize-color-spec color who))
 
 (define (material-with-color material color)
   (material3d-with-color material color))

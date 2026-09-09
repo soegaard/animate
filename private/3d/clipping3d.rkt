@@ -466,15 +466,12 @@
         [else second]))
 
 ;; Keep colour in the same edge-derived vertex record as position and normal.
-;; `mesh3d` accepts colour names for authored vertices, but interpolation has
-;; to resolve those names to a numerical value first.  `rgba-color-lerp`
-;; preserves exact source endpoints, so an intersection that collapses onto a
-;; source vertex remains author-identical through the earlier endpoint cases.
+;; Mesh colors remain authored semantic specifications until rendering
+;; preparation, so an edge intersection records a mix expression rather than
+;; resolving a theme token while cutting geometry.
 (define (interpolate-color first second amount)
   (cond [(and first second)
-         (rgba-color-lerp (color-spec->rgba-color first 'slice-mesh3d)
-                          (color-spec->rgba-color second 'slice-mesh3d)
-                          amount)]
+         (color-mix first second amount)]
         [first first]
         [else second]))
 

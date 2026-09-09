@@ -21,6 +21,12 @@
          racket/set
          racket/string
          "authoring.rkt"
+         (only-in "colors.rkt"
+                  animate-light-theme
+                  color-theme?
+                  color-theme-fingerprint
+                  color-theme-id
+                  theme->datum)
          "main.rkt"
          "private/3d/label-layout-preparation3d.rkt"
          "private/3d/renderer3d.rkt"
@@ -29,6 +35,7 @@
          "private/ffmpeg-capabilities.rkt"
          "private/scene-frame-grid.rkt"
          "private/scene-state.rkt"
+         "private/render-color-context.rkt"
          "private/visual-model.rkt"
          "version.rkt")
 
@@ -73,6 +80,8 @@
          render-spec-supersample
          render-spec-workers
          render-spec-quality
+         render-spec-theme
+         render-spec-with-theme
          preview-spec
          preview-spec?
          preview-spec-fps
@@ -189,7 +198,7 @@
 (define scene-program-source-program scene-program-source-value-value)
 
 (struct render-spec-value
-  (fps width height camera renderers renderer-options renderer3d supersample workers quality)
+  (fps width height camera renderers renderer-options renderer3d supersample workers quality theme)
   #:transparent
   #:constructor-name make-render-spec)
 
@@ -204,6 +213,7 @@
 (define render-spec-supersample render-spec-value-supersample)
 (define render-spec-workers render-spec-value-workers)
 (define render-spec-quality render-spec-value-quality)
+(define render-spec-theme render-spec-value-theme)
 
 (struct preview-spec-value
   (fps pixel-scale supersample cache-megabytes prefetch worker-mode quality-policy audio?)
@@ -349,7 +359,8 @@
                      #:renderer3d [renderer3d 'software]
                      #:supersample [supersample 1]
                      #:workers [workers 1]
-                     #:quality [quality 'final])
+                     #:quality [quality 'final]
+                     #:theme [theme animate-light-theme])
   (check-positive-integer 'render-spec "fps" fps)
   (check-positive-integer 'render-spec "width" width)
   (check-positive-integer 'render-spec "height" height)
@@ -372,11 +383,34 @@
      renderer3d))
   (unless (memq quality '(draft final))
     (raise-argument-error 'render-spec "'draft or 'final" quality))
+  (unless (color-theme? theme)
+    (raise-argument-error 'render-spec "color-theme? as #:theme" theme))
   (make-render-spec fps width height camera
                     (if (list? renderers) (append renderers '()) renderers)
                     (immutable-hash-snapshot renderer-options)
                     renderer3d
-                    supersample workers quality))
+                    supersample workers quality theme))
+
+;; render-spec-with-theme : render-spec? color-theme? -> render-spec?
+;; Replaces only the immutable color snapshot while preserving every raster,
+;; renderer, worker, and quality declaration. This is used by the effectful
+;; command layer for an explicit command-line theme override.
+(define (render-spec-with-theme value theme)
+  (unless (render-spec? value)
+    (raise-argument-error 'render-spec-with-theme "render-spec?" value))
+  (unless (color-theme? theme)
+    (raise-argument-error 'render-spec-with-theme "color-theme?" theme))
+  (render-spec #:fps (render-spec-fps value)
+               #:width (render-spec-width value)
+               #:height (render-spec-height value)
+               #:camera (render-spec-camera value)
+               #:renderers (render-spec-renderers value)
+               #:renderer-options (render-spec-renderer-options value)
+               #:renderer3d (render-spec-renderer3d value)
+               #:supersample (render-spec-supersample value)
+               #:workers (render-spec-workers value)
+               #:quality (render-spec-quality value)
+               #:theme theme))
 
 ; preview-spec : ... -> preview-spec?
 ;;   Describes preview resolution, cache budget, isolation mode, and audio intent.
@@ -759,6 +793,7 @@
                    default-pict-renderers
                    (render-spec-renderers render))
    #:supersample (render-spec-supersample render)
+   #:theme (render-spec-theme render)
    #:switch-penalty switch-penalty
    #:movement-penalty movement-penalty))
 
@@ -1054,6 +1089,10 @@
    'id (animate-project-id (project-plan-project plan))
    'target (project-target->datum (project-plan-target plan))
    'source (project-plan-source-plan plan)
+   ;; A plan stores the whole decoded theme rather than only a convenient
+   ;; name.  Replaying it on another machine therefore cannot silently pick up
+   ;; a changed local palette with the same ID.
+   'color-theme (render-spec-theme->datum (project-plan-renderer-plan plan))
    'paths
    (hasheq 'primary (project-path-plan-primary paths)
            'temporary (project-path-plan-temporary paths)
@@ -1069,6 +1108,17 @@
            'source-program-root
            (project-path-plan-cache-domain-root paths 'source-program)
            'manifest (project-path-plan-manifest paths))))
+
+;; render-spec-theme->datum : render-spec? -> immutable-hash?
+;; Records both author-facing provenance and the concrete appearance selected
+;; for one project render.  The resolver version guards a future change to the
+;; interpretation of otherwise identical authored token expressions.
+(define (render-spec-theme->datum render)
+  (define theme (render-spec-theme render))
+  (hasheq 'id (color-theme-id theme)
+          'datum (theme->datum theme)
+          'appearance-fingerprint (color-theme-fingerprint theme)
+          'resolver-version render-color-resolver-version))
 
 ; prepared-project->datum : prepared-project? -> immutable-hash?
 ;;   Produces source/target diagnostics without serializing arbitrary Scene data.

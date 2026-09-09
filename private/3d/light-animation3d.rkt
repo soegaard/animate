@@ -11,7 +11,6 @@
 
 (require "../color-style.rkt"
          "../geometry.rkt"
-         "color-space3d.rkt"
          "light-attenuation3d.rkt"
          "light3d.rkt"
          "rotation3.rkt"
@@ -142,27 +141,16 @@
 ;;; Pure samplers
 ;;;
 
-;; Semantic colours are sRGB, while V2 declared that all 3D lighting and
-;; colour interpolation happens in linear light.  Exact endpoints preserve the
-;; authored rgba values; interior samples convert, lerp, then re-encode.
+;; Light colors retain their authored semantic specifications through an
+;; animation.  `color-mix` declares the existing linear-light policy without
+;; forcing a theme lookup while a scene is sampled.
 (define (light3d-color-sample from to progress)
-  (check-opaque-rgba 'light3d-color-sample from)
-  (check-opaque-rgba 'light3d-color-sample to)
+  (unless (color-spec? from)
+    (raise-argument-error 'light3d-color-sample "color-spec?" from))
+  (unless (color-spec? to)
+    (raise-argument-error 'light3d-color-sample "color-spec?" to))
   (check-unit 'light3d-color-sample progress)
-  (cond [(zero? progress) from]
-        [(= progress 1) to]
-        [else
-         (define linear-from (rgba-srgb->linear from))
-         (define linear-to (rgba-srgb->linear to))
-         (rgba-linear->srgb
-          (linear-rgba3d
-           (real-lerp (linear-rgba3d-red linear-from)
-                      (linear-rgba3d-red linear-to) progress)
-           (real-lerp (linear-rgba3d-green linear-from)
-                      (linear-rgba3d-green linear-to) progress)
-           (real-lerp (linear-rgba3d-blue linear-from)
-                      (linear-rgba3d-blue linear-to) progress)
-           1))]))
+  (color-mix from to progress))
 
 ;; A normalized vector lerp is smooth and inexpensive away from a half-turn.
 ;; Near opposite directions it becomes numerically ill-conditioned, so sample
@@ -215,9 +203,11 @@
 (define (opaque-color who value)
   (unless (color-spec? value)
     (raise-argument-error who "color-spec?" value))
-  (define resolved (color-spec->rgba-color value who))
-  (check-opaque-rgba who resolved)
-  resolved)
+  (define normalized (normalize-color-spec value who))
+  (when (and (rgba-color? normalized)
+             (not (= (rgba-color-alpha normalized) 1)))
+    (raise-argument-error who "opaque literal color-spec?" value))
+  normalized)
 
 (define (check-opaque-rgba who value)
   (unless (and (rgba-color? value) (= (rgba-color-alpha value) 1))

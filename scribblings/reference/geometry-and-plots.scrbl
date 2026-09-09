@@ -2215,10 +2215,10 @@ implicit all-scene fitting and rejects it when explicitly selected, and
 
 @declare-exporting[animate #:use-sources (animate/main)]
 
-SCENE-AT introduces a small renderer-independent color representation for style
+Animate uses renderer-independent color specifications for style
 interpolation. Existing Visual constructors still accept their historical color
-strings; semantic RGBA values are needed only when an animation is sampled in
-its interior or when callers choose to construct one explicitly.
+strings. Palette tokens, semantic roles, and token-bearing interpolation
+expressions remain authored scene data until an explicit theme resolves them.
 
 @defstruct*[rgba-color ([red (and/c finite-real? (>=/c 0) (<=/c 255))]
                         [green (and/c finite-real? (>=/c 0) (<=/c 255))]
@@ -2242,8 +2242,9 @@ Constructs an opaque @racket[rgba-color] whose alpha component is one.
 
 @defproc[(color-spec? [value any/c]) boolean?]{
 
-Returns @racket[#t] for an @racket[rgba-color] or a supported textual color.
-Text accepts X11-style names from Racket's drawing color family case-insensitively
+Returns @racket[#t] for an @racket[rgba-color], a supported textual color, or a
+token/expression created by @racketmodname[animate/colors]. Text accepts
+X11-style names from Racket's drawing color family case-insensitively
 (common spaces, hyphens, and underscores are ignored), @tt{#RGB}, @tt{#RGBA}, @tt{#RRGGBB}, and
 @tt{#RRGGBBAA}. @tt{transparent} is the zero-alpha black semantic color.
 }
@@ -2254,7 +2255,9 @@ Text accepts X11-style names from Racket's drawing color family case-insensitive
 
 Resolves @racket[value] to semantic RGBA channels. An existing
 @racket[rgba-color] is returned unchanged. Unsupported strings and other values
-raise an argument error attributed to @racket[who].
+raise an argument error attributed to @racket[who]. An unresolved token or
+expression reports that a theme resolver is required; it is not silently passed
+to a drawing backend.
 }
 
 @defproc[(rgba-color-lerp [from rgba-color?]
@@ -2356,11 +2359,14 @@ sentinel and is deliberately not a paint.
                       [progress (and/c finite-real? (>=/c 0) (<=/c 1))])
          paint?]{
 
-Interpolates compatible paints, retaining @racket[from] and @racket[to]
-exactly at progress zero and one. Solid colours interpolate in sRGB value
-space. Gradient endpoints, radii, stop offsets, and stop colours interpolate
-componentwise, but corresponding gradients must have the same number of stops.
-Checker colours and cell size interpolate similarly.
+Interpolates compatible paints. Structured paint endpoints retain their
+authored geometry at progress zero and one; solid literal endpoints normalize
+to semantic RGBA values. Interior color values use the declared semantic mix
+policy, retaining palette tokens and role expressions until a theme is
+explicitly supplied. Gradient endpoints, radii, stop offsets, and cell size
+interpolate componentwise, but corresponding gradients must have the same
+number of stops. Checker colors and gradient stop colors follow the same
+semantic color policy.
 
 Paint kinds must agree. In particular, this function does not invent a
 meaningless halfway value between a solid fill and a gradient; use a deliberate

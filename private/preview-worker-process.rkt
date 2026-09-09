@@ -20,6 +20,7 @@
          "preview-quality.rkt"
          "preview-render-request.rkt"
          "preview-worker-protocol.rkt"
+         "color-theme.rkt"
          "3d/preview-camera3d-override.rkt")
 
 (provide preview-worker-process?
@@ -181,6 +182,7 @@
      (sample->datum (preview-render-request-sample request))
      (preview-render-spec-pixel-scale render-spec)
      (preview-render-spec-supersample render-spec)
+     (theme->datum (preview-render-spec-theme render-spec))
      (for/list
          ([view-id
            (in-list

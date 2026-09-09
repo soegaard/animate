@@ -3,6 +3,7 @@
 ;;; 3D Materials
 
 (require "../color-style.rkt"
+         (only-in "../color-token.rkt" theme-surface)
          "../geometry.rkt")
 
 (provide material3d
@@ -28,10 +29,11 @@
          material3d-with-shadow-policy
          default-material3d)
 
-;; Material values are deliberately renderer independent.  Alpha belongs to
-;; the resolved material colour; SCENE-3D-I's renderer decides how translucent
-;; triangles are sorted and composited rather than baking a backend policy
-;; into the model.
+;; Material values are deliberately renderer independent.  Authored colour
+;; specifications stay unresolved until a renderer prepares them against an
+;; explicit theme snapshot.  Alpha belongs to that prepared material colour;
+;; SCENE-3D-I's renderer decides how translucent triangles are sorted and
+;; composited rather than baking a backend policy into the model.
 (struct material3d-value
   (color shading lighting ambient diffuse specular specular-color roughness
          emission emission-strength double-sided? casts-shadow? receives-shadow? wireframe?)
@@ -69,7 +71,7 @@
 ;              -> material3d?
 ;; Creates one renderer-independent surface material. `shading` chooses normal
 ;; interpolation; `lighting` chooses the illumination equation for lit modes.
-(define (material3d #:color [color "cornflowerblue"]
+(define (material3d #:color [color theme-surface]
                     #:shading [shading 'flat]
                     #:lighting [lighting 'lambert]
                     #:ambient [ambient 1]
@@ -85,7 +87,6 @@
                     #:wireframe? [wireframe? #f])
   (unless (color-spec? color)
     (raise-argument-error 'material3d "color-spec?" color))
-  (define resolved-color (color-spec->rgba-color color 'material3d))
   (unless (memq shading '(unlit flat smooth))
     (raise-argument-error 'material3d "(or/c 'unlit 'flat 'smooth)" shading))
   (unless (memq lighting '(lambert blinn-phong))
@@ -110,9 +111,10 @@
     (raise-argument-error 'material3d "boolean?" receives-shadow?))
   (unless (boolean? wireframe?)
     (raise-argument-error 'material3d "boolean?" wireframe?))
-  (material3d-value resolved-color shading lighting ambient diffuse specular
-                    (color-spec->rgba-color specular-color 'material3d) roughness
-                    (color-spec->rgba-color emission 'material3d) emission-strength
+  (material3d-value (normalize-color-spec color 'material3d)
+                    shading lighting ambient diffuse specular
+                    (normalize-color-spec specular-color 'material3d) roughness
+                    (normalize-color-spec emission 'material3d) emission-strength
                     double-sided? casts-shadow? receives-shadow? wireframe?))
 
 ;; material3d-specular-exponent : material3d? -> positive-real?
