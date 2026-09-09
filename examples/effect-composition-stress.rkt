@@ -40,10 +40,11 @@
               (/ (sin (* 4 pi fraction)) 3))))
      #:id 'curve #:fill #f #:stroke "tomato" #:stroke-width 4))
   (define caption
-    (rich-text #:id 'caption #:center (vec2 1 1)
-               #:font-size 1/2 #:font-family 'swiss
-               (text-span "prepared " #:color "navy")
-               (text-span "layout" #:font-weight 'bold #:color "mediumorchid")))
+    ;; Keep the stress scene renderable by the documented conservative Pict
+    ;; typewrite subset. Rich/wrapped partial text is a capability diagnostic,
+    ;; not a visual-probe fallback.
+    (plain-text "sable layout" #:id 'caption #:center (vec2 1 1)
+                #:font-size 1/2 #:font-family 'swiss #:color "navy"))
   (define base (scene-add (make-scene #:camera camera) title note curve))
   (define introduced
     (scene-play
@@ -51,7 +52,7 @@
      (animation-group
       (reveal-in panel (linear-reveal-front (vec2 1 0)))
       (enter badge #:translation-offset (vec2 -2 0) #:scale-factor 1/5)
-      (typewrite caption #:unit 'word))
+      (typewrite caption #:unit 'run))
      #:duration 2))
   (define active
     (scene-play

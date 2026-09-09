@@ -44,6 +44,39 @@
   (check-equal? (visual-rotation (scene-visual-at timed-repeat 'arrow 4))
                 (+ 1/10 1/2))
 
+  ;; Structural cycles are validated against every iteration's exact local
+  ;; endpoint before rendering. The high-level diagnostic reports the actual
+  ;; failing repeat/ping-pong pair and child position.
+  (check-exn
+   #px"repeat-animation:(?s:.)*iteration: 2"
+   (lambda ()
+     (scene-play (make-scene)
+                 (repeat-animation (enter arrow) 2)
+                 #:duration 2)))
+  (check-exn
+   #px"repeat-animation:(?s:.)*lifecycle-effects"
+   (lambda ()
+     (scene-play (make-scene)
+                 (repeat-animation (enter arrow) 2)
+                 #:duration 2)))
+  (check-exn
+   #px"repeat-animation:(?s:.)*iteration: 1"
+   (lambda ()
+     (scene-play (make-scene)
+                 (repeat-animation (leave 'arrow) 2)
+                 #:duration 2)))
+  (check-not-exn
+   (lambda ()
+     (scene-play (make-scene)
+                 (repeat-animation (succession (enter arrow) (leave 'arrow)) 2)
+                 #:duration 4)))
+  (check-exn
+   #px"ping-pong:(?s:.)*iteration: 1(?s:.)*child-index: 1"
+   (lambda ()
+     (scene-play base
+                 (ping-pong (rotate-by 'arrow 1/4) (enter arrow) #:count 1)
+                 #:duration 2)))
+
   (check-exn exn:fail:contract? (lambda () (repeat-animation (rotate-by 'arrow 1) 0)))
   (check-exn exn:fail:contract? (lambda () (ping-pong (rotate-by 'arrow 1) 'bad)))
   (check-exn exn:fail:contract?

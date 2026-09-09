@@ -15,12 +15,54 @@
          animation-inspection?
          animation-inspection-kind
          animation-inspection-data
+         animation-inspection-with-provenance
          string-transition-inspection-with-compiled-plan
          (struct-out string-transition-inspection))
 
 (define-generics animation-inspection
   (animation-inspection-kind animation-inspection)
   (animation-inspection-data animation-inspection))
+
+;; Keep these calls outside a `gen:animation-inspection` method body.  Inside a
+;; method the generated method binding shadows the generic identifier, which
+;; would otherwise try to apply the provenance accessor to the wrapped base.
+(define (base-inspection-kind inspection)
+  (animation-inspection-kind inspection))
+
+(define (base-inspection-data inspection)
+  (animation-inspection-data inspection))
+
+;; A scene scheduler owns expansion provenance, while individual animation
+;; implementations own their effect-specific explanation.  This small generic
+;; wrapper combines both without forcing every effect inspection struct to know
+;; about a scheduler or a preview.
+(struct provenance-animation-inspection (base provenance)
+  #:transparent
+  #:methods gen:animation-inspection
+  [(define (animation-inspection-kind inspection)
+     (base-inspection-kind
+      (provenance-animation-inspection-base inspection)))
+   (define (animation-inspection-data inspection)
+     (define data
+       (base-inspection-data
+        (provenance-animation-inspection-base inspection)))
+     (if (hash? data)
+         (hash-set data
+                   'expansion-origin
+                   (provenance-animation-inspection-provenance inspection))
+         (hasheq 'effect-data data
+                 'expansion-origin
+                 (provenance-animation-inspection-provenance inspection))))])
+
+; animation-inspection-with-provenance : animation-inspection? any/c
+;                                         -> animation-inspection?
+;; Returns a generic inspection whose data retains the immutable scheduler
+;; origin alongside the effect's own data.
+(define (animation-inspection-with-provenance inspection provenance)
+  (unless (animation-inspection? inspection)
+    (raise-argument-error
+     'animation-inspection-with-provenance "animation-inspection?" inspection))
+  (provenance-animation-inspection inspection provenance))
 
 ;; string-transition-inspection retains the exact plan calculated by
 ;; transform-matching-strings or rewrite-matching-strings. `options` is an

@@ -4,7 +4,7 @@
 ;;; Mapped Staggering Example
 ;;;
 
-;; stagger-map evaluates the factory once per source target in source order,
+;; eager-stagger-map evaluates the factory once per source target in source order,
 ;; then schedules the resulting ordinary requests with lagged-start timing.
 
 (require racket/cmdline
@@ -32,7 +32,7 @@
              #:fill "tomato" #:stroke "darkred" #:stroke-width 3)))
   (define title
     (fixed-in-frame
-     (plain-text "FX-A: stagger-map"
+     (plain-text "FX-A: eager-stagger-map"
                  #:id 'title
                  #:font-size 2/5
                  #:font-family 'swiss
@@ -53,7 +53,7 @@
   (define animated
     (scene-play
      (scene-wait base 1)
-     (stagger-map
+     (eager-stagger-map
       dots
       (lambda (dot source-index)
         (move-to dot

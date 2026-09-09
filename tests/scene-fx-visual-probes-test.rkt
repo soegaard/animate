@@ -88,15 +88,14 @@
                (camera-shake #:amplitude 1/3 #:samples 6 #:seed 17)
                #:duration 2))
 
-  ;; Prepared rich text masks final layout rectangles rather than rasterizing
-  ;; transient prefix layouts.
+  ;; The Pict probe uses the documented conservative final-run subset. Rich
+  ;; and wrapped partial text have dedicated capability-error tests instead of
+  ;; a misleading visual approximation.
   (define caption
-    (rich-text #:id 'caption #:width 3 #:font-size 1/2
-               (text-span "prepared " #:color "navy")
-               (text-span "layout" #:font-weight 'bold #:color "tomato")))
+    (plain-text "sable text" #:id 'caption #:font-size 1/2 #:color "navy"))
   (check-canonical-probe
    'typewrite
-   (scene-play (make-scene #:camera camera) (typewrite caption #:unit 'word)
+   (scene-play (make-scene #:camera camera) (typewrite caption #:unit 'run)
                #:duration 2))
 
   ;; Semantic decorations are visible Pict-rendered overlays with independent

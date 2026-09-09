@@ -31,7 +31,7 @@
                           (vec2-y (visual-position target)))))
   (define mapped-scene
     (scene-play base
-                (stagger-map (vector first second third) request #:lag-ratio 1/2)
+                (eager-stagger-map (vector first second third) request #:lag-ratio 1/2)
                 #:duration 4))
   (define manual-scene
     (scene-play base

@@ -18,7 +18,7 @@
 
 (module+ test
   (define caption
-    (plain-text "office" #:id 'caption #:font-size 1/2))
+    (plain-text "sable" #:id 'caption #:font-size 1/2))
   (define initial-scene
     (scene-add (make-scene) caption))
   (define request (erase-text 'caption))
@@ -32,7 +32,7 @@
   (check-equal? (scene-visual-at erased 'caption 0) caption)
   (define partial (scene-visual-at erased 'caption 1/2))
   (check-true (text-reveal-visual? partial))
-  (check-equal? (text-reveal-visual-revealed-count partial) 5)
+  (check-equal? (text-reveal-visual-revealed-count partial) 4)
   (check-false (scene-state-has? (scene-sample erased 2) 'caption))
   (check-false (scene-state-has? (scene-current-state erased) 'caption))
   (check-equal? (scene-sample erased 1/2)
@@ -44,12 +44,12 @@
     (car (scene-animation-inspections-at erased 1/2)))
    'erase-text)
 
-  ;; Word timing retains the semantic source order, including whitespace.
+  ;; Run timing retains the semantic source order, including whitespace.
   (define words
     (plain-text "one two" #:id 'words))
   (define word-scene
     (scene-play (scene-add (make-scene) words)
-                (erase-text words #:unit 'word)
+                (erase-text words #:unit 'run)
                 #:duration 1))
   (check-equal?
    (text-reveal-visual-revealed-count
@@ -57,9 +57,9 @@
    2)
   (check-false (scene-state-has? (scene-sample word-scene 1) 'words))
 
-  ;; Erasure uses the same frozen final layout as typewrite. Rich spans and
-  ;; wrapped source text must therefore render changing interior frames rather
-  ;; than triggering a reflowing substring path.
+  ;; Rich spans and wrapped source text are rejected at interior frontiers
+  ;; until a shaped-layout backend can provide exact fragment geometry. Their
+  ;; endpoints remain available as ordinary source/removal states.
   (define rich-caption
     (rich-text #:id 'rich
                (text-span "warm " #:color "tomato")
@@ -68,24 +68,30 @@
     (scene-play (scene-add (make-scene) rich-caption)
                 (erase-text 'rich)
                 #:duration 2))
-  (define rich-start (scene-frame->bitmap rich-erasure 0 #:fps 2))
-  (define rich-middle (scene-frame->bitmap rich-erasure 1 #:fps 2))
-  (define rich-end (scene-frame->bitmap rich-erasure 3 #:fps 2))
-  (check-not-equal? (bitmap-bytes rich-start) (bitmap-bytes rich-middle))
-  (check-not-equal? (bitmap-bytes rich-middle) (bitmap-bytes rich-end))
+  (check-not-false (scene-frame->bitmap rich-erasure 0 #:fps 2))
+  (check-exn exn:fail:contract?
+             (lambda () (scene-frame->bitmap rich-erasure 1 #:fps 2)))
   (check-false (scene-state-has? (scene-sample rich-erasure 2) 'rich))
 
   (define multiline-caption
-    (paragraph "first line\nsecond line wraps here"
+    (paragraph "sable line\nsecond line wraps here"
                #:id 'multiline #:font-size 1/2 #:width 9/5))
   (define multiline-erasure
     (scene-play (scene-add (make-scene) multiline-caption)
                 (erase-text 'multiline)
                 #:duration 2))
-  (define multiline-middle (scene-frame->bitmap multiline-erasure 1 #:fps 2))
-  (define multiline-end (scene-frame->bitmap multiline-erasure 3 #:fps 2))
-  (check-not-equal? (bitmap-bytes multiline-middle) (bitmap-bytes multiline-end))
+  (check-not-false (scene-frame->bitmap multiline-erasure 0 #:fps 2))
+  (check-exn exn:fail:contract?
+             (lambda () (scene-frame->bitmap multiline-erasure 1 #:fps 2)))
   (check-false (scene-state-has? (scene-sample multiline-erasure 2) 'multiline))
+
+  (define ligature-erasure
+    (scene-play (scene-add (make-scene) (plain-text "office" #:id 'ligature))
+                (erase-text 'ligature)
+                #:duration 1))
+  (check-not-false (scene-frame->bitmap ligature-erasure 0 #:fps 2))
+  (check-exn exn:fail:contract?
+             (lambda () (scene-frame->bitmap ligature-erasure 1 #:fps 2)))
 
   ;; Erasure keeps its exact source at local progress zero. An optional cursor
   ;; appears only after the frontier begins to move and disappears together

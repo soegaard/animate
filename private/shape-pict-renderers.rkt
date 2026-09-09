@@ -189,6 +189,24 @@
            ;; Report that limitation explicitly instead of fabricating bounds
            ;; from successively reflowed substrings.
            (prepared-text-cluster segment #f #f)))))
+  (define initial-cursor-box
+    ;; At an empty frontier the cursor belongs at the first final-layout
+    ;; fragment, not at an assumed top-left pixel. Leading newlines and empty
+    ;; text retain a baseline-sized local fallback.
+    (or (for/first ([cluster (in-vector clusters)]
+                    #:do [(define bounds
+                            (prepared-text-cluster-bounds cluster))]
+                    #:when (and (vector? bounds)
+                                (= (vector-length bounds) 4)
+                                (< (vector-ref bounds 0) (vector-ref bounds 2))
+                                (< (vector-ref bounds 1) (vector-ref bounds 3))))
+          (vector (vector-ref bounds 0)
+                  (vector-ref bounds 1)
+                  (vector-ref bounds 0)
+                  (vector-ref bounds 3)))
+        (vector 0 0 0 (max 1 (pict-height full-pict)))))
+  (define-values (anchor-x anchor-y)
+    (text-content-anchor-offset visual full-pict))
   (prepared-text-layout
    (text-segmentation-source-key graphemes)
    (text-segmentation-segments lines)
@@ -198,8 +216,15 @@
    (vector 'pict (camera-scale camera))
    (hash 'stable-layout? #t
          'stable-fragments? stable-fragments?
+         'anchor-offset (vector anchor-x anchor-y)
+         'initial-cursor-box initial-cursor-box
+         'capabilities
+         (hasheq 'whole-layout-stable? #t
+                 'fragment-masks-exact? stable-fragments?
+                 'prefix-mask-safe? stable-fragments?
+                 'bidirectional-order-known? #f)
          'reason (if stable-fragments?
-                     'pict-frozen-token-layout
+                     'pict-conservative-final-layout
                      'pict-whole-layout-only))))
 
 (define (text-reveal-visual->pict renderer visual camera)
@@ -210,12 +235,16 @@
     (text-reveal-visual-revealed-count visual))
   (define segment-count
     (text-reveal-visual-segment-count visual))
-  (define (with-cursor presented visible-clusters)
+  (define cursor-layout
+    (and (text-reveal-visual-cursor? visual)
+         (prepare-pict-text-layout renderer source camera)))
+  (define (with-cursor presented visible-clusters [layout cursor-layout])
     (if (text-reveal-visual-cursor? visual)
         (text-reveal-cursor-pict
          presented
          source
          visible-clusters
+         layout
          (text-reveal-visual-cursor-style visual))
         presented))
   (cond
@@ -224,7 +253,8 @@
     [(= requested-count segment-count)
      complete]
     [else
-     (define layout (prepare-pict-text-layout renderer source camera))
+     (define layout (or cursor-layout
+                        (prepare-pict-text-layout renderer source camera)))
      (unless (prepared-text-layout-stable-fragments? layout)
        (raise-arguments-error
         'typewrite
@@ -249,20 +279,29 @@
       visible-clusters)]))
 
 ;; text-reveal-cursor-pict : pict? text-visual?
-;;                            (listof prepared-text-cluster?) any/c -> pict?
+;;                            (listof prepared-text-cluster?)
+;;                            prepared-text-layout? any/c -> pict?
 ;; Draws a two-device-pixel marker at the final-layout reveal frontier.  The
 ;; source Pict remains the complete frozen layout; the cursor is merely a
 ;; renderer-local overlay, never a second semantic Visual or cache handle.
-(define (text-reveal-cursor-pict source visual clusters style)
+(define (text-reveal-cursor-pict source visual clusters layout style)
   (define last-bounds
     (for/fold ([latest #f]) ([cluster (in-list clusters)])
       (define bounds (prepared-text-cluster-bounds cluster))
       (if (vector? bounds) bounds latest)))
-  (define raw-x (if last-bounds (vector-ref last-bounds 2) 0))
-  (define raw-top (if last-bounds (vector-ref last-bounds 1) 0))
+  (define initial-box
+    (and layout (prepared-text-layout-initial-cursor-box layout)))
+  (define raw-x (if last-bounds
+                    (vector-ref last-bounds 2)
+                    (if (vector? initial-box) (vector-ref initial-box 0) 0)))
+  (define raw-top (if last-bounds
+                      (vector-ref last-bounds 1)
+                      (if (vector? initial-box) (vector-ref initial-box 1) 0)))
   (define raw-bottom (if last-bounds
                          (vector-ref last-bounds 3)
-                         (pict-height source)))
+                         (if (vector? initial-box)
+                             (vector-ref initial-box 3)
+                             (pict-height source))))
   (define cursor-width (max 1 (min 2 (pict-width source))))
   (define cursor-height
     (max 1 (min (pict-height source) (- raw-bottom raw-top))))
@@ -323,14 +362,29 @@
    (pict-ascent source)
    (pict-descent source)))
 
-;; The Pict backend forms a whole final local layout first.  It can then expose
-;; stable token placements for rich spans, explicit lines, and its deterministic
-;; word-wrapping pass. Rotation and non-unit scale remain intentionally refused:
-;; their Pict transforms change the local clip geometry and need a polygonal
-;; rather than rectangular masking protocol.
+;; The Pict backend forms a whole final local layout first. It exposes fragment
+;; masks only for a conservative LTR subset. Rotation and non-unit scale remain
+;; refused because their Pict transforms need a polygonal masking protocol;
+;; complex scripts, bidi text, and common ligature/kerning-sensitive pairs are
+;; also refused rather than being reported as exact shaped fragments.
 (define (pict-stable-fragment-layout? visual)
   (and (zero? (visual-rotation visual))
-       (equal? (visual-scale visual) (vec2 1 1))))
+       (equal? (visual-scale visual) (vec2 1 1))
+       ;; The current Pict adapter can measure exact final-layout fragments
+       ;; only for one direct, unwrapped draw run.  Rich spans and paragraphs
+       ;; would otherwise recover rectangles by re-laying out substrings.
+       (text-direct-single-run? visual)
+       (pict-conservative-ltr-content? (text-visual-content visual))))
+
+(define (pict-conservative-ltr-content? content)
+  (and (for/and ([character (in-string content)])
+         (or (char-whitespace? character)
+             (and (char<=? #\space character #\~)
+                  (not (char=? character #\tab)))))
+       ;; Pict does not expose final shaping clusters. These common sequences
+       ;; are intentionally rejected until a shaped-layout adapter supplies
+       ;; them from the same draw run.
+       (not (regexp-match? #px"ffi|ffl|fi|fl|AV|To|Wa|Yo" content))))
 
 (define (pict-prepared-grapheme-clusters visual camera full-pict graphemes)
   (if (text-direct-single-run? visual)

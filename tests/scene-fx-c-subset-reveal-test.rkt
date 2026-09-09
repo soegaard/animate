@@ -38,33 +38,52 @@
   (check-equal? (scene-visual-at reverse-scene 'second 3) second)
   (check-equal? (scene-visual-at reverse-scene 'third 3) third)
 
-  ;; In one-at-a-time mode each scheduled entry after the first starts a fade
-  ;; of the previous scheduled target. The final scheduled target alone
-  ;; remains, with exact structural cleanup at the common leaf boundaries.
+  ;; One-at-a-time presentation has its own explicit crossfade schedule. With
+  ;; overlap zero, an exit ends exactly as the following entry begins.
   (define one-at-a-time
     (scene-play
      (make-scene)
-     (reveal-subsets targets enter #:lag-ratio 1 #:cumulative? #f)
-     #:duration 3))
+     (crossfade-subsets targets enter #:overlap 0)
+     #:duration 5))
   (check-true (scene-state-has? (scene-sample one-at-a-time 0) 'first))
   (check-true (scene-state-has? (scene-sample one-at-a-time 1) 'first))
-  (check-true (scene-state-has? (scene-sample one-at-a-time 1) 'second))
+  (check-false (scene-state-has? (scene-sample one-at-a-time 1) 'second))
   (check-false (scene-state-has? (scene-sample one-at-a-time 2) 'first))
   (check-true (scene-state-has? (scene-sample one-at-a-time 2) 'second))
-  (check-true (scene-state-has? (scene-sample one-at-a-time 2) 'third))
-  (check-false (scene-state-has? (scene-sample one-at-a-time 3) 'first))
-  (check-false (scene-state-has? (scene-sample one-at-a-time 3) 'second))
-  (check-equal? (scene-visual-at one-at-a-time 'third 3) third)
+  (check-false (scene-state-has? (scene-sample one-at-a-time 2) 'third))
+  (check-false (scene-state-has? (scene-sample one-at-a-time 4) 'second))
+  (check-true (scene-state-has? (scene-sample one-at-a-time 4) 'third))
+  (check-equal? (scene-visual-at one-at-a-time 'third 5) third)
 
   ;; Reversal also determines the retained final target in one-at-a-time mode.
   (define reverse-one-at-a-time
     (scene-play
      (make-scene)
-     (reveal-subsets targets enter #:order 'reverse #:lag-ratio 1 #:cumulative? #f)
-     #:duration 3))
-  (check-equal? (scene-visual-at reverse-one-at-a-time 'first 3) first)
-  (check-false (scene-state-has? (scene-sample reverse-one-at-a-time 3) 'second))
-  (check-false (scene-state-has? (scene-sample reverse-one-at-a-time 3) 'third))
+     (crossfade-subsets targets enter #:order 'reverse #:overlap 0)
+     #:duration 5))
+  (check-equal? (scene-visual-at reverse-one-at-a-time 'first 5) first)
+  (check-false (scene-state-has? (scene-sample reverse-one-at-a-time 5) 'second))
+  (check-false (scene-state-has? (scene-sample reverse-one-at-a-time 5) 'third))
+
+  ;; Positive overlap is an intentional handoff, not an accidental lagged
+  ;; component collision. Both adjacent targets are present only in the
+  ;; documented overlap interval.
+  (define overlapping
+    (scene-play (make-scene)
+                (crossfade-subsets (list first second) enter #:overlap 1/2)
+                #:duration 5/2))
+  (check-true (scene-state-has? (scene-sample overlapping 7/4) 'first))
+  (check-true (scene-state-has? (scene-sample overlapping 7/4) 'second))
+  (check-false (scene-state-has? (scene-sample overlapping 2) 'first))
+  (check-equal? (scene-visual-at overlapping 'second 5/2) second)
+
+  (define remove-final
+    (scene-play (make-scene)
+                (crossfade-subsets (list first second) enter
+                                    #:remove-final? #t)
+                #:duration 7/2))
+  (check-false (scene-state-has? (scene-sample remove-final 7/2) 'first))
+  (check-false (scene-state-has? (scene-sample remove-final 7/2) 'second))
 
   ;; The supplied constructor remains general: existing fade introductions
   ;; work, and every eager-construction diagnostic names reveal-subsets.
@@ -78,7 +97,7 @@
   (check-exn exn:fail:contract?
              (lambda () (reveal-subsets '() enter)))
   (check-exn exn:fail:contract?
-             (lambda () (reveal-subsets targets enter #:cumulative? 'yes)))
+             (lambda () (reveal-subsets targets enter #:cumulative? #f)))
   (check-exn #rx"reveal-subsets.*source-index: 1"
              (lambda ()
                (reveal-subsets

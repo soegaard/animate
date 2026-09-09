@@ -30,7 +30,16 @@
          "formula-style.rkt"
          "geometry.rkt"
          "parameter.rkt"
+         "composition-model.rkt"
+         "composition-conflict.rkt"
+         "composition-lifecycle.rkt"
+         "composition-origin.rkt"
+         "composition-schedule.rkt"
+         "delay-plan.rkt"
+         "effect-random.rkt"
+         "request-template.rkt"
          "scene-state.rkt"
+         "target-sequence.rkt"
          "visual-selection.rkt"
          "visual-model.rkt")
 
@@ -44,8 +53,13 @@
          animation-group-animation-request?
          lagged-start
          lagged-start-animation-request?
+         eager-stagger-map
+         stagger-requests
          stagger-map
+         parallel-map
+         successive-map
          reveal-subsets
+         crossfade-subsets
          reveal-formula-parts
          repeat-animation
          ping-pong
@@ -77,57 +91,17 @@
 ;;; Data Representation
 ;;;
 
-(struct timed-animation-request (request start duration easing)
-  #:transparent)
-
-;; timed-animation-request wraps one Visual leaf or composition with local timing.
-;;  - request   timable-request?                 Visual/camera request/composition to schedule.
-;;  - start     nonnegative finite real?        local delay/timing units.
-;;  - duration  positive finite real?           active duration/timing units.
-;;  - easing    (or/c false/c (-> real? real?)) local mapping; #f inherits the
-;;                                                enclosing scene-play easing.
-
-(struct succession-animation-request (requests)
-  #:transparent)
-
-;; succession-animation-request stores one immutable sequential composition.
-;;  - requests  (listof composition-child-request?)
-;;              direct children in chronological order; ordering is significant.
-
-(struct animation-group-animation-request (requests)
-  #:transparent)
-
-;; animation-group-animation-request stores one immutable parallel composition.
-;;  - requests  (listof composition-child-request?)
-;;              direct children sharing one local interval; ordering remains
-;;              significant for deterministic equal-start compilation.
-
-(struct lagged-start-animation-request (requests lag-ratio)
-  #:transparent)
-
-;; lagged-start-animation-request stores one immutable staggered composition.
-;;  - requests   (listof composition-child-request?)
-;;               direct children in stagger order.
-;;  - lag-ratio  nonnegative finite real?
-;;               start offset as a multiple of the previous direct child's span.
-
-(struct style-to-animation-request (requests)
-  #:transparent)
-
-;; style-to-animation-request stores one parallel bundle of existing primitive
-;; style requests. Keeping the leaves primitive reuses AS/AT exact endpoint,
-;; protocol validation, and per-component conflict semantics.
-
-(struct visual-request-spec (request start duration easing)
+(struct visual-request-spec (request start duration easing origin)
   #:transparent)
 
 ;; visual-request-spec is one validated, resolved local Visual schedule entry.
 
-(struct scheduled-visual-animation (duration easing animation)
+(struct scheduled-visual-animation (duration easing animation origin)
   #:transparent)
 
 ;; scheduled-visual-animation stores one compiled Visual leaf relative to the
-;; containing batch start.
+;; containing batch start. `origin` is the immutable expansion provenance that
+;; produced the leaf, retained for generic effect inspection.
 
 (struct active-scheduled-visual-animation (start scheduled)
   #:transparent)
@@ -162,6 +136,7 @@
    start-state
    start-camera
    animations
+   animation-origins
    camera-animations
    easing)
   #:transparent)
@@ -173,6 +148,8 @@
 ;;  - start-camera       camera?                   complete camera start state.
 ;;  - animations         (listof compiled-animation?)
 ;;                       Visual components compiled in request order.
+;;  - animation-origins  (listof expansion-origin?) deterministic provenance
+;;                       for the corresponding compiled Visual animations.
 ;;  - camera-animations  (listof compiled-camera-animation?)
 ;;                       camera components compiled in request order.
 ;;  - easing             (-> real? real?)  shared progress mapping.
@@ -282,7 +259,7 @@
      request)
    lag-ratio))
 
-; stagger-map : (or/c list? vector?) procedure?
+; eager-stagger-map : (or/c list? vector?) procedure?
 ;               [#:lag-ratio nonnegative-real?]
 ;               [#:order (or/c 'forward 'reverse animation-order?)]
 ;               -> lagged-start-animation-request?
@@ -291,68 +268,383 @@
 ;;   The factory always runs in source order; #:order changes only scheduling
 ;;   order.  Choosing the two-argument call when both arities are accepted
 ;;   makes the original source index available deterministically.
-(define (stagger-map targets make-request
-                     #:lag-ratio [lag-ratio 1/4]
-                     #:order [order 'forward])
+(define (eager-stagger-map targets make-request
+                           #:lag-ratio [lag-ratio 1/4]
+                           #:order [order 'forward])
   (define source-targets
-    (normalize-stagger-targets targets 'stagger-map))
-  (check-nonnegative-time 'stagger-map lag-ratio)
+    (normalize-stagger-targets targets 'eager-stagger-map))
+  (check-nonnegative-time 'eager-stagger-map lag-ratio)
   (check-stagger-order order)
   (define children
-    (call-stagger-factory source-targets make-request 'stagger-map))
+    (call-stagger-factory source-targets make-request 'eager-stagger-map))
   (lagged-start
    #:lag-ratio lag-ratio
    (order-stagger-children children order)))
 
+;; The former `stagger-map` behavior is retained under names which make its
+;; eager source-collection capture explicit.
+(define stagger-requests eager-stagger-map)
+
+; stagger-map : target-sequence? (or/c request-template? procedure?) ...
+;;             -> deferred-map-request?
+;; A semantic target query is resolved at scene compilation and its factory
+;; receives exactly one target-ref. Use eager-stagger-map/stagger-requests when
+;; authoring-time collection expansion is intended.
+(define (stagger-map targets template
+                     #:lag-ratio [lag-ratio 1/4]
+                     #:order [order 'forward]
+                     #:delay [delay #f])
+  (check-nonnegative-time 'stagger-map lag-ratio)
+  (check-stagger-order order)
+  (unless (or (not delay) (delay-plan? delay))
+    (raise-argument-error 'stagger-map "#f or delay-plan? as #:delay" delay))
+  (cond
+    [(target-sequence? targets)
+     (unless (or (request-template? template) (procedure? template))
+       (raise-argument-error
+        'stagger-map "request-template? or procedure?" template))
+     (deferred-map-request targets template 'lagged lag-ratio order
+                           (or delay (index-delay lag-ratio)))]
+    [else
+     (raise-argument-error
+      'stagger-map "target-sequence?" targets)]))
+
+(define (parallel-map targets template #:order [order 'forward])
+  (unless (target-sequence? targets)
+    (raise-argument-error 'parallel-map "target-sequence?" targets))
+  (check-stagger-order order 'parallel-map)
+  (unless (or (request-template? template) (procedure? template))
+    (raise-argument-error
+     'parallel-map "request-template? or procedure?" template))
+  (deferred-map-request targets template 'parallel 0 order #f))
+
+(define (successive-map targets template #:order [order 'forward])
+  (unless (target-sequence? targets)
+    (raise-argument-error 'successive-map "target-sequence?" targets))
+  (check-stagger-order order 'successive-map)
+  (unless (or (request-template? template) (procedure? template))
+    (raise-argument-error
+     'successive-map "request-template? or procedure?" template))
+  (deferred-map-request targets template 'successive 1 order #f))
+
+;; Deferred mapped nodes are materialized once, against the immutable scene
+;; state visible at their compilation boundary. The result is an ordinary
+;; composition value, so the existing timing, conflict, and lifecycle compiler
+;; remains the sole scheduler for mapped scalar, camera, 2D, and 3D requests.
+(define (resolve-deferred-compositions requests local-state [duration #f])
+  (for/list ([request (in-list requests)])
+    (resolve-deferred-composition request local-state duration)))
+
+(define (resolve-deferred-composition request local-state [duration #f])
+  (cond
+    [(deferred-map-request? request)
+     (define references
+       (resolve-target-sequence (deferred-map-request-target-sequence request)
+                                local-state))
+     (when (zero? (vector-length references))
+       (raise-arguments-error
+        'stagger-map
+        "a target sequence resolving to at least one target"
+        "target-sequence" (deferred-map-request-target-sequence request)))
+     (define order
+       (deferred-map-request-order request))
+     (define order-plan
+       (resolve-animation-order
+       (cond [(eq? order 'forward) (forward-order)]
+              [(eq? order 'reverse) (reverse-order)]
+              [else order])
+        (vector-length references)))
+     (define scheduled-references
+       (vector->immutable-vector
+        (for/vector #:length (vector-length order-plan)
+                    ([source-position (in-vector order-plan)]
+                     [scheduled-index (in-naturals)])
+          (target-ref-with-scheduled-index
+           (vector-ref references source-position) scheduled-index))))
+     (define children
+       (for/list ([reference (in-vector scheduled-references)])
+         (define child
+           (instantiate-request-template
+            (deferred-map-request-template request)
+            reference
+            (hasheq 'target-sequence
+                     (deferred-map-request-target-sequence request)
+                     'topology (deferred-map-request-topology request))))
+         (unless (composition-child-request? child)
+           (raise-arguments-error
+            'stagger-map
+            "a mapped template producing a composition child request"
+            "source-index" (target-ref-source-index reference)
+            "scheduled-index" (target-ref-scheduled-index reference)
+            "resolved-path" (target-ref-path reference)
+            "request" child))
+         child))
+     (case (deferred-map-request-topology request)
+       [(parallel) (apply animation-group children)]
+       [(successive) (apply succession children)]
+       [(lagged)
+        (define delay (deferred-map-request-delay-plan request))
+        (define offsets
+          (resolve-delay-plan
+           delay
+           scheduled-references
+           (mapped-delay-context local-state scheduled-references)))
+        ;; The historic uniform index-delay lowers to the existing lagged
+        ;; composition and preserves its exact span math. Other plans lower to
+        ;; explicit timed children in one parallel envelope, making offsets
+        ;; inspectable and independent of source/scheduled ordering.
+        (if (index-delay? delay)
+            (apply lagged-start
+                   #:lag-ratio (index-delay-ratio delay)
+                   children)
+            (apply animation-group
+                   (for/list ([child (in-list children)]
+                              [offset (in-vector offsets)])
+                     (timed child #:start offset #:duration 1))))]
+       [else
+        (raise-arguments-error
+         'stagger-map "a known mapped topology"
+         "topology" (deferred-map-request-topology request))])]
+    [(timed-animation-request? request)
+     (struct-copy timed-animation-request request
+                  [request
+                   (resolve-deferred-composition
+                    (timed-animation-request-request request) local-state
+                    (timed-animation-request-duration request))])]
+    [(succession-animation-request? request)
+     (resolve-deferred-succession request local-state duration)]
+    [(cycle-animation-request? request)
+     (resolve-cycle-animation request local-state duration)]
+    [(animation-group-animation-request? request)
+     (struct-copy animation-group-animation-request request
+                  [requests
+                   (resolve-deferred-compositions
+                    (animation-group-animation-request-requests request)
+                    local-state duration)])]
+    [(lagged-start-animation-request? request)
+     (struct-copy lagged-start-animation-request request
+                  [requests
+                   (resolve-deferred-compositions
+                    (lagged-start-animation-request-requests request)
+                    local-state duration)])]
+    [(style-to-animation-request? request) request]
+    [else request]))
+
+;; mapped-delay-context : scene-state? immutable-vector? -> immutable-hash?
+;; Position-driven delay plans receive only frozen world-space positions from
+;; the map's local-start state. Unsupported target families omit a position,
+;; which lets delay-plan.rkt report a clear capability diagnostic instead of
+;; inventing a local coordinate approximation.
+(define (mapped-delay-context local-state references)
+  (hasheq
+   'positions
+   (for/hash ([reference (in-vector references)]
+              #:do [(define path (target-ref-path reference))]
+              #:when path
+              #:do [(define position
+                       (with-handlers ([exn:fail? (lambda (_exception) #f)])
+                         (define value
+                           (scene-state-resolved-world-ref local-state path))
+                         (and (visual? value)
+                              (visual-position value))))]
+              #:when (vec2? position))
+     (values reference position))))
+
+;; A mapped node nested in succession sees the exact endpoint state of every
+;; preceding child. This is a compilation-time simulation of the already-pure
+;; local scheduler: it does not inspect a rendered frame or sampling history.
+;; Parallel and lagged siblings still share their common local-start state.
+(define (resolve-deferred-succession request local-state duration)
+  (define children (succession-animation-request-requests request))
+  (cond
+    [(not duration)
+     (struct-copy succession-animation-request request
+                  [requests (resolve-deferred-compositions children local-state)])]
+    [else
+     (define spans (map composition-direct-child-span children))
+     (define total-span (apply + spans))
+     (define scale (composition-scale 'succession duration total-span))
+     (let loop ([remaining children]
+                [remaining-spans spans]
+                [state local-state]
+                [elapsed 0]
+                [index 0]
+                [resolved '()])
+       (cond
+         [(null? remaining)
+          (succession-animation-request (reverse resolved))]
+         [else
+          (define child-duration
+            (if (= index (sub1 (length children)))
+                (- duration elapsed)
+                (* (car remaining-spans) scale)))
+          (define child
+            (resolve-deferred-composition (car remaining) state child-duration))
+          (define next-state
+            (resolved-request-end-state state child child-duration))
+          (loop (cdr remaining) (cdr remaining-spans) next-state
+                (+ elapsed child-duration) (add1 index)
+                (cons child resolved))]))]))
+
+(define (resolved-request-end-state start-state request duration)
+  (define specs (request->visual-specs request duration linear))
+  (define visual-specs
+    (filter (lambda (spec)
+              (animation-request? (visual-request-spec-request spec)))
+            specs))
+  (define batches (compile-scheduled-visual-batches start-state visual-specs))
+  (sample-scheduled-visual-state start-state batches duration))
+
+(define (resolve-cycle-animation request local-state duration)
+  (define kind (cycle-animation-request-kind request))
+  (define children (cycle-animation-request-requests request))
+  ;; A cycle needs the same local-start simulation as a normal succession, but
+  ;; keeps its own child counter so lifecycle failures identify the iteration
+  ;; that actually failed (including a first-iteration leave on an absent
+  ;; target). No frame is rendered while this validation is happening.
+  (define (raise-cycle-error child child-index exception)
+    (raise-arguments-error
+     kind
+     "a lifecycle-valid repeated animation"
+     "iteration"
+     (if (eq? kind 'ping-pong)
+         (add1 (quotient child-index 2))
+         (add1 child-index))
+     "child-index"
+     (if (eq? kind 'ping-pong)
+         (if (even? child-index) 0 1)
+         child-index)
+     "origin" (expansion-origin 0 (list child-index)
+                                child-index child-index 0 kind)
+     "lifecycle-effects"
+     (map lifecycle-effect->data
+          (animation-request-lifecycle-effects child))
+     "exception-message" (exn-message exception)))
+  (cond
+    [(not duration)
+     ;; This branch is retained for structural introspection of a request tree
+     ;; without an assigned parent interval. Ordinary scene compilation always
+     ;; supplies a duration and therefore takes the validating branch below.
+     (resolve-deferred-succession
+      (succession-animation-request children) local-state duration)]
+    [else
+     (define spans (map composition-direct-child-span children))
+     (define total-span (apply + spans))
+     (define scale (composition-scale kind duration total-span))
+     (let loop ([remaining children]
+                [remaining-spans spans]
+                [state local-state]
+                [elapsed 0]
+                [child-index 0]
+                [resolved '()])
+       (cond
+         [(null? remaining)
+          (succession-animation-request (reverse resolved))]
+         [else
+          (define child-duration
+            (if (= child-index (sub1 (length children)))
+                (- duration elapsed)
+                (* (car remaining-spans) scale)))
+          (define-values (child next-state)
+            (with-handlers
+                ([exn:fail?
+                  (lambda (exception)
+                    (raise-cycle-error (car remaining) child-index exception))])
+              (define resolved-child
+                (resolve-deferred-composition (car remaining) state child-duration))
+              (values resolved-child
+                      (resolved-request-end-state state resolved-child child-duration))))
+          (loop (cdr remaining) (cdr remaining-spans) next-state
+                (+ elapsed child-duration) (add1 child-index)
+                (cons child resolved))]))]))
+
 ; reveal-subsets : (or/c list? vector?) procedure?
 ;                  [#:order (or/c 'forward 'reverse animation-order?)]
 ;                  [#:lag-ratio nonnegative-real?]
-;                  [#:cumulative? boolean?]
 ;                  -> lagged-start-animation-request?
-;; Eagerly maps an entry constructor over a concrete source collection. In
-;; cumulative mode it is exactly stagger-map. In one-at-a-time mode every
-;; scheduled entry after the first starts a matching fade-out of the prior
-;; scheduled target, while retaining the ordinary lagged-start timing model.
+;; Eagerly maps a cumulative entry constructor over a concrete source
+;; collection. One-at-a-time display has deliberately moved to
+;; crossfade-subsets, whose overlap/hold schedule is explicit.
 (define (reveal-subsets targets make-entry
                         #:order [order 'forward]
-                        #:lag-ratio [lag-ratio 1]
-                        #:cumulative? [cumulative? #t])
+                        #:lag-ratio [lag-ratio 1])
   (define source-targets
     (normalize-stagger-targets targets 'reveal-subsets))
   (check-nonnegative-time 'reveal-subsets lag-ratio)
   (check-stagger-order order 'reveal-subsets)
-  (unless (boolean? cumulative?)
-    (raise-argument-error 'reveal-subsets "boolean?" cumulative?))
   (define entries
     (call-stagger-factory source-targets make-entry 'reveal-subsets))
-  (cond
-    [cumulative?
-     (lagged-start
-      #:lag-ratio lag-ratio
-      (order-stagger-children entries order))]
-    [else
-     (define ordered-targets
-       (order-stagger-children source-targets order))
-     (define ordered-entries
-       (order-stagger-children entries order))
-     (lagged-start
-      #:lag-ratio lag-ratio
-      (for/list ([entry (in-list ordered-entries)]
-                 [previous-target
-                  (in-list (cons #f ordered-targets))])
-        (if previous-target
-            (animation-group entry (fade-out previous-target))
-            entry)))]))
+  (lagged-start
+   #:lag-ratio lag-ratio
+   (order-stagger-children entries order)))
+
+;; crossfade-subsets : (or/c list? vector?) procedure? ...
+;; Defines one-at-a-time presentation without borrowing the ambiguous lagged
+;; reveal timing. Each entry completes, optionally holds, then exits while the
+;; next entry overlaps its exit by the requested amount. The final entry stays
+;; present unless #:remove-final? is selected.
+(define (crossfade-subsets targets make-entry
+                           #:exit-template [make-exit fade-out]
+                           #:entry-duration [entry-duration 1]
+                           #:hold-duration [hold-duration 0]
+                           #:overlap [overlap 0]
+                           #:order [order 'forward]
+                           #:remove-final? [remove-final? #f])
+  (define source-targets
+    (normalize-stagger-targets targets 'crossfade-subsets))
+  (check-positive-duration 'crossfade-subsets entry-duration)
+  (check-nonnegative-time 'crossfade-subsets hold-duration)
+  (check-nonnegative-time 'crossfade-subsets overlap)
+  (when (> overlap entry-duration)
+    (raise-arguments-error 'crossfade-subsets
+                           "an overlap no longer than one entry duration"
+                           "overlap" overlap
+                           "entry-duration" entry-duration))
+  (check-stagger-order order 'crossfade-subsets)
+  (unless (boolean? remove-final?)
+    (raise-argument-error
+     'crossfade-subsets "boolean? as #:remove-final?" remove-final?))
+  (define entries
+    (call-stagger-factory source-targets make-entry 'crossfade-subsets))
+  (define exits
+    (call-stagger-factory source-targets make-exit 'crossfade-subsets))
+  (define ordered-entries (order-stagger-children entries order))
+  (define ordered-exits (order-stagger-children exits order))
+  (define wrappers
+    (let loop ([remaining-entries ordered-entries]
+               [remaining-exits ordered-exits]
+               [entry-start 0]
+               [accumulated '()])
+      (define entry (car remaining-entries))
+      (define exit (car remaining-exits))
+      (define entry-wrapper
+        (timed entry #:start entry-start #:duration entry-duration))
+      (cond
+        [(null? (cdr remaining-entries))
+         (reverse
+          (if remove-final?
+              (let ([exit-start (+ entry-start entry-duration hold-duration)])
+                (cons (timed exit #:start exit-start #:duration entry-duration)
+                      (cons entry-wrapper accumulated)))
+              (cons entry-wrapper accumulated)))]
+        [else
+         (define exit-start (+ entry-start entry-duration hold-duration))
+         (define next-entry-start (+ exit-start (- entry-duration overlap)))
+         (loop (cdr remaining-entries) (cdr remaining-exits) next-entry-start
+               (cons (timed exit #:start exit-start #:duration entry-duration)
+                     (cons entry-wrapper accumulated)))])))
+  (apply animation-group wrappers))
 
 ; reveal-formula-parts : formula-assembly-visual?
-;                        (or/c list? vector?) procedure?
+;                        (or/c list? vector?)
+;                        (or/c request-template? procedure?)
 ;                        [#:order (or/c 'forward 'reverse animation-order?)]
 ;                        [#:lag-ratio nonnegative-real?]
-;                        -> lagged-start-animation-request?
-;; Resolves stable formula part names or root-relative semantic selections,
-;; then delegates the eager factory expansion and scheduling to stagger-map.
-;; It deliberately has no symbolic effect registry: callers choose the same
-;; concrete request factory used by every other mapped composition.
+;                        -> deferred-map-request?
+;; Constructs a semantic formula target query, so named parts and root-relative
+;; selections are resolved at the mapped node's local start. The template
+;; receives one target-ref, retaining formula-root/selection metadata instead
+;; of an eagerly reduced target path.
 (define (reveal-formula-parts formula selections make-request
                               #:order [order 'forward]
                               #:lag-ratio [lag-ratio 1/5])
@@ -363,39 +655,39 @@
     (normalize-stagger-targets selections 'reveal-formula-parts))
   (define formula-root
     (list (visual-id formula)))
-  (define targets
-    (for/list ([selection (in-list raw-selections)])
-      (cond
-        [(symbol? selection)
-         (formula-select formula selection)]
-        [(visual-selection? selection)
-         (unless (equal? (visual-selection-root selection) formula-root)
-           (raise-arguments-error
-            'reveal-formula-parts
-            "a semantic selection rooted at the supplied formula"
-            "formula-id" (visual-id formula)
-            "selection-root" (visual-selection-root selection)))
-         (when (visual-selection-empty? selection)
-           (raise-arguments-error
-            'reveal-formula-parts
-            "a nonempty semantic formula selection"
-            "selection" selection))
-         selection]
-        [(visual-path? selection)
-         (unless (and (pair? selection)
-                      (eq? (car selection) (visual-id formula)))
-           (raise-arguments-error
-            'reveal-formula-parts
-            "a formula part path beginning with the supplied formula identity"
-            "formula-id" (visual-id formula)
-            "selection" selection))
-         selection]
-        [else
-         (raise-argument-error
+  ;; Validate construction-time shape/root errors without resolving named part
+  ;; membership or invoking the user template. The latter two operations are
+  ;; intentionally delayed until the local-start scene state is known.
+  (for ([selection (in-list raw-selections)])
+    (cond
+      [(symbol? selection) (void)]
+      [(visual-selection? selection)
+       (unless (equal? (visual-selection-root selection) formula-root)
+         (raise-arguments-error
           'reveal-formula-parts
-          "symbol?, visual-path?, or visual-selection?"
-          selection)])))
-  (stagger-map targets make-request #:order order #:lag-ratio lag-ratio))
+          "a semantic selection rooted at the supplied formula"
+          "formula-id" (visual-id formula)
+          "selection-root" (visual-selection-root selection)))
+       (when (visual-selection-empty? selection)
+         (raise-arguments-error
+          'reveal-formula-parts
+          "a nonempty semantic formula selection"
+          "selection" selection))]
+      [(visual-path? selection)
+       (unless (and (pair? selection)
+                    (eq? (car selection) (visual-id formula)))
+         (raise-arguments-error
+          'reveal-formula-parts
+          "a formula part path beginning with the supplied formula identity"
+          "formula-id" (visual-id formula)
+          "selection" selection))]
+      [else
+       (raise-argument-error
+        'reveal-formula-parts
+        "symbol?, visual-path?, or visual-selection?"
+        selection)]))
+  (stagger-map (formula-part-targets formula raw-selections)
+               make-request #:order order #:lag-ratio lag-ratio))
 
 ; repeat-animation : composition-child-request? exact-positive-integer?
 ;                    -> succession-animation-request?
@@ -406,7 +698,7 @@
     (raise-argument-error 'repeat-animation "composition-child-request?" request))
   (unless (and (exact-integer? count) (positive? count))
     (raise-argument-error 'repeat-animation "positive exact integer" count))
-  (apply succession (make-list count request)))
+  (cycle-animation-request (make-list count request) 'repeat-animation))
 
 ; ping-pong : composition-child-request? composition-child-request?
 ;             [#:count exact-positive-integer?] -> succession-animation-request?
@@ -419,9 +711,9 @@
     (raise-argument-error 'ping-pong "composition-child-request?" backward))
   (unless (and (exact-integer? count) (positive? count))
     (raise-argument-error 'ping-pong "positive exact integer" count))
-  (apply succession
-         (apply append
-                (make-list count (list forward backward)))))
+  (cycle-animation-request
+   (apply append (make-list count (list forward backward)))
+   'ping-pong))
 
 ; camera-shake : [#:amplitude nonnegative-finite-real?]
 ;                [#:samples exact-positive-integer?]
@@ -452,17 +744,6 @@
                     [to (in-list (cdr offsets))])
            (camera-pan-by (vec2- to from)))))
 
-(define camera-shake-modulus 2147483648)
-(define camera-shake-multiplier 1103515245)
-(define camera-shake-increment 12345)
-
-(define (camera-shake-random seed index salt)
-  (define state
-    (modulo (+ seed (* 2 index) salt) camera-shake-modulus))
-  (/ (modulo (+ (* camera-shake-multiplier state) camera-shake-increment)
-             camera-shake-modulus)
-     camera-shake-modulus))
-
 (define (camera-shake-offset amplitude samples seed decay index)
   (define fraction (/ index samples))
   (define envelope
@@ -473,8 +754,16 @@
        (define inverse (- 1 fraction))
        (* inverse inverse (- 3 (* 2 inverse)))]))
   (define magnitude (* amplitude envelope))
-  (vec2 (* magnitude (- (* 2 (camera-shake-random seed index 0)) 1))
-        (* magnitude (- (* 2 (camera-shake-random seed index 1)) 1))))
+  (vec2 (* magnitude
+           (- (* 2 (effect-random-unit-real
+                    current-effect-random-plan-version seed 'camera-shake
+                    index 'x-position))
+              1))
+        (* magnitude
+           (- (* 2 (effect-random-unit-real
+                    current-effect-random-plan-version seed 'camera-shake
+                    index 'y-position))
+              1))))
 
 ; style-to : (or/c symbol? visual?)
 ;            [#:fill (or/c false/c color-spec?)]
@@ -664,14 +953,23 @@
         1))
   (check-positive-duration 'scene-play resolved-duration)
   (if (ormap scheduled-scene-play-request? requests)
-      (scene-play/scheduled scn resolved-duration easing requests)
+      (scene-play/scheduled
+       scn resolved-duration easing
+       (resolve-deferred-compositions requests (scene-current-state scn)
+                                      resolved-duration))
       (scene-play/legacy scn resolved-duration easing requests)))
 
 ; scene-play/legacy : scene? positive-real? easing? list? -> scene?
 ;;   Preserves the exact SCENE-AM simultaneous-play implementation.
 (define (scene-play/legacy scn duration easing requests)
   (define visual-requests
-    (filter animation-request? requests))
+    (for/list ([request (in-list requests)]
+               [index (in-naturals)]
+               #:when (animation-request? request))
+      (animation-request-with-expansion-origin
+       request
+       (expansion-origin (length (scene-clips scn))
+                         (list index) index index 0 'legacy-leaf))))
   (define camera-requests
     (filter camera-animation-request? requests))
   (define-values (start-state compiled-animations)
@@ -697,6 +995,9 @@
                start-state
                start-camera
                compiled-animations
+               (for/list ([index (in-range (length compiled-animations))])
+                 (expansion-origin (length (scene-clips scn))
+                                   (list index) index index 0 'legacy-leaf))
                compiled-camera-animations
                easing))
   (define endpoint-progress
@@ -731,11 +1032,25 @@
   ;; One expansion calculates the local timing tree for both Visual and camera
   ;; leaves. Keeping a single source of spans means a camera in a succession or
   ;; lagged group receives exactly the same interval as an equivalent Visual.
-  (define scheduled-specs
+  (define raw-scheduled-specs
     (append-map
      (lambda (request)
        (request->visual-specs request duration easing))
      requests))
+  (define scheduled-specs
+    (for/list ([spec (in-list raw-scheduled-specs)]
+               [index (in-naturals)])
+      (define origin
+        (expansion-origin (length (scene-clips scn))
+                          (list index) index index 0 'scheduled-leaf))
+      (struct-copy visual-request-spec spec
+                   [request
+                    (if (animation-request?
+                         (visual-request-spec-request spec))
+                        (animation-request-with-expansion-origin
+                         (visual-request-spec-request spec) origin)
+                        (visual-request-spec-request spec))]
+                   [origin origin])))
   (define visual-specs
     (filter (lambda (spec)
               (animation-request?
@@ -845,7 +1160,7 @@
     [(or (animation-request? request)
          (camera-animation-request? request))
      (list
-      (visual-request-spec request 0 clip-duration clip-easing))]
+      (visual-request-spec request 0 clip-duration clip-easing #f))]
     [(succession-animation-request? request)
      (succession->visual-specs request 0 clip-duration clip-easing)]
     [(animation-group-animation-request? request)
@@ -871,34 +1186,6 @@
    start
    duration
    easing))
-
-; composition-direct-child-span : composition-child-request? -> positive-real?
-;;   Gives one direct child its intrinsic timing span before the parent interval
-;;   is scaled. Historical unwrapped children remain one unit, so AO-AQ trees
-;;   keep their old equal-share semantics. A timed child contributes its explicit
-;;   delay plus active duration. Bare nested compositions still count as one
-;;   direct child unless the caller wraps that composition with timed.
-(define (composition-direct-child-span request)
-  (if (timed-animation-request? request)
-      (+ (timed-animation-request-start request)
-         (timed-animation-request-duration request))
-      1))
-
-; composition-scale : symbol? positive-real? positive-real? -> positive-real?
-;;   Returns the proportional mapping from intrinsic child units to the concrete
-;;   interval allocated by the parent composition.
-(define (composition-scale who duration intrinsic-duration)
-  (define scale
-    (/ duration intrinsic-duration))
-  (unless (and (finite-real? scale)
-               (positive? scale))
-    (raise-arguments-error
-     'scene-play
-     "composition duration scale must be positive and finite"
-     "composition" who
-     "duration" duration
-     "intrinsic-duration" intrinsic-duration))
-  scale)
 
 ; succession->visual-specs : succession-animation-request?
 ;                            nonnegative-real? positive-real? easing?
@@ -1091,7 +1378,7 @@
           easing))]
     [(or (animation-request? request)
          (camera-animation-request? request))
-     (list (visual-request-spec request start duration easing))]
+     (list (visual-request-spec request start duration easing #f))]
     [(succession-animation-request? request)
      (succession->visual-specs request start duration easing)]
     [(animation-group-animation-request? request)
@@ -1113,7 +1400,7 @@
   (cond
     [(or (animation-request? request)
          (camera-animation-request? request))
-     (list (visual-request-spec request start duration easing))]
+     (list (visual-request-spec request start duration easing #f))]
     [(succession-animation-request? request)
      (succession->visual-specs request start duration easing)]
     [(animation-group-animation-request? request)
@@ -1163,7 +1450,8 @@
            (scheduled-visual-animation
             (visual-request-spec-duration spec)
             (visual-request-spec-easing spec)
-            animation)))
+            animation
+            (visual-request-spec-origin spec))))
        (loop (cdr remaining)
              (append compiled-batches
                      (list
@@ -1581,7 +1869,9 @@
   (cond
     [(not clip) '()]
     [(play-clip? clip)
-     (compiled-animations->inspections (play-clip-animations clip))]
+     (compiled-animations-with-origins->inspections
+      (play-clip-animations clip)
+      (play-clip-animation-origins clip))]
     [(timed-play-clip? clip)
      (define local-time
        (timed-clip-local-time clip time))
@@ -1592,7 +1882,7 @@
                  #:when (or endpoint?
                             (<= (scheduled-visual-batch-start batch)
                                 local-time)))
-        (compiled-animations->inspections
+        (scheduled-animations->inspections
          (for/list ([scheduled
                      (in-list (scheduled-visual-batch-animations batch))]
                     #:when
@@ -1600,13 +1890,32 @@
                         (< local-time
                            (+ (scheduled-visual-batch-start batch)
                               (scheduled-visual-animation-duration scheduled)))))
-           (scheduled-visual-animation-animation scheduled)))))]
+           scheduled))))]
     [else '()]))
 
 (define (compiled-animations->inspections animations)
   (filter values
           (for/list ([animation (in-list animations)])
             (compiled-animation-inspection animation))))
+
+(define (compiled-animations-with-origins->inspections animations origins)
+  (filter values
+          (for/list ([animation (in-list animations)]
+                     [origin (in-list origins)])
+            (define inspection (compiled-animation-inspection animation))
+            (and inspection
+                 (animation-inspection-with-provenance inspection origin)))))
+
+(define (scheduled-animations->inspections scheduled-animations)
+  (filter values
+          (for/list ([scheduled (in-list scheduled-animations)])
+            (define inspection
+              (compiled-animation-inspection
+               (scheduled-visual-animation-animation scheduled)))
+            (and inspection
+                 (animation-inspection-with-provenance
+                  inspection
+                  (scheduled-visual-animation-origin scheduled))))))
 
 ; scene-clip-count : scene? -> exact-nonnegative-integer?
 ;;   Returns the number of chronological clips in scene.
@@ -1826,20 +2135,16 @@
                 (visual-request-spec-duration left)
                 (visual-request-spec-start right)
                 (visual-request-spec-duration right)))
-          (define duplicate-component
-            (for/first ([component
-                         (in-list
-                          (animation-request-components left-request))]
-                        #:when
-                        (memq component
-                              (animation-request-components right-request)))
-              component))
-          (when duplicate-component
+          (define duplicate-coordinate
+            (request-effects-first-write-conflict
+             (animation-request-effects left-request)
+             (animation-request-effects right-request)))
+          (when duplicate-coordinate
             (raise-arguments-error
              'scene-play
              "two overlapping scheduled animations target the same animation component"
-             "target-id" (animation-request-component-target-id left-request)
-             "component" duplicate-component
+             "target-id" (car duplicate-coordinate)
+             "component" (cdr duplicate-coordinate)
              "first-interval"
              (cons (visual-request-spec-start left)
                    (+ (visual-request-spec-start left)
@@ -1953,9 +2258,11 @@
   (or (animation-request? value)
       (timed-animation-request? value)
       (succession-animation-request? value)
+      (cycle-animation-request? value)
       (animation-group-animation-request? value)
       (lagged-start-animation-request? value)
       (style-to-animation-request? value)
+      (deferred-map-request? value)
       (camera-animation-request? value)))
 
 ; visual-scene-play-request? : any/c -> boolean?
@@ -1964,18 +2271,29 @@
   (or (animation-request? value)
       (timed-animation-request? value)
       (succession-animation-request? value)
+      (cycle-animation-request? value)
       (animation-group-animation-request? value)
       (lagged-start-animation-request? value)
-      (style-to-animation-request? value)))
+      (style-to-animation-request? value)
+      (deferred-map-request? value)))
 
 ; scheduled-scene-play-request? : any/c -> boolean?
 ;;   Reports whether value requires the local scheduler rather than legacy play.
 (define (scheduled-scene-play-request? value)
   (or (timed-animation-request? value)
       (succession-animation-request? value)
+      (cycle-animation-request? value)
       (animation-group-animation-request? value)
       (lagged-start-animation-request? value)
-      (style-to-animation-request? value)))
+      (style-to-animation-request? value)
+      (deferred-map-request? value)
+      ;; Generated helper identities are assigned from scheduler provenance.
+      ;; These effects are otherwise plain leaves, so make that boundary
+      ;; explicit for every request whose default helper ID is origin-derived.
+      (confetti-request? value)
+      (underline-sweep-request? value)
+      (strike-through-request? value)
+      (highlight-sweep-request? value)))
 
 ; timable-visual-request? : any/c -> boolean?
 ;;   Reports whether value may be wrapped by timed. Nested timed wrappers remain
@@ -1985,9 +2303,11 @@
   (or (animation-request? value)
       (camera-animation-request? value)
       (succession-animation-request? value)
+      (cycle-animation-request? value)
       (animation-group-animation-request? value)
       (lagged-start-animation-request? value)
-      (style-to-animation-request? value)))
+      (style-to-animation-request? value)
+      (deferred-map-request? value)))
 
 ; composition-child-request? : any/c -> boolean?
 ;;   Reports whether value may occur directly inside a sequential/parallel/lagged

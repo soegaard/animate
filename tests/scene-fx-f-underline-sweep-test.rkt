@@ -4,7 +4,8 @@
 ;;; FX-F4 Semantic Underline Sweep Tests
 ;;;
 
-(require rackunit
+(require racket/list
+         rackunit
          "../main.rkt")
 
 (module+ test
@@ -14,7 +15,11 @@
     (scene-play (scene-add (make-scene) caption)
                 (underline-sweep 'caption #:stroke-width 3)
                 #:duration 2))
-  (define default-id '__underline-caption)
+  (define default-id
+    (hash-ref
+     (animation-inspection-data
+      (car (scene-animation-inspections-at underlined 1/2)))
+     'overlay-id))
   (check-false (scene-state-has? (scene-sample underlined 0) default-id))
   (define partial
     (scene-visual-at underlined default-id 1/2))
@@ -37,10 +42,12 @@
                 (underline-sweep 'caption)
                 (strike-through 'caption #:color "tomato")
                 #:duration 1))
-  (check-true (scene-state-has? (scene-current-state marked)
-                                '__underline-caption))
-  (check-true (scene-state-has? (scene-current-state marked)
-                                '__strike-through-caption))
+  (define marked-helper-ids
+    (for/list ([inspection (in-list (scene-animation-inspections-at marked 1/2))])
+      (hash-ref (animation-inspection-data inspection) 'overlay-id)))
+  (check-equal? (length (remove-duplicates marked-helper-ids)) 2)
+  (for ([helper-id (in-list marked-helper-ids)])
+    (check-true (scene-state-has? (scene-current-state marked) helper-id)))
   (check-not-false (scene-frame->bitmap marked 1 #:fps 2))
 
   ;; A highlight is a filled semantic rectangle placed behind, not on top of,
@@ -49,7 +56,11 @@
     (scene-play (scene-add (make-scene) caption)
                 (highlight-sweep 'caption)
                 #:duration 1))
-  (define highlight-id '__highlight-caption)
+  (define highlight-id
+    (hash-ref
+     (animation-inspection-data
+      (car (scene-animation-inspections-at highlighted 1/2)))
+     'overlay-id))
   (define highlighted-order
     (map visual-id
          (scene-state-visuals-in-drawing-order
@@ -82,13 +93,19 @@
   (check-false (scene-state-has? (scene-current-state transient)
                                  'temporary-underline))
 
-  ;; One default helper identity cannot be accidentally reused in one clip.
-  (check-exn
-   exn:fail:contract?
+  ;; Default helper identities are derived from scheduler provenance, so two
+  ;; same-target decorations coexist. Explicit duplicate identities still fail.
+  (check-not-exn
    (lambda ()
      (scene-play (scene-add (make-scene) caption)
                  (underline-sweep 'caption)
                  (underline-sweep 'caption))))
+  (check-exn
+   exn:fail:contract?
+   (lambda ()
+     (scene-play (scene-add (make-scene) caption)
+                 (underline-sweep 'caption #:id 'duplicate)
+                 (underline-sweep 'caption #:id 'duplicate))))
   (check-exn
    exn:fail:contract?
    (lambda ()

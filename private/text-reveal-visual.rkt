@@ -31,10 +31,10 @@
       (raise-argument-error who "symbol?" id))
     (unless (text-visual? source)
       (raise-argument-error who "text-visual?" source))
-    (unless (memq unit '(grapheme word line span))
+    (unless (memq unit '(grapheme run line span))
       (raise-argument-error
        who
-       "(or/c 'grapheme 'word 'line 'span)"
+       "(or/c 'grapheme 'run 'line 'span)"
        unit))
     (unless (and (exact-integer? revealed-count)
                  (not (negative? revealed-count))

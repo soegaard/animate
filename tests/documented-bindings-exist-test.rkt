@@ -16,7 +16,13 @@
   (dynamic-require module-path name (lambda () absent)))
 
 (module+ test
-  (for ([name (in-list '(circle vec2 scene-play scene-add make-scene stagger-map reveal-subsets
+  (for ([name (in-list '(circle vec2 scene-play scene-add make-scene stagger-map eager-stagger-map
+                         stagger-requests parallel-map successive-map crossfade-subsets
+                         target-sequence? concrete-targets children-of descendants-of selection-targets
+                         formula-part-targets target-ref? target-ref-path target-ref-source-index
+                         delay-plan? index-delay constant-delay distance-delay radial-delay wave-delay
+                         target-ref-scheduled-index named-request-template procedure-request-template request-template?
+                         reveal-subsets
                          enter leave reveal-in reveal-out reveal-formula-parts
                          linear-reveal-front radial-reveal-front reveal-front-path
                          wipe-in wipe-out iris-in iris-out

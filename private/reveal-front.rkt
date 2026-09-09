@@ -56,20 +56,36 @@
    (check-nonnegative-finite-real 'radial-reveal-front "start radius" start-radius)
    (check-front-padding 'radial-reveal-front padding)))
 
-;; reveal-front-path : reveal-front? layout-box? unit-real? -> path-geometry?
+;; reveal-front-path : reveal-front? layout-box? unit-real?
+;;                    [#:world-units-per-pixel positive-finite-real?]
+;;                    [#:max-error-pixels positive-finite-real?]
+;;                    -> path-geometry?
 ;; Progress zero returns empty path geometry whenever the authored start front
 ;; has no area. This avoids constructing a degenerate zero-area clip polygon.
-(define (reveal-front-path front box progress)
+(define (reveal-front-path front box progress
+                          #:world-units-per-pixel [world-units-per-pixel 1/64]
+                          #:max-error-pixels [max-error-pixels 1/2])
   (unless (reveal-front? front)
     (raise-argument-error 'reveal-front-path "reveal-front?" front))
   (unless (layout-box? box)
     (raise-argument-error 'reveal-front-path "layout-box?" box))
   (unless (and (finite-real? progress) (<= 0 progress 1))
     (raise-argument-error 'reveal-front-path "finite real in the closed unit interval" progress))
+  (unless (and (finite-real? world-units-per-pixel)
+               (positive? world-units-per-pixel))
+    (raise-argument-error 'reveal-front-path
+                          "positive finite real as #:world-units-per-pixel"
+                          world-units-per-pixel))
+  (unless (and (finite-real? max-error-pixels)
+               (positive? max-error-pixels))
+    (raise-argument-error 'reveal-front-path
+                          "positive finite real as #:max-error-pixels"
+                          max-error-pixels))
   (cond
     [(linear-reveal-front-value? front)
      (linear-front-path front box progress)]
-    [else (radial-front-path front box progress)]))
+    [else (radial-front-path front box progress world-units-per-pixel
+                             max-error-pixels)]))
 
 (define (linear-front-path front box progress)
   (define expanded (expand-layout-box box (linear-reveal-front-value-padding front)))
@@ -87,7 +103,8 @@
   (polygon-or-empty
    (clip-polygon-at-or-below corners direction threshold)))
 
-(define (radial-front-path front box progress)
+(define (radial-front-path front box progress world-units-per-pixel
+                           max-error-pixels)
   (define expanded (expand-layout-box box (radial-reveal-front-value-padding front)))
   (define center
     (front-reference-point (radial-reveal-front-value-center front) expanded))
@@ -100,15 +117,34 @@
     (+ start-radius (* progress (max 0 (- final-radius start-radius)))))
   (if (zero? radius)
       empty-path-geometry
-      (polygon-path
-       (for/list ([index (in-range 64)])
-         (define angle (* 2 pi (/ index 64)))
+      (let ([segments (radial-segment-count radius world-units-per-pixel
+                                            max-error-pixels)])
+        (polygon-path
+       (for/list ([index (in-range segments)])
+         (define angle (* 2 pi (/ index segments)))
          ;; The polygon circumscribes, rather than inscribes, the mathematical
          ;; disk so an endpoint radius that reaches every box corner cannot
          ;; leave a one-pixel corner unmasked between sample vertices.
-         (define polygon-radius (/ radius (cos (/ pi 64))))
+         (define polygon-radius (/ radius (cos (/ pi segments))))
          (vec2 (+ (vec2-x center) (* polygon-radius (cos angle)))
-               (+ (vec2-y center) (* polygon-radius (sin angle))))))))
+               (+ (vec2-y center) (* polygon-radius (sin angle)))))))))
+
+;; The chord sagitta of an n-gon is r * (1 - cos(pi/n)). Choose the smallest
+;; useful n whose projected error is below the requested pixel budget, then
+;; clamp it so a malformed or gigantic author box cannot create an unbounded
+;; renderer allocation. The enclosing polygon still guarantees endpoint
+;; coverage of every layout-box corner.
+(define (radial-segment-count radius world-units-per-pixel max-error-pixels)
+  (define projected-radius (/ radius world-units-per-pixel))
+  (define raw
+    (if (zero? projected-radius)
+        16
+        (let* ([tolerance
+                (min max-error-pixels (max 1/1024 projected-radius))]
+               [ratio
+                (max -1 (min 1 (- 1 (/ tolerance projected-radius))))])
+          (ceiling (/ pi (acos ratio))))))
+  (min 1024 (max 16 raw)))
 
 ;; Keeps a local rectangular front clipped by the half-plane dot(p,d) <= t.
 ;; This is pure Sutherland--Hodgman clipping, so oblique directions use exactly
@@ -189,8 +225,11 @@
   (vec2 (/ scaled-x magnitude) (/ scaled-y magnitude)))
 
 (define (check-front-reference who value)
-  (unless (or (eq? value 'automatic) (vec2? value))
-    (raise-argument-error who "(or/c 'automatic vec2?)" value))
+  (unless (or (eq? value 'automatic)
+              (and (vec2? value)
+                   (finite-real? (vec2-x value))
+                   (finite-real? (vec2-y value))))
+    (raise-argument-error who "(or/c 'automatic vec2-with-finite-components?)" value))
   value)
 
 (define (check-front-padding who value)

@@ -29,6 +29,10 @@
          "camera.rkt"
          "clipped-visual.rkt"
          "color-style.rkt"
+         "composition-model.rkt"
+         "composition-origin.rkt"
+         "composition-lifecycle.rkt"
+         "composition-conflict.rkt"
          "derived-visual.rkt"
          "effect-random.rkt"
          "formula-part-transition.rkt"
@@ -285,6 +289,7 @@
          with-animation-inspection
          animation-request-inspection
          compiled-animation-inspection
+         animation-inspection-with-provenance
          create
          create-request?
          uncreate
@@ -299,6 +304,9 @@
          animation-request-target-id
          animation-request-component-target-id
          animation-request-components
+         animation-request-effects
+         animation-request-lifecycle-effects
+         animation-request-with-expansion-origin
          compile-animation-requests
          apply-compiled-animations
          finalize-compiled-animation
@@ -719,11 +727,13 @@
 ;;  - destination  affine opacity Visual introduced at clip completion.
 ;;  - route        formula-route?  centre trajectory for the temporary copy.
 
-(struct attention-request (target-id kind padding color stroke-width parameter)
+(struct attention-request (target-id kind padding color stroke-width parameter overlay-id)
   #:transparent)
 
 ;; attention-request is a non-mutating temporary visual emphasis. `kind` is
 ;; either `circumscribe` (draw, pause, erase) or `indicate` (a short pulse).
+;; `overlay-id` is #f until the scheduler assigns a deterministic expansion
+;; origin, unless an author supplied an explicit public #:id.
 (define (circumscribe-request? value)
   (and (attention-request? value)
        (eq? (attention-request-kind value) 'circumscribe)))
@@ -1651,7 +1661,7 @@
                   #:height [height 2]
                   #:gravity [gravity 3]
                   #:palette [palette default-confetti-palette]
-                  #:id [id 'confetti])
+                  #:id [id #f])
   (define origin-value
     (confetti-origin 'confetti origin-or-target))
   (unless (and (exact-integer? count) (positive? count))
@@ -1663,8 +1673,8 @@
     (unless (and (finite-real? value) (not (negative? value)))
       (raise-arguments-error 'confetti "nonnegative finite real?"
                              (symbol->string name) value)))
-  (unless (symbol? id)
-    (raise-argument-error 'confetti "symbol?" id))
+  (unless (or (not id) (symbol? id))
+    (raise-argument-error 'confetti "#f or symbol?" id))
   (define checked-palette (check-confetti-palette palette))
   (confetti-request
    origin-value seed count spread height gravity checked-palette id
@@ -1696,17 +1706,19 @@
 (define (confetti-piece-plan overlay-id count seed spread height palette)
   (for/list ([index (in-range count)])
     (define random-value
-      (lambda (salt) (deterministic-effect-real seed index salt)))
+      (lambda (property)
+        (effect-random-unit-real
+         current-effect-random-plan-version seed 'confetti index property)))
     (confetti-piece
      (string->symbol (format "~a-piece-~a" overlay-id index))
-     (* spread (- (* 2 (random-value 0)) 1))
-     (* height (+ 1/2 (random-value 1)))
-     (* 2 pi (random-value 2))
-     (* 4 pi (- (* 2 (random-value 3)) 1))
+     (* spread (- (* 2 (random-value 'x-position)) 1))
+     (* height (+ 1/2 (random-value 'y-velocity)))
+     (* 2 pi (random-value 'rotation))
+     (* 4 pi (- (* 2 (random-value 'angular-velocity)) 1))
      (list-ref palette
-               (min (sub1 (length palette))
-                    (inexact->exact
-                     (floor (* (length palette) (random-value 4)))))))))
+               (effect-random-bounded-integer
+                current-effect-random-plan-version seed 'confetti index
+                'color-index (length palette))))))
 
 ; typewrite : text-visual? [#:unit text-segmentation-unit?]
 ;             [#:cursor? boolean?] [#:cursor-style (or/c false/c color-spec?)]
@@ -1721,10 +1733,10 @@
                    #:cursor-style [cursor-style #f])
   (unless (text-visual? visual)
     (raise-argument-error 'typewrite "text-visual?" visual))
-  (unless (memq unit '(grapheme word line span))
+  (unless (memq unit '(grapheme run line span))
     (raise-argument-error
      'typewrite
-     "(or/c 'grapheme 'word 'line 'span)"
+     "(or/c 'grapheme 'run 'line 'span)"
      unit))
   (unless (boolean? cursor?)
     (raise-argument-error 'typewrite "boolean? as #:cursor?" cursor?))
@@ -1756,10 +1768,10 @@
      'erase-text
      "(or/c text-visual? symbol? visual-path?)"
      target))
-  (unless (memq unit '(grapheme word line span))
+  (unless (memq unit '(grapheme run line span))
     (raise-argument-error
      'erase-text
-     "(or/c 'grapheme 'word 'line 'span)"
+     "(or/c 'grapheme 'run 'line 'span)"
      unit))
   (unless (boolean? cursor?)
     (raise-argument-error 'erase-text "boolean? as #:cursor?" cursor?))
@@ -1803,7 +1815,7 @@
   (define target-id (visual-target-id target 'underline-sweep))
   (underline-sweep-request
    target-id
-   (or id (default-text-decoration-id 'underline target-id))
+   id
    color
    stroke-width
    retain?))
@@ -1839,7 +1851,7 @@
   (define target-id (visual-target-id target 'strike-through))
   (strike-through-request
    target-id
-   (or id (default-text-decoration-id 'strike-through target-id))
+   id
    color
    stroke-width
    retain?))
@@ -1875,13 +1887,10 @@
   (define target-id (visual-target-id target 'highlight-sweep))
   (highlight-sweep-request
    target-id
-   (or id (default-text-decoration-id 'highlight target-id))
+   id
    color
    padding
    retain?))
-
-(define (default-text-decoration-id kind target-id)
-  (string->symbol (format "__~a-~a" kind target-id)))
 
 ; slide-in : affine/opacity-visual? slide-direction? [#:distance nonnegative-real?]
 ;            -> enter-request?
@@ -2525,6 +2534,7 @@
 ;               [#:padding nonnegative-finite-real?]
 ;               [#:color any/c]
 ;               [#:stroke-width nonnegative-finite-real?]
+;               [#:id (or/c false/c symbol?)]
 ;               -> circumscribe-request?
 ;; Draws a rounded temporary outline around a Visual path, pauses briefly, then
 ;; erases it. Bounds are measured through the normal Pict renderer so TeX, SVG,
@@ -2532,32 +2542,36 @@
 (define (circumscribe target
                       #:padding [padding 1/5]
                       #:color [color "gold"]
-                      #:stroke-width [stroke-width 3])
+                      #:stroke-width [stroke-width 3]
+                      #:id [id #f])
   (make-attention-request
-   'circumscribe target padding color stroke-width 'circumscribe))
+   'circumscribe target padding color stroke-width 'circumscribe #:id id))
 
 ; indicate : (or/c visual? symbol? visual-path? visual-selection?)
 ;            [#:padding nonnegative-finite-real?]
 ;            [#:color any/c]
 ;            [#:stroke-width nonnegative-finite-real?]
+;            [#:id (or/c false/c symbol?)]
 ;            -> indicate-request?
 ;; Pulses a temporary rounded outline around a Visual path without
 ;; changing that Visual's transform, fill, stroke, or opacity.
 (define (indicate target
                   #:padding [padding 1/5]
                   #:color [color "gold"]
-                  #:stroke-width [stroke-width 3])
+                  #:stroke-width [stroke-width 3]
+                  #:id [id #f])
   (make-attention-request
-   'indicate target padding color stroke-width 'indicate))
+   'indicate target padding color stroke-width 'indicate #:id id))
 
 ; flash : (or/c visual? symbol? visual-path?) ... -> flash-request?
 ;; Emits a short radial stroke burst centred on the target's live rendered box.
 (define (flash target
                #:radius [radius 1/2]
                #:color [color "gold"]
-               #:stroke-width [stroke-width 3])
+               #:stroke-width [stroke-width 3]
+               #:id [id #f])
   (make-attention-request
-   'flash target radius color stroke-width 'flash))
+   'flash target radius color stroke-width 'flash #:id id))
 
 ; focus-on : (or/c visual? symbol? visual-path? visual-selection?) ...
 ;             -> focus-on-request?
@@ -2565,9 +2579,10 @@
 (define (focus-on target
                   #:radius [radius 1/2]
                   #:color [color "gold"]
-                  #:stroke-width [stroke-width 3])
+                  #:stroke-width [stroke-width 3]
+                  #:id [id #f])
   (make-attention-request
-   'focus-on target radius color stroke-width 'focus-on))
+   'focus-on target radius color stroke-width 'focus-on #:id id))
 
 ; show-passing-flash : (or/c path-visual? symbol? visual-path?) ...
 ;; Draws only a moving arc-length sliver of the target's path. The target must
@@ -2575,7 +2590,8 @@
 (define (show-passing-flash target
                             #:time-width [time-width 1/5]
                             #:color [color "gold"]
-                            #:stroke-width [stroke-width 4])
+                            #:stroke-width [stroke-width 4]
+                            #:id [id #f])
   (unless (and (finite-real? time-width) (positive? time-width) (<= time-width 1))
     (raise-argument-error
      'show-passing-flash "finite real in (0, 1]" time-width))
@@ -2586,7 +2602,8 @@
   ;; the list shape alone used to misclassify ordinary nested paths as 3D.
   (make-attention-request
    'show-passing-flash target 0 color stroke-width 'show-passing-flash
-   #:parameter time-width))
+   #:parameter time-width
+   #:id id))
 
 ; ripple : (or/c visual? symbol? visual-path? visual-selection?)
 ;          [#:rings positive-exact-integer?]
@@ -2618,18 +2635,14 @@
       (raise-argument-error 'ripple "nonnegative finite real?" value)))
   (unless (or (not id) (symbol? id))
     (raise-argument-error 'ripple "(or/c #f symbol?)" id))
-  (define instance-id
-    (or id (ripple-instance-id checked-target)))
-  (define stagger-map
-    (dynamic-require scene-module 'stagger-map))
-  (stagger-map
-   (make-list rings checked-target)
-   (lambda (ring-target source-index)
+  (define instance-id id)
+  (composition-lagged-start
+   (for/list ([source-index (in-range rings)])
      (define overlay-id
-       (ripple-ring-id instance-id source-index))
+       (and instance-id (ripple-ring-id instance-id source-index)))
      (ripple-ring-request
-      ring-target padding spacing color stroke-width overlay-id overlay-id))
-   #:lag-ratio lag-ratio))
+      checked-target padding spacing color stroke-width overlay-id overlay-id))
+   lag-ratio))
 
 (define (check-ripple-target target)
   (unless (or (visual? target)
@@ -2677,9 +2690,7 @@
                         (rotate-by target angle))
                   (list (rotate-by target (* -2 angle))
                         (rotate-by target (* 2 angle))))))))
-  ;; Scene owns compositions and imports this module, so obtain its public
-  ;; constructor lazily to keep the module graph acyclic.
-  (apply (dynamic-require scene-module 'succession) moves))
+  (composition-succession moves))
 
 ; grow-from-center : (and/c visual? affine-visual? opacity-visual?)
 ;;                    -> grow-from-center-request?
@@ -2703,7 +2714,8 @@
   (draw-border-then-fill-request visual))
 
 (define (make-attention-request kind target padding color stroke-width who
-                                #:parameter [parameter #f])
+                                #:parameter [parameter #f]
+                                #:id [id #f])
   (unless (or (visual? target)
               (symbol? target)
               (visual-path? target)
@@ -2730,6 +2742,8 @@
   (unless (and (finite-real? stroke-width)
                (not (negative? stroke-width)))
     (raise-argument-error who "nonnegative finite real?" stroke-width))
+  (unless (or (not id) (symbol? id))
+    (raise-argument-error who "#f or symbol? as #:id" id))
   (attention-request
    (if (visual-selection? target)
        target
@@ -2738,7 +2752,8 @@
    padding
    color
    stroke-width
-   parameter))
+   parameter
+   id))
 
 (define (check-grow-visual who visual)
   (unless (and (visual? visual)
@@ -5258,7 +5273,10 @@
        "a Visual present at every requested selection path in the scene"
        "target-path" target-path)))
   (define overlay-id
-    (attention-overlay-id target-paths (attention-request-kind request)))
+    (or (attention-request-overlay-id request)
+        ;; This fallback remains for direct internal compilation. Public scene
+        ;; assembly assigns an expansion-origin ID before it reaches here.
+        (attention-overlay-id target-paths (attention-request-kind request))))
   (check-absent-introduction-target state overlay-id (attention-request-kind request))
   (attention-animation
    overlay-id
@@ -5547,7 +5565,6 @@
 ;; cycle through tagged-formula -> animation while still measuring exactly what
 ;; the renderer will draw.
 (define-runtime-path relative-layout-module "relative-layout.rkt")
-(define-runtime-path scene-module "scene.rkt")
 
 (define (relative-layout-procedure name)
   (dynamic-require relative-layout-module name))
@@ -5691,10 +5708,10 @@
            (visual-id
             (transform-matching-visuals-request-destination request)))]
     [(attention-request? request)
-     (define target (attention-request-target-id request))
-     (if (visual-selection? target)
-         (list (car (visual-selection-root target)))
-         (list target))]
+     ;; Attention reads its target and writes only this independently named
+     ;; temporary overlay. Conflict analysis must therefore use the helper
+     ;; identity, not the target path shared by two legal simultaneous reads.
+     (list (attention-request-overlay-id request))]
     [(ripple-ring-request? request)
      (define target (ripple-ring-request-target-id request))
      (if (visual-selection? target)
@@ -5719,10 +5736,16 @@
 ;;   is the ordinary target identity; a 3D light is one component namespace
 ;;   per light inside its owning view.
 (define (animation-request-component-target-id request)
-  (if (light3d-animation-request? request)
-      (list (light3d-animation-request-view-id request)
-            (light3d-animation-request-light-id request))
-      (animation-request-target-id request)))
+  (cond
+    [(light3d-animation-request? request)
+     (list (light3d-animation-request-view-id request)
+           (light3d-animation-request-light-id request))]
+    ;; Attention overlays read the target but write only their own temporary
+    ;; helper. After expansion every default helper ID is unique, so two
+    ;; simultaneous read-only attention effects on one target are safe.
+    [(attention-request? request)
+     (attention-request-overlay-id request)]
+    [else (animation-request-target-id request)]))
 
 ; find-duplicate-key : list? -> any/c
 ;;   Returns the first duplicate key or #f when all keys are distinct.
@@ -5808,6 +5831,89 @@
       (uncreate-request? value)
       (write-in-request? value)
       (unwrite-request? value)))
+
+;; Assign generated helper identities only after the composition scheduler has
+;; supplied a deterministic expansion origin. Explicit public #:id values are
+;; retained unchanged. This avoids target-only defaults colliding when two
+;; otherwise identical effects appear in one parallel clip.
+(define (animation-request-with-expansion-origin request origin)
+  (unless (animation-request? request)
+    (raise-argument-error
+     'animation-request-with-expansion-origin "animation-request?" request))
+  (unless (expansion-origin? origin)
+    (raise-argument-error
+     'animation-request-with-expansion-origin "expansion-origin?" origin))
+  (cond
+    [(ripple-ring-request? request)
+     (if (ripple-ring-request-overlay-id request)
+         request
+         (let ([helper-id
+                (effect-helper-id
+                 'ripple (ripple-ring-request-target-id request) origin
+                 (expansion-origin-local-index origin))])
+           (struct-copy ripple-ring-request request
+                        [overlay-id helper-id]
+                        [component helper-id])))]
+    [(confetti-request? request)
+     (if (confetti-request-overlay-id request)
+         request
+         (let* ([helper-id
+                 (effect-helper-id
+                  'confetti (confetti-request-origin request) origin
+                  (expansion-origin-local-index origin))]
+                [pieces
+                 (confetti-piece-plan
+                  helper-id
+                  (confetti-request-count request)
+                  (confetti-request-seed request)
+                  (confetti-request-spread request)
+                  (confetti-request-height request)
+                  (confetti-request-palette request))])
+           (struct-copy confetti-request request
+                        [overlay-id helper-id]
+                        [pieces pieces])))]
+    [(underline-sweep-request? request)
+     (if (underline-sweep-request-overlay-id request)
+         request
+         (struct-copy
+          underline-sweep-request request
+          [overlay-id
+           (effect-helper-id 'underline
+                             (underline-sweep-request-target-id request)
+                             origin
+                             (expansion-origin-local-index origin))]))]
+    [(strike-through-request? request)
+     (if (strike-through-request-overlay-id request)
+         request
+         (struct-copy
+          strike-through-request request
+          [overlay-id
+           (effect-helper-id 'strike-through
+                             (strike-through-request-target-id request)
+                             origin
+                             (expansion-origin-local-index origin))]))]
+    [(highlight-sweep-request? request)
+     (if (highlight-sweep-request-overlay-id request)
+         request
+         (struct-copy
+          highlight-sweep-request request
+          [overlay-id
+           (effect-helper-id 'highlight
+                             (highlight-sweep-request-target-id request)
+                             origin
+                             (expansion-origin-local-index origin))]))]
+    [(attention-request? request)
+     (if (attention-request-overlay-id request)
+         request
+         (struct-copy
+          attention-request request
+          [overlay-id
+           (effect-helper-id
+            (attention-request-kind request)
+            (attention-request-target-id request)
+            origin
+            (expansion-origin-local-index origin))]))]
+    [else request]))
 
 ; animation-request-default-duration : animation-request? -> (or/c false/c
 ;                                                              positive-real?)
@@ -6235,6 +6341,86 @@
       'animation-request-components
       "animation request"
       request)]))
+
+;; animation-request-effects : animation-request? -> request-effects?
+;; The request layer resolves its own component coordinate once. The pure
+;; composition conflict module then compares these values without importing the
+;; request hierarchy or scene compiler.
+(define (animation-request-effects request)
+  (unless (animation-request? request)
+    (raise-argument-error 'animation-request-effects "animation-request?" request))
+  (request-effects
+   '()
+   (for/list ([component (in-list (animation-request-components request))])
+     (cons (animation-request-component-target-id request) component))
+   '()
+   '()
+   '()))
+
+;; animation-request-lifecycle-effects : animation-request?
+;;                                       -> (listof lifecycle-effect?)
+;; Classifies concrete request families in one immutable vocabulary. Scene
+;; compilation remains the authority that resolves targets against its
+;; local-start state; this summary makes structural preconditions inspectable
+;; and gives repeated-composition diagnostics a uniform explanation.
+(define (animation-request-lifecycle-effects request)
+  (unless (animation-request? request)
+    (raise-argument-error
+     'animation-request-lifecycle-effects "animation-request?" request))
+  (define target (animation-request-target-id request))
+  (define (effect requires result #:temporary? [temporary? #f])
+    (lifecycle-effect target requires result temporary? #t))
+  (define (helper helper-id #:retain? [retain? #f])
+    (lifecycle-effect helper-id
+                      'absent
+                      (if retain? 'present 'absent)
+                      (not retain?)
+                      #t))
+  (cond
+    [(or (fade-in-request? request)
+         (enter-request? request)
+         (reveal-in-request? request)
+         (typewrite-request? request)
+         (grow-request? request)
+         (create-request? request)
+         (write-in-request? request))
+     (list (effect 'absent 'present))]
+    [(or (fade-out-request? request)
+         (reveal-out-request? request)
+         (erase-text-request? request)
+         (uncreate-request? request)
+         (unwrite-request? request))
+     (list (effect 'present 'absent))]
+    [(leave-request? request)
+     (list (effect 'present
+                   (if (leave-request-remove-at-end? request)
+                       'absent
+                       'present)))]
+    [(attention-request? request)
+     (list (effect 'present 'unchanged)
+           (helper (attention-request-overlay-id request)))]
+    [(ripple-ring-request? request)
+     (list (effect 'present 'unchanged)
+           (helper (ripple-ring-request-overlay-id request)))]
+    [(confetti-request? request)
+     ;; A point origin has no Visual precondition. A visual origin is checked
+     ;; during compilation; `either` avoids pretending a vec2 is a scene ID.
+     (list (lifecycle-effect (confetti-request-origin request)
+                             'either 'unchanged #f #t)
+           (helper (confetti-request-overlay-id request)))]
+    [(underline-sweep-request? request)
+     (list (effect 'present 'unchanged)
+           (helper (underline-sweep-request-overlay-id request)
+                   #:retain? (underline-sweep-request-retain? request)))]
+    [(strike-through-request? request)
+     (list (effect 'present 'unchanged)
+           (helper (strike-through-request-overlay-id request)
+                   #:retain? (strike-through-request-retain? request)))]
+    [(highlight-sweep-request? request)
+     (list (effect 'present 'unchanged)
+           (helper (highlight-sweep-request-overlay-id request)
+                   #:retain? (highlight-sweep-request-retain? request)))]
+    [else (list (effect 'present 'present))]))
 
 ;;;
 ;;; Sampling

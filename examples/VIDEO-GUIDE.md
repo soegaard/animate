@@ -30,6 +30,7 @@ examples use the standard Racket runtime.
 | [parallel-animation-groups](../rendered-examples/parallel-animation-groups.mp4) | Several requests sharing one time span. |
 | [lagged-start-animations](../rendered-examples/lagged-start-animations.mp4) | A staggered cascade of starts. |
 | [stagger-map](../rendered-examples/stagger-map.mp4) | A target collection mapped eagerly to staggered requests; source indexing is independent of reverse scheduling. |
+| semantic-mapped-composition | A `children-of` target query resolved at local start, with stable source and scheduled indexes. |
 | [enter-leave-effects](../rendered-examples/enter-leave-effects.mp4) | Exact affine/opacity enter and leave with slide, spin, and shrink presets. |
 | [progressive-reveals](../rendered-examples/progressive-reveals.mp4) | Direct Visuals enter in a source-stable staggered subset reveal. |
 | [clip-reveals](../rendered-examples/clip-reveals.mp4) | Frozen-layout linear wipes and radial iris entry/leave effects. |

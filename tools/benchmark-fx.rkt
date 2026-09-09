@@ -48,7 +48,7 @@
              #:fill "cornflowerblue"
              #:stroke "navy"))
 
-(define (make-stagger-instance mapped?)
+(define (make-stagger-instance topology)
   (define cards
     (for/list ([index (in-range 1000)])
       (benchmark-card (string->symbol (format "stagger-~a" index)) index)))
@@ -58,11 +58,45 @@
              #:scale-factor 3/4 #:opacity-factor 0)))
   (benchmark-fx-instance
    (make-scene #:camera benchmark-camera)
-   (if mapped?
-       (stagger-map cards make-entry #:lag-ratio 1/1000)
-       (apply lagged-start #:lag-ratio 1/1000
-              (for/list ([card (in-list cards)] [index (in-naturals)])
-                (make-entry card index))))
+   (case topology
+     [(eager)
+      (eager-stagger-map cards make-entry #:lag-ratio 1/1000)]
+     [(deferred)
+      (stagger-map
+       (concrete-targets cards)
+       (lambda (reference)
+         (make-entry (target-ref-value reference)
+                     (target-ref-source-index reference)))
+       #:lag-ratio 1/1000)]
+     [(explicit)
+      (apply lagged-start #:lag-ratio 1/1000
+             (for/list ([card (in-list cards)] [index (in-naturals)])
+               (make-entry card index)))]
+     [else
+      (raise-argument-error 'make-stagger-instance
+                            "one of 'eager, 'deferred, or 'explicit"
+                            topology)])
+   1
+   '(0 1/2 1)
+   '(1/2)))
+
+;; Keeps target resolution separate from layout-driven delay planning. The
+;; targets are present at local start because distance plans require frozen
+;; world positions rather than author-time Visual positions.
+(define (make-distance-delay-instance)
+  (define cards
+    (for/list ([index (in-range 200)])
+      (benchmark-card (string->symbol (format "distance-~a" index)) index)))
+  (benchmark-fx-instance
+   (apply scene-add (make-scene #:camera benchmark-camera) cards)
+   (stagger-map
+    (concrete-targets cards)
+    (lambda (reference)
+      (define card (target-ref-value reference))
+      (move-to (target-ref-path reference)
+               (vec2 (+ 1 (vec2-x (visual-position card)))
+                     (vec2-y (visual-position card)))))
+    #:delay (distance-delay origin 1/20))
    1
    '(0 1/2 1)
    '(1/2)))
@@ -108,14 +142,15 @@
    '(1/2)))
 
 (define (make-typewrite-instance)
+  ;; The Pict backend's release-quality fragment benchmark uses the documented
+  ;; conservative single-run subset. A separate shaped backend can add rich
+  ;; and wrapped layout preparation measurements when it advertises that
+  ;; capability rather than benchmarking a deliberate capability failure.
   (define paragraph
-    (rich-text #:id 'paragraph #:width 5 #:font-size 1/2 #:line-spacing 6/5
-               (text-span "Prepared layouts keep " #:color "navy")
-               (text-span "rich text" #:font-weight 'bold #:color "tomato")
-               (text-span " on measured lines while the reveal advances.")))
+    (plain-text "sable zebra text" #:id 'paragraph #:font-size 1/2))
   (benchmark-fx-instance
    (make-scene #:camera benchmark-camera)
-   (typewrite paragraph #:unit 'word)
+   (typewrite paragraph #:unit 'run)
    1
    benchmark-sample-times
    '(1/2 1/2)))
@@ -130,16 +165,19 @@
 
 (define benchmark-fx-workloads
   (list
-   ;; The first two results are deliberately comparable: 1,000 mapped entries
-   ;; and the same explicit lagged-start expansion.
-   (benchmark-fx-workload 'stagger-map-1000
-                           (lambda () (make-stagger-instance #t)))
+   ;; The first three results separate eager factory expansion, semantic
+   ;; local-start target resolution, and the equivalent explicit tree.
+   (benchmark-fx-workload 'eager-stagger-map-1000
+                           (lambda () (make-stagger-instance 'eager)))
+   (benchmark-fx-workload 'deferred-stagger-map-1000
+                           (lambda () (make-stagger-instance 'deferred)))
    (benchmark-fx-workload 'explicit-lagged-start-1000
-                           (lambda () (make-stagger-instance #f)))
+                           (lambda () (make-stagger-instance 'explicit)))
+   (benchmark-fx-workload 'distance-delay-map-200 make-distance-delay-instance)
    (benchmark-fx-workload 'combined-entrances-100 make-entrance-instance)
    (benchmark-fx-workload 'hard-reveals-100 make-reveal-instance)
    (benchmark-fx-workload 'moving-target-ripple make-ripple-instance)
-   (benchmark-fx-workload 'rich-multiline-typewrite make-typewrite-instance)
+   (benchmark-fx-workload 'conservative-typewrite make-typewrite-instance)
    (benchmark-fx-workload 'deterministic-confetti-100 make-confetti-instance)))
 
 (define (measure thunk)

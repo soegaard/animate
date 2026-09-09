@@ -56,12 +56,38 @@
   (check-true (>= (list-ref radial-full-bounds 3) 1))
   (define radial-started (radial-reveal-front #:center origin #:start-radius 1))
   (check-false (path-geometry-empty? (reveal-front-path radial-started box 0)))
+  ;; Adaptive tessellation is a pure quality-context decision. The same
+  ;; projected-size/error inputs reproduce exactly, and large projected radii
+  ;; remain finite rather than allocating an unbounded fixed polygon.
+  (check-equal?
+   (reveal-front-path radial box 1/2
+                      #:world-units-per-pixel 1/1000
+                      #:max-error-pixels 1/4)
+   (reveal-front-path radial box 1/2
+                      #:world-units-per-pixel 1/1000
+                      #:max-error-pixels 1/4))
+  (check-true
+   (path-geometry?
+    (reveal-front-path radial (layout-box -100000 -100000 100000 100000) 1/2
+                       #:world-units-per-pixel 1/1000)))
 
   (check-exn exn:fail:contract?
              (lambda () (linear-reveal-front origin)))
+  (check-exn exn:fail:contract?
+             (lambda () (linear-reveal-front (vec2 +inf.0 0))))
+  (check-exn exn:fail:contract?
+             (lambda () (linear-reveal-front (vec2 +nan.0 0))))
+  (check-exn exn:fail:contract?
+             (lambda () (linear-reveal-front (vec2 1 0) #:origin (vec2 +inf.0 0))))
+  (check-exn exn:fail:contract?
+             (lambda () (radial-reveal-front #:center (vec2 +nan.0 0))))
   (check-exn exn:fail:contract?
              (lambda () (linear-reveal-front (vec2 1 0) #:padding -1)))
   (check-exn exn:fail:contract?
              (lambda () (radial-reveal-front #:start-radius -1)))
   (check-exn exn:fail:contract?
-             (lambda () (reveal-front-path linear-x box 2))))
+             (lambda () (reveal-front-path linear-x box 2)))
+  (check-exn exn:fail:contract?
+             (lambda () (reveal-front-path linear-x box 1 #:world-units-per-pixel +inf.0)))
+  (check-exn exn:fail:contract?
+             (lambda () (reveal-front-path linear-x box 1 #:max-error-pixels 0))))

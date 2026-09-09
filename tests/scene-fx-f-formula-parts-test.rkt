@@ -15,23 +15,30 @@
            (formula-part 'two (latex-formula "2" #:id 'two #:center (vec2 1 0))))
      #:id 'equation))
 
-  ;; Named semantic parts are resolved before mapping. The factory still runs
-  ;; in original source order and receives the ordinary stable visual paths.
+  ;; Named semantic parts resolve at the mapped node's local start. The
+  ;; template receives target-ref metadata rather than a hidden arity-selected
+  ;; target/index pair.
   (define seen '())
   (define revealed
     (reveal-formula-parts
      equation
      '(x equals two)
-     (lambda (target source-index)
-       (set! seen (append seen (list (list target source-index))))
-       (move-to target (vec2 source-index 1)))
+     (lambda (reference)
+       (set! seen
+             (append seen
+                     (list (list (target-ref-path reference)
+                                 (target-ref-source-index reference)
+                                 (target-ref-scheduled-index reference)))))
+       (move-to (target-ref-path reference)
+                (vec2 (target-ref-source-index reference) 1)))
      #:order 'reverse #:lag-ratio 1/5))
-  (check-true (lagged-start-animation-request? revealed))
-  (check-equal?
-   seen
-   '(((equation x) 0) ((equation equals) 1) ((equation two) 2)))
+  (check-false (lagged-start-animation-request? revealed))
+  (check-equal? seen '())
   (define animated
     (scene-play (scene-add (make-scene) equation) revealed #:duration 2))
+  (check-equal?
+   seen
+   '(((equation two) 2 0) ((equation equals) 1 1) ((equation x) 0 2)))
   (check-equal? (visual-position (scene-visual-at animated '(equation x) 2))
                 (vec2 0 1))
   (check-equal? (visual-position (scene-visual-at animated '(equation equals) 2))
@@ -49,11 +56,15 @@
     (reveal-formula-parts
      equation
      (list source-selection)
-     (lambda (target)
-       (set! selected-seen (cons target selected-seen))
-       (indicate target))))
-  (check-true (lagged-start-animation-request? selected))
-  (check-equal? selected-seen (list source-selection))
+     (lambda (reference)
+       (set! selected-seen (cons (target-ref-selection-data reference)
+                                 selected-seen))
+       (indicate (target-ref-path reference)))))
+  (define selected-scene
+    (scene-play (scene-add (make-scene) equation) selected #:duration 1))
+  ;; Every leaf in a source selection is a mapped target, and each retains its
+  ;; originating semantic selection data.
+  (check-equal? selected-seen (list source-selection source-selection))
 
   (check-exn
    exn:fail:contract?

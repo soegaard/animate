@@ -1373,10 +1373,10 @@ component. The outline starts absent, grows by @racket[spacing], fades to
 transparent, and is absent again at the exact local endpoint.
 
 The expansion uses the same source-order and timing semantics as
-@racket[stagger-map]. Its generated helpers have deterministic IDs. Give
-simultaneous ripple effects on the same target different explicit
-@racket[#:id] values; reusing one instance ID is rejected as a normal component
-conflict rather than producing helper collisions.
+@racket[stagger-map]. Its generated helpers have deterministic origin-derived
+IDs, so simultaneous default ripples on one target are distinct. An explicit
+@racket[#:id] remains authoritative; reusing it is rejected as a normal
+component conflict.
 }
 
 @defthing[default-confetti-palette (listof color-spec?)]{
@@ -1392,7 +1392,7 @@ The immutable default palette used by @racket[confetti].
           [#:gravity gravity (and/c finite-real? (>=/c 0)) 3]
           [#:palette palette (or/c (listof color-spec?) (vectorof color-spec?))
                      default-confetti-palette]
-          [#:id id symbol? 'confetti])
+          [#:id id (or/c #f symbol?) #f])
          confetti-request?]{
 
 Creates a deterministic temporary overlay of simple path pieces. The complete
@@ -1404,11 +1404,12 @@ motion does not change an already compiled particle trajectory.
 
 Each piece follows a direct ballistic formula using @racket[spread],
 @racket[height], and @racket[gravity], so arbitrary-time sampling and forward
-playback produce the same frame. Helpers use deterministic child identities
-under @racket[id], appear only at interior samples, and are all removed exactly
-at completion. Reusing an @racket[id] in a simultaneous play is rejected as a
-normal component conflict. Inspection records the resolved origin, seed,
-generated count, and helper IDs.
+playback produce the same frame. With an explicit @racket[id], helpers use
+deterministic child identities under that name; otherwise their identities are
+derived from the composition expansion origin. They appear only at interior
+samples and are all removed exactly at completion. Reusing an explicit
+@racket[id] in a simultaneous play is rejected as a normal component conflict.
+Inspection records the resolved origin, seed, generated count, and helper IDs.
 }
 
 @defproc[(confetti-request? [value any/c]) boolean?]{
@@ -1417,7 +1418,7 @@ Recognizes a request created by @racket[confetti].
 
 @defproc[(typewrite
           [visual text-visual?]
-          [#:unit unit (or/c 'grapheme 'word 'line 'span) 'grapheme]
+          [#:unit unit (or/c 'grapheme 'run 'line 'span) 'grapheme]
           [#:cursor? cursor? boolean? #f]
           [#:cursor-style cursor-style (or/c #f color-spec?) #f])
          typewrite-request?]{
@@ -1429,13 +1430,20 @@ prefixes. Thus a seek is a direct function of the requested clip time and the
 endpoint restores the authored @racket[visual] exactly.
 
 @racket[#:unit] controls whether the front advances by Unicode grapheme,
-whitespace-preserving word, line, or rich-text span intervals. A renderer must
+whitespace-preserving run, line, or rich-text span intervals. @racket['run]
+means maximal whitespace/non-whitespace source runs; it is not Unicode word
+segmentation, and @racket['word] is reserved for a future real word-boundary
+mode. A renderer must
 be able to associate those intervals with stable shaped fragments. The current
-Pict renderer prepares one frozen token layout for plain, rich, and wrapped
-text, then masks that final shaped presentation for interior samples. It
-currently reports a contract error for rotated or non-unit-scaled text instead
-of applying a rectangular mask with incorrect transformed geometry. Exact start
-and final samples remain valid for every @racket[text-visual?].
+Pict renderer prepares one frozen whole layout for every text Visual, but it
+exposes exact fragment masks only for a conservative unwrapped, single-run LTR
+subset. It reports a contract error for interior partial samples of rich or
+wrapped text, transformed text, bidirectional or complex-script text, and
+common ligature/kerning-sensitive sequences. This deliberate refusal prevents
+incorrect prefix re-layout or rectangular masks from being represented as exact
+shaping. Exact start and final samples remain valid for every
+@racket[text-visual?]. A future shaped-layout backend may advertise broader
+fragment-mask capabilities.
 
 With @racket[#:cursor? #t], the renderer adds a clip-local cursor at the
 prepared-layout reveal frontier. @racket[#:cursor-style] selects its colour;
@@ -1450,7 +1458,7 @@ Recognizes a request created by @racket[typewrite].
 
 @defproc[(erase-text
           [target (or/c text-visual? symbol? visual-path?)]
-          [#:unit unit (or/c 'grapheme 'word 'line 'span) 'grapheme]
+          [#:unit unit (or/c 'grapheme 'run 'line 'span) 'grapheme]
           [#:cursor? cursor? boolean? #f]
           [#:cursor-style cursor-style (or/c #f color-spec?) #f])
          erase-text-request?]{
@@ -1483,8 +1491,9 @@ Recognizes a request created by @racket[erase-text].
 Adds an inspectable ordinary path Visual that sweeps from the frozen text
 layout's left edge to its right edge. It is retained at completion by default;
 pass @racket[#:retain? #f] for a temporary helper. With no @racket[#:id], the
-deterministic helper identity is derived from the target; use distinct IDs for
-simultaneous underlines of the same target.
+deterministic helper identity is derived from the target and immutable scheduler
+expansion origin. Thus simultaneous default underlines of one target remain
+distinct; an explicit @racket[#:id] is authoritative and must be unique.
 
 This first underline slice accepts unrotated, unscaled text and snapshots the
 text box at local clip start. Consequently it is intentionally a frozen-layout
@@ -2693,6 +2702,66 @@ Returns @racket[#t] when @racket[value] is a composition created by
 }
 
 @defproc[(stagger-map
+          [targets target-sequence?]
+          [template (or/c request-template? procedure?)]
+          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/4]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward]
+          [#:delay delay (or/c #f delay-plan?) #f])
+         any/c]{
+
+Creates a deferred semantic stagger. @racket[targets] is resolved exactly once
+against the scene state at this mapped composition's local start. Its immutable
+snapshot is then ordered, indexed, instantiated, conflict-checked, and lowered
+through the normal @racket[lagged-start] scheduler. A procedure template receives
+exactly one @racket[target-ref?], not a target/index pair. The reference records
+the stable path, source order index, scheduled order index, and any available
+selection/formula metadata.
+
+@racket[#:order] changes scheduled order only. It never changes a reference's
+source index. An empty resolved sequence is a contract error. Procedure-backed
+templates are supported for in-process authoring but are explicitly
+nonserializable; @racket[request-template?] communicates that distinction.
+
+With no @racket[#:delay], @racket[stagger-map] uses
+@racket[(index-delay lag-ratio)] and lowers through the ordinary
+@racket[lagged-start] timing rule. A custom delay plan is independent of
+@racket[#:order] and lowers to explicit timed children in a parallel envelope.
+Position-driven plans use frozen world positions from the map's local start and
+raise a capability error when a target has no 2D position.
+}
+
+@defproc[(delay-plan? [value any/c]) boolean?]{
+Recognizes an immutable delay policy for a deferred mapped composition.
+}
+
+@defproc[(index-delay [ratio (and/c finite-real? (>=/c 0))]) delay-plan?]{
+Starts each target after @racket[ratio] times its scheduled index. This is the
+default policy corresponding to @racket[#:lag-ratio].
+}
+
+@defproc[(constant-delay [value (and/c finite-real? (>=/c 0))]) delay-plan?]{
+Adds the same explicit lead-in before every mapped child.
+}
+
+@defproc[(distance-delay [point vec2?]
+                         [scale (and/c finite-real? (>=/c 0))]) delay-plan?]{
+Schedules targets by scaled frozen distance from @racket[point], with the
+nearest resolved target at offset zero.
+}
+
+@defproc[(radial-delay [center vec2?]
+                       [scale (and/c finite-real? (>=/c 0))]) delay-plan?]{
+The radial spelling of a frozen-position distance delay.
+}
+
+@defproc[(wave-delay [direction vec2?]
+                     [wavelength positive-real?]
+                     [phase finite-real?]) delay-plan?]{
+Schedules targets by their frozen projection onto a nonzero direction. The
+lowest computed phase is normalized to offset zero.
+}
+
+@defproc[(eager-stagger-map
           [targets (or/c list? vector?)]
           [make-request procedure?]
           [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/4]
@@ -2713,50 +2782,140 @@ changes stagger scheduling but never factory evaluation order or source indexes.
 ordinary composition child; its child-specific capability and conflict rules
 are preserved unchanged.
 
-@racket[stagger-map] adds no scheduler node or timing vocabulary: its
+@racket[eager-stagger-map] adds no scheduler node or timing vocabulary: its
 @racket[#:lag-ratio] is passed directly to @racket[lagged-start]. Therefore it
 has the same intrinsic-span scaling, exact finalization, conflict checking, and
 arbitrary-time sampling behavior as an explicitly written @racket[lagged-start]
 tree. For example:
 
 @racketblock[
-(stagger-map targets
+(eager-stagger-map targets
              (lambda (target source-index)
                (move-to target (vec2 (+ 2 source-index) 0)))
              #:lag-ratio 1/5
              #:order 'reverse)]
 }
 
+@defthing[stagger-requests procedure?]{
+An alias for @racket[eager-stagger-map]. It is provided for code that reads more
+naturally as an eager request-building step.
+}
+
+@defproc[(target-sequence? [value any/c]) boolean?]{
+Recognizes an immutable deferred target query.
+}
+
+@defproc[(concrete-targets [values (or/c list? vector?)]) target-sequence?]{
+Creates an immutable target-sequence snapshot from an author-supplied collection.
+The collection spine is copied at construction; requests are still instantiated
+only when a semantic mapper resolves the sequence.
+}
+
+@defproc[(children-of [parent (or/c visual? symbol? visual-path?)]) target-sequence?]{
+Describes the direct children of a composite Visual at mapped local start.
+}
+
+@defproc[(descendants-of [root (or/c visual? symbol? visual-path?)]
+                         [#:where selector (or/c #f procedure?) #f])
+         target-sequence?]{
+Describes depth-first source-order descendants of a composite Visual. The
+optional selector filters resolved Visual values without changing their source
+order.
+}
+
+@defproc[(selection-targets [selection visual-selection?]) target-sequence?]{
+Describes the stable absolute paths held by a semantic visual selection.
+}
+
+@defproc[(formula-part-targets [formula formula-assembly-visual?]
+                               [selections (or/c list? vector?)])
+         target-sequence?]{
+Describes formula-part selections rooted at @racket[formula]. A selection with
+multiple leaves produces one @racket[target-ref] per leaf; every reference
+retains the originating semantic selection metadata.
+}
+
+@defproc[(target-ref? [value any/c]) boolean?]{Recognizes a resolved mapped target.}
+@defproc[(target-ref-path [reference target-ref?]) (or/c #f visual-path?)]{
+Returns the resolved stable target path when one is available.
+}
+@defproc[(target-ref-source-index [reference target-ref?]) exact-nonnegative-integer?]{
+Returns the query's immutable source-order index.
+}
+@defproc[(target-ref-scheduled-index [reference target-ref?]) exact-nonnegative-integer?]{
+Returns the index assigned after the map's order policy is resolved.
+}
+@defproc[(procedure-request-template [procedure procedure?]
+                                     [#:name name symbol? 'procedure-template])
+         request-template?]{
+Marks an in-process one-argument target-ref procedure as intentionally
+nonserializable. @racket[request-template-serializable?] distinguishes template
+families; an arbitrary closure is never treated as project-serializable.
+}
+@defproc[(named-request-template [name symbol?]) request-template?]{
+Creates a transparent serializable template reference. It contains no closure.
+Project/worker code must supply a trusted registered implementation for its
+name at compilation; ordinary in-process use should use
+@racket[procedure-request-template] instead.
+}
+@defproc[(request-template? [value any/c]) boolean?]{Recognizes a request template.}
+@defproc[(request-template-serializable? [value request-template?]) boolean?]{
+Reports whether the template protocol marks a representation serializable.
+}
+
+@defproc[(parallel-map
+          [targets target-sequence?]
+          [template (or/c request-template? procedure?)]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward])
+         any/c]{
+Creates a deferred semantic map whose resolved children share one local start.
+}
+
+@defproc[(successive-map
+          [targets target-sequence?]
+          [template (or/c request-template? procedure?)]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward])
+         any/c]{
+Creates a deferred semantic map whose resolved children compile in succession;
+each child sees the exact endpoint state of the prior child.
+}
+
 @defproc[(reveal-subsets
           [targets (or/c list? vector?)]
           [make-entry procedure?]
           [#:order order (or/c 'forward 'reverse animation-order?) 'forward]
-          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1]
-          [#:cumulative? cumulative? boolean? #t])
+          [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1])
          lagged-start-animation-request?]{
 
 Eagerly maps a one- or two-argument entry factory over a nonempty list or
 vector, with the same source-order evaluation and original zero-based indexes
-as @racket[stagger-map]. The result is an ordinary @racket[lagged-start]
+as @racket[eager-stagger-map]. The result is an ordinary @racket[lagged-start]
 composition, not a specialized renderer effect.
 
-With @racket[#:cumulative? #t], every produced entry remains after it completes.
-With @racket[#f], each scheduled entry after the first begins a
-@racket[fade-out] of the previously scheduled source target. Thus a transition
-may briefly cross-fade two neighbors, but only the final scheduled target
-remains at the completed endpoint. This mode consequently retains
-@racket[fade-out]'s ordinary opacity-capability and conflict checks. Reverse
-order affects scheduling and which target remains; it never reverses factory
-evaluation.
+Every produced entry remains after completion. One-at-a-time presentation has
+its own explicit @racket[crossfade-subsets] timing model rather than an ambiguous
+boolean option on a lagged composition.
+}
 
-For example, this introduces direct Visuals one at a time in reverse source
-order:
+@defproc[(crossfade-subsets
+          [targets (or/c list? vector?)]
+          [make-entry procedure?]
+          [#:exit-template make-exit procedure? fade-out]
+          [#:entry-duration entry-duration positive-real? 1]
+          [#:hold-duration hold-duration (and/c finite-real? (>=/c 0)) 0]
+          [#:overlap overlap (and/c finite-real? (>=/c 0)) 0]
+          [#:order order (or/c 'forward 'reverse animation-order?) 'forward]
+          [#:remove-final? remove-final? boolean? #f])
+         animation-group-animation-request?]{
 
-@racketblock[
-(reveal-subsets visuals enter
-                #:order 'reverse
-                #:lag-ratio 1
-                #:cumulative? #f)]
+Creates an explicit one-at-a-time handoff. Entry @italic{i} begins, remains for
+@racket[entry-duration], optionally holds for @racket[hold-duration], then its
+exit starts. Entry @italic{i+1} begins @racket[overlap] before that exit ends.
+Thus @racket[#:overlap 0] is an exact non-overlapping handoff, while positive
+overlap is a deliberate crossfade. The final entry remains unless
+@racket[#:remove-final?] is true. @racket[overlap] may not exceed
+@racket[entry-duration].
+
 }
 
 @defproc[(reveal-formula-parts
@@ -2765,14 +2924,15 @@ order:
           [make-request procedure?]
           [#:order order (or/c 'forward 'reverse animation-order?) 'forward]
           [#:lag-ratio lag-ratio (and/c finite-real? (>=/c 0)) 1/5])
-         lagged-start-animation-request?]{
+         any/c]{
 
-Eagerly resolves ordered formula selections and maps @racket[make-request]
-over the resulting stable targets through @racket[stagger-map]. A selection
+Creates a deferred formula target sequence and maps @racket[make-request]
+over its local-start snapshot through @racket[stagger-map]. A selection
 may be a named formula part symbol, a complete visual path beginning with the
 supplied formula identity, or a nonempty root-relative @racket[visual-selection]
-rooted at that formula. The factory receives the concrete semantic target and
-the original source index when it accepts two arguments.
+rooted at that formula. The template receives one @racket[target-ref?]; use
+@racket[target-ref-path] for the resolved target and the other accessors for
+source/scheduled indexes and formula-selection metadata.
 
 This helper deliberately chooses no effect by name. For example, an author can
 make an ordinary semantic formula-part cascade with:
@@ -2780,13 +2940,12 @@ make an ordinary semantic formula-part cascade with:
 @racketblock[
 (reveal-formula-parts equation
                       '(x equals two)
-                      (lambda (part index)
-                        (indicate part #:color "gold"))
+                      (lambda (reference)
+                        (indicate (target-ref-path reference) #:color "gold"))
                       #:lag-ratio 1/5)]
 
 All normal target validation, timing, conflict checking, and random-access
-sampling rules are inherited from the concrete requests returned by the
-factory.
+sampling rules are inherited from the concrete requests returned by the template.
 }
 
 @defproc[(animation-order? [value any/c]) boolean?]{

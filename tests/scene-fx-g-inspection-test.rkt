@@ -38,13 +38,18 @@
     (inspector-row-value
      (second (inspector-section-rows effects-section))))
   (check-equal? (hash-ref underline-data 'layout) 'frozen-at-clip-start)
+  ;; Scheduled effects retain the same deterministic expansion provenance that
+  ;; supplies their default helper identity.  The inspector can therefore link
+  ;; a visual helper back to its composition leaf without an allocation-order
+  ;; counter or renderer state.
+  (check-true (hash-has-key? underline-data 'expansion-origin))
 
   ;; Prepared text identity appears in the same generic Effects section. It
   ;; is source data, not an adapter cache object, and remains available when a
   ;; completed clip is inspected.
   (define typed
     (scene-play (make-scene)
-                (typewrite caption #:unit 'word
+                (typewrite caption #:unit 'run
                            #:cursor? #t #:cursor-style "tomato")
                 #:duration 1))
   (define typed-document (scene-inspector-document typed 1/2))
@@ -55,7 +60,8 @@
   (define typewrite-data
     (inspector-row-value (car (inspector-section-rows typed-effects))))
   (check-true (vector? (hash-ref typewrite-data 'prepared-layout-key)))
-  (check-equal? (hash-ref typewrite-data 'unit) 'word)
+  (check-equal? (hash-ref typewrite-data 'unit) 'run)
   (check-true (hash-ref typewrite-data 'cursor?))
   (check-equal? (hash-ref typewrite-data 'cursor-style) "tomato")
-  (check-equal? (hash-ref typewrite-data 'cursor-lifecycle) 'open-clip-only))
+  (check-equal? (hash-ref typewrite-data 'cursor-lifecycle) 'open-clip-only)
+  (check-true (hash-has-key? typewrite-data 'expansion-origin)))

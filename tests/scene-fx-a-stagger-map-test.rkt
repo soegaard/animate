@@ -19,7 +19,7 @@
 
   (define source-indexes (box '()))
   (define mapped
-    (stagger-map
+    (eager-stagger-map
      targets
      (lambda (target source-index)
        (set-box! source-indexes
@@ -42,7 +42,7 @@
   ;; factory remains valid, while a factory accepting both arities receives the
   ;; more informative target/source-index call.
   (check-equal?
-   (stagger-map
+   (eager-stagger-map
     (vector top middle)
     (lambda (target) (move-to target (vec2 3 (vec2-y (visual-position target)))))
     #:lag-ratio 1/3)
@@ -55,17 +55,17 @@
   ;; need a special Visual-only request representation.
   (check-true
    (lagged-start-animation-request?
-    (stagger-map '(alpha beta)
+    (eager-stagger-map '(alpha beta)
                  (lambda (target source-index)
                    (value-to target (+ source-index 1))))))
   (check-true
    (lagged-start-animation-request?
-    (stagger-map '(first-camera second-camera)
+    (eager-stagger-map '(first-camera second-camera)
                  (lambda (_target source-index)
                    (camera-pan-to (vec2 source-index 0))))))
   (check-true
    (lagged-start-animation-request?
-    (stagger-map (list '(world cube) 'world)
+    (eager-stagger-map (list '(world cube) 'world)
                  (lambda (target source-index)
                    (if (zero? source-index)
                        (move3d-to target (vec3 1 0 0))
@@ -77,7 +77,7 @@
   (define mutable-targets (vector top middle))
   (define copied-spine-ids (box '()))
   (define copied-spine-request
-    (stagger-map
+    (eager-stagger-map
      mutable-targets
      (lambda (target source-index)
        (set-box! copied-spine-ids
@@ -89,7 +89,7 @@
   (check-equal? (unbox copied-spine-ids) '(top middle))
   (define selected-arity (box '()))
   (define arity-selected-request
-    (stagger-map
+    (eager-stagger-map
      (list top)
      (case-lambda
        [(target)
@@ -105,7 +105,7 @@
   ;; order, and the returned value is the ordinary reversed lagged tree.
   (define reverse-calls (box '()))
   (define reverse-mapped
-    (stagger-map
+    (eager-stagger-map
      targets
      (lambda (target source-index)
        (set-box! reverse-calls
@@ -166,7 +166,7 @@
    (lambda ()
      (scene-play
       (scene-add (make-scene) top middle bottom)
-      (stagger-map
+      (eager-stagger-map
        targets
        (lambda (_target _source-index) (move-to top (vec2 4 2)))
        #:lag-ratio 0)
@@ -175,20 +175,20 @@
   ;; All invalid forms fail during eager construction and include the source
   ;; index for factory-local failures.
   (check-exn exn:fail:contract?
-             (lambda () (stagger-map '() (lambda (target) target))))
+             (lambda () (eager-stagger-map '() (lambda (target) target))))
   (check-exn exn:fail:contract?
-             (lambda () (stagger-map #() (lambda (target) target))))
+             (lambda () (eager-stagger-map #() (lambda (target) target))))
   (check-exn exn:fail:contract?
-             (lambda () (stagger-map 'not-a-collection (lambda (target) target))))
+             (lambda () (eager-stagger-map 'not-a-collection (lambda (target) target))))
   (check-exn exn:fail:contract?
-             (lambda () (stagger-map targets 42)))
+             (lambda () (eager-stagger-map targets 42)))
   (check-exn exn:fail:contract?
-             (lambda () (stagger-map targets (lambda () mapped))))
+             (lambda () (eager-stagger-map targets (lambda () mapped))))
   (check-exn exn:fail:contract?
-             (lambda () (stagger-map targets (lambda (target) 42))))
+             (lambda () (eager-stagger-map targets (lambda (target) 42))))
   (check-exn #rx"source-index: 1"
              (lambda ()
-               (stagger-map
+               (eager-stagger-map
                 targets
                 (lambda (target source-index)
                   (if (= source-index 1)
@@ -198,7 +198,7 @@
   (check-exn
    exn:fail:contract?
    (lambda ()
-     (stagger-map
+     (eager-stagger-map
       targets
       (lambda (target)
         (set-box! invalid-order-called? #t)

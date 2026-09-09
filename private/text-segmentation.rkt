@@ -35,7 +35,7 @@
 (struct text-segmentation (source-key unit segments diagnostics)
   #:transparent)
 
-;; segment-text-visual : text-visual? (or/c 'grapheme 'word 'line 'span)
+;; segment-text-visual : text-visual? (or/c 'grapheme 'run 'line 'span)
 ;;                       -> text-segmentation?
 ;; Source positions are Racket string indexes. Grapheme iteration delegates to
 ;; Racket's Unicode grapheme-boundary implementation rather than splitting code
@@ -43,16 +43,16 @@
 (define (segment-text-visual visual #:unit [unit 'grapheme])
   (unless (text-visual? visual)
     (raise-argument-error 'segment-text-visual "text-visual?" visual))
-  (unless (memq unit '(grapheme word line span))
+  (unless (memq unit '(grapheme run line span))
     (raise-argument-error 'segment-text-visual
-                          "(or/c 'grapheme 'word 'line 'span)"
+                          "(or/c 'grapheme 'run 'line 'span)"
                           unit))
   (define content (text-visual-content visual))
   (define span-ranges (text-span-ranges visual))
   (define raw-ranges
     (case unit
       [(grapheme) (grapheme-ranges content)]
-      [(word) (word-ranges content)]
+      [(run) (run-ranges content)]
       [(line) (line-ranges content)]
       [(span) span-ranges]))
   (define segments
@@ -76,11 +76,11 @@
         (let ([span (string-grapheme-span content start)])
           (loop (+ start span) (cons (cons start (+ start span)) ranges))))))
 
-;; A word policy retains every source character. Whitespace runs are explicit
-;; segments, so a typewriter can reveal spaces/newlines without silently
-;; changing the final text content. Punctuation remains with its non-whitespace
-;; run; a later text API may add a punctuation-specific author option.
-(define (word-ranges content)
+;; This is deliberately *run* segmentation, not Unicode word segmentation.
+;; Whitespace runs stay explicit so a typewriter can reveal spaces/newlines
+;; without changing its source. Punctuation remains in the non-whitespace run;
+;; a future genuine word-boundary mode can choose a documented whitespace rule.
+(define (run-ranges content)
   (runs-by content (lambda (character) (char-whitespace? character))))
 
 ;; Newline belongs to its preceding line segment when possible. This preserves
@@ -137,9 +137,9 @@
 
 (define (range-kind unit content start end)
   (case unit
-    [(word)
+    [(run)
      (if (and (< start end)
               (char-whitespace? (string-ref content start)))
          'whitespace
-         'word)]
+         'run)]
     [else unit]))

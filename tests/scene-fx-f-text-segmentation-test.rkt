@@ -22,12 +22,12 @@
   (check-equal? (map text-segment-index (text-segmentation-segments graphemes))
                 '(0 1 2 3))
 
-  ;; Word mode retains whitespace runs as explicit source segments, including
+  ;; Run mode retains whitespace runs as explicit source segments, including
   ;; multiple spaces, rather than discarding them between visible words.
-  (define words (segment-text-visual unicode #:unit 'word))
+  (define words (segment-text-visual unicode #:unit 'run))
   (check-equal? (contents words) '("á👩🏽‍💻" " " "Z"))
   (check-equal? (map text-segment-kind (text-segmentation-segments words))
-                '(word whitespace word))
+                '(run whitespace run))
 
   ;; Line intervals include their explicit newlines, so empty lines and the
   ;; source reconstruction remain deterministic without renderer metrics.

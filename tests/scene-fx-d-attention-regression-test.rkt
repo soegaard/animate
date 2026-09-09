@@ -41,4 +41,22 @@
   (check-equal? (scene-sample wiggled 0) exact-initial)
   (check-not-equal? (scene-visual-at wiggled 'marker 1/8) marker)
   (check-equal? (scene-sample wiggled 1) exact-initial)
-  (check-equal? (scene-current-state wiggled) exact-initial))
+  (check-equal? (scene-current-state wiggled) exact-initial)
+
+  ;; Default attention helpers now derive from a scheduler origin rather than
+  ;; the shared target alone. Two effects can therefore read one target in the
+  ;; same interval, whereas matching explicit IDs deliberately remain a
+  ;; structural conflict.
+  (define simultaneous
+    (scene-play initial
+                (animation-group (indicate 'marker)
+                                 (circumscribe 'marker))
+                #:duration 1))
+  (check-equal? (scene-state-count (scene-sample simultaneous 1/2)) 4)
+  (check-exn
+   exn:fail:contract?
+   (lambda ()
+     (scene-play initial
+                 (animation-group (indicate 'marker #:id 'attention-helper)
+                                  (circumscribe 'marker #:id 'attention-helper))
+                 #:duration 1))))

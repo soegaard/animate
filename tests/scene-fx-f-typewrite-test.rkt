@@ -17,11 +17,11 @@
   pixels)
 
 (module+ test
-  ;; `office` is deliberately ligature-sensitive in many fonts.  The partial
-  ;; frames are rendered as clips of the final shaped run, not as independently
-  ;; laid-out prefix strings.
+  ;; A conservative ordinary run exposes exact Pict fragment masks. Partial
+  ;; frames are clips of the final shaped run, not independently laid-out
+  ;; prefix strings.
   (define caption
-    (plain-text "office" #:id 'caption #:font-size 1/2))
+    (plain-text "sable" #:id 'caption #:font-size 1/2))
   (define request
     (typewrite caption))
   (check-true (typewrite-request? request))
@@ -53,9 +53,9 @@
    'typewrite)
 
   ;; Source segmentation is independent from the visible grapheme front, so a
-  ;; word request still reveals all preceding whitespace deterministically.
+  ;; run request still reveals all preceding whitespace deterministically.
   (define word-request
-    (typewrite (plain-text "one two" #:id 'words) #:unit 'word))
+    (typewrite (plain-text "one two" #:id 'words) #:unit 'run))
   (define word-scene
     (scene-play (make-scene) word-request #:duration 1))
   (check-equal?
@@ -64,9 +64,9 @@
    1)
   (check-not-false (scene-frame->bitmap word-scene 1 #:fps 2))
 
-  ;; Rich and reflowing sources use prepared cluster rectangles over their one
-  ;; final layout. Their interior frames therefore render without replacing the
-  ;; source with transient prefixes.
+  ;; The Pict adapter refuses rich and reflowing sources until it has a shaped
+  ;; layout backend that exposes their final-layout fragment geometry. Exact
+  ;; endpoints remain semantic source Visuals and still render normally.
   (define rich-caption
     (rich-text #:id 'rich
                (text-span "warm " #:color "tomato")
@@ -76,22 +76,29 @@
      (make-scene)
      (typewrite rich-caption)
      #:duration 2))
-  (check-not-false (scene-frame->bitmap rich-scene 0 #:fps 2))
   (check-equal? (scene-visual-at rich-scene 'rich 2) rich-caption)
-  (define rich-start (scene-frame->bitmap rich-scene 0 #:fps 2))
-  (define rich-middle (scene-frame->bitmap rich-scene 1 #:fps 2))
-  (define rich-end (scene-frame->bitmap rich-scene 3 #:fps 2))
-  (check-not-equal? (bitmap-bytes rich-start) (bitmap-bytes rich-middle))
-  (check-not-equal? (bitmap-bytes rich-middle) (bitmap-bytes rich-end))
+  (check-not-false (scene-frame->bitmap rich-scene 0 #:fps 2))
+  (check-exn exn:fail:contract?
+             (lambda () (scene-frame->bitmap rich-scene 1 #:fps 2)))
 
   (define multiline-caption
-    (paragraph "first line\nsecond line wraps here"
+    (paragraph "sable line\nsecond line wraps here"
                #:id 'multiline #:font-size 1/2 #:width 9/5))
   (define multiline-scene
     (scene-play (make-scene) (typewrite multiline-caption) #:duration 2))
-  (define multiline-middle (scene-frame->bitmap multiline-scene 1 #:fps 2))
-  (define multiline-end (scene-frame->bitmap multiline-scene 3 #:fps 2))
-  (check-not-equal? (bitmap-bytes multiline-middle) (bitmap-bytes multiline-end))
+  (check-not-false (scene-frame->bitmap multiline-scene 0 #:fps 2))
+  (check-exn exn:fail:contract?
+             (lambda () (scene-frame->bitmap multiline-scene 1 #:fps 2)))
+
+  ;; Ligature-sensitive text is similarly rejected at an interior frontier;
+  ;; it must not be approximated with separately measured prefixes.
+  (define ligature-scene
+    (scene-play (make-scene)
+                (typewrite (plain-text "office" #:id 'ligature))
+                #:duration 1))
+  (check-not-false (scene-frame->bitmap ligature-scene 0 #:fps 2))
+  (check-exn exn:fail:contract?
+             (lambda () (scene-frame->bitmap ligature-scene 1 #:fps 2)))
 
   ;; An optional cursor is renderer-local presentation during the open clip.
   ;; It changes the clipped frame but does not survive the exact authored

@@ -2163,12 +2163,15 @@ example remains available as
 `examples/successive-animations.rkt`, and the SCENE-AN local-timing example as
 `examples/local-animation-timing.rkt`.
 
-The animation-composition roadmap begins with `stagger-map`: it eagerly maps a
-one- or two-argument request factory over a nonempty list or vector, then uses
-the established `lagged-start` timing. The factory always receives targets in
-source order; `#:order 'reverse` changes only scheduling order, while a
-two-argument factory receives the original zero-based source index. Run
-`examples/stagger-map.rkt` for a small reverse-scheduled example.
+Semantic `stagger-map` takes a `target-sequence?` such as `children-of`, then
+resolves it once at the mapped node's local start. Its one-argument template
+receives a `target-ref` carrying path, source index, scheduled index, and
+selection metadata. Use `eager-stagger-map` or `stagger-requests` for the
+earlier list/vector factory convenience; those names make eager collection
+capture explicit. `#:order` chooses scheduled order independently of `#:delay`:
+`index-delay` is the familiar lagged policy, `constant-delay` creates a lead-in,
+and distance/radial/wave plans use frozen local-start 2D positions. Run
+`examples/stagger-map.rkt` for a small reverse-scheduled eager example.
 
 `enter` and `leave` provide one exact lifecycle effect for combined local
 translation, scale, rotation, and opacity factors. `enter` leaves the authored
@@ -2178,10 +2181,10 @@ or retains the relative endpoint with `#:remove? #f`. `slide-in`, `slide-out`,
 See `examples/enter-leave-effects.rkt` for both endpoint directions in one
 short animation.
 
-`reveal-subsets` is the child-level progressive-reveal counterpart: it eagerly
-maps an entry constructor over a list or vector with `stagger-map` source-order
-rules. Cumulative mode retains earlier children; noncumulative mode fades the
-previous scheduled child as the next one begins.
+`reveal-subsets` is the cumulative child-level progressive reveal: it eagerly
+maps an entry constructor over a list or vector with `eager-stagger-map`
+source-order rules and retains earlier children. `crossfade-subsets` provides
+one-at-a-time presentation with explicit entry, hold, exit, and overlap timing.
 
 For a geometric wipe or iris, use a pure `linear-reveal-front` or
 `radial-reveal-front` with `reveal-in` or `reveal-out`. The target's local Pict
@@ -2199,8 +2202,10 @@ components it actually changes, so a scale-only pulse can accompany movement.
 `ripple` eagerly lowers to staggered temporary outline rings. Every ring reads
 the target's renderer-measured bounds at its current sample time, so a ripple
 can follow a moving target without rewriting it; the deterministic helpers are
-absent at both endpoints. Use a distinct `#:id` when two ripples share one
-target. See `examples/ripple-effects.rkt` for a moving-target demonstration.
+absent at both endpoints. Simultaneous default ripples on one target receive
+distinct origin-derived helper IDs; use the same explicit `#:id` only when you
+intend a normal helper conflict. See `examples/ripple-effects.rkt` for a
+moving-target demonstration.
 
 `apply-wave` is a target-local sinusoidal deformation for ordinary affine
 Visuals with exposed geometry. It samples each frame directly from the
@@ -2213,13 +2218,13 @@ is sampled directly from the immutable plan, so a seek produces the same frame
 as forward playback; all helpers are removed at completion. See
 `examples/deterministic-confetti.rkt`.
 
-`typewrite` introduces a `text-visual?` through semantic grapheme, word, line,
-or span fronts while retaining one frozen final text layout. Partial Pict
-samples clip the final shaped run instead of re-laying out prefixes, so glyphs
-do not shift during playback. The current Pict backend supports rich spans,
-explicit lines, and its measured word wrapping by masking that same final token
-layout. Rotated or non-unit-scaled text is reported as an explicit unsupported
-interior-layout capability rather than approximating it.
+`typewrite` introduces a `text-visual?` through semantic grapheme, run, line,
+or span fronts while retaining one frozen final text layout. The current Pict
+backend advertises exact partial clipping only for a conservative unwrapped
+single-run LTR subset; it rejects interior rich, wrapped, transformed,
+bidirectional, complex-script, and common ligature/kerning-sensitive cases
+instead of approximating them with prefixes. Exact start and endpoint samples
+remain available for all text.
 `#:cursor? #t` adds a renderer-local cursor at the prepared reveal frontier;
 `#:cursor-style` can override the source text colour. The cursor is only an
 open-clip presentation overlay and is absent from the exact restored endpoint.
@@ -2243,11 +2248,11 @@ rules.
 rectangle immediately behind the text in drawing order. It cleans up by
 default, or remains as a background highlight with `#:retain? #t`.
 
-`reveal-formula-parts` maps an explicit request factory over stable named or
-source-selected formula parts, then lowers the result through `stagger-map`.
-It does not impose a symbolic effect vocabulary, so the factory determines
-whether parts are indicated, moved, written, or handled by another concrete
-animation request.
+`reveal-formula-parts` constructs a local-start semantic target sequence for
+stable named or source-selected formula parts, then lowers the result through
+`stagger-map`. Its template receives a `target-ref`, so it can choose whether
+parts are indicated, moved, written, or handled by another concrete request
+without losing formula-root/source metadata.
 
 Mapped effects may use transparent `forward-order`, `reverse-order`,
 `permutation-order`, or seed-explicit `shuffled-order` policies. For temporal

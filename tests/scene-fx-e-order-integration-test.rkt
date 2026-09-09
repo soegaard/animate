@@ -17,7 +17,7 @@
   ;; permutation decides their later schedule.
   (define calls (box '()))
   (define planned
-    (stagger-map
+    (eager-stagger-map
      targets
      (lambda (target source-index)
        (set-box! calls (append (unbox calls) (list (list (visual-id target) source-index))))
@@ -32,19 +32,19 @@
   (check-equal? (visual-position (scene-visual-at scene 'first 2)) (vec2 10 0))
   (check-equal? (visual-position (scene-visual-at scene 'second 3)) (vec2 11 0))
 
-  ;; One-at-a-time subset progressions share precisely the same immutable plan;
-  ;; final retention follows scheduled order, not the original collection order.
+  ;; Explicit crossfades use the same immutable order plan; final retention
+  ;; follows scheduled order, not the original collection order.
   (define revealed
     (scene-play
      (make-scene)
-     (reveal-subsets targets enter
-                     #:order (permutation-order #(1 2 0))
-                     #:lag-ratio 1 #:cumulative? #f)
-     #:duration 3))
-  (check-equal? (scene-visual-at revealed 'first 3) first)
-  (check-false (scene-state-has? (scene-sample revealed 3) 'second))
-  (check-false (scene-state-has? (scene-sample revealed 3) 'third))
+     (crossfade-subsets targets enter
+                         #:order (permutation-order #(1 2 0))
+                         #:overlap 0)
+     #:duration 5))
+  (check-equal? (scene-visual-at revealed 'first 5) first)
+  (check-false (scene-state-has? (scene-sample revealed 5) 'second))
+  (check-false (scene-state-has? (scene-sample revealed 5) 'third))
 
   (check-exn exn:fail:contract?
              (lambda ()
-               (stagger-map targets move-to #:order (permutation-order #(0 1))))))
+               (eager-stagger-map targets move-to #:order (permutation-order #(0 1))))))

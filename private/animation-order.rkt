@@ -7,7 +7,8 @@
 ;; Order values contain only transparent immutable data. In particular,
 ;; shuffled orders never retain a random generator or depend on global state.
 
-(require racket/list)
+(require racket/list
+         "effect-random.rkt")
 
 (provide animation-order?
          forward-order
@@ -98,25 +99,18 @@
     [else
      (deterministic-shuffle count (shuffled-order-value-seed order))]))
 
-;; A small local LCG is sufficient for an ordering policy. It is specified here
-;; rather than using Racket's random APIs, whose state and sequence are outside
-;; the public deterministic contract.
-(define lcg-modulus 2147483648)
-(define lcg-multiplier 1103515245)
-(define lcg-increment 12345)
-
 (define (deterministic-shuffle count seed)
   (define mutable (list->vector (range count)))
-  (let loop ([index (sub1 count)] [state (modulo seed lcg-modulus)])
+  (let loop ([index (sub1 count)])
     (if (positive? index)
-        (let* ([next-state
-                (modulo (+ (* lcg-multiplier state) lcg-increment)
-                        lcg-modulus)]
-               [swap-index (modulo next-state (add1 index))]
+        (let* ([swap-index
+                (effect-random-bounded-integer
+                 current-effect-random-plan-version seed 'animation-order
+                 index 'shuffle-swap (add1 index))]
                [saved (vector-ref mutable index)])
           (vector-set! mutable index (vector-ref mutable swap-index))
           (vector-set! mutable swap-index saved)
-          (loop (sub1 index) next-state))
+          (loop (sub1 index)))
         (vector->immutable-vector mutable))))
 
 (define (find-duplicate values)
