@@ -23,13 +23,14 @@ paths, or animation requests.
 (define brand-blue (rgb-color 34 84 190)) ; deliberately literal
 
 (define card
-  (rectangle #:id 'card #:width 4 #:height 2
+  (rectangle #:id 'card #:width 6 #:height 2
              #:fill theme-surface #:stroke theme-surface-edge))
 (define caption
   (plain-text "Theme-aware card" #:id 'caption
-              #:color theme-foreground))
+              #:center (vec2 1/3 0) #:color theme-foreground))
 (define logo-mark
-  (circle #:id 'logo #:radius 1/5 #:fill brand-blue #:stroke brand-blue))
+  (circle #:id 'logo #:center (vec2 -5/2 0) #:radius 1/5
+          #:fill brand-blue #:stroke brand-blue))
 
 (define scene
   (scene-wait (scene-add (make-scene) card caption logo-mark) 1))
@@ -43,6 +44,15 @@ The two foreground results can differ; the final literal @racket[brand-blue]
 does not. Use a role when the job should adapt, use a palette token when a
 reviewed hue matters, and use a literal only when changing it would be wrong.
 
+The same Scene, rendered as two frames:
+
+@centered[
+ @tabular[
+  #:sep @hspace[1]
+  (list (list @image["scribblings/guide/figures/colors-and-themes-light.svg"]
+              @image["scribblings/guide/figures/colors-and-themes-dark.svg"])
+        (list "light theme" "dark theme"))]]
+
 @section{Categories and scales}
 
 For categorical data, choose a stable data order and use
@@ -55,6 +65,17 @@ For scalar data, use @racket[sequential-color-scale] or
 missing-data color, interpolation space, and out-of-range policy are all
 authored values. A theme may change the swatches, but it does not reverse the
 meaning of low and high values.
+
+The palette-sheet example keeps the role names and series order while the
+selected theme changes the rendered colors. Its complete source is
+@filepath{examples/colors/palette-sheet.rkt}.
+
+@centered[
+ @tabular[
+  #:sep @hspace[1]
+  (list (list @image["scribblings/guide/figures/colors-palette-sheet-light.svg"]
+              @image["scribblings/guide/figures/colors-palette-sheet-dark.svg"])
+        (list "light theme" "dark theme"))]]
 
 @section{Inspecting a result}
 

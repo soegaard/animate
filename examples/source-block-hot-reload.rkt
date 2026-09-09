@@ -14,16 +14,11 @@
   (circle #:id 'dot #:center (vec2 -3 0) #:radius 1/2
           #:fill "tomato" #:stroke "firebrick"))
 
-(define label
-  (plain-text "Edit a named scene block and save"
-              #:id 'label #:center (vec2 0 2)
-              #:font-size 1/3 #:font-family 'swiss #:color "navy"))
-
 (define-scene-program hot-reload-demo
   #:initial (make-scene)
 
   (scene-block setup (scene)
-    (scene-wait (scene-add scene dot label) 1))
+    (scene-wait (scene-add scene dot) 1))
 
   (scene-block move-dot (scene)
     (scene-play scene (move-to 'dot (vec2 3 0)) #:duration 2))
