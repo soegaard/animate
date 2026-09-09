@@ -1,6 +1,6 @@
 #lang scribble/manual
 
-@(require (for-label (except-in racket/base angle)
+@(require (for-label racket/base
                      racket/math
                      animate/3d
                      animate/3d/opengl))

@@ -716,7 +716,7 @@
  arc
  dashed-path
  dashed-line
- angle
+ angle-marker
  angle-between
  right-angle
  right-angle-between

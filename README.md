@@ -508,7 +508,7 @@ and midpoint Riemann rectangles. They are ordinary immutable values, so a
 `derived-visual` can rebuild one from an animated parameter without an updater.
 
 SCENE-CO adds mathematical annotation geometry: cubic arcs, dashed paths,
-angle and right-angle marks, braces with labels, and a renderer-aware
+angle-marker and right-angle marks, braces with labels, and a renderer-aware
 `surrounding-rectangle`. They are ordinary semantic paths/groups where possible,
 so they compose with the existing style and path-animation machinery.
 
@@ -3711,11 +3711,11 @@ lose the follow-on idea that led to the work.
   semantic relations support `create`/`uncreate` and ordinary outer movement,
   fade, and style animation. Layout-phase endpoint relations remain top-level
   in this release and use complete rendered boxes rather than tight ink bounds.
-- SCENE-ED extends angle, right-angle, brace, brace-label, and curved-arrow
+- SCENE-ED extends angle-marker, right-angle, brace, brace-label, and curved-arrow
   annotations with the same semantic/layout relation protocol. It deliberately
   does not infer that rays are perpendicular or tangent, route a curved arrow
   around an obstacle, prevent a dynamic label collision, or nest a layout
-  relation inside an arbitrary group. The ordinary static `angle`,
+  relation inside an arbitrary group. The ordinary static `angle-marker`,
   `right-angle`, and `curved-arrow` constructors remain the direct way to draw
   a fixed mark.
 - SCENE-DX matches ordinary affine/opacity leaves below a replaced top-level
@@ -4960,7 +4960,7 @@ numeric construction.
 Version `0.89.0` adds common explanatory marks as ordinary semantic paths:
 
 ```racket
-(angle A C B #:id 'angle-mark #:radius 1/2)
+(angle-marker A C B #:id 'angle-mark #:radius 1/2)
 (right-angle B A C #:id 'right-mark #:size 2/5)
 (brace-label A B "base" #:id 'base-brace #:offset -1/2)
 (surrounding-rectangle '(annotations angle-mark) #:id 'outline)
@@ -4969,7 +4969,7 @@ Version `0.89.0` adds common explanatory marks as ordinary semantic paths:
 `arc` uses cubic Bézier segments with exact cardinal endpoints; `dashed-path`
 selects arc-length pieces without flattening curves. `brace` is an open stroked
 curve with a narrow unfilled centre cusp, matching Manim's visual convention.
-`angle`, `right-angle`, `brace-between`, and `brace-label` are ordinary
+`angle-marker`, `right-angle`, `brace-between`, and `brace-label` are ordinary
 path/group Visuals.
 `surrounding-rectangle` alone needs renderer measurement, so it tracks a
 top-level or nested target's current rendered bounding box with world-space

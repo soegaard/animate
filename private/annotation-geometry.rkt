@@ -26,7 +26,7 @@
 (provide arc
          dashed-path
          dashed-line
-         angle
+         angle-marker
          angle-between
          right-angle
          right-angle-between
@@ -132,7 +132,7 @@
 ;;; Angle Marks
 ;;;
 
-; angle : vec2? vec2? vec2?
+; angle-marker : vec2? vec2? vec2?
 ;         #:id symbol?
 ;         [#:radius positive-finite-real?]
 ;         [#:reflex? boolean?]
@@ -140,29 +140,29 @@
 ;         -> path-visual?
 ;; Draws the shorter (or, with reflex?, longer) directed angle from first to
 ;; second around vertex. The mark itself is an open circular arc.
-(define (angle first vertex second
+(define (angle-marker first vertex second
                #:id id
                #:radius [radius 1/3]
                #:reflex? [reflex? #f]
                #:opacity [opacity 1]
                #:stroke [stroke "black"]
                #:stroke-width [stroke-width 2])
-  (check-point 'angle first)
-  (check-point 'angle vertex)
-  (check-point 'angle second)
-  (check-symbol 'angle id)
-  (check-positive 'angle "radius" radius)
+  (check-point 'angle-marker first)
+  (check-point 'angle-marker vertex)
+  (check-point 'angle-marker second)
+  (check-symbol 'angle-marker id)
+  (check-positive 'angle-marker "radius" radius)
   (unless (boolean? reflex?)
-    (raise-argument-error 'angle "boolean?" reflex?))
+    (raise-argument-error 'angle-marker "boolean?" reflex?))
   (define first-vector (vec2- first vertex))
   (define second-vector (vec2- second vertex))
   (define first-length (point-distance vertex first))
   (define second-length (point-distance vertex second))
   (unless (positive? first-length)
-    (raise-arguments-error 'angle "first distinct from vertex"
+    (raise-arguments-error 'angle-marker "first distinct from vertex"
                            "first" first "vertex" vertex))
   (unless (positive? second-length)
-    (raise-arguments-error 'angle "second distinct from vertex"
+    (raise-arguments-error 'angle-marker "second distinct from vertex"
                            "second" second "vertex" vertex))
   (define start-angle (atan (vec2-y first-vector) (vec2-x first-vector)))
   (define signed-sweep
@@ -170,7 +170,7 @@
      (- (atan (vec2-y second-vector) (vec2-x second-vector)) start-angle)))
   (when (zero? signed-sweep)
     (raise-arguments-error
-     'angle "noncollinear rays" "first" first "vertex" vertex "second" second))
+     'angle-marker "noncollinear rays" "first" first "vertex" vertex "second" second))
   (define sweep
     (if reflex?
         (- signed-sweep (* (if (positive? signed-sweep) 1 -1) (* 2 pi)))
@@ -217,18 +217,18 @@
                        #:stroke [stroke "black"]
                        #:stroke-width [stroke-width 2])
   (if (and (vec2? first) (vec2? vertex) (vec2? second))
-      (angle first vertex second
+      (angle-marker first vertex second
              #:id id #:radius radius #:reflex? reflex?
              #:opacity opacity #:stroke stroke #:stroke-width stroke-width)
       (let ([template
-             (angle (vec2 1 0) origin (vec2 0 1)
+             (angle-marker (vec2 1 0) origin (vec2 0 1)
                     #:id id #:radius radius #:reflex? reflex?
                     #:opacity opacity #:stroke stroke #:stroke-width stroke-width)])
         (make-live-endpoint-annotation
          (list first vertex second)
          template
          (lambda (points)
-           (angle (car points) (cadr points) (caddr points)
+           (angle-marker (car points) (cadr points) (caddr points)
                   #:id id #:radius radius #:reflex? reflex?
                   #:opacity 1 #:stroke stroke #:stroke-width stroke-width))
          'angle-between))))

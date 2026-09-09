@@ -56,11 +56,11 @@
   ;; Angle and right-angle marks use the two author-provided rays. They do not
   ;; pretend to infer a theorem about the enclosing diagram.
   (define angle-mark
-    (angle (vec2 1 0) origin (vec2 0 1) #:id 'angle #:radius 1/2))
+    (angle-marker (vec2 1 0) origin (vec2 0 1) #:id 'angle #:radius 1/2))
   (check-true (path-visual? angle-mark))
   (check-exn exn:fail:contract?
              (lambda ()
-               (angle (vec2 1 0) origin (vec2 2 0) #:id 'flat)))
+               (angle-marker (vec2 1 0) origin (vec2 2 0) #:id 'flat)))
   (define right-mark
     (right-angle (vec2 1 0) origin (vec2 0 1) #:id 'right #:size 1/2))
   (check-equal?

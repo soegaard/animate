@@ -1,5 +1,5 @@
 #lang scribble/manual
-@(require (for-label (except-in racket/base angle)
+@(require (for-label racket/base
                      racket/class
                      racket/contract
                      racket/draw
@@ -2911,7 +2911,7 @@ path fragments; they are not flattened into renderer-specific segments.
 Creates a finite dashed line. @racket[start] and @racket[end] must differ.
 }
 
-@defproc[(angle [first vec2?] [vertex vec2?] [second vec2?]
+@defproc[(angle-marker [first vec2?] [vertex vec2?] [second vec2?]
                 [#:id id symbol?]
                 [#:radius radius (and/c finite-real? positive?) 1/3]
                 [#:reflex? reflex? boolean? #f]
@@ -2923,7 +2923,8 @@ Creates a finite dashed line. @racket[start] and @racket[end] must differ.
 Creates an arc mark from the ray @racket[vertex]--@racket[first] to the ray
 @racket[vertex]--@racket[second]. By default it selects the signed minor angle;
 @racket[reflex?] selects its complementary reflex sweep. Collinear rays are
-rejected instead of producing a deceptive zero-angle mark.
+rejected instead of producing a deceptive zero-angle mark. Its name avoids
+shadowing @racket[racket/base]'s numeric @racket[angle] procedure.
 }
 
 @defproc[(right-angle [first vec2?] [vertex vec2?] [second vec2?]
@@ -2947,8 +2948,8 @@ try to prove that those rays are perpendicular.
                         [#:stroke-width stroke-width stroke-width? 2])
          visual?]{
 
-Creates @racket[angle] from three live endpoint descriptions. Literal
-@racket[vec2] values return the same static path as @racket[angle]. Otherwise,
+Creates @racket[angle-marker] from three live endpoint descriptions. Literal
+@racket[vec2] values return the same static path as @racket[angle-marker]. Otherwise,
 all three endpoints are sampled together before the angle arc is built. It
 still does not infer a mathematical relationship between the rays.
 }

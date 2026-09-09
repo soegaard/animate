@@ -52,7 +52,7 @@
         (list
          (right-angle b a c #:id 'right-mark #:size 2/5
                       #:stroke "crimson" #:stroke-width 3)
-         (angle a c b #:id 'angle-mark #:radius 1/2
+         (angle-marker a c b #:id 'angle-mark #:radius 1/2
                 #:stroke "darkorange" #:stroke-width 3)
          ;; A TeX underbrace is wide and shallow. Place the entire mark below
          ;; AB so even its upward end curls remain clearly separated from the
