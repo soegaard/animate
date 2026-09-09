@@ -25,6 +25,8 @@
          pict-renderer?
          pict-renderer-supports?
          pict-renderer-render
+         prop:pict-renderer-cache-identity
+         pict-renderer-cache-identity
          pict-renderer-list?
          check-pict-renderer-list
          find-supporting-pict-renderer
@@ -44,6 +46,53 @@
 (define-generics pict-renderer
   (pict-renderer-supports? pict-renderer visual)
   (pict-renderer-render pict-renderer visual camera))
+
+;; A renderer can opt into persistent section caching by declaring immutable
+;; appearance data. The protocol intentionally has no fallback based on a
+;; printed structure or closure: unknown semantics make a section renderable
+;; but not persistently reusable.
+(define-values (prop:pict-renderer-cache-identity
+                pict-renderer-cache-identity-property?
+                pict-renderer-cache-identity-property-ref)
+  (make-struct-type-property 'pict-renderer-cache-identity))
+
+; pict-renderer-cache-identity : pict-renderer? -> (or/c immutable-datum? #f)
+;; Returns a renderer's declared pixel-appearance identity, or #f when its
+;; semantics are opaque and section caching must be disabled.
+(define (pict-renderer-cache-identity renderer)
+  (unless (pict-renderer? renderer)
+    (raise-argument-error 'pict-renderer-cache-identity "pict-renderer?" renderer))
+  (cond
+    [(not (pict-renderer-cache-identity-property? renderer)) #f]
+    [else
+     (define descriptor
+       (pict-renderer-cache-identity-property-ref renderer))
+     (define identity
+       (if (procedure? descriptor) (descriptor renderer) descriptor))
+     (unless (or (not identity) (cache-identity-datum? identity))
+       (raise-arguments-error
+        'pict-renderer-cache-identity
+        "#f or an immutable datum containing only primitive values"
+        "renderer" renderer
+        "identity" identity))
+     identity]))
+
+(define (cache-identity-datum? value)
+  (cond [(or (null? value) (boolean? value) (symbol? value) (keyword? value)
+             (char? value) (number? value)) #t]
+        [(string? value) (immutable? value)]
+        [(bytes? value) (immutable? value)]
+        [(pair? value)
+         (and (cache-identity-datum? (car value))
+              (cache-identity-datum? (cdr value)))]
+        [(vector? value)
+         (and (immutable? value)
+              (for/and ([item (in-vector value)]) (cache-identity-datum? item)))]
+        [(hash? value)
+         (and (immutable? value)
+              (for/and ([(key item) (in-hash value)])
+                (and (cache-identity-datum? key) (cache-identity-datum? item))))]
+        [else #f]))
 
 
 ;;;

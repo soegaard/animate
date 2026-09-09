@@ -271,13 +271,23 @@
 ;; color-spec-schema-version : exact-positive-integer?
 ;;   Identifies the externally readable color-specification datum format.
 (define color-spec-schema-version 1)
+(define maximum-color-spec-datum-nodes 100000)
 
 ; color-spec->datum : color-spec? -> immutable-datum?
 ;;   Converts a color specification to a versioned, evaluator-free datum tree.
 (define (color-spec->datum color)
+  (define nodes 0)
+  (define (count-node!)
+    (set! nodes (add1 nodes))
+    (when (> nodes maximum-color-spec-datum-nodes)
+      (raise-arguments-error
+       'color-spec->datum
+       "a color expression whose serialized tree fits the configured node budget"
+       "maximum nodes" maximum-color-spec-datum-nodes)))
   `(animate-color-spec ,color-spec-schema-version
                        ,(color-spec->body (normalize-color-spec color
-                                                                  'color-spec->datum))))
+                                                                  'color-spec->datum)
+                                          count-node!)))
 
 ; datum->color-spec : any/c [#:maximum-depth exact-positive-integer?]
 ;                    -> color-spec?
@@ -292,7 +302,8 @@
 
 ; color-spec->body : color-spec? -> immutable-datum?
 ;;   Serializes a normalized specification to the body under the version header.
-(define (color-spec->body color)
+(define (color-spec->body color [count-node! void])
+  (count-node!)
   (cond
     [(rgba-color? color)
      `(rgba ,(rgba-color-red color)
@@ -309,12 +320,12 @@
      `(mix ,(mix-color-space color)
            ,(mix-color-alpha-mode color)
            ,(mix-color-amount color)
-           ,(color-spec->body (mix-color-from color))
-           ,(color-spec->body (mix-color-to color)))]
+           ,(color-spec->body (mix-color-from color) count-node!)
+           ,(color-spec->body (mix-color-to color) count-node!))]
     [(alpha-color? color)
      `(alpha ,(alpha-color-operation color)
              ,(alpha-color-amount color)
-             ,(color-spec->body (alpha-color-source color)))]
+             ,(color-spec->body (alpha-color-source color) count-node!))]
     [else
      (raise-arguments-error
       'color-spec->datum

@@ -25,6 +25,7 @@
 
 (struct svg-pict-renderer (pict-cache)
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-svg-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (svg-image-visual? visual))

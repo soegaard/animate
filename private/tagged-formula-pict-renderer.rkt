@@ -23,6 +23,7 @@
 
 (struct tagged-formula-pict-renderer (pict-cache)
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-tagged-formula-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (tagged-formula-renderable? visual))

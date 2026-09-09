@@ -16,6 +16,7 @@
 
 (struct glyph-outline-morph-pict-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-glyph-outline-morph-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (glyph-outline-morph-visual? visual))

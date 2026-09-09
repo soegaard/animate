@@ -47,6 +47,9 @@
   (paint->draw-color color))
 
 (define maximum-color-theme-file-bytes (* 1024 1024))
+(define maximum-color-theme-reader-depth 128)
+(define maximum-color-theme-reader-nodes 100000)
+(define maximum-color-theme-token-bytes 4096)
 
 ;; load-color-theme! : path-string? -> color-theme?
 ;; Reads one bounded, versioned data-only theme file at the effectful render
@@ -57,6 +60,7 @@
     (raise-argument-error 'load-color-theme! "path-string?" path))
   (define complete-path (path->complete-path path))
   (define snapshot (read-color-theme-snapshot complete-path))
+  (validate-color-theme-snapshot! snapshot complete-path)
   (define source-datum (read-one-color-theme-datum snapshot complete-path))
   (define digest (bytes->hex-string (sha1-bytes snapshot)))
   (define decoded (datum->theme source-datum))
@@ -81,6 +85,78 @@
      "path" path
      "maximum bytes" maximum-color-theme-file-bytes))
   (bytes->immutable-bytes snapshot))
+
+;; validate-color-theme-snapshot! : immutable-bytes? path? -> void?
+;; Applies the deliberately narrow theme-file grammar before the general reader
+;; can allocate vectors, hashes, or other compact allocation-expanding forms.
+(define (validate-color-theme-snapshot! snapshot path)
+  (define length (bytes-length snapshot))
+  (define nodes 0)
+  (define (fail expected position)
+    (raise-arguments-error 'load-color-theme!
+                           expected
+                           "path" path
+                           "byte position" position))
+  (define (count-node! position)
+    (set! nodes (add1 nodes))
+    (when (> nodes maximum-color-theme-reader-nodes)
+      (fail "a theme datum within the configured reader-node budget" position)))
+  (define (delimiter? byte)
+    (or (member byte '(9 10 13 32 40 41 91 93 59 34))
+        (= byte 35)))
+  (let loop ([position 0] [depth 0])
+    (cond
+      [(= position length)
+       (unless (zero? depth)
+         (fail "balanced list delimiters in a theme datum" position))]
+      [else
+       (define byte (bytes-ref snapshot position))
+       (cond
+         [(member byte '(9 10 13 32)) (loop (add1 position) depth)]
+         [(= byte 59) ; ordinary line comment
+          (let comment-loop ([index (add1 position)])
+            (cond [(or (= index length) (= (bytes-ref snapshot index) 10))
+                   (loop index depth)]
+                  [else (comment-loop (add1 index))]))]
+         [(or (= byte 40) (= byte 91))
+          (count-node! position)
+          (define next-depth (add1 depth))
+          (when (> next-depth maximum-color-theme-reader-depth)
+            (fail "a theme datum within the configured reader-depth budget" position))
+          (loop (add1 position) next-depth)]
+         [(or (= byte 41) (= byte 93))
+          (when (zero? depth)
+            (fail "balanced list delimiters in a theme datum" position))
+          (loop (add1 position) (sub1 depth))]
+         [(= byte 34)
+          (count-node! position)
+          (let string-loop ([index (add1 position)] [token-length 0] [escaped? #f])
+            (when (> token-length maximum-color-theme-token-bytes)
+              (fail "a theme string within the configured token-length budget" index))
+            (cond [(= index length)
+                   (fail "a terminated string in a theme datum" position)]
+                  [else
+                   (define current (bytes-ref snapshot index))
+                   (cond [escaped? (string-loop (add1 index) (add1 token-length) #f)]
+                         [(= current 92) (string-loop (add1 index) (add1 token-length) #t)]
+                         [(= current 34) (loop (add1 index) depth)]
+                         [else (string-loop (add1 index) (add1 token-length) #f)])]))]
+         [(= byte 35)
+          ;; Theme files may use only the Boolean sentinels emitted by
+          ;; theme->datum. In particular #(...), #hash, #s and #; are rejected
+          ;; before Racket's reader can allocate or discard their payloads.
+          (if (and (< (add1 position) length)
+                   (memv (bytes-ref snapshot (add1 position)) '(116 102)))
+              (begin (count-node! position) (loop (+ position 2) depth))
+              (fail "the declarative theme-file grammar without reader dispatch forms" position))]
+         [else
+          (count-node! position)
+          (let token-loop ([index position] [token-length 0])
+            (when (> token-length maximum-color-theme-token-bytes)
+              (fail "a theme token within the configured token-length budget" index))
+            (cond [(or (= index length) (delimiter? (bytes-ref snapshot index)))
+                   (loop index depth)]
+                  [else (token-loop (add1 index) (add1 token-length))]))])])))
 
 (define (read-one-color-theme-datum snapshot path)
   (define input (open-input-bytes snapshot))

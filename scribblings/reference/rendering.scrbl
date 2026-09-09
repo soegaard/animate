@@ -72,6 +72,23 @@ places the result.
 
 }
 
+@defthing[prop:pict-renderer-cache-identity any/c]{
+
+A structure-type property for a custom Pict renderer's declared persistent-cache
+appearance identity. Its value is either @racket[#f], an immutable primitive
+datum, or a procedure accepting the renderer and returning one of those values.
+The datum must include every renderer configuration field that can change pixels,
+but must exclude locks, counters, resource caches, addresses, and other runtime
+state. A renderer that has no stable declaration simply omits the property.
+}
+
+@defproc[(pict-renderer-cache-identity [renderer pict-renderer?]) any/c]{
+
+Returns the renderer's declared immutable appearance datum, or @racket[#f] when
+it has none. The section renderer then remains able to render that renderer but
+does not persistently reuse the section output.
+}
+
 @defproc[(pict-renderer-list? [value any/c]) boolean?]{
 
 Returns @racket[#t] when @racket[value] is a list containing only Pict renderer
@@ -246,6 +263,7 @@ Here is a complete custom Visual and renderer:
 
 (struct cross-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(cross-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (cross-visual? visual))
@@ -1053,7 +1071,10 @@ then decodes exactly one datum under isolated data-reader settings. It validates
 the datum with @racket[datum->theme], records the matching digest as provenance,
 and returns one immutable snapshot. It rejects reader extensions, graph syntax,
 and trailing datums; it does not evaluate the file or retain a handle that a
-renderer could reread.
+renderer could reread. Before reading, it accepts only the declarative
+list/symbol/number/string/Boolean grammar emitted by @racket[theme->datum],
+with bounded nesting, nodes, and token lengths; reader-dispatch forms such as
+sized vectors, hashes, and datum comments are rejected before they can expand.
 }
 
 @defproc[(render-frames!
@@ -1381,10 +1402,16 @@ available for an author-managed key; @racket[#f] disables caching and removes
 any existing section cache manifest. External dependencies are not discovered:
 declare them in @racket[asset-files] or use a deliberate explicit key.
 Every enabled cache manifest separately records the selected theme's appearance
-fingerprint and resolver version, plus camera and renderer representations.
+fingerprint and resolver version, plus semantic camera, declared renderer
+identities, and the declared backend used by an opaque @racket[view3d]
+viewport. An unidentifiable ambient 3D backend disables persistent reuse rather
+than being guessed from its printed representation.
 This mandatory rendering identity applies even when @racket[cache-key] is an
 explicit symbol or string: that key identifies author-controlled source, not
 the appearance of its PNGs. @racket[#f] continues to disable caching.
+Custom Pict renderers without a declared immutable cache identity remain
+renderable but deliberately disable persistent section reuse; Animate never
+guesses their identity from a printed closure or object.
 }
 
 @defproc[(render-timeline-section/report!
@@ -1431,7 +1458,8 @@ Computes the conservative automatic key used by selected rendering. It returns
 @racket[#f] when the scene contains an arbitrary procedure, because its identity
 and source cannot be made a reliable content hash. Built-in
 @racket[rate-function?] values are represented semantically and remain
-cacheable. The public rendering procedures
+cacheable. It also returns @racket[#f] for a renderer whose pixel-affecting
+identity is not explicitly declared. The public rendering procedures
 normally call it themselves; it is exposed for diagnostics or a custom partial
 movie workflow.
 }

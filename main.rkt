@@ -1094,6 +1094,8 @@ procedure-request-template
  pict-renderer?
  pict-renderer-supports?
  pict-renderer-render
+ prop:pict-renderer-cache-identity
+ pict-renderer-cache-identity
  pict-renderer-list?
  default-pict-renderers
 

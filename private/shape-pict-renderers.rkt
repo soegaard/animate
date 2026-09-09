@@ -82,6 +82,7 @@
 
 (struct circle-pict-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-circle-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (circle-visual? visual))
@@ -92,6 +93,7 @@
 
 (struct rectangle-pict-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-rectangle-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (rectangle-visual? visual))
@@ -103,6 +105,7 @@
 
 (struct arrow-pict-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-arrow-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (arrow-visual? visual))
@@ -114,6 +117,7 @@
 
 (struct axes-pict-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-axes-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (axes-visual? visual))
@@ -147,6 +151,7 @@
 
 (struct text-pict-renderer (raster-cache)
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-text-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (or (text-visual? visual)

@@ -29,6 +29,7 @@
 
 (struct image-pict-renderer (raster-cache)
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-image-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (image-visual? visual))

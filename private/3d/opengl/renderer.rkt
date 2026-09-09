@@ -42,6 +42,7 @@
          "framebuffer.rkt"
          "geometry-cache.rkt"
          "geometry-pack.rkt"
+         "light-preparation.rkt"
          "limits.rkt"
          "gl-object.rkt"
          "matrix-pack.rkt"
@@ -91,7 +92,7 @@
 ;; A preparation holds no GL handle.  Its geometry descriptors are immutable
 ;; author-independent data; cache lookup happens when the retained renderer
 ;; submits a frame, always inside its serialized context owner.
-(struct opengl-preparation (compiled frame-spec unsupported-primitives color-context)
+(struct opengl-preparation (compiled frame-spec unsupported-primitives color-context lights shadow-casters)
   #:transparent)
 
 (struct opengl-renderer3d-value
@@ -101,6 +102,13 @@
         geometry-upload-milliseconds frames)
   #:mutable
   #:transparent
+  #:property prop:renderer3d-cache-identity
+  (lambda (renderer)
+    (define spec (opengl-renderer3d-value-spec renderer))
+    (list 'animate-opengl-renderer3d-v1
+          (opengl-renderer3d-spec-value-samples spec)
+          (opengl-renderer3d-spec-value-cache-megabytes spec)
+          (opengl-renderer3d-spec-value-fallback spec)))
   #:methods gen:renderer3d
   [(define (renderer3d-id renderer)
      (if (opengl-renderer3d-value-host renderer) 'opengl-racket 'software))
@@ -461,12 +469,22 @@
 (define (prepare-opengl renderer request)
   (renderer3d-require-request-capabilities renderer request)
   (define compiled (render3d-request-compiled-view request))
+  (define color-context (render3d-request-color-context request))
+  ;; Resolve the authored list exactly once for this immutable preparation.
+  ;; All GL numerical consumers, including shadow selection, receive these
+  ;; concrete RGBA lights rather than consulting an ambient render context.
+  (define lights
+    (resolve-lights3d (authored-frame-lights (render3d-request-frame-spec request))
+                      color-context))
+  (define shadow-casters
+    (parameterize ([current-render-color-context color-context])
+      (prepare-shadow-casters compiled)))
   ;; Surface resources are camera-independent.  Screen-space O primitives are
   ;; prepared afresh per frame below, precisely because their clipping, dashes,
   ;; feature selection, and pixel size are camera dependent.
   (statistics-add! renderer 'spatial-compilations 1)
   (opengl-preparation compiled (render3d-request-frame-spec request) '()
-                      (render3d-request-color-context request)))
+                      color-context lights shadow-casters))
 
 (define (render-opengl renderer preparation request)
   (cond [(not (opengl-preparation? preparation))
@@ -488,6 +506,8 @@
             (define compiled (opengl-preparation-compiled preparation))
             (define frame-spec (opengl-preparation-frame-spec preparation))
             (define color-context (opengl-preparation-color-context preparation))
+            (define lights (opengl-preparation-lights preparation))
+            (define shadow-casters (opengl-preparation-shadow-casters preparation))
             (unless (and (= (render-color-context-resolver-version color-context)
                             (render-color-context-resolver-version
                              (render3d-request-color-context request)))
@@ -528,20 +548,23 @@
                  ;; initialization. It owns its depth-only FBO and restores
                  ;; colour/depth/cull state before this ordinary frame begins.
                  (define shadow-samples
-                   (prepare-gl-shadow-maps/current! renderer compiled frame-spec))
+                   (prepare-gl-shadow-maps/current! renderer compiled frame-spec
+                                                   lights shadow-casters))
                  (initialize-frame/current! target host compiled)
                  (define-values (opaque transparent depth-only)
                    (partition-instances compiled))
                  (for ([instance (in-list opaque)])
                    (draw-instance/current! renderer compiled frame-spec instance #f
+                                           #:lights lights
                                            #:shadow-samples shadow-samples))
                  (for ([instance (in-list depth-only)])
-                   (draw-instance/current! renderer compiled frame-spec instance #t))
+                   (draw-instance/current! renderer compiled frame-spec instance #t
+                                           #:lights lights))
                  (draw-stroke-batches/current! renderer stroke-batches 'hidden)
                  (draw-billboards/current! renderer billboards 'hidden frame-spec)
                  (draw-stroke-batches/current! renderer stroke-batches 'visible)
                  (draw-billboards/current! renderer billboards 'test frame-spec)
-                 (draw-transparent/current! renderer compiled frame-spec transparent)
+                 (draw-transparent/current! renderer compiled frame-spec transparent lights)
                  (draw-stroke-batches/current! renderer stroke-batches 'always)
                  (draw-billboards/current! renderer billboards 'always frame-spec)
                   (values (gl-framebuffer-target-read-linear-rgba! target host)
@@ -700,9 +723,14 @@
 ;; owned by the bounded cache and therefore never enters an authored view.
 (struct gl-shadow-sample (light-id target camera settings bounds) #:transparent)
 
-(define (prepare-gl-shadow-maps/current! renderer compiled frame-spec)
-  (define lights (effective-frame-lights frame-spec))
-  (define caster-bounds (compiled-shadow-caster-bounds compiled))
+;; gl-shadow-caster captures one depth-map participant after its resolved
+;; material and vertex alpha have selected the current shadow policy. Keeping
+;; this value as the single input to both keying and drawing prevents those
+;; two paths from drifting apart when appearance changes.
+(struct gl-shadow-caster (instance geometry identity) #:transparent)
+
+(define (prepare-gl-shadow-maps/current! renderer compiled frame-spec lights shadow-casters)
+  (define caster-bounds (shadow-caster-bounds shadow-casters))
   (cond
     [(aabb3-empty? caster-bounds) '()]
     [else
@@ -717,7 +745,7 @@
        (define settings (shadow3d-settings shadow))
        (define bounds (or (shadow-settings3d-bounds settings) caster-bounds))
        (define camera (shadow-light-camera3d light settings bounds))
-       (define key (opengl-shadow-map-key compiled light settings bounds))
+       (define key (opengl-shadow-map-key shadow-casters light settings bounds))
        (define cache (opengl-renderer3d-value-shadow-cache renderer))
        (define map-size (shadow-settings3d-map-size settings))
        (define-values (entry _hit?)
@@ -731,7 +759,7 @@
                          (gl-shadow-target-delete/current!
                           target (opengl-renderer3d-value-host renderer))
                          (raise exception))])
-              (render-gl-shadow-map/current! renderer compiled camera target)
+              (render-gl-shadow-map/current! renderer compiled camera target shadow-casters)
               target))
           (lambda (target)
             (gl-shadow-target-delete/current! target
@@ -739,47 +767,47 @@
        (gl-shadow-sample (light3d-id light) (gl-shadow-cache-entry-target entry)
                          camera settings bounds))]))
 
-(define (effective-frame-lights frame-spec)
-  (resolve-lights3d
-   (if (null? (frame3d-spec-lights frame-spec))
-       default-lights3d
-       (frame3d-spec-lights frame-spec))
-   (current-or-default-render-color-context)))
+(define (authored-frame-lights frame-spec)
+  (if (null? (frame3d-spec-lights frame-spec))
+      default-lights3d
+      (frame3d-spec-lights frame-spec)))
 
-(define (compiled-shadow-caster-bounds compiled)
+(define (prepare-shadow-casters compiled)
   (define by-key (geometry-table compiled))
+  (for/list ([instance (in-vector (compiled-view3d-instances compiled))]
+             #:do [(define geometry
+                     (hash-ref by-key (compiled-instance3d-geometry-key instance)))]
+             #:when (shadow-caster-instance? instance geometry))
+    (gl-shadow-caster instance geometry (shadow-caster-identity instance))))
+
+(define (shadow-caster-bounds shadow-casters)
   (for/fold ([result aabb3-empty])
-            ([instance (in-vector (compiled-view3d-instances compiled))])
-    (define geometry (hash-ref by-key (compiled-instance3d-geometry-key instance)))
-    (if (shadow-caster-instance? instance geometry)
-        (aabb3-union
-         result
-         (aabb3-transform (compiled-geometry3d-local-bounds geometry)
-                          (compiled-instance3d-world-transform instance)))
-        result)))
+            ([caster (in-list shadow-casters)])
+    (define instance (gl-shadow-caster-instance caster))
+    (aabb3-union
+     result
+     (aabb3-transform (compiled-geometry3d-local-bounds (gl-shadow-caster-geometry caster))
+                      (compiled-instance3d-world-transform instance)))))
 
 (define (shadow-caster-instance? instance geometry)
   (and (material3d-casts-shadow? (compiled-instance3d-material instance))
        (instance-opaque? instance geometry)))
 
-(define (opengl-shadow-map-key compiled light settings bounds)
+(define (shadow-caster-identity instance)
+  (define material (compiled-instance3d-material instance))
   (vector-immutable
-   'animate-opengl-shadow-map-v1
-   (for/list ([instance (in-vector (compiled-view3d-instances compiled))])
-     (define material (compiled-instance3d-material instance))
-     (vector-immutable
-      (compiled-instance3d-geometry-key instance)
-      (compiled-instance3d-world-transform instance)
-      (compiled-instance3d-clip-planes instance)
-      (compiled-instance3d-surface-mode instance)
-      (compiled-instance3d-opacity instance)
-      (material3d-casts-shadow? material)
-      (material3d-receives-shadow? material)
-      (material3d-double-sided? material)
-      (rgba-color-alpha
-       (resolve-color-in-context
-        (material3d-color material)
-        (current-or-default-render-color-context)))))
+   (compiled-instance3d-geometry-key instance)
+   (compiled-instance3d-world-transform instance)
+   (compiled-instance3d-clip-planes instance)
+   (compiled-instance3d-surface-mode instance)
+   (compiled-instance3d-opacity instance)
+   (material3d-casts-shadow? material)
+   (material3d-double-sided? material)))
+
+(define (opengl-shadow-map-key shadow-casters light settings bounds)
+  (vector-immutable
+   'animate-opengl-shadow-map-v2
+   (map gl-shadow-caster-identity shadow-casters)
    (if (directional-light3d? light)
        (vector-immutable 'directional (directional-light3d-direction light))
        (vector-immutable 'spot (spot-light3d-position light)
@@ -788,7 +816,7 @@
                          (spot-light3d-outer-angle light)))
    settings bounds))
 
-(define (render-gl-shadow-map/current! renderer compiled camera target)
+(define (render-gl-shadow-map/current! renderer compiled camera target shadow-casters)
   (define host (opengl-renderer3d-value-host renderer))
   (gl-shadow-target-bind-draw/current! target host)
   (glDisable GL_SCISSOR_TEST)
@@ -806,11 +834,9 @@
   (define map-frame (frame3d-spec camera '()
                                   (gl-shadow-target-size target)
                                   (gl-shadow-target-size target)))
-  (define by-key (geometry-table compiled))
-  (for ([instance (in-vector (compiled-view3d-instances compiled))])
-    (define geometry (hash-ref by-key (compiled-instance3d-geometry-key instance)))
-    (when (shadow-caster-instance? instance geometry)
-      (draw-shadow-instance/current! renderer compiled map-frame instance)))
+  (for ([caster (in-list shadow-casters)])
+    (draw-shadow-instance/current! renderer compiled map-frame
+                                   (gl-shadow-caster-instance caster)))
   ;; The main pass explicitly initializes all state it uses, but resetting the
   ;; exceptional colour mask and polygon offset here keeps the depth pass safe
   ;; for any future intermediate pass as well.
@@ -863,7 +889,7 @@
                  (resolve-color-in-context
                   vertex-color (current-or-default-render-color-context))) 1)))))
 
-(define (draw-transparent/current! renderer compiled frame-spec transparent)
+(define (draw-transparent/current! renderer compiled frame-spec transparent lights)
   (when (pair? transparent)
     (glEnable GL_BLEND)
     ;; Fragment shaders emit premultiplied colour. Separate factors preserve
@@ -876,7 +902,7 @@
       (sort transparent > #:key (lambda (instance)
                                    (instance-depth compiled frame-spec instance))))
     (for ([instance (in-list ordered)])
-      (draw-instance/current! renderer compiled frame-spec instance #f))
+      (draw-instance/current! renderer compiled frame-spec instance #f #:lights lights))
     (glDepthMask #t)
     (glDisable GL_BLEND)))
 
@@ -924,6 +950,7 @@
   (vector-length (mesh3d-triangles (compiled-geometry3d-mesh geometry))))
 
 (define (draw-instance/current! renderer compiled frame-spec instance depth-only?
+                                #:lights lights
                                 #:shadow-samples [shadow-samples '()])
   (define host (opengl-renderer3d-value-host renderer))
   (define geometry
@@ -953,7 +980,7 @@
                                    (compiled-geometry3d-mesh geometry))
   (unless depth-only?
     (upload-light-uniforms/current!
-     program frame-spec material shadow-samples
+     program frame-spec material lights shadow-samples
      (opengl-renderer3d-value-fallback-shadow-texture renderer)))
   (if (material3d-double-sided? material)
       (glDisable GL_CULL_FACE)
@@ -1055,72 +1082,6 @@
                          (* z (vec3-z (plane3-point plane))))))
     (uniform-4f! program (format "clipPlanes[~a]" index) x y z offset)))
 
-(struct gl-light-record
-  (id kind direction position color intensity attenuation-mode attenuation-a attenuation-b attenuation-c
-        attenuation-cutoff range inner-angle outer-angle)
-  #:transparent)
-
-;; The mesh shader consumes one ordered stream instead of independently packed
-;; arrays for each light kind.  Consequently a frame's non-ambient lights are
-;; accumulated in the author's list order, while the published per-kind limits
-;; still reject a frame before a fixed GPU array can truncate it.
-(define (pack-gl-lights lights)
-  (define-values (ambient-red ambient-green ambient-blue records)
-    (for/fold ([red 0.0] [green 0.0] [blue 0.0] [reversed-records '()])
-              ([light (in-list lights)])
-      (cond
-        [(ambient-light3d? light)
-         (define linear (rgba-srgb->linear (ambient-light3d-color light)))
-         (values (+ red (* (ambient-light3d-intensity light) (linear-rgba3d-red linear)))
-                 (+ green (* (ambient-light3d-intensity light) (linear-rgba3d-green linear)))
-                 (+ blue (* (ambient-light3d-intensity light) (linear-rgba3d-blue linear)))
-                 reversed-records)]
-        [(directional-light3d? light)
-         (values red green blue
-                 (cons (gl-light-record
-                        (directional-light3d-id light)
-                        0 (directional-light3d-direction light) origin3
-                        (directional-light3d-color light) (directional-light3d-intensity light)
-                        0 1 0 0 -1 -1 0 0)
-                       reversed-records))]
-        [(point-light3d? light)
-         (values red green blue
-                 (cons (finite-light->gl-record
-                        (point-light3d-id light)
-                        1 (point-light3d-position light) origin3
-                        (point-light3d-color light) (point-light3d-intensity light)
-                        (point-light3d-attenuation light) (point-light3d-range light) 0 0)
-                       reversed-records))]
-        [(spot-light3d? light)
-         (values red green blue
-                 (cons (finite-light->gl-record
-                        (spot-light3d-id light)
-                        2 (spot-light3d-position light) (spot-light3d-direction light)
-                        (spot-light3d-color light) (spot-light3d-intensity light)
-                        (spot-light3d-attenuation light) (spot-light3d-range light)
-                        (spot-light3d-inner-angle light) (spot-light3d-outer-angle light))
-                       reversed-records))]
-        [else
-         (raise-argument-error 'opengl-renderer3d "light3d?" light)])))
-  (values ambient-red ambient-green ambient-blue (reverse records)))
-
-(define (finite-light->gl-record id kind position direction color intensity attenuation range inner outer)
-  (define parameters (light-attenuation3d-parameters attenuation))
-  (define-values (mode a b c cutoff)
-    (case (light-attenuation3d-mode attenuation)
-      [(constant)
-       (values 0 (hash-ref parameters 'factor) 0 0 -1)]
-      [(inverse-square)
-       (values 1 0 0 (hash-ref parameters 'reference-distance)
-               (or (hash-ref parameters 'cutoff) -1))]
-      [(polynomial)
-       (values 2 (hash-ref parameters 'constant) (hash-ref parameters 'linear)
-               (hash-ref parameters 'quadratic) (or (hash-ref parameters 'cutoff) -1))]))
-  ;; Inverse-square uses the `c` slot as its named reference distance; the
-  ;; shader's polynomial mode uses all of a, b and c.
-  (gl-light-record id kind direction position color intensity mode a b c cutoff
-                   (or range -1) inner outer))
-
 (define (check-gl-light-limits records)
   (define directional-count (count (lambda (record) (= (gl-light-record-kind record) 0)) records))
   (define point-count (count (lambda (record) (= (gl-light-record-kind record) 1)) records))
@@ -1141,7 +1102,7 @@
                            "light-count" (length records)))
   (void))
 
-(define (upload-light-uniforms/current! program frame-spec material shadow-samples
+(define (upload-light-uniforms/current! program frame-spec material lights shadow-samples
                                         fallback-shadow-texture)
   (when (not (eq? (material3d-shading material) 'unlit))
     (uniform-1f! program "materialAmbient" (material3d-ambient material))
@@ -1159,11 +1120,8 @@
     (define camera-position (camera3d-position (frame3d-spec-camera frame-spec)))
     (uniform-3f! program "cameraPosition"
                  (vec3-x camera-position) (vec3-y camera-position) (vec3-z camera-position))
-    (define lights (if (null? (frame3d-spec-lights frame-spec))
-                       default-lights3d
-                       (frame3d-spec-lights frame-spec)))
     (define-values (ambient-red ambient-green ambient-blue selected)
-      (pack-gl-lights lights))
+      (pack-opengl-lights lights))
     (uniform-3f! program "ambientLight" ambient-red ambient-green ambient-blue)
     (check-gl-light-limits selected)
     (uniform-1i! program "nonAmbientLightCount" (length selected))

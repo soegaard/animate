@@ -55,4 +55,14 @@
   (check-equal? (color-theme-fingerprint first-theme)
                 (color-theme-fingerprint second-theme))
   (check-equal? (color-theme-fingerprint first-theme)
-                (color-theme-fingerprint (datum->theme (theme->datum first-theme)))))
+                (color-theme-fingerprint (datum->theme (theme->datum first-theme))))
+
+  ;; Appearance bytes never inherit an interactive printer's pair notation.
+  (define parenthesized
+    (parameterize ([print-pair-curly-braces #f])
+      (color-theme #:id 'printer-independent #:extends animate-light-theme)))
+  (define curled
+    (parameterize ([print-pair-curly-braces #t])
+      (color-theme #:id 'printer-independent #:extends animate-light-theme)))
+  (check-equal? (color-theme-fingerprint parenthesized)
+                (color-theme-fingerprint curled)))

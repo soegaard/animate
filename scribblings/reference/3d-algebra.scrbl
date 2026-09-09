@@ -966,6 +966,11 @@ adds a directional-light highlight, scaled by @racket[specular] and
 @racket[specular-color]. The colour may include alpha; the renderer's explicit
 transparent pass controls its compositing policy.
 
+The OpenGL preparation resolves the complete ordered light list once under the
+same request-owned color context. Uniform packing and shadow-light selection
+consume those numerical RGBA values; authored light values remain unchanged for
+inspection. A resolved translucent light is rejected before a GPU draw.
+
 For Blinn--Phong the roughness @italic{r} maps identically in the reference
 and OpenGL renderers to @racketblock[n = max(1, 2/r^2 - 2)]. @racket[roughness]
 must be finite in @math{(0,1]}; ambient, diffuse, specular, and
@@ -981,6 +986,9 @@ OpenGL renderers include only opaque mesh instances with
 @racket[casts-shadow?] in a depth map and apply receiver policy to diffuse and
 specular illumination. Transparent surfaces, strokes, markers, and billboards
 do not cast or receive a map lookup in this stage.
+OpenGL shadow reuse is keyed by the prepared eligible-caster set, so a themed
+vertex-alpha change that adds or removes a caster refreshes the depth map while
+an RGB-only change may reuse it.
 }
 @defproc[(material3d? [value any/c]) boolean?]{Recognizes a material.}
 @defproc[(material3d-color [material material3d?]) color-spec?]{Returns the retained base colour specification.}
@@ -3579,6 +3587,15 @@ value.}
 instance.}
 @defproc[(renderer3d-id [renderer renderer3d?]) symbol?]{Returns a stable
 backend identity, such as @racket['software-reference].}
+@defthing[prop:renderer3d-cache-identity any/c]{A structure-type property whose
+immutable primitive datum declares a backend's pixel-affecting configuration
+for an enclosing persistent cache. A backend without a stable declaration
+omits the property.}
+@defproc[(renderer3d-cache-identity [renderer renderer3d?]) any/c]{Returns the
+declared backend appearance identity or @racket[#f]. An opaque
+@racket[view3d] Pict adapter treats @racket[#f] conservatively: section-output
+caching is disabled rather than reusing pixels rendered with an ambient custom
+backend.}
 @defproc[(renderer3d-capabilities-of [renderer renderer3d?])
          renderer3d-capabilities?]{Returns the backend's immutable declared
 feature set, limits, and diagnostics.}
@@ -3787,7 +3804,9 @@ every render.}
 used by @racket[view3d]'s opaque Pict adapter.}
 @defparam[current-view3d-renderer3d renderer renderer3d?]{Dynamically selects
 the backend used by opaque @racket[view3d] rendering. The parameter affects the
-effectful rendering boundary only; it is not captured in semantic scene values.}
+effectful rendering boundary only; it is not captured in semantic scene values.
+When a section-output cache is enabled, its declared backend identity is part of
+the mandatory render envelope.}
 @defproc[(retained-software-renderer3d-cache-hits [renderer renderer3d?])
          exact-nonnegative-integer?]{Reports retained preparation hits.}
 @defproc[(retained-software-renderer3d-cache-misses [renderer renderer3d?])

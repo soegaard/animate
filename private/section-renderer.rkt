@@ -23,6 +23,7 @@
          "color-theme-data.rkt"
          "color-theme.rkt"
          "render-color-context.rkt"
+         "pict-renderer.rkt"
          "png-renderer.rkt"
          "shape-pict-renderers.rkt")
 
@@ -175,11 +176,11 @@
   (define cache-path
     (build-path output-directory cache-file-name))
   (cond
-    [(and effective-cache-key
+    [(and effective-cache-key expected-cache
           (section-cache-valid? cache-path expected-cache expected-paths))
      (section-render-report expected-paths source-indices #t #f)]
     [else
-     (when (and (not effective-cache-key)
+     (when (and (or (not effective-cache-key) (not expected-cache))
                 (file-exists? cache-path))
        (delete-file cache-path))
      (define diagnostics
@@ -193,7 +194,7 @@
         #:clean? clean?
         #:workers workers
         #:color-context color-context))
-     (when effective-cache-key
+     (when (and effective-cache-key expected-cache)
        (write-section-cache! cache-path expected-cache))
      (section-render-report
       (render-diagnostics-paths diagnostics)
@@ -208,26 +209,36 @@
                              #:camera camera
                              #:renderers renderers
                              #:color-context color-context)
-  (list 'animate-section-cache-v4
-        animate-version
-        animate-stage
-        source-key
-        fps
-        (authoring-section-name entry)
-        (authoring-section-start entry)
-        (authoring-section-end entry)
-        source-indices
-        (section-render-identity camera renderers color-context)))
+  (define render-identity
+    (section-render-identity camera renderers color-context))
+  (and render-identity
+       (list 'animate-section-cache-v5
+             animate-version
+             animate-stage
+             source-key
+             fps
+             (authoring-section-name entry)
+             (authoring-section-start entry)
+             (authoring-section-end entry)
+             source-indices
+             render-identity)))
 
 (define (section-render-identity camera renderers color-context)
   (unless (render-color-context? color-context)
     (raise-argument-error
      'section-render-identity "render-color-context?" color-context))
-  (list 'animate-section-render-identity-v1
-        (render-color-context-appearance-fingerprint color-context)
-        (render-color-context-resolver-version color-context)
-        (format "~s" camera)
-        (format "~s" renderers)))
+  (define renderer-identities
+    (for/list ([renderer (in-list renderers)])
+      (pict-renderer-cache-identity renderer)))
+  (and (andmap values renderer-identities)
+       (list 'animate-section-render-identity-v2
+             (render-color-context-appearance-fingerprint color-context)
+             (render-color-context-resolver-version color-context)
+             ;; Camera values are immutable semantic records in the supported
+             ;; API. They remain in their native representation rather than a
+             ;; printer-dependent string.
+             camera
+             renderer-identities)))
 
 ;; Reads a cache manifest conservatively; malformed/unreadable cache data is a
 ;; miss rather than an authoring error.
@@ -278,7 +289,10 @@
      'automatic-section-cache-key theme color-context))
   (define scene-representation
     (format "~s" (authored-timeline-scene timeline)))
-  (if (scene-representation-has-opaque-procedure? scene-representation)
+  (define render-identity
+    (section-render-identity camera renderers selected-color-context))
+  (if (or (not render-identity)
+          (scene-representation-has-opaque-procedure? scene-representation))
       #f
       (let* ([asset-representation
               (for/list ([asset (in-list asset-files)])
@@ -293,10 +307,8 @@
                     (authoring-section-start entry)
                     (authoring-section-end entry)
                     fps
-                    (format "~s" camera)
-                    (format "~s" renderers)
-                    (section-render-identity
-                     camera renderers selected-color-context)
+                    camera
+                    render-identity
                     (version)
                     asset-representation)])
         (string-append

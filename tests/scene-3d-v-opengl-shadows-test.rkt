@@ -8,6 +8,7 @@
          rackunit
          "../3d.rkt"
          "../3d/render.rkt"
+         "../colors.rkt"
          "../private/3d/opengl/limits.rkt"
          "../private/3d/opengl/shadow-cache.rkt")
 
@@ -23,7 +24,8 @@
   (material3d #:color "gray" #:shading 'flat #:lighting 'lambert
               #:ambient 0 #:diffuse 1 #:specular 0))
 
-(define (square id half-size z material)
+(define (square id half-size z material #:colors [colors #f]
+                #:transform [transform identity-transform3])
   (mesh3d #:id id
           #:vertices
           (vector (vec3 (- half-size) (- half-size) z)
@@ -31,6 +33,8 @@
                   (vec3 half-size half-size z)
                   (vec3 (- half-size) half-size z))
           #:triangles (vector (vector 0 1 2) (vector 0 2 3))
+          #:colors colors
+          #:transform transform
           #:material material))
 
 (define (shadow-view #:camera [camera
@@ -39,6 +43,8 @@
                                                        #:vertical-size 6)]
                      #:caster-z [caster-z 1]
                      #:shadow? [shadow? #t]
+                     #:themed-caster-colors [themed-caster-colors #f]
+                     #:persistent-caster? [persistent-caster? #f]
                      #:bias [bias #f])
   (define bounds (aabb3 (vec3 -3 -3 0) (vec3 3 3 caster-z)))
   (define settings
@@ -47,8 +53,13 @@
         (shadow-settings3d #:map-size 128 #:pcf-radius 0
                            #:depth-bias 1/100 #:normal-bias 0 #:bounds bounds)))
   (view3d
-   (list (square 'receiver 3 0 receiver-material)
-         (square 'caster 1/3 caster-z caster-material))
+   (filter values
+           (list (square 'receiver 3 0 receiver-material)
+                 (square 'caster 1/3 caster-z caster-material
+                         #:colors themed-caster-colors)
+                 (and persistent-caster?
+                      (square 'persistent-caster 1/4 caster-z caster-material
+                              #:transform (make-transform3 #:translation (vec3 -2 0 0))))))
    #:id 'opengl-shadow-world #:width 6 #:height 6 #:background "black" #:render-mode 'opaque
    #:camera camera
    #:lights
@@ -56,8 +67,8 @@
           (vec3 1 0 -1) #:id 'sun
           #:shadow (and shadow? (directional-shadow3d #:settings settings))))))
 
-(define (render backend view)
-  (define request (view3d->render3d-request view 64 64))
+(define (render backend view #:theme [theme animate-light-theme])
+  (define request (view3d->render3d-request view 64 64 #:theme theme))
   (renderer3d-render backend (renderer3d-prepare backend request) request))
 
 (define (red-at result x y)
@@ -191,7 +202,44 @@
        (render renderer (shadow-view #:caster-z 3/2))
        (check-equal? (hash-ref (hash-ref (renderer-statistics renderer) 'shadow-cache)
                                'allocations)
-                     (add1 allocations)))
+                     (add1 allocations))
+       ;; Vertex alpha is a shadow-caster eligibility input. The fixed bounds
+       ;; and persistent opaque caster force both appearances through a real
+       ;; cache lookup, so retained/fresh equality detects an old depth map.
+       (define alpha-colors
+         (vector (role-color 'shadow-caster) (role-color 'shadow-caster)
+                 (role-color 'shadow-caster) (role-color 'shadow-caster)))
+       (define opaque-theme
+         (color-theme #:id 'same-shadow-theme #:extends animate-light-theme
+                      #:roles (hash 'shadow-caster "white")))
+       (define translucent-theme
+         (color-theme #:id 'same-shadow-theme #:extends animate-light-theme
+                      #:roles (hash 'shadow-caster (color-with-alpha white 1/2))))
+       (define alpha-view
+         (shadow-view #:themed-caster-colors alpha-colors #:persistent-caster? #t))
+       (void (render renderer alpha-view #:theme opaque-theme))
+       (define retained-b (render renderer alpha-view #:theme translucent-theme))
+       (define fresh-b-renderer
+         (make-opengl-renderer
+          (make-opengl-spec #:samples 1 #:cache-megabytes 16 #:fallback 'error)))
+       (dynamic-wind
+        void
+        (lambda ()
+          (define fresh-b (render fresh-b-renderer alpha-view #:theme translucent-theme))
+          (check-equal? (renderer3d-render-result-argb-bytes retained-b)
+                        (renderer3d-render-result-argb-bytes fresh-b)))
+        (lambda () (renderer-release fresh-b-renderer)))
+       (define retained-a (render renderer alpha-view #:theme opaque-theme))
+       (define fresh-a-renderer
+         (make-opengl-renderer
+          (make-opengl-spec #:samples 1 #:cache-megabytes 16 #:fallback 'error)))
+       (dynamic-wind
+        void
+        (lambda ()
+          (define fresh-a (render fresh-a-renderer alpha-view #:theme opaque-theme))
+          (check-equal? (renderer3d-render-result-argb-bytes retained-a)
+                        (renderer3d-render-result-argb-bytes fresh-a)))
+        (lambda () (renderer-release fresh-a-renderer))))
      (lambda () (renderer-release renderer)))
     (check-equal? (hash-ref (hash-ref (renderer-statistics renderer) 'shadow-cache)
                             'entries)

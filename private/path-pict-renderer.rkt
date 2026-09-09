@@ -29,6 +29,7 @@
 
 (struct path-pict-renderer ()
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-path-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (path-visual? visual))

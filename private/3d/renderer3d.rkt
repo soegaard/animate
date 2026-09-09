@@ -36,6 +36,8 @@
 (provide gen:renderer3d
          renderer3d?
          renderer3d-id
+         prop:renderer3d-cache-identity
+         renderer3d-cache-identity
          renderer3d-capabilities-of
          renderer3d-fingerprint
          renderer3d-prepare
@@ -171,6 +173,55 @@
   (renderer3d-prepare renderer3d request)
   (renderer3d-render renderer3d preparation request)
   (renderer3d-release renderer3d))
+
+;; A backend may describe its pixel-affecting implementation configuration for
+;; an enclosing persistent cache.  This is deliberately separate from a
+;; renderer's per-request fingerprint, which may contain request data and
+;; implementation-owned cache state.
+(define-values (prop:renderer3d-cache-identity
+                renderer3d-cache-identity-property?
+                renderer3d-cache-identity-property-ref)
+  (make-struct-type-property 'renderer3d-cache-identity))
+
+; renderer3d-cache-identity : renderer3d? -> (or/c immutable-datum? #f)
+;; Returns a declared backend appearance identity, or #f when an outer cache
+;; must conservatively decline reuse across an ambient backend choice.
+(define (renderer3d-cache-identity renderer)
+  (unless (renderer3d? renderer)
+    (raise-argument-error 'renderer3d-cache-identity "renderer3d?" renderer))
+  (cond
+    [(not (renderer3d-cache-identity-property? renderer)) #f]
+    [else
+     (define descriptor
+       (renderer3d-cache-identity-property-ref renderer))
+     (define identity
+       (if (procedure? descriptor) (descriptor renderer) descriptor))
+     (unless (or (not identity) (renderer3d-cache-identity-datum? identity))
+       (raise-arguments-error
+        'renderer3d-cache-identity
+        "#f or an immutable datum containing only primitive values"
+        "renderer" renderer
+        "identity" identity))
+     identity]))
+
+(define (renderer3d-cache-identity-datum? value)
+  (cond [(or (null? value) (boolean? value) (symbol? value) (keyword? value)
+             (char? value) (number? value)) #t]
+        [(string? value) (immutable? value)]
+        [(bytes? value) (immutable? value)]
+        [(pair? value)
+         (and (renderer3d-cache-identity-datum? (car value))
+              (renderer3d-cache-identity-datum? (cdr value)))]
+        [(vector? value)
+         (and (immutable? value)
+              (for/and ([item (in-vector value)])
+                (renderer3d-cache-identity-datum? item)))]
+        [(hash? value)
+         (and (immutable? value)
+              (for/and ([(key item) (in-hash value)])
+                (and (renderer3d-cache-identity-datum? key)
+                     (renderer3d-cache-identity-datum? item))))]
+        [else #f]))
 
 (define maximum-reference-resource-count
   ;; The reference backend has no fixed shader-array resource limit. Capability
@@ -518,6 +569,8 @@
 
 (struct software-renderer3d-value (statistics lock)
   #:transparent
+  #:property prop:renderer3d-cache-identity
+  '(animate-software-renderer3d-v1 reference)
   #:methods gen:renderer3d
   [(define (renderer3d-id _self) 'software-reference)
    (define (renderer3d-capabilities-of _self) reference-capabilities)
@@ -576,6 +629,8 @@
   (capacity entries geometry-entries clock geometry-clock hits misses lock statistics)
   #:mutable
   #:transparent
+  #:property prop:renderer3d-cache-identity
+  '(animate-software-renderer3d-v1 retained-reference)
   #:methods gen:renderer3d
   [(define (renderer3d-id _self) 'retained-software-reference)
    (define (renderer3d-capabilities-of _self) reference-capabilities)

@@ -35,12 +35,16 @@ palette or theme reference, so it resolves identically in every theme.
 Constructs an immutable reference to a canonical lowercase, hyphenated palette
 key. The family and neutral aliases documented below normalize to their
 canonical entries. A custom canonical key is allowed; the selected theme
-validates whether it has a supplied swatch.
+validates whether it has a supplied swatch. The key must be a nonempty
+interned symbol; uninterned and unreadable symbols are rejected because their
+identity cannot survive a theme-file or worker boundary.
 }
 
 @defproc[(role-color [key symbol?]) color-token?]{
 Constructs an immutable reference to a nonempty semantic role key. Use it for a
-custom role; the @racket[theme-...] bindings below are the standard roles.
+custom role; the @racket[theme-...] bindings below are the standard roles. The
+key must be a nonempty interned symbol for the same portable-data reason as a
+palette key.
 }
 
 @defproc[(series-color [index exact-nonnegative-integer?]) color-token?]{
@@ -177,7 +181,9 @@ The version number carried by @racket[color-spec->datum] values.
 
 @defproc[(color-spec->datum [color color-spec?]) any/c]{
 Produces a readable, versioned datum. For example, a palette reference is
-written as @racket['(animate-color-spec 1 (palette aqua-c))].
+written as @racket['(animate-color-spec 1 (palette aqua-c))]. Serialization
+uses a finite output-node budget, so a shared expression graph cannot expand
+without bound into this tree-shaped external format.
 }
 
 @defproc[(datum->color-spec [datum any/c]
@@ -193,6 +199,13 @@ A palette is a complete immutable table from palette keys to literal RGBA
 swatches. A theme owns one complete palette snapshot and maps semantic role
 keys to authored color specifications. Both are pure values: resolution always
 takes a theme explicitly and no mutable process-wide current theme exists.
+
+Every symbol that becomes portable color data---palette/theme IDs, palette and
+role keys, palette-group IDs, and symbol-valued provenance---must be a nonempty
+interned symbol. Process-local uninterned and unreadable symbols are rejected
+rather than silently interned, since distinct same-spelling keys could otherwise
+merge after a file or worker round trip. Strings remain supported for display
+names and provenance.
 
 @defthing[color-palette-schema-version exact-positive-integer?]{
 The version number used by palette data read and written by this release.
@@ -262,7 +275,9 @@ series definitions may refer to literals, palette tokens, roles, and
 expressions, but not @racket[series-color]: a categorical series token becomes
 valid only after the complete theme series has been constructed. Theme
 definitions are bounded to 10,000 roles or series entries and expression depth
-64, so invalid external data cannot create an unbounded dependency walk.
+64. Validation and resolution memoize shared expression nodes within one
+operation and enforce a distinct-node budget, so invalid external data cannot
+create an unbounded dependency walk.
 }
 
 @defproc[(color-theme? [value any/c]) boolean?]{Recognizes a complete theme.}
@@ -289,7 +304,8 @@ but resolving a series token raises an error.
 Returns a deterministic appearance identity based on the complete palette,
 resolved roles, and resolved series. Display names and provenance do not alter
 this fingerprint. Equal appearances have equal fingerprints regardless of hash
-insertion order or palette-extension history; series order remains significant.
+insertion order, palette-extension history, or ordinary printer preferences;
+series order remains significant.
 }
 @defproc[(theme->datum [theme color-theme?]) any/c]{
 Produces a complete readable versioned theme datum.
@@ -349,7 +365,9 @@ not a claim that every rendered video meets an accessibility standard.
                                   '((foreground . background))]
           [#:graphic-pairs graphic-pairs (listof (cons/c symbol? symbol?))
                             '((axis . background) (accent . background))]
-          [#:minimum-series-contrast minimum-series-contrast positive-real? 3])
+          [#:minimum-series-contrast minimum-series-contrast
+                                      (and/c finite-real? positive?) 3]
+          [#:canvas canvas (or/c #f rgba-color?) #f])
          (listof immutable-hash?)]{
 Returns deterministic reports for requested role-pair contrast, nonmonotonic
 declared standard shade ramps, empty categorical series, and low-contrast
@@ -361,6 +379,12 @@ expression-resolution failures are rejected when a palette, theme, or color
 datum is constructed; no renderer silently repairs them. A color that needs
 gamut mapping during Oklab interpolation remains deterministic, but the
 resolved value is always the value this API reports.
+
+If a requested background or the theme background is translucent, a supplied
+opaque @racket[canvas] gives the compositing basis. Without one, the valid theme
+still returns a @racket['contrast-undetermined] report instead of being treated
+as malformed. Returned invalid-datum reports retain a bounded immutable summary
+of input, never the caller's mutable datum.
 }
 
 @defproc[(color-theme-datum-diagnostics [datum any/c])

@@ -41,6 +41,7 @@
 
 (struct latex-formula-pict-renderer (appearance-cache)
   #:transparent
+  #:property prop:pict-renderer-cache-identity '(animate-latex-formula-pict-renderer-v1)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (formula-visual? visual))

@@ -16,6 +16,8 @@
 (provide gen:renderer3d
          renderer3d?
          renderer3d-id
+         prop:renderer3d-cache-identity
+         renderer3d-cache-identity
          renderer3d-capabilities-of
          renderer3d-fingerprint
          renderer3d-prepare

@@ -127,9 +127,11 @@
                        (make-immutable-hash (hash->list merged-roles))
                        normalized-series normalized-provenance #f #f #f #f))
   (define resolved-roles (resolve-all-theme-roles provisional))
+  (define series-expression-results (make-hasheq))
   (define resolved-series
     (for/list ([spec (in-list normalized-series)])
-      (resolve-color-in-theme spec provisional resolved-roles)))
+      (resolve-color-in-theme spec provisional resolved-roles
+                              series-expression-results)))
   (define resolved-series-vector
     (vector->immutable-vector (list->vector resolved-series)))
   (define fingerprint
@@ -213,16 +215,22 @@
 
 ;; resolve-color-in-theme : color-spec? color-theme? [immutable-hash?] -> rgba-color?
 ;;   Resolves literals, tokens, and supported expressions under one explicit theme.
-(define (resolve-color-in-theme spec theme [resolved-roles #f])
+(define (resolve-color-in-theme spec theme [resolved-roles #f]
+                                [expression-results #f])
   (check-theme 'resolve-color-in-theme theme)
   (define roles (or resolved-roles (color-theme-value-resolved-roles theme)))
+  ;; A direct public resolution is still one operation: use local memoization
+  ;; when a caller has not supplied the operation's shared table.  Theme
+  ;; construction supplies one table deliberately when resolving several
+  ;; roles/series entries together.
+  (define results (or expression-results (make-hasheq)))
   (unless (hash? roles)
     (raise-arguments-error
      'resolve-color-in-theme
      "a fully validated theme role table"
      "theme" (color-theme-value-id theme)))
   (resolve-color-spec (normalize-color-spec spec 'resolve-color-in-theme)
-                      theme roles))
+                      theme roles #f '() results))
 
 ;; resolve-all-theme-roles : color-theme? -> immutable-hash?
 ;;   Resolves every role with a tri-color DFS and reports indirect cycles.
@@ -230,6 +238,7 @@
   (define authored (color-theme-value-roles theme))
   (define states (make-hash))
   (define resolved (make-hash))
+  (define expression-results (make-hasheq))
   (define (visit key chain)
     (case (hash-ref states key 'unseen)
       [(resolved) (hash-ref resolved key)]
@@ -251,7 +260,8 @@
                              theme
                              #f
                              visit
-                             (cons key chain)))
+                             (cons key chain)
+                             expression-results))
        (hash-set! resolved key result)
        (hash-set! states key 'resolved)
        result]))
@@ -261,8 +271,14 @@
 
 ;; resolve-color-spec : color-spec? color-theme? (or/c #f hash?) ... -> rgba-color?
 ;;   Implements recursive literal/token/expression evaluation without global state.
-(define (resolve-color-spec spec theme resolved-roles [visit-role #f] [chain '()])
-  (cond
+(define (resolve-color-spec spec theme resolved-roles [visit-role #f] [chain '()]
+                            [expression-results #f])
+  (define cached
+    (and expression-results (hash-ref expression-results spec #f)))
+  (if cached
+      cached
+      (let ([result
+             (cond
     [(rgba-color? spec) spec]
     [(palette-token? spec)
      (palette-ref (color-theme-value-palette theme) (palette-token-key spec))]
@@ -295,14 +311,17 @@
                  (modulo (series-color-index spec) (vector-length series)))]
     [(mix-color? spec)
      (mix-rgba-colors
-      (resolve-color-spec (mix-color-from spec) theme resolved-roles visit-role chain)
-      (resolve-color-spec (mix-color-to spec) theme resolved-roles visit-role chain)
+      (resolve-color-spec (mix-color-from spec) theme resolved-roles visit-role chain
+                          expression-results)
+      (resolve-color-spec (mix-color-to spec) theme resolved-roles visit-role chain
+                          expression-results)
       (mix-color-amount spec)
       (mix-color-space spec)
       (mix-color-alpha-mode spec))]
     [(alpha-color? spec)
      (define source
-       (resolve-color-spec (alpha-color-source spec) theme resolved-roles visit-role chain))
+       (resolve-color-spec (alpha-color-source spec) theme resolved-roles visit-role chain
+                           expression-results))
      (define alpha
        (case (alpha-color-operation spec)
          [(replace) (alpha-color-amount spec)]
@@ -320,7 +339,10 @@
      (raise-arguments-error
       'resolve-color-in-theme
       "color-spec?"
-      "value" spec)]))
+      "value" spec)])])
+        (when (and expression-results (color-expression? spec))
+          (hash-set! expression-results spec result))
+        result)))
 
 ;; mix-rgba-colors : rgba-color? rgba-color? unit-real? symbol? symbol? -> rgba-color?
 ;;   Evaluates a declared mix with encoded or linear-light sRGB components.
@@ -341,15 +363,33 @@
 (define (theme-appearance-fingerprint theme resolved-roles resolved-series)
   (bytes->immutable-bytes
    (sha1-bytes
-    (call-with-output-bytes
-     (lambda (out)
-       (write
-        (list 'animate-color-theme-appearance-v2
-              (palette-appearance-datum (color-theme-value-palette theme))
-              (for/list ([key (in-list (sort (hash-keys resolved-roles) symbol<?))])
-                (list key (rgba->datum (hash-ref resolved-roles key))))
-              (map rgba->datum resolved-series))
-        out))))))
+    (color-theme-appearance-bytes/from-values theme resolved-roles resolved-series))))
+
+;; color-theme-appearance-bytes : color-theme? -> immutable-bytes?
+;; Returns canonical printer-independent bytes for the resolved appearance.
+(define (color-theme-appearance-bytes theme)
+  (check-theme 'color-theme-appearance-bytes theme)
+  (color-theme-appearance-bytes/from-values
+   theme (color-theme-value-resolved-roles theme)
+   (color-theme-value-resolved-series theme)))
+
+(define (color-theme-appearance-bytes/from-values theme resolved-roles resolved-series)
+  ;; The appearance grammar contains only lists, symbols, and finite colour
+  ;; numbers.  Fix the one reader-visible list spelling accepted by `write` so
+  ;; a REPL's print-pair-curly-braces preference cannot affect cache identity.
+  (bytes->immutable-bytes
+   (parameterize ([print-pair-curly-braces #f]
+                  [print-graph #f]
+                  [print-reader-abbreviations #f])
+     (call-with-output-bytes
+      (lambda (out)
+        (write
+         (list 'animate-color-theme-appearance-v3
+               (palette-appearance-datum (color-theme-value-palette theme))
+               (for/list ([key (in-list (sort (hash-keys resolved-roles) symbol<?))])
+                 (list key (rgba->datum (hash-ref resolved-roles key))))
+               (map rgba->datum resolved-series))
+         out))))))
 
 ;; theme->datum : color-theme? -> datum?
 ;;   Converts a complete normalized theme to a readable evaluator-free datum.
@@ -392,9 +432,10 @@
         [else
          (define entry (car entries))
          (define pair (checked-proper-list entry 'datum->theme))
-         (unless (and (= (length pair) 2) (symbol? (car pair)))
+         (unless (and (= (length pair) 2) (portable-color-key? (car pair)))
            (raise-arguments-error
-            'datum->theme "(role-key color-spec-datum) entries" "entry" entry "index" index))
+            'datum->theme "(nonempty interned role-key color-spec-datum) entries"
+            "entry" entry "index" index))
          (define key (car pair))
          (when (hash-has-key? seen key)
            (raise-arguments-error
@@ -446,33 +487,44 @@
 ;; `series-color` token can be consumed only after that entire graph has been
 ;; completed, never while defining it.
 (define (reject-series-dependencies! roles series)
+  (define visited (make-hasheq))
+  (define visited-count 0)
+  (define (visit owner-kind owner spec route)
+    ;; Check depth before consulting the shared-node memo. A node first seen
+    ;; shallowly must still fail when a later dependency route reaches it too
+    ;; deeply.
+    (when (> (length route) maximum-theme-expression-depth)
+      (raise-arguments-error
+       'color-theme "a color definition within the configured expression-depth budget"
+       "definition kind" owner-kind
+       "definition" owner
+       "maximum depth" maximum-theme-expression-depth))
+    (unless (hash-ref visited spec #f)
+      (hash-set! visited spec #t)
+      (set! visited-count (add1 visited-count))
+      (when (> visited-count maximum-theme-definition-count)
+        (raise-arguments-error
+         'color-theme "a color-definition graph within the configured node budget"
+         "maximum nodes" maximum-theme-definition-count))
+      (cond
+        [(series-color? spec)
+         (raise-arguments-error
+          'color-theme
+          "role and series definitions without series-color dependencies"
+          "definition kind" owner-kind
+          "definition" owner
+          "series index" (series-color-index spec)
+          "dependency route" (reverse (cons 'series-color route)))]
+        [(mix-color? spec)
+         (visit owner-kind owner (mix-color-from spec) (cons 'mix-from route))
+         (visit owner-kind owner (mix-color-to spec) (cons 'mix-to route))]
+        [(alpha-color? spec)
+         (visit owner-kind owner (alpha-color-source spec) (cons 'alpha route))]
+        [else (void)])))
   (for ([(key spec) (in-hash roles)])
-    (reject-series-dependency! 'role key spec '()))
+    (visit 'role key spec '()))
   (for ([spec (in-list series)] [index (in-naturals)])
-    (reject-series-dependency! 'series index spec '())))
-
-(define (reject-series-dependency! owner-kind owner spec route)
-  (when (> (length route) maximum-theme-expression-depth)
-    (raise-arguments-error
-     'color-theme "a color definition within the configured expression-depth budget"
-     "definition kind" owner-kind
-     "definition" owner
-     "maximum depth" maximum-theme-expression-depth))
-  (cond
-    [(series-color? spec)
-     (raise-arguments-error
-      'color-theme
-      "role and series definitions without series-color dependencies"
-      "definition kind" owner-kind
-      "definition" owner
-      "series index" (series-color-index spec)
-      "dependency route" (reverse (cons 'series-color route)))]
-    [(mix-color? spec)
-     (reject-series-dependency! owner-kind owner (mix-color-from spec) (cons 'mix-from route))
-     (reject-series-dependency! owner-kind owner (mix-color-to spec) (cons 'mix-to route))]
-    [(alpha-color? spec)
-     (reject-series-dependency! owner-kind owner (alpha-color-source spec) (cons 'alpha route))]
-    [else (void)]))
+    (visit 'series index spec '())))
 
 ;; normalize-display-name : any/c symbol? -> string?
 ;;   Copies human-readable metadata into an immutable string.
@@ -486,7 +538,10 @@
 (define (normalize-provenance value who)
   (cond
     [(not value) #f]
-    [(symbol? value) value]
+    [(symbol? value)
+     (unless (portable-color-key? value)
+       (raise-arguments-error who "an interned symbol or string provenance" "provenance" value))
+     value]
     [(string? value) (string->immutable-string (string-copy value))]
     [else (raise-argument-error who "(or/c #f symbol? string?) provenance" value)]))
 
@@ -506,8 +561,8 @@
 ;; check-nonempty-symbol : symbol? string? any/c -> void?
 ;;   Validates identifiers and role names without a display-name convention.
 (define (check-nonempty-symbol who label value)
-  (unless (and (symbol? value) (not (eq? value '||)))
-    (raise-arguments-error who "nonempty symbol?" label value)))
+  (unless (portable-color-key? value)
+    (raise-arguments-error who "nonempty interned symbol?" label value)))
 
 ;; check-theme : symbol? any/c -> void?
 ;;   Raises a consistent contract error for theme queries.

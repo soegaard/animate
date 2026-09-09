@@ -223,8 +223,8 @@
 ;;   Validates canonical non-reserved keys and normalizes all values to RGBA.
 (define (normalize-palette-colors colors who)
   (for/fold ([result (hash)]) ([(key value) (in-hash colors)])
-    (unless (symbol? key)
-      (raise-arguments-error who "symbol? palette keys" "key" key))
+    (unless (portable-color-key? key)
+      (raise-arguments-error who "nonempty interned symbol? palette keys" "key" key))
     (define canonical-key (color-token-key (palette-color key)))
     (when (memq canonical-key reserved-literal-palette-keys)
       (raise-arguments-error
@@ -267,9 +267,11 @@
   (for/list ([group (in-list groups)])
     (define fields (checked-proper-list group who))
     (unless (and (= (length fields) 2)
-                 (symbol? (car fields))
                  (list? (cadr fields)))
       (raise-arguments-error who "(list group-id (listof palette-key))" "group" group))
+    (unless (portable-color-key? (car fields))
+      (raise-arguments-error who "a nonempty interned symbol as palette group id"
+                             "group id" (car fields)))
     (define keys
       (for/list ([key (in-list (cadr fields))])
         (define canonical-key (color-token-key (palette-color key)))
@@ -311,7 +313,10 @@
 (define (normalize-provenance value who)
   (cond
     [(not value) #f]
-    [(symbol? value) value]
+    [(symbol? value)
+     (unless (portable-color-key? value)
+       (raise-arguments-error who "an interned symbol or string provenance" "provenance" value))
+     value]
     [(string? value) (string->immutable-string (string-copy value))]
     [else (raise-argument-error who "(or/c #f symbol? string?) provenance" value)]))
 
@@ -331,8 +336,8 @@
 ;; check-nonempty-symbol : symbol? string? any/c -> void?
 ;;   Validates identifiers without imposing a display-name convention.
 (define (check-nonempty-symbol who label value)
-  (unless (and (symbol? value) (not (eq? value '||)))
-    (raise-arguments-error who "nonempty symbol?" label value)))
+  (unless (portable-color-key? value)
+    (raise-arguments-error who "nonempty interned symbol?" label value)))
 
 ;; check-palette : symbol? any/c -> void?
 ;;   Raises a consistent contract error for palette queries.

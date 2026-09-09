@@ -23,7 +23,7 @@
 ;; Palette appearance data gained canonical construction-history-independent
 ;; ordering in COLOR-R6.  Bump the resolver identity so persisted pixel caches
 ;; cannot conflate their earlier fingerprint payload with this one.
-(define render-color-resolver-version 2)
+(define render-color-resolver-version 3)
 
 (struct render-color-context
   (theme resolved-role-table appearance-fingerprint resolver-version)

@@ -39,6 +39,17 @@
 
 (struct view3d-pict-renderer ()
   #:transparent
+  ;; An opaque viewport consults the dynamically selected backend.  The
+  ;; enclosing section cache must therefore include its declared backend
+  ;; appearance identity rather than treating every viewport as software.
+  ;; A custom backend that supplies no declaration makes this renderer (and
+  ;; thus persistent section reuse) conservatively noncacheable.
+  #:property prop:pict-renderer-cache-identity
+  (lambda (_renderer)
+    (define backend-identity
+      (renderer3d-cache-identity (current-view3d-renderer3d)))
+    (and backend-identity
+         (list 'animate-view3d-pict-renderer-v2 backend-identity)))
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (view3d? visual))

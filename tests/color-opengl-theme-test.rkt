@@ -23,6 +23,26 @@
    #:render-mode 'opaque
    #:camera (orthographic-camera3d #:position (vec3 0 0 3) #:look-at origin3)))
 
+(define (lit-light-view light-colour)
+  (view3d
+   (list
+    (mesh3d #:id 'lit-light-triangle
+            #:vertices (vector (vec3 -2 -2 0) (vec3 2 -2 0) (vec3 0 2 0))
+            #:triangles (vector (vector 0 1 2))
+            #:material (material3d #:color white #:shading 'flat
+                                   #:lighting 'lambert #:ambient 1/4 #:diffuse 3/4)))
+   #:id 'themed-opengl-lights #:width 4 #:height 4 #:background black
+   #:render-mode 'opaque
+   #:camera (orthographic-camera3d #:position (vec3 0 0 3) #:look-at origin3)
+   #:lights
+   (list (ambient-light3d #:id 'ambient #:color light-colour #:intensity 1/4)
+         (directional-light3d (vec3 0 0 -1) #:id 'directional
+                              #:color light-colour #:intensity 1/4)
+         (point-light3d (vec3 0 0 3) #:id 'point
+                        #:color light-colour #:intensity 1/4)
+         (spot-light3d (vec3 0 0 3) (vec3 0 0 -1) #:id 'spot
+                       #:color light-colour #:intensity 1/4))))
+
 (define (render! renderer theme view)
   (parameterize ([current-render-color-context (make-render-color-context theme)])
     (define request (view3d->render3d-request view 64 64))
@@ -69,5 +89,20 @@
          (hash-ref (hash-ref (statistics renderer) 'geometry-cache) 'uploads))
        (void (render! renderer cool-theme attribute-view))
        (check-true (> (hash-ref (hash-ref (statistics renderer) 'geometry-cache) 'uploads)
-                      attribute-uploads)))
+                      attribute-uploads))
+       ;; Each light kind follows the preparation-owned context. A tokenized
+       ;; list agrees with an explicitly resolved literal reference, and A/B/A
+       ;; reuse cannot consult a newer ambient theme while uploading uniforms.
+       (define warm-lights (render! renderer warm-theme (lit-light-view aqua-c)))
+       (define warm-literal
+         (render! renderer animate-light-theme
+                  (lit-light-view (resolve-color aqua-c warm-theme))))
+       (check-equal? (renderer3d-render-result-argb-bytes warm-lights)
+                     (renderer3d-render-result-argb-bytes warm-literal))
+       (define cool-lights (render! renderer cool-theme (lit-light-view aqua-c)))
+       (check-not-equal? (renderer3d-render-result-argb-bytes warm-lights)
+                         (renderer3d-render-result-argb-bytes cool-lights))
+       (define warm-again (render! renderer warm-theme (lit-light-view aqua-c)))
+       (check-equal? (renderer3d-render-result-argb-bytes warm-lights)
+                     (renderer3d-render-result-argb-bytes warm-again)))
      (lambda () (release! renderer)))))

@@ -20,6 +20,7 @@
 (provide palette-color
          role-color
          series-color
+         portable-color-key?
          palette-token?
          palette-token-key
          role-token?
@@ -72,10 +73,19 @@
 ;; role-color : symbol? -> role-token?
 ;;   Constructs an immutable semantic-role reference.
 (define (role-color key)
-  (unless (and (symbol? key)
-               (not (string=? (symbol->string key) "")))
-    (raise-argument-error 'role-color "nonempty symbol?" key))
+  (unless (portable-color-key? key)
+    (raise-argument-error 'role-color "nonempty interned symbol?" key))
   (role-token key))
+
+;; portable-color-key? : any/c -> boolean?
+;; Identifies a symbol whose identity and spelling survive a `write`/`read`
+;; boundary. Non-interned and unreadable symbols are process-local identities;
+;; accepting either in a portable theme/palette key could change or merge a
+;; declaration after it is stored or sent to a worker.
+(define (portable-color-key? value)
+  (and (symbol? value)
+       (symbol-interned? value)
+       (positive? (string-length (symbol->string value)))))
 
 ;; series-color : exact-nonnegative-integer? -> series-color?
 ;; Constructs a themeable categorical color reference without consulting a
@@ -125,8 +135,8 @@
 ;; canonical-palette-key : any/c symbol? -> symbol?
 ;;   Validates canonical hyphenated palette spelling and normalizes aliases.
 (define (canonical-palette-key key who)
-  (unless (symbol? key)
-    (raise-argument-error who "canonical hyphenated symbol?" key))
+  (unless (portable-color-key? key)
+    (raise-argument-error who "nonempty interned canonical hyphenated symbol?" key))
   (define spelling (symbol->string key))
   (unless (regexp-match? #px"^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" spelling)
     (raise-arguments-error

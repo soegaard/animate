@@ -45,8 +45,16 @@
      ;; Reader graph syntax is not part of the data format, irrespective of
      ;; ambient reader parameters in a caller.
      (call-with-output-file
-      path
+     path
       (lambda (out) (display "#0=(animate-color-theme 1)" out))
+      #:exists 'truncate/replace)
+     (check-exn exn:fail?
+                (lambda () (load-color-theme! path)))
+     ;; Compact reader-dispatch forms can request disproportionate allocation;
+     ;; the declarative file grammar rejects them before `read` sees a vector.
+     (call-with-output-file
+      path
+      (lambda (out) (display "#1000000(0)" out))
       #:exists 'truncate/replace)
      (check-exn exn:fail?
                 (lambda () (load-color-theme! path))))
