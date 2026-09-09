@@ -10,7 +10,10 @@
          "../render.rkt")
 
 (module+ test
-  (define path (make-temporary-file "animate-theme-~a.rktd"))
+  ;; Keep the destination in its own directory so successful transactional
+  ;; replacement can prove that it did not leave a sibling temporary file.
+  (define directory (make-temporary-file "animate-theme-~a" 'directory))
+  (define path (build-path directory "theme.rktd"))
   (dynamic-wind
    void
    (lambda ()
@@ -33,6 +36,26 @@
                    (color-theme-fingerprint animate-dark-theme))
      (check-false (regexp-match? #rx"#false|#true|[{}]"
                                  (file->string path)))
+     ;; Serialization happens before the destination is touched. A failed
+     ;; replacement must therefore retain the old complete file byte-for-byte.
+     (write-color-theme! animate-light-theme path)
+     (define original-bytes (file->bytes path))
+     (define oversized-name-theme
+       (color-theme #:id 'writer-oversized-name
+                    #:extends animate-light-theme
+                    #:display-name (make-string 65537 #\x)))
+     (check-exn exn:fail:contract?
+                (lambda () (write-color-theme! oversized-name-theme path)))
+     (check-equal? (file->bytes path) original-bytes)
+     (check-equal? (color-theme-fingerprint (load-color-theme! path))
+                   (color-theme-fingerprint animate-light-theme))
+     ;; A successful replacement publishes the new complete file and consumes
+     ;; its sibling temporary file.
+     (write-color-theme! animate-dark-theme path)
+     (check-equal? (color-theme-fingerprint (load-color-theme! path))
+                   (color-theme-fingerprint animate-dark-theme))
+     (check-equal? (directory-list directory)
+                   (list (string->path "theme.rktd")))
      ;; The reader accepts the ordinary alternate spellings produced by
      ;; Racket's writer.  This snapshot contains both long Booleans and curly
      ;; pairs when their parameters are enabled by a caller.
@@ -135,4 +158,4 @@
       #:exists 'truncate/replace)
      (check-exn #px"reader-depth"
                 (lambda () (load-color-theme! path))))
-   (lambda () (when (file-exists? path) (delete-file path)))))
+   (lambda () (when (directory-exists? directory) (delete-directory/files directory)))))

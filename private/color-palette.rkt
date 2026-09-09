@@ -29,6 +29,7 @@
          palette-keys
          palette-groups
          palette->datum
+         palette->datum/budget
          datum->palette
          color-palette-schema-version)
 
@@ -157,18 +158,20 @@
 ;;; Deterministic Data Conversion
 ;;;
 
-;; palette->datum : color-palette?
-;;                   [#:serialization-budget color-serialization-budget?]
-;;                   -> datum?
+;; palette->datum : color-palette? -> datum?
 ;;   Converts a palette to a readable, deterministic, versioned data tree.
-(define (palette->datum palette #:serialization-budget [serialization-budget #f])
+(define (palette->datum palette)
+  (palette->datum/budget
+   palette
+   (make-color-serialization-budget 'palette->datum)))
+
+;; palette->datum/budget is private composition support for `theme->datum`.
+;; It is deliberately excluded from the public `colors` module.
+(define (palette->datum/budget palette budget)
   (check-palette 'palette->datum palette)
-  (define budget
-    (or serialization-budget
-        (make-color-serialization-budget 'palette->datum)))
   (unless (color-serialization-budget? budget)
-    (raise-argument-error 'palette->datum
-                          "color-serialization-budget? as #:serialization-budget"
+    (raise-argument-error 'palette->datum/budget
+                          "color-serialization-budget?"
                           budget))
   (define keys (palette-keys palette))
   (define groups (color-palette-value-groups palette))

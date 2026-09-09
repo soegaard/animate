@@ -14,7 +14,8 @@
 ;;;
 
 ;; Imports
-(require racket/list
+(require racket/file
+         racket/list
          racket/path
          racket/port
          file/sha1
@@ -61,17 +62,46 @@
     (raise-argument-error 'write-color-theme! "color-theme?" theme))
   (unless (path-string? path)
     (raise-argument-error 'write-color-theme! "path-string?" path))
-  (call-with-output-file
-   path
-   (lambda (output)
-     (parameterize ([print-pair-curly-braces #f]
-                    [print-boolean-long-form #f]
-                    [print-graph #f]
-                    [print-reader-abbreviations #f])
-       (write (theme->datum theme) output)
-       (newline output)))
-   #:exists 'truncate/replace)
-  path)
+  ;; Construct the complete immutable datum before opening the destination.
+  ;; A serialization failure must not truncate a previously valid theme file.
+  (define datum (theme->datum theme))
+  (define destination (path->complete-path path))
+  (define destination-directory
+    (or (path-only destination) (current-directory)))
+  (define destination-leaf
+    (or (file-name-from-path destination) (string->path "theme")))
+  ;; The temporary file is a sibling of the destination, so replacement stays
+  ;; within one filesystem. `rename-file-or-directory` is the same replacement
+  ;; primitive used for the project's other complete output artifacts.
+  (define temporary
+    (make-temporary-file
+     (string-append "."
+                    (path->string destination-leaf)
+                    ".animate-theme-~a.rktd")
+     #f
+     destination-directory))
+  (dynamic-wind
+   void
+   (lambda ()
+     (call-with-output-file
+      temporary
+      (lambda (output)
+        (parameterize ([print-pair-curly-braces #f]
+                       [print-boolean-long-form #f]
+                       [print-graph #f]
+                       [print-reader-abbreviations #f])
+          (write datum output)
+          (newline output)))
+      #:exists 'truncate/replace)
+     ;; Publish only a completely written and successfully closed file.
+     (rename-file-or-directory temporary destination #t)
+     path)
+   (lambda ()
+     ;; On a failed write or replacement, leave the previous destination alone
+     ;; and remove the unique sibling temporary file.
+     (when (file-exists? temporary)
+       (with-handlers ([exn:fail? (lambda (_error) (void))])
+         (delete-file temporary))))))
 
 ;; load-color-theme! : path-string? -> color-theme?
 ;; Reads one bounded, versioned data-only theme file at the effectful render

@@ -32,13 +32,15 @@
 ;; Exports
 (provide (except-out (all-from-out "private/color-style.rkt")
                      normalize-color-spec
-                     rgba-color-mix)
+                     rgba-color-mix
+                     color-spec->datum/budget)
          (except-out (all-from-out "private/color-token.rkt")
                      palette-token?
                      palette-token-key
                      role-token?
                      role-token-key)
-         (all-from-out "private/color-palette.rkt")
+         (except-out (all-from-out "private/color-palette.rkt")
+                     palette->datum/budget)
          ;; `color-theme-resolved-roles` is an adapter snapshot used only to
          ;; construct a render-color-context.  The public API exposes authored
          ;; role specifications through `theme-ref`, not this implementation

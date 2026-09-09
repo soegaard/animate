@@ -31,6 +31,7 @@
          normalize-color-spec
          color-spec-schema-version
          color-spec->datum
+         color-spec->datum/budget
          datum->color-spec)
 
 ;; rgba-color stores sRGB component values independently from any drawing backend.
@@ -280,57 +281,47 @@
 ;; shared complete-output allowance before exact datum accounting runs.
 (define maximum-serialized-nodes-per-color-expression-node 17)
 
-; color-spec->datum : color-spec? [#:count-node! procedure?]
-;                     [#:serialization-budget color-serialization-budget?]
-;                     -> immutable-datum?
+; color-spec->datum : color-spec? -> immutable-datum?
 ;;   Converts a color specification to a versioned, evaluator-free datum tree.
-(define (color-spec->datum color
-                           #:count-node! [shared-count-node! #f]
-                           #:serialization-budget [serialization-budget #f])
-  (when (and shared-count-node! serialization-budget)
-    (raise-arguments-error
-     'color-spec->datum
-     "at most one internal serialization accounting mechanism"
-     "#:count-node!" shared-count-node!
-     "#:serialization-budget" serialization-budget))
-  (when (and serialization-budget
-             (not (color-serialization-budget? serialization-budget)))
-    (raise-argument-error 'color-spec->datum
-                          "color-serialization-budget? as #:serialization-budget"
-                          serialization-budget))
-  (define maximum-expression-nodes
-    (if serialization-budget
-        (quotient (color-serialization-budget-remaining-nodes serialization-budget)
-                  maximum-serialized-nodes-per-color-expression-node)
-        maximum-color-spec-datum-nodes))
+(define (color-spec->datum color)
+  (serialize-color-spec->datum
+   color
+   (make-color-serialization-budget
+    'color-spec->datum #:maximum-nodes maximum-color-spec-datum-nodes)
+   maximum-color-spec-datum-nodes))
+
+;; color-spec->datum/budget is private composition support for `theme->datum`.
+;; Keeping its shared allowance out of the public procedure prevents callers
+;; from bypassing the complete-datum resource accounting.
+(define (color-spec->datum/budget color budget)
+  (unless (color-serialization-budget? budget)
+    (raise-argument-error 'color-spec->datum/budget
+                          "color-serialization-budget?"
+                          budget))
+  (serialize-color-spec->datum
+   color
+   budget
+   (quotient (color-serialization-budget-remaining-nodes budget)
+             maximum-serialized-nodes-per-color-expression-node)))
+
+(define (serialize-color-spec->datum color budget maximum-expression-nodes)
   (define count-node!
-    (or shared-count-node!
-        (let ([nodes 0])
-          (lambda ()
-            (set! nodes (add1 nodes))
-            (when (> nodes maximum-expression-nodes)
-              (raise-arguments-error
-               'color-spec->datum
-               "a color expression whose serialized tree fits the configured node budget"
-               "maximum nodes" maximum-expression-nodes))))))
-  (unless (procedure? count-node!)
-    (raise-argument-error 'color-spec->datum "procedure? as #:count-node!"
-                          count-node!))
+    (let ([nodes 0])
+      (lambda ()
+        (set! nodes (add1 nodes))
+        (when (> nodes maximum-expression-nodes)
+          (raise-arguments-error
+           'color-spec->datum
+           "a color expression whose serialized tree fits the configured node budget"
+           "maximum nodes" maximum-expression-nodes)))))
   (define datum
     `(animate-color-spec ,color-spec-schema-version
                          ,(color-spec->body (normalize-color-spec color
                                                                     'color-spec->datum)
                                             count-node!)))
-  (cond [serialization-budget
-         (color-serialization-budget-count-datum! serialization-budget datum)]
-        [shared-count-node! (void)]
-        [else
-         ;; Standalone output also has the complete datum budget: expression
-         ;; nodes alone do not account for wrapper pairs or large atoms.
-         (color-serialization-budget-count-datum!
-          (make-color-serialization-budget 'color-spec->datum
-                                            #:maximum-nodes maximum-color-spec-datum-nodes)
-          datum)])
+  ;; Expression nodes are preflighted above; this accounts for their wrappers
+  ;; and atoms as well. A shared theme budget counts every nested occurrence.
+  (color-serialization-budget-count-datum! budget datum)
   datum)
 
 ; datum->color-spec : any/c [#:maximum-depth exact-positive-integer?]
@@ -346,7 +337,7 @@
 
 ; color-spec->body : color-spec? -> immutable-datum?
 ;;   Serializes a normalized specification to the body under the version header.
-(define (color-spec->body color [count-node! void])
+(define (color-spec->body color count-node!)
   (count-node!)
   (cond
     [(rgba-color? color)

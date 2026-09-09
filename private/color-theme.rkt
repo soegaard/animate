@@ -413,8 +413,7 @@
                               (color-theme-value-provenance theme)))])
     (color-serialization-budget-count-atom! budget value))
   (define palette-datum
-    (palette->datum (color-theme-value-palette theme)
-                    #:serialization-budget budget))
+    (palette->datum/budget (color-theme-value-palette theme) budget))
   (count-list-container! budget (length role-keys))
   (define roles
     (for/list ([key (in-list role-keys)])
@@ -422,12 +421,11 @@
       ;; the color spec's own call contributes its complete nested tree.
       (count-list-container! budget 2)
       (color-serialization-budget-count-atom! budget key)
-      (list key (color-spec->datum (theme-ref theme key)
-                                   #:serialization-budget budget))))
+      (list key (color-spec->datum/budget (theme-ref theme key) budget))))
   (count-list-container! budget (length series))
   (define series-data
     (for/list ([spec (in-list series)])
-      (color-spec->datum spec #:serialization-budget budget)))
+      (color-spec->datum/budget spec budget)))
   `(animate-color-theme ,color-theme-schema-version
                         ,(color-theme-value-id theme)
                         ,(color-theme-value-display-name theme)
