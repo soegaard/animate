@@ -417,7 +417,7 @@
 (define (preview-spec #:fps [fps 30]
                       #:pixel-scale [pixel-scale 1]
                       #:supersample [supersample 1]
-                      #:cache-megabytes [cache-megabytes 128]
+                      #:cache-megabytes [cache-megabytes 512]
                       #:prefetch [prefetch 3]
                       #:worker-mode [worker-mode 'in-process]
                       #:quality-policy [quality-policy 'adaptive]

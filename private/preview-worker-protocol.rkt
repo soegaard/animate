@@ -6,9 +6,9 @@
 
 ;; Every value crossing the process boundary is a prefab, reader-safe datum.
 ;; In particular, bitmaps never travel through a Racket place/channel: the
-;; worker writes a temporary PNG and the preview process owns loading and
-;; deleting it.  This keeps the protocol portable across Racket versions and
-;; prevents a GUI eventspace from acquiring a foreign bitmap object.
+;; worker returns encoded PNG bytes, which the preview process decodes into
+;; its own bitmap object. This keeps the protocol portable across Racket
+;; versions and prevents a GUI eventspace from acquiring a foreign bitmap.
 
 (provide (struct-out worker-load-project)
          (struct-out worker-render-frame)
@@ -34,12 +34,11 @@
 ;; sample is either '(frame INDEX FPS) or '(time SECONDS). theme-datum is a
 ;; complete reader-safe color-theme snapshot, never a worker-local lookup by
 ;; name. camera3d-overrides is a reader-safe list of preview-camera3d-override
-;; data. output-path names a parent-owned temporary PNG. Generations and request
-;; id are echoed in every render response, allowing a controller to reject
-;; obsolete results.
+;; data. Generations and request id are echoed in every render response,
+;; allowing a controller to reject obsolete results.
 (struct worker-render-frame
   (plan-fingerprint document-generation render-generation request-id
-                    sample pixel-scale supersample theme-datum camera3d-overrides output-path)
+                    sample pixel-scale supersample theme-datum camera3d-overrides)
   #:prefab)
 
 (struct worker-cancel
@@ -58,7 +57,7 @@
   #:prefab)
 (struct worker-frame-complete
   (plan-fingerprint document-generation render-generation request-id
-                    output-path diagnostics)
+                    png-bytes diagnostics)
   #:prefab)
 (struct worker-frame-failed
   (plan-fingerprint document-generation render-generation request-id message)

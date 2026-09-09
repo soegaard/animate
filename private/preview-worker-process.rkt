@@ -11,7 +11,6 @@
 (require racket/async-channel
          racket/class
          racket/draw
-         racket/file
          racket/list
          racket/path
          racket/runtime-path
@@ -57,21 +56,43 @@
 ;; The controller's general producer contract predates subprocess workers and
 ;; deliberately exposes only document/sample/spec/token. This adapter creates
 ;; protocol request identities internally while preserving that small contract.
-;; It is used only by module-backed projects; in-memory scenes retain their
-;; cooperative in-process producer.
+;; Module-backed software previews use a small pool of isolated Racket
+;; processes, so independent frames can use separate CPU cores. In-memory
+;; scenes retain their cooperative in-process producer because arbitrary
+;; author procedures and racket/draw values cannot safely cross that boundary.
 (struct project-worker-producer
-  (module-path binding fingerprint worker document-generation next-request-id)
+  (module-path binding fingerprint workers available next-request-id-lock next-request-id)
   #:mutable
   #:transparent)
 
 (define (make-project-worker-producer module-path binding
-                                      #:fingerprint [fingerprint 'project])
+                                      #:fingerprint [fingerprint 'project]
+                                      #:workers [workers 2])
   (unless (path-string? module-path)
     (raise-argument-error 'make-project-worker-producer "path-string?" module-path))
   (unless (symbol? binding)
     (raise-argument-error 'make-project-worker-producer "symbol?" binding))
-  (project-worker-producer
-   (path->complete-path module-path) binding fingerprint #f #f 0))
+  (unless (exact-positive-integer? workers)
+    (raise-argument-error 'make-project-worker-producer "exact-positive-integer?" workers))
+  (define complete-module-path (path->complete-path module-path))
+  (define available (make-async-channel))
+  (define started '())
+  (with-handlers
+      ([exn:fail?
+        (lambda (error)
+          (for ([worker (in-list started)])
+            (preview-worker-stop! worker))
+          (raise error))])
+    (for ([ignored (in-range workers)])
+      (define worker
+        (start-project-preview-worker complete-module-path binding
+                                      #:fingerprint fingerprint
+                                      #:document-generation 0))
+      (set! started (cons worker started))
+      (async-channel-put available worker))
+    (project-worker-producer
+     complete-module-path binding fingerprint (reverse started) available
+     (make-semaphore 1) 0)))
 
 (define (project-worker-producer-produce producer document sample render-spec token)
   (unless (project-worker-producer? producer)
@@ -84,46 +105,55 @@
   (unless (cancellation-token? token)
     (raise-argument-error 'project-worker-producer-produce "cancellation-token?" token))
   (define generation (preview-document-generation document))
-  (define worker (project-worker-producer-worker producer))
-  (cond
-    [(not worker)
-     (set! worker
-           (start-project-preview-worker
-            (project-worker-producer-module-path producer)
-            (project-worker-producer-binding producer)
-            #:fingerprint (project-worker-producer-fingerprint producer)
-            #:document-generation generation))
-     (set-project-worker-producer-worker! producer worker)
-     (set-project-worker-producer-document-generation! producer generation)]
-    [(not (= generation (project-worker-producer-document-generation producer)))
-     (preview-worker-reload! worker #:document-generation generation)
-     (set-project-worker-producer-document-generation! producer generation)]
-    [else (void)])
-  (define next-id (add1 (project-worker-producer-next-request-id producer)))
-  (set-project-worker-producer-next-request-id! producer next-id)
-  (define request
-    (preview-render-request
-     #:id next-id
-     #:document-generation generation
-     #:render-generation 0
-     #:sample sample
-     #:quality
-     (preview-quality #:name 'project-worker
-                      #:pixel-scale (preview-render-spec-pixel-scale render-spec)
-                      #:supersample (preview-render-spec-supersample render-spec))
-     #:priority 0
-     #:cancellation-token token))
-  (define-values (bitmap _diagnostics)
-    (preview-worker-render-frame! worker request render-spec))
-  bitmap)
+  ;; Waiting for a pool slot is cancellation-aware. It is important during a
+  ;; seek: an obsolete high-priority request must not begin after another
+  ;; frame gives up its process.
+  (define worker
+    (let wait-for-worker ()
+      (check-cancellation token)
+      (define available-worker
+        (sync/timeout 1/100 (project-worker-producer-available producer)))
+      (or available-worker (wait-for-worker))))
+  (dynamic-wind
+   void
+   (lambda ()
+     ;; A process is checked out by exactly one controller lane. Reloading the
+     ;; source independently here is therefore race-free, and avoids stopping
+     ;; a sibling frame merely because the document generation changed.
+     (when (not (= generation (preview-worker-process-document-generation worker)))
+       (preview-worker-reload! worker #:document-generation generation))
+     (define next-id
+       (call-with-semaphore
+        (project-worker-producer-next-request-id-lock producer)
+        (lambda ()
+          (define next (add1 (project-worker-producer-next-request-id producer)))
+          (set-project-worker-producer-next-request-id! producer next)
+          next)))
+     (define request
+       (preview-render-request
+        #:id next-id
+        #:document-generation generation
+        #:render-generation 0
+        #:sample sample
+        #:quality
+        (preview-quality #:name 'project-worker
+                         #:pixel-scale (preview-render-spec-pixel-scale render-spec)
+                         #:supersample (preview-render-spec-supersample render-spec))
+        #:priority 0
+        #:cancellation-token token))
+     (define-values (bitmap _diagnostics)
+       (preview-worker-render-frame! worker request render-spec))
+     bitmap)
+   (lambda ()
+     (async-channel-put (project-worker-producer-available producer) worker))))
 
 (define (project-worker-producer-close! producer)
   (unless (project-worker-producer? producer)
     (raise-argument-error 'project-worker-producer-close!
                           "project-worker-producer?" producer))
-  (define worker (project-worker-producer-worker producer))
-  (when worker (preview-worker-stop! worker))
-  (set-project-worker-producer-worker! producer #f)
+  (for ([worker (in-list (project-worker-producer-workers producer))])
+    (preview-worker-stop! worker))
+  (set-project-worker-producer-workers! producer '())
   (void))
 
 (define (start-project-preview-worker module-path binding
@@ -153,9 +183,9 @@
   (check-worker 'preview-worker-open? worker)
   (unbox (preview-worker-process-alive? worker)))
 
-;; The return value is a bitmap loaded from a parent-owned temporary PNG. The
-;; file is removed after it is read; durable frame caching remains the project
-;; executor's separate responsibility.
+;; The return value is a bitmap decoded in the parent from worker-produced PNG
+;; bytes. Durable frame caching remains the project executor's separate
+;; responsibility.
 (define (preview-worker-render-frame! worker request render-spec
                                       #:timeout-milliseconds [timeout-milliseconds 10000])
   (check-worker 'preview-worker-render-frame! worker)
@@ -168,10 +198,6 @@
                           "exact-positive-integer?" timeout-milliseconds))
   (unless (preview-worker-open? worker)
     (preview-worker-restart! worker))
-  (define temporary (make-temporary-file "animate-preview-worker-~a.png"))
-  ;; bitmap% cannot always replace a pre-existing temporary file on every
-  ;; platform, while the worker owns the single later write.
-  (delete-file temporary)
   (define token (preview-render-request-cancellation-token request))
   (define message
     (worker-render-frame
@@ -189,13 +215,9 @@
             (sort (hash-keys (preview-render-spec-camera3d-overrides render-spec))
                   symbol<?))])
        (preview-camera3d-override->datum
-        (hash-ref (preview-render-spec-camera3d-overrides render-spec) view-id)))
-     (path->string temporary)))
-  (dynamic-wind
-   void
-   (lambda ()
-     (send-worker! worker message)
-     (let loop ([remaining timeout-milliseconds])
+        (hash-ref (preview-render-spec-camera3d-overrides render-spec) view-id)))))
+  (send-worker! worker message)
+  (let loop ([remaining timeout-milliseconds])
        (cond
          [(cancellation-requested? token)
           (preview-worker-cancel! worker request)
@@ -216,7 +238,8 @@
             [(and (worker-frame-complete? response)
                   (= (worker-frame-complete-request-id response)
                      (preview-render-request-id request)))
-             (values (read-bitmap temporary)
+             (values (read-bitmap
+                      (open-input-bytes (worker-frame-complete-png-bytes response)))
                      (worker-frame-complete-diagnostics response))]
             [(and (worker-frame-failed? response)
                   (= (worker-frame-failed-request-id response)
@@ -226,8 +249,6 @@
                                     "worker-error"
                                     (worker-frame-failed-message response))]
             [else (loop remaining)])])))
-   (lambda ()
-     (when (file-exists? temporary) (delete-file temporary)))))
 
 (define (preview-worker-cancel! worker request)
   (check-worker 'preview-worker-cancel! worker)

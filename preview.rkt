@@ -128,6 +128,11 @@
 (define-runtime-path preview-window-path "private/preview-window.rkt")
 (define-runtime-path opengl-renderer-module "3d/opengl.rkt")
 
+;; Module-backed software previews have independent renderer processes. Two
+;; lanes overlap prefetched frames without making the preview's memory or CPU
+;; demand surprising on ordinary laptops.
+(define project-software-preview-render-workers 2)
+
 (define (ensure-preview-gui who)
   ;; Keeping this non-initializing check avoids a headless worker crashing while
   ;; it tries to initialize Cocoa/GTK. The CLI relaunches itself with GRacket
@@ -147,10 +152,11 @@
                             #:renderers [renderers default-pict-renderers]
                             #:theme [theme #f]
                             #:pixel-scale [pixel-scale 1]
-                            #:cache-megabytes [cache-megabytes 128]
+                            #:cache-megabytes [cache-megabytes 512]
                             #:prefetch [prefetch 3]
                             #:playback-policy [playback-policy 'realtime]
                             #:worker-mode [worker-mode 'in-process]
+                            #:render-workers [render-workers 1]
                             #:producer [producer #f]
                             #:waveform [wave #f]
                             #:audio-mute-available? [audio-mute-available? (lambda () #f)]
@@ -168,7 +174,8 @@
      #:theme theme
      #:cache-megabytes cache-megabytes #:prefetch prefetch
      #:playback-policy playback-policy
-     #:worker-mode worker-mode #:producer producer #:waveform wave
+     #:worker-mode worker-mode #:render-workers render-workers
+     #:producer producer #:waveform wave
      #:audio-mute-available? audio-mute-available?
      #:audio-muted? audio-muted?
      #:set-audio-muted! set-audio-muted!
@@ -233,7 +240,8 @@
           ;; The configuration plan is pure and deterministic; its printed
           ;; datum gives a restarted worker an identity without serializing
           ;; arbitrary scene procedures.
-          #:fingerprint (format "~s" (project-plan->datum plan)))))
+          #:fingerprint (format "~s" (project-plan->datum plan))
+          #:workers project-software-preview-render-workers)))
   ;; `open-scene-preview` creates GUI controls before returning its session.
   ;; Keep the audio-control closure independent of the still-uninitialized
   ;; `session` binding during that construction window.
@@ -256,6 +264,10 @@
      ;; frame visible rather than superseding it until the final frame wins.
      #:playback-policy (if project-opengl-renderer 'exact 'realtime)
      #:worker-mode (if worker-producer 'subprocess 'in-process)
+     ;; The producer is a pool of independent software Racket processes. The
+     ;; controller can therefore issue two frame jobs concurrently without
+     ;; running racket/draw or an OpenGL context from multiple GUI threads.
+     #:render-workers (if worker-producer project-software-preview-render-workers 1)
      #:waveform (project-preview-audio-runtime-waveform audio-runtime)
      #:audio-mute-available?
      (lambda ()
@@ -441,7 +453,7 @@
                               #:renderers [renderers default-pict-renderers]
                               #:theme [theme #f]
                               #:pixel-scale [pixel-scale 1]
-                              #:cache-megabytes [cache-megabytes 128]
+                              #:cache-megabytes [cache-megabytes 512]
                               #:prefetch [prefetch 3]
                               #:repl? [repl? #f]
                               #:open-source [open-source #f]

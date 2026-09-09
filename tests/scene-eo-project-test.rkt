@@ -19,6 +19,7 @@
 (module+ test
   (define scene
     (scene-wait (make-scene) 2))
+  (check-equal? (preview-spec-cache-megabytes (preview-spec)) 512)
   ;; Project specifications snapshot option maps. Mutating a caller-owned
   ;; hash after construction cannot silently change a prepared render or its
   ;; persistent cache identity.

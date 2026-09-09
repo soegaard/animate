@@ -97,11 +97,12 @@ renderers, worker policy, and quality remain unchanged.
 
 @defproc[(preview-spec [#:fps fps exact-positive-integer? 30]
                        [#:pixel-scale pixel-scale positive? 1]
-                       [#:cache-megabytes cache-megabytes exact-nonnegative-integer? 128]
+                       [#:cache-megabytes cache-megabytes exact-positive-integer? 512]
                        [#:prefetch prefetch exact-nonnegative-integer? 3]
                        [#:audio? audio? boolean? #f])
          preview-spec?]{
-Describes preview quality, bitmap-cache budget, and optional audio monitoring.
+Describes preview quality, a 512 MiB default bitmap-cache budget, and optional
+audio monitoring.
 }
 
 @defproc[(preview-spec? [value any/c]) boolean?]{Recognizes a preview configuration.}

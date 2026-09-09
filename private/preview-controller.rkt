@@ -4,10 +4,10 @@
 ;;; Headless Preview Controller
 ;;;
 
-;; One controller thread owns all mutable preview state.  A single renderer
-;; worker produces bitmaps and never mutates the scene or calls UI code.  The
-;; controller attaches document and render generations to every job, making a
-;; late result from an obsolete source or configuration harmless.
+;; One controller thread owns all mutable preview state. Renderer workers
+;; produce bitmaps and never mutate the scene or call UI code. The controller
+;; attaches document and render generations to every job, making a late result
+;; from an obsolete source or configuration harmless.
 
 (require racket/async-channel
          racket/class
@@ -176,7 +176,8 @@
                           high-jobs
                           low-jobs
                           pending
-                          active-job
+                          active-jobs
+                          render-workers
                           next-request-id
                           trace
                           canceled-request-count
@@ -206,12 +207,13 @@
                                  #:pixel-scale [pixel-scale 1]
                                  #:supersample [supersample 1]
                                  #:theme [theme #f]
-                                 #:cache-megabytes [cache-megabytes 128]
+                                 #:cache-megabytes [cache-megabytes 512]
                                  #:prefetch [prefetch 3]
                                  #:playback-policy [playback-policy 'realtime]
                                  #:quality-policy [quality-policy 'adaptive]
                                  #:settle-milliseconds [settle-milliseconds 120]
                                  #:worker-mode [worker-mode 'in-process]
+                                 #:render-workers [render-workers 1]
                                  #:producer [producer #f]
                                  #:byte-size [byte-size default-bitmap-bytes]
                                  #:on-event [on-event void])
@@ -236,6 +238,8 @@
     (raise-argument-error 'open-preview-controller "'adaptive or 'full" quality-policy))
   (unless (memq worker-mode '(in-process subprocess))
     (raise-argument-error 'open-preview-controller "'in-process or 'subprocess" worker-mode))
+  (unless (exact-positive-integer? render-workers)
+    (raise-argument-error 'open-preview-controller "exact-positive-integer?" render-workers))
   (unless (and (exact-positive-integer? settle-milliseconds)
                (<= settle-milliseconds 10000))
     (raise-argument-error 'open-preview-controller
@@ -254,18 +258,23 @@
   (define completed (make-async-channel))
   (define jobs (make-async-channel))
   (define alive? (box #t))
-  (define worker
-    (thread (lambda () (renderer-loop jobs completed actual-producer byte-size))))
+  ;; In-process producers may call arbitrary author code and racket/draw, so
+  ;; callers leave this at one unless the producer itself provides isolated
+  ;; processes.  Each loop merely supervises one such producer invocation.
+  (define workers
+    (for/list ([ignored (in-range render-workers)])
+      (thread (lambda () (renderer-loop jobs completed actual-producer byte-size)))))
   (define state
     (controller-state document spec 0 (make-preview-cache byte-limit)
                       initial-sample #f #f quality-policy
                       (full-quality-for spec) worker-mode #f #f settle-milliseconds
                       #f playback-policy 1 #f #f #f #f #f
-                      '() '() (make-hash) #f 0 (make-preview-trace) 0 #f #f on-event))
+                      '() '() (make-hash) (make-hash) render-workers
+                      0 (make-preview-trace) 0 #f #f on-event))
   (define controller
     (thread
      (lambda ()
-       (controller-loop state commands jobs completed worker alive? prefetch))))
+       (controller-loop state commands jobs completed workers alive? prefetch))))
   (define session (preview-session commands controller alive? (box '())))
   ;; Install the first request after the session exists, without allowing a GUI
   ;; callback to observe a partly initialized actor.
@@ -491,7 +500,7 @@
 ;;; Controller Loop
 ;;;
 
-(define (controller-loop state commands jobs completed worker alive? prefetch)
+(define (controller-loop state commands jobs completed workers alive? prefetch)
   (let loop ()
     ;; Transport commands have priority over a completed bitmap. This matters
     ;; for exact looping with a very cheap renderer: without the zero-wait
@@ -510,7 +519,7 @@
                        (lambda (result) (cons 'result result))))))
     (cond
       [(and message (eq? (car message) 'command))
-       (handle-command! state (cdr message) jobs worker alive? prefetch)]
+       (handle-command! state (cdr message) jobs workers alive? prefetch)]
       [(and message (eq? (car message) 'result))
        (handle-render-result! state (cdr message) jobs prefetch)]
       [else
@@ -528,7 +537,7 @@
     (unless (not (unbox alive?))
       (loop))))
 
-(define (handle-command! state command jobs worker alive? prefetch)
+(define (handle-command! state command jobs workers alive? prefetch)
   (define reply (controller-command-reply command))
   (with-handlers
       ([exn:fail?
@@ -827,11 +836,13 @@
          (state-status state)]
         [(close)
          (set-controller-state-playing?! state #f)
-         (cancel-active-job! state 'preview-closed)
+         (cancel-active-jobs! state 'preview-closed)
          (clear-queued-jobs! state 'preview-closed)
          (set-box! alive? #f)
-         (async-channel-put jobs 'close)
-         (thread-wait worker)
+         (for ([ignored (in-list workers)])
+           (async-channel-put jobs 'close))
+         (for ([worker (in-list workers)])
+           (thread-wait worker))
          (emit! state 'closed #f #f)
          (void)]
         [else
@@ -868,11 +879,11 @@
      ;; boundaries, so we cancel it and retain its slot until it reports a
      ;; result.  The newest exact request is then first in the high queue.
      (clear-queued-jobs! state 'superseded)
-     (when (and (controller-state-active-job state)
-                (not (equal? key
-                             (render-job-key
-                              (controller-state-active-job state)))))
-       (cancel-active-job! state 'superseded))
+     (for ([active (in-hash-values (controller-state-active-jobs state))]
+           #:unless (equal? key (render-job-key active)))
+       (cancel! (preview-render-request-cancellation-token
+                 (render-job-request active))
+                'superseded))
      (enqueue-job! state (make-render-job! state
                                            key
                                            (controller-state-document state)
@@ -942,15 +953,16 @@
      #:priority priority))
   (render-job request key document sample render-spec))
 
-(define (cancel-active-job! state [reason 'superseded])
-  (define active (controller-state-active-job state))
-  (when active
+(define (cancel-active-jobs! state [reason 'superseded])
+  (for ([active (in-hash-values (controller-state-active-jobs state))])
     (cancel! (preview-render-request-cancellation-token (render-job-request active))
              reason))
   (void))
 
 (define (start-next-job! state jobs)
-  (unless (controller-state-active-job state)
+  (let loop ()
+    (when (< (hash-count (controller-state-active-jobs state))
+             (controller-state-render-workers state))
     (define job
       (cond
         [(pair? (controller-state-high-jobs state))
@@ -963,15 +975,15 @@
          next]
         [else #f]))
     (when job
-      (set-controller-state-active-job! state job)
-      (async-channel-put jobs job))))
+      (hash-set! (controller-state-active-jobs state)
+                 (preview-render-request-id (render-job-request job))
+                 job)
+      (async-channel-put jobs job)
+      (loop)))))
 
 (define (handle-render-result! state result jobs prefetch)
-  (when (and (controller-state-active-job state)
-             (= (preview-render-request-id
-                 (render-job-request (controller-state-active-job state)))
-                (preview-render-request-id (render-result-request result))))
-    (set-controller-state-active-job! state #f))
+  (hash-remove! (controller-state-active-jobs state)
+                (preview-render-request-id (render-result-request result)))
   (hash-remove! (controller-state-pending state) (render-result-key result))
   (define still-current-generation?
     (and (= (preview-frame-key-generation (render-result-key result))
@@ -1055,7 +1067,7 @@
    state
    (add1 (controller-state-render-generation state)))
   (preview-cache-clear! (controller-state-cache state))
-  (cancel-active-job! state 'render-invalidated)
+  (cancel-active-jobs! state 'render-invalidated)
   (clear-queued-jobs! state 'render-invalidated)
   (set-controller-state-current-bitmap! state #f)
   (set-controller-state-displayed-sample! state #f)
@@ -1458,7 +1470,7 @@
                   (preview-cache-byte-count (controller-state-cache state))
                   (preview-cache-count (controller-state-cache state))
                   (hash-count (controller-state-pending state))
-                  (and (controller-state-active-job state) #t)
+                  (positive? (hash-count (controller-state-active-jobs state)))
                   (controller-state-error state)
                   (controller-state-canceled-request-count state)
                   (controller-state-current-quality state)

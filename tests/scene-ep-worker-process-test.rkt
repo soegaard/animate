@@ -5,10 +5,13 @@
 ;;;
 
 (require rackunit
+         racket/async-channel
          racket/class
          racket/draw
          racket/runtime-path
+         "../main.rkt"
          "../preview.rkt"
+         "../private/preview-model.rkt"
          "../private/preview-worker-process.rkt")
 
 (define-runtime-path fixture "fixtures/preview-worker-scene.rkt")
@@ -62,3 +65,37 @@
         (make-preview-render-spec #:fps 2 #:pixel-scale 1/4)))
      (check-equal? (send recovered get-width) 320))
    (lambda () (preview-worker-stop! worker))))
+
+(module+ test
+  ;; Two controller lanes can safely borrow separate module workers.  The
+  ;; workers render in independent Racket processes; this is intentionally not
+  ;; implemented with two racket/draw threads in the parent process.
+  (define pool
+    (make-project-worker-producer fixture 'worker-scene
+                                  #:fingerprint 'worker-pool-test
+                                  #:workers 2))
+  (dynamic-wind
+   void
+   (lambda ()
+     (define completed (make-async-channel))
+     (define document (make-preview-document (make-scene)))
+     (define spec (make-preview-render-spec #:fps 2 #:pixel-scale 1/4))
+     (for ([frame (in-list '(0 1))])
+       (thread
+        (lambda ()
+          (define request
+            (preview-render-request #:id (add1 frame)
+                                    #:document-generation 0
+                                    #:render-generation 0
+                                    #:sample (frame-sample frame 2)
+                                    #:quality full-preview-quality
+                                    #:priority 0))
+          (async-channel-put
+           completed
+           (project-worker-producer-produce
+            pool document (frame-sample frame 2) spec
+            (preview-render-request-cancellation-token request))))))
+     (for ([ignored (in-range 2)])
+       (define bitmap (sync/timeout 15 completed))
+       (check-true (is-a? bitmap bitmap%))))
+   (lambda () (project-worker-producer-close! pool))))

@@ -37,11 +37,17 @@ transport operations.
                              [#:fps fps exact-positive-integer? 30]
                              [#:theme theme (or/c false/c color-theme?) #f]
                              [#:pixel-scale pixel-scale positive? 1]
+                             [#:cache-megabytes cache-megabytes exact-positive-integer? 512]
+                             [#:prefetch prefetch exact-nonnegative-integer? 3]
+                             [#:render-workers render-workers exact-positive-integer? 1]
                              [#:title title string? "Animate"])
          preview-session?]{
 Opens an interactive preview with one immutable content-theme snapshot. The
 theme affects rendered scene pixels only: canvas handles, inspector text, and
-operating-system widgets retain their editor UI appearance.
+operating-system widgets retain their editor UI appearance. The bitmap cache
+uses 512 MiB by default. @racket[#:render-workers] normally remains 1: it is
+for producers that explicitly provide isolated render processes, not for an
+ordinary in-process scene or an OpenGL context.
 }
 
 @defproc[(inspector-subject? [value any/c]) boolean?]{
@@ -76,9 +82,11 @@ GRacket (or @tt{raco animate preview}) rather than a headless Racket process.
                                [#:title title (or/c #f string?) #f])
          preview-session?]{
 
-Prepares and opens an immutable project declaration.  A module-binding source
-uses a restartable subprocess renderer; direct Scene or timeline sources use
-cooperative in-process cancellation.
+Prepares and opens an immutable project declaration. A module-binding source
+uses two restartable software-renderer subprocesses, so queued independent
+frames can use two CPU cores. Direct Scene or timeline sources use cooperative
+in-process cancellation. An OpenGL project keeps one serialized graphics
+context.
 }
 
 @defproc[(preview-color-theme [session preview-session?]) color-theme?]{

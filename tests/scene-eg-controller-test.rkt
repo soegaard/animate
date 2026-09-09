@@ -101,4 +101,35 @@
   (void (preview-seek-frame! cache-session 0))
   (void (await-frame-ready cache-events))
   (check-equal? render-count 3)
-  (preview-close! cache-session))
+  (preview-close! cache-session)
+
+  ;; A producer that explicitly opts into two render lanes receives two
+  ;; prefetched frame requests at once. Production uses this only with the
+  ;; isolated software-worker pool; this small fake keeps the scheduling
+  ;; contract deterministic and headless.
+  (define parallel-starts (make-async-channel))
+  (define parallel-releases (make-async-channel))
+  (define parallel-session
+    (open-preview-controller
+     (scene-wait (make-scene) 3)
+     #:fps 2 #:prefetch 3 #:render-workers 2
+     #:producer
+     (lambda (_document sample _spec _cancellation-token)
+       (define frame (frame-sample-frame-index sample))
+       (if (zero? frame)
+           frame
+           (begin
+             (async-channel-put parallel-starts frame)
+             (async-channel-get parallel-releases)
+             frame)))
+     #:byte-size (lambda (_value) 1)))
+  ;; Frame zero completes first. Its prefetch fills both available lanes with
+  ;; frames one and two instead of keeping one behind a serial worker.
+  (check-equal? (sort (list (await parallel-starts) (await parallel-starts)) <)
+                '(1 2))
+  ;; There is one more queued prefetch frame. Release all three before closing
+  ;; so this controlled fake producer cannot hold a controller thread.
+  (for ([ignored (in-range 3)])
+    (async-channel-put parallel-releases 'continue))
+  (sleep 1/20)
+  (preview-close! parallel-session))

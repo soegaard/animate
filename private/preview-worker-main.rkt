@@ -123,19 +123,26 @@
             #:renderers default-pict-renderers
             #:theme (request-theme request))
            'smoothed))))))
-  (define output (string->path (worker-render-frame-output-path request)))
-  (define parent (path-only output))
-  (when parent (make-directory* parent))
-  (unless (send bitmap save-file output 'png)
-    (raise-arguments-error 'preview-worker
-                           "a writable PNG output path" "path" output))
+  ;; The temporary PNG stays inside the worker process. Sending its encoded
+  ;; bytes avoids sharing a filesystem handoff between concurrent workers.
+  (define output (make-temporary-file "animate-preview-worker-~a.png"))
+  (define png-bytes
+    (dynamic-wind
+     void
+     (lambda ()
+       (unless (send bitmap save-file output 'png)
+         (raise-arguments-error 'preview-worker
+                                "a writable PNG output path" "path" output))
+       (file->bytes output))
+     (lambda ()
+       (when (file-exists? output) (delete-file output)))))
   (send-response
    (worker-frame-complete
     (worker-render-frame-plan-fingerprint request)
     (worker-render-frame-document-generation request)
     (worker-render-frame-render-generation request)
     (worker-render-frame-request-id request)
-    (worker-render-frame-output-path request)
+    png-bytes
     (hasheq 'render-milliseconds
             (- (current-inexact-monotonic-milliseconds) started)))))
 

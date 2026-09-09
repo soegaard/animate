@@ -28,7 +28,7 @@
    #:id 'project-planning
    #:source (scene-source sample-scene)
    #:render (render-spec #:fps 30 #:width 1280 #:height 720 #:workers 2)
-   #:preview (preview-spec #:fps 30 #:pixel-scale 1/2 #:cache-megabytes 128)
+   #:preview (preview-spec #:fps 30 #:pixel-scale 1/2 #:cache-megabytes 512)
    #:output (output-spec #:root "media" #:name "project-planning")
    #:encoder (encoder-spec #:codec 'h264 #:pixel-format 'yuv420p
                            #:options #hasheq((crf . "18")))

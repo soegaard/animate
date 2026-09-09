@@ -242,10 +242,11 @@
                              #:renderers [renderers default-pict-renderers]
                              #:theme [theme #f]
                              #:pixel-scale [pixel-scale 1]
-                             #:cache-megabytes [cache-megabytes 128]
+                             #:cache-megabytes [cache-megabytes 512]
                              #:prefetch [prefetch 3]
                              #:playback-policy [playback-policy 'realtime]
                              #:worker-mode [worker-mode 'in-process]
+                             #:render-workers [render-workers 1]
                              #:producer [producer #f]
                              #:waveform [wave #f]
                              #:audio-mute-available? [audio-mute-available? (lambda () #f)]
@@ -2563,6 +2564,7 @@
      #:cache-megabytes cache-megabytes #:prefetch prefetch
      #:playback-policy playback-policy
      #:worker-mode worker-mode
+     #:render-workers render-workers
      #:producer producer
      #:on-event
      (lambda (event)

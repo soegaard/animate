@@ -61,7 +61,7 @@
                                          #:renderers [renderers default-pict-renderers]
                                          #:pixel-scale [pixel-scale 1]
                                          #:supersample [supersample 1]
-                                         #:cache-megabytes [cache-megabytes 128]
+                                         #:cache-megabytes [cache-megabytes 512]
                                          #:prefetch [prefetch 3]
                                          #:producer [producer #f]
                                          #:byte-size [byte-size #f]
