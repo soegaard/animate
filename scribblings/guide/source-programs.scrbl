@@ -19,8 +19,19 @@ batch environment. The complete tested example is
   #:initial (make-scene)
   (scene-block setup (scene)
     (scene-add scene (circle #:id 'dot #:radius 1)))
-  (scene-block pause (scene)
+(scene-block pause (scene)
     (scene-wait scene 1)))]
+
+Five frames from the video:
+
+@centered[
+ @tabular[
+  #:sep @hspace[1]
+  (list (list @image["scribblings/guide/figures/source-block-hot-reload-0.svg"]
+              @image["scribblings/guide/figures/source-block-hot-reload-1.svg"]
+              @image["scribblings/guide/figures/source-block-hot-reload-2.svg"]
+              @image["scribblings/guide/figures/source-block-hot-reload-3.svg"]
+              @image["scribblings/guide/figures/source-block-hot-reload-4.svg"]))]]
 
 Each block consumes and returns an immutable Scene. The compiler retains
 checkpoints and source locations for reliable reload diagnostics.
