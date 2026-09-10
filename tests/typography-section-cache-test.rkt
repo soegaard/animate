@@ -8,7 +8,8 @@
          rackunit
          "../authoring.rkt"
          "../main.rkt"
-         "../render.rkt")
+         "../render.rkt"
+         "../private/render-typography-context.rkt")
 
 (define (body-theme id size #:display-name [display-name "Typography cache"]
                     #:provenance [provenance #f])
@@ -66,5 +67,33 @@
      (define changed-reuse
        (render-timeline-section/report!
         timeline 'only root #:fps 1 #:typography large #:cache-key 'source-v1))
-     (check-true (section-render-report-cache-hit? changed-reuse)))
+     (check-true (section-render-report-cache-hit? changed-reuse))
+     ;; The public section APIs accept either a typography theme or a prepared
+     ;; immutable context. Supplying a context alone must not collide with a
+     ;; hidden non-false default theme.
+     (check-not-false
+      (render-timeline-section!
+       timeline 'only root #:fps 1 #:cache-key 'default-typography))
+     (define context-only
+       (make-render-typography-context medium))
+     (check-not-false
+      (render-timeline-section!
+       timeline 'only root #:fps 1 #:typography-context context-only
+       #:cache-key 'context-only))
+     (check-not-false
+      (render-timeline-section/report!
+       timeline 'only root #:fps 1 #:typography-context context-only
+       #:cache-key 'context-only-report))
+     (check-exn
+      exn:fail:contract?
+      (lambda ()
+        (render-timeline-section!
+         timeline 'only root #:fps 1 #:typography medium
+         #:typography-context context-only #:cache-key 'ambiguous)))
+     (check-exn
+      exn:fail:contract?
+      (lambda ()
+        (render-timeline-section/report!
+         timeline 'only root #:fps 1 #:typography medium
+         #:typography-context context-only #:cache-key 'ambiguous-report))))
    (lambda () (delete-directory/files root))))

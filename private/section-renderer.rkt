@@ -122,7 +122,7 @@
                                   #:clean? [clean? #t]
                                   #:workers [workers 1]
                                   #:theme [theme animate-light-theme]
-                                  #:typography [typography animate-typography-theme]
+                                  #:typography [typography #f]
                                   #:typography-context [typography-context #f]
                                   #:cache-key [cache-key 'auto]
                                   #:asset-files [asset-files '()])
@@ -150,7 +150,7 @@
                                          #:clean? [clean? #t]
                                          #:workers [workers 1]
                                          #:theme [theme animate-light-theme]
-                                         #:typography [typography animate-typography-theme]
+                                         #:typography [typography #f]
                                          #:typography-context [typography-context #f]
                                          #:cache-key [cache-key 'auto]
                                          #:asset-files [asset-files '()])

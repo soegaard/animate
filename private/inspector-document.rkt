@@ -553,7 +553,12 @@
    (entry (semantic-text-overrides-horizontal-alignment overrides))
    'vertical-alignment
    (entry (semantic-text-overrides-vertical-alignment overrides))
-   'treatment (entry (semantic-text-overrides-treatment overrides))))
+   'treatment (entry (semantic-text-overrides-treatment overrides))
+   'background (entry (semantic-text-overrides-background overrides))
+   'border-color (entry (semantic-text-overrides-border-color overrides))
+   'border-width (entry (semantic-text-overrides-border-width overrides))
+   'padding-x (entry (semantic-text-overrides-padding-x overrides))
+   'padding-y (entry (semantic-text-overrides-padding-y overrides))))
 
 
 ;;;

@@ -19,6 +19,7 @@
 (require racket/class
          (only-in pict
                   blank
+                  cc-superimpose
                   colorize
                   dc
                   draw-pict
@@ -77,7 +78,9 @@
 ;; Exports
 (provide default-pict-renderers
          default-pict-renderer-cache-counters
-         (struct-out renderer-cache-counters))
+         (struct-out renderer-cache-counters)
+         text-pict-renderer?
+         text-pict-renderer-unanchored-content-pict)
 
 
 ;;;
@@ -177,7 +180,8 @@
 ;; text-pict-renderer renders immutable plain, paragraph, and rich text Visuals
 ;; with Pict fonts.
 
-(define (prepare-pict-text-layout renderer visual camera)
+(define (prepare-pict-text-layout renderer visual camera
+                                  #:unanchored? [unanchored? #f])
   (unless (text-visual? visual)
     (raise-argument-error 'prepare-pict-text-layout "text-visual?" visual))
   (define graphemes (segment-text-visual visual #:unit 'grapheme))
@@ -186,7 +190,9 @@
   ;; rendering, so the snapshot cache identity includes the active camera and
   ;; every layout-affecting text style input.
   (define full-pict
-    (text-visual->pict visual camera (text-pict-renderer-raster-cache renderer)))
+    (if unanchored?
+        (text-pict-renderer-unanchored-content-pict renderer visual camera)
+        (text-visual->pict visual camera (text-pict-renderer-raster-cache renderer))))
   (define stable-fragments?
     (pict-stable-fragment-layout? visual))
   (define clusters
@@ -261,8 +267,12 @@
         (visual-with-transform resolved-source
                                (make-affine-transform #:translation origin))
         resolved-source))
+  ;; Semantic text treats the unanchored final layout as its content box. Raw
+  ;; text retains the historical already-anchored representation.
   (define content
-    (text-visual->pict source camera (text-pict-renderer-raster-cache renderer)))
+    (if semantic-source?
+        (text-pict-renderer-unanchored-content-pict renderer source camera)
+        (text-visual->pict source camera (text-pict-renderer-raster-cache renderer))))
   ;; During a semantic typewriter effect the treatment is the stable outer
   ;; box. Only glyph ink is masked, so a code block does not resize or jitter
   ;; while its source graphemes are revealed.
@@ -275,15 +285,28 @@
             (current-or-default-render-typography-context))))))
   (define (present-content revealed-content)
     (define local-content
-      (if treatment
-          (apply-text-treatment-to-pict revealed-content treatment
-                                        (text-visual-font-size source) camera)
-          revealed-content))
+      (cond
+        [treatment
+         ;; The frame always comes from complete content. The reveal mask only
+         ;; controls glyph ink, so background, border, and padding never grow
+         ;; or jitter between graphemes.
+         (cc-superimpose
+          (text-treatment-decoration-pict content treatment
+                                           (text-visual-font-size source) camera)
+          (text-treatment-content-pict revealed-content treatment
+                                       (text-visual-font-size source) camera))]
+        [else revealed-content]))
+    (define anchored-content
+      (if semantic-source?
+          (anchor-pict local-content
+                       (text-visual-horizontal-alignment source)
+                       (text-visual-vertical-alignment source))
+          local-content))
     (if semantic-source?
         (rotate-pict-if-needed
-         (scale-pict-if-needed local-content (visual-scale authored-source))
+         (scale-pict-if-needed anchored-content (visual-scale authored-source))
          (visual-rotation authored-source))
-        local-content))
+        anchored-content))
   (define complete (present-content content))
   (define requested-count
     (text-reveal-visual-revealed-count visual))
@@ -291,7 +314,8 @@
     (text-reveal-visual-segment-count visual))
   (define cursor-layout
     (and (text-reveal-visual-cursor? visual)
-         (prepare-pict-text-layout renderer source camera)))
+         (prepare-pict-text-layout renderer source camera
+                                   #:unanchored? semantic-source?)))
   (define (with-cursor revealed-content visible-clusters [layout cursor-layout])
     ;; Cursor cluster coordinates belong to the unpadded final text Pict.
     ;; Draw it there first, then compose the stable semantic treatment around
@@ -312,7 +336,8 @@
      complete]
     [else
      (define layout (or cursor-layout
-                        (prepare-pict-text-layout renderer source camera)))
+                        (prepare-pict-text-layout renderer source camera
+                                                  #:unanchored? semantic-source?)))
      (unless (prepared-text-layout-stable-fragments? layout)
        (raise-arguments-error
         'typewrite
@@ -884,6 +909,37 @@
            (let-values ([(frozen-pict _byte-count)
                          (freeze-text-pict-at-local-origin
                           (text-visual->live-pict visual camera))])
+             frozen-pict)]))))
+
+;; text-pict-renderer-unanchored-content-pict : text-pict-renderer? text-visual? camera?
+;;                                                -> pict?
+;; Freezes one final laid-out glyph Pict before semantic anchoring. The semantic
+;; adapter uses this path when treatment must decorate actual content rather
+;; than the transparent balancing space that `anchor-pict` later introduces.
+(define (text-pict-renderer-unanchored-content-pict renderer visual camera)
+  (unless (text-pict-renderer? renderer)
+    (raise-argument-error 'text-pict-renderer-unanchored-content-pict
+                          "text-pict-renderer?" renderer))
+  (unless (text-visual? visual)
+    (raise-argument-error 'text-pict-renderer-unanchored-content-pict
+                          "text-visual?" visual))
+  (if (string=? (text-visual-content visual) "")
+      (blank 1 1)
+      (let-values ([(cacheable? cache-key)
+                    (text-raster-cache-key visual camera)])
+        (define raster-cache (text-pict-renderer-raster-cache renderer))
+        (cond
+          [cacheable?
+           (renderer-resource-cache-ref!
+            raster-cache
+            (list 'unanchored-text cache-key)
+            (lambda ()
+              (freeze-text-pict-at-local-origin
+               (text-content->pict visual camera))))]
+          [else
+           (let-values ([(frozen-pict _byte-count)
+                         (freeze-text-pict-at-local-origin
+                          (text-content->pict visual camera))])
              frozen-pict)]))))
 
 ; text-visual->live-pict : text-visual? camera? -> pict?

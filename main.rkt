@@ -516,6 +516,7 @@
  text-treatment-border-width
  text-treatment-padding-x
  text-treatment-padding-y
+ text-treatment-update
  text-style
  text-style?
  text-style-font-face
@@ -573,6 +574,11 @@
  semantic-text-overrides-horizontal-alignment
  semantic-text-overrides-vertical-alignment
  semantic-text-overrides-treatment
+ semantic-text-overrides-background
+ semantic-text-overrides-border-color
+ semantic-text-overrides-border-width
+ semantic-text-overrides-padding-x
+ semantic-text-overrides-padding-y
  semantic-text-override-inherited?
  semantic-text-visual-width
  resolve-semantic-text-style

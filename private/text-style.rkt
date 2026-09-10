@@ -14,6 +14,7 @@
          text-treatment-border-width
          text-treatment-padding-x
          text-treatment-padding-y
+         text-treatment-update
          text-style
          text-style?
          text-style-font-face
@@ -58,6 +59,27 @@
 (define text-treatment-border-width text-treatment-value-border-width)
 (define text-treatment-padding-x text-treatment-value-padding-x)
 (define text-treatment-padding-y text-treatment-value-padding-y)
+
+;; text-treatment-update : text-treatment? ... -> text-treatment?
+;; Returns a copy whose explicitly supplied properties replace the matching
+;; value.  The private sentinel keeps an omitted keyword distinct from an
+;; explicit #f for background and border color.
+(define (text-treatment-update treatment
+                               #:background [background unspecified]
+                               #:border-color [border-color unspecified]
+                               #:border-width [border-width unspecified]
+                               #:padding-x [padding-x unspecified]
+                               #:padding-y [padding-y unspecified])
+  (unless (text-treatment? treatment)
+    (raise-argument-error 'text-treatment-update "text-treatment?" treatment))
+  (define (keep proposed prior)
+    (if (eq? proposed unspecified) prior proposed))
+  (text-treatment
+   #:background (keep background (text-treatment-background treatment))
+   #:border-color (keep border-color (text-treatment-border-color treatment))
+   #:border-width (keep border-width (text-treatment-border-width treatment))
+   #:padding-x (keep padding-x (text-treatment-padding-x treatment))
+   #:padding-y (keep padding-y (text-treatment-padding-y treatment))))
 
 (struct text-style-value
   (font-face font-family font-size font-style font-weight color line-spacing

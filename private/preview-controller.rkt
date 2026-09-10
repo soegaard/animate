@@ -851,11 +851,29 @@
             #:typography typography
             #:camera3d-overrides
             (preview-render-spec-camera3d-overrides prior)))
+         ;; Theme labels/provenance are useful inspection metadata but not
+         ;; pixels. Keep the current bitmap and render generation when the
+         ;; immutable appearance contract is unchanged.
+         (define prior-typography-context
+           (make-render-typography-context
+            (preview-render-spec-typography prior)))
+         (define replacement-typography-context
+           (make-render-typography-context typography))
          (set-controller-state-render-spec! state replacement)
-         (set-controller-state-current-quality! state (full-quality-for replacement))
-         (set-controller-state-scrubbing?! state #f)
-         (invalidate-render! state)
-         (request-current! state jobs prefetch)
+         (unless (and
+                  (bytes=?
+                   (render-typography-context-appearance-fingerprint
+                    prior-typography-context)
+                   (render-typography-context-appearance-fingerprint
+                    replacement-typography-context))
+                  (= (render-typography-context-resolver-version
+                      prior-typography-context)
+                     (render-typography-context-resolver-version
+                      replacement-typography-context)))
+           (set-controller-state-current-quality! state (full-quality-for replacement))
+           (set-controller-state-scrubbing?! state #f)
+           (invalidate-render! state)
+           (request-current! state jobs prefetch))
          (state-status state)]
         [(camera3d-overrides)
          (preview-render-spec-camera3d-overrides

@@ -70,7 +70,7 @@
   (for ([name (in-list '(text-treatment text-treatment?
                          text-treatment-background text-treatment-border-color
                          text-treatment-border-width text-treatment-padding-x
-                         text-treatment-padding-y
+                         text-treatment-padding-y text-treatment-update
                          text-style text-style? text-style-font-face
                          text-style-font-family text-style-font-size text-style-font-style
                          text-style-font-weight text-style-color text-style-line-spacing
@@ -88,6 +88,11 @@
                          styled-text styled-rich-text semantic-text-visual?
                          semantic-text-style-key semantic-text-content semantic-text-spans
                          semantic-text-overrides semantic-text-overrides?
+                         semantic-text-overrides-background
+                         semantic-text-overrides-border-color
+                         semantic-text-overrides-border-width
+                         semantic-text-overrides-padding-x
+                         semantic-text-overrides-padding-y
                          semantic-text-override-inherited? semantic-text-visual-width
                          resolve-semantic-text-style))])
     (check-not-eq? (public-binding "../main.rkt" name) absent))

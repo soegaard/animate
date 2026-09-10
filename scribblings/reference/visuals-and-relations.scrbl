@@ -892,8 +892,14 @@ independent of typography themes.
 
 Creates immutable optional presentation treatment for semantic text. Padding is
 in ems of the resolved outer style. A border width is cosmetic device width.
-The treatment expands symmetrically around the text Pict, so its logical text
-anchor remains fixed.
+The treatment decorates the final text-content box, then that decorated box is
+anchored, so its logical text anchor remains fixed. A border width of zero does
+not draw a border.
+
+The built-in text renderer knows that content box exactly. A custom Pict
+renderer for a semantic text value instead declares its own logical Pict box;
+the treatment decorates that declared box. Animate does not inspect rendered
+pixels to guess a tighter ink box for custom renderers.
 }
 
 @defproc[(text-treatment? [value any/c]) boolean?]{
@@ -915,6 +921,20 @@ treatment.
 
 Returns one immutable treatment property. Padding values are em multipliers,
 not world distances or pixels.
+}
+
+@defproc[(text-treatment-update
+          [treatment text-treatment?]
+          [#:background background (or/c false/c paint?)]
+          [#:border-color border-color (or/c false/c color-spec?)]
+          [#:border-width border-width (and/c finite-real? (>=/c 0))]
+          [#:padding-x padding-x (and/c finite-real? (>=/c 0))]
+          [#:padding-y padding-y (and/c finite-real? (>=/c 0))])
+         text-treatment?]{
+
+Returns a new treatment. Omit a keyword to keep its value from
+@racket[treatment]. Supplying @racket[#f] explicitly removes a background or
+border color.
 }
 
 @defproc[(text-style
@@ -1001,7 +1021,10 @@ named complete styles. @racket[typography-ref] gets one style, and
 @racket[typography-theme-fingerprint] identifies its appearance-relevant
 contents. @racket[typography-theme->datum] and
 @racket[datum->typography-theme] provide the deterministic versioned data
-format used by project plans and preview workers.
+format used by project plans and preview workers. Serialization accounts for
+the complete data tree, including styles, treatments, paints, and colors, and
+rejects data beyond its generous resource limits. Decoding validates the
+wrapper and style entries before it traverses their contents.
 }
 
 @defproc[(typography-theme? [value any/c]) boolean?]{
@@ -1067,9 +1090,12 @@ The ordered standard role keys required by a root typography theme.
 
 Creates semantic text with the corresponding standard role. The common
 keywords include placement and affine presentation plus explicit font, color,
-alignment, width, line-spacing, and treatment overrides. An omitted property
-inherits from the role. A semantic text value retains that inheritance data in
-the Scene.
+alignment, width, line-spacing, and treatment overrides. In addition to a
+whole @racket[#:treatment], @racket[#:background], @racket[#:border-color],
+@racket[#:border-width], @racket[#:padding-x], and @racket[#:padding-y] can
+change one treatment property while the other properties inherit. An omitted
+property inherits from the role. A semantic text value retains that inheritance
+data in the Scene.
 }
 
 @defproc[(styled-text [content string?]

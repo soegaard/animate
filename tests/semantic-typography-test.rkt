@@ -6,7 +6,7 @@
 (require racket/async-channel
          racket/class
          rackunit
-         (only-in pict filled-rectangle pict-height pict-width)
+         (only-in pict filled-rectangle pict->bitmap pict-height pict-width)
          "../authoring.rkt"
          "../colors.rkt"
          "../main.rkt"
@@ -76,6 +76,76 @@
                  #:horizontal-alignment 'left #:vertical-alignment 'top)
      #:font-face #f))
    #f)
+  ;; Appearance identity is independent of ambient printer preferences.
+  (define default-fingerprint
+    (typography-theme-fingerprint animate-typography-theme))
+  (for ([settings (in-list (list (list #t #t #t #t)
+                                 (list #f #t #f #t)
+                                 (list #t #f #t #f)))])
+    (parameterize ([print-pair-curly-braces (list-ref settings 0)]
+                   [print-graph (list-ref settings 1)]
+                   [print-reader-abbreviations (list-ref settings 2)]
+                   [print-boolean-long-form (list-ref settings 3)])
+      (check-equal? (typography-theme-fingerprint animate-typography-theme)
+                    default-fingerprint)))
+  ;; Typography transport rejects malformed wrappers before traversing style
+  ;; data, rejects duplicate keys, and keeps nested treatment errors in the
+  ;; typography decoder rather than exposing incidental list/number failures.
+  (check-exn exn:fail?
+             (lambda ()
+               (datum->typography-theme
+                '(animate-typography-theme schema theme "Theme" () #f))))
+  (check-exn exn:fail?
+             (lambda ()
+               (datum->typography-theme
+                '(animate-typography-theme 1 theme "Theme" not-a-list #f))))
+  (define body-style-datum
+    (text-style->datum (typography-ref animate-typography-theme 'body)))
+  (check-exn exn:fail?
+             (lambda ()
+               (datum->typography-theme
+                `(animate-typography-theme 1 duplicate "Duplicate"
+                                           ((body ,body-style-datum)
+                                            (body ,body-style-datum))
+                                           #f))))
+  (check-exn exn:fail?
+             (lambda ()
+               (datum->typography-theme
+                `(animate-typography-theme 1 overflow "Overflow"
+                                           ,(build-list 10001 (lambda (_) '(body bad)))
+                                           #f))))
+  ;; The complete theme budget also bounds nested treatment paint data, not
+  ;; just the outer number of style definitions.
+  (define excessive-stop-style-datum
+    `(text-style #f swiss 1 normal normal
+                 (animate-color-spec 1 (rgba 0 0 0 1))
+                 1 left left top
+                 (text-treatment
+                  (linear-gradient (0 0) (1 1)
+                                   ,(build-list
+                                     10001
+                                     (lambda (_)
+                                       '(0 (animate-color-spec 1 (rgba 0 0 0 1))))))
+                  #f 0 0 0)))
+  (check-exn
+   (lambda (error)
+     (and (exn:fail? error)
+          (regexp-match? #rx"datum->typography-theme" (exn-message error))))
+   (lambda ()
+     (datum->typography-theme
+      `(animate-typography-theme 1 nested-overflow "Nested overflow"
+                                 ,(for/list ([key (in-list typography-standard-style-keys)])
+                                    (list key (if (eq? key 'body)
+                                                  excessive-stop-style-datum
+                                                  body-style-datum)))
+                                 #f))))
+  (check-exn exn:fail?
+             (lambda ()
+               (datum->text-style
+                `(text-style #f swiss 1 normal normal
+                             ,(color-spec->datum "black")
+                             1 left left top
+                             (text-treatment #f #f bad-width 0 0)))))
 
   ;; The authored object stores the role and override, not a font/color chosen
   ;; from the currently active rendering context.
@@ -149,6 +219,16 @@
                   #:renderers (cons (custom-text-renderer) default-pict-renderers)))
   (check-= (pict-width custom-heading-pict) (pict-width custom-text-pict) 1e-9)
   (check-= (pict-height custom-heading-pict) (pict-height custom-text-pict) 1e-9)
+  ;; A custom renderer declares its own logical Pict as the treatment box.
+  ;; The adapter never tries to infer a tighter visible-ink rectangle.
+  (define custom-treated-code-pict
+    (visual->pict
+     (code-text "x" #:id 'custom-treated-code)
+     camera #:renderers (cons (custom-text-renderer) default-pict-renderers)))
+  (check-true (> (pict-width custom-treated-code-pict)
+                 (pict-width custom-text-pict)))
+  (check-true (> (pict-height custom-treated-code-pict)
+                 (pict-height custom-text-pict)))
 
   ;; Code's built-in treatment is visible geometry around the lowered text.
   (define code (code-text "(add1 x)" #:id 'code))
@@ -198,7 +278,7 @@
                #:id 'treated-body
                #:horizontal-alignment 'left
                #:vertical-alignment 'top
-               #:treatment (text-treatment #:background "ivory"
+                #:treatment (text-treatment #:background "ivory"
                                             #:border-color "black"
                                             #:border-width 1
                                             #:padding-x 1/2 #:padding-y 1/4)))
@@ -211,6 +291,145 @@
                           #:typography animate-typography-theme))
   (check-= (vec2-x measured-treatment-anchor) (vec2-x treatment-anchor) 1e-9)
   (check-= (vec2-y measured-treatment-anchor) (vec2-y treatment-anchor) 1e-9)
+
+  ;; Treatment decorates actual content before anchoring. At left/top and
+  ;; baseline anchors its painted box is narrower than the transparent
+  ;; anchor-balancing Pict; center/center remains a no-spare-space control.
+  (define (red-box-dimensions pict)
+    (define bitmap (pict->bitmap pict))
+    (define width (send bitmap get-width))
+    (define height (send bitmap get-height))
+    (define pixels (make-bytes (* 4 width height)))
+    (send bitmap get-argb-pixels 0 0 width height pixels)
+    (define points
+      (for*/list ([y (in-range height)] [x (in-range width)]
+                  #:when (let ([offset (* 4 (+ x (* y width)))])
+                           (and (> (bytes-ref pixels (add1 offset)) 200)
+                                (< (bytes-ref pixels (+ offset 2)) 80)
+                                (< (bytes-ref pixels (+ offset 3)) 80))))
+        (cons x y)))
+    (if (null? points)
+        (values 0 0)
+        (values (add1 (- (apply max (map car points))
+                         (apply min (map car points))))
+                (add1 (- (apply max (map cdr points))
+                         (apply min (map cdr points)))))))
+  (define (treated-probe id horizontal vertical)
+    (body-text "T" #:id id
+               #:horizontal-alignment horizontal #:vertical-alignment vertical
+               #:treatment (text-treatment #:background "red")))
+  (define left-top-pict
+    (visual->pict (treated-probe 'left-top 'left 'top) camera))
+  (define center-pict
+    (visual->pict (treated-probe 'center 'center 'center) camera))
+  (define baseline-pict
+    (visual->pict (treated-probe 'baseline 'left 'baseline) camera))
+  (define right-bottom-pict
+    (visual->pict (treated-probe 'right-bottom 'right 'bottom) camera))
+  (define center-baseline-pict
+    (visual->pict (treated-probe 'center-baseline 'center 'baseline) camera))
+  (define-values (left-top-red-width left-top-red-height)
+    (red-box-dimensions left-top-pict))
+  (define-values (center-red-width center-red-height)
+    (red-box-dimensions center-pict))
+  (define-values (baseline-red-width baseline-red-height)
+    (red-box-dimensions baseline-pict))
+  (define-values (right-bottom-red-width right-bottom-red-height)
+    (red-box-dimensions right-bottom-pict))
+  (define-values (center-baseline-red-width center-baseline-red-height)
+    (red-box-dimensions center-baseline-pict))
+  (check-true (< left-top-red-width (pict-width left-top-pict)))
+  (check-true (< left-top-red-height (pict-height left-top-pict)))
+  (check-= center-red-width (pict-width center-pict) 1e-9)
+  (check-= center-red-height (pict-height center-pict) 1e-9)
+  (check-true (< baseline-red-width (pict-width baseline-pict)))
+  (check-true (< baseline-red-height (pict-height baseline-pict)))
+  (check-true (< right-bottom-red-width (pict-width right-bottom-pict)))
+  (check-true (< right-bottom-red-height (pict-height right-bottom-pict)))
+  (check-= center-baseline-red-width (pict-width center-baseline-pict) 1e-9)
+  (check-true (< center-baseline-red-height
+                 (pict-height center-baseline-pict)))
+
+  ;; A zero-width border is no border even when a color is supplied.
+  (define zero-border
+    (body-text "border" #:id 'zero-border
+               #:treatment (text-treatment #:background "white"
+                                            #:border-color "red" #:border-width 0)))
+  (define no-border
+    (body-text "border" #:id 'no-border
+               #:treatment (text-treatment #:background "white")))
+  (check-equal? (bitmap-bytes (pict->bitmap (visual->pict zero-border camera)))
+                (bitmap-bytes (pict->bitmap (visual->pict no-border camera))))
+  (define positive-border
+    (body-text "border" #:id 'positive-border
+               #:treatment (text-treatment #:background "white"
+                                            #:border-color "red" #:border-width 2)))
+  (check-not-equal?
+   (bitmap-bytes (pict->bitmap (visual->pict positive-border camera)))
+   (bitmap-bytes (pict->bitmap (visual->pict no-border camera))))
+  ;; The same content-first treatment path accepts wrapped, rich, and empty
+  ;; semantic text without adding a second layout engine or an empty-text
+  ;; special case to callers.
+  (define wrapped-treated
+    (body-text "A wrapped treatment uses the one final text layout."
+               #:id 'wrapped-treated #:width 2
+               #:treatment (text-treatment #:background "red" #:padding-x 1/3)))
+  (define rich-treated
+    (styled-rich-text #:style 'body #:id 'rich-treated
+                      #:treatment (text-treatment #:background "red")
+                      (text-span "rich" #:font-style 'italic) " text"))
+  (define empty-treated
+    (body-text "" #:id 'empty-treated
+               #:treatment (text-treatment #:background "red")))
+  (for ([value (in-list (list wrapped-treated rich-treated empty-treated))])
+    (define rendered (visual->pict value camera))
+    (check-true (positive? (pict-width rendered)))
+    (check-true (positive? (pict-height rendered))))
+
+  ;; Individual treatment fields refine inherited code treatment without
+  ;; forcing an author to reconstruct the other fields.
+  (define inherited-code-treatment
+    (text-style-treatment (typography-ref animate-typography-theme 'code)))
+  (define partial-treatment
+    (resolve-semantic-text-style
+     (code-text "x" #:id 'partial-treatment #:background #f #:padding-x 7/10)
+     animate-typography-theme))
+  (define partial-value (text-style-treatment partial-treatment))
+  (check-false (text-treatment-background partial-value))
+  (check-equal? (text-treatment-border-color partial-value)
+                (text-treatment-border-color inherited-code-treatment))
+  (check-equal? (text-treatment-border-width partial-value)
+                (text-treatment-border-width inherited-code-treatment))
+  (check-equal? (text-treatment-padding-x partial-value) 7/10)
+  (check-equal? (text-treatment-padding-y partial-value)
+                (text-treatment-padding-y inherited-code-treatment))
+  (define border-color-value
+    (text-style-treatment
+     (resolve-semantic-text-style
+      (code-text "x" #:id 'border-color-override #:border-color "blue")
+      animate-typography-theme)))
+  (define border-width-value
+    (text-style-treatment
+     (resolve-semantic-text-style
+      (code-text "x" #:id 'border-width-override #:border-width 3)
+      animate-typography-theme)))
+  (define padding-y-value
+    (text-style-treatment
+     (resolve-semantic-text-style
+      (code-text "x" #:id 'padding-y-override #:padding-y 2/5)
+      animate-typography-theme)))
+  (check-equal? (text-treatment-border-color border-color-value) "blue")
+  (check-equal? (text-treatment-padding-x border-color-value)
+                (text-treatment-padding-x inherited-code-treatment))
+  (check-equal? (text-treatment-border-width border-width-value) 3)
+  (check-equal? (text-treatment-background border-width-value)
+                (text-treatment-background inherited-code-treatment))
+  (check-equal? (text-treatment-padding-y padding-y-value) 2/5)
+  (check-equal? (text-treatment-border-color padding-y-value)
+                (text-treatment-border-color inherited-code-treatment))
+  (check-false
+   (text-treatment-background
+    (text-treatment-update inherited-code-treatment #:background #f)))
 
   ;; Matrix/table auto sizing is a construction snapshot.  Its chosen cell
   ;; dimensions therefore reflect the selected typography at construction,
@@ -312,6 +531,20 @@
                 (section-key enlarged-metadata-theme))
   (check-not-equal? (section-key animate-typography-theme)
                     (section-key enlarged-theme))
+  ;; Inherited semantic fields have a stable prefab marker instead of a
+  ;; process-local gensym, so rebuilt equivalent timelines keep their automatic
+  ;; persistent-cache identity.
+  (define (rebuilt-semantic-section-key)
+    (define rebuilt-heading (title-text "A semantic title" #:id 'heading))
+    (define rebuilt-timeline
+      (make-authored-timeline
+       (scene-wait (scene-add (make-scene) rebuilt-heading) 1)
+       #:sections (list (section 'only 0 1))))
+    (automatic-section-cache-key
+     rebuilt-timeline (timeline-section rebuilt-timeline 'only)
+     #:fps 1 #:camera #f #:renderers '() #:asset-files '()))
+  (check-equal? (rebuilt-semantic-section-key)
+                (rebuilt-semantic-section-key))
   (define preview-document
     (make-preview-document (scene-wait (scene-add (make-scene) heading) 1)))
   (define preview-sample (frame-sample 0 1))
@@ -342,7 +575,14 @@
      (define after (preview-set-typography-theme! preview-session enlarged-theme))
      (check-eq? (preview-typography-theme preview-session) enlarged-theme)
      (check-true (> (preview-status-render-generation after)
-                    (preview-status-render-generation before))))
+                    (preview-status-render-generation before)))
+     ;; Metadata-only switches update inspection metadata without discarding an
+     ;; equal-appearance bitmap or advancing the render generation.
+     (define metadata-after
+       (preview-set-typography-theme! preview-session enlarged-metadata-theme))
+     (check-eq? (preview-typography-theme preview-session) enlarged-metadata-theme)
+     (check-equal? (preview-status-render-generation metadata-after)
+                   (preview-status-render-generation after)))
    (lambda () (preview-close! preview-session)))
 
   ;; A producer is allowed to finish only at its own coarse cancellation

@@ -1406,6 +1406,8 @@ The report's paths and per-frame times are ordered by the local output number.
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
           [#:theme theme color-theme? animate-light-theme]
+          [#:typography typography (or/c false/c typography-theme?) #f]
+          [#:typography-context typography-context any/c #f]
           [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
           [#:asset-files asset-files (listof path-string?) null])
          (listof path?)]{
@@ -1436,6 +1438,13 @@ Custom Pict renderers without a declared immutable cache identity remain
 renderable but deliberately disable persistent reuse for a section supplied
 with them. Animate never guesses their identity from a printed closure or
 object, nor does it infer that they are unused from only a top-level Visual.
+
+Pass @racket[#:typography] to select a typography snapshot for semantic text.
+The prepared @racket[#:typography-context] form is accepted for rendering
+pipelines that already hold one; supply at most one of these keywords. When
+neither is supplied, Animate uses @racket[animate-typography-theme]. The
+typography appearance fingerprint and resolver version are part of the section
+cache identity.
 }
 
 @defproc[(render-timeline-section/report!
@@ -1448,6 +1457,8 @@ object, nor does it infer that they are unused from only a top-level Visual.
           [#:clean? clean? boolean? #t]
           [#:workers workers exact-positive-integer? 1]
           [#:theme theme color-theme? animate-light-theme]
+          [#:typography typography (or/c false/c typography-theme?) #f]
+          [#:typography-context typography-context any/c #f]
           [#:cache-key cache-key (or/c false/c 'auto symbol? string?) 'auto]
           [#:asset-files asset-files (listof path-string?) null])
          section-render-report?]{

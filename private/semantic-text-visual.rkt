@@ -6,6 +6,7 @@
 (require racket/list
          "affine-transform.rkt"
          "color-style.rkt"
+         "paint.rkt"
          "geometry.rkt"
          "render-typography-context.rkt"
          "text-properties.rkt"
@@ -42,17 +43,27 @@
          semantic-text-overrides-horizontal-alignment
          semantic-text-overrides-vertical-alignment
          semantic-text-overrides-treatment
+         semantic-text-overrides-background
+         semantic-text-overrides-border-color
+         semantic-text-overrides-border-width
+         semantic-text-overrides-padding-x
+         semantic-text-overrides-padding-y
          semantic-text-override-inherited?
          semantic-text-visual-width
          semantic-text->text-visual
          resolve-semantic-text-style
          textual-visual?)
 
-(define unspecified (gensym 'semantic-text-unspecified))
+;; This marker is stored in immutable Scene data. A prefab value gives it a
+;; stable reader representation, unlike a gensym, while keeping inherited
+;; distinct from an explicit #f.
+(struct semantic-text-inherited () #:prefab)
+(define unspecified (semantic-text-inherited))
 
 (struct semantic-text-overrides-value
   (font-face font-family font-size font-style font-weight color line-spacing
-             line-alignment horizontal-alignment vertical-alignment treatment)
+             line-alignment horizontal-alignment vertical-alignment treatment
+             background border-color border-width padding-x padding-y)
   #:transparent)
 
 (define semantic-text-overrides? semantic-text-overrides-value?)
@@ -67,12 +78,17 @@
 (define semantic-text-overrides-horizontal-alignment semantic-text-overrides-value-horizontal-alignment)
 (define semantic-text-overrides-vertical-alignment semantic-text-overrides-value-vertical-alignment)
 (define semantic-text-overrides-treatment semantic-text-overrides-value-treatment)
+(define semantic-text-overrides-background semantic-text-overrides-value-background)
+(define semantic-text-overrides-border-color semantic-text-overrides-value-border-color)
+(define semantic-text-overrides-border-width semantic-text-overrides-value-border-width)
+(define semantic-text-overrides-padding-x semantic-text-overrides-value-padding-x)
+(define semantic-text-overrides-padding-y semantic-text-overrides-value-padding-y)
 
 ;; The implementation uses a private sentinel rather than #f so callers can
 ;; explicitly request #f for optional fields such as a treatment.  Inspection
 ;; clients need only this predicate, never the sentinel itself.
 (define (semantic-text-override-inherited? value)
-  (eq? value unspecified))
+  (semantic-text-inherited? value))
 
 (struct semantic-text-visual
   (id transform opacity style-key content spans overrides width)
@@ -126,6 +142,11 @@
                      #:horizontal-alignment [horizontal-alignment unspecified]
                      #:vertical-alignment [vertical-alignment unspecified]
                      #:treatment [treatment unspecified]
+                     #:background [background unspecified]
+                     #:border-color [border-color unspecified]
+                     #:border-width [border-width unspecified]
+                     #:padding-x [padding-x unspecified]
+                     #:padding-y [padding-y unspecified]
                      #:width [width #f])
   (make-semantic-text 'styled-text content (list (text-span content)) style-key
                       #:id id #:center center #:rotation rotation #:scale scale #:opacity opacity
@@ -133,7 +154,10 @@
                       #:font-style font-style #:font-weight font-weight #:color color
                       #:line-spacing line-spacing #:line-alignment line-alignment
                       #:horizontal-alignment horizontal-alignment
-                      #:vertical-alignment vertical-alignment #:treatment treatment #:width width))
+                      #:vertical-alignment vertical-alignment #:treatment treatment
+                      #:background background #:border-color border-color
+                      #:border-width border-width #:padding-x padding-x #:padding-y padding-y
+                      #:width width))
 
 (define (styled-rich-text #:style style-key #:id id
                           #:center [center origin] #:rotation [rotation 0]
@@ -149,6 +173,11 @@
                           #:horizontal-alignment [horizontal-alignment unspecified]
                           #:vertical-alignment [vertical-alignment unspecified]
                           #:treatment [treatment unspecified]
+                          #:background [background unspecified]
+                          #:border-color [border-color unspecified]
+                          #:border-width [border-width unspecified]
+                          #:padding-x [padding-x unspecified]
+                          #:padding-y [padding-y unspecified]
                           #:width [width #f]
                           . pieces)
   (define spans
@@ -163,7 +192,10 @@
                       #:font-style font-style #:font-weight font-weight #:color color
                       #:line-spacing line-spacing #:line-alignment line-alignment
                       #:horizontal-alignment horizontal-alignment
-                      #:vertical-alignment vertical-alignment #:treatment treatment #:width width))
+                      #:vertical-alignment vertical-alignment #:treatment treatment
+                      #:background background #:border-color border-color
+                      #:border-width border-width #:padding-x padding-x #:padding-y padding-y
+                      #:width width))
 
 (define (semantic-role-constructor style-key)
   (lambda (content #:id id #:center [center origin] #:rotation [rotation 0]
@@ -174,14 +206,23 @@
            #:line-spacing [line-spacing unspecified] #:line-alignment [line-alignment unspecified]
            #:horizontal-alignment [horizontal-alignment unspecified]
            #:vertical-alignment [vertical-alignment unspecified]
-           #:treatment [treatment unspecified] #:width [width #f])
+           #:treatment [treatment unspecified]
+           #:background [background unspecified]
+           #:border-color [border-color unspecified]
+           #:border-width [border-width unspecified]
+           #:padding-x [padding-x unspecified]
+           #:padding-y [padding-y unspecified]
+           #:width [width #f])
     (make-semantic-text style-key content (list (text-span content)) style-key
                         #:id id #:center center #:rotation rotation #:scale scale #:opacity opacity
                         #:font-face font-face #:font-family font-family #:font-size font-size
                         #:font-style font-style #:font-weight font-weight #:color color
                         #:line-spacing line-spacing #:line-alignment line-alignment
                         #:horizontal-alignment horizontal-alignment
-                        #:vertical-alignment vertical-alignment #:treatment treatment #:width width)))
+                        #:vertical-alignment vertical-alignment #:treatment treatment
+                        #:background background #:border-color border-color
+                        #:border-width border-width #:padding-x padding-x #:padding-y padding-y
+                        #:width width)))
 
 (define title-text (semantic-role-constructor 'title))
 (define subtitle-text (semantic-role-constructor 'subtitle))
@@ -199,7 +240,10 @@
                             #:font-style font-style #:font-weight font-weight #:color color
                             #:line-spacing line-spacing #:line-alignment line-alignment
                             #:horizontal-alignment horizontal-alignment
-                            #:vertical-alignment vertical-alignment #:treatment treatment #:width width)
+                            #:vertical-alignment vertical-alignment #:treatment treatment
+                            #:background background #:border-color border-color
+                            #:border-width border-width #:padding-x padding-x #:padding-y padding-y
+                            #:width width)
   (unless (string? content) (raise-argument-error who "string?" content))
   (unless (symbol? id) (raise-argument-error who "symbol? as #:id" id))
   (unless (portable-style-key? style-key)
@@ -211,31 +255,49 @@
   (unless (or (not width) (and (finite-real? width) (positive? width)))
     (raise-argument-error who "positive finite real? or #f as #:width" width))
   (check-overrides who font-face font-family font-size font-style font-weight color
-                   line-spacing line-alignment horizontal-alignment vertical-alignment treatment)
+                   line-spacing line-alignment horizontal-alignment vertical-alignment treatment
+                   background border-color border-width padding-x padding-y)
   (semantic-text-visual
    id (make-affine-transform #:translation center #:rotation rotation #:scale scale) opacity style-key
    (string->immutable-string content) spans
    (semantic-text-overrides-value font-face font-family font-size font-style font-weight color
-                                  line-spacing line-alignment horizontal-alignment vertical-alignment treatment)
+                                  line-spacing line-alignment horizontal-alignment vertical-alignment treatment
+                                  background border-color border-width padding-x padding-y)
    width))
 
 (define (check-overrides who font-face font-family font-size font-style font-weight color
-                         line-spacing line-alignment horizontal vertical treatment)
-  (when (and (not (eq? font-face unspecified)) font-face (not (string? font-face)))
+                         line-spacing line-alignment horizontal vertical treatment
+                         background border-color border-width padding-x padding-y)
+  (when (and (not (semantic-text-override-inherited? font-face)) font-face (not (string? font-face)))
     (raise-argument-error who "string? or #f as #:font-face" font-face))
   (for ([value (in-list (list font-family font-size font-style font-weight line-spacing line-alignment horizontal vertical))]
         [predicate (in-list (list text-font-family? text-font-size? text-font-style? text-font-weight?
                                   text-line-spacing? text-line-alignment?
                                   text-horizontal-alignment? text-vertical-alignment?))]
         [name (in-list '(font-family font-size font-style font-weight line-spacing line-alignment horizontal-alignment vertical-alignment))])
-    (unless (or (eq? value unspecified) (predicate value))
+    (unless (or (semantic-text-override-inherited? value) (predicate value))
       (raise-arguments-error who "a valid explicit typography override" "property" name "value" value)))
-  (when (and (not (eq? color unspecified)) (not (color-spec? color)))
+  (when (and (not (semantic-text-override-inherited? color)) (not (color-spec? color)))
     (raise-argument-error who "color-spec? as #:color" color))
-  (when (and (not (eq? treatment unspecified)) treatment (not (text-treatment? treatment)))
-    (raise-argument-error who "text-treatment? or #f as #:treatment" treatment)))
+  (when (and (not (semantic-text-override-inherited? treatment)) treatment (not (text-treatment? treatment)))
+    (raise-argument-error who "text-treatment? or #f as #:treatment" treatment))
+  (when (and (not (semantic-text-override-inherited? background))
+             background
+             (not (paint? background)))
+    (raise-argument-error who "paint? or #f as #:background" background))
+  (when (and (not (semantic-text-override-inherited? border-color))
+             border-color
+             (not (color-spec? border-color)))
+    (raise-argument-error who "color-spec? or #f as #:border-color" border-color))
+  (for ([value (in-list (list border-width padding-x padding-y))]
+        [name (in-list '(border-width padding-x padding-y))])
+    (unless (or (semantic-text-override-inherited? value)
+                (and (finite-real? value) (>= value 0)))
+      (raise-arguments-error who "a nonnegative finite real treatment override"
+                             "property" name "value" value))))
 
-(define (override-or value base) (if (eq? value unspecified) base value))
+(define (override-or value base)
+  (if (semantic-text-override-inherited? value) base value))
 
 (define (resolve-semantic-text-style visual theme)
   (unless (semantic-text-visual? visual)
@@ -244,6 +306,39 @@
     (raise-argument-error 'resolve-semantic-text-style "typography-theme?" theme))
   (define overrides (semantic-text-visual-overrides visual))
   (define base (typography-ref theme (semantic-text-visual-style-key visual)))
+  ;; Resolve a complete replacement before its individual refinements. A
+  ;; property override on #f begins with a neutral treatment.
+  (define replacement-treatment
+    (override-or (semantic-text-overrides-treatment overrides)
+                 (text-style-treatment base)))
+  (define treatment-properties
+    (list (semantic-text-overrides-background overrides)
+          (semantic-text-overrides-border-color overrides)
+          (semantic-text-overrides-border-width overrides)
+          (semantic-text-overrides-padding-x overrides)
+          (semantic-text-overrides-padding-y overrides)))
+  (define resolved-treatment
+    (if (ormap (lambda (value) (not (semantic-text-override-inherited? value)))
+               treatment-properties)
+        (let ([prior (or replacement-treatment (text-treatment))])
+          (text-treatment-update
+           prior
+           #:background
+           (override-or (semantic-text-overrides-background overrides)
+                        (text-treatment-background prior))
+           #:border-color
+           (override-or (semantic-text-overrides-border-color overrides)
+                        (text-treatment-border-color prior))
+           #:border-width
+           (override-or (semantic-text-overrides-border-width overrides)
+                        (text-treatment-border-width prior))
+           #:padding-x
+           (override-or (semantic-text-overrides-padding-x overrides)
+                        (text-treatment-padding-x prior))
+           #:padding-y
+           (override-or (semantic-text-overrides-padding-y overrides)
+                        (text-treatment-padding-y prior))))
+        replacement-treatment))
   (text-style-update
    base
    #:font-face (override-or (semantic-text-overrides-font-face overrides) (text-style-font-face base))
@@ -256,7 +351,7 @@
    #:line-alignment (override-or (semantic-text-overrides-line-alignment overrides) (text-style-line-alignment base))
    #:horizontal-alignment (override-or (semantic-text-overrides-horizontal-alignment overrides) (text-style-horizontal-alignment base))
    #:vertical-alignment (override-or (semantic-text-overrides-vertical-alignment overrides) (text-style-vertical-alignment base))
-   #:treatment (override-or (semantic-text-overrides-treatment overrides) (text-style-treatment base))))
+   #:treatment resolved-treatment))
 
 (define (semantic-text->text-visual visual
                                      [typography-context (current-or-default-render-typography-context)])

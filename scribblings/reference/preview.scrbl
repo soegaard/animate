@@ -111,8 +111,11 @@ Returns the typography snapshot selected for this session's semantic text.}
                                         [typography typography-theme?])
          preview-status?]{
 Changes only the preview typography snapshot. The preview keeps its semantic
-time and selection, advances its render generation, and never reuses a bitmap
-from the earlier typography appearance.
+time and selection. If the new snapshot has a different typography appearance,
+the preview advances its render generation and never reuses a bitmap from the
+earlier appearance. If only metadata such as the theme name or provenance
+changes, the current bitmap and render generation are retained while inspector
+metadata is updated.
 }
 
 @defproc[(preview-scrub! [session preview-session?] [time real?]) void?]{

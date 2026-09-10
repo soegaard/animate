@@ -6,7 +6,8 @@
 (require file/sha1
          racket/list
          racket/port
-         "text-style.rkt")
+         "text-style.rkt"
+         "typography-serialization-budget.rkt")
 
 (provide typography-theme
          typography-theme?
@@ -22,6 +23,8 @@
          typography-standard-style-keys)
 
 (define typography-theme-schema-version 1)
+(define maximum-typography-style-count 10000)
+(define maximum-typography-serialization-nodes 100000)
 (define typography-standard-style-keys
   '(title subtitle section-heading body caption label quotation code annotation))
 
@@ -45,9 +48,15 @@
     (raise-argument-error 'typography-theme "string? as #:display-name" display-name))
   (unless (or (not provenance) (string? provenance) (symbol? provenance))
     (raise-argument-error 'typography-theme "(or/c #f string? symbol?) as #:provenance" provenance))
+  (define normalized-entries (normalize-style-entries styles))
+  (when (> (length normalized-entries) maximum-typography-style-count)
+    (raise-arguments-error 'typography-theme
+                           "at most the configured number of style definitions"
+                           "maximum" maximum-typography-style-count
+                           "count" (length normalized-entries)))
   (define inherited (if parent (typography-theme-value-styles parent) (hash)))
   (define merged
-    (for/fold ([result inherited]) ([entry (in-list (normalize-style-entries styles))])
+    (for/fold ([result inherited]) ([entry (in-list normalized-entries)])
       (hash-set result (car entry) (cdr entry))))
   (unless parent
     (for ([key (in-list typography-standard-style-keys)])
@@ -122,38 +131,112 @@
    (sha1-bytes
     (call-with-output-bytes
      (lambda (output)
-       (write `(animate-typography-appearance-v1
-                ,(for/list ([key (in-list (sort (hash-keys styles) symbol<?))])
-                   (list key (text-style->datum (hash-ref styles key)))))
-              output))))))
+       (canonical-typography-write
+        `(animate-typography-appearance-v2
+          ,(for/list ([key (in-list (sort (hash-keys styles) symbol<?))])
+             (list key (text-style->datum (hash-ref styles key)))))
+        output))))))
+
+;; Typography fingerprints are persistent appearance identities. Keep their
+;; byte encoding independent of ambient caller printer preferences.
+(define (canonical-typography-write value output)
+  (parameterize ([print-pair-curly-braces #f]
+                 [print-graph #f]
+                 [print-reader-abbreviations #f]
+                 [print-boolean-long-form #f])
+    (write value output)))
 
 (define (typography-theme->datum theme)
   (unless (typography-theme? theme)
     (raise-argument-error 'typography-theme->datum "typography-theme?" theme))
-  `(animate-typography-theme ,typography-theme-schema-version
-                             ,(typography-theme-id theme)
-                             ,(typography-theme-display-name theme)
-                             ,(for/list ([key (in-list (typography-style-keys theme))])
-                                (list key (text-style->datum (typography-ref theme key))))
-                             ,(typography-theme-provenance theme)))
+  (define datum
+    `(animate-typography-theme ,typography-theme-schema-version
+                               ,(typography-theme-id theme)
+                               ,(typography-theme-display-name theme)
+                               ,(for/list ([key (in-list (typography-style-keys theme))])
+                                  (list key (text-style->datum (typography-ref theme key))))
+                               ,(typography-theme-provenance theme)))
+  ;; One shared allowance counts the wrapper, metadata, every style property,
+  ;; treatment paint/stops, and each nested color datum.
+  (typography-serialization-budget-count-datum!
+   (make-typography-serialization-budget
+    'typography-theme->datum
+    #:maximum-nodes maximum-typography-serialization-nodes)
+   datum)
+  datum)
 
 (define (datum->typography-theme datum)
-  (unless (and (list? datum) (= (length datum) 6)
-               (eq? (car datum) 'animate-typography-theme))
+  ;; Bound the entire untrusted tree before even the outer-list helper creates
+  ;; a reversed copy. The generic counter also rejects cyclic nested data.
+  (typography-serialization-budget-count-datum!
+   (make-typography-serialization-budget
+    'datum->typography-theme
+    #:maximum-nodes maximum-typography-serialization-nodes)
+   datum)
+  (define fields (proper-list-elements datum 'datum->typography-theme))
+  (unless (and (= (length fields) 6)
+               (eq? (car fields) 'animate-typography-theme))
     (raise-arguments-error 'datum->typography-theme
                            "an (animate-typography-theme version id name styles provenance) datum"
                            "datum" datum))
-  (unless (= (list-ref datum 1) typography-theme-schema-version)
+  (define schema-version (list-ref fields 1))
+  (unless (exact-positive-integer? schema-version)
+    (raise-arguments-error 'datum->typography-theme
+                           "an exact positive typography schema version"
+                           "version" schema-version))
+  (unless (= schema-version typography-theme-schema-version)
     (raise-arguments-error 'datum->typography-theme
                            "a supported typography theme schema version"
-                           "version" (list-ref datum 1)))
+                           "version" schema-version))
+  (define style-data
+    (proper-list-elements (list-ref fields 4) 'datum->typography-theme
+                          #:maximum maximum-typography-style-count))
   (define entries
-    (for/list ([entry (in-list (list-ref datum 4))])
-      (unless (and (list? entry) (= (length entry) 2))
+    (let loop ([remaining style-data] [index 0] [seen (hash)] [reversed '()])
+      (cond
+        [(null? remaining) (reverse reversed)]
+        [else
+         (define entry (car remaining))
+         (define entry-fields
+           (proper-list-elements entry 'datum->typography-theme #:maximum 2))
+         (unless (= (length entry-fields) 2)
         (raise-arguments-error 'datum->typography-theme "(style-key style-datum) entries"
                                "entry" entry))
-      (cons (car entry) (datum->text-style (cadr entry)))))
-  (typography-theme #:id (list-ref datum 2)
-                    #:display-name (list-ref datum 3)
+         (define key (car entry-fields))
+         (unless (portable-style-key? key)
+           (raise-arguments-error 'datum->typography-theme
+                                  "a nonempty interned style key"
+                                  "style" key "index" index))
+         (when (hash-has-key? seen key)
+           (raise-arguments-error 'datum->typography-theme
+                                  "style entries with no duplicate keys"
+                                  "style" key
+                                  "first index" (hash-ref seen key)
+                                  "duplicate index" index))
+         (loop (cdr remaining) (add1 index) (hash-set seen key index)
+               (cons (cons key (datum->text-style (cadr entry-fields))) reversed))])))
+  (typography-theme #:id (list-ref fields 2)
+                    #:display-name (list-ref fields 3)
                     #:styles entries
-                    #:provenance (list-ref datum 5)))
+                    #:provenance (list-ref fields 5)))
+
+;; Validates a bounded proper list before callers use list operations or
+;; traverse untrusted style entries. This keeps decoding failures in typography
+;; vocabulary instead of exposing an incidental list/number contract.
+(define (proper-list-elements value who #:maximum [maximum #f])
+  (let loop ([remaining value] [reversed '()] [seen (hasheq)] [count 0])
+    (cond
+      [(null? remaining) (reverse reversed)]
+      [(not (pair? remaining))
+       (raise-arguments-error who "an acyclic proper list datum" "datum" value)]
+      [(hash-has-key? seen remaining)
+       (raise-arguments-error who "an acyclic proper list datum" "datum" value)]
+      [else
+       (define next-count (add1 count))
+       (when (and maximum (> next-count maximum))
+         (raise-arguments-error who
+                                "a typography datum within the configured style-count budget"
+                                "maximum styles" maximum
+                                "styles" next-count))
+       (loop (cdr remaining) (cons (car remaining) reversed)
+             (hash-set seen remaining #t) next-count)])))

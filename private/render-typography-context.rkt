@@ -11,7 +11,7 @@
          current-render-typography-context
          current-or-default-render-typography-context)
 
-(define render-typography-resolver-version 1)
+(define render-typography-resolver-version 2)
 
 (struct render-typography-context (theme appearance-fingerprint resolver-version)
   #:transparent)

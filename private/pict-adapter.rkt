@@ -68,6 +68,7 @@
          "render-typography-context.rkt"
          "renderer-resources.rkt"
          "semantic-text-visual.rkt"
+         "text-visual.rkt"
          "text-style.rkt"
          "text-treatment-pict.rkt"
          "3d/frame-artifact-cache3d.rkt"
@@ -297,9 +298,11 @@
 
 ;; semantic-text-visual->pict : semantic-text-visual? camera?
 ;;                              (listof pict-renderer?) -> pict?
-;; Lowers only for this render operation.  Treatment geometry is built around
-;; the untransformed text Pict, then receives the same scale and rotation as
-;; the text itself; its padding and border therefore remain one visual unit.
+;; Lowers only for this render operation. The built-in text renderer exposes
+;; unanchored final layout, so treatment decorates real content before the
+;; semantic anchor is introduced. A custom text renderer has no content-box
+;; protocol; its returned logical Pict is therefore its declared treatment box.
+;; Treatment-free custom rendering remains exactly on the old dispatch path.
 (define (semantic-text-visual->pict visual camera renderers)
   (define typography-context
     (current-or-default-render-typography-context))
@@ -315,11 +318,32 @@
   ;; after the background/border has been composed.
   (define local-concrete
     (visual-with-transform concrete (make-affine-transform #:translation origin)))
-  (define content
-    (render-visual-or-composite local-concrete camera renderers))
+  (define renderer
+    (find-supporting-pict-renderer local-concrete renderers))
+  (unless renderer
+    (raise-arguments-error
+     'visual->pict
+     "a Pict renderer supporting lowered semantic text"
+     "visual" visual))
   (define treated
-    (apply-text-treatment-to-pict content (text-style-treatment style)
-                                  (text-style-font-size style) camera))
+    (cond
+      [(text-pict-renderer? renderer)
+       (define content
+         (text-pict-renderer-unanchored-content-pict
+          renderer local-concrete camera))
+       (anchor-pict
+        (apply-text-treatment-to-pict content (text-style-treatment style)
+                                      (text-style-font-size style) camera)
+        (text-visual-horizontal-alignment local-concrete)
+        (text-visual-vertical-alignment local-concrete))]
+      [else
+       ;; Custom renderers retain their existing anchored/logical protocol.
+       ;; There is no safe pixel inference for their actual ink bounds.
+       (apply-text-treatment-to-pict
+        (render-visual-with-pict-renderer renderer local-concrete camera)
+        (text-style-treatment style)
+        (text-style-font-size style)
+        camera)]))
   (rotate-pict-if-needed
    (scale-pict-if-needed treated (visual-scale visual))
    (visual-rotation visual)))
