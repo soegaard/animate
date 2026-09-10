@@ -71,9 +71,13 @@
     "examples/adaptive-ode-trajectory.rkt" 'make-demo-scene
     '(ode flow) '(core) 3 7)
    (example-entry
-    'source-block-reload "Source-block hot reload"
+   'source-block-reload "Source-block hot reload"
     "examples/source-block-hot-reload.rkt" 'hot-reload-demo
     '(authoring preview) '(core gui) 1 4)
+   (example-entry
+    'semantic-typography "Semantic typography"
+    "examples/semantic-typography.rkt" 'make-typography-scene
+    '(typography text themes) '(core) 1 2)
    (example-entry
     'semantic-inspector "Semantic inspector"
     "examples/semantic-inspector.rkt" 'semantic-inspector-demo

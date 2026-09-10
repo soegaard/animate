@@ -225,6 +225,7 @@ exactly synchronized with the gallery and example requirements.
 - [Adaptive function plot](examples/function-graphs.rkt) — plotting, adaptive; requires core.
 - [Adaptive ODE trajectory](examples/adaptive-ode-trajectory.rkt) — ode, flow; requires core.
 - [Source-block hot reload](examples/source-block-hot-reload.rkt) — authoring, preview; requires core, gui.
+- [Semantic typography](examples/semantic-typography.rkt) — typography, text, themes; requires core.
 - [Semantic inspector](examples/semantic-inspector.rkt) — preview, inspector, formula, relations; requires core, latex, dvisvgm, gui.
 - [Authored audio and video](examples/authored-media-assembly.rkt) — rendering, audio, subtitles; requires core, ffmpeg.
 - [Perspective wireframe cube](examples/3d/wireframe-cube.rkt) — 3d, wireframe, camera; requires core, latex, dvisvgm.

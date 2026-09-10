@@ -55,7 +55,8 @@
   (for ([name (in-list '(scene-program? scene-block-spec? make-scene-program))])
     (check-not-eq? (public-binding "../authoring.rkt" name) absent))
   (for ([name (in-list '(open-program-preview open-scene-preview preview-available?
-                         preview-color-theme preview-set-color-theme!))])
+                         preview-color-theme preview-set-color-theme!
+                         preview-typography-theme preview-set-typography-theme!))])
     (check-not-eq? (public-binding "../preview.rkt" name) absent))
   (for ([name (in-list '(render-frames! encode-mp4! render-color->draw-color
                          load-color-theme! write-color-theme!))])
@@ -63,8 +64,33 @@
   (for ([name (in-list '(animate-project? plan-project prepare-project!
                          prepare-project-label-layout3d
                          project-target-section project-plan->datum
-                         render-spec-theme render-spec-with-theme))])
+                         render-spec-theme render-spec-typography
+                         render-spec-with-theme render-spec-with-typography))])
     (check-not-eq? (public-binding "../project.rkt" name) absent))
+  (for ([name (in-list '(text-treatment text-treatment?
+                         text-treatment-background text-treatment-border-color
+                         text-treatment-border-width text-treatment-padding-x
+                         text-treatment-padding-y
+                         text-style text-style? text-style-font-face
+                         text-style-font-family text-style-font-size text-style-font-style
+                         text-style-font-weight text-style-color text-style-line-spacing
+                         text-style-line-alignment text-style-horizontal-alignment
+                         text-style-vertical-alignment text-style-treatment
+                         text-style-update text-style->datum datum->text-style
+                         typography-theme typography-theme? typography-theme-id
+                         typography-theme-display-name typography-theme-provenance
+                         typography-ref typography-style-keys typography-theme-fingerprint
+                         typography-theme-schema-version typography-theme->datum
+                         datum->typography-theme typography-standard-style-keys
+                         animate-typography-theme
+                         title-text subtitle-text section-heading-text body-text
+                         caption-text label-text quotation-text code-text annotation-text
+                         styled-text styled-rich-text semantic-text-visual?
+                         semantic-text-style-key semantic-text-content semantic-text-spans
+                         semantic-text-overrides semantic-text-overrides?
+                         semantic-text-override-inherited? semantic-text-visual-width
+                         resolve-semantic-text-style))])
+    (check-not-eq? (public-binding "../main.rkt" name) absent))
   (for ([name (in-list '(literal-color-spec? palette-color role-color series-color
                          color-token? color-token-kind color-token-key
                          series-color? series-color-index

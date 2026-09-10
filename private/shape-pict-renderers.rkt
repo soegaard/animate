@@ -61,11 +61,15 @@
          "pict-renderer.rkt"
          "render-color-context.rkt"
          "renderer-resources.rkt"
+         "render-typography-context.rkt"
+         "semantic-text-visual.rkt"
          "svg-pict-renderer.rkt"
          "tagged-formula-pict-renderer.rkt"
          "text-layout-preparation.rkt"
          "text-reveal-visual.rkt"
          "text-segmentation.rkt"
+         "text-style.rkt"
+         "text-treatment-pict.rkt"
          "text-visual.rkt"
          "3d/view3d-pict-renderer.rkt"
          "visual-model.rkt")
@@ -235,9 +239,52 @@
                      'pict-whole-layout-only))))
 
 (define (text-reveal-visual->pict renderer visual camera)
-  (define source (text-reveal-visual-source visual))
-  (define complete
+  ;; The wrapper keeps the authored source untouched for the clip endpoint.
+  ;; Only this renderer-local view lowers semantic text under the active
+  ;; immutable typography context.
+  (define authored-source (text-reveal-visual-source visual))
+  (define semantic-source?
+    (semantic-text-visual? authored-source))
+  (define resolved-source
+    (let ([authored-source authored-source])
+      (if semantic-source?
+          (semantic-text->text-visual authored-source
+                                      (current-or-default-render-typography-context))
+          authored-source)))
+  ;; The ordinary semantic path treats the background/border as part of one
+  ;; local Pict, then applies the source's scale and rotation.  A temporary
+  ;; reveal must do exactly the same thing.  In particular, do not pad a
+  ;; pre-scaled glyph Pict: that would make the treatment's em padding and
+  ;; border disagree with the completed semantic endpoint.
+  (define source
+    (if semantic-source?
+        (visual-with-transform resolved-source
+                               (make-affine-transform #:translation origin))
+        resolved-source))
+  (define content
     (text-visual->pict source camera (text-pict-renderer-raster-cache renderer)))
+  ;; During a semantic typewriter effect the treatment is the stable outer
+  ;; box. Only glyph ink is masked, so a code block does not resize or jitter
+  ;; while its source graphemes are revealed.
+  (define treatment
+    (and (semantic-text-visual? authored-source)
+         (text-style-treatment
+          (resolve-semantic-text-style
+           authored-source
+           (render-typography-context-theme
+            (current-or-default-render-typography-context))))))
+  (define (present-content revealed-content)
+    (define local-content
+      (if treatment
+          (apply-text-treatment-to-pict revealed-content treatment
+                                        (text-visual-font-size source) camera)
+          revealed-content))
+    (if semantic-source?
+        (rotate-pict-if-needed
+         (scale-pict-if-needed local-content (visual-scale authored-source))
+         (visual-rotation authored-source))
+        local-content))
+  (define complete (present-content content))
   (define requested-count
     (text-reveal-visual-revealed-count visual))
   (define segment-count
@@ -245,18 +292,22 @@
   (define cursor-layout
     (and (text-reveal-visual-cursor? visual)
          (prepare-pict-text-layout renderer source camera)))
-  (define (with-cursor presented visible-clusters [layout cursor-layout])
-    (if (text-reveal-visual-cursor? visual)
-        (text-reveal-cursor-pict
-         presented
-         source
-         visible-clusters
-         layout
-         (text-reveal-visual-cursor-style visual))
-        presented))
+  (define (with-cursor revealed-content visible-clusters [layout cursor-layout])
+    ;; Cursor cluster coordinates belong to the unpadded final text Pict.
+    ;; Draw it there first, then compose the stable semantic treatment around
+    ;; the result so padding cannot displace the cursor.
+    (present-content
+     (if (text-reveal-visual-cursor? visual)
+         (text-reveal-cursor-pict
+          revealed-content
+          source
+          visible-clusters
+          layout
+          (text-reveal-visual-cursor-style visual))
+         revealed-content)))
   (cond
     [(zero? requested-count)
-     (with-cursor (clip-pict-to-leading-width complete 0) '())]
+     (with-cursor (clip-pict-to-leading-width content 0) '())]
     [(= requested-count segment-count)
      complete]
     [else
@@ -281,9 +332,8 @@
                               (prepared-text-cluster-segment cluster))
                              reveal-source-end))
          cluster))
-     (with-cursor
-      (clip-pict-to-cluster-bounds complete visible-clusters)
-      visible-clusters)]))
+     (with-cursor (clip-pict-to-cluster-bounds content visible-clusters)
+                  visible-clusters)]))
 
 ;; text-reveal-cursor-pict : pict? text-visual?
 ;;                            (listof prepared-text-cluster?)

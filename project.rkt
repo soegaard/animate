@@ -27,6 +27,12 @@
                   color-theme-fingerprint
                   color-theme-id
                   theme->datum)
+         (only-in "typography.rkt"
+                  animate-typography-theme
+                  typography-theme?
+                  typography-theme-fingerprint
+                  typography-theme-id
+                  typography-theme->datum)
          "main.rkt"
          "private/3d/label-layout-preparation3d.rkt"
          "private/3d/renderer3d.rkt"
@@ -36,6 +42,7 @@
          "private/scene-frame-grid.rkt"
          "private/scene-state.rkt"
          "private/render-color-context.rkt"
+         "private/render-typography-context.rkt"
          "private/visual-model.rkt"
          "version.rkt")
 
@@ -81,7 +88,9 @@
          render-spec-workers
          render-spec-quality
          render-spec-theme
+         render-spec-typography
          render-spec-with-theme
+         render-spec-with-typography
          preview-spec
          preview-spec?
          preview-spec-fps
@@ -198,7 +207,7 @@
 (define scene-program-source-program scene-program-source-value-value)
 
 (struct render-spec-value
-  (fps width height camera renderers renderer-options renderer3d supersample workers quality theme)
+  (fps width height camera renderers renderer-options renderer3d supersample workers quality theme typography)
   #:transparent
   #:constructor-name make-render-spec)
 
@@ -214,6 +223,7 @@
 (define render-spec-workers render-spec-value-workers)
 (define render-spec-quality render-spec-value-quality)
 (define render-spec-theme render-spec-value-theme)
+(define render-spec-typography render-spec-value-typography)
 
 (struct preview-spec-value
   (fps pixel-scale supersample cache-megabytes prefetch worker-mode quality-policy audio?)
@@ -360,7 +370,8 @@
                      #:supersample [supersample 1]
                      #:workers [workers 1]
                      #:quality [quality 'final]
-                     #:theme [theme animate-light-theme])
+                     #:theme [theme animate-light-theme]
+                     #:typography [typography animate-typography-theme])
   (check-positive-integer 'render-spec "fps" fps)
   (check-positive-integer 'render-spec "width" width)
   (check-positive-integer 'render-spec "height" height)
@@ -385,11 +396,13 @@
     (raise-argument-error 'render-spec "'draft or 'final" quality))
   (unless (color-theme? theme)
     (raise-argument-error 'render-spec "color-theme? as #:theme" theme))
+  (unless (typography-theme? typography)
+    (raise-argument-error 'render-spec "typography-theme? as #:typography" typography))
   (make-render-spec fps width height camera
                     (if (list? renderers) (append renderers '()) renderers)
                     (immutable-hash-snapshot renderer-options)
                     renderer3d
-                    supersample workers quality theme))
+                    supersample workers quality theme typography))
 
 ;; render-spec-with-theme : render-spec? color-theme? -> render-spec?
 ;; Replaces only the immutable color snapshot while preserving every raster,
@@ -410,7 +423,30 @@
                #:supersample (render-spec-supersample value)
                #:workers (render-spec-workers value)
                #:quality (render-spec-quality value)
-               #:theme theme))
+               #:theme theme
+               #:typography (render-spec-typography value)))
+
+;; render-spec-with-typography : render-spec? typography-theme? -> render-spec?
+;; Replaces only the immutable semantic text snapshot.  Color appearance and
+;; every pixel/grid setting remain unchanged, making a command-line or preview
+;; typography switch explicit rather than global.
+(define (render-spec-with-typography value typography)
+  (unless (render-spec? value)
+    (raise-argument-error 'render-spec-with-typography "render-spec?" value))
+  (unless (typography-theme? typography)
+    (raise-argument-error 'render-spec-with-typography "typography-theme?" typography))
+  (render-spec #:fps (render-spec-fps value)
+               #:width (render-spec-width value)
+               #:height (render-spec-height value)
+               #:camera (render-spec-camera value)
+               #:renderers (render-spec-renderers value)
+               #:renderer-options (render-spec-renderer-options value)
+               #:renderer3d (render-spec-renderer3d value)
+               #:supersample (render-spec-supersample value)
+               #:workers (render-spec-workers value)
+               #:quality (render-spec-quality value)
+               #:theme (render-spec-theme value)
+               #:typography typography))
 
 ; preview-spec : ... -> preview-spec?
 ;;   Describes preview resolution, cache budget, isolation mode, and audio intent.
@@ -1098,6 +1134,11 @@
    ;; name.  Replaying it on another machine therefore cannot silently pick up
    ;; a changed local palette with the same ID.
    'color-theme (render-spec-theme->datum (project-plan-renderer-plan plan))
+   ;; Typography is a separate appearance snapshot because it changes both
+   ;; glyph pixels and layout geometry.  An ID alone would let a worker or a
+   ;; later replay silently substitute a local style table.
+   'typography-theme
+   (render-spec-typography->datum (project-plan-renderer-plan plan))
    'paths
    (hasheq 'primary (project-path-plan-primary paths)
            'temporary (project-path-plan-temporary paths)
@@ -1124,6 +1165,14 @@
           'datum (theme->datum theme)
           'appearance-fingerprint (color-theme-fingerprint theme)
           'resolver-version render-color-resolver-version))
+
+;; render-spec-typography->datum : render-spec? -> immutable-hash?
+(define (render-spec-typography->datum render)
+  (define typography (render-spec-typography render))
+  (hasheq 'id (typography-theme-id typography)
+          'datum (typography-theme->datum typography)
+          'appearance-fingerprint (typography-theme-fingerprint typography)
+          'resolver-version render-typography-resolver-version))
 
 ; prepared-project->datum : prepared-project? -> immutable-hash?
 ;;   Produces source/target diagnostics without serializing arbitrary Scene data.

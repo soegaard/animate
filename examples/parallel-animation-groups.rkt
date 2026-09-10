@@ -10,6 +10,7 @@
 (require racket/cmdline
          racket/math
          animate
+         animate/colors
          animate/render)
 
 (provide make-demo-scene)
@@ -22,7 +23,7 @@
     (make-camera #:width 960
                  #:height 540
                  #:world-width 18
-                 #:background "white"))
+                 #:background theme-background))
   (define disk
     (circle #:id 'disk
             #:radius 4/5
@@ -40,20 +41,14 @@
                #:stroke-width 3))
   (define title
     (fixed-in-frame
-     (plain-text "SCENE-AP: parallel animation groups"
-                 #:id 'title-text
-                 #:font-size 2/5
-                 #:font-family 'swiss
-                 #:color "black")
+     (title-text "SCENE-AP: parallel animation groups"
+                 #:id 'title-text)
      #:camera camera
      #:at (vec2 0 4)))
   (define note
     (fixed-in-frame
-     (plain-text "two successions share one six-second group interval"
-                 #:id 'note-text
-                 #:font-size 7/20
-                 #:font-family 'swiss
-                 #:color "dimgray")
+     (caption-text "two successions share one six-second group interval"
+                   #:id 'note-text)
      #:camera camera
      #:at (vec2 0 -4)))
   (define base

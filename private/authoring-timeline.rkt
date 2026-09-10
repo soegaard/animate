@@ -40,7 +40,7 @@
          subtitle?
          subtitle-start
          subtitle-end
-         subtitle-text
+         subtitle-cue-text
          make-authored-timeline
          authored-timeline?
          authored-timeline-scene
@@ -120,7 +120,10 @@
 (define subtitle? subtitle-placement?)
 (define subtitle-start subtitle-placement-start)
 (define subtitle-end subtitle-placement-end)
-(define subtitle-text subtitle-placement-text)
+;; Keep the subtitle timeline accessor distinct from semantic presentation
+;; text's `subtitle-text` constructor.  The old short name made importing
+;; `animate` together with `animate/authoring` ambiguous.
+(define subtitle-cue-text subtitle-placement-text)
 
 
 ;;;
@@ -275,7 +278,7 @@
       (raise-arguments-error
        'make-authored-timeline
        "subtitle must end inside scene duration"
-       "subtitle" (subtitle-text entry)
+       "subtitle" (subtitle-cue-text entry)
        "subtitle-end" (subtitle-end entry)
        "scene-duration" duration)))
   (define ordered-sections
@@ -418,7 +421,7 @@
    (for/list ([entry (in-list (authored-timeline-subtitles timeline))])
      (hasheq 'start (subtitle-start entry)
              'end (subtitle-end entry)
-             'text (subtitle-text entry)))))
+             'text (subtitle-cue-text entry)))))
 
 
 ;;;
@@ -453,7 +456,7 @@
        (fprintf output "~a --> ~a\n"
                 (subtitle-timestamp (subtitle-start entry) format)
                 (subtitle-timestamp (subtitle-end entry) format))
-       (display (normalize-subtitle-text (subtitle-text entry)) output)
+       (display (normalize-subtitle-text (subtitle-cue-text entry)) output)
        (display "\n\n" output)))
    #:exists 'truncate/replace)
   output-file)

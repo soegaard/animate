@@ -16,6 +16,7 @@
          racket/system
          "authoring-timeline.rkt"
          "color-theme-data.rkt"
+         "typography-theme-data.rkt"
          "section-renderer.rkt"
          "scene.rkt"
          "shape-pict-renderers.rkt"
@@ -200,6 +201,7 @@
                               #:renderers [renderers default-pict-renderers]
                               #:workers [workers 1]
                               #:theme [theme animate-light-theme]
+                              #:typography [typography animate-typography-theme]
                               #:cache-key [cache-key 'auto]
                               #:asset-files [asset-files '()]
                               #:subtitle-file [subtitle-file 'auto]
@@ -263,10 +265,12 @@
          #:renderers renderers
          #:workers workers
          #:theme theme
+         #:typography typography
          #:cache-key cache-key
          #:asset-files asset-files))
       (define effective-key
-        (resolve-section-cache-key timeline entry cache-key fps camera renderers theme asset-files))
+        (resolve-section-cache-key timeline entry cache-key fps camera renderers
+                                   theme typography asset-files))
       (define partial-manifest
         (build-path partial-root
                     (format "section-~a.cache.rktd"
@@ -314,13 +318,14 @@
                              "left-section" (authoring-section-name left)
                              "right-section" (authoring-section-name right)))))
 
-(define (resolve-section-cache-key timeline entry cache-key fps camera renderers theme asset-files)
+(define (resolve-section-cache-key timeline entry cache-key fps camera renderers theme typography asset-files)
   (if (eq? cache-key 'auto)
       (automatic-section-cache-key timeline entry
                                    #:fps fps
                                    #:camera camera
                                    #:renderers renderers
                                    #:theme theme
+                                   #:typography typography
                                    #:asset-files asset-files)
       cache-key))
 

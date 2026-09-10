@@ -67,12 +67,13 @@
 ;;   Returns visual's symmetric rendered Pict box in containing coordinates.
 (define (visual-layout-box visual
                            #:camera [camera default-camera]
-                           #:renderers [renderers default-pict-renderers])
+                           #:renderers [renderers default-pict-renderers]
+                           #:typography [typography #f])
   (check-layout-context 'visual-layout-box camera renderers)
   (define position
     (checked-visual-position 'visual-layout-box visual))
   (define rendered
-    (visual->pict visual camera #:renderers renderers))
+    (visual->pict visual camera #:renderers renderers #:typography typography))
   (define measurement-camera
     (layout-measurement-camera visual camera))
   (define width
@@ -102,10 +103,11 @@
 (define (visual-layout-anchor visual
                               anchor
                               #:camera [camera default-camera]
-                              #:renderers [renderers default-pict-renderers])
+                              #:renderers [renderers default-pict-renderers]
+                              #:typography [typography #f])
   (check-layout-box-anchor 'visual-layout-anchor anchor)
   (layout-box-anchor
-   (visual-layout-box visual #:camera camera #:renderers renderers)
+   (visual-layout-box visual #:camera camera #:renderers renderers #:typography typography)
    anchor))
 
 ; visuals-layout-box : (listof visual?)
@@ -115,7 +117,8 @@
 ;;   Returns the union box of visuals, or false for an empty list.
 (define (visuals-layout-box visuals
                             #:camera [camera default-camera]
-                            #:renderers [renderers default-pict-renderers])
+                            #:renderers [renderers default-pict-renderers]
+                            #:typography [typography #f])
   (check-layout-context 'visuals-layout-box camera renderers)
   (check-visual-list 'visuals-layout-box visuals)
   (check-shared-layout-coordinate-space 'visuals-layout-box visuals)
@@ -126,13 +129,15 @@
      (for/fold ([combined
                  (visual-layout-box (car visuals)
                                     #:camera camera
-                                    #:renderers renderers)])
+                                    #:renderers renderers
+                                    #:typography typography)])
                ([visual (in-list (cdr visuals))])
        (layout-box-union
         combined
         (visual-layout-box visual
                            #:camera camera
-                           #:renderers renderers)))]))
+                           #:renderers renderers
+                           #:typography typography)))]))
 
 
 ;;;
@@ -148,7 +153,8 @@
                          position
                          #:anchor [anchor 'center]
                          #:camera [camera default-camera]
-                         #:renderers [renderers default-pict-renderers])
+                         #:renderers [renderers default-pict-renderers]
+                         #:typography [typography #f])
   (check-layout-context 'visual-place-at camera renderers)
   (unless (vec2? position)
     (raise-argument-error 'visual-place-at "vec2?" position))
@@ -157,7 +163,8 @@
     (visual-layout-anchor visual
                           anchor
                           #:camera camera
-                          #:renderers renderers))
+                          #:renderers renderers
+                          #:typography typography))
   (shift-visual-position
    'visual-place-at
    visual
@@ -175,7 +182,8 @@
                          #:anchor [anchor 'center]
                          #:reference-anchor [reference-anchor anchor]
                          #:camera [camera default-camera]
-                         #:renderers [renderers default-pict-renderers])
+                         #:renderers [renderers default-pict-renderers]
+                         #:typography [typography #f])
   (check-layout-context 'visual-align-to camera renderers)
   (check-layout-box-anchor 'visual-align-to anchor)
   (check-layout-box-anchor 'visual-align-to reference-anchor)
@@ -187,12 +195,14 @@
     (visual-layout-anchor visual
                           anchor
                           #:camera camera
-                          #:renderers renderers))
+                          #:renderers renderers
+                          #:typography typography))
   (define reference-point
     (visual-layout-anchor reference
                           reference-anchor
                           #:camera camera
-                          #:renderers renderers))
+                          #:renderers renderers
+                          #:typography typography))
   (shift-visual-position
    'visual-align-to
    visual
@@ -207,14 +217,16 @@
                                  reference
                                  alignment
                                  #:camera [camera default-camera]
-                                 #:renderers [renderers default-pict-renderers])
+                                 #:renderers [renderers default-pict-renderers]
+                                 #:typography [typography #f])
   (check-horizontal-alignment 'visual-align-horizontal alignment)
   (define-values (visual-box reference-box)
     (measure-visual-pair 'visual-align-horizontal
                          visual
                          reference
                          camera
-                         renderers))
+                         renderers
+                         typography))
   (shift-visual-position
    'visual-align-horizontal
    visual
@@ -231,14 +243,16 @@
                                reference
                                alignment
                                #:camera [camera default-camera]
-                               #:renderers [renderers default-pict-renderers])
+                               #:renderers [renderers default-pict-renderers]
+                               #:typography [typography #f])
   (check-vertical-alignment 'visual-align-vertical alignment)
   (define-values (visual-box reference-box)
     (measure-visual-pair 'visual-align-vertical
                          visual
                          reference
                          camera
-                         renderers))
+                         renderers
+                         typography))
   (shift-visual-position
    'visual-align-vertical
    visual
@@ -264,7 +278,8 @@
                             #:horizontal-alignment
                             [horizontal-alignment 'center]
                             #:camera [camera default-camera]
-                            #:renderers [renderers default-pict-renderers])
+                            #:renderers [renderers default-pict-renderers]
+                            #:typography [typography #f])
   (check-layout-gap 'visual-place-above gap)
   (check-horizontal-alignment
    'visual-place-above
@@ -274,7 +289,8 @@
                          visual
                          reference
                          camera
-                         renderers))
+                         renderers
+                         typography))
   (shift-visual-position
    'visual-place-above
    visual
@@ -300,7 +316,8 @@
                             #:horizontal-alignment
                             [horizontal-alignment 'center]
                             #:camera [camera default-camera]
-                            #:renderers [renderers default-pict-renderers])
+                            #:renderers [renderers default-pict-renderers]
+                            #:typography [typography #f])
   (check-layout-gap 'visual-place-below gap)
   (check-horizontal-alignment
    'visual-place-below
@@ -310,7 +327,8 @@
                          visual
                          reference
                          camera
-                         renderers))
+                         renderers
+                         typography))
   (shift-visual-position
    'visual-place-below
    visual
@@ -336,7 +354,8 @@
                               #:vertical-alignment
                               [vertical-alignment 'center]
                               #:camera [camera default-camera]
-                              #:renderers [renderers default-pict-renderers])
+                              #:renderers [renderers default-pict-renderers]
+                              #:typography [typography #f])
   (check-layout-gap 'visual-place-left-of gap)
   (check-vertical-alignment
    'visual-place-left-of
@@ -346,7 +365,8 @@
                          visual
                          reference
                          camera
-                         renderers))
+                         renderers
+                         typography))
   (shift-visual-position
    'visual-place-left-of
    visual
@@ -372,7 +392,8 @@
                                #:vertical-alignment
                                [vertical-alignment 'center]
                                #:camera [camera default-camera]
-                               #:renderers [renderers default-pict-renderers])
+                               #:renderers [renderers default-pict-renderers]
+                               #:typography [typography #f])
   (check-layout-gap 'visual-place-right-of gap)
   (check-vertical-alignment
    'visual-place-right-of
@@ -382,7 +403,8 @@
                          visual
                          reference
                          camera
-                         renderers))
+                         renderers
+                         typography))
   (shift-visual-position
    'visual-place-right-of
    visual
@@ -408,7 +430,8 @@
 (define (visuals-center-at visuals
                            center
                            #:camera [camera default-camera]
-                           #:renderers [renderers default-pict-renderers])
+                           #:renderers [renderers default-pict-renderers]
+                           #:typography [typography #f])
   (check-layout-context 'visuals-center-at camera renderers)
   (check-visual-list 'visuals-center-at visuals)
   (unless (vec2? center)
@@ -416,7 +439,8 @@
   (define box
     (visuals-layout-box visuals
                         #:camera camera
-                        #:renderers renderers))
+                        #:renderers renderers
+                        #:typography typography))
   (cond
     [(not box)
      '()]
@@ -444,7 +468,8 @@
          #:vertical-alignment [vertical-alignment 'center]
          #:center [center #f]
          #:camera [camera default-camera]
-         #:renderers [renderers default-pict-renderers])
+         #:renderers [renderers default-pict-renderers]
+         #:typography [typography #f])
   (check-layout-context
    'arrange-visuals-horizontally
    camera
@@ -467,8 +492,9 @@
         #:gap gap
         #:vertical-alignment vertical-alignment
         #:camera camera
-        #:renderers renderers))))
-  (maybe-center-visuals arranged center camera renderers))
+        #:renderers renderers
+        #:typography typography))))
+  (maybe-center-visuals arranged center camera renderers typography))
 
 ; arrange-visuals-vertically : (listof visual?)
 ;                              [#:gap nonnegative-real?]
@@ -485,7 +511,8 @@
          #:horizontal-alignment [horizontal-alignment 'center]
          #:center [center #f]
          #:camera [camera default-camera]
-         #:renderers [renderers default-pict-renderers])
+         #:renderers [renderers default-pict-renderers]
+         #:typography [typography #f])
   (check-layout-context
    'arrange-visuals-vertically
    camera
@@ -508,8 +535,9 @@
         #:gap gap
         #:horizontal-alignment horizontal-alignment
         #:camera camera
-        #:renderers renderers))))
-  (maybe-center-visuals arranged center camera renderers))
+        #:renderers renderers
+        #:typography typography))))
+  (maybe-center-visuals arranged center camera renderers typography))
 
 ; arrange-visuals : (listof visual?) (visual? visual? -> visual?)
 ;                   -> (listof visual?)
@@ -536,12 +564,13 @@
 ;                        camera? (listof pict-renderer?)
 ;                        -> (listof visual?)
 ;;   Centers visuals when center is a vec2 and otherwise returns them unchanged.
-(define (maybe-center-visuals visuals center camera renderers)
+(define (maybe-center-visuals visuals center camera renderers typography)
   (if center
       (visuals-center-at visuals
                          center
                          #:camera camera
-                         #:renderers renderers)
+                         #:renderers renderers
+                         #:typography typography)
       visuals))
 
 
@@ -553,7 +582,7 @@
 ;; Aligns each Visual's semantic reference y coordinate. For text constructed
 ;; with `#:vertical-alignment 'baseline`, that reference is its actual Pict
 ;; baseline; nontext Visuals deliberately use their normal reference point.
-(define (align-baselines visuals #:baseline [baseline #f])
+(define (align-baselines visuals #:baseline [baseline #f] #:typography [typography #f])
   (check-visual-list 'align-baselines visuals)
   (define target
     (cond [baseline (unless (finite-real? baseline)
@@ -571,10 +600,11 @@
 (define (keep-inside-frame visual
                            #:margin [margin 0]
                            #:camera [camera default-camera]
-                           #:renderers [renderers default-pict-renderers])
+                           #:renderers [renderers default-pict-renderers]
+                           #:typography [typography #f])
   (check-layout-context 'keep-inside-frame camera renderers)
   (check-layout-gap 'keep-inside-frame margin)
-  (define box (visual-layout-box visual #:camera camera #:renderers renderers))
+  (define box (visual-layout-box visual #:camera camera #:renderers renderers #:typography typography))
   (define center (camera-center camera))
   (define left (+ (vec2-x center) (- (/ (camera-world-width camera) 2)) margin))
   (define right (+ (vec2-x center) (/ (camera-world-width camera) 2) (- margin)))
@@ -599,7 +629,8 @@
                        #:direction [direction 'right]
                        #:gap [gap 1/5]
                        #:camera [camera default-camera]
-                       #:renderers [renderers default-pict-renderers])
+                       #:renderers [renderers default-pict-renderers]
+                       #:typography [typography #f])
   (check-layout-context 'avoid-overlap camera renderers)
   (check-visual-list 'avoid-overlap visuals) (check-layout-gap 'avoid-overlap gap)
   (unless (memq direction '(right up))
@@ -609,20 +640,20 @@
           [else
            (define candidate
              (let settle ([item (car remaining)])
-               (define box (visual-layout-box item #:camera camera #:renderers renderers))
+               (define box (visual-layout-box item #:camera camera #:renderers renderers #:typography typography))
                (define conflicts
                  (for/list ([prior (in-list placed)]
                             #:when (layout-box-overlap?
-                                    box (visual-layout-box prior #:camera camera #:renderers renderers)))
+                                    box (visual-layout-box prior #:camera camera #:renderers renderers #:typography typography)))
                    prior))
                (if (null? conflicts) item
                    (let ([displacement
                           (if (eq? direction 'right)
                               (max 0 (apply max (for/list ([prior (in-list conflicts)])
-                                                  (- (+ (layout-box-right (visual-layout-box prior #:camera camera #:renderers renderers)) gap)
+                                                  (- (+ (layout-box-right (visual-layout-box prior #:camera camera #:renderers renderers #:typography typography)) gap)
                                                      (layout-box-left box)))))
                               (max 0 (apply max (for/list ([prior (in-list conflicts)])
-                                                  (- (+ (layout-box-top (visual-layout-box prior #:camera camera #:renderers renderers)) gap)
+                                                  (- (+ (layout-box-top (visual-layout-box prior #:camera camera #:renderers renderers #:typography typography)) gap)
                                                      (layout-box-bottom box))))))])
                      (settle (shift-visual-position 'avoid-overlap item
                                                      (if (eq? direction 'right)
@@ -633,7 +664,8 @@
 ; distribute-within : (listof visual?) finite-real? finite-real? ... -> (listof visual?)
 ;; Places reference points evenly along a horizontal or vertical interval.
 (define (distribute-within visuals start end
-                           #:axis [axis 'horizontal])
+                           #:axis [axis 'horizontal]
+                           #:typography [typography #f])
   (check-visual-list 'distribute-within visuals)
   (unless (and (finite-real? start) (finite-real? end) (<= start end))
     (raise-arguments-error 'distribute-within "increasing finite interval"
@@ -755,7 +787,7 @@
 ;                       (listof pict-renderer?)
 ;                       -> (values layout-box? layout-box?)
 ;;   Validates and measures one moving Visual and one reference Visual.
-(define (measure-visual-pair who visual reference camera renderers)
+(define (measure-visual-pair who visual reference camera renderers typography)
   (check-layout-context who camera renderers)
   (checked-visual-position who visual)
   (checked-visual-position who reference)
@@ -763,10 +795,12 @@
   (values
    (visual-layout-box visual
                       #:camera camera
-                      #:renderers renderers)
+                      #:renderers renderers
+                      #:typography typography)
    (visual-layout-box reference
                       #:camera camera
-                      #:renderers renderers)))
+                      #:renderers renderers
+                      #:typography typography)))
 
 ; shift-visual-position : symbol? visual? vec2? -> visual?
 ;;   Returns visual translated by displacement with protocol results checked.

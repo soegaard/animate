@@ -15,7 +15,8 @@
 (require rackunit
          (only-in "../private/group-visual.rkt"
                   group-visual-resolved-children)
-         "../main.rkt")
+         "../main.rkt"
+         (only-in "../colors.rkt" theme-foreground))
 
 
 (module+ test
@@ -68,7 +69,9 @@
   (check-equal? (text-visual-font-family greeting) 'default)
   (check-equal? (text-visual-font-style greeting) 'normal)
   (check-equal? (text-visual-font-weight greeting) 'normal)
-  (check-equal? (text-visual-color greeting) "black")
+  ;; Raw text has always carried the semantic foreground token by default.
+  ;; The renderer resolves that token through the selected color theme.
+  (check-equal? (text-visual-color greeting) theme-foreground)
   (check-equal? (text-visual-horizontal-alignment greeting) 'center)
   (check-equal? (text-visual-vertical-alignment greeting) 'center)
 

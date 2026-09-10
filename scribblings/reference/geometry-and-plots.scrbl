@@ -1761,6 +1761,7 @@ the request. The stored fit is not recomputed for a different aspect ratio.
           [#:renderers renderers
                        pict-renderer-list?
                        default-pict-renderers]
+          [#:typography typography (or/c false/c typography-theme?) #f]
           [#:padding padding
                      (and/c finite-real? (>=/c 0))
                      1/2])
@@ -1774,6 +1775,8 @@ Frame-space overlays and callouts are not camera-fit geometry.
 
 Measurement uses @racket[camera] and the first-supporting renderer rule from
 @racket[renderers]. Custom renderer padding therefore participates in fitting.
+A supplied @racket[#:typography] is used when a semantic text Visual is
+measured. Without it, the standard typography snapshot is used.
 A standalone @racket[derived-visual?] cannot be measured here because this
 function has no scene-state scalar context; use @racket[camera-fit-scene] for a
 derived top-level target.
@@ -1798,6 +1801,7 @@ measurement camera that describe the intended view as closely as possible.
           [#:renderers renderers
                        pict-renderer-list?
                        default-pict-renderers]
+          [#:typography typography (or/c false/c typography-theme?) #f]
           [#:padding padding
                      (and/c finite-real? (>=/c 0))
                      1/2])
@@ -1819,6 +1823,8 @@ measurement.
 A scene with no world-space Visuals, an empty target list, a missing target, or
 an explicitly selected frame-space target raises an exception. The result is a
 snapshot of the current endpoint state and does not follow later scene changes.
+Use @racket[#:typography] when the selected targets include semantic text and
+the intended final rendering uses a nonstandard typography snapshot.
 }
 
 @defproc[(camera-focus
@@ -1830,6 +1836,7 @@ snapshot of the current endpoint state and does not follow later scene changes.
           [#:renderers renderers
                        pict-renderer-list?
                        default-pict-renderers]
+          [#:typography typography (or/c false/c typography-theme?) #f]
           [#:padding padding
                      (and/c finite-real? (>=/c 0))
                      1/2])
@@ -1847,6 +1854,9 @@ makes an imported SVG element or formula/group child a useful focus subject
 without rebuilding its parent. Frame-space targets are rejected. The request is
 a current-scene snapshot: it does not choose context automatically, remeasure
 during the clip, or live-follow later subject/context motion.
+
+Pass @racket[#:typography] to make a camera-focus snapshot agree with a chosen
+semantic text theme.
 }
 
 @section[#:tag "frame-space"]{Frame-Space Overlays and Callouts}

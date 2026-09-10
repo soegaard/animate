@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Added immutable semantic typography. Presentation roles such as
+  `title-text`, `body-text`, and `code-text` resolve late through an explicit
+  `typography-theme`, independently of the existing color theme. Typography
+  now travels through direct rendering, projects, preview workers, cache
+  identities, static layout and camera fitting; the preview can switch its
+  typography without rebuilding the authored Scene. Raw `plain-text`,
+  `paragraph`, and `rich-text` remain concrete opt-in escape hatches.
+
 - Corrected mapped composition semantics. `stagger-map` now accepts a deferred
   `target-sequence?` and resolves it at local start, passing one indexed
   `target-ref` to its template. `eager-stagger-map`/`stagger-requests` retain

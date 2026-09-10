@@ -36,14 +36,15 @@ transport operations.
 @defproc[(open-scene-preview [source (or/c scene? authored-timeline?)]
                              [#:fps fps exact-positive-integer? 30]
                              [#:theme theme (or/c false/c color-theme?) #f]
+                             [#:typography typography (or/c false/c typography-theme?) #f]
                              [#:pixel-scale pixel-scale positive? 1]
                              [#:cache-megabytes cache-megabytes exact-positive-integer? 512]
                              [#:prefetch prefetch exact-nonnegative-integer? 3]
                              [#:render-workers render-workers exact-positive-integer? 1]
                              [#:title title string? "Animate"])
          preview-session?]{
-Opens an interactive preview with one immutable content-theme snapshot. The
-theme affects rendered scene pixels only: canvas handles, inspector text, and
+Opens an interactive preview with immutable color and typography snapshots.
+They affect rendered scene pixels only: canvas handles, inspector text, and
 operating-system widgets retain their editor UI appearance. The bitmap cache
 uses 512 MiB by default. @racket[#:render-workers] normally remains 1: it is
 for producers that explicitly provide isolated render processes, not for an
@@ -103,6 +104,17 @@ render generation and uses separately keyed frame-cache entries. A bitmap from
 the previous theme can never be installed as a result for the new theme.
 }
 
+@defproc[(preview-typography-theme [session preview-session?]) typography-theme?]{
+Returns the typography snapshot selected for this session's semantic text.}
+
+@defproc[(preview-set-typography-theme! [session preview-session?]
+                                        [typography typography-theme?])
+         preview-status?]{
+Changes only the preview typography snapshot. The preview keeps its semantic
+time and selection, advances its render generation, and never reuses a bitmap
+from the earlier typography appearance.
+}
+
 @defproc[(preview-scrub! [session preview-session?] [time real?]) void?]{
 Seeks during a drag.  Older pending scrub work is superseded and the current
 time first uses the preview's draft quality.
@@ -141,7 +153,8 @@ available project audio monitor.
 @defproc[(preview-session-diagnostics [session preview-session?]) immutable-hash?]{
 Returns one immutable production-monitor snapshot: requested and displayed
 sample times, quality, cache state, cancellation count, worker information,
-and recent rendering measurements.
+recent rendering measurements, and the color/typography appearance
+fingerprints plus resolver versions used by the current frame-cache namespace.
 }
 
 @defproc[(scene-inspector-subject-at-path [state scene-state?]
@@ -155,13 +168,19 @@ between repeated or shared source occurrences.
 
 @defproc[(scene-inspector-document [scene scene?]
                                    [time real?]
-                                   [#:subject subject (or/c #f inspector-subject?) #f])
+                                   [#:subject subject (or/c #f inspector-subject?) #f]
+                                   [#:theme theme color-theme? animate-light-theme]
+                                   [#:typography typography typography-theme?
+                                                 animate-typography-theme])
          inspector-document?]{
 
 Creates the immutable, GUI-independent inspector model for a scene sample.
 Formula maps, active string-match plans, relation dependency reports, camera,
 and preview-only overlays all live in this value; inspecting does not invalidate
-the bitmap cache.
+the bitmap cache. When the selected object is semantic text, its Typography
+section distinguishes the authored role and overrides from the base style and
+resolved appearance. It also reports the resolved color and measured rendered
+box under the selected theme and typography snapshots.
 }
 
 @bold{Limitations:} hard cancellation is available only for a module-backed

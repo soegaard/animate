@@ -31,14 +31,15 @@
   (plan-fingerprint module-path binding document-generation)
   #:prefab)
 
-;; sample is either '(frame INDEX FPS) or '(time SECONDS). theme-datum is a
-;; complete reader-safe color-theme snapshot, never a worker-local lookup by
-;; name. camera3d-overrides is a reader-safe list of preview-camera3d-override
-;; data. Generations and request id are echoed in every render response,
-;; allowing a controller to reject obsolete results.
+;; sample is either '(frame INDEX FPS) or '(time SECONDS). theme-datum and
+;; typography-datum are complete reader-safe appearance snapshots, never
+;; worker-local lookups by name. camera3d-overrides is a reader-safe list of
+;; preview-camera3d-override data. Generations and request id are echoed in
+;; every render response, allowing a controller to reject obsolete results.
 (struct worker-render-frame
   (plan-fingerprint document-generation render-generation request-id
-                    sample pixel-scale supersample theme-datum camera3d-overrides)
+                    sample pixel-scale supersample theme-datum typography-datum
+                    camera3d-overrides)
   #:prefab)
 
 (struct worker-cancel

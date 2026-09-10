@@ -18,6 +18,10 @@
          "camera.rkt"
          "color-theme.rkt"
          "color-theme-data.rkt"
+         "render-color-context.rkt"
+         "typography-theme.rkt"
+         "typography-theme-data.rkt"
+         "render-typography-context.rkt"
          "frame-renderer.rkt"
          "ode-flow.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers scene-state->pict)
@@ -77,6 +81,8 @@
          preview-set-render-spec!
          preview-color-theme
          preview-set-color-theme!
+         preview-typography-theme
+         preview-set-typography-theme!
          preview-camera3d-overrides
          preview-set-camera3d-override!
          preview-clear-camera3d-override!
@@ -209,6 +215,7 @@
                                  #:pixel-scale [pixel-scale 1]
                                  #:supersample [supersample 1]
                                  #:theme [theme #f]
+                                 #:typography [typography #f]
                                  #:cache-megabytes [cache-megabytes 512]
                                  #:prefetch [prefetch 3]
                                  #:playback-policy [playback-policy 'realtime]
@@ -250,7 +257,8 @@
   (define spec
     (make-preview-render-spec #:fps fps #:camera camera #:renderers renderers
                               #:pixel-scale pixel-scale #:supersample supersample
-                              #:theme (or theme animate-light-theme)))
+                              #:theme (or theme animate-light-theme)
+                              #:typography (or typography animate-typography-theme)))
   (define document (make-preview-document source))
   (define initial-sample
     (initial-preview-sample document spec start section))
@@ -452,6 +460,24 @@
     (raise-argument-error 'preview-set-color-theme! "color-theme?" theme))
   (send-controller-command 'preview-set-color-theme!
                            session 'set-color-theme (list theme)))
+
+;; preview-typography-theme : preview-session? -> typography-theme?
+;; Returns the immutable text-role snapshot selected for preview frames.
+(define (preview-typography-theme session)
+  (preview-render-spec-typography
+   (send-controller-command 'preview-typography-theme session 'render-spec '())))
+
+;; preview-set-typography-theme! : preview-session? typography-theme?
+;;                                  -> preview-status?
+;; Typography affects late lowering of semantic text, so changing it is a
+;; render-generation boundary just like changing the color theme.
+(define (preview-set-typography-theme! session typography)
+  (unless (typography-theme? typography)
+    (raise-argument-error 'preview-set-typography-theme!
+                          "typography-theme?"
+                          typography))
+  (send-controller-command 'preview-set-typography-theme!
+                           session 'set-typography-theme (list typography)))
 
 ; preview-camera3d-overrides : preview-session? -> immutable-hash?
 ;;   Returns the preview-only inspection cameras keyed by view3d ID.
@@ -797,6 +823,32 @@
             #:pixel-scale (preview-render-spec-pixel-scale prior)
             #:supersample (preview-render-spec-supersample prior)
             #:theme theme
+            #:typography (preview-render-spec-typography prior)
+            #:camera3d-overrides
+            (preview-render-spec-camera3d-overrides prior)))
+         (set-controller-state-render-spec! state replacement)
+         (set-controller-state-current-quality! state (full-quality-for replacement))
+         (set-controller-state-scrubbing?! state #f)
+         (invalidate-render! state)
+         (request-current! state jobs prefetch)
+         (state-status state)]
+        [(set-typography-theme)
+         (match-arguments 'set-typography-theme (controller-command-arguments command) 1)
+         (define typography (car (controller-command-arguments command)))
+         (unless (typography-theme? typography)
+           (raise-argument-error 'preview-set-typography-theme!
+                                 "typography-theme?"
+                                 typography))
+         (define prior (controller-state-render-spec state))
+         (define replacement
+           (make-preview-render-spec
+            #:fps (preview-render-spec-fps prior)
+            #:camera (preview-render-spec-camera prior)
+            #:renderers (preview-render-spec-renderers prior)
+            #:pixel-scale (preview-render-spec-pixel-scale prior)
+            #:supersample (preview-render-spec-supersample prior)
+            #:theme (preview-render-spec-theme prior)
+            #:typography typography
             #:camera3d-overrides
             (preview-render-spec-camera3d-overrides prior)))
          (set-controller-state-render-spec! state replacement)
@@ -1491,7 +1543,8 @@
                                preview-camera
                                (preview-render-spec-supersample render-spec))
                               #:renderers (preview-render-spec-renderers render-spec)
-                              #:theme (preview-render-spec-theme render-spec))
+                              #:theme (preview-render-spec-theme render-spec)
+                              #:typography (preview-render-spec-typography render-spec))
            'smoothed)))))))
 
 (define (camera-at-pixel-scale camera pixel-scale)
@@ -1571,6 +1624,7 @@
 ;; rather than an estimated placeholder.
 (define (state-diagnostics state)
   (define status (state-status state))
+  (define render-spec (controller-state-render-spec state))
   (hasheq
    'timeline-time (preview-status-time status)
    'desired-frame (preview-status-frame status)
@@ -1586,6 +1640,16 @@
    'cache-bytes (preview-status-cache-bytes status)
    'cache-count (preview-status-cache-count status)
    'canceled-requests (preview-status-canceled-request-count status)
+   ;; These are the appearance identity facets used by this preview's frame
+   ;; requests.  IDs are useful labels, but fingerprints and resolver versions
+   ;; explain why a frame can or cannot be reused after a style implementation
+   ;; change or a typography switch.
+   'color-theme-appearance-fingerprint
+   (color-theme-fingerprint (preview-render-spec-theme render-spec))
+   'color-theme-resolver-version render-color-resolver-version
+   'typography-appearance-fingerprint
+   (typography-theme-fingerprint (preview-render-spec-typography render-spec))
+   'typography-resolver-version render-typography-resolver-version
    'recent-render-diagnostics
    (or (preview-status-last-render-diagnostics status) #hasheq())
    'playback-speed (preview-status-playback-speed status)
@@ -1610,6 +1674,7 @@
    #:pixel-scale (preview-quality-pixel-scale quality)
    #:supersample (preview-quality-supersample quality)
    #:theme (preview-render-spec-theme base)
+   #:typography (preview-render-spec-typography base)
    #:camera3d-overrides (preview-render-spec-camera3d-overrides base)))
 
 ;; replace-camera3d-overrides! switches only the inspection layer.  Its own
@@ -1625,6 +1690,7 @@
      #:pixel-scale (preview-render-spec-pixel-scale prior)
      #:supersample (preview-render-spec-supersample prior)
      #:theme (preview-render-spec-theme prior)
+     #:typography (preview-render-spec-typography prior)
      #:camera3d-overrides overrides))
   (set-controller-state-render-spec! state replacement)
   (set-controller-state-current-quality! state (full-quality-for replacement))

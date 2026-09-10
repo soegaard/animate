@@ -98,6 +98,7 @@
 ;          [#:bracket-gap nonnegative-real?]
 ;          [#:stroke any/c]
 ;          [#:stroke-width nonnegative-real?]
+;          [#:typography typography-theme?]
 ;          -> group-visual?
 ;;   Arranges a rectangular grid of entry Visuals with optional square brackets.
 (define (matrix rows
@@ -115,7 +116,8 @@
                 #:bracket-width [bracket-width 1/5]
                 #:bracket-gap [bracket-gap 1/10]
                 #:stroke [stroke theme-axis]
-                #:stroke-width [stroke-width 2])
+                #:stroke-width [stroke-width 2]
+                #:typography [typography #f])
   (define dimensions
     (check-grid 'matrix rows))
   (check-root-id 'matrix id)
@@ -130,7 +132,7 @@
   (define row-count (car dimensions))
   (define column-count (cdr dimensions))
   (define-values (column-widths row-heights)
-    (resolve-grid-sizes 'matrix rows entry-width entry-height entry-padding))
+    (resolve-grid-sizes 'matrix rows entry-width entry-height entry-padding typography))
   (define-values (grid-width grid-height)
     (grid-extents column-widths row-heights column-gap row-gap))
   (define brackets
@@ -170,6 +172,7 @@
 ;         [#:row-gap nonnegative-real?]
 ;         [#:stroke any/c]
 ;         [#:stroke-width nonnegative-real?]
+;         [#:typography typography-theme?]
 ;         -> group-visual?
 ;;   Arranges a rectangular grid of entries and draws a shared rectangular grid.
 (define (table rows
@@ -184,7 +187,8 @@
                #:column-gap [column-gap 0]
                #:row-gap [row-gap 0]
                #:stroke [stroke theme-axis]
-               #:stroke-width [stroke-width 2])
+               #:stroke-width [stroke-width 2]
+               #:typography [typography #f])
   (define dimensions
     (check-grid 'table rows))
   (check-root-id 'table id)
@@ -195,7 +199,7 @@
   (define row-count (car dimensions))
   (define column-count (cdr dimensions))
   (define-values (column-widths row-heights)
-    (resolve-grid-sizes 'table rows cell-width cell-height cell-padding))
+    (resolve-grid-sizes 'table rows cell-width cell-height cell-padding typography))
   (define-values (grid-width grid-height)
     (grid-extents column-widths row-heights column-gap row-gap))
   (group
@@ -341,12 +345,12 @@
 ;; `auto`. Auto sizing measures every existing entry once at construction time,
 ;; then chooses the maximum measured extent in each column and row plus the
 ;; caller's padding. The resulting ordinary group has no renderer dependency.
-(define (resolve-grid-sizes who rows width-spec height-spec padding)
+(define (resolve-grid-sizes who rows width-spec height-spec padding typography)
   (values
-   (resolve-grid-axis-sizes who rows width-spec padding 'column)
-   (resolve-grid-axis-sizes who rows height-spec padding 'row)))
+   (resolve-grid-axis-sizes who rows width-spec padding 'column typography)
+   (resolve-grid-axis-sizes who rows height-spec padding 'row typography)))
 
-(define (resolve-grid-axis-sizes who rows specification padding axis)
+(define (resolve-grid-axis-sizes who rows specification padding axis typography)
   (define count
     (if (eq? axis 'column)
         (length (car rows))
@@ -363,7 +367,7 @@
              (list-ref rows index)))
        (+ (* 2 padding)
           (for/fold ([largest 0]) ([entry (in-list entries)])
-            (define box (visual-layout-box entry))
+            (define box (visual-layout-box entry #:typography typography))
             (max largest
                  (if (eq? axis 'column)
                      (layout-box-width box)

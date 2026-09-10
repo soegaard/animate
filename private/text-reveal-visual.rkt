@@ -9,6 +9,7 @@
 ;; and restores the original text-visual exactly at completion.
 
 (require (only-in racket/generic define/generic)
+         "semantic-text-visual.rkt"
          "text-visual.rkt"
          "visual-model.rkt")
 
@@ -29,8 +30,8 @@
   (lambda (id source unit revealed-count segment-count cursor? cursor-style who)
     (unless (symbol? id)
       (raise-argument-error who "symbol?" id))
-    (unless (text-visual? source)
-      (raise-argument-error who "text-visual?" source))
+    (unless (textual-visual? source)
+      (raise-argument-error who "textual-visual?" source))
     (unless (memq unit '(grapheme run line span))
       (raise-argument-error
        who

@@ -68,7 +68,9 @@ Declares an in-memory source-program source.
                       [#:renderer3d renderer3d any/c 'software]
                       [#:supersample supersample exact-positive-integer? 1]
                       [#:workers workers exact-positive-integer? 1]
-                      [#:theme theme color-theme? animate-light-theme])
+                      [#:theme theme color-theme? animate-light-theme]
+                      [#:typography typography typography-theme?
+                                     animate-typography-theme])
          render-spec?]{
 Describes final raster quality.  Renderer and camera fields have defaults too;
 see @racket[render-spec] in the contract reference for the complete set.
@@ -87,12 +89,25 @@ The project plan records its canonical datum, appearance fingerprint, resolver
 version, and provenance, so replay does not depend on a locally named palette.
 }
 
+@defproc[(render-spec-typography [specification render-spec?]) typography-theme?]{
+Returns the immutable semantic text snapshot selected for final rendering. Its
+canonical datum, appearance fingerprint, and resolver version participate in
+project and section-cache identity because typography can change text geometry.
+}
+
 @defproc[(render-spec-with-theme [specification render-spec?]
                                  [theme color-theme?])
          render-spec?]{
 Returns a copy with only the selected theme changed. This is useful for an
 explicit command-line or build-system appearance override; raster dimensions,
 renderers, worker policy, and quality remain unchanged.
+}
+
+@defproc[(render-spec-with-typography [specification render-spec?]
+                                      [typography typography-theme?])
+         render-spec?]{
+Returns a copy with only the typography snapshot changed. This is explicit
+render configuration; raw text constructors remain unaffected.
 }
 
 @defproc[(preview-spec [#:fps fps exact-positive-integer? 30]

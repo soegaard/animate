@@ -17,6 +17,8 @@
          racket/list
          "animation-inspection.rkt"
          "camera.rkt"
+         "color-theme.rkt"
+         "color-theme-data.rkt"
          "formula-parts-visual.rkt"
          "formula-part-transition.rkt"
          "formula-source.rkt"
@@ -26,10 +28,17 @@
          "relation-dependency.rkt"
          "relation-resolver.rkt"
          "relation-visual.rkt"
+         "relative-layout.rkt"
+         "render-color-context.rkt"
          "scene-state.rkt"
          "scene-program.rkt"
          "scene.rkt"
+         "semantic-text-visual.rkt"
          "source-document.rkt"
+         "text-style.rkt"
+         "typography-theme-data.rkt"
+         "typography-theme.rkt"
+         "render-typography-context.rkt"
          "visual-inspector.rkt"
          "visual-selection.rkt"
          "visual-model.rkt")
@@ -56,6 +65,7 @@
          string-transition-subject
          source-block-inspector-subject
          render-diagnostics-inspector-subject
+         semantic-text-inspection-section
          scene-inspector-document)
 
 
@@ -308,6 +318,7 @@
 ;;                            [#:subject (or/c #f inspector-subject?)]
 ;;                            [#:source-block (or/c #f inspector-source-block?)]
 ;;                            [#:render-diagnostics (or/c #f hash?)]
+;;                            [#:theme color-theme?]
 ;;                            -> inspector-document?
 ;;   Samples once and produces generic, formula, relation, camera, source-block,
 ;;   and render-diagnostic explanation data. Optional production metadata is
@@ -315,7 +326,10 @@
 (define (scene-inspector-document scene time
                                   #:subject [subject #f]
                                   #:source-block [source-block #f]
-                                  #:render-diagnostics [render-diagnostics #f])
+                                  #:render-diagnostics [render-diagnostics #f]
+                                  #:theme [theme animate-light-theme]
+                                  #:color-context [color-context #f]
+                                  #:typography [typography animate-typography-theme])
   (unless (scene? scene)
     (raise-argument-error 'scene-inspector-document "scene?" scene))
   (unless (and (finite-real? time) (not (negative? time))
@@ -331,6 +345,12 @@
   (unless (or (not render-diagnostics) (hash? render-diagnostics))
     (raise-argument-error
      'scene-inspector-document "#f or hash?" render-diagnostics))
+  (define selected-color-context
+    (select-inspector-color-context 'scene-inspector-document theme color-context))
+  (unless (typography-theme? typography)
+    (raise-argument-error 'scene-inspector-document
+                          "typography-theme? as #:typography"
+                          typography))
   (define-values (state camera)
     (scene-sample-with-camera scene time))
   (define effective-subject
@@ -424,12 +444,116 @@
    (inspector-subject (inspector-subject-kind effective-subject)
                       subject-value
                       (inspector-subject-root-path effective-subject))
-   (append sections relation-sample-sections transition-sections supplemental-sections)
+   (append sections
+           (if (semantic-text-visual? subject-value)
+               (list
+                (semantic-text-inspection-section
+                 subject-value typography
+                 #:color-context selected-color-context
+                 #:camera camera))
+               '())
+           relation-sample-sections transition-sections supplemental-sections)
    (append overlays transition-overlays)
    (append actions transition-actions supplemental-actions)
    (if render-diagnostics
        (list (immutable-hash-snapshot render-diagnostics))
        '())))
+
+;; semantic-text-inspection-section : semantic-text-visual? typography-theme?
+;;                                     [#:color-context render-color-context?]
+;;                                     [#:camera camera?]
+;;                                     -> inspector-section?
+;; A pure explanation record.  It retains the authored semantic value and
+;; reports the style selected by the supplied immutable snapshot; no renderer,
+;; font lookup, cache, or GUI object is consulted here.
+(define (semantic-text-inspection-section
+         visual typography
+         #:color-context [color-context (make-render-color-context animate-light-theme)]
+         #:camera [camera default-camera])
+  (unless (semantic-text-visual? visual)
+    (raise-argument-error 'semantic-text-inspection-section
+                          "semantic-text-visual?"
+                          visual))
+  (unless (typography-theme? typography)
+    (raise-argument-error 'semantic-text-inspection-section
+                          "typography-theme?"
+                          typography))
+  (unless (render-color-context? color-context)
+    (raise-argument-error 'semantic-text-inspection-section
+                          "render-color-context? as #:color-context"
+                          color-context))
+  (unless (camera? camera)
+    (raise-argument-error 'semantic-text-inspection-section "camera? as #:camera" camera))
+  (define overrides (semantic-text-overrides visual))
+  (define base (typography-ref typography (semantic-text-style-key visual)))
+  (define resolved (resolve-semantic-text-style visual typography))
+  (define measured (visual-layout-box visual #:camera camera #:typography typography))
+  (inspector-section
+   'semantic-typography
+   "Typography"
+   (list
+    (inspector-row "style key" (semantic-text-style-key visual) 'info '())
+    (inspector-row "source content" (semantic-text-content visual) 'info '())
+    (inspector-row "typography theme" (typography-theme-id typography) 'info '())
+    (inspector-row "typography fingerprint"
+                   (typography-theme-fingerprint typography) 'info '())
+    (inspector-row "typography resolver version"
+                   render-typography-resolver-version 'info '())
+    (inspector-row "authored overrides"
+                   (semantic-text-overrides->inspection-datum overrides) 'info '())
+    (inspector-row "style value" (text-style->datum base) 'info '())
+    (inspector-row "resolved outer style" (text-style->datum resolved) 'info '())
+    (inspector-row "color specification" (text-style-color resolved) 'info '())
+    (inspector-row "resolved color"
+                   (resolve-color-in-context (text-style-color resolved) color-context)
+                   'info '())
+    (inspector-row "resolved treatment" (text-style-treatment resolved) 'info '())
+    (inspector-row "measured rendered box"
+                   (hasheq 'left (layout-box-left measured)
+                           'bottom (layout-box-bottom measured)
+                           'right (layout-box-right measured)
+                           'top (layout-box-top measured)
+                           'width (layout-box-width measured)
+                           'height (layout-box-height measured))
+                   'info '()))
+   #f))
+
+;; Inspector callers can either select a named immutable color theme or pass
+;; the precise render context published by a preview/frame operation.  The two
+;; are exclusive for the same reason they are at a drawing boundary: using
+;; both would leave the diagnostic's reported RGBA ambiguous.
+(define (select-inspector-color-context who theme color-context)
+  (when (and theme color-context)
+    (raise-arguments-error who "at most one of #:theme or #:color-context"
+                           "theme" theme "color-context" color-context))
+  (cond
+    [color-context
+     (unless (render-color-context? color-context)
+       (raise-argument-error who "render-color-context? as #:color-context" color-context))
+     color-context]
+    [theme
+     (unless (color-theme? theme)
+       (raise-argument-error who "color-theme? as #:theme" theme))
+     (make-render-color-context theme)]
+    [else (make-render-color-context animate-light-theme)]))
+
+(define (semantic-text-overrides->inspection-datum overrides)
+  (define (entry value)
+    (if (semantic-text-override-inherited? value) 'inherited value))
+  (hasheq
+   'font-face (entry (semantic-text-overrides-font-face overrides))
+   'font-family (entry (semantic-text-overrides-font-family overrides))
+   'font-size (entry (semantic-text-overrides-font-size overrides))
+   'font-style (entry (semantic-text-overrides-font-style overrides))
+   'font-weight (entry (semantic-text-overrides-font-weight overrides))
+   'color (entry (semantic-text-overrides-color overrides))
+   'line-spacing (entry (semantic-text-overrides-line-spacing overrides))
+   'line-alignment (entry (semantic-text-overrides-line-alignment overrides))
+   'horizontal-alignment
+   (entry (semantic-text-overrides-horizontal-alignment overrides))
+   'vertical-alignment
+   (entry (semantic-text-overrides-vertical-alignment overrides))
+   'treatment (entry (semantic-text-overrides-treatment overrides))))
 
 
 ;;;

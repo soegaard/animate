@@ -237,10 +237,13 @@
     (cons (text-override-renderer)
           default-pict-renderers))
 
-  (check-eq? (visual->pict centered-text
-                           test-camera
-                           #:renderers override-renderers)
-             override-shape)
+  ;; The public adapter captures the active render contexts in a wrapper Pict,
+  ;; so identity is not the renderer result itself. Its measured content still
+  ;; proves that dispatch selected the custom renderer rather than text.
+  (define overridden-pict
+    (visual->pict centered-text test-camera #:renderers override-renderers))
+  (check-= (pict-width overridden-pict) (pict-width override-shape) 1e-8)
+  (check-= (pict-height overridden-pict) (pict-height override-shape) 1e-8)
 
   ;; Recursive group composition propagates text rendering and inherited
   ;; transforms. The group and an explicitly flattened child render identically.

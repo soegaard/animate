@@ -102,18 +102,21 @@
 ; camera-fit-visuals : (and/c (listof visual?) pair?)
 ;                      [#:camera camera?]
 ;                      [#:renderers (listof pict-renderer?)]
+;                      [#:typography typography-theme?]
 ;                      [#:padding nonnegative-real?]
 ;                      -> camera-fit-request?
 ;;   Creates a request that fits the union of the supplied rendered Visuals.
 (define (camera-fit-visuals visuals
                             #:camera [camera default-camera]
                             #:renderers [renderers default-pict-renderers]
+                            #:typography [typography #f]
                             #:padding [padding 1/2])
   (check-nonempty-world-visual-list 'camera-fit-visuals visuals)
   (define box
     (visuals-layout-box visuals
                         #:camera camera
-                        #:renderers renderers))
+                        #:renderers renderers
+                        #:typography typography))
   (camera-fit-layout-box box
                          #:camera camera
                          #:padding padding))
@@ -125,12 +128,14 @@
 ;                            (listof (or/c visual? symbol? visual-path?))
 ;                            pair?))]
 ;                    [#:renderers (listof pict-renderer?)]
+;                    [#:typography typography-theme?]
 ;                    [#:padding nonnegative-real?]
 ;                    -> camera-fit-request?
 ;;   Creates a request that fits current scene targets or all top-level Visuals.
 (define (camera-fit-scene scn
                           #:targets [targets #f]
                           #:renderers [renderers default-pict-renderers]
+                          #:typography [typography #f]
                           #:padding [padding 1/2])
   (unless (scene? scn)
     (raise-argument-error 'camera-fit-scene "scene?" scn))
@@ -164,11 +169,13 @@
   (camera-fit-visuals visuals
                       #:camera (scene-current-camera scn)
                       #:renderers renderers
+                      #:typography typography
                       #:padding padding))
 
 ; camera-focus : scene? (or/c visual? symbol? visual-path?)
 ;                [#:context (listof (or/c visual? symbol? visual-path?))]
 ;                [#:renderers (listof pict-renderer?)]
+;                [#:typography typography-theme?]
 ;                [#:padding nonnegative-real?]
 ;                -> camera-fit-request?
 ;; Creates a current-state fit centered on one explanatory subject plus any
@@ -177,6 +184,7 @@
 (define (camera-focus scn focus
                       #:context [context '()]
                       #:renderers [renderers default-pict-renderers]
+                      #:typography [typography #f]
                       #:padding [padding 1/2])
   (check-camera-focus-target 'camera-focus focus)
   (unless (and (list? context)
@@ -189,6 +197,7 @@
    scn
    #:targets (cons focus context)
    #:renderers renderers
+   #:typography typography
    #:padding padding))
 
 

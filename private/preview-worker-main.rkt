@@ -16,6 +16,7 @@
          "../main.rkt"
          "../authoring.rkt"
          "color-theme.rkt"
+         "typography-theme.rkt"
          "camera.rkt"
          "ode-flow.rkt"
          (only-in "pict-adapter.rkt" default-pict-renderers scene-state->pict)
@@ -29,6 +30,7 @@
 (define loaded-fingerprint #f)
 (define loaded-generation #f)
 (define decoded-themes (make-hash))
+(define decoded-typographies (make-hash))
 
 ;; A theme is immutable and identified by its complete transmitted datum. The
 ;; worker validates it once per appearance revision, then reuses the frozen
@@ -38,6 +40,15 @@
   (hash-ref!
    decoded-themes datum
    (lambda () (datum->theme datum))))
+
+;; Typography follows the same snapshot rule as color themes.  In particular,
+;; a worker never looks up a mutable user preference or reloads source while a
+;; frame batch is in flight.
+(define (request-typography request)
+  (define datum (worker-render-frame-typography-datum request))
+  (hash-ref!
+   decoded-typographies datum
+   (lambda () (datum->typography-theme datum))))
 
 (define (send-response value)
   (write value)
@@ -121,7 +132,8 @@
             (camera-with-supersampling
              scaled-camera (worker-render-frame-supersample request))
             #:renderers default-pict-renderers
-            #:theme (request-theme request))
+            #:theme (request-theme request)
+            #:typography (request-typography request))
            'smoothed))))))
   ;; The temporary PNG stays inside the worker process. Sending its encoded
   ;; bytes avoids sharing a filesystem handoff between concurrent workers.

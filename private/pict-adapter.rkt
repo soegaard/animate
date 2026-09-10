@@ -65,7 +65,11 @@
          "paint-pict.rkt"
          "scene-state.rkt"
          "render-color-context.rkt"
+         "render-typography-context.rkt"
          "renderer-resources.rkt"
+         "semantic-text-visual.rkt"
+         "text-style.rkt"
+         "text-treatment-pict.rkt"
          "3d/frame-artifact-cache3d.rkt"
          "3d/label-layout3d.rkt"
          "3d/label-placement3d.rkt"
@@ -114,22 +118,47 @@
     [theme (make-render-color-context theme)]
     [else (current-or-default-render-color-context)]))
 
+;; Typography follows the same explicit snapshot rule as color.  It is a
+;; rendering choice, never a mutable authoring setting, so a prepared Pict can
+;; safely retain the exact role table that produced it.
+(define (select-render-typography-context who typography typography-context)
+  (when (and typography typography-context)
+    (raise-arguments-error
+     who
+     "at most one of #:typography or #:typography-context"
+     "typography" typography
+     "typography-context" typography-context))
+  (cond
+    [typography-context
+     (unless (render-typography-context? typography-context)
+       (raise-argument-error who
+                             "render-typography-context? as #:typography-context"
+                             typography-context))
+     typography-context]
+    [typography (make-render-typography-context typography)]
+    [else (current-or-default-render-typography-context)]))
+
 ;; pict-with-render-color-context : pict? render-color-context? -> pict?
 ;; Captures a render context in the returned delayed Pict callback.  Pict
 ;; assembly may outlive the dynamic extent of an entry point, so merely
 ;; parameterizing construction would otherwise let an unrelated later theme
 ;; affect a deferred draw.
-(define (pict-with-render-color-context source color-context)
+(define (pict-with-render-color-context source color-context
+                                        [typography-context
+                                         (current-or-default-render-typography-context)])
   (renderer-resource-cache-ref!
    captured-color-pict-cache
    (list 'pict-with-render-color-context
          source
          (render-color-context-appearance-fingerprint color-context)
-         (render-color-context-resolver-version color-context))
+         (render-color-context-resolver-version color-context)
+         (render-typography-context-appearance-fingerprint typography-context)
+         (render-typography-context-resolver-version typography-context))
    (lambda ()
      (values
       (dc (lambda (drawing-context x y)
-            (parameterize ([current-render-color-context color-context])
+            (parameterize ([current-render-color-context color-context]
+                           [current-render-typography-context typography-context])
               (draw-pict source drawing-context x y)))
           (pict-width source)
           (pict-height source)
@@ -154,12 +183,16 @@
 ;                [#:renderers (listof pict-renderer?)]
 ;                [#:theme color-theme?]
 ;                [#:color-context render-color-context?]
+;                [#:typography typography-theme?]
+;                [#:typography-context render-typography-context?]
 ;                -> pict?
 ;;   Converts visual through renderer dispatch or recursive composite composition.
 (define (visual->pict visual camera
                       #:renderers [renderers default-pict-renderers]
                       #:theme [theme #f]
-                      #:color-context [color-context #f])
+                      #:color-context [color-context #f]
+                      #:typography [typography #f]
+                      #:typography-context [typography-context #f])
   (unless (visual? visual)
     (raise-argument-error 'visual->pict "visual?" visual))
   (unless (camera? camera)
@@ -167,14 +200,19 @@
   (check-pict-renderer-list 'visual->pict renderers)
   (define selected-color-context
     (select-render-color-context 'visual->pict theme color-context))
-  (parameterize ([current-render-color-context selected-color-context])
+  (define selected-typography-context
+    (select-render-typography-context
+     'visual->pict typography typography-context))
+  (parameterize ([current-render-color-context selected-color-context]
+                 [current-render-typography-context selected-typography-context])
     (define render-camera
       (visual-render-camera visual camera))
     (define rendered-pict
       (render-visual-or-composite visual render-camera renderers))
     (pict-with-render-color-context
      (apply-semantic-opacity visual rendered-pict)
-     selected-color-context)))
+     selected-color-context
+     selected-typography-context)))
 
 ; visual-render-camera : visual? camera? -> camera?
 ;;   Returns the world camera or the stable frame camera selected by visual.
@@ -201,6 +239,12 @@
       (transient-visual-underlying visual)
       camera
       renderers)]
+    [(semantic-text-visual? visual)
+     ;; Do this before renderer dispatch.  Pict renderers continue to receive
+     ;; the longstanding concrete text-visual protocol, while the authored
+     ;; Scene retains its role key and overrides for a different typography
+     ;; context to resolve later.
+     (semantic-text-visual->pict visual camera renderers)]
     [(affine-map-visual? visual)
      (affine-map-content->pict visual camera renderers)]
     [else
@@ -249,7 +293,36 @@
      (raise-arguments-error
       'visual->pict
       "no Pict renderer supports the Visual"
-     "visual" visual)])]))
+      "visual" visual)])]))
+
+;; semantic-text-visual->pict : semantic-text-visual? camera?
+;;                              (listof pict-renderer?) -> pict?
+;; Lowers only for this render operation.  Treatment geometry is built around
+;; the untransformed text Pict, then receives the same scale and rotation as
+;; the text itself; its padding and border therefore remain one visual unit.
+(define (semantic-text-visual->pict visual camera renderers)
+  (define typography-context
+    (current-or-default-render-typography-context))
+  (define style
+    (resolve-semantic-text-style
+     visual
+     (render-typography-context-theme typography-context)))
+  (define concrete
+    (semantic-text->text-visual visual typography-context))
+  ;; The normal text renderer includes scale/rotation when it freezes glyphs.
+  ;; A treatment must be part of that same local object, so render the concrete
+  ;; text at its local identity transform and apply the semantic transform only
+  ;; after the background/border has been composed.
+  (define local-concrete
+    (visual-with-transform concrete (make-affine-transform #:translation origin)))
+  (define content
+    (render-visual-or-composite local-concrete camera renderers))
+  (define treated
+    (apply-text-treatment-to-pict content (text-style-treatment style)
+                                  (text-style-font-size style) camera))
+  (rotate-pict-if-needed
+   (scale-pict-if-needed treated (visual-scale visual))
+   (visual-rotation visual)))
 
 ;; affine-map-content->pict : affine-map-visual? camera?
 ;;                            (listof pict-renderer?) -> pict?
@@ -841,6 +914,8 @@
 ;                     [#:renderers (listof pict-renderer?)]
 ;                     [#:theme color-theme?]
 ;                     [#:color-context render-color-context?]
+;                     [#:typography typography-theme?]
+;                     [#:typography-context render-typography-context?]
 ;                     -> pict?
 ;;   Converts state to a fixed-size pict in drawing order.
 (define (scene-state->pict state
@@ -848,6 +923,8 @@
                            #:renderers [renderers default-pict-renderers]
                            #:theme [theme #f]
                            #:color-context [color-context #f]
+                           #:typography [typography #f]
+                           #:typography-context [typography-context #f]
                            ;; A prepared layout is for this exact sampled
                            ;; frame.  Its stable item slots may cover one
                            ;; viewport while labels in every other viewport
@@ -865,8 +942,12 @@
      prepared-layout))
   (define selected-color-context
     (select-render-color-context 'scene-state->pict theme color-context))
+  (define selected-typography-context
+    (select-render-typography-context
+     'scene-state->pict typography typography-context))
   (define composed
-    (parameterize ([current-render-color-context selected-color-context])
+    (parameterize ([current-render-color-context selected-color-context]
+                   [current-render-typography-context selected-typography-context])
       (define background
         (filled-rectangle (camera-width camera)
                           (camera-height camera)
@@ -911,7 +992,8 @@
            active-layout-paths))
         (place-scene-visual-on-pict frame state resolved-for-layout camera renderers
                                     #:authored visual))))))
-  (pict-with-render-color-context composed selected-color-context))
+  (pict-with-render-color-context composed selected-color-context
+                                  selected-typography-context))
 
 ;; scene-projected-label-layout-candidates : scene-state? (listof visual?) camera?
 ;;                                            (listof pict-renderer?)

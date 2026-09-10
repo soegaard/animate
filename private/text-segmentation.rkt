@@ -10,6 +10,7 @@
 
 (require racket/list
          racket/string
+         "semantic-text-visual.rkt"
          "text-visual.rkt")
 
 (provide text-segment
@@ -35,19 +36,19 @@
 (struct text-segmentation (source-key unit segments diagnostics)
   #:transparent)
 
-;; segment-text-visual : text-visual? (or/c 'grapheme 'run 'line 'span)
+;; segment-text-visual : textual-visual? (or/c 'grapheme 'run 'line 'span)
 ;;                       -> text-segmentation?
 ;; Source positions are Racket string indexes. Grapheme iteration delegates to
 ;; Racket's Unicode grapheme-boundary implementation rather than splitting code
 ;; points, so combining sequences and emoji ZWJ clusters stay intact.
 (define (segment-text-visual visual #:unit [unit 'grapheme])
-  (unless (text-visual? visual)
-    (raise-argument-error 'segment-text-visual "text-visual?" visual))
+  (unless (textual-visual? visual)
+    (raise-argument-error 'segment-text-visual "textual-visual?" visual))
   (unless (memq unit '(grapheme run line span))
     (raise-argument-error 'segment-text-visual
                           "(or/c 'grapheme 'run 'line 'span)"
                           unit))
-  (define content (text-visual-content visual))
+  (define content (textual-content visual))
   (define span-ranges (text-span-ranges visual))
   (define raw-ranges
     (case unit
@@ -64,7 +65,7 @@
                     (range-kind unit content start end)
                     (substring content start end))))
   (text-segmentation
-   (vector-immutable content (text-visual-spans visual))
+   (vector-immutable content (textual-spans visual))
    unit
    segments
    '()))
@@ -115,12 +116,12 @@
                 (cons (cons start index) ranges))]))]))
 
 (define (text-span-ranges visual)
-  (define spans (text-visual-spans visual))
+  (define spans (textual-spans visual))
   (cond
     [(null? spans)
-     (if (zero? (string-length (text-visual-content visual)))
+     (if (zero? (string-length (textual-content visual)))
          '()
-         (list (cons 0 (string-length (text-visual-content visual)))))]
+         (list (cons 0 (string-length (textual-content visual)))))]
     [else
      (let loop ([remaining spans] [start 0] [ranges '()])
        (cond
@@ -128,6 +129,16 @@
          [else
           (define end (+ start (string-length (text-span-content (car remaining)))))
           (loop (cdr remaining) end (cons (cons start end) ranges))]))]))
+
+(define (textual-content visual)
+  (if (text-visual? visual)
+      (text-visual-content visual)
+      (semantic-text-content visual)))
+
+(define (textual-spans visual)
+  (if (text-visual? visual)
+      (text-visual-spans visual)
+      (semantic-text-spans visual)))
 
 (define (span-index-at ranges position)
   (for/first ([range (in-list ranges)] [index (in-naturals)]

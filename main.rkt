@@ -83,6 +83,10 @@
          "private/svg-import.rkt"
          "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
+         "private/text-style.rkt"
+         "private/typography-theme.rkt"
+         "private/typography-theme-data.rkt"
+         "private/semantic-text-visual.rkt"
          "private/target-sequence.rkt"
          "private/traced-path.rkt"
          "private/vector-field.rkt"
@@ -501,6 +505,77 @@
  text-visual-line-alignment
  text-visual-with-content
  text-visual-with-spans
+
+ ;; Semantic typography.  The raw text constructors above retain their
+ ;; historic concrete defaults; these constructors deliberately retain a role
+ ;; key and resolve it only at a rendering boundary.
+ text-treatment
+ text-treatment?
+ text-treatment-background
+ text-treatment-border-color
+ text-treatment-border-width
+ text-treatment-padding-x
+ text-treatment-padding-y
+ text-style
+ text-style?
+ text-style-font-face
+ text-style-font-family
+ text-style-font-size
+ text-style-font-style
+ text-style-font-weight
+ text-style-color
+ text-style-line-spacing
+ text-style-line-alignment
+ text-style-horizontal-alignment
+ text-style-vertical-alignment
+ text-style-treatment
+ text-style-update
+ text-style->datum
+ datum->text-style
+ typography-theme
+ typography-theme?
+ typography-theme-id
+ typography-theme-display-name
+ typography-theme-provenance
+ typography-ref
+ typography-style-keys
+ typography-theme-fingerprint
+ typography-theme-schema-version
+ typography-theme->datum
+ datum->typography-theme
+ typography-standard-style-keys
+ animate-typography-theme
+ title-text
+ subtitle-text
+ section-heading-text
+ body-text
+ caption-text
+ label-text
+ quotation-text
+ code-text
+ annotation-text
+ styled-text
+ styled-rich-text
+ semantic-text-visual?
+ semantic-text-style-key
+ semantic-text-content
+ semantic-text-spans
+ semantic-text-overrides
+ semantic-text-overrides?
+ semantic-text-overrides-font-face
+ semantic-text-overrides-font-family
+ semantic-text-overrides-font-size
+ semantic-text-overrides-font-style
+ semantic-text-overrides-font-weight
+ semantic-text-overrides-color
+ semantic-text-overrides-line-spacing
+ semantic-text-overrides-line-alignment
+ semantic-text-overrides-horizontal-alignment
+ semantic-text-overrides-vertical-alignment
+ semantic-text-overrides-treatment
+ semantic-text-override-inherited?
+ semantic-text-visual-width
+ resolve-semantic-text-style
  formula-mode?
  latex-option?
  latex-formula

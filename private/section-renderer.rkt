@@ -24,6 +24,9 @@
          "color-theme-data.rkt"
          "color-theme.rkt"
          "render-color-context.rkt"
+         "render-typography-context.rkt"
+         "typography-theme-data.rkt"
+         "typography-theme.rkt"
          "pict-renderer.rkt"
          "png-renderer.rkt"
          "scene.rkt"
@@ -77,7 +80,7 @@
        (fprintf output "~a --> ~a\n"
                 (subtitle-timestamp (subtitle-start entry) format)
                 (subtitle-timestamp (subtitle-end entry) format))
-       (display (normalize-subtitle-text (subtitle-text entry)) output)
+       (display (normalize-subtitle-text (subtitle-cue-text entry)) output)
        (display "\n\n" output)))
    #:exists 'truncate/replace)
   output-file)
@@ -119,6 +122,8 @@
                                   #:clean? [clean? #t]
                                   #:workers [workers 1]
                                   #:theme [theme animate-light-theme]
+                                  #:typography [typography animate-typography-theme]
+                                  #:typography-context [typography-context #f]
                                   #:cache-key [cache-key 'auto]
                                   #:asset-files [asset-files '()])
   (section-render-report-paths
@@ -130,6 +135,8 @@
     #:clean? clean?
     #:workers workers
     #:theme theme
+    #:typography typography
+    #:typography-context typography-context
     #:cache-key cache-key
     #:asset-files asset-files)))
 
@@ -143,6 +150,8 @@
                                          #:clean? [clean? #t]
                                          #:workers [workers 1]
                                          #:theme [theme animate-light-theme]
+                                         #:typography [typography animate-typography-theme]
+                                         #:typography-context [typography-context #f]
                                          #:cache-key [cache-key 'auto]
                                          #:asset-files [asset-files '()])
   (unless (path-string? output-directory)
@@ -157,6 +166,9 @@
   ;; invalid theme, and key construction and pixel rendering share this exact
   ;; context.
   (define color-context (make-render-color-context theme))
+  (define selected-typography-context
+    (select-section-render-typography-context
+     'render-timeline-section/report! typography typography-context))
   (define entry
     (timeline-section timeline section-or-name))
   (define source-indices
@@ -167,6 +179,7 @@
                                      #:fps fps #:camera camera
                                      #:renderers renderers
                                      #:color-context color-context
+                                     #:typography-context selected-typography-context
                                      #:asset-files asset-files)
         cache-key))
   (define expected-cache
@@ -174,7 +187,8 @@
                          #:scene (authored-timeline-scene timeline)
                          #:camera camera
                          #:renderers renderers
-                         #:color-context color-context))
+                         #:color-context color-context
+                         #:typography-context selected-typography-context))
   (define expected-paths
     (local-frame-paths output-directory (length source-indices)))
   (define cache-path
@@ -197,7 +211,8 @@
         #:renderers renderers
         #:clean? clean?
         #:workers workers
-        #:color-context color-context))
+        #:color-context color-context
+        #:typography-context selected-typography-context))
      (when (and effective-cache-key expected-cache)
        (write-section-cache! cache-path expected-cache))
      (section-render-report
@@ -213,12 +228,13 @@
                              #:scene scene
                              #:camera camera
                              #:renderers renderers
-                             #:color-context color-context)
+                             #:color-context color-context
+                             #:typography-context typography-context)
   (define render-identity
-    (section-render-identity camera renderers color-context))
+    (section-render-identity camera renderers color-context typography-context))
   (define datum
     (and render-identity
-         (list 'animate-section-cache-v6
+         (list 'animate-section-cache-v7
                animate-version
                animate-stage
                (immutable-cache-source-key source-key)
@@ -235,10 +251,13 @@
 (define (immutable-cache-source-key value)
   (if (string? value) (string->immutable-string value) value))
 
-(define (section-render-identity camera renderers color-context)
+(define (section-render-identity camera renderers color-context typography-context)
   (unless (render-color-context? color-context)
     (raise-argument-error
      'section-render-identity "render-color-context?" color-context))
+  (unless (render-typography-context? typography-context)
+    (raise-argument-error
+     'section-render-identity "render-typography-context?" typography-context))
   (define renderer-identities
     (for/list ([renderer (in-list renderers)])
       ;; Rendering dispatch can recurse into groups and other composites.
@@ -250,9 +269,11 @@
     (and camera (camera-cache-identity camera)))
   (and (or (not camera) camera-identity)
        (andmap values renderer-identities)
-       (list 'animate-section-render-identity-v3
+       (list 'animate-section-render-identity-v4
              (render-color-context-appearance-fingerprint color-context)
              (render-color-context-resolver-version color-context)
+             (render-typography-context-appearance-fingerprint typography-context)
+             (render-typography-context-resolver-version typography-context)
              camera-identity
              renderer-identities)))
 
@@ -321,14 +342,20 @@
                                      #:renderers renderers
                                      #:theme [theme #f]
                                      #:color-context [color-context #f]
+                                     #:typography [typography #f]
+                                     #:typography-context [typography-context #f]
                                      #:asset-files asset-files)
   (define selected-color-context
     (select-section-render-color-context
      'automatic-section-cache-key theme color-context))
+  (define selected-typography-context
+    (select-section-render-typography-context
+     'automatic-section-cache-key typography typography-context))
   (define scene-representation
     (format "~s" (authored-timeline-scene timeline)))
   (define render-identity
-    (section-render-identity camera renderers selected-color-context))
+    (section-render-identity camera renderers selected-color-context
+                             selected-typography-context))
   (if (or (not render-identity)
           (scene-representation-has-opaque-procedure? scene-representation))
       #f
@@ -367,6 +394,26 @@
      color-context]
     [theme (make-render-color-context theme)]
     [else (make-render-color-context animate-light-theme)]))
+
+(define (select-section-render-typography-context who typography typography-context)
+  (when (and typography typography-context)
+    (raise-arguments-error
+     who
+     "at most one of #:typography or #:typography-context"
+     "typography" typography
+     "typography-context" typography-context))
+  (cond
+    [typography-context
+     (unless (render-typography-context? typography-context)
+       (raise-argument-error who
+                             "render-typography-context? as #:typography-context"
+                             typography-context))
+     typography-context]
+    [typography
+     (unless (typography-theme? typography)
+       (raise-argument-error who "typography-theme? as #:typography" typography))
+     (make-render-typography-context typography)]
+    [else (make-render-typography-context animate-typography-theme)]))
 
 ;; Built-in rate functions are transparent semantic values, so their scene
 ;; representation has no procedure token. A printed name alone cannot prove the

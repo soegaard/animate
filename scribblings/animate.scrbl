@@ -44,6 +44,7 @@ spellings are removed rather than retained as compatibility aliases.
 @include-section["concepts/relation-phases.scrbl"]
 @include-section["concepts/spatial-coordinates.scrbl"]
 @include-section["concepts/colors-and-themes.scrbl"]
+@include-section["concepts/typography-and-text-styles.scrbl"]
 @include-section["reference/module-boundaries.scrbl"]
 @include-section["reference/colors.scrbl"]
 @include-section["reference/authoring.scrbl"]

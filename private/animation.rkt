@@ -52,6 +52,7 @@
          "relation-visual.rkt"
          "resolvable-visual.rkt"
          "scene-state.rkt"
+         "semantic-text-visual.rkt"
          "text-reveal-visual.rkt"
          "text-segmentation.rkt"
          "text-visual.rkt"
@@ -1720,7 +1721,7 @@
                 current-effect-random-plan-version seed 'confetti index
                 'color-index (length palette))))))
 
-; typewrite : text-visual? [#:unit text-segmentation-unit?]
+; typewrite : textual-visual? [#:unit text-segmentation-unit?]
 ;             [#:cursor? boolean?] [#:cursor-style (or/c false/c color-spec?)]
 ;             -> typewrite-request?
 ;; Introduces a text Visual by a discrete, renderer-prepared reveal frontier.
@@ -1731,8 +1732,8 @@
                    #:unit [unit 'grapheme]
                    #:cursor? [cursor? #f]
                    #:cursor-style [cursor-style #f])
-  (unless (text-visual? visual)
-    (raise-argument-error 'typewrite "text-visual?" visual))
+  (unless (textual-visual? visual)
+    (raise-argument-error 'typewrite "textual-visual?" visual))
   (unless (memq unit '(grapheme run line span))
     (raise-argument-error
      'typewrite
@@ -1751,7 +1752,7 @@
                      cursor?
                      cursor-style))
 
-; erase-text : (or/c text-visual? symbol? visual-path?)
+; erase-text : (or/c textual-visual? symbol? visual-path?)
 ;              [#:unit text-segmentation-unit?]
 ;              [#:cursor? boolean?]
 ;              [#:cursor-style (or/c false/c color-spec?)]
@@ -1763,10 +1764,10 @@
                     #:unit [unit 'grapheme]
                     #:cursor? [cursor? #f]
                     #:cursor-style [cursor-style #f])
-  (unless (or (text-visual? target) (symbol? target) (visual-path? target))
+  (unless (or (textual-visual? target) (symbol? target) (visual-path? target))
     (raise-argument-error
      'erase-text
-     "(or/c text-visual? symbol? visual-path?)"
+     "(or/c textual-visual? symbol? visual-path?)"
      target))
   (unless (memq unit '(grapheme run line span))
     (raise-argument-error
@@ -1783,7 +1784,7 @@
                       cursor?
                       cursor-style))
 
-; underline-sweep : (or/c text-visual? symbol?)
+; underline-sweep : (or/c textual-visual? symbol?)
 ;                   [#:color (or/c false/c color-spec?)]
 ;                   [#:stroke-width nonnegative-finite-real?]
 ;                   [#:id (or/c false/c symbol?)]
@@ -1796,10 +1797,10 @@
                          #:stroke-width [stroke-width 2]
                          #:id [id #f]
                          #:retain? [retain? #t])
-  (unless (or (text-visual? target) (symbol? target))
+  (unless (or (textual-visual? target) (symbol? target))
     (raise-argument-error
      'underline-sweep
-     "(or/c text-visual? symbol?)"
+     "(or/c textual-visual? symbol?)"
      target))
   (unless (or (not color) (color-spec? color))
     (raise-argument-error 'underline-sweep "(or/c #f color-spec?)" color))
@@ -1820,7 +1821,7 @@
    stroke-width
    retain?))
 
-; strike-through : (or/c text-visual? symbol?)
+; strike-through : (or/c textual-visual? symbol?)
 ;                 [#:color (or/c false/c color-spec?)]
 ;                 [#:stroke-width nonnegative-finite-real?]
 ;                 [#:id (or/c false/c symbol?)]
@@ -1832,10 +1833,10 @@
                         #:stroke-width [stroke-width 2]
                         #:id [id #f]
                         #:retain? [retain? #t])
-  (unless (or (text-visual? target) (symbol? target))
+  (unless (or (textual-visual? target) (symbol? target))
     (raise-argument-error
      'strike-through
-     "(or/c text-visual? symbol?)"
+     "(or/c textual-visual? symbol?)"
      target))
   (unless (or (not color) (color-spec? color))
     (raise-argument-error 'strike-through "(or/c #f color-spec?)" color))
@@ -1856,7 +1857,7 @@
    stroke-width
    retain?))
 
-; highlight-sweep : (or/c text-visual? symbol?)
+; highlight-sweep : (or/c textual-visual? symbol?)
 ;                   [#:color color-spec?]
 ;                   [#:padding nonnegative-finite-real?]
 ;                   [#:id (or/c false/c symbol?)]
@@ -1868,10 +1869,10 @@
                          #:padding [padding 1/20]
                          #:id [id #f]
                          #:retain? [retain? #f])
-  (unless (or (text-visual? target) (symbol? target))
+  (unless (or (textual-visual? target) (symbol? target))
     (raise-argument-error
      'highlight-sweep
-     "(or/c text-visual? symbol?)"
+     "(or/c textual-visual? symbol?)"
      target))
   (unless (color-spec? color)
     (raise-argument-error 'highlight-sweep "color-spec?" color))
@@ -5369,10 +5370,10 @@
 (define (compile-erase-text-request state request)
   (define target-id (erase-text-request-target-id request))
   (define source (scene-state-ref state target-id))
-  (unless (text-visual? source)
+  (unless (textual-visual? source)
     (raise-arguments-error
      'erase-text
-     "a present text-visual? target at the clip start"
+     "a present textual-visual? target at the clip start"
      "target-id" target-id
      "actual" source))
   (define segmentation
@@ -5399,7 +5400,7 @@
 (define (compile-underline-sweep-request state request)
   (define target-id (underline-sweep-request-target-id request))
   (define source (scene-state-ref state target-id))
-  (unless (text-visual? source)
+  (unless (textual-visual? source)
     (raise-arguments-error
      'underline-sweep
      "a present text-visual? target at the clip start"
@@ -5413,13 +5414,17 @@
                (equal? (visual-scale source) (vec2 1 1)))
     (raise-arguments-error
      'underline-sweep
-     "an unrotated, unscaled text Visual for this frozen-layout line effect"
+     "an unrotated, unscaled textual Visual for this frozen-layout line effect"
      "target-id" target-id
      "rotation" (visual-rotation source)
      "scale" (visual-scale source)))
   (define overlay-id (underline-sweep-request-overlay-id request))
   (check-absent-introduction-target state overlay-id 'underline-sweep)
   (define box (renderer-layout-box source))
+  ;; Decoration geometry is measured from the complete semantic source so a
+  ;; text treatment contributes to its visible box. Font-derived defaults are
+  ;; read from a temporary concrete proxy; the authored Scene keeps `source`.
+  (define concrete-source (textual-source->concrete source))
   (define left
     (let ([box-left ((relative-layout-procedure 'layout-box-left) box)])
       box-left))
@@ -5430,10 +5435,10 @@
     (let ([box-bottom ((relative-layout-procedure 'layout-box-bottom) box)])
       box-bottom))
   (define underline-y
-    (- bottom (/ (text-visual-font-size source) 8)))
+    (- bottom (/ (text-visual-font-size concrete-source) 8)))
   (define color
     (or (underline-sweep-request-color request)
-        (text-visual-color source)))
+        (text-visual-color concrete-source)))
   (define complete
     (line (vec2 left underline-y)
           (vec2 right underline-y)
@@ -5455,7 +5460,7 @@
 (define (compile-strike-through-request state request)
   (define target-id (strike-through-request-target-id request))
   (define source (scene-state-ref state target-id))
-  (unless (text-visual? source)
+  (unless (textual-visual? source)
     (raise-arguments-error
      'strike-through
      "a present text-visual? target at the clip start"
@@ -5465,13 +5470,14 @@
                (equal? (visual-scale source) (vec2 1 1)))
     (raise-arguments-error
      'strike-through
-     "an unrotated, unscaled text Visual for this frozen-layout line effect"
+     "an unrotated, unscaled textual Visual for this frozen-layout line effect"
      "target-id" target-id
      "rotation" (visual-rotation source)
      "scale" (visual-scale source)))
   (define overlay-id (strike-through-request-overlay-id request))
   (check-absent-introduction-target state overlay-id 'strike-through)
   (define box (renderer-layout-box source))
+  (define concrete-source (textual-source->concrete source))
   (define left ((relative-layout-procedure 'layout-box-left) box))
   (define right ((relative-layout-procedure 'layout-box-right) box))
   (define bottom ((relative-layout-procedure 'layout-box-bottom) box))
@@ -5479,7 +5485,7 @@
   (define strike-y (/ (+ bottom top) 2))
   (define color
     (or (strike-through-request-color request)
-        (text-visual-color source)))
+        (text-visual-color concrete-source)))
   (define complete
     (line (vec2 left strike-y)
           (vec2 right strike-y)
@@ -5501,7 +5507,7 @@
 (define (compile-highlight-sweep-request state request)
   (define target-id (highlight-sweep-request-target-id request))
   (define source (scene-state-ref state target-id))
-  (unless (text-visual? source)
+  (unless (textual-visual? source)
     (raise-arguments-error
      'highlight-sweep
      "a present text-visual? target at the clip start"
@@ -5511,7 +5517,7 @@
                (equal? (visual-scale source) (vec2 1 1)))
     (raise-arguments-error
      'highlight-sweep
-     "an unrotated, unscaled text Visual for this frozen-layout rectangle effect"
+     "an unrotated, unscaled textual Visual for this frozen-layout rectangle effect"
      "target-id" target-id
      "rotation" (visual-rotation source)
      "scale" (visual-scale source)))
@@ -5569,6 +5575,14 @@
 
 (define (renderer-layout-box visual)
   ((relative-layout-procedure 'visual-layout-box) visual))
+
+;; Effects that need an ordinary font property may lower semantic text only in
+;; their private compilation calculation. This does not enter a sampled Scene;
+;; all effect endpoints still retain the original semantic source.
+(define (textual-source->concrete source)
+  (if (semantic-text-visual? source)
+      (semantic-text->text-visual source)
+      source))
 
 (define (renderer-layout-boxes visuals)
   ((relative-layout-procedure 'visuals-layout-box) visuals))

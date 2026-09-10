@@ -14,6 +14,8 @@
          "camera.rkt"
          "color-theme-data.rkt"
          "color-theme.rkt"
+         "typography-theme-data.rkt"
+         "typography-theme.rkt"
          "frame-renderer.rkt"
          "scene-frame-grid.rkt"
          "geometry.rkt"
@@ -53,7 +55,7 @@
 ;; to a lossy hash.  A document/render generation establishes the cache
 ;; namespace whenever callers replace arbitrary custom renderers.
 (struct preview-render-spec (fps camera renderers pixel-scale supersample
-                                 theme camera3d-overrides)
+                                 theme typography camera3d-overrides)
   #:transparent)
 
 ;; frame-sample is the authoritative playback identity.  Its time is always
@@ -89,6 +91,7 @@
                                   #:pixel-scale [pixel-scale 1]
                                   #:supersample [supersample 1]
                                   #:theme [theme animate-light-theme]
+                                  #:typography [typography animate-typography-theme]
                                   #:camera3d-overrides
                                   [camera3d-overrides #hasheq()])
   (check-fps 'make-preview-render-spec fps)
@@ -108,6 +111,9 @@
   (unless (color-theme? theme)
     (raise-argument-error
      'make-preview-render-spec "color-theme? as #:theme" theme))
+  (unless (typography-theme? typography)
+    (raise-argument-error
+     'make-preview-render-spec "typography-theme? as #:typography" typography))
   (unless (and (hash? camera3d-overrides) (immutable? camera3d-overrides))
     (raise-argument-error
      'make-preview-render-spec
@@ -130,7 +136,7 @@
        "an override whose view ID matches its hash key"
        "key" view-id
        "override" override)))
-  (preview-render-spec fps camera renderers pixel-scale supersample theme
+  (preview-render-spec fps camera renderers pixel-scale supersample theme typography
                        camera3d-overrides))
 
 (define (make-preview-document source #:generation [generation 0] #:label [label #f])

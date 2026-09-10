@@ -19,6 +19,7 @@
 (require "affine-transform.rkt"
          (only-in "color-token.rkt" theme-foreground)
          "geometry.rkt"
+         "text-properties.rkt"
          "visual-model.rkt")
 
 ;; Exports
@@ -55,42 +56,6 @@
          text-visual-line-alignment
          text-visual-with-content
          text-visual-with-spans)
-
-
-;;;
-;;; Font and Alignment Predicates
-;;;
-
-; text-font-family? : any/c -> boolean?
-;;   Reports whether value is a supported portable font-family symbol.
-(define (text-font-family? value)
-  (and (memq value
-             '(default decorative roman script swiss modern symbol system))
-       #t))
-
-; text-font-style? : any/c -> boolean?
-;;   Reports whether value is a supported font-slant style.
-(define (text-font-style? value)
-  (and (memq value '(normal italic slant))
-       #t))
-
-; text-font-weight? : any/c -> boolean?
-;;   Reports whether value is a supported font-weight style.
-(define (text-font-weight? value)
-  (and (memq value '(normal bold light))
-       #t))
-
-; text-horizontal-alignment? : any/c -> boolean?
-;;   Reports whether value is a supported horizontal anchor alignment.
-(define (text-horizontal-alignment? value)
-  (and (memq value '(left center right))
-       #t))
-
-; text-vertical-alignment? : any/c -> boolean?
-;;   Reports whether value is a supported vertical anchor alignment.
-(define (text-vertical-alignment? value)
-  (and (memq value '(top center baseline bottom))
-       #t))
 
 
 ;;;

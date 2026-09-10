@@ -84,7 +84,7 @@
                                        values))
                (timeline-lane 'subtitles "subtitles"
                               (entries (authored-timeline-subtitles timeline)
-                                       subtitle-text subtitle-start subtitle-end values))
+                                       subtitle-cue-text subtitle-start subtitle-end values))
                (timeline-lane 'cues "cues"
                               (for/list ([cue (in-list (authored-timeline-cues timeline))])
                                 (timeline-entry (cue-name cue) (cue-time cue)

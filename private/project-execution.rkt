@@ -25,6 +25,9 @@
          (only-in "../colors.rkt"
                   color-theme-fingerprint
                   theme->datum)
+         (only-in "../typography.rkt"
+                  typography-theme-fingerprint
+                  typography-theme->datum)
          "../project.rkt"
          "../version.rkt"
          "3d/label-layout3d.rkt"
@@ -32,6 +35,7 @@
          "3d/renderer3d.rkt"
          "png-renderer.rkt"
          "render-color-context.rkt"
+         "render-typography-context.rkt"
          "section-renderer.rkt"
          "doctor.rkt"
          "video-assembly.rkt"
@@ -397,20 +401,21 @@
      (if (eq? (render-spec-renderers render) 'default)
          (keyword-apply
           render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:theme #:workers)
+          '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:theme #:typography #:workers)
           (list (project-render-camera prepared)
                 #t
                 (render-spec-fps render)
                 prepared-label-layout
                 (render-spec-supersample render)
                 (render-spec-theme render)
+                (render-spec-typography render)
                 (render-spec-workers render))
           (list (prepared-project-scene prepared)
                 (prepared-project-target-frame-indices prepared)
                 frame-root))
          (keyword-apply
           render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:theme #:workers)
+          '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:theme #:typography #:workers)
           (list (project-render-camera prepared)
                 #t
                 (render-spec-fps render)
@@ -418,6 +423,7 @@
                 (render-spec-renderers render)
                 (render-spec-supersample render)
                 (render-spec-theme render)
+                (render-spec-typography render)
                 (render-spec-workers render))
           (list (prepared-project-scene prepared)
                 (prepared-project-target-frame-indices prepared)
@@ -522,6 +528,13 @@
            'appearance-fingerprint
            (color-theme-fingerprint (render-spec-theme render))
            'resolver-version render-color-resolver-version)
+   ;; Text roles can affect line breaks and treatment bounds, so typography is
+   ;; mandatory even with an author-supplied source cache key.
+   'typography-theme
+   (hasheq 'datum (typography-theme->datum (render-spec-typography render))
+           'appearance-fingerprint
+           (typography-theme-fingerprint (render-spec-typography render))
+           'resolver-version render-typography-resolver-version)
    ;; A prepared table changes selected placement boxes, so it is part of the
    ;; PNG identity even though its computation happens before worker creation.
    ;; Convert only its immutable primitive contents to a readable datum; cache

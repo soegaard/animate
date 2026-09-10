@@ -322,6 +322,7 @@
                              #:camera [camera #f]
                              #:renderers [renderers default-pict-renderers]
                              #:theme [theme #f]
+                             #:typography [typography #f]
                              #:pixel-scale [pixel-scale 1]
                              #:cache-megabytes [cache-megabytes 512]
                              #:prefetch [prefetch 3]
@@ -376,7 +377,8 @@
           session
           (make-preview-render-spec #:fps fps #:camera camera #:renderers renderers
                                     #:pixel-scale scale
-                                    #:theme (preview-color-theme session))))]))
+                                    #:theme (preview-color-theme session)
+                                    #:typography (preview-typography-theme session))))]))
   ;; Program previews currently expose named blocks rather than authored
   ;; timeline sections.  Keep the generic section controls inert in that
   ;; case, instead of sending an invalid jump command to the controller.
@@ -2630,7 +2632,9 @@
            #:source-block (current-inspector-source-block session)
            #:render-diagnostics
            (and (positive? (hash-count recent-render-diagnostics))
-                recent-render-diagnostics)))
+                recent-render-diagnostics)
+           #:theme (preview-color-theme session)
+           #:typography (preview-typography-theme session)))
         (install-inspector-document! document)
         (send selection-message set-label
               (string-append
@@ -2790,6 +2794,7 @@
           source #:fps fps #:start start #:section section #:camera camera
           #:renderers renderers #:pixel-scale pixel-scale
           #:theme theme
+          #:typography typography
      #:cache-megabytes cache-megabytes #:prefetch prefetch
      #:playback-policy playback-policy
      #:worker-mode worker-mode

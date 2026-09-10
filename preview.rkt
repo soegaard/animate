@@ -11,6 +11,7 @@
          racket/runtime-path
          (only-in "private/pict-adapter.rkt" default-pict-renderers)
          (only-in "colors.rkt" color-theme?)
+         (only-in "typography.rkt" typography-theme?)
          "project.rkt"
          "private/preview-model.rkt"
          "private/preview-controller.rkt"
@@ -151,6 +152,7 @@
                             #:camera [camera #f]
                             #:renderers [renderers default-pict-renderers]
                             #:theme [theme #f]
+                            #:typography [typography #f]
                             #:pixel-scale [pixel-scale 1]
                             #:cache-megabytes [cache-megabytes 512]
                             #:prefetch [prefetch 3]
@@ -167,11 +169,16 @@
   (ensure-preview-gui 'open-scene-preview)
   (when (and theme (not (color-theme? theme)))
     (raise-argument-error 'open-scene-preview "color-theme? as #:theme" theme))
+  (when (and typography (not (typography-theme? typography)))
+    (raise-argument-error 'open-scene-preview
+                          "typography-theme? as #:typography"
+                          typography))
   (define session
     ((dynamic-require preview-window-path 'open-preview-window)
      source #:fps fps #:start start #:section section #:camera camera
      #:renderers renderers #:pixel-scale pixel-scale
      #:theme theme
+     #:typography typography
      #:cache-megabytes cache-megabytes #:prefetch prefetch
      #:playback-policy playback-policy
      #:worker-mode worker-mode #:render-workers render-workers
@@ -251,6 +258,7 @@
      (or (prepared-project-timeline prepared) (prepared-project-scene prepared))
      #:fps (preview-spec-fps preview-specification)
      #:theme (render-spec-theme render-specification)
+     #:typography (render-spec-typography render-specification)
      #:start requested-start
      #:section (and (prepared-project-timeline prepared)
                      (eq? (project-target-kind target) 'section)
@@ -452,6 +460,7 @@
                               #:camera [camera #f]
                               #:renderers [renderers default-pict-renderers]
                               #:theme [theme #f]
+                              #:typography [typography #f]
                               #:pixel-scale [pixel-scale 1]
                               #:cache-megabytes [cache-megabytes 512]
                               #:prefetch [prefetch 3]
@@ -482,7 +491,7 @@
       (open-scene-preview
        (compiled-scene-program-scene compiled)
        #:fps fps #:start (or actual-start start) #:section section #:camera camera
-       #:renderers renderers #:theme theme #:pixel-scale pixel-scale
+       #:renderers renderers #:theme theme #:typography typography #:pixel-scale pixel-scale
        #:cache-megabytes cache-megabytes #:prefetch prefetch #:title title))
     (attach-program-preview! session loader
                              #:auto-reload? auto-reload?
