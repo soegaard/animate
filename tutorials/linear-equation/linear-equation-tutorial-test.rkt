@@ -7,7 +7,7 @@
 (require rackunit
          animate
          animate/authoring
-         "../examples/linear-equation-tutorial.rkt")
+         "linear-equation-tutorial.rkt")
 
 (module+ test
   (define demo-video (make-demo-video))

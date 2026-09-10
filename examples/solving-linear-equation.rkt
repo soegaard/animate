@@ -63,14 +63,10 @@
   (define after-dividing (equation-divided-by-two))
   (define solution (solution-equation))
   (define title
-    (plain-text
+    (title-text
      "Solving 2x + 1 = 5 with a fixed equals sign"
      #:id 'title
-     #:center (vec2 0 2)
-     #:font-size 1/3
-     #:font-family 'swiss
-     #:font-weight 'bold
-     #:color "navy"))
+     #:center (vec2 0 2)))
   (define initial
     (scene-add (scene-add (make-scene) title) initial-equation))
   (define before-subtracting-one

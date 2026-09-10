@@ -205,27 +205,23 @@
    'problem
    (lambda (scn)
      (define title
-       (plain-text "Solving a Linear Equation"
-                   #:id          'problem-title
-                   #:center      (vec2 0 2)
-                   #:font-size   2/5
-                   #:font-family 'swiss
-                   #:font-weight 'bold))
+       (title-text "Solving a Linear Equation"
+                   #:id 'problem-title
+                   #:center (vec2 0 2)))
      (define eq
        (equation 'problem-equation origin
-                 (frag 'three     "3")
-                 (frag 'x         "x")
+                 (frag 'three-x "3x")
                  (frag 'plus-five "+5")
-                 (frag 'equals    "=")
-                 (frag 'rhs-17    "17")))
-
-     (define with-title    (scene-play scn          (fade-in title) #:duration 2/5))
-     (define with-equation (scene-play with-title   (fade-in eq)    #:duration 3/5))
-     (define held          (scene-wait with-equation 6/5))
-
-     ;; Keep the equation for the explanation scene, where it moves into its
-     ;; working position.  Only the title has finished its job here.
-     (scene-remove held 'problem-title))))
+                 (frag 'equals "=")
+                 (frag 'rhs-17 "17")))
+     (define with-title
+       (scene-play scn (fade-in title) #:duration 2/5))
+     (define with-equation
+       (scene-play with-title (fade-in eq) #:duration 3/5))
+     (define held (scene-wait with-equation 6/5))
+     ;; Hard cut between tutorial scenes; the named section ends just before
+     ;; the next scene adds its own content.
+     (scene-remove held 'problem-title 'problem-equation))))
 
 ;; ============================================================================
 ;; Scene 2 — What "solve" means
@@ -235,34 +231,35 @@
   (scene
    'meaning
    (lambda (scn)
+     (define eq
+       (equation 'meaning-equation (vec2 0 4/5)
+                 (frag 'three "3")
+                 (frag 'x "x")
+                 (frag 'plus-five "+5")
+                 (frag 'equals "=")
+                 (frag 'rhs-17 "17")))
      (define goal
-       (plain-text
+       (body-text
         "Find all numbers that make the equation true when inserted for x."
-        #:id          'meaning-goal
-        #:center      (vec2 0 -4/5)
-        #:font-size   1/4
-        #:font-family 'swiss))
+        #:id 'meaning-goal
+        #:center (vec2 0 -4/5)
+        #:width 12))
      (define method
-       (plain-text "Method: isolate x."
-                   #:id          'meaning-method
-                   #:center      (vec2 0 -8/5)
-                   #:font-size   1/4
-                   #:font-family 'swiss
-                   #:font-weight 'bold))
-
-     (define positioned    (scene-play scn
-                                       (move-to 'problem-equation (vec2 0 4/5))
-                                       #:duration 2/5))
-     (define x-emphasized  (scene-play positioned
-                                       ;; Emphasize the variable itself.  A pulse keeps the
-                                       ;; equation readable, unlike an outline around one glyph.
-                                       (pulse '(problem-equation x) #:scale-factor 6/5)
-                                       #:duration 4/5))
-     (define goal-shown    (scene-play x-emphasized (fade-in goal) #:duration 2/5))
-     (define goal-held     (scene-wait goal-shown 6/5))
-     (define method-shown  (scene-play goal-held (fade-in method) #:duration 2/5))
-     (define held          (scene-wait method-shown 6/5))
-     (scene-remove held 'problem-equation 'meaning-goal 'meaning-method))))
+       (label-text "Method: isolate x."
+                   #:id 'meaning-method
+                   #:center (vec2 0 -8/5)))
+     (define shown (scene-play scn (fade-in eq) #:duration 2/5))
+     (define x-emphasized
+       (scene-play shown
+                   (indicate '(meaning-equation x))
+                   #:duration 4/5))
+     (define goal-shown
+       (scene-play x-emphasized (fade-in goal) #:duration 2/5))
+     (define goal-held (scene-wait goal-shown 6/5))
+     (define method-shown
+       (scene-play goal-held (fade-in method) #:duration 2/5))
+     (define held (scene-wait method-shown 6/5))
+     (scene-remove held 'meaning-equation 'meaning-goal 'meaning-method))))
 
 ;; ============================================================================
 ;; Scene 3 — Subtract 5 from both sides
@@ -571,12 +568,10 @@
         (formula-ref multiplied 'rhs-17)))
 
      (define checkmark
-       (plain-text "✓"
+       (label-text "✓"
                    #:id 'checkmark
                    #:center (vec2 5/2 -3/5)
-                   #:font-size 1/2
-                   #:font-family 'swiss
-                   #:font-weight 'bold))
+                   #:font-size 1/2))
 
      ;; Start from the original equation and make a working copy.
      (define reference-shown
