@@ -20,6 +20,29 @@
 
 (define-runtime-path preview-cli-path "preview-cli.rkt")
 
+;; Keep this helper before the command dispatcher. Module bindings are
+;; initialized in source order, and the `preview` arm below can need to invoke
+;; it immediately when `raco` started us with the headless racket executable.
+(define (relaunch-with-gracket!)
+  (define racket-executable (find-system-path 'exec-file))
+  (define gracket-executable
+    (build-path (or (path-only racket-executable) (current-directory)) "gracket"))
+  (unless (file-exists? gracket-executable)
+    (raise-user-error
+     'raco-animate
+     (format "preview needs GRacket, but no sibling launcher was found at ~a"
+             gracket-executable)))
+  (define-values (process _stdout _stdin _stderr)
+    (apply subprocess
+           (current-output-port)
+           (current-input-port)
+           (current-error-port)
+           gracket-executable
+           (path->string preview-cli-path)
+           (vector->list (current-command-line-arguments))))
+  (subprocess-wait process)
+  (exit (subprocess-status process)))
+
 (define auto-reload? #t)
 (define fps 30)
 (define block #f)
@@ -277,23 +300,3 @@
    (raise-user-error
    'raco-animate
    "usage: raco animate [--theme animate-light|animate-dark | --theme-file THEME.rktd] COMMAND ...; commands: version | doctor | check-source-tree [ARCHIVE-DIRECTORY] | check-installed-package ARCHIVE [FRESH-PLTUSERHOME] | check-repo | plan|check PROJECT.rkt binding | render [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding | cache list PROJECT.rkt binding | cache clear [--domain formula|frames|segments|audio|waveform|source-program] PROJECT.rkt binding | preview [--fps N] [--section NAME|--block NAME|--frame N|--range START:END] PROJECT.rkt binding")])
-
-(define (relaunch-with-gracket!)
-  (define racket-executable (find-system-path 'exec-file))
-  (define gracket-executable
-    (build-path (or (path-only racket-executable) (current-directory)) "gracket"))
-  (unless (file-exists? gracket-executable)
-    (raise-user-error
-     'raco-animate
-     (format "preview needs GRacket, but no sibling launcher was found at ~a"
-             gracket-executable)))
-  (define-values (process _stdout _stdin _stderr)
-    (apply subprocess
-           (current-output-port)
-           (current-input-port)
-           (current-error-port)
-           gracket-executable
-           (path->string preview-cli-path)
-           (vector->list (current-command-line-arguments))))
-  (subprocess-wait process)
-  (exit (subprocess-status process)))

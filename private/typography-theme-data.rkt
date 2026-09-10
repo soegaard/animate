@@ -30,7 +30,12 @@
                      #:spacing 11/10 #:line 'center #:horizontal 'center #:vertical 'center)
     'section-heading (style #:family 'swiss #:size 3/5 #:weight 'bold #:color theme-accent
                            #:spacing 11/10)
-    'body (style #:family 'swiss #:size 2/5 #:color theme-foreground #:spacing 6/5)
+    ;; A body paragraph is normally left-aligned within its own width, but its
+    ;; box is centered on the constructor's #:center point.  This keeps a
+    ;; short explanation positioned where an author places it without making
+    ;; a multi-line paragraph needlessly centered.
+    'body (style #:family 'swiss #:size 2/5 #:color theme-foreground #:spacing 6/5
+                 #:line 'left #:horizontal 'center)
     'caption (style #:family 'swiss #:size 3/10 #:color theme-muted #:spacing 11/10)
     'label (style #:family 'swiss #:size 7/20 #:color theme-foreground
                   #:spacing 1 #:line 'center #:horizontal 'center #:vertical 'center)

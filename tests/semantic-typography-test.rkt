@@ -69,6 +69,19 @@
   ;; must partition the snapshot.
   (check-equal? (typography-style-keys animate-typography-theme)
                 (sort typography-standard-style-keys symbol<?))
+  ;; `#:center` places a body paragraph's box. Its lines remain left-aligned,
+  ;; so explanatory copy stays readable without unexpectedly starting at the
+  ;; supplied center point.
+  (define default-body-style
+    (typography-ref animate-typography-theme 'body))
+  (check-eq? (text-style-horizontal-alignment default-body-style) 'center)
+  (check-eq? (text-style-line-alignment default-body-style) 'left)
+  (define default-body-visual
+    (semantic-text->text-visual
+     (body-text "A centered text box with left-aligned lines."
+                #:id 'default-body-alignment #:center origin #:width 6)))
+  (check-eq? (text-visual-horizontal-alignment default-body-visual) 'center)
+  (check-eq? (text-visual-line-alignment default-body-visual) 'left)
   (check-equal?
    (typography-theme-fingerprint animate-typography-theme)
    (typography-theme-fingerprint
