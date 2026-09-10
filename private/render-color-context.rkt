@@ -20,10 +20,14 @@
          current-render-color-context
          current-or-default-render-color-context)
 
-;; Palette appearance data gained canonical construction-history-independent
-;; ordering in COLOR-R6.  Bump the resolver identity so persisted pixel caches
-;; cannot conflate their earlier fingerprint payload with this one.
-(define render-color-resolver-version 3)
+;; Version 3 made palette appearance data construction-history independent.
+;; Version 4 adds Animate-owned meanings for named literals such as "crimson"
+;; and "indigo". A raw path Visual can retain one of those strings, so it now
+;; follows Animate semantic color resolution rather than backend-name
+;; passthrough. Accepted named-literal vocabulary is renderer semantics, not
+;; theme appearance data; advance this version whenever that vocabulary changes
+;; so persisted pixel caches cannot cross the boundary.
+(define render-color-resolver-version 4)
 
 (struct render-color-context
   (theme resolved-role-table appearance-fingerprint resolver-version)

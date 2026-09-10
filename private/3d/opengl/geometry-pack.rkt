@@ -66,7 +66,11 @@
       (vector-immutable
        (compiled-geometry3d-key geometry)
        'vertex-colours
-       (render-color-context-appearance-fingerprint color-context))
+       (render-color-context-appearance-fingerprint color-context)
+       ;; Resolved vertex colours are packed into this resource. Keep a
+       ;; resolver-semantic change (including accepted named literals) from
+       ;; reusing an upload prepared under an earlier color namespace.
+       (render-color-context-resolver-version color-context))
       (compiled-geometry3d-key geometry)))
 
 ; pack-compiled-geometry3d : compiled-geometry3d? variant

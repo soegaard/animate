@@ -278,6 +278,38 @@
           (regexp-match? #rx"typography-theme->datum" (exn-message error))))
    (lambda () (typography-theme->datum oversized-display-theme)))
 
+  ;; The budget permits one atom just below the per-atom limit, but counts
+  ;; every occurrence before fingerprinting. Reusing an individually valid
+  ;; face across many styles therefore cannot allocate an unbounded canonical
+  ;; appearance datum.
+  (define near-limit-font-face (make-string 65535 #\x))
+  (check-not-exn
+   (lambda ()
+     (typography-theme
+      #:id 'near-atom-limit
+      #:extends animate-typography-theme
+      #:styles
+      (hash 'body
+            (text-style-update
+             (typography-ref animate-typography-theme 'body)
+             #:font-face near-limit-font-face)))))
+  (define repeated-medium-font-face (make-string 60000 #\y))
+  (check-exn
+   (lambda (error)
+     (and (exn:fail? error)
+          (regexp-match? #rx"cumulative byte budget" (exn-message error))))
+   (lambda ()
+     (typography-theme
+      #:id 'aggregate-atom-limit
+      #:extends animate-typography-theme
+      #:styles
+      (for/hash ([index (in-range 18)])
+        (values
+         (string->symbol (format "aggregate-style-~a" index))
+         (text-style-update
+          (typography-ref animate-typography-theme 'body)
+          #:font-face repeated-medium-font-face))))))
+
   ;; The authored object stores the role and override, not a font/color chosen
   ;; from the currently active rendering context.
   (define heading

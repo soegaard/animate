@@ -10,13 +10,17 @@
          typography-serialization-budget-check-atom!
          typography-serialization-budget-count-datum!)
 
-(struct typography-serialization-budget (who maximum-nodes maximum-atom-bytes nodes)
+(struct typography-serialization-budget
+  (who maximum-nodes maximum-atom-bytes maximum-total-atom-bytes
+       nodes total-atom-bytes)
   #:mutable
   #:transparent)
 
 (define (make-typography-serialization-budget who
                                                #:maximum-nodes [maximum-nodes 100000]
-                                               #:maximum-atom-bytes [maximum-atom-bytes 65536])
+                                               #:maximum-atom-bytes [maximum-atom-bytes 65536]
+                                               #:maximum-total-atom-bytes
+                                               [maximum-total-atom-bytes (* 1024 1024)])
   (unless (symbol? who)
     (raise-argument-error 'make-typography-serialization-budget "symbol?" who))
   (unless (exact-positive-integer? maximum-nodes)
@@ -25,7 +29,13 @@
   (unless (exact-positive-integer? maximum-atom-bytes)
     (raise-argument-error 'make-typography-serialization-budget
                           "exact-positive-integer? as #:maximum-atom-bytes" maximum-atom-bytes))
-  (typography-serialization-budget who maximum-nodes maximum-atom-bytes 0))
+  (unless (exact-positive-integer? maximum-total-atom-bytes)
+    (raise-argument-error
+     'make-typography-serialization-budget
+     "exact-positive-integer? as #:maximum-total-atom-bytes"
+     maximum-total-atom-bytes))
+  (typography-serialization-budget who maximum-nodes maximum-atom-bytes
+                                   maximum-total-atom-bytes 0 0))
 
 ;; Reserve known output nodes before a serializer allocates a large derived
 ;; list.  This is deliberately separate from `count-datum!`: callers use it
@@ -49,8 +59,10 @@
 
 ;; Validate a known output atom during a source-structure preflight without
 ;; counting another node. Serializers use this after reserving their exact
-;; output shape, so an oversized string, symbol, or byte string is rejected
-;; before they allocate a derived datum or write canonical bytes.
+;; output shape, so an oversized atom or a collection of individually valid
+;; atoms is rejected before they allocate a derived datum or write canonical
+;; bytes. Each invocation counts one serialized occurrence, even when callers
+;; reuse the same immutable source value in several output positions.
 (define (typography-serialization-budget-check-atom! budget value)
   (unless (typography-serialization-budget? budget)
     (raise-argument-error 'typography-serialization-budget-check-atom!
@@ -61,7 +73,18 @@
      (typography-serialization-budget-who budget)
      "a serialized typography atom within the configured byte budget"
      "maximum atom bytes" (typography-serialization-budget-maximum-atom-bytes budget)
-     "atom bytes" byte-count)))
+     "atom bytes" byte-count))
+  (define next-total
+    (+ (typography-serialization-budget-total-atom-bytes budget) byte-count))
+  (when (> next-total
+           (typography-serialization-budget-maximum-total-atom-bytes budget))
+    (raise-arguments-error
+     (typography-serialization-budget-who budget)
+     "serialized typography atoms within the configured cumulative byte budget"
+     "maximum total atom bytes"
+     (typography-serialization-budget-maximum-total-atom-bytes budget)
+     "serialized atom bytes" next-total))
+  (set-typography-serialization-budget-total-atom-bytes! budget next-total))
 
 (define (typography-serialization-budget-count-datum! budget datum)
   (unless (typography-serialization-budget? budget)

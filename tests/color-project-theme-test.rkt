@@ -8,7 +8,8 @@
          "../authoring.rkt"
          "../colors.rkt"
          "../main.rkt"
-         "../project.rkt")
+         "../project.rkt"
+         "../private/render-color-context.rkt")
 
 (module+ test
   (define palette
@@ -33,6 +34,8 @@
   (check-equal? (hash-ref recorded-theme 'datum) (theme->datum theme))
   (check-equal? (hash-ref recorded-theme 'appearance-fingerprint)
                 (color-theme-fingerprint theme))
+  (check-equal? (hash-ref recorded-theme 'resolver-version)
+                render-color-resolver-version)
   ;; The prepared inspection datum retains the plan's full snapshot rather
   ;; than relying on the locally installed palette catalog.
   (check-equal?
