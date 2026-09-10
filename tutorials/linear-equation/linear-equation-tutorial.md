@@ -45,10 +45,13 @@ Narration:
 > Let's solve the equation \(3x+5=17\).
 
 Keep this scene very short.
+Keep the equation on screen when the next scene begins.
 
 ## Scene 2 — What “solve” means
 
-Show the equation again and emphasize \(x\).
+Move the equation from Scene 1 upward, then emphasize \(x\). This keeps the
+viewer oriented: it is the same equation, now placed to make room for the
+explanation below.
 
 Explain:
 

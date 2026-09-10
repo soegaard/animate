@@ -210,7 +210,10 @@
                    #:center (vec2 0 2)))
      (define eq
        (equation 'problem-equation origin
-                 (frag 'three-x "3x")
+                 ;; Keep x addressable so the next scene can emphasize it
+                 ;; without replacing the equation.
+                 (frag 'three "3")
+                 (frag 'x "x")
                  (frag 'plus-five "+5")
                  (frag 'equals "=")
                  (frag 'rhs-17 "17")))
@@ -219,9 +222,9 @@
      (define with-equation
        (scene-play with-title (fade-in eq) #:duration 3/5))
      (define held (scene-wait with-equation 6/5))
-     ;; Hard cut between tutorial scenes; the named section ends just before
-     ;; the next scene adds its own content.
-     (scene-remove held 'problem-title 'problem-equation))))
+     ;; The title belongs only to this opening scene. Keep the equation so
+     ;; Scene 2 can move the same authored formula into its teaching position.
+     (scene-remove held 'problem-title))))
 
 ;; ============================================================================
 ;; Scene 2 — What "solve" means
@@ -231,13 +234,6 @@
   (scene
    'meaning
    (lambda (scn)
-     (define eq
-       (equation 'meaning-equation (vec2 0 4/5)
-                 (frag 'three "3")
-                 (frag 'x "x")
-                 (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
      (define goal
        (body-text
         "Find all numbers that make the equation true when inserted for x."
@@ -248,10 +244,17 @@
        (label-text "Method: isolate x."
                    #:id 'meaning-method
                    #:center (vec2 0 -8/5)))
-     (define shown (scene-play scn (fade-in eq) #:duration 2/5))
+     ;; Continue directly from Scene 1 instead of fading in a replacement
+     ;; equation at a different position.
+     (define shown
+       (scene-play scn
+                   (move-to 'problem-equation (vec2 0 4/5))
+                   #:duration 2/5))
      (define x-emphasized
        (scene-play shown
-                   (indicate '(meaning-equation x))
+                   ;; A pulse keeps the equation readable, unlike an outline
+                   ;; around a single glyph.
+                   (pulse '(problem-equation x) #:scale-factor 6/5)
                    #:duration 4/5))
      (define goal-shown
        (scene-play x-emphasized (fade-in goal) #:duration 2/5))
@@ -259,7 +262,7 @@
      (define method-shown
        (scene-play goal-held (fade-in method) #:duration 2/5))
      (define held (scene-wait method-shown 6/5))
-     (scene-remove held 'meaning-equation 'meaning-goal 'meaning-method))))
+     (scene-remove held 'problem-equation 'meaning-goal 'meaning-method))))
 
 ;; ============================================================================
 ;; Scene 3 — Subtract 5 from both sides
