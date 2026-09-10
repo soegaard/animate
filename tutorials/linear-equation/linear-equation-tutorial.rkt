@@ -217,11 +217,10 @@
                  (frag 'plus-five "+5")
                  (frag 'equals "=")
                  (frag 'rhs-17 "17")))
-     (define with-title
-       (scene-play scn (fade-in title) #:duration 2/5))
-     (define with-equation
-       (scene-play with-title (fade-in eq) #:duration 3/5))
-     (define held (scene-wait with-equation 6/5))
+
+     (define with-title    (scene-play scn        (fade-in title) #:duration 2/5))
+     (define with-equation (scene-play with-title (fade-in eq)    #:duration 3/5))
+     (define held          (scene-wait with-equation                         6/5))
      ;; The title belongs only to this opening scene. Keep the equation so
      ;; Scene 2 can move the same authored formula into its teaching position.
      (scene-remove held 'problem-title))))
@@ -246,22 +245,18 @@
                    #:center (vec2 0 -8/5)))
      ;; Continue directly from Scene 1 instead of fading in a replacement
      ;; equation at a different position.
-     (define shown
-       (scene-play scn
-                   (move-to 'problem-equation (vec2 0 4/5))
-                   #:duration 2/5))
-     (define x-emphasized
-       (scene-play shown
-                   ;; A pulse keeps the equation readable, unlike an outline
-                   ;; around a single glyph.
-                   (pulse '(problem-equation x) #:scale-factor 6/5)
-                   #:duration 4/5))
-     (define goal-shown
-       (scene-play x-emphasized (fade-in goal) #:duration 2/5))
-     (define goal-held (scene-wait goal-shown 6/5))
-     (define method-shown
-       (scene-play goal-held (fade-in method) #:duration 2/5))
-     (define held (scene-wait method-shown 6/5))
+     (define shown        (scene-play scn
+                                      (move-to 'problem-equation (vec2 0 4/5))
+                                      #:duration 2/5))
+     (define x-emphasized (scene-play shown
+                                      ;; A pulse keeps the equation readable, unlike an outline
+                                      ;; around a single glyph.
+                                      (pulse '(problem-equation x) #:scale-factor 6/5)
+                                      #:duration 4/5))
+     (define goal-shown   (scene-play x-emphasized (fade-in goal)   #:duration 2/5))
+     (define goal-held    (scene-wait goal-shown                               6/5))
+     (define method-shown (scene-play goal-held    (fade-in method) #:duration 2/5))
+     (define held         (scene-wait method-shown                             6/5))
      (scene-remove held 'problem-equation 'meaning-goal 'meaning-method))))
 
 ;; ============================================================================
@@ -343,12 +338,10 @@
         (formula-ref final-aligned 'rhs-12)))
 
      ;; 1. Copy the equation.
-     (define reference-shown
-       (scene-play scn (fade-in reference) #:duration 2/5))
-     (define before-copy (scene-wait reference-shown 1/4))
-     (define copied
-       (copy-equation before-copy reference work #:duration 3/4))
-     (define before-room (scene-wait copied 1/4))
+     (define reference-shown (scene-play scn (fade-in reference) #:duration 2/5))
+     (define before-copy     (scene-wait reference-shown 1/4))
+     (define copied          (copy-equation before-copy reference work #:duration 3/4))
+     (define before-room     (scene-wait copied 1/4))
 
      ;; 2. Make room for -5 on the lhs while = is fixed.
      (define room-made
@@ -512,39 +505,39 @@
      ;; Split 3 and x here because x itself is the part being substituted.
      (define reference
        (equation 'check-reference upper-line
-                 (frag 'three "3")
-                 (frag 'x "x")
+                 (frag 'three     "3")
+                 (frag 'x         "x")
                  (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'equals    "=")
+                 (frag 'rhs-17    "17")))
      (define work
        (equation 'check-work working-line
-                 (frag 'three "3")
-                 (frag 'x "x")
+                 (frag 'three     "3")
+                 (frag 'x         "x")
                  (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'equals    "=")
+                 (frag 'rhs-17    "17")))
      (define fixed-equals (formula-part-position work 'equals))
 
      (define substituted-layout
        (equation 'check-work working-line
-                 (frag 'three "3")
-                 (frag 'left-paren "(")
-                 (frag 'value-4 "4")
+                 (frag 'three       "3")
+                 (frag 'left-paren  "(")
+                 (frag 'value-4     "4")
                  (frag 'right-paren ")")
-                 (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'plus-five   "+5")
+                 (frag 'equals      "=")
+                 (frag 'rhs-17      "17")))
      (define substituted
        (formula-with-anchor-at substituted-layout 'equals fixed-equals))
 
      ;; Build 12+5=17 while preserving +5, =, and the rhs exactly.
      (define multiplied-layout
        (equation 'check-work working-line
-                 (frag 'lhs-12 "12")
+                 (frag 'lhs-12    "12")
                  (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'equals    "=")
+                 (frag 'rhs-17    "17")))
      (define multiplied-aligned
        (formula-with-anchor-at multiplied-layout 'equals fixed-equals))
      (define multiplied
