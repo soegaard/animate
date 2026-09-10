@@ -5,8 +5,9 @@
 
 (require racket/async-channel
          racket/class
+         racket/runtime-path
          rackunit
-         (only-in pict filled-rectangle pict->bitmap pict-height pict-width)
+         (only-in pict filled-rectangle pict->bitmap pict-ascent pict-height pict-width)
          "../authoring.rkt"
          "../colors.rkt"
          "../main.rkt"
@@ -18,9 +19,17 @@
          "../private/section-renderer.rkt"
          "../private/text-reveal-visual.rkt")
 
+(define-runtime-path semantic-section-key-fixture
+  "fixtures/semantic-typography-section-key.rkt")
+
 (module+ test
   (define camera
     (make-camera #:width 320 #:height 180 #:world-width 8 #:background "white"))
+  (define (bitmap-bytes bitmap)
+    (define bytes (make-bytes (* 4 (send bitmap get-width) (send bitmap get-height))))
+    (send bitmap get-argb-pixels 0 0
+          (send bitmap get-width) (send bitmap get-height) bytes)
+    bytes)
   (define enlarged-theme
     (typography-theme
      #:id 'enlarged
@@ -76,9 +85,20 @@
                  #:horizontal-alignment 'left #:vertical-alignment 'top)
      #:font-face #f))
    #f)
-  ;; Appearance identity is independent of ambient printer preferences.
+  ;; Appearance identity is independent of ambient printer preferences. Build
+  ;; a fresh equivalent theme under each setting, so this tests the canonical
+  ;; writer rather than merely querying a stored fingerprint.
+  (define (fresh-printer-theme)
+    (typography-theme
+     #:id 'printer-probe
+     #:extends animate-typography-theme
+     #:styles
+     (hash 'title
+           (text-style-update
+            (typography-ref animate-typography-theme 'title)
+            #:font-size 7/5))))
   (define default-fingerprint
-    (typography-theme-fingerprint animate-typography-theme))
+    (typography-theme-fingerprint (fresh-printer-theme)))
   (for ([settings (in-list (list (list #t #t #t #t)
                                  (list #f #t #f #t)
                                  (list #t #f #t #f)))])
@@ -86,8 +106,66 @@
                    [print-graph (list-ref settings 1)]
                    [print-reader-abbreviations (list-ref settings 2)]
                    [print-boolean-long-form (list-ref settings 3)])
-      (check-equal? (typography-theme-fingerprint animate-typography-theme)
+      (check-equal? (typography-theme-fingerprint (fresh-printer-theme))
                     default-fingerprint)))
+  ;; Typography values are immutable appearance snapshots all the way down to
+  ;; caller-supplied literal strings inside colors, treatment borders, and
+  ;; paint stops. Mutating those original strings cannot invalidate a retained
+  ;; fingerprint or silently change an existing rendered Scene.
+  (define mutable-text-color (string-copy "#ff0000"))
+  (define mutable-border-color (string-copy "#0000ff"))
+  (define mutable-stop-color (string-copy "#00ff00"))
+  (define mutable-theme
+    (typography-theme
+     #:id 'mutable-input-probe
+     #:extends animate-typography-theme
+     #:styles
+     (hash 'title
+           (text-style-update
+            (typography-ref animate-typography-theme 'title)
+            #:color mutable-text-color
+            #:treatment
+            (text-treatment
+             #:background
+             (linear-gradient (vec2 -1 1) (vec2 1 -1)
+                              (list (paint-stop 0 mutable-stop-color)
+                                    (paint-stop 1 "#000000")))
+             #:border-color mutable-border-color
+             #:border-width 1)))))
+  (define mutable-probe (title-text "Snapshot" #:id 'mutable-probe))
+  (define mutable-fingerprint (typography-theme-fingerprint mutable-theme))
+  (define mutable-datum (typography-theme->datum mutable-theme))
+  (define mutable-bitmap
+    (bitmap-bytes
+     (pict->bitmap (visual->pict mutable-probe camera #:typography mutable-theme))))
+  (for ([mutation (in-list (list (cons mutable-text-color "#00ff00")
+                                  (cons mutable-border-color "#ff0000")
+                                  (cons mutable-stop-color "#0000ff")))])
+    (for ([index (in-range (string-length (car mutation)))])
+      (string-set! (car mutation) index (string-ref (cdr mutation) index))))
+  (check-equal? (typography-theme-fingerprint mutable-theme) mutable-fingerprint)
+  (check-equal? (typography-theme->datum mutable-theme) mutable-datum)
+  (check-equal?
+   (bitmap-bytes
+    (pict->bitmap (visual->pict mutable-probe camera #:typography mutable-theme)))
+   mutable-bitmap)
+  (define mutable-face (string-copy "Helvetica"))
+  (define mutable-override-color (string-copy "#ff0000"))
+  (define semantic-mutable-probe
+    (body-text "Snapshot" #:id 'semantic-mutable-probe
+               #:font-face mutable-face #:color mutable-override-color
+               #:background (checker-pattern mutable-override-color "#0000ff")))
+  (define semantic-before
+    (semantic-text->text-visual semantic-mutable-probe))
+  (string-set! mutable-face 0 #\X)
+  (for ([index (in-range (string-length mutable-override-color))])
+    (string-set! mutable-override-color index (string-ref "#00ff00" index)))
+  (define semantic-after
+    (semantic-text->text-visual semantic-mutable-probe))
+  (check-equal? (text-visual-font-face semantic-after) "Helvetica")
+  (check-equal? (text-visual-color semantic-after)
+                (color-spec->rgba-color "#ff0000"))
+  (check-equal? semantic-after semantic-before)
   ;; Typography transport rejects malformed wrappers before traversing style
   ;; data, rejects duplicate keys, and keeps nested treatment errors in the
   ;; typography decoder rather than exposing incidental list/number failures.
@@ -146,6 +224,29 @@
                              ,(color-spec->datum "black")
                              1 left left top
                              (text-treatment #f #f bad-width 0 0)))))
+  ;; A huge authored gradient is rejected before theme fingerprinting or
+  ;; transport expands every stop into a portable color datum.
+  (check-exn
+   (lambda (error)
+     (and (exn:fail? error)
+          (regexp-match? #rx"typography-theme" (exn-message error))))
+   (lambda ()
+     (typography-theme
+      #:id 'oversized-gradient-serialization
+      #:extends animate-typography-theme
+      #:styles
+      (hash
+       'body
+       (text-style-update
+        (typography-ref animate-typography-theme 'body)
+        #:treatment
+        (text-treatment
+         #:background
+         (linear-gradient
+          (vec2 0 0) (vec2 1 1)
+          (build-list 5000
+                      (lambda (index)
+                        (paint-stop (/ index 4999) "black"))))))))))
 
   ;; The authored object stores the role and override, not a font/color chosen
   ;; from the currently active rendering context.
@@ -192,11 +293,6 @@
   ;; rendered pixels follow the selected light or dark color snapshot.
   (define themed-heading-scene
     (scene-wait (scene-add (make-scene) heading) 1))
-  (define (bitmap-bytes bitmap)
-    (define bytes (make-bytes (* 4 (send bitmap get-width) (send bitmap get-height))))
-    (send bitmap get-argb-pixels 0 0
-          (send bitmap get-width) (send bitmap get-height) bytes)
-    bytes)
   (check-not-equal?
    (bitmap-bytes
     (scene-frame->bitmap themed-heading-scene 0 #:fps 1 #:camera camera
@@ -340,8 +436,20 @@
     (red-box-dimensions center-baseline-pict))
   (check-true (< left-top-red-width (pict-width left-top-pict)))
   (check-true (< left-top-red-height (pict-height left-top-pict)))
-  (check-= center-red-width (pict-width center-pict) 1e-9)
-  (check-= center-red-height (pict-height center-pict) 1e-9)
+  ;; Raster rows are device-rounded and can be anti-aliased. Establish the
+  ;; center treatment geometry from logical Pict dimensions and use painted
+  ;; pixels only as a tolerant smoke test.
+  (define center-plain-pict
+    (visual->pict
+     (body-text "T" #:id 'center-plain
+                #:horizontal-alignment 'center #:vertical-alignment 'center)
+     camera))
+  (check-= (pict-width center-pict) (pict-width center-plain-pict) 1e-9)
+  (check-= (pict-height center-pict) (pict-height center-plain-pict) 1e-9)
+  (check-true (and (positive? center-red-width)
+                   (positive? center-red-height)
+                   (<= center-red-width (ceiling (pict-width center-pict)))
+                   (<= center-red-height (ceiling (pict-height center-pict)))))
   (check-true (< baseline-red-width (pict-width baseline-pict)))
   (check-true (< baseline-red-height (pict-height baseline-pict)))
   (check-true (< right-bottom-red-width (pict-width right-bottom-pict)))
@@ -349,6 +457,26 @@
   (check-= center-baseline-red-width (pict-width center-baseline-pict) 1e-9)
   (check-true (< center-baseline-red-height
                  (pict-height center-baseline-pict)))
+
+  ;; A decoration must retain padded text metrics.  The semantic baseline
+  ;; anchor therefore still follows the actual glyph baseline, rather than the
+  ;; default bottom baseline of a `dc` decoration.
+  (define baseline-content
+    (visual->pict
+     (body-text "Ag" #:id 'baseline-content
+                #:horizontal-alignment 'center #:vertical-alignment 'baseline)
+     camera))
+  (define baseline-treated
+    (visual->pict
+     (body-text "Ag" #:id 'baseline-treated
+                #:horizontal-alignment 'center #:vertical-alignment 'baseline
+                #:treatment (text-treatment #:background "ivory"
+                                             #:border-color "black" #:border-width 1
+                                             #:padding-x 1/4 #:padding-y 1/4))
+     camera))
+  (check-= (/ (pict-ascent baseline-treated) (pict-height baseline-treated))
+            (/ (pict-ascent baseline-content) (pict-height baseline-content))
+            1e-9)
 
   ;; A zero-width border is no border even when a color is supplied.
   (define zero-border
@@ -367,6 +495,58 @@
   (check-not-equal?
    (bitmap-bytes (pict->bitmap (visual->pict positive-border camera)))
    (bitmap-bytes (pict->bitmap (visual->pict no-border camera))))
+  ;; Treatment paints use the text anchor as a normal y-up local origin. An
+  ;; asymmetric vertical gradient must therefore be red above the anchor and
+  ;; blue below it, rather than following Pict's y-down box coordinates.
+  (define gradient-treatment-pict
+    (visual->pict
+     (body-text "" #:id 'gradient-treatment
+                #:horizontal-alignment 'center #:vertical-alignment 'center
+                #:treatment
+                (text-treatment
+                 #:background
+                 (linear-gradient (vec2 0 1) (vec2 0 -1)
+                                  (list (paint-stop 0 "red")
+                                        (paint-stop 1 "blue")))
+                 #:padding-x 1 #:padding-y 1))
+     camera))
+  (define gradient-bitmap (pict->bitmap gradient-treatment-pict))
+  (define gradient-width (send gradient-bitmap get-width))
+  (define gradient-height (send gradient-bitmap get-height))
+  (define gradient-pixels (bitmap-bytes gradient-bitmap))
+  (define (gradient-rgb y)
+    (define offset (* 4 (+ (quotient gradient-width 2)
+                           (* y gradient-width))))
+    (values (bytes-ref gradient-pixels (add1 offset))
+            (bytes-ref gradient-pixels (+ offset 2))
+            (bytes-ref gradient-pixels (+ offset 3))))
+  (define-values (top-red _top-green top-blue) (gradient-rgb 2))
+  (define-values (bottom-red _bottom-green bottom-blue)
+    (gradient-rgb (- gradient-height 3)))
+  (check-true (> top-red top-blue))
+  (check-true (> bottom-blue bottom-red))
+  ;; A treatment border is cosmetic: the surrounding box grows under semantic
+  ;; scale, but the sampled device-row pen thickness remains unchanged.
+  (define (red-border-thickness scale)
+    (define border-pict
+      (visual->pict
+       (body-text "" #:id (if (= scale 1) 'border-scale-1 'border-scale-2)
+                  #:scale scale
+                  #:treatment (text-treatment #:border-color "red"
+                                               #:border-width 3
+                                               #:padding-x 1 #:padding-y 1))
+       camera))
+    (define border-bitmap (pict->bitmap border-pict))
+    (define width (send border-bitmap get-width))
+    (define pixels (bitmap-bytes border-bitmap))
+    (define (red-row? y)
+      (define offset (* 4 (+ (quotient width 2) (* y width))))
+      (and (> (bytes-ref pixels (add1 offset)) 150)
+           (< (bytes-ref pixels (+ offset 2)) 100)
+           (< (bytes-ref pixels (+ offset 3)) 100)))
+    (let loop ([row 0])
+      (if (red-row? row) (add1 (loop (add1 row))) 0)))
+  (check-= (red-border-thickness 1) (red-border-thickness 2) 1)
   ;; The same content-first treatment path accepts wrapped, rich, and empty
   ;; semantic text without adding a second layout engine or an empty-text
   ;; special case to callers.
@@ -418,7 +598,8 @@
      (resolve-semantic-text-style
       (code-text "x" #:id 'padding-y-override #:padding-y 2/5)
       animate-typography-theme)))
-  (check-equal? (text-treatment-border-color border-color-value) "blue")
+  (check-equal? (text-treatment-border-color border-color-value)
+                (color-spec->rgba-color "blue"))
   (check-equal? (text-treatment-padding-x border-color-value)
                 (text-treatment-padding-x inherited-code-treatment))
   (check-equal? (text-treatment-border-width border-width-value) 3)
@@ -532,19 +713,14 @@
   (check-not-equal? (section-key animate-typography-theme)
                     (section-key enlarged-theme))
   ;; Inherited semantic fields have a stable prefab marker instead of a
-  ;; process-local gensym, so rebuilt equivalent timelines keep their automatic
-  ;; persistent-cache identity.
-  (define (rebuilt-semantic-section-key)
-    (define rebuilt-heading (title-text "A semantic title" #:id 'heading))
-    (define rebuilt-timeline
-      (make-authored-timeline
-       (scene-wait (scene-add (make-scene) rebuilt-heading) 1)
-       #:sections (list (section 'only 0 1))))
-    (automatic-section-cache-key
-     rebuilt-timeline (timeline-section rebuilt-timeline 'only)
-     #:fps 1 #:camera #f #:renderers '() #:asset-files '()))
-  (check-equal? (rebuilt-semantic-section-key)
-                (rebuilt-semantic-section-key))
+  ;; process-local gensym. Instantiate the equivalent fixture in two fresh
+  ;; namespaces: two calls inside one module would not reproduce the old
+  ;; module-instantiation bug.
+  (define (fresh-semantic-section-key)
+    (parameterize ([current-namespace (make-base-namespace)])
+      ((dynamic-require semantic-section-key-fixture 'semantic-section-key))))
+  (check-equal? (fresh-semantic-section-key)
+                (fresh-semantic-section-key))
   (define preview-document
     (make-preview-document (scene-wait (scene-add (make-scene) heading) 1)))
   (define preview-sample (frame-sample 0 1))
@@ -555,6 +731,13 @@
    (make-preview-frame-key preview-document 0 preview-sample
                            (make-preview-render-spec #:fps 1
                                                      #:typography enlarged-theme)))
+  (check-equal?
+   (make-preview-frame-key preview-document 0 preview-sample
+                           (make-preview-render-spec #:fps 1
+                                                     #:typography enlarged-theme))
+   (make-preview-frame-key preview-document 0 preview-sample
+                           (make-preview-render-spec #:fps 1
+                                                     #:typography enlarged-metadata-theme)))
   (define preview-session
     (open-preview-controller
      (scene-wait (scene-add (make-scene) heading) 1)
@@ -584,6 +767,48 @@
      (check-equal? (preview-status-render-generation metadata-after)
                    (preview-status-render-generation after)))
    (lambda () (preview-close! preview-session)))
+
+  ;; An equal-appearance switch while the initial frame is in flight keeps the
+  ;; same frame key. It must neither start a replacement producer nor discard
+  ;; the completed frame merely because its selected typography metadata
+  ;; changed.
+  (define equal-starts (make-async-channel))
+  (define equal-releases (make-async-channel))
+  (define equal-events (make-async-channel))
+  (define equal-appearance-session
+    (open-preview-controller
+     (scene-wait (scene-add (make-scene) heading) 1)
+     #:typography enlarged-theme #:prefetch 0 #:render-workers 1
+     #:producer
+     (lambda (_document _sample spec _token)
+       (async-channel-put equal-starts
+                          (typography-theme-id (preview-render-spec-typography spec)))
+       (async-channel-get equal-releases)
+       'equal-appearance-frame)
+     #:byte-size (lambda (_value) 1)
+     #:on-event (lambda (event) (async-channel-put equal-events event))))
+  (dynamic-wind
+   void
+   (lambda ()
+     (check-eq? (or (sync/timeout 2 equal-starts)
+                    (error 'semantic-typography-test "timed out waiting for preview work"))
+                'enlarged)
+     (void (preview-set-typography-theme! equal-appearance-session
+                                           enlarged-metadata-theme))
+     (check-false (sync/timeout 1/10 equal-starts))
+     (async-channel-put equal-releases 'render)
+     (define equal-frame-event
+       (let wait ()
+         (define event
+           (or (sync/timeout 2 equal-events)
+               (error 'semantic-typography-test "timed out waiting for equal-appearance frame")))
+         (if (eq? (preview-event-kind event) 'frame-ready) event (wait))))
+     (check-eq? (preview-event-bitmap equal-frame-event) 'equal-appearance-frame)
+     (check-eq? (preview-current-bitmap equal-appearance-session)
+                'equal-appearance-frame))
+   (lambda ()
+     (async-channel-put equal-releases 'close)
+     (preview-close! equal-appearance-session)))
 
   ;; A producer is allowed to finish only at its own coarse cancellation
   ;; boundary.  Deliberately let the initial producer ignore cancellation,
@@ -683,6 +908,46 @@
             1e-9)
   (check-not-false (scene-frame->bitmap typed-scene 1 #:fps 3))
   (check-not-false (scene-frame->bitmap typed-scene 8 #:fps 3))
+  ;; The semantic reveal path prepares an unanchored content Pict. Its
+  ;; left-aligned code role used to clamp every intermediate cluster to zero
+  ;; width; each interior sample must now add real glyph ink while preserving
+  ;; the complete treatment box.
+  (for ([alignment (in-list '(left center right))])
+    (define id (string->symbol (format "typed-~a" alignment)))
+    (define aligned-code
+      (code-text "abc" #:id id #:horizontal-alignment alignment))
+    (define aligned-scene
+      (scene-play (make-scene) (typewrite aligned-code #:unit 'grapheme)
+                  #:duration 3))
+    (define start-pict
+      (visual->pict (scene-visual-at aligned-scene id 0) camera))
+    (define first-pict
+      (visual->pict (scene-visual-at aligned-scene id 1) camera))
+    (define second-pict
+      (visual->pict (scene-visual-at aligned-scene id 2) camera))
+    (define final-pict
+      (visual->pict (scene-visual-at aligned-scene id 3) camera))
+    (check-= (pict-width start-pict) (pict-width final-pict) 1e-9)
+    (check-= (pict-height start-pict) (pict-height final-pict) 1e-9)
+    (check-not-equal? (bitmap-bytes (pict->bitmap start-pict))
+                      (bitmap-bytes (pict->bitmap first-pict)))
+    (check-not-equal? (bitmap-bytes (pict->bitmap first-pict))
+                      (bitmap-bytes (pict->bitmap second-pict)))
+    (check-equal? (bitmap-bytes (pict->bitmap final-pict))
+                  (bitmap-bytes (pict->bitmap (visual->pict aligned-code camera)))))
+  (define cursor-code (code-text "abc" #:id 'typed-code-cursor))
+  (define cursor-scene
+    (scene-play (make-scene) (typewrite cursor-code #:unit 'grapheme
+                                          #:cursor? #t #:cursor-style "tomato")
+                #:duration 3))
+  (define cursor-first
+    (visual->pict (scene-visual-at cursor-scene 'typed-code-cursor 1) camera))
+  (define cursor-second
+    (visual->pict (scene-visual-at cursor-scene 'typed-code-cursor 2) camera))
+  (check-= (pict-width cursor-first) (pict-width cursor-second) 1e-9)
+  (check-= (pict-height cursor-first) (pict-height cursor-second) 1e-9)
+  (check-not-equal? (bitmap-bytes (pict->bitmap cursor-first))
+                    (bitmap-bytes (pict->bitmap cursor-second)))
 
   ;; Erasure follows the same semantic-source rule in reverse: its exact
   ;; initial sample is the authored role value, its interior is temporary, and

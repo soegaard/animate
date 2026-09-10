@@ -259,10 +259,30 @@
                    background border-color border-width padding-x padding-y)
   (semantic-text-visual
    id (make-affine-transform #:translation center #:rotation rotation #:scale scale) opacity style-key
-   (string->immutable-string content) spans
-   (semantic-text-overrides-value font-face font-family font-size font-style font-weight color
+   (string->immutable-string content) (for/list ([span (in-list spans)])
+                                      (text-span (text-span-content span)
+                                                 #:font-size (text-span-font-size span)
+                                                 #:font-face (text-span-font-face span)
+                                                 #:font-family (text-span-font-family span)
+                                                 #:font-style (text-span-font-style span)
+                                                 #:font-weight (text-span-font-weight span)
+                                                 #:color (text-span-color span)))
+   (semantic-text-overrides-value
+    (if (and (not (semantic-text-override-inherited? font-face)) font-face)
+        (string->immutable-string font-face)
+        font-face)
+    font-family font-size font-style font-weight
+    (if (semantic-text-override-inherited? color)
+        color
+        (normalize-color-spec color who))
                                   line-spacing line-alignment horizontal-alignment vertical-alignment treatment
-                                  background border-color border-width padding-x padding-y)
+                                  (if (semantic-text-override-inherited? background)
+                                      background
+                                      (and background (normalize-paint background who)))
+                                  (if (semantic-text-override-inherited? border-color)
+                                      border-color
+                                      (and border-color (normalize-color-spec border-color who)))
+                                  border-width padding-x padding-y)
    width))
 
 (define (check-overrides who font-face font-family font-size font-style font-weight color

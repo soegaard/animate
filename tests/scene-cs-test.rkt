@@ -67,7 +67,7 @@
                 "The unknown is highlighted.")
   (check-equal? (length (text-visual-spans rich)) 5)
   (check-equal? (text-span-color (list-ref (text-visual-spans rich) 1))
-                "royalblue")
+                (color-spec->rgba-color "royalblue"))
   (check-equal? (text-span-font-weight (list-ref (text-visual-spans rich) 1))
                 'bold)
   (check-equal? (text-span-font-style (list-ref (text-visual-spans rich) 3))

@@ -193,11 +193,16 @@
     (if unanchored?
         (text-pict-renderer-unanchored-content-pict renderer visual camera)
         (text-visual->pict visual camera (text-pict-renderer-raster-cache renderer))))
+  ;; Prepared clusters can describe either the historical already-anchored
+  ;; Pict or the semantic renderer's unanchored content Pict. Keep that
+  ;; coordinate space explicit instead of re-deriving it from alignment.
+  (define coordinate-space (if unanchored? 'content 'anchored))
   (define stable-fragments?
     (pict-stable-fragment-layout? visual))
   (define clusters
     (if stable-fragments?
-        (pict-prepared-grapheme-clusters visual camera full-pict graphemes)
+        (pict-prepared-grapheme-clusters visual camera full-pict graphemes
+                                        coordinate-space)
         (list->vector
          (for/list ([segment (in-list (text-segmentation-segments graphemes))])
            ;; The Pict adapter freezes whole shaped layouts, but its public
@@ -233,6 +238,7 @@
    (vector 'pict (camera-scale camera))
    (hash 'stable-layout? #t
          'stable-fragments? stable-fragments?
+         'coordinate-space coordinate-space
          'anchor-offset (vector anchor-x anchor-y)
          'initial-cursor-box initial-cursor-box
          'capabilities
@@ -292,7 +298,12 @@
          ;; or jitter between graphemes.
          (cc-superimpose
           (text-treatment-decoration-pict content treatment
-                                           (text-visual-font-size source) camera)
+                                           (text-visual-font-size source) camera
+                                           #:horizontal-alignment
+                                           (text-visual-horizontal-alignment source)
+                                           #:vertical-alignment
+                                           (text-visual-vertical-alignment source)
+                                           #:include-border? #f)
           (text-treatment-content-pict revealed-content treatment
                                        (text-visual-font-size source) camera))]
         [else revealed-content]))
@@ -303,9 +314,20 @@
                        (text-visual-vertical-alignment source))
           local-content))
     (if semantic-source?
-        (rotate-pict-if-needed
-         (scale-pict-if-needed anchored-content (visual-scale authored-source))
-         (visual-rotation authored-source))
+        (let* ([scaled-content
+                (scale-pict-if-needed anchored-content (visual-scale authored-source))]
+               [cosmetic-border
+                (and treatment
+                     (text-treatment-cosmetic-border-pict
+                      scaled-content local-content treatment
+                      (visual-scale authored-source)
+                      (text-visual-horizontal-alignment source)
+                      (text-visual-vertical-alignment source)))])
+          (rotate-pict-if-needed
+           (or (and cosmetic-border
+                    (cc-superimpose scaled-content cosmetic-border))
+               scaled-content)
+           (visual-rotation authored-source)))
         anchored-content))
   (define complete (present-content content))
   (define requested-count
@@ -468,9 +490,11 @@
        ;; them from the same draw run.
        (not (regexp-match? #px"ffi|ffl|fi|fl|AV|To|Wa|Yo" content))))
 
-(define (pict-prepared-grapheme-clusters visual camera full-pict graphemes)
+(define (pict-prepared-grapheme-clusters visual camera full-pict graphemes
+                                         coordinate-space)
   (if (text-direct-single-run? visual)
-      (pict-prepared-direct-grapheme-clusters visual camera full-pict graphemes)
+      (pict-prepared-direct-grapheme-clusters visual camera full-pict graphemes
+                                              coordinate-space)
       (pict-prepared-paragraph-grapheme-clusters visual camera full-pict graphemes)))
 
 (define (text-direct-single-run? visual)
@@ -479,16 +503,25 @@
        (not (text-string-has-line-break?
              (text-span-content (car (text-visual-spans visual)))))))
 
-(define (pict-prepared-direct-grapheme-clusters visual camera full-pict graphemes)
+(define (pict-prepared-direct-grapheme-clusters visual camera full-pict graphemes
+                                                coordinate-space)
   (define span (car (text-visual-spans visual)))
   (define content (text-visual-content visual))
   (define content-pict
     (text-span-content->pict visual span content camera))
   (define content-width (pict-width content-pict))
   (define text-start-x
-    (case (text-visual-horizontal-alignment visual)
-      [(left) content-width]
-      [(center right) 0]))
+    (case coordinate-space
+      [(content) 0]
+      [(anchored)
+       (case (text-visual-horizontal-alignment visual)
+         [(left) content-width]
+         [(center right) 0])]
+      [else
+       (raise-arguments-error
+        'pict-prepared-direct-grapheme-clusters
+        "a known prepared text coordinate space"
+        "coordinate space" coordinate-space)]))
   (define maximum-x (pict-width full-pict))
   (define segments (text-segmentation-segments graphemes))
   (define previous-ends

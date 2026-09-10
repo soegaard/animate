@@ -22,6 +22,7 @@
          radial-gradient
          checker-pattern
          paint?
+         normalize-paint
          paint-lerp)
 
 (struct paint-stop (offset color)
@@ -34,7 +35,7 @@
     (unless (color-spec? color)
       (raise-arguments-error who "color must be a supported color specification"
                              "color" color))
-    (values offset color)))
+    (values offset (normalize-color-spec color who))))
 
 (struct linear-gradient-paint (start end stops)
   #:transparent
@@ -70,7 +71,9 @@
     (unless (and (finite-real? cell-size) (positive? cell-size))
       (raise-arguments-error who "cell-size must be a positive finite real"
                              "cell-size" cell-size))
-    (values first second cell-size)))
+    (values (normalize-color-spec first who)
+            (normalize-color-spec second who)
+            cell-size)))
 
 (define (linear-gradient start end stops)
   (linear-gradient-paint start end stops))
@@ -90,6 +93,34 @@
       (linear-gradient-paint? value)
       (radial-gradient-paint? value)
       (checker-pattern-paint? value)))
+
+;; normalize-paint : paint? symbol? -> paint?
+;; Rebuilds structured paint values at a public immutable-data boundary.  In
+;; particular, literal color strings become rgba values and every stop is
+;; reconstructed, so a caller cannot alter an existing Scene/theme appearance
+;; through a retained mutable string.
+(define (normalize-paint value [who 'normalize-paint])
+  (cond
+    [(color-spec? value) (normalize-color-spec value who)]
+    [(linear-gradient-paint? value)
+     (linear-gradient
+      (linear-gradient-paint-start value)
+      (linear-gradient-paint-end value)
+      (for/list ([stop (in-list (linear-gradient-paint-stops value))])
+        (paint-stop (paint-stop-offset stop) (paint-stop-color stop))))]
+    [(radial-gradient-paint? value)
+     (radial-gradient
+      (radial-gradient-paint-center value)
+      (radial-gradient-paint-radius value)
+      (for/list ([stop (in-list (radial-gradient-paint-stops value))])
+        (paint-stop (paint-stop-offset stop) (paint-stop-color stop)))
+      #:focal-center (radial-gradient-paint-focal-center value)
+      #:focal-radius (radial-gradient-paint-focal-radius value))]
+    [(checker-pattern-paint? value)
+     (checker-pattern (checker-pattern-paint-first value)
+                      (checker-pattern-paint-second value)
+                      #:cell-size (checker-pattern-paint-cell-size value))]
+    [else (raise-argument-error who "paint?" value)]))
 
 ;; Interpolate compatible semantic paints. Cross-kind transitions deliberately
 ;; fall back to the caller's existing fade-transform policy rather than invent

@@ -14,8 +14,10 @@
          "camera.rkt"
          "color-theme-data.rkt"
          "color-theme.rkt"
+         "render-color-context.rkt"
          "typography-theme-data.rkt"
          "typography-theme.rkt"
+         "render-typography-context.rkt"
          "frame-renderer.rkt"
          "scene-frame-grid.rkt"
          "geometry.rkt"
@@ -74,9 +76,10 @@
 (struct preview-document (source scene timeline generation label)
   #:transparent)
 
-;; render-spec-id is the complete immutable render-spec value.  We do not hash
-;; arbitrary procedures or renderer objects: a configuration replacement is
-;; instead represented by render-generation.
+;; render-spec-id is the pixel-appearance identity of a render spec.  The
+;; complete render specification remains attached to workers and inspection,
+;; but labels/provenance must not cause an equal-appearance frame to miss the
+;; cache or be rejected while it is in flight.
 (struct preview-frame-key (generation render-generation sample render-spec-id)
   #:transparent)
 
@@ -280,7 +283,34 @@
 
 (define (preview-render-spec-id render-spec)
   (check-preview-render-spec 'preview-render-spec-id render-spec)
-  render-spec)
+  (list
+   'animate-preview-render-appearance-v1
+   (preview-render-spec-fps render-spec)
+   (preview-camera-appearance-id (preview-render-spec-camera render-spec))
+   (for/list ([renderer (in-list (preview-render-spec-renderers render-spec))])
+     ;; A renderer without a declared immutable appearance identity is still
+     ;; safe: retain that renderer value conservatively rather than pretending
+     ;; unrelated custom implementations draw the same pixels.
+     (or (pict-renderer-cache-identity renderer) renderer))
+   (preview-render-spec-pixel-scale render-spec)
+   (preview-render-spec-supersample render-spec)
+   (color-theme-fingerprint (preview-render-spec-theme render-spec))
+   render-color-resolver-version
+   (typography-theme-fingerprint (preview-render-spec-typography render-spec))
+   render-typography-resolver-version
+   (preview-camera3d-overrides-appearance-id
+    (preview-render-spec-camera3d-overrides render-spec))))
+
+(define (preview-camera-appearance-id camera)
+  (cond [(not camera) #f]
+        ;; `camera-cache-identity` is canonical for the portable camera
+        ;; vocabulary. An opaque background has no portable appearance value,
+        ;; so retain the camera conservatively in that unusual case.
+        [else (or (camera-cache-identity camera) camera)]))
+
+(define (preview-camera3d-overrides-appearance-id overrides)
+  (for/list ([view-id (in-list (sort (hash-keys overrides) symbol<?))])
+    (preview-camera3d-override->datum (hash-ref overrides view-id))))
 
 (define (make-preview-frame-key document render-generation sample render-spec)
   (check-preview-document 'make-preview-frame-key document)

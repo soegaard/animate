@@ -891,10 +891,17 @@ independent of typography themes.
          text-treatment?]{
 
 Creates immutable optional presentation treatment for semantic text. Padding is
-in ems of the resolved outer style. A border width is cosmetic device width.
+in ems of the resolved outer style. A border width is cosmetic device width:
+semantic scaling changes the treatment box but not the visible pen thickness.
 The treatment decorates the final text-content box, then that decorated box is
 anchored, so its logical text anchor remains fixed. A border width of zero does
 not draw a border.
+
+A structured background paint uses the same local coordinates as every other
+Paint: the semantic text anchor is the origin, positive @racket[x] points
+right, and positive @racket[y] points up. Thus gradients and checker patterns
+follow text placement, scaling, and rotation rather than starting at the
+treatment box's top-left corner.
 
 The built-in text renderer knows that content box exactly. A custom Pict
 renderer for a semantic text value instead declares its own logical Pict box;

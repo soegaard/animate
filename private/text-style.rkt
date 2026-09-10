@@ -51,7 +51,9 @@
     (unless (and (finite-real? value) (>= value 0))
       (raise-arguments-error 'text-treatment "a nonnegative finite real value"
                              "property" name "value" value)))
-  (text-treatment-value background border-color border-width padding-x padding-y))
+  (text-treatment-value (and background (normalize-paint background 'text-treatment))
+                        (and border-color (normalize-color-spec border-color 'text-treatment))
+                        border-width padding-x padding-y))
 
 (define text-treatment? text-treatment-value?)
 (define text-treatment-background text-treatment-value-background)
@@ -118,7 +120,8 @@
     (raise-argument-error 'text-style "text-vertical-alignment? as #:vertical-alignment" vertical-alignment))
   (unless (or (not treatment) (text-treatment? treatment))
     (raise-argument-error 'text-style "(or/c #f text-treatment?) as #:treatment" treatment))
-  (text-style-value checked-face font-family font-size font-style font-weight color
+  (text-style-value checked-face font-family font-size font-style font-weight
+                    (normalize-color-spec color 'text-style)
                     line-spacing line-alignment horizontal-alignment vertical-alignment treatment))
 
 (define text-style? text-style-value?)

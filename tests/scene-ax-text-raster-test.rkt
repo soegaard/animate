@@ -135,8 +135,9 @@
          test-camera)
         local-raster))
 
-  ;; Mutable color strings are snapshotted by value for the cache key, so a
-  ;; caller-side style mutation cannot leave a stale cached text raster behind.
+  ;; Mutable color strings are normalized at construction. A caller-side
+  ;; mutation therefore cannot alter an already-built Visual's appearance or
+  ;; invalidate its immutable raster snapshot behind its cache key.
   (define mutable-color
     ;; `formula-string-copy` is Animate's source-addressed formula-copy constructor.
     ;; Construct the mutable Racket string directly here instead.
@@ -153,8 +154,8 @@
   (string-set! mutable-color 1 #\a)
   (string-set! mutable-color 2 #\v)
   (check-equal? mutable-color "navy")
-  (check-false (eq? (visual->pict mutable-color-label test-camera)
-                    gray-raster))
+  (check-eq? (visual->pict mutable-color-label test-camera)
+             gray-raster)
 
   ;; A dependency-driven text Visual resolves to different world positions while
   ;; retaining exactly the same cacheable local appearance.

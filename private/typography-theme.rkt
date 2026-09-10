@@ -6,6 +6,10 @@
 (require file/sha1
          racket/list
          racket/port
+         "color-expression.rkt"
+         "color-style.rkt"
+         "color-token.rkt"
+         "paint.rkt"
          "text-style.rkt"
          "typography-serialization-budget.rkt")
 
@@ -58,6 +62,14 @@
   (define merged
     (for/fold ([result inherited]) ([entry (in-list normalized-entries)])
       (hash-set result (car entry) (cdr entry))))
+  ;; The portable style limit describes the complete inherited theme, not only
+  ;; one extension delta. Otherwise an in-memory child could be accepted but
+  ;; later fail its own decoder/round-trip limit.
+  (when (> (hash-count merged) maximum-typography-style-count)
+    (raise-arguments-error 'typography-theme
+                           "at most the configured number of complete style definitions"
+                           "maximum" maximum-typography-style-count
+                           "count" (hash-count merged)))
   (unless parent
     (for ([key (in-list typography-standard-style-keys)])
       (unless (hash-has-key? merged key)
@@ -127,6 +139,14 @@
                       (cons (cons key style) reversed) (add1 index))])))
 
 (define (appearance-fingerprint styles)
+  ;; Fingerprinting serializes the same complete style payload as portable
+  ;; transport. Preflight it too, so constructing a theme cannot bypass the
+  ;; serialization bound by putting a giant gradient only in its fingerprint.
+  (typography-serialization-budget-reserve!
+   (make-typography-serialization-budget
+    'typography-theme
+    #:maximum-nodes maximum-typography-serialization-nodes)
+   (+ 4 (style-map-datum-node-count styles)))
   (bytes->immutable-bytes
    (sha1-bytes
     (call-with-output-bytes
@@ -149,6 +169,15 @@
 (define (typography-theme->datum theme)
   (unless (typography-theme? theme)
     (raise-argument-error 'typography-theme->datum "typography-theme?" theme))
+  ;; Check the exact output shape from the already-immutable theme before a
+  ;; conversion allocates its derived style and gradient-stop datum lists.
+  ;; In particular, a hostile but valid source gradient with many stops now
+  ;; fails here rather than after duplicating every stop as portable data.
+  (typography-serialization-budget-reserve!
+   (make-typography-serialization-budget
+    'typography-theme->datum
+    #:maximum-nodes maximum-typography-serialization-nodes)
+   (typography-theme-datum-node-count theme))
   (define datum
     `(animate-typography-theme ,typography-theme-schema-version
                                ,(typography-theme-id theme)
@@ -164,6 +193,97 @@
     #:maximum-nodes maximum-typography-serialization-nodes)
    datum)
   datum)
+
+;; Count the precise pair/atom tree that `typography-theme->datum` will emit,
+;; without constructing that tree.  Keep this adjacent to the serializer so
+;; any portable grammar change updates both the emitted datum and this compact
+;; preflight description together.
+(define (typography-theme-datum-node-count theme)
+  ;; `(animate-typography-theme version id display-name styles provenance)`
+  (+ 12 (style-map-datum-node-count
+         (checked-theme 'typography-theme->datum theme typography-theme-value-styles))))
+
+(define (style-map-datum-node-count styles)
+  ;; Each spine pair and the terminal null are serialized nodes.
+  (define keys (sort (hash-keys styles) symbol<?))
+  (+ (length keys) 1
+     (for/sum ([key (in-list keys)])
+       ;; `(key text-style-datum)`
+       (+ 4 (text-style-datum-node-count (hash-ref styles key))))))
+
+(define (text-style-datum-node-count style)
+  ;; The style wrapper contains twelve list elements.  Apart from color and
+  ;; treatment, its tag and nine scalar properties occupy twenty-three nodes.
+  (+ 23
+     (color-spec-datum-node-count (text-style-color style))
+     (treatment-datum-node-count (text-style-treatment style))))
+
+(define (treatment-datum-node-count treatment)
+  (cond [(not treatment) 1]
+        [else
+         ;; `(text-treatment background border border-width padding-x padding-y)`
+         (+ 11
+            (if (text-treatment-background treatment)
+                (paint-datum-node-count (text-treatment-background treatment))
+                1)
+            (if (text-treatment-border-color treatment)
+                (color-spec-datum-node-count
+                 (text-treatment-border-color treatment))
+                1))]))
+
+(define (paint-datum-node-count paint)
+  (cond
+    [(color-spec? paint) (+ 4 (color-spec-datum-node-count paint))]
+    [(linear-gradient-paint? paint)
+     ;; tag + two points + stop list
+     (+ 16 (stops-datum-node-count (linear-gradient-paint-stops paint)))]
+    [(radial-gradient-paint? paint)
+     ;; tag + two points + two radii + stop list
+     (+ 20 (stops-datum-node-count (radial-gradient-paint-stops paint)))]
+    [(checker-pattern-paint? paint)
+     (+ 7
+        (color-spec-datum-node-count (checker-pattern-paint-first paint))
+        (color-spec-datum-node-count (checker-pattern-paint-second paint)))]
+    [else
+     (raise-arguments-error 'typography-theme->datum "paint?"
+                            "background" paint)]))
+
+(define (stops-datum-node-count stops)
+  (+ (length stops) 1
+     (for/sum ([stop (in-list stops)])
+       ;; `(offset color-datum)`
+       (+ 4 (color-spec-datum-node-count (paint-stop-color stop))))))
+
+(define (color-spec-datum-node-count color)
+  ;; `(animate-color-spec version body)` contributes six nodes.  Use an
+  ;; explicit work list so a deeply nested color expression cannot consume the
+  ;; host stack while we are trying to reject an oversized serialization.
+  (let loop ([pending (list color)] [count 6])
+    (cond
+      [(null? pending) count]
+      [else
+       (define current (car pending))
+       (cond
+         [(rgba-color? current) (loop (cdr pending) (+ count 11))]
+         [(or (palette-token? current)
+              (role-token? current)
+              (series-color? current))
+          (loop (cdr pending) (+ count 5))]
+         [(mix-color? current)
+          ;; `(mix space alpha-mode amount from-body to-body)`
+          (loop (cons (mix-color-from current)
+                      (cons (mix-color-to current) (cdr pending)))
+                (+ count 11))]
+         [(alpha-color? current)
+          ;; `(alpha operation amount source-body)`
+          (loop (cons (alpha-color-source current) (cdr pending))
+                (+ count 8))]
+         [else
+          ;; Theme construction already validates color specifications. Keep
+          ;; this guard close to the serializer for a useful private failure if
+          ;; that invariant is ever broken.
+          (raise-arguments-error 'typography-theme->datum "color-spec?"
+                                 "color" current)])])))
 
 (define (datum->typography-theme datum)
   ;; Bound the entire untrusted tree before even the outer-list helper creates

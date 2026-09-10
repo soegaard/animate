@@ -331,11 +331,30 @@
        (define content
          (text-pict-renderer-unanchored-content-pict
           renderer local-concrete camera))
-       (anchor-pict
-        (apply-text-treatment-to-pict content (text-style-treatment style)
-                                      (text-style-font-size style) camera)
-        (text-visual-horizontal-alignment local-concrete)
-        (text-visual-vertical-alignment local-concrete))]
+       (define local-treated
+         (apply-text-treatment-to-pict content (text-style-treatment style)
+                                       (text-style-font-size style) camera
+                                       #:horizontal-alignment
+                                       (text-visual-horizontal-alignment local-concrete)
+                                       #:vertical-alignment
+                                       (text-visual-vertical-alignment local-concrete)
+                                       #:include-border? #f))
+       (define anchored-treated
+         (anchor-pict local-treated
+                      (text-visual-horizontal-alignment local-concrete)
+                      (text-visual-vertical-alignment local-concrete)))
+       (define scaled-treated
+         (scale-pict-if-needed anchored-treated (visual-scale visual)))
+       (define cosmetic-border
+         (text-treatment-cosmetic-border-pict
+          scaled-treated local-treated (text-style-treatment style)
+          (visual-scale visual)
+          (text-visual-horizontal-alignment local-concrete)
+          (text-visual-vertical-alignment local-concrete)))
+       ;; The cosmetic outline is added after local scale. Rotation is still a
+       ;; rigid transform and naturally carries the whole treatment together.
+       (or (and cosmetic-border (cc-superimpose scaled-treated cosmetic-border))
+           scaled-treated)]
       [else
        ;; Custom renderers retain their existing anchored/logical protocol.
        ;; There is no safe pixel inference for their actual ink bounds.
@@ -343,10 +362,14 @@
         (render-visual-with-pict-renderer renderer local-concrete camera)
         (text-style-treatment style)
         (text-style-font-size style)
-        camera)]))
-  (rotate-pict-if-needed
-   (scale-pict-if-needed treated (visual-scale visual))
-   (visual-rotation visual)))
+        camera
+        #:horizontal-alignment (text-visual-horizontal-alignment local-concrete)
+        #:vertical-alignment (text-visual-vertical-alignment local-concrete))]))
+  (if (text-pict-renderer? renderer)
+      (rotate-pict-if-needed treated (visual-rotation visual))
+      (rotate-pict-if-needed
+       (scale-pict-if-needed treated (visual-scale visual))
+       (visual-rotation visual))))
 
 ;; affine-map-content->pict : affine-map-visual? camera?
 ;;                            (listof pict-renderer?) -> pict?

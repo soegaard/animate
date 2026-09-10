@@ -6,6 +6,7 @@
 
 (provide typography-serialization-budget?
          make-typography-serialization-budget
+         typography-serialization-budget-reserve!
          typography-serialization-budget-count-datum!)
 
 (struct typography-serialization-budget (who maximum-nodes maximum-atom-bytes nodes)
@@ -24,6 +25,26 @@
     (raise-argument-error 'make-typography-serialization-budget
                           "exact-positive-integer? as #:maximum-atom-bytes" maximum-atom-bytes))
   (typography-serialization-budget who maximum-nodes maximum-atom-bytes 0))
+
+;; Reserve known output nodes before a serializer allocates a large derived
+;; list.  This is deliberately separate from `count-datum!`: callers use it
+;; only for a source-structure preflight, then verify the completed datum with
+;; a fresh complete-tree accounting pass.
+(define (typography-serialization-budget-reserve! budget amount)
+  (unless (typography-serialization-budget? budget)
+    (raise-argument-error 'typography-serialization-budget-reserve!
+                          "typography-serialization-budget?" budget))
+  (unless (exact-nonnegative-integer? amount)
+    (raise-argument-error 'typography-serialization-budget-reserve!
+                          "exact-nonnegative-integer?" amount))
+  (define next (+ (typography-serialization-budget-nodes budget) amount))
+  (set-typography-serialization-budget-nodes! budget next)
+  (when (> next (typography-serialization-budget-maximum-nodes budget))
+    (raise-arguments-error
+     (typography-serialization-budget-who budget)
+     "a complete serialized typography datum within the configured node budget"
+     "maximum nodes" (typography-serialization-budget-maximum-nodes budget)
+     "serialized nodes" next)))
 
 (define (typography-serialization-budget-count-datum! budget datum)
   (unless (typography-serialization-budget? budget)

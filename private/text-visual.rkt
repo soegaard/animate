@@ -18,6 +18,7 @@
 ;; Imports
 (require "affine-transform.rkt"
          (only-in "color-token.rkt" theme-foreground)
+         "color-style.rkt"
          "geometry.rkt"
          "text-properties.rkt"
          "visual-model.rkt")
@@ -79,7 +80,7 @@
             (check-optional-font-family who font-family)
             (check-optional-font-style who font-style)
             (check-optional-font-weight who font-weight)
-            color)))
+            (and color (normalize-color-spec color who)))))
 
 ; text-span : string? [#:font-size (or/c false/c positive-real?)] ...
 ;;             -> text-span?
@@ -307,12 +308,13 @@
   (unless (text-horizontal-alignment? line-alignment)
     (raise-argument-error who "text-horizontal-alignment?" line-alignment))
   (define checked-spans (check-text-spans who spans))
+  (define checked-color (normalize-color-spec color who))
   (text-visual
    id
    (make-affine-transform #:translation center #:rotation rotation #:scale scale)
    opacity
    (spans->content checked-spans)
-   font-size checked-font-face font-family font-style font-weight color
+   font-size checked-font-face font-family font-style font-weight checked-color
    horizontal-alignment vertical-alignment
    checked-spans width line-spacing line-alignment))
 
