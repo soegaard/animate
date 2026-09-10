@@ -4,9 +4,10 @@
 ;;; A First Multi-Scene Video: Solving a Linear Equation
 ;;;
 ;; This example is intentionally small enough to read from top to bottom.
-;; The tutorial-local API comes first.  It is implemented entirely in terms of
-;; Animate's existing immutable scenes, authored timelines, tagged formulas,
-;; TransformFromCopy, and formula-part transitions.
+;; Its six lessons are ordinary Animate source blocks: each block receives the
+;; immutable scene built so far and returns the next one.  That makes the
+;; tutorial directly usable with Animate's block-aware preview and hot reload,
+;; while still allowing it to be rendered as one authored timeline.
 ;;
 ;; The mathematics:
 ;;
@@ -23,72 +24,13 @@
          animate/authoring
          animate/render)
 
-(provide make-demo-video
+(provide linear-equation-tutorial
+         tutorial-title
          make-demo-timeline
          make-demo-scene
-         tutorial-video?
-         tutorial-video-title
-         tutorial-video-timeline)
+         make-demo-program)
 
-;; ============================================================================
-;; Tutorial-local API
-;; ============================================================================
-
-(struct tutorial-scene (name build) #:transparent)
-(struct tutorial-video (title timeline) #:transparent)
-
-;; scene : symbol? (scene? -> scene?) -> tutorial-scene?
-;;
-;; A tutorial scene is a named authoring unit.  It is not a second rendering
-;; model: its builder simply extends Animate's ordinary immutable scene.
-(define (scene name build)
-  (unless (symbol? name)
-    (raise-argument-error 'scene "symbol?" name))
-  (unless (procedure? build)
-    (raise-argument-error 'scene "procedure?" build))
-  (tutorial-scene name build))
-
-;; video : #:title string? tutorial-scene? ... -> tutorial-video?
-;;
-;; Thread one ordinary Animate scene through the builders and record the time
-;; span of each builder as an authoring section.  The result can therefore be
-;; rendered as one video or addressed scene-by-scene through Animate's existing
-;; section machinery.
-(define (video #:title title . scenes)
-  (unless (string? title)
-    (raise-argument-error 'video "string?" title))
-  (unless (and (pair? scenes) (andmap tutorial-scene? scenes))
-    (raise-argument-error 'video "nonempty list of tutorial-scene? values" scenes))
-  (define names (map tutorial-scene-name scenes))
-  (unless (= (length names) (length (remove-duplicates names)))
-    (raise-arguments-error 'video
-                           "scene names must be distinct"
-                           "scene-names" names))
-  (define-values (finished sections-reversed)
-    (for/fold ([scn (make-scene)]
-               [sections-reversed '()])
-              ([entry (in-list scenes)])
-      (define start (scene-duration scn))
-      (define next ((tutorial-scene-build entry) scn))
-      (unless (scene? next)
-        (raise-arguments-error 'video
-                               "a scene builder must return an Animate scene"
-                               "scene-name" (tutorial-scene-name entry)
-                               "result" next))
-      (define end (scene-duration next))
-      (unless (< start end)
-        (raise-arguments-error 'video
-                               "each tutorial scene must advance time"
-                               "scene-name" (tutorial-scene-name entry)
-                               "start" start
-                               "end" end))
-      (values next
-              (cons (section (tutorial-scene-name entry) start end)
-                    sections-reversed))))
-  (tutorial-video
-   (string->immutable-string title)
-   (make-authored-timeline finished
-                           #:sections (reverse sections-reversed))))
+(define tutorial-title "Solving a Linear Equation")
 
 ;; equation : symbol? vec2? formula-fragment? ... -> formula-assembly-visual?
 ;;
@@ -197,13 +139,14 @@
 (define working-line (vec2 0 -3/5))
 
 ;; ============================================================================
-;; Scene 1 — The problem
+;; Source blocks — the six lessons
 ;; ============================================================================
 
-(define problem-scene
-  (scene
-   'problem
-   (lambda (scn)
+(define-scene-program linear-equation-tutorial
+  #:initial (make-scene)
+
+  ;; Scene 1 — The problem
+  (scene-block problem (scn)
      (define title
        (title-text "Solving a Linear Equation"
                    #:id 'problem-title
@@ -212,27 +155,24 @@
        (equation 'problem-equation origin
                  ;; Keep x addressable so the next scene can emphasize it
                  ;; without replacing the equation.
-                 (frag 'three "3")
-                 (frag 'x "x")
+                 (frag 'three     "3")
+                 (frag 'x         "x")
                  (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'equals    "=")
+                 (frag 'rhs-17    "17")))
 
      (define with-title    (scene-play scn        (fade-in title) #:duration 2/5))
      (define with-equation (scene-play with-title (fade-in eq)    #:duration 3/5))
      (define held          (scene-wait with-equation                         6/5))
      ;; The title belongs only to this opening scene. Keep the equation so
      ;; Scene 2 can move the same authored formula into its teaching position.
-     (scene-remove held 'problem-title))))
+     (scene-remove held 'problem-title))
 
 ;; ============================================================================
 ;; Scene 2 — What "solve" means
 ;; ============================================================================
 
-(define meaning-scene
-  (scene
-   'meaning
-   (lambda (scn)
+  (scene-block meaning (scn)
      (define goal
        (body-text
         "Find all numbers that make the equation true when inserted for x."
@@ -257,37 +197,34 @@
      (define goal-held    (scene-wait goal-shown                               6/5))
      (define method-shown (scene-play goal-held    (fade-in method) #:duration 2/5))
      (define held         (scene-wait method-shown                             6/5))
-     (scene-remove held 'problem-equation 'meaning-goal 'meaning-method))))
+     (scene-remove held 'problem-equation 'meaning-goal 'meaning-method))
 
 ;; ============================================================================
 ;; Scene 3 — Subtract 5 from both sides
 ;; ============================================================================
 
-(define subtract-five-scene
-  (scene
-   'subtract-five
-   (lambda (scn)
+  (scene-block subtract-five (scn)
      (define reference
        (equation 'subtract-reference upper-line
-                 (frag 'three-x "3x")
+                 (frag 'three-x   "3x")
                  (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'equals    "=")
+                 (frag 'rhs-17    "17")))
      (define work
        (equation 'subtract-work working-line
-                 (frag 'three-x "3x")
+                 (frag 'three-x   "3x")
                  (frag 'plus-five "+5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")))
+                 (frag 'equals    "=")
+                 (frag 'rhs-17    "17")))
 
      ;; Full target after subtracting 5 on each side.
      (define expanded-layout
        (equation 'subtract-work working-line
-                 (frag 'three-x "3x")
-                 (frag 'plus-five "+5")
-                 (frag 'left-minus-five "-5")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")
+                 (frag 'three-x          "3x")
+                 (frag 'plus-five        "+5")
+                 (frag 'left-minus-five  "-5")
+                 (frag 'equals           "=")
+                 (frag 'rhs-17           "17")
                  (frag 'right-minus-five "-5")))
      (define fixed-equals (formula-part-position work 'equals))
      (define expanded
@@ -309,9 +246,9 @@
      ;; same equality sign; then move only 3x there.
      (define compact-layout
        (equation 'subtract-work working-line
-                 (frag 'three-x "3x")
-                 (frag 'equals "=")
-                 (frag 'rhs-17 "17")
+                 (frag 'three-x          "3x")
+                 (frag 'equals           "=")
+                 (frag 'rhs-17           "17")
                  (frag 'right-minus-five "-5")))
      (define compact-aligned
        (formula-with-anchor-at compact-layout 'equals fixed-equals))
@@ -326,15 +263,15 @@
      (define final-layout
        (equation 'subtract-work working-line
                  (frag 'three-x "3x")
-                 (frag 'equals "=")
-                 (frag 'rhs-12 "12")))
+                 (frag 'equals  "=")
+                 (frag 'rhs-12  "12")))
      (define final-aligned
        (formula-with-anchor-at final-layout 'equals fixed-equals))
      (define final
        (formula-with-parts
         compact
-        (formula-ref compact 'three-x)
-        (formula-ref compact 'equals)
+        (formula-ref compact       'three-x)
+        (formula-ref compact       'equals)
         (formula-ref final-aligned 'rhs-12)))
 
      ;; 1. Copy the equation.
@@ -387,33 +324,30 @@
         #:mismatch-mode 'fade-transform
         #:duration 3/5))
      (define held (scene-wait simplified 1))
-     (scene-remove held 'subtract-reference 'subtract-work))))
+     (scene-remove held 'subtract-reference 'subtract-work))
 
 ;; ============================================================================
 ;; Scene 4 — Divide both sides by 3
 ;; ============================================================================
 
-(define divide-by-three-scene
-  (scene
-   'divide-by-three
-   (lambda (scn)
+  (scene-block divide-by-three (scn)
      (define reference
        (equation 'divide-reference upper-line
                  (frag 'three-x "3x")
-                 (frag 'equals "=")
-                 (frag 'rhs-12 "12")))
+                 (frag 'equals  "=")
+                 (frag 'rhs-12  "12")))
      (define work
        (equation 'divide-work working-line
                  (frag 'three-x "3x")
-                 (frag 'equals "=")
-                 (frag 'rhs-12 "12")))
+                 (frag 'equals  "=")
+                 (frag 'rhs-12  "12")))
      (define fixed-equals (formula-part-position work 'equals))
 
      ;; Genuine TeX fractions on both sides.
      (define divided-layout
        (equation 'divide-work working-line
                  (frag 'lhs-fraction "\\frac{3x}{3}")
-                 (frag 'equals "=")
+                 (frag 'equals       "=")
                  (frag 'rhs-fraction "\\frac{12}{3}")))
      (define divided
        (formula-with-anchor-at divided-layout 'equals fixed-equals))
@@ -421,9 +355,9 @@
      ;; Show the left simplification explicitly as 1*x before suppressing 1*.
      (define one-times-layout
        (equation 'divide-work working-line
-                 (frag 'one-times "1\\cdot")
-                 (frag 'x "x")
-                 (frag 'equals "=")
+                 (frag 'one-times    "1\\cdot")
+                 (frag 'x            "x")
+                 (frag 'equals       "=")
                  (frag 'rhs-fraction "\\frac{12}{3}")))
      (define one-times
        (formula-with-anchor-at one-times-layout 'equals fixed-equals))
@@ -436,9 +370,9 @@
      ;; Only after the pause does 12/3 become 4.  Preserve x and = exactly.
      (define solution-layout
        (equation 'divide-work working-line
-                 (frag 'x "x")
+                 (frag 'x      "x")
                  (frag 'equals "=")
-                 (frag 'rhs-4 "4")))
+                 (frag 'rhs-4  "4")))
      (define solution-aligned
        (formula-with-anchor-at solution-layout 'equals fixed-equals))
      (define solution
@@ -492,16 +426,13 @@
         #:mismatch-mode 'fade-transform
         #:duration 3/5))
      (define held (scene-wait solved 1))
-     (scene-remove held 'divide-reference 'divide-work))))
+     (scene-remove held 'divide-reference 'divide-work))
 
 ;; ============================================================================
 ;; Scene 5 — Check x=4 in the original equation
 ;; ============================================================================
 
-(define check-scene
-  (scene
-   'check
-   (lambda (scn)
+  (scene-block check (scn)
      ;; Split 3 and x here because x itself is the part being substituted.
      (define reference
        (equation 'check-reference upper-line
@@ -607,32 +538,29 @@
      (define checked
        (scene-play true-scene (fade-in checkmark) #:duration 2/5))
      (define held (scene-wait checked 6/5))
-     (scene-remove held 'check-reference 'check-work 'checkmark))))
+     (scene-remove held 'check-reference 'check-work 'checkmark))
 
 ;; ============================================================================
 ;; Scene 6 — Summary
 ;; ============================================================================
 
-(define summary-scene
-  (scene
-   'summary
-   (lambda (scn)
+  (scene-block summary (scn)
      ;; Typeset each line independently, then put every equals sign on x=0.
      (define row1-layout
        (equation 'summary-row-1 (vec2 0 6/5)
-                 (frag 'lhs "3x+5")
+                 (frag 'lhs    "3x+5")
                  (frag 'equals "=")
-                 (frag 'rhs "17")))
+                 (frag 'rhs    "17")))
      (define row2-layout
        (equation 'summary-row-2 origin
-                 (frag 'lhs "3x")
+                 (frag 'lhs    "3x")
                  (frag 'equals "=")
-                 (frag 'rhs "12")))
+                 (frag 'rhs    "12")))
      (define row3-layout
        (equation 'summary-row-3 (vec2 0 -6/5)
-                 (frag 'lhs "x")
+                 (frag 'lhs    "x")
                  (frag 'equals "=")
-                 (frag 'rhs "4")))
+                 (frag 'rhs    "4")))
      (define (equals-on-axis formula)
        (define p (formula-part-position formula 'equals))
        (formula-with-anchor-at formula 'equals (vec2 0 (vec2-y p))))
@@ -649,26 +577,32 @@
        (scene-play (scene-wait second 1/4)
                    (fade-in row3)
                    #:duration 2/5))
-     (scene-wait third 3/2))))
+     (scene-wait third 3/2))
+
+  )
 
 ;; ============================================================================
-;; Assemble the complete six-scene tutorial
+;; Render the complete source program
 ;; ============================================================================
 
-(define (make-demo-video)
-  (video #:title "Solving a Linear Equation"
-         problem-scene
-         meaning-scene
-         subtract-five-scene
-         divide-by-three-scene
-         check-scene
-         summary-scene))
+(define (make-demo-program)
+  linear-equation-tutorial)
+
+(define (compile-demo-program)
+  (compile-scene-program linear-equation-tutorial))
 
 (define (make-demo-timeline)
-  (tutorial-video-timeline (make-demo-video)))
+  (define compiled (compile-demo-program))
+  (make-authored-timeline
+   (compiled-scene-program-scene compiled)
+   #:sections
+   (for/list ([run (in-list (compiled-scene-program-block-runs compiled))])
+     (section (scene-block-run-id run)
+              (scene-block-run-start-time run)
+              (scene-block-run-end-time run)))))
 
 (define (make-demo-scene)
-  (authored-timeline-scene (make-demo-timeline)))
+  (compiled-scene-program-scene (compile-demo-program)))
 
 (define (run-tutorial)
   (define output-directory "frames")

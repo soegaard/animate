@@ -10,12 +10,21 @@
          "linear-equation-tutorial.rkt")
 
 (module+ test
-  (define demo-video (make-demo-video))
-  (check-true (tutorial-video? demo-video))
-  (check-equal? (tutorial-video-title demo-video)
-                "Solving a Linear Equation")
+  (check-equal? tutorial-title "Solving a Linear Equation")
+  (check-true (scene-program? linear-equation-tutorial))
+  (check-eq? (make-demo-program) linear-equation-tutorial)
 
-  (define timeline (tutorial-video-timeline demo-video))
+  (define compiled (compile-scene-program linear-equation-tutorial))
+  (check-equal? (map scene-block-run-id
+                     (compiled-scene-program-block-runs compiled))
+                '(problem
+                  meaning
+                  subtract-five
+                  divide-by-three
+                  check
+                  summary))
+
+  (define timeline (make-demo-timeline))
   (check-true (authored-timeline? timeline))
   (check-equal? (timeline-section-names timeline)
                 '(problem
