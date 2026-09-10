@@ -97,9 +97,11 @@ The original text anchor stays fixed while padding expands around it. In a
 @racket[typewrite] effect, a semantic treatment box stays present while glyphs
 are progressively revealed; it does not resize for every character. The exact
 end of a text effect remains the original semantic text value, not a
-font-resolved proxy. Background paints use the text anchor as their local
-origin, just like paints on shapes. The border is a cosmetic output-pixel
-width, so making text larger does not make its outline thicker.
+font-resolved proxy. Linear and radial background paints use the text anchor
+as their local origin, just like paints on shapes. The border is a cosmetic
+output-pixel width, so making text larger does not make its outline thicker.
+The Pict renderer currently draws checker backgrounds as device-aligned tiles,
+so a checker does not yet fully follow text scaling or rotation.
 
 @section{Migration cookbook}
 

@@ -7,7 +7,8 @@
          racket/class
          racket/runtime-path
          rackunit
-         (only-in pict filled-rectangle pict->bitmap pict-ascent pict-height pict-width)
+         (only-in pict blank filled-rectangle pict->bitmap pict-ascent pict-descent
+                  pict-height pict-width)
          "../authoring.rkt"
          "../colors.rkt"
          "../main.rkt"
@@ -17,6 +18,7 @@
          "../private/render-typography-context.rkt"
          "../private/semantic-text-visual.rkt"
          "../private/section-renderer.rkt"
+         "../private/text-treatment-pict.rkt"
          "../private/text-reveal-visual.rkt")
 
 (define-runtime-path semantic-section-key-fixture
@@ -248,6 +250,34 @@
                       (lambda (index)
                         (paint-stop (/ index 4999) "black"))))))))))
 
+  ;; Source-structure preflight validates atom sizes as well as tree nodes.
+  ;; A huge font face is rejected while fingerprinting, before canonical bytes
+  ;; are allocated; metadata that is absent from the fingerprint is checked
+  ;; before the portable theme datum is constructed.
+  (define oversized-atom (make-string 65537 #\x))
+  (check-exn
+   (lambda (error)
+     (and (exn:fail? error)
+          (regexp-match? #rx"typography-theme" (exn-message error))))
+   (lambda ()
+     (typography-theme
+      #:id 'oversized-font-face
+      #:extends animate-typography-theme
+      #:styles
+      (hash 'body
+            (text-style-update
+             (typography-ref animate-typography-theme 'body)
+             #:font-face oversized-atom)))))
+  (define oversized-display-theme
+    (typography-theme #:id 'oversized-display
+                      #:display-name oversized-atom
+                      #:extends animate-typography-theme))
+  (check-exn
+   (lambda (error)
+     (and (exn:fail? error)
+          (regexp-match? #rx"typography-theme->datum" (exn-message error))))
+   (lambda () (typography-theme->datum oversized-display-theme)))
+
   ;; The authored object stores the role and override, not a font/color chosen
   ;; from the currently active rendering context.
   (define heading
@@ -477,6 +507,24 @@
   (check-= (/ (pict-ascent baseline-treated) (pict-height baseline-treated))
             (/ (pict-ascent baseline-content) (pict-height baseline-content))
             1e-9)
+  ;; Check the production invariant directly, before `anchor-pict` adds its
+  ;; symmetric placement box: decoration must retain the padded content's
+  ;; actual baseline metrics. A descender-bearing probe makes a synthetic
+  ;; bottom baseline immediately visible to this test.
+  (define baseline-metrics-content (blank 60 20 13 7))
+  (define baseline-metrics-treatment
+    (text-treatment #:background "ivory" #:border-color "black" #:border-width 1
+                    #:padding-x 1/4 #:padding-y 1/4))
+  (define baseline-metrics-padded
+    (text-treatment-content-pict baseline-metrics-content
+                                 baseline-metrics-treatment 1 camera))
+  (define baseline-metrics-decoration
+    (text-treatment-decoration-pict baseline-metrics-content
+                                    baseline-metrics-treatment 1 camera))
+  (check-= (pict-ascent baseline-metrics-decoration)
+            (pict-ascent baseline-metrics-padded) 1e-9)
+  (check-= (pict-descent baseline-metrics-decoration)
+            (pict-descent baseline-metrics-padded) 1e-9)
 
   ;; A zero-width border is no border even when a color is supplied.
   (define zero-border
@@ -547,6 +595,74 @@
     (let loop ([row 0])
       (if (red-row? row) (add1 (loop (add1 row))) 0)))
   (check-= (red-border-thickness 1) (red-border-thickness 2) 1)
+  ;; A custom semantic Pict renderer declares one asymmetric 47-by-19 logical
+  ;; box. Treatment uses its centre as the paint anchor, never reuses the
+  ;; lowered text's left/baseline settings, and still adds its one-pixel-style
+  ;; outline after scale. Blank content leaves the background directly visible.
+  (define custom-transparent-text-pict (blank 47 19))
+  (struct custom-transparent-text-renderer ()
+    #:transparent
+    #:methods gen:pict-renderer
+    [(define (pict-renderer-supports? _renderer visual) (text-visual? visual))
+     (define (pict-renderer-render _renderer _visual _camera)
+       custom-transparent-text-pict)])
+  (define custom-treatment
+    (text-treatment
+     #:background
+     (linear-gradient (vec2 0 1) (vec2 0 -1)
+                      (list (paint-stop 0 "red") (paint-stop 1 "blue")))
+     #:border-color "red" #:border-width 3 #:padding-x 1 #:padding-y 1))
+  (define (custom-treated-pict scale #:rotation [rotation 0])
+    (visual->pict
+     (body-text "custom" #:id (gensym 'custom-treated)
+                #:horizontal-alignment 'left #:vertical-alignment 'baseline
+                #:scale scale #:rotation rotation #:treatment custom-treatment)
+     camera
+     #:renderers
+     (cons (custom-transparent-text-renderer) default-pict-renderers)))
+  (define custom-gradient-bitmap (pict->bitmap (custom-treated-pict 1)))
+  (define custom-gradient-width (send custom-gradient-bitmap get-width))
+  (define custom-gradient-height (send custom-gradient-bitmap get-height))
+  (define custom-gradient-pixels (bitmap-bytes custom-gradient-bitmap))
+  (define (custom-gradient-rgb y)
+    (define offset (* 4 (+ (quotient custom-gradient-width 2)
+                           (* y custom-gradient-width))))
+    (values (bytes-ref custom-gradient-pixels (add1 offset))
+            (bytes-ref custom-gradient-pixels (+ offset 2))
+            (bytes-ref custom-gradient-pixels (+ offset 3))))
+  (define-values (custom-top-red _custom-top-green custom-top-blue)
+    (custom-gradient-rgb 4))
+  (define-values (custom-bottom-red _custom-bottom-green custom-bottom-blue)
+    (custom-gradient-rgb (- custom-gradient-height 5)))
+  (check-true (> custom-top-red custom-top-blue))
+  (check-true (> custom-bottom-blue custom-bottom-red))
+  (define custom-border-treatment
+    (text-treatment #:background "white" #:border-color "red" #:border-width 3
+                    #:padding-x 1 #:padding-y 1))
+  (define (custom-border-pict scale)
+    (visual->pict
+     (body-text "custom" #:id (gensym 'custom-border)
+                #:horizontal-alignment 'left #:vertical-alignment 'baseline
+                #:scale scale #:treatment custom-border-treatment)
+     camera
+     #:renderers
+     (cons (custom-transparent-text-renderer) default-pict-renderers)))
+  (define (custom-red-border-thickness scale)
+    (define bitmap (pict->bitmap (custom-border-pict scale)))
+    (define width (send bitmap get-width))
+    (define pixels (bitmap-bytes bitmap))
+    (define (red-row? y)
+      (define offset (* 4 (+ (quotient width 2) (* y width))))
+      (and (> (bytes-ref pixels (add1 offset)) 150)
+           (< (bytes-ref pixels (+ offset 2)) 100)
+           (< (bytes-ref pixels (+ offset 3)) 100)))
+    (let loop ([row 0])
+      (if (red-row? row) (add1 (loop (add1 row))) 0)))
+  (check-= (custom-red-border-thickness 1)
+            (custom-red-border-thickness 2) 1)
+  (check-not-exn
+   (lambda ()
+     (custom-treated-pict (vec2 1/2 2) #:rotation 1/10)))
   ;; The same content-first treatment path accepts wrapped, rich, and empty
   ;; semantic text without adding a second layout engine or an empty-text
   ;; special case to callers.
@@ -682,6 +798,10 @@
                 (typography-theme-fingerprint enlarged-theme))
   (check-equal? (hash-ref recorded-typography 'resolver-version)
                 render-typography-resolver-version)
+  ;; The project plan records the semantic renderer revision separately from
+  ;; the unchanged theme fingerprint, so resolver-2 cached frames cannot be
+  ;; accepted after the treatment rendering change.
+  (check-equal? (hash-ref recorded-typography 'resolver-version) 3)
   ;; The two explicit render-spec replacement helpers are intentionally
   ;; orthogonal: selecting a color theme does not silently replace typography,
   ;; and selecting typography does not replace the color snapshot.
@@ -724,6 +844,13 @@
   (define preview-document
     (make-preview-document (scene-wait (scene-add (make-scene) heading) 1)))
   (define preview-sample (frame-sample 0 1))
+  (define preview-render-identity
+    (preview-render-spec-id
+     (make-preview-render-spec #:fps 1 #:typography enlarged-theme)))
+  ;; This position is the typography resolver slot in the documented private
+  ;; appearance grammar. It intentionally differs from the old resolver-2
+  ;; namespace while its adjacent theme fingerprint remains unchanged.
+  (check-equal? (list-ref preview-render-identity 9) 3)
   (check-not-equal?
    (make-preview-frame-key preview-document 0 preview-sample
                            (make-preview-render-spec #:fps 1

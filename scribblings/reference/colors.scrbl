@@ -15,8 +15,11 @@
 @racketmodname[animate/colors] provides literal colors plus immutable palette,
 role, categorical-series, mix, and alpha specifications. A palette or role token is a description
 of a color to resolve under an explicit immutable theme; it is not a drawing
-color. Existing literal color strings such as @racket["teal"] keep their
-literal meaning.
+color. Existing literal color strings such as @racket["teal"] and
+@racket["crimson"] keep their literal meaning. Animate recognizes names from
+its own fixed, case-insensitive X11-style table; it never asks the host drawing
+backend to interpret a name. Use a hexadecimal literal or @racket[rgb-color]
+when you need a color that is not in that table.
 
 @defproc[(literal-color-spec? [value any/c]) boolean?]{
 Returns @racket[#t] for an @racket[rgba-color] or a supported literal color

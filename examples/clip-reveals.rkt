@@ -27,12 +27,12 @@
      (plain-text "FX-C: hard-clip wipes and irises"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "layout freezes once per clip; enter restores exactly and leave removes exactly"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define base (scene-add (make-scene #:camera camera) title note))
   (define entered
     (scene-play

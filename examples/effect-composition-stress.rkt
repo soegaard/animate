@@ -19,12 +19,12 @@
      (plain-text "FX-G: deterministic effect composition"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "independent targets keep lifecycle, transient helpers, and source sampling composable"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define panel
     (rectangle #:id 'panel #:width 8 #:height 3 #:center origin
                #:fill "aliceblue" #:stroke "steelblue" #:stroke-width 4))

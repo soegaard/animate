@@ -38,7 +38,7 @@
                  #:font-family 'swiss
                  #:color "black")
      #:camera camera
-     #:at (vec2 0 4)))
+     #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "factory source index chooses each destination; reverse changes only schedule order"
@@ -47,7 +47,7 @@
                  #:font-family 'swiss
                  #:color "dimgray")
      #:camera camera
-     #:at (vec2 0 -4)))
+     #:at (vec2 0 -3)))
   (define base
     (apply scene-add (make-scene #:camera camera) title note dots))
   (define animated

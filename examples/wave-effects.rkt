@@ -30,12 +30,12 @@
      (plain-text "FX-D: target-local wave"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "direct source sampling; zero displacement and exact source restoration at both ends"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define base (scene-add (make-scene #:camera camera) title note curve))
   (define animated
     (scene-play

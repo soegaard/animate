@@ -561,6 +561,10 @@
         "coral4" #x8B3E2F
         "cornflowerblue" #x6495ED
         "cornsilk" #xFFF8DC
+        ;; Keep Animate's accepted named-color vocabulary deterministic and
+        ;; independent of the host drawing backend. This conventional CSS/X11
+        ;; spelling is used by shipped examples.
+        "crimson" #xDC143C
         "cornsilk1" #xFFF8DC
         "cornsilk2" #xEEE8CD
         "cornsilk3" #xCDC8B1
@@ -875,6 +879,7 @@
         "indianred2" #xEE6363
         "indianred3" #xCD5555
         "indianred4" #x8B3A3A
+        "indigo" #x4B0082
         "ivory" #xFFFFF0
         "ivory1" #xFFFFF0
         "ivory2" #xEEEEE0

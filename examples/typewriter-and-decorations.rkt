@@ -19,12 +19,12 @@
     (make-camera #:width 960 #:height 540 #:world-width 18 #:background "white"))
   (define heading
     (plain-text "FX-F: stable text effects"
-                #:id 'title #:center (vec2 0 4)
+                #:id 'title #:center (vec2 0 3)
                 #:font-size 2/5 #:font-family 'swiss
                 #:font-weight 'bold #:color "navy"))
   (define note
     (plain-text "typewrite clips one shaped layout; decorations are ordinary scene Visuals"
-                #:id 'note #:center (vec2 0 -4)
+                #:id 'note #:center (vec2 0 -3)
                 #:font-size 7/20 #:font-family 'swiss #:color "dimgray"))
   (define message
     (plain-text "frozen layout" #:id 'message #:center (vec2 0 0)

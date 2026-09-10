@@ -24,12 +24,12 @@
      (plain-text "FX-F: deterministic confetti"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "an explicit seed gives the same closed-form particle plan on every seek"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define base (scene-add (make-scene #:camera camera) title note badge))
   (define animated
     (scene-play

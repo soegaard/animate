@@ -32,6 +32,7 @@
 (define (text-treatment-decoration-pict content treatment base-font-size camera
                                         #:horizontal-alignment [horizontal-alignment 'center]
                                         #:vertical-alignment [vertical-alignment 'center]
+                                        #:content-anchor [content-anchor #f]
                                         #:include-border? [include-border? #t])
   (cond
     [(not treatment) #f]
@@ -56,17 +57,33 @@
      ;; is drawn in Pict coordinates, where y points down, so pass that
      ;; conversion explicitly rather than treating its top-left as a new paint
      ;; origin.
-     (define anchor-x
-       (case horizontal-alignment
-         [(left) 0]
-         [(center) (/ width 2)]
-         [(right) width]))
-     (define anchor-y
-       (case vertical-alignment
-         [(top) 0]
-         [(center) (/ height 2)]
-         [(baseline) ascent]
-         [(bottom) height]))
+     ;; The built-in renderer supplies an unanchored text layout, whose
+     ;; semantic anchor follows its text alignments. A custom Pict renderer
+     ;; instead declares a complete logical Pict box. Its explicit anchor is
+     ;; measured in that unpadded box and remains independent of the lowered
+     ;; text-visual alignments.
+     (when (and content-anchor (not (vec2? content-anchor)))
+       (raise-argument-error 'text-treatment-decoration-pict
+                             "(or/c #f vec2?) as #:content-anchor"
+                             content-anchor))
+     (define padding-x (/ (- width (pict-width content)) 2))
+     (define padding-y (/ (- height (pict-height content)) 2))
+     (define-values (anchor-x anchor-y)
+       (cond
+         [content-anchor
+          (values (+ padding-x (vec2-x content-anchor))
+                  (+ padding-y (vec2-y content-anchor)))]
+         [else
+          (values
+           (case horizontal-alignment
+             [(left) 0]
+             [(center) (/ width 2)]
+             [(right) width])
+           (case vertical-alignment
+             [(top) 0]
+             [(center) (/ height 2)]
+             [(baseline) ascent]
+             [(bottom) height]))]))
      (define (paint-point->pict point x y)
        (vec2 (+ x anchor-x
                 (camera-length->pixels camera (vec2-x point)))
@@ -122,12 +139,14 @@
 (define (apply-text-treatment-to-pict content treatment base-font-size camera
                                       #:horizontal-alignment [horizontal-alignment 'center]
                                       #:vertical-alignment [vertical-alignment 'center]
+                                      #:content-anchor [content-anchor #f]
                                       #:include-border? [include-border? #t])
   (if treatment
       (cc-superimpose
        (text-treatment-decoration-pict content treatment base-font-size camera
                                        #:horizontal-alignment horizontal-alignment
                                        #:vertical-alignment vertical-alignment
+                                       #:content-anchor content-anchor
                                        #:include-border? include-border?)
        (text-treatment-content-pict content treatment base-font-size camera))
       content))
@@ -139,7 +158,8 @@
 ;; is a cosmetic device-width pen and therefore must not be part of the Pict
 ;; that receives a nonuniform scale.
 (define (text-treatment-cosmetic-border-pict anchored-scaled source treatment scale
-                                              horizontal-alignment vertical-alignment)
+                                              horizontal-alignment vertical-alignment
+                                              #:source-offset [source-offset #f])
   (cond [(or (not treatment)
              (not (text-treatment-border-color treatment))
              (not (positive? (text-treatment-border-width treatment))))
@@ -151,16 +171,28 @@
          (define source-descent (pict-descent source))
          (define x-scale (vec2-x scale))
          (define y-scale (vec2-y scale))
-         ;; These are the source offsets chosen by anchor-pict before scale.
-         (define source-x
-           (case horizontal-alignment
-             [(left) source-width]
-             [(center right) 0]))
-         (define source-y
-           (case vertical-alignment
-             [(top) source-height]
-             [(center bottom) 0]
-             [(baseline) (- (max source-ascent source-descent) source-ascent)]))
+         ;; Built-in text has been placed by anchor-pict, so derive its source
+         ;; offset from semantic text alignment. A custom renderer already
+         ;; supplies a declared logical Pict; it uses a direct offset instead
+         ;; of interpreting those text alignments a second time.
+         (when (and source-offset (not (vec2? source-offset)))
+           (raise-argument-error 'text-treatment-cosmetic-border-pict
+                                 "(or/c #f vec2?) as #:source-offset"
+                                 source-offset))
+         (define-values (source-x source-y)
+           (cond
+             [source-offset
+              (values (vec2-x source-offset) (vec2-y source-offset))]
+             [else
+              (values
+               (case horizontal-alignment
+                 [(left) source-width]
+                 [(center right) 0])
+               (case vertical-alignment
+                 [(top) source-height]
+                 [(center bottom) 0]
+                 [(baseline) (- (max source-ascent source-descent)
+                                source-ascent)]))]))
          (define border-width (text-treatment-border-width treatment))
          (define border-color (text-treatment-border-color treatment))
          (define full-width (pict-width anchored-scaled))

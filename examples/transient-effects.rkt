@@ -18,12 +18,12 @@
      (plain-text "FX-D: transient attention effects"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "a pulse writes the target while ripple rings remain temporary helpers"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define badge
     (circle #:id 'badge #:radius 1 #:center origin
             #:fill "mediumorchid" #:stroke "indigo" #:stroke-width 4))

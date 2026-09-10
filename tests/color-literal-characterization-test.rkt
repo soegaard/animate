@@ -33,6 +33,12 @@
   ;; Animate's literal table follows X11/Racket names rather than CSS green.
   (check-equal? (color-spec->rgba-color "green")
                 (rgba-color 0 255 0 1))
+  ;; Animate owns a fixed named-color table rather than delegating names to a
+  ;; drawing backend. `crimson` is a shipped example spelling.
+  (check-equal? (color-spec->rgba-color "crimson")
+                (rgba-color #xDC #x14 #x3C 1))
+  (check-equal? (color-spec->rgba-color "indigo")
+                (rgba-color #x4B #x00 #x82 1))
   (check-equal? (color-spec->rgba-color "transparent")
                 (rgba-color 0 0 0 0))
 

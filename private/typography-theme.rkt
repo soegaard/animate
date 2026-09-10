@@ -9,6 +9,7 @@
          "color-expression.rkt"
          "color-style.rkt"
          "color-token.rkt"
+         "geometry.rkt"
          "paint.rkt"
          "text-style.rkt"
          "typography-serialization-budget.rkt")
@@ -142,11 +143,15 @@
   ;; Fingerprinting serializes the same complete style payload as portable
   ;; transport. Preflight it too, so constructing a theme cannot bypass the
   ;; serialization bound by putting a giant gradient only in its fingerprint.
+  ;; The node shape and every source-owned atom are both checked before the
+  ;; canonical writer allocates its output bytes.
+  (define preflight
+    (make-typography-serialization-budget
+     'typography-theme
+     #:maximum-nodes maximum-typography-serialization-nodes))
   (typography-serialization-budget-reserve!
-   (make-typography-serialization-budget
-    'typography-theme
-    #:maximum-nodes maximum-typography-serialization-nodes)
-   (+ 4 (style-map-datum-node-count styles)))
+   preflight (+ 4 (style-map-datum-node-count styles)))
+  (preflight-style-map-atoms! preflight styles)
   (bytes->immutable-bytes
    (sha1-bytes
     (call-with-output-bytes
@@ -173,11 +178,13 @@
   ;; conversion allocates its derived style and gradient-stop datum lists.
   ;; In particular, a hostile but valid source gradient with many stops now
   ;; fails here rather than after duplicating every stop as portable data.
+  (define preflight
+    (make-typography-serialization-budget
+     'typography-theme->datum
+     #:maximum-nodes maximum-typography-serialization-nodes))
   (typography-serialization-budget-reserve!
-   (make-typography-serialization-budget
-    'typography-theme->datum
-    #:maximum-nodes maximum-typography-serialization-nodes)
-   (typography-theme-datum-node-count theme))
+   preflight (typography-theme-datum-node-count theme))
+  (preflight-theme-datum-atoms! preflight theme)
   (define datum
     `(animate-typography-theme ,typography-theme-schema-version
                                ,(typography-theme-id theme)
@@ -282,6 +289,139 @@
           ;; Theme construction already validates color specifications. Keep
           ;; this guard close to the serializer for a useful private failure if
           ;; that invariant is ever broken.
+          (raise-arguments-error 'typography-theme->datum "color-spec?"
+                                 "color" current)])])))
+
+;; The exact node-count functions above protect against wide portable trees.
+;; These helpers inspect the same source values before serializers build those
+;; trees, protecting against one enormous atom (for example a display name,
+;; font face, or token key). Static grammar tags are intentionally omitted:
+;; they are small literals owned by this module.
+(define (preflight-theme-datum-atoms! budget theme)
+  (typography-serialization-budget-check-atom! budget (typography-theme-id theme))
+  (typography-serialization-budget-check-atom!
+   budget (typography-theme-display-name theme))
+  (typography-serialization-budget-check-atom!
+   budget (typography-theme-provenance theme))
+  (preflight-style-map-atoms!
+   budget
+   (checked-theme 'typography-theme->datum theme typography-theme-value-styles)))
+
+(define (preflight-style-map-atoms! budget styles)
+  (for ([key (in-list (sort (hash-keys styles) symbol<?))])
+    (typography-serialization-budget-check-atom! budget key)
+    (preflight-text-style-atoms! budget (hash-ref styles key))))
+
+(define (preflight-text-style-atoms! budget style)
+  (for ([value (in-list
+                (list (text-style-font-face style)
+                      (text-style-font-family style)
+                      (text-style-font-size style)
+                      (text-style-font-style style)
+                      (text-style-font-weight style)
+                      (text-style-line-spacing style)
+                      (text-style-line-alignment style)
+                      (text-style-horizontal-alignment style)
+                      (text-style-vertical-alignment style)))])
+    (typography-serialization-budget-check-atom! budget value))
+  (preflight-color-spec-atoms! budget (text-style-color style))
+  (preflight-treatment-atoms! budget (text-style-treatment style)))
+
+(define (preflight-treatment-atoms! budget treatment)
+  (cond
+    [(not treatment)
+     (typography-serialization-budget-check-atom! budget #f)]
+    [else
+     (define background (text-treatment-background treatment))
+     (define border-color (text-treatment-border-color treatment))
+     (if background
+         (preflight-paint-atoms! budget background)
+         (typography-serialization-budget-check-atom! budget #f))
+     (if border-color
+         (preflight-color-spec-atoms! budget border-color)
+         (typography-serialization-budget-check-atom! budget #f))
+     (for ([value (in-list
+                   (list (text-treatment-border-width treatment)
+                         (text-treatment-padding-x treatment)
+                         (text-treatment-padding-y treatment)))])
+       (typography-serialization-budget-check-atom! budget value))]))
+
+(define (preflight-paint-atoms! budget paint)
+  (cond
+    [(color-spec? paint)
+     (preflight-color-spec-atoms! budget paint)]
+    [(linear-gradient-paint? paint)
+     (preflight-vec2-atoms! budget (linear-gradient-paint-start paint))
+     (preflight-vec2-atoms! budget (linear-gradient-paint-end paint))
+     (preflight-stops-atoms! budget (linear-gradient-paint-stops paint))]
+    [(radial-gradient-paint? paint)
+     (preflight-vec2-atoms! budget (radial-gradient-paint-focal-center paint))
+     (typography-serialization-budget-check-atom!
+      budget (radial-gradient-paint-focal-radius paint))
+     (preflight-vec2-atoms! budget (radial-gradient-paint-center paint))
+     (typography-serialization-budget-check-atom!
+      budget (radial-gradient-paint-radius paint))
+     (preflight-stops-atoms! budget (radial-gradient-paint-stops paint))]
+    [(checker-pattern-paint? paint)
+     (preflight-color-spec-atoms! budget (checker-pattern-paint-first paint))
+     (preflight-color-spec-atoms! budget (checker-pattern-paint-second paint))
+     (typography-serialization-budget-check-atom!
+      budget (checker-pattern-paint-cell-size paint))]
+    [else
+     (raise-arguments-error 'typography-theme->datum "paint?"
+                            "background" paint)]))
+
+(define (preflight-vec2-atoms! budget point)
+  (typography-serialization-budget-check-atom! budget (vec2-x point))
+  (typography-serialization-budget-check-atom! budget (vec2-y point)))
+
+(define (preflight-stops-atoms! budget stops)
+  (for ([stop (in-list stops)])
+    (typography-serialization-budget-check-atom! budget (paint-stop-offset stop))
+    (preflight-color-spec-atoms! budget (paint-stop-color stop))))
+
+(define (preflight-color-spec-atoms! budget color)
+  ;; Keep this iterative for the same reason as color-spec-datum-node-count:
+  ;; a valid, deeply nested expression must not consume the host stack while
+  ;; we are checking a portable-data bound.
+  (let loop ([pending (list color)])
+    (cond
+      [(null? pending) (void)]
+      [else
+       (define current (car pending))
+       (cond
+         [(rgba-color? current)
+          (for ([value (in-list (list (rgba-color-red current)
+                                      (rgba-color-green current)
+                                      (rgba-color-blue current)
+                                      (rgba-color-alpha current)))])
+            (typography-serialization-budget-check-atom! budget value))
+          (loop (cdr pending))]
+         [(palette-token? current)
+          (typography-serialization-budget-check-atom!
+           budget (palette-token-key current))
+          (loop (cdr pending))]
+         [(role-token? current)
+          (typography-serialization-budget-check-atom! budget (role-token-key current))
+          (loop (cdr pending))]
+         [(series-color? current)
+          (typography-serialization-budget-check-atom!
+           budget (series-color-index current))
+          (loop (cdr pending))]
+         [(mix-color? current)
+          (for ([value (in-list (list (mix-color-space current)
+                                      (mix-color-alpha-mode current)
+                                      (mix-color-amount current)))])
+            (typography-serialization-budget-check-atom! budget value))
+          (loop (cons (mix-color-from current)
+                      (cons (mix-color-to current) (cdr pending))))]
+         [(alpha-color? current)
+          (typography-serialization-budget-check-atom!
+           budget (alpha-color-operation current))
+          (typography-serialization-budget-check-atom!
+           budget (alpha-color-amount current))
+          (loop (cons (alpha-color-source current) (cdr pending)))]
+         [else
           (raise-arguments-error 'typography-theme->datum "color-spec?"
                                  "color" current)])])))
 

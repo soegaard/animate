@@ -18,12 +18,12 @@
      (plain-text "FX-D: deterministic camera shake"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "the explicit seed determines a finite camera-offset plan that returns exactly"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define grid
     (group
      (for*/list ([x (in-list '(-3 0 3))]

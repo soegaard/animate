@@ -107,7 +107,8 @@
   (check-equal? (text-visual-font-family styled-label) 'swiss)
   (check-equal? (text-visual-font-style styled-label) 'italic)
   (check-equal? (text-visual-font-weight styled-label) 'bold)
-  (check-equal? (text-visual-color styled-label) "navy")
+  (check-equal? (text-visual-color styled-label)
+                (color-spec->rgba-color "navy"))
   (check-equal? (text-visual-horizontal-alignment styled-label) 'left)
   (check-equal? (text-visual-vertical-alignment styled-label) 'baseline)
 
@@ -206,7 +207,8 @@
     (check-equal? (text-visual-font-family updated) 'swiss)
     (check-equal? (text-visual-font-style updated) 'italic)
     (check-equal? (text-visual-font-weight updated) 'bold)
-    (check-equal? (text-visual-color updated) "navy")
+    (check-equal? (text-visual-color updated)
+                  (color-spec->rgba-color "navy"))
     (check-equal? (text-visual-horizontal-alignment updated) 'left)
     (check-equal? (text-visual-vertical-alignment updated) 'baseline))
 

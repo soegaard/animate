@@ -28,12 +28,12 @@
      (plain-text "FX-B: exact enter and leave"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "slide and spin preserve authored endpoints; shrink and slide remove exactly on time"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define base (scene-add (make-scene #:camera camera) title note))
   (define entered
     (scene-play

@@ -899,14 +899,19 @@ not draw a border.
 
 A structured background paint uses the same local coordinates as every other
 Paint: the semantic text anchor is the origin, positive @racket[x] points
-right, and positive @racket[y] points up. Thus gradients and checker patterns
-follow text placement, scaling, and rotation rather than starting at the
-treatment box's top-left corner.
+right, and positive @racket[y] points up. Linear and radial gradients follow
+text placement, scaling, and rotation rather than starting at the treatment
+box's top-left corner. The current Pict backend draws a @racket[checker-pattern]
+as a device-aligned tile, so checker cells do not yet fully follow scale or
+rotation.
 
 The built-in text renderer knows that content box exactly. A custom Pict
 renderer for a semantic text value instead declares its own logical Pict box;
 the treatment decorates that declared box. Animate does not inspect rendered
-pixels to guess a tighter ink box for custom renderers.
+pixels to guess a tighter ink box for custom renderers. Its treatment anchor is
+the center of the declared box, independently of the text alignment stored on
+the Visual. Backgrounds and padding scale with the Pict; a treatment border is
+added after that scale, so its width stays cosmetic (in device pixels).
 }
 
 @defproc[(text-treatment? [value any/c]) boolean?]{

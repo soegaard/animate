@@ -25,12 +25,12 @@
      (plain-text "FX-D: live-tracking ripple"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "each staggered ring reads the moving target; every helper disappears at its endpoint"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define base (scene-add (make-scene #:camera camera) title note beacon))
   (define animated
     (scene-play

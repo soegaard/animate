@@ -40,6 +40,26 @@
                 #:display-name "Same appearance, new name"
                 #:provenance 'documentation-revision))
   (define large (body-theme 'large 4/5))
+  ;; The theme fingerprint describes authored appearance only. A renderer
+  ;; semantics change is isolated in the resolver version, so its cache
+  ;; namespace must differ even for the exact same theme snapshot.
+  (define current-context (make-render-typography-context medium))
+  (define resolver-2-context
+    (render-typography-context medium
+                               (typography-theme-fingerprint medium)
+                               2))
+  (check-equal? (render-typography-context-resolver-version current-context) 3)
+  (check-equal? (render-typography-context-appearance-fingerprint current-context)
+                (render-typography-context-appearance-fingerprint resolver-2-context))
+  (check-not-equal?
+   (automatic-section-cache-key timeline (timeline-section timeline 'only)
+                                #:fps 1 #:camera #f #:renderers '()
+                                #:typography-context resolver-2-context
+                                #:asset-files '())
+   (automatic-section-cache-key timeline (timeline-section timeline 'only)
+                                #:fps 1 #:camera #f #:renderers '()
+                                #:typography-context current-context
+                                #:asset-files '()))
   (define root (make-temporary-file "animate-typography-section-~a" 'directory))
   (dynamic-wind
    void

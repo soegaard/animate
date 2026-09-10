@@ -18,12 +18,12 @@
      (plain-text "FX-C: progressive subset reveals"
                  #:id 'title #:font-size 2/5 #:font-family 'swiss
                  #:font-weight 'bold #:color "navy")
-     #:camera camera #:at (vec2 0 4)))
+     #:camera camera #:at (vec2 0 3)))
   (define note
     (fixed-in-frame
      (plain-text "source order stays stable while each tile enters on its own schedule"
                  #:id 'note #:font-size 7/20 #:font-family 'swiss #:color "dimgray")
-     #:camera camera #:at (vec2 0 -4)))
+     #:camera camera #:at (vec2 0 -3)))
   (define tiles
     (list
      (rectangle #:id 'first #:width 2 #:height 2 #:center (vec2 -3 0)

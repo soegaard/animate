@@ -11,7 +11,11 @@
          current-render-typography-context
          current-or-default-render-typography-context)
 
-(define render-typography-resolver-version 2)
+;; Version 3 changes pixels for unchanged theme data: treatment Paints are
+;; anchored in semantic text coordinates, decorations preserve the content
+;; baseline, and cosmetic borders are drawn after semantic scale. Persistent
+;; frame identities must therefore not reuse resolver-2 artifacts.
+(define render-typography-resolver-version 3)
 
 (struct render-typography-context (theme appearance-fingerprint resolver-version)
   #:transparent)

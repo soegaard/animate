@@ -7,6 +7,7 @@
 (provide typography-serialization-budget?
          make-typography-serialization-budget
          typography-serialization-budget-reserve!
+         typography-serialization-budget-check-atom!
          typography-serialization-budget-count-datum!)
 
 (struct typography-serialization-budget (who maximum-nodes maximum-atom-bytes nodes)
@@ -45,6 +46,22 @@
      "a complete serialized typography datum within the configured node budget"
      "maximum nodes" (typography-serialization-budget-maximum-nodes budget)
      "serialized nodes" next)))
+
+;; Validate a known output atom during a source-structure preflight without
+;; counting another node. Serializers use this after reserving their exact
+;; output shape, so an oversized string, symbol, or byte string is rejected
+;; before they allocate a derived datum or write canonical bytes.
+(define (typography-serialization-budget-check-atom! budget value)
+  (unless (typography-serialization-budget? budget)
+    (raise-argument-error 'typography-serialization-budget-check-atom!
+                          "typography-serialization-budget?" budget))
+  (define byte-count (atom-byte-count value))
+  (when (> byte-count (typography-serialization-budget-maximum-atom-bytes budget))
+    (raise-arguments-error
+     (typography-serialization-budget-who budget)
+     "a serialized typography atom within the configured byte budget"
+     "maximum atom bytes" (typography-serialization-budget-maximum-atom-bytes budget)
+     "atom bytes" byte-count)))
 
 (define (typography-serialization-budget-count-datum! budget datum)
   (unless (typography-serialization-budget? budget)
@@ -88,13 +105,7 @@
 
 (define (count-atom! budget value)
   (count-node! budget)
-  (define byte-count (atom-byte-count value))
-  (when (> byte-count (typography-serialization-budget-maximum-atom-bytes budget))
-    (raise-arguments-error
-     (typography-serialization-budget-who budget)
-     "a serialized typography atom within the configured byte budget"
-     "maximum atom bytes" (typography-serialization-budget-maximum-atom-bytes budget)
-     "atom bytes" byte-count)))
+  (typography-serialization-budget-check-atom! budget value))
 
 (define (atom-byte-count value)
   (cond [(string? value) (bytes-length (string->bytes/utf-8 value))]

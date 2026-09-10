@@ -356,20 +356,36 @@
        (or (and cosmetic-border (cc-superimpose scaled-treated cosmetic-border))
            scaled-treated)]
       [else
-       ;; Custom renderers retain their existing anchored/logical protocol.
-       ;; There is no safe pixel inference for their actual ink bounds.
-       (apply-text-treatment-to-pict
-        (render-visual-with-pict-renderer renderer local-concrete camera)
-        (text-style-treatment style)
-        (text-style-font-size style)
-        camera
-        #:horizontal-alignment (text-visual-horizontal-alignment local-concrete)
-        #:vertical-alignment (text-visual-vertical-alignment local-concrete))]))
-  (if (text-pict-renderer? renderer)
-      (rotate-pict-if-needed treated (visual-rotation visual))
-      (rotate-pict-if-needed
-       (scale-pict-if-needed treated (visual-scale visual))
-       (visual-rotation visual))))
+       ;; A custom renderer declares a complete logical Pict, not a text-ink
+       ;; box. Do not infer pixels or reinterpret its text alignments. Its
+       ;; default semantic treatment anchor is the centre of that declared
+       ;; box; padding, paint mapping, scale, and the cosmetic outline then
+       ;; follow the same treatment order as built-in text.
+       (define content
+         (render-visual-with-pict-renderer renderer local-concrete camera))
+       (define local-treated
+         (apply-text-treatment-to-pict
+          content
+          (text-style-treatment style)
+          (text-style-font-size style)
+          camera
+          #:content-anchor (vec2 (/ (pict-width content) 2)
+                                 (/ (pict-height content) 2))
+          #:include-border? #f))
+       (define scaled-treated
+         (scale-pict-if-needed local-treated (visual-scale visual)))
+       (define cosmetic-border
+         (text-treatment-cosmetic-border-pict
+          scaled-treated local-treated (text-style-treatment style)
+          (visual-scale visual)
+          ;; These values are ignored for a custom Pict. Retain the public
+          ;; helper's complete argument shape while supplying its direct
+          ;; declared-box placement below.
+          'center 'center
+          #:source-offset origin))
+       (or (and cosmetic-border (cc-superimpose scaled-treated cosmetic-border))
+           scaled-treated)]))
+  (rotate-pict-if-needed treated (visual-rotation visual)))
 
 ;; affine-map-content->pict : affine-map-visual? camera?
 ;;                            (listof pict-renderer?) -> pict?
