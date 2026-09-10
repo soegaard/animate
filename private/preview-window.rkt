@@ -70,6 +70,86 @@
 ;; optional block chooser without giving the controller or model any GUI state.
 (define block-navigation-updaters (make-weak-hasheq))
 
+;; The preview's two primary work areas have a stable visual priority: the
+;; video and timeline use two thirds of the window, while authoring tools use
+;; the remaining third.  A stock horizontal panel shares its *extra* space
+;; evenly after minimum sizes, which makes this relationship depend on the
+;; inspector's current contents.  Keep the ratio explicit, while respecting
+;; the declared minimum widths of the workspace and sidebar containers.
+(define preview-workspace-sidebar-panel%
+  (class panel%
+    (init parent)
+    (super-new [parent parent])
+    (define/override (container-size info)
+      (match info
+        ['() (values 0 0)]
+        [(list only)
+         (values (car only) (cadr only))]
+        [(list workspace sidebar)
+         (values (+ (car workspace) (car sidebar))
+                 (max (cadr workspace) (cadr sidebar)))]
+        [many
+         (values (apply + (map car many))
+                 (apply max (map cadr many)))]))
+    (define/override (place-children info width height)
+      (match info
+        ['() '()]
+        [(list only)
+         (list (list 0 0 width height))]
+        [(list workspace sidebar)
+         (define workspace-minimum (car workspace))
+         (define sidebar-minimum (car sidebar))
+         (define workspace-width
+           (if (>= width (+ workspace-minimum sidebar-minimum))
+               ;; Clamp the preferred 2:1 division to both minimum widths.
+               (min (- width sidebar-minimum)
+                    (max workspace-minimum (quotient (* 2 width) 3)))
+               ;; The frame normally prevents this case; retain the ratio if
+               ;; a window manager nevertheless makes it narrower.
+               (quotient (* 2 width) 3)))
+         (list (list 0 0 workspace-width height)
+               (list workspace-width 0 (- width workspace-width) height))]
+        [many
+         ;; This container is intentionally used with two children, but keep
+         ;; a safe placement for construction-time or future extra children.
+         (for/list ([ignored (in-list many)])
+           (list 0 0 width height))]))))
+
+;; The sidebar contains controls whose natural width can be much wider than a
+;; third of the preview window.  It is still a fixed viewport: lay its one tab
+;; panel out at the available width, rather than letting that child establish a
+;; wider virtual canvas.  This also keeps the native tab strip centered in the
+;; visible sidebar.
+(define preview-sidebar-viewport-panel%
+  (class panel%
+    (init parent)
+    (super-new [parent parent])
+    (define/override (container-size info)
+      (values 480
+              (if (null? info) 0 (apply max (map cadr info)))))
+    (define/override (place-children info width height)
+      (for/list ([ignored (in-list info)])
+        (list 0 0 width height)))))
+
+;; `auto-tab-panel%` supplies a single active content page beneath native
+;; tabs. Its ordinary minimum width is the widest Inspector child, which can
+;; be much wider than this sidebar. Constrain that reported width while still
+;; placing its one content area across the visible sidebar.
+(define preview-sidebar-tabs%
+  (class auto-tab-panel%
+    (init choices parent [callback (lambda (_tabs _event) (void))])
+    (super-new [choices choices]
+               [parent parent]
+               [callback callback]
+               [stretchable-width #t]
+               [stretchable-height #t])
+    (define/override (container-size info)
+      (values 480
+              (if (null? info) 0 (apply max (map cadr info)))))
+    (define/override (place-children info width height)
+      (for/list ([ignored (in-list info)])
+        (list 0 0 width height)))))
+
 ;; These helpers describe source text only. Keeping them outside the GUI
 ;; constructor makes the source-index calculation independent of widget state
 ;; and, in particular, prevents a character hit from being inferred from a
@@ -396,9 +476,7 @@
   ;; Inspector and production diagnostics share the right sidebar instead of
   ;; extending the window vertically below the timeline.
   (define outer
-    (new horizontal-panel%
-         [parent frame]
-         [alignment '(left top)]))
+    (new preview-workspace-sidebar-panel% [parent frame]))
   (define workspace
     (new vertical-panel%
          [parent outer]
@@ -408,21 +486,11 @@
          [stretchable-width #t]
          [stretchable-height #t]))
   (define sidebar
-    (new vertical-panel%
-         [parent outer]
-         [alignment '(left top)]
-         [min-width 480]
-         [stretchable-width #f]
-         [stretchable-height #t]))
+    (new preview-sidebar-viewport-panel% [parent outer]))
   (define sidebar-tabs
-    ;; `auto-tab-panel%` adds a one-child-at-a-time content panel beneath the
-    ;; native tabs.  A plain `tab-panel%` only reports tab selection; hiding
-    ;; its sibling children leaves their layout slots in place.
-    (new auto-tab-panel%
+    (new preview-sidebar-tabs%
          [parent sidebar]
-         [choices '("Inspector" "Diagnostics")]
-         [stretchable-width #t]
-         [stretchable-height #t]))
+         [choices '("Inspector" "Diagnostics")]))
   (send sidebar-tabs set-selection 0)
   (define bitmap-box (box #f))
   ;; The active view is selected by the most recent drag/wheel gesture. It is
@@ -1483,60 +1551,84 @@
   ;; source selector, string-match suggestion, or relation declaration without
   ;; re-running an inspector provider.
   (define inspector-rows-box (box '()))
+  ;; The action buttons belong to the upper Inspector panel, but a copied
+  ;; render snapshot or colour literal may be selected in either lower panel.
+  ;; Track the list that most recently received a row selection so those
+  ;; actions continue to work across all three Inspector panels.
+  (define active-inspector-list-box (box #f))
+  (define main-inspector-rows-box (box '()))
+  (define render-detail-rows-box (box '()))
+  (define color-theme-rows-box (box '()))
   ;; A source-side inspector selection is not necessarily one Visual path:
   ;; one source unit can intentionally map to several formula leaves.  Keep
   ;; this stable `(root-path . source-index)` description apart from the
   ;; controller's ordinary single-path selection so source clicks never pick
   ;; an arbitrary rendered leaf.
   (define inspector-source-selection-box (box #f))
-  (define inspector-section-choice #f)
   (define copy-selection-box (box #f))
   (define copy-inspector-action-box (box #f))
   (define select-inspector-source-unit-box (box #f))
   ;; `list-box%` may invoke its callback while it is being constructed.  The
   ;; final updater is installed only after every dependent button exists.
   (define inspector-action-updater-box (box #f))
-  (define inspector-panel
+  ;; Inspector has enough vertical space for its three durable perspectives.
+  ;; Keep the scene-specific selector in the first panel, then retain the
+  ;; latest render snapshot and current colour theme below it. The other
+  ;; top-level tab remains the live playback/worker Diagnostics report.
+  (define inspector-page
     (new vertical-panel% [parent (send sidebar-tabs get-panel 0)]
+         [alignment '(left top)]
+         [stretchable-width #t]
+         [stretchable-height #t]))
+  (define inspector-panel
+    (new vertical-panel% [parent inspector-page]
          [alignment '(left top)]
          [stretchable-width #t]
          [stretchable-height #t]))
   (define selection-message
     (new message% [parent inspector-panel] [label "selection: none"]))
-  ;; Put the selector before the potentially tall inspector body.  A footer
-  ;; beneath a long list could be below the initial viewport, and native choice
-  ;; menus near the window bottom do not have enough room to show every
-  ;; section.  The action buttons may still be added to this row later.
+  ;; Keep row actions above the potentially tall Inspector body so they remain
+  ;; available even when a section produces many rows.
   (define inspector-footer
     (new horizontal-panel% [parent inspector-panel] [alignment '(center center)]
          [stretchable-width #t] [stretchable-height #f]))
-  (set! inspector-section-choice
-        (new choice% [parent inspector-footer] [label "Inspector section"] [choices '()]
-             [min-width 220]
-             [callback
-              (lambda (choice _event)
-                (display-inspector-section! (send choice get-selection)))]))
-  (send inspector-section-choice show #f)
+  ;; Keep the heading above the rows instead of using the list-box label,
+  ;; which macOS places in a separate column beside the list.
+  (define inspector-heading
+    (new message% [parent inspector-panel] [label "Inspector"]))
   (define inspector-rows
     (new list-box% [parent inspector-panel]
-         [label "Inspector"]
+         [label #f]
          [choices '()]
-         [min-width 400]
+         ;; Keep the ordinary Inspector compact enough for its one-third
+         ;; sidebar. Long detail rows can use the sidebar's horizontal scroll.
+         [min-width 320]
          [min-height 110]
          [stretchable-width #t]
          [stretchable-height #t]
          [callback
-          (lambda (_list-box _event)
+         (lambda (list-box _event)
+            (set-box! active-inspector-list-box list-box)
+            (set-box! inspector-rows-box (unbox main-inspector-rows-box))
             (define updater (unbox inspector-action-updater-box))
             (when updater (updater)))]))
+  ;; Keep the optional formula-source controls in one hideable child.  On
+  ;; macOS, hiding their individual native controls still leaves their former
+  ;; layout space in the containing panel; hiding this whole panel lets the
+  ;; ordinary Inspector rows use the same full height as Diagnostics.
+  (define formula-source-panel
+    (new vertical-panel% [parent inspector-panel]
+         [alignment '(left top)]
+         [stretchable-width #t]
+         [stretchable-height #f]))
   (define formula-source-label
-    (new message% [parent inspector-panel]
+    (new message% [parent formula-source-panel]
          [label "Formula source — click a mapped character"] ))
   (define formula-source-canvas
     (new
      (class canvas%
-       (super-new [parent inspector-panel]
-                  [min-width 400]
+       (super-new [parent formula-source-panel]
+                  [min-width 320]
                   [min-height 32]
                   [stretchable-width #t]
                   [stretchable-height #f]
@@ -1584,8 +1676,49 @@
              (when (exact-nonnegative-integer? index)
                (select-inspector-source-index! index))))
          (super on-event event)))))
-  (send formula-source-label show #f)
-  (send formula-source-canvas show #f)
+  (send formula-source-panel show #f)
+  (define render-detail-panel
+    (new vertical-panel% [parent inspector-page]
+         [alignment '(left top)]
+         [min-height 150]
+         [stretchable-width #t]
+         [stretchable-height #t]))
+  (new message% [parent render-detail-panel] [label "Last render details"])
+  (define render-detail-rows
+    (new list-box% [parent render-detail-panel]
+         [label #f]
+         [choices '()]
+         [min-width 320]
+         [min-height 110]
+         [stretchable-width #t]
+         [stretchable-height #t]
+         [callback
+          (lambda (list-box _event)
+            (set-box! active-inspector-list-box list-box)
+            (set-box! inspector-rows-box (unbox render-detail-rows-box))
+            (define updater (unbox inspector-action-updater-box))
+            (when updater (updater)))]))
+  (define color-theme-panel
+    (new vertical-panel% [parent inspector-page]
+         [alignment '(left top)]
+         [min-height 150]
+         [stretchable-width #t]
+         [stretchable-height #t]))
+  (new message% [parent color-theme-panel] [label "Colors and theme"])
+  (define color-theme-rows
+    (new list-box% [parent color-theme-panel]
+         [label #f]
+         [choices '()]
+         [min-width 320]
+         [min-height 110]
+         [stretchable-width #t]
+         [stretchable-height #t]
+         [callback
+          (lambda (list-box _event)
+            (set-box! active-inspector-list-box list-box)
+            (set-box! inspector-rows-box (unbox color-theme-rows-box))
+            (define updater (unbox inspector-action-updater-box))
+            (when updater (updater)))]))
   ;; A spatial hierarchy belongs below its owning view3d, not in the ordinary
   ;; Visual tree. Keep it a preview section assembled from immutable inspection
   ;; records so choosing it cannot change scene selection or trigger a render.
@@ -1884,9 +2017,15 @@
               #f))))
     (filter values (list material-section light-section fragment-section)))
   (define (available-inspector-sections document)
-    (append (if (inspector-document? document)
-                (inspector-document-sections document)
-                '())
+    ;; These two durable views own their lower panels. Keeping them out of
+    ;; this selector prevents a user from seeing the same data twice.
+    (filter
+     (lambda (section)
+       (not (memq (inspector-section-id section)
+                  '(render-diagnostics colors-and-theme))))
+     (append (if (inspector-document? document)
+                 (inspector-document-sections document)
+                 '())
             (let ([spatial (spatial-hierarchy-section)])
               (if spatial (list spatial) '()))
             (let ([topology (spatial-topology-section)])
@@ -1897,42 +2036,71 @@
             (let ([session (unbox controller-box)])
               (if session
                   (list (color-theme-inspector-section (preview-color-theme session)))
-                  '()))))
-  (define (display-inspector-section! index)
+                  '())))))
+  (define (inspector-row->list-label row)
+    (define severity-prefix
+      (case (inspector-row-severity row)
+        [(warning) "warning: "]
+        [(error) "error: "]
+        [else ""]))
+    (define action-suffix
+      (if (null? (inspector-row-actions row))
+          ""
+          (format "  [~a]"
+                  (string-join
+                   (for/list ([action (in-list (inspector-row-actions row))])
+                     (inspector-action-label action))
+                   ", "))))
+    (list-control-label
+     (format "~a~a: ~a~a"
+             severity-prefix
+             (inspector-row-label row)
+             (inspector-value->string (inspector-row-value row))
+             action-suffix)))
+  (define (install-inspector-rows! list-box rows empty-message)
+    (send list-box clear)
+    (if (null? rows)
+        (send list-box append empty-message)
+        (for ([row (in-list rows)])
+          (send list-box append (inspector-row->list-label row)))))
+  (define (document-section document section-id)
+    (and (inspector-document? document)
+         (for/first ([section (in-list (inspector-document-sections document))]
+                     #:when (eq? (inspector-section-id section) section-id))
+           section)))
+  (define (install-render-detail-panel! document)
+    (define section (document-section document 'render-diagnostics))
+    (define rows (if section (inspector-section-rows section) '()))
+    (set-box! render-detail-rows-box rows)
+    (install-inspector-rows! render-detail-rows rows
+                             "No completed render details yet."))
+  (define (install-color-theme-panel! session)
+    (define rows
+      (if session
+          (inspector-section-rows
+           (color-theme-inspector-section (preview-color-theme session)))
+          '()))
+    (set-box! color-theme-rows-box rows)
+    (install-inspector-rows! color-theme-rows rows "No colour theme available."))
+  (define (section->prefixed-rows section)
+    (for/list ([row (in-list (inspector-section-rows section))])
+      (inspector-row
+       (format "~a — ~a" (inspector-section-title section)
+               (inspector-row-label row))
+       (inspector-row-value row)
+       (inspector-row-severity row)
+       (inspector-row-actions row))))
+  (define (display-inspector-sections!)
     (define document (unbox inspector-document-box))
     (define sections (available-inspector-sections document))
-    (send inspector-rows clear)
-    (set-box! inspector-rows-box '())
-    (cond
-      [(and (exact-nonnegative-integer? index) (< index (length sections)))
-       (define section (list-ref sections index))
-       (set-box! inspector-rows-box (inspector-section-rows section))
-       (for ([row (in-list (inspector-section-rows section))])
-         (define severity-prefix
-           (case (inspector-row-severity row)
-             [(warning) "warning: "]
-             [(error) "error: "]
-             [else ""]))
-         (define action-suffix
-           (if (null? (inspector-row-actions row))
-               ""
-               (format "  [~a]"
-                       (string-join
-                        (for/list ([action (in-list (inspector-row-actions row))])
-                          (inspector-action-label action))
-                        ", "))))
-         (send inspector-rows append
-               (list-control-label
-                (format "~a~a: ~a~a"
-                        severity-prefix
-                        (inspector-row-label row)
-                        (inspector-value->string (inspector-row-value row))
-                        action-suffix))))
-       (when (null? (inspector-section-rows section))
-         (send inspector-rows append "No rows in this inspector section."))]
-      [else
-       (send inspector-rows append
-             "Select a Visual, or pause in a string transition, to inspect its semantics.")])
+    (define rows
+      (for/fold ([all '()]) ([section (in-list sections)])
+        (append all (section->prefixed-rows section))))
+    (set-box! active-inspector-list-box inspector-rows)
+    (set-box! main-inspector-rows-box rows)
+    (set-box! inspector-rows-box rows)
+    (install-inspector-rows! inspector-rows rows
+                             "No Inspector data is available yet.")
     ;; Refresh both action visibility and enabled state after replacing the
     ;; rows.  This procedure is first called only after the updater has been
     ;; installed below; the list-box constructor itself uses the guarded box
@@ -1941,19 +2109,12 @@
   (define (install-inspector-document! document)
     (set-box! inspector-document-box document)
     (define formula (inspector-document-formula document))
-    (send formula-source-label show (and formula #t))
-    (send formula-source-canvas show (and formula #t))
+    (send formula-source-panel show (and formula #t))
     (when formula
       (send formula-source-canvas refresh))
-    (define sections (available-inspector-sections document))
-    (send inspector-section-choice clear)
-    (for ([section (in-list sections)])
-      (send inspector-section-choice append (inspector-section-title section)))
-    (send inspector-section-choice enable (pair? sections))
-    (send inspector-section-choice show (pair? sections))
-    (when (pair? sections)
-      (send inspector-section-choice set-selection 0))
-    (display-inspector-section! (and (pair? sections) 0)))
+    (install-render-detail-panel! document)
+    (install-color-theme-panel! (unbox controller-box))
+    (display-inspector-sections!))
   (define (select-inspector-source-index! index)
     ;; This is source-to-Visual selection. The source unit is represented by
     ;; its formula root and exact source index, not by one arbitrary leaf, so
@@ -1997,7 +2158,8 @@
     (new button% [parent inspector-footer] [label "Copy inspector action"]
          [callback
           (lambda (_button _event)
-            (define index (send inspector-rows get-selection))
+            (define list-box (unbox active-inspector-list-box))
+            (define index (and list-box (send list-box get-selection)))
             (define rows (unbox inspector-rows-box))
             (when (and (exact-nonnegative-integer? index)
                        (< index (length rows)))
@@ -2027,7 +2189,8 @@
          [callback
           (lambda (_button _event)
             (define session (unbox controller-box))
-            (define index (send inspector-rows get-selection))
+            (define list-box (unbox active-inspector-list-box))
+            (define index (and list-box (send list-box get-selection)))
             (define rows (unbox inspector-rows-box))
             (when (and session
                        (exact-nonnegative-integer? index)
@@ -2059,7 +2222,8 @@
   ;; the exact mesh path after a 3D click rather than copying its outer view.
   (define (update-inspector-action-controls!)
     (define rows (unbox inspector-rows-box))
-    (define selected-index (send inspector-rows get-selection))
+    (define list-box (unbox active-inspector-list-box))
+    (define selected-index (and list-box (send list-box get-selection)))
     (define selected-row
       (and (exact-nonnegative-integer? selected-index)
            (< selected-index (length rows))
@@ -2104,17 +2268,21 @@
             (selected-action? (lambda (action) (eq? (inspector-action-id action)
                                                       'select-source-unit))))))
   (set-box! inspector-action-updater-box update-inspector-action-controls!)
-  (display-inspector-section! #f)
+  (display-inspector-sections!)
   (define diagnostics-panel
     (new vertical-panel% [parent (send sidebar-tabs get-panel 1)]
          [alignment '(left top)]
          [stretchable-width #t]
          [stretchable-height #t]))
+  ;; A list-box label is laid out beside the list on macOS. Keep this heading
+  ;; separate so the diagnostics have the full sidebar width below it.
+  (define diagnostics-heading
+    (new message% [parent diagnostics-panel] [label "Production diagnostics"]))
   (define diagnostics-rows
     (new list-box% [parent diagnostics-panel]
-         [label "Production diagnostics"]
+         [label #f]
          [choices '()]
-         [min-width 400]
+         [min-width 320]
          [min-height 110]
          [stretchable-width #t]
          [stretchable-height #t]))
