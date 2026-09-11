@@ -14,6 +14,7 @@
     (point [radius 0.055])
     (label [font-size 0.30])
     (circle (deemphasized (stroke [dash (7 5)])))
+    (marker (size 0.18) (spacing 0.08) (radius 0.26))
     (highlighted (stroke [width 4.5]))))
 
 (define example-theme (make-example-theme 'light))
@@ -44,8 +45,9 @@
   (step "The circles meet at C and D." [(C D) (intersections cA cB)])
   (step "Draw the line through C and D." [m (line C D)])
   (step "This is the perpendicular to l through P."
-    (deemphasize cP cA cB) (hide-label A B C D) (highlight m P))
-  (result m))
+    [right-angle (marker (perpendicular l m #:at P))]
+    (deemphasize cP cA cB) (hide-label A B C D) (highlight m P right-angle))
+  (result m right-angle))
 
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline perpendicular-through-point #:theme (make-example-theme theme-mode) #:aspect aspect))

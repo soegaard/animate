@@ -58,6 +58,7 @@
         [(segment? value) (list (segment-a value) (segment-b value))]
         [(ray? value) (list (ray-a value))]
         [(circle? value) (list (circle-center value) (circle-through value))]
+        [(marker? value) (marker-anchor-points value)]
         [else '()]))
 (define (anchor-points program environment)
   (define mentioned

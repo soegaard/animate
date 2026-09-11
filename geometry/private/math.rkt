@@ -5,9 +5,14 @@
 (require racket/list (only-in racket/math pi))
 (provide (struct-out point) (struct-out line) (struct-out segment)
          (struct-out ray) (struct-out circle)
+         (struct-out angle-spec) (struct-out perpendicular-marker)
+         (struct-out equal-length-marker) (struct-out angle-marker)
+         (struct-out equal-angle-marker)
          (struct-out exn:fail:geometry) geometry-error finite-real?
          point+ point- point* dot cross norm distance midpoint circle-radius
-         distinct? noncollinear? on same-point? geometry-kind curve?
+         distinct? noncollinear? on same-point? geometry-kind curve? marker?
+         marker-anchor-points marker-style-kind perpendicular-at? equal-segments?
+         equal-angles? angle-measure angle-directions angle-sweep
          curve-start curve-end intersections intersection clip-linear
          circle-points interpolate-point)
 
@@ -42,6 +47,13 @@
 ;; circle: its centre followed by the circumference point that defines its radius.
 (struct circle (center through) #:transparent #:guard check-pair)
 
+;; Marker values are semantic diagram annotations rather than Euclidean loci.
+(struct angle-spec (a b c) #:transparent)
+(struct perpendicular-marker (first second at) #:transparent)
+(struct equal-length-marker (segments) #:transparent)
+(struct angle-marker (angle) #:transparent)
+(struct equal-angle-marker (angles) #:transparent)
+
 (define (point+ a b) (point (+ (point-x a) (point-x b)) (+ (point-y a) (point-y b))))
 (define (point- a b) (point (- (point-x a) (point-x b)) (- (point-y a) (point-y b))))
 (define (point* a t) (point (* (point-x a) t) (* (point-y a) t)))
@@ -63,9 +75,70 @@
        (not (near-zero? (cross u v) (* (norm u) (norm v))))))
 (define (geometry-kind v)
   (cond [(point? v) 'Point] [(line? v) 'Line] [(segment? v) 'Segment]
-        [(ray? v) 'Ray] [(circle? v) 'Circle]
+        [(ray? v) 'Ray] [(circle? v) 'Circle] [(marker? v) 'Marker]
         [(finite-real? v) 'Number]
         [else (geometry-error 'geometry-kind "not a supported geometry value: ~e" v)]))
+
+(define (marker? v)
+  (or (perpendicular-marker? v) (equal-length-marker? v)
+      (angle-marker? v) (equal-angle-marker? v)))
+(define (marker-style-kind v)
+  (cond [(perpendicular-marker? v) 'marker]
+        [(equal-length-marker? v) 'marker]
+        [(angle-marker? v) 'marker]
+        [(equal-angle-marker? v) 'marker]
+        [else (geometry-error 'marker-style-kind "not a marker value: ~e" v)]))
+(define (unit-vector p who)
+  (define n (norm p))
+  (when (near-zero? n 1) (geometry-error who "degenerate direction"))
+  (point* p (/ 1 n)))
+(define (linear-direction c)
+  (unit-vector (point- (curve-end c) (curve-start c)) 'linear-direction))
+(define (angle-directions spec)
+  (unless (angle-spec? spec) (geometry-error 'angle-directions "expected an angle specification"))
+  (define u (point- (angle-spec-a spec) (angle-spec-b spec)))
+  (define v (point- (angle-spec-c spec) (angle-spec-b spec)))
+  (values (unit-vector u 'angle) (unit-vector v 'angle)))
+(define (angle-measure spec)
+  (define-values (u v) (angle-directions spec))
+  (define theta (atan (cross u v) (dot u v)))
+  (abs theta))
+(define (angle-sweep spec)
+  (define-values (u v) (angle-directions spec))
+  (define theta (atan (cross u v) (dot u v)))
+  (cond [(> theta pi) (- theta (* 2 pi))]
+        [(<= theta (- pi)) (+ theta (* 2 pi))]
+        [else theta]))
+(define (perpendicular-at? a b p)
+  (unless (and (linear? a) (linear? b) (point? p))
+    (geometry-error 'perpendicular-at? "expected two linear objects and a point"))
+  (and (on p a) (on p b)
+       (let* ([u (linear-direction a)] [v (linear-direction b)]
+              [scale (max 1 (distance (curve-start a) (curve-end a))
+                          (distance (curve-start b) (curve-end b)))])
+         (near-zero? (dot u v) scale))))
+(define (equal-segments? segments)
+  (unless (and (list? segments) (>= (length segments) 2) (andmap segment? segments))
+    (geometry-error 'equal-segments? "expected at least two segments"))
+  (define base (distance (segment-a (car segments)) (segment-b (car segments))))
+  (define scale (max 1 base))
+  (andmap (lambda (s)
+            (near-zero? (- (distance (segment-a s) (segment-b s)) base) scale))
+          (cdr segments)))
+(define (equal-angles? angles)
+  (unless (and (list? angles) (>= (length angles) 2) (andmap angle-spec? angles))
+    (geometry-error 'equal-angles? "expected at least two angle specifications"))
+  (define base (angle-measure (car angles)))
+  (define scale (max 1 base))
+  (andmap (lambda (a) (near-zero? (- (angle-measure a) base) scale)) (cdr angles)))
+(define (marker-anchor-points v)
+  (cond [(perpendicular-marker? v) (list (perpendicular-marker-at v))]
+        [(equal-length-marker? v)
+         (map (lambda (s) (midpoint (segment-a s) (segment-b s))) (equal-length-marker-segments v))]
+        [(angle-marker? v) (list (angle-spec-b (angle-marker-angle v)))]
+        [(equal-angle-marker? v) (map angle-spec-b (equal-angle-marker-angles v))]
+        [else '()]))
+
 (define (linear? v) (or (line? v) (segment? v) (ray? v)))
 (define (curve? v) (or (linear? v) (circle? v)))
 (define (curve-start v)

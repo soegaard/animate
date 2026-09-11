@@ -553,3 +553,50 @@ presentation events, and the native adapter. More capable geometry or layout
 implementations can replace these without changing the mathematical meaning of
 `show`, `hide`, `deemphasize`, or `highlight`.
 
+
+
+## Semantic markers
+
+The DSL now supports semantic diagram markers. Markers are first-class drawable values,
+so they can be bound to names, styled, shown/hidden, highlighted, and returned from helpers.
+
+### Marker expressions
+
+```racket
+(marker (perpendicular AB m #:at M))
+(marker (equal-length AB AC BC))
+(marker (angle A B C))
+(marker (equal-angle (angle A B C) (angle D E F)))
+```
+
+Supported relations:
+
+- `(perpendicular l m)` or `(perpendicular l m #:at P)` where `l` and `m` are lines,
+  segments, or rays. Without `#:at`, the construction must determine a unique
+  intersection point.
+- `(equal-length s1 s2 ...)` for two or more segments of equal length.
+- `(angle A B C)` for the angle with vertex `B`.
+- `(equal-angle a1 a2 ...)` for two or more equal angle specifications.
+
+### Example
+
+```racket
+(step "M is the midpoint, and the two lines are perpendicular."
+  [right-angle (marker (perpendicular AB m #:at M))]
+  (highlight m M right-angle))
+```
+
+### Styling markers
+
+Markers use the `marker` selector in themes and object styles.
+Useful properties are `size`, `spacing`, `radius`, `color`, and stroke width.
+
+```racket
+(geometry-theme
+  (marker (size 0.18) (spacing 0.08) (radius 0.28)
+          (normal (color foreground))))
+
+(style
+  [right-angle [color-family gold]]
+  [equal-sides [size 0.16]])
+```

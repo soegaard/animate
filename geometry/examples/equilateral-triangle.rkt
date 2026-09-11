@@ -13,6 +13,7 @@
     (stroke [width 2.5])
     (point [radius 0.055])
     (label [font-size 0.30])
+    (marker (size 0.17) (spacing 0.08) (radius 0.26))
     (highlighted (stroke [width 4.5]))))
 
 (define example-theme (make-example-theme 'light))
@@ -42,8 +43,9 @@
     [C (intersection cA cB #:side-of AB 'left)])
   (step "Join C to A and B." [AC (segment A C)] [BC (segment B C)])
   (step "This is the required equilateral triangle."
-    (deemphasize cA cB) (highlight AB AC BC))
-  (result C AB AC BC))
+    [equal-sides (marker (equal-length AB AC BC))]
+    (deemphasize cA cB) (highlight AB AC BC equal-sides))
+  (result C AB AC BC equal-sides))
 
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline equilateral-triangle #:theme (make-example-theme theme-mode) #:aspect aspect))

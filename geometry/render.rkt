@@ -5,7 +5,7 @@
 (require racket/list racket/file racket/format
          (prefix-in output: "../render.rkt")
          "main.rkt")
-(provide render-geometry-frames! render-geometry-stills!
+(provide render-geometry-frames! render-geometry-frames/report! render-geometry-stills!
          write-geometry-subtitles! geometry-caption-cues)
 
 ;; Flatten expanded-helper narration into nonoverlapping caption spans.
@@ -37,18 +37,29 @@
                  (timestamp (geometry-cue-end cue)) (geometry-cue-text cue))))
     #:exists 'truncate/replace)
   path)
+(define (render-geometry-frames/report! timeline directory #:width [width 1280] #:height [height 720]
+                                        #:fps [fps 30] #:workers [workers 1] #:supersample [supersample 1]
+                                        #:color-theme [color-theme #f] #:captions? [captions? #t]
+                                        #:labels [labels (hash)] #:mp4 [mp4 #f])
+  (define scene (geometry-timeline->scene timeline #:width width #:height height
+                                         #:captions? captions? #:labels labels))
+  (define report
+    (output:render-frames/report! scene directory #:fps fps #:workers workers
+                                  #:supersample supersample #:theme color-theme))
+  (write-geometry-subtitles! timeline (build-path directory "narration.srt"))
+  (when mp4
+    (output:encode-mp4! directory mp4 #:fps fps #:width width #:height height))
+  report)
+
 (define (render-geometry-frames! timeline directory #:width [width 1280] #:height [height 720]
                                  #:fps [fps 30] #:workers [workers 1] #:supersample [supersample 1]
                                  #:color-theme [color-theme #f] #:captions? [captions? #t]
                                  #:labels [labels (hash)] #:mp4 [mp4 #f])
-  (define scene (geometry-timeline->scene timeline #:width width #:height height
-                                         #:captions? captions? #:labels labels))
-  (define paths (output:render-frames! scene directory #:fps fps #:workers workers
-                                      #:supersample supersample #:theme color-theme))
-  (write-geometry-subtitles! timeline (build-path directory "narration.srt"))
-  (when mp4
-    (output:encode-mp4! directory mp4 #:fps fps #:width width #:height height))
-  paths)
+  (output:render-diagnostics-paths
+   (render-geometry-frames/report! timeline directory #:width width #:height height
+                                   #:fps fps #:workers workers #:supersample supersample
+                                   #:color-theme color-theme #:captions? captions?
+                                   #:labels labels #:mp4 mp4)))
 (define (render-geometry-stills! timeline directory #:width [width 1280] #:height [height 720]
                                 #:fps [fps 30] #:color-theme [color-theme #f]
                                 #:captions? [captions? #t] #:labels [labels (hash)]

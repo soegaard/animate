@@ -5,6 +5,50 @@
 (require racket/list "math.rkt")
 (provide evaluate-expression)
 
+
+(define (eval-angle expression environment)
+  (define values (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
+  (unless (and (= (length values) 3) (andmap point? values))
+    (geometry-error 'angle "angle expects three points"))
+  (define a (list-ref values 0))
+  (define b (list-ref values 1))
+  (define c (list-ref values 2))
+  (when (or (same-point? a b 1) (same-point? c b 1))
+    (geometry-error 'angle "angle rays must have positive length"))
+  (angle-spec a b c))
+(define (eval-perpendicular expression environment)
+  (define args (cdr expression))
+  (define a (evaluate-expression (car args) environment))
+  (define b (evaluate-expression (cadr args) environment))
+  (unless (and (or (line? a) (segment? a) (ray? a)) (or (line? b) (segment? b) (ray? b)))
+    (geometry-error 'perpendicular "perpendicular expects linear objects"))
+  (define at
+    (cond [(= (length args) 2)
+           (define pts (intersections a b))
+           (unless (= (length pts) 1)
+             (geometry-error 'perpendicular "cannot infer unique intersection; use #:at"))
+           (car pts)]
+          [(and (= (length args) 4) (eq? (caddr args) '#:at))
+           (evaluate-expression (cadddr args) environment)]
+          [else (geometry-error 'perpendicular "expected optional #:at point")]))
+  (unless (perpendicular-at? a b at)
+    (geometry-error 'perpendicular "relation does not hold at ~e" at))
+  (perpendicular-marker a b at))
+(define (eval-equal-length expression environment)
+  (define segments (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
+  (unless (and (>= (length segments) 2) (andmap segment? segments))
+    (geometry-error 'equal-length "equal-length expects at least two segments"))
+  (unless (equal-segments? segments)
+    (geometry-error 'equal-length "relation does not hold"))
+  (equal-length-marker segments))
+(define (eval-equal-angle expression environment)
+  (define angles (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
+  (unless (and (>= (length angles) 2) (andmap angle-spec? angles))
+    (geometry-error 'equal-angle "equal-angle expects at least two angle specifications"))
+  (unless (equal-angles? angles)
+    (geometry-error 'equal-angle "relation does not hold"))
+  (equal-angle-marker angles))
+
 (define (evaluate-expression expression environment)
   (define (ev x) (evaluate-expression x environment))
   (define result
@@ -25,6 +69,15 @@
          [(segment) (apply segment (map ev args))]
          [(ray) (apply ray (map ev args))]
          [(circle) (apply circle (map ev args))]
+         [(marker)
+          (define rel (ev (car args)))
+          (cond [(angle-spec? rel) (angle-marker rel)]
+                [(marker? rel) rel]
+                [else (geometry-error 'marker "expected an angle or marker relation")])]
+         [(angle) (eval-angle expression environment)]
+         [(perpendicular) (eval-perpendicular expression environment)]
+         [(equal-length) (eval-equal-length expression environment)]
+         [(equal-angle) (eval-equal-angle expression environment)]
          [(distance) (apply distance (map ev args))]
          [(midpoint) (apply midpoint (map ev args))]
          [(center) (circle-center (ev (car args)))]

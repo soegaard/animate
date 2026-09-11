@@ -8,6 +8,7 @@
          infer-expression-type expression-references substitute-expression)
 
 (define curve-types '(Line Segment Ray Circle))
+(define linear-types '(Line Segment Ray))
 (define (lookup-type env id who)
   (hash-ref env id (lambda () (geometry-error who "unknown or forward geometry reference ~a" id))))
 (define (expect-type actual expected who expression)
@@ -66,6 +67,34 @@
   (define (infer x) (infer-expression-type x env who))
   (define (all-of xs type)
     (for ([x (in-list xs)]) (expect-type (infer x) type who x)))
+  (define (marker-relation-type x)
+    (unless (and (list? x) (pair? x)) (geometry-error who "invalid marker relation ~e" x))
+    (case (car x)
+      [(angle)
+       (expect-count (cdr x) 3 who x)
+       (all-of (cdr x) 'Point)
+       'AngleSpec]
+      [(perpendicular)
+       (unless (or (= (length (cdr x)) 2) (= (length (cdr x)) 4))
+         (geometry-error who "perpendicular expects two linear objects and optional #:at point"))
+       (for ([arg (in-list (take (cdr x) 2))])
+         (unless (memq (infer arg) linear-types)
+           (geometry-error who "perpendicular expects line, segment or ray arguments")))
+       (when (= (length (cdr x)) 4)
+         ;; x = (perpendicular first second #:at point)
+         (unless (eq? (cadddr x) '#:at) (geometry-error who "expected #:at in ~e" x))
+         (expect-type (infer (list-ref x 4)) 'Point who x))
+       'MarkerRelation]
+      [(equal-length)
+       (unless (>= (length (cdr x)) 2) (geometry-error who "equal-length expects at least two segments"))
+       (all-of (cdr x) 'Segment)
+       'MarkerRelation]
+      [(equal-angle)
+       (unless (>= (length (cdr x)) 2) (geometry-error who "equal-angle expects at least two angles"))
+       (for ([arg (in-list (cdr x))])
+         (expect-type (marker-relation-type arg) 'AngleSpec who arg))
+       'MarkerRelation]
+      [else (geometry-error who "unsupported marker relation ~a" (car x))]))
   (cond
     [(finite-real? e) 'Number]
     [(boolean? e) 'Boolean]
@@ -93,6 +122,12 @@
         (expect-count args 1 who e) (all-of args 'Circle) 'Point]
        [(length)
         (expect-count args 1 who e) (all-of args 'Segment) 'Number]
+       [(marker)
+        (expect-count args 1 who e)
+        (unless (memq (marker-relation-type (car args)) '(AngleSpec MarkerRelation))
+          (geometry-error who "marker expects a marker relation or angle"))
+        'Marker]
+       [(angle perpendicular equal-length equal-angle) (marker-relation-type e)]
        [(intersection intersections)
         (unless (>= (length args) 2) (geometry-error who "two curves are required in ~e" e))
         (for ([x (in-list (take args 2))])
@@ -220,8 +255,8 @@
   (define (known! id)
     (lookup-type types id name) id)
   (define (drawable! id)
-    (unless (memq (lookup-type types id name) '(Point Line Segment Ray Circle))
-      (geometry-error name "presentation and visual layout need a drawable object, not ~a" id))
+    (unless (memq (lookup-type types id name) '(Point Line Segment Ray Circle Marker))
+      (geometry-error name "presentation and visual layout need a drawable object or marker, not ~a" id))
     id)
   (define (helper-call? e)
     (and (pair? e) (symbol? (car e)) (hash-has-key? helpers (car e))))

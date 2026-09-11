@@ -115,6 +115,7 @@
                         (geometry-program-steps program))))
   (define (anchor value)
     (cond [(point? value) value]
+          [(marker? value) (if (null? (marker-anchor-points value)) (point 0 0) (car (marker-anchor-points value)))]
           [(circle? value) (circle-through value)]
           [(segment? value) (midpoint (segment-a value) (segment-b value))]
           [(ray? value) (ray-a value)]

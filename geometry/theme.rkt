@@ -13,10 +13,10 @@
 (struct geometry-theme-value (rules) #:transparent)
 (define geometry-theme? geometry-theme-value?)
 (define geometry-theme-rules geometry-theme-value-rules)
-(define selectors '(stroke fill label point line segment ray circle normal deemphasized highlighted))
+(define selectors '(stroke fill label point line segment ray circle marker normal deemphasized highlighted))
 (define states '(normal deemphasized highlighted))
 (define (selector-path? path)
-  (define kinds '(point line segment ray circle))
+  (define kinds '(point line segment ray circle marker))
   (define channels '(stroke fill label))
   (match path
     [(list x) (memq x selectors)]
@@ -24,12 +24,12 @@
                     (and (memq x states) (memq y channels)))]
     [(list x y z) (and (memq x kinds) (memq y states) (memq z channels))]
     [_ #f]))
-(define properties '(width radius font-size font-family font-face font-style font-weight offset
+(define properties '(width radius size spacing font-size font-family font-face font-style font-weight offset
                           color-family color-variant color opacity dash))
 (define (property-valid? key value)
   (case key
-    [(width offset) (and (finite-real? value) (>= value 0))]
-    [(radius font-size) (and (finite-real? value) (> value 0))]
+    [(width offset spacing) (and (finite-real? value) (>= value 0))]
+    [(radius size font-size) (and (finite-real? value) (> value 0))]
     [(opacity) (and (finite-real? value) (<= 0 value 1))]
     [(color-family) (and (symbol? value) (regexp-match? #px"^[a-z][a-z0-9-]*$" (symbol->string value)))]
     [(color-variant) (memq value '(a b c d e))]
@@ -79,6 +79,10 @@
       (label (font-size 0.30) (font-family roman) (font-style italic)
              (offset 0.16) (color foreground))
       (circle (color-family aqua))
+      (marker (size 0.18) (spacing 0.08) (radius 0.28)
+              (normal (color foreground))
+              (deemphasized (color muted) (opacity 0.75))
+              (highlighted (color highlight) (opacity 1) (stroke (width 4))))
       (normal (color-variant d))
       (deemphasized (color-variant c) (opacity 0.75))
       (highlighted (color-variant e) (opacity 1) (stroke (width 4))))
@@ -91,6 +95,10 @@
       (label (font-size 0.30) (font-family roman) (font-style italic)
              (offset 0.16) (color foreground))
       (circle (color-family aqua))
+      (marker (size 0.18) (spacing 0.08) (radius 0.28)
+              (normal (color foreground))
+              (deemphasized (color muted) (opacity 0.70))
+              (highlighted (color highlight) (opacity 1) (stroke (width 4))))
       (normal (color-variant b))
       (deemphasized (color-variant c) (opacity 0.70))
       (highlighted (color-variant a) (opacity 1) (stroke (width 4))))
@@ -122,7 +130,7 @@
   entries)
 
 (define initial-style
-  (hash 'radius 0.055 'font-size 0.30 'font-family 'roman 'font-face #f
+  (hash 'radius 0.055 'size 0.18 'spacing 0.08 'font-size 0.30 'font-family 'roman 'font-face #f
         'font-style 'italic 'font-weight 'normal 'offset 0.16
         'opacity 1 'stroke-opacity 1 'fill-opacity 1 'label-opacity 1
         'stroke-width 2 'dash 'solid

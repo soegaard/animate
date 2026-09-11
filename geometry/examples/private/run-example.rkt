@@ -2,6 +2,7 @@
 
 (require racket/cmdline racket/pretty
          (prefix-in native-colors: "../../../colors.rkt")
+         (prefix-in output: "../../../render.rkt")
          "../../main.rkt" "../../render.rkt")
 (provide run-geometry-example)
 
@@ -16,6 +17,7 @@
   (define width 1280)
   (define height 720)
   (define supersample 1)
+  (define workers 10)
   (define destination #f)
   (define theme-mode 'light)
   (define native-color-theme native-colors:animate-light-theme)
@@ -40,6 +42,7 @@
    [("--width") n "Output width in pixels, default 1280." (set! width (positive-integer n "--width"))]
    [("--height") n "Output height in pixels, default 720." (set! height (positive-integer n "--height"))]
    [("--supersample") n "Native render supersampling factor, default 1." (set! supersample (positive-integer n "--supersample"))]
+   [("--workers") n "Parallel frame-render workers, default 10." (set! workers (positive-integer n "--workers"))]
    #:args ([directory #f])
    (set! destination (or directory (build-path "geometry-output" name))))
   (define aspect (/ width height))
@@ -52,13 +55,25 @@
          (pretty-write (geometry-realization-diagnostics (geometry-timeline-realization timeline)))
          (pretty-write (geometry-realization-choices (geometry-timeline-realization timeline)))]
         [else
-         (define paths
-           (if frames?
-               (render-geometry-frames! timeline destination #:width width #:height height
-                                        #:fps fps #:supersample supersample #:captions? captions?
-                                        #:color-theme native-color-theme #:mp4 mp4)
-               (render-geometry-stills! timeline destination #:width width #:height height
-                                        #:fps fps #:supersample supersample #:captions? captions?
-                                        #:color-theme native-color-theme)))
-         (printf "Wrote ~a ~a to ~a\n" (length paths) (if frames? "frames" "step stills") destination)
-         (when mp4 (printf "Encoded ~a\n" mp4))]))
+         (cond
+           [frames?
+            (printf "Rendering with ~a requested worker~a...\n"
+                    workers (if (= workers 1) "" "s"))
+            (define report
+              (render-geometry-frames/report! timeline destination #:width width #:height height
+                                              #:fps fps #:workers workers #:supersample supersample
+                                              #:captions? captions? #:color-theme native-color-theme
+                                              #:mp4 mp4))
+            (define paths (output:render-diagnostics-paths report))
+            (define actual-workers (output:render-diagnostics-workers report))
+            (printf "Wrote ~a frames to ~a\n" (length paths) destination)
+            (printf "Workers: requested ~a, actual ~a\n" workers actual-workers)
+            (printf "Render time: ~a ms\n"
+                    (inexact->exact (round (output:render-diagnostics-elapsed-milliseconds report))))
+            (when mp4 (printf "Encoded ~a\n" mp4))]
+           [else
+            (define paths
+              (render-geometry-stills! timeline destination #:width width #:height height
+                                       #:fps fps #:supersample supersample #:captions? captions?
+                                       #:color-theme native-color-theme))
+            (printf "Wrote ~a step stills to ~a\n" (length paths) destination)])]))

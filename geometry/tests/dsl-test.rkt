@@ -82,6 +82,27 @@
                                 [l (line (point -2 1) (point 2 1))])
                          (step [c (circle A B)] [(P Q) (intersections c l)]))))
     (check-exn exn:fail:geometry? (lambda () (realize-construction p))))
+
+  (test-case "perpendicular marker #:at keyword is parsed in the fourth argument slot"
+    (define p
+      (compile '((given [A (point 0 0)] [B (point 2 0)] [M (point 1 0)]
+                        [m (line (point 1 -2) (point 1 2))])
+                 (step [AB (segment A B)])
+                 (step [right-angle (marker (perpendicular AB m #:at M))]))))
+    (check-equal? (geometry-node-type
+                   (findf (lambda (n) (eq? (geometry-node-id n) 'right-angle))
+                          (geometry-program-nodes p)))
+                  'Marker))
+  (test-case "marker expressions compile and realize as drawable marker values"
+    (define p
+      (compile '((given [A (point 0 0)] [B (point 2 0)] [C (point 1 0)]
+                        [m (line (point 1 -2) (point 1 2))])
+                 (step [AB (segment A B)])
+                 (step [right-angle (marker (perpendicular AB m #:at C))]))))
+    (check-equal? (geometry-node-type (findf (lambda (n) (eq? (geometry-node-id n) 'right-angle))
+                                             (geometry-program-nodes p))) 'Marker)
+    (define r (realize-construction p))
+    (check-true (marker? (construction-ref r 'right-angle))))
   (test-case "helper preconditions are checked on actual input values"
     (check-exn exn:fail:geometry?
                (lambda () (realize-construction expanded #:givens (hash 'B (point -2 0)))))))

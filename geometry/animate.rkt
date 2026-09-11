@@ -75,6 +75,67 @@
          (define runs (dash-polylines points pattern (/ (geometry-view-width view) pixels)))
          (polylines-path (append-map (lambda (ps) (clipped-polylines ps view)) runs))]))
 
+(define (point-neg p) (point (- (point-x p)) (- (point-y p))))
+(define (normalize-point p who)
+  (define n (norm p))
+  (if (<= n 1e-12) (geometry-error who "degenerate direction") (point* p (/ 1 n))))
+(define (left-normal p) (point (- (point-y p)) (point-x p)))
+(define (arc-polyline center radius start sweep progress)
+  (define p (unit progress))
+  (define sweep* (* sweep p))
+  (define count (max 6 (inexact->exact (ceiling (* 24 (/ (abs sweep*) pi))))))
+  (for/list ([i (in-range (add1 count))])
+    (define theta (+ start (* sweep* (/ i count))))
+    (point+ center (point (* radius (cos theta)) (* radius (sin theta))))))
+(define (angle-start spec)
+  (define b (angle-spec-b spec))
+  (define u (point- (angle-spec-a spec) b))
+  (atan (point-y u) (point-x u)))
+(define (marker-polylines value styles progress count)
+  (define size (hash-ref styles 'size))
+  (define spacing (hash-ref styles 'spacing))
+  (define radius (hash-ref styles 'radius))
+  (cond
+    [(perpendicular-marker? value)
+     (define at (perpendicular-marker-at value))
+     (define u (normalize-point (point- (curve-end (perpendicular-marker-first value))
+                                        (curve-start (perpendicular-marker-first value))) 'perpendicular-marker))
+     (define v0 (normalize-point (point- (curve-end (perpendicular-marker-second value))
+                                         (curve-start (perpendicular-marker-second value))) 'perpendicular-marker))
+     (define v (if (negative? (cross u v0)) (point-neg v0) v0))
+     (list (list (point+ at (point* u size))
+                 (point+ at (point+ (point* u size) (point* v size)))
+                 (point+ at (point* v size))))]
+    [(equal-length-marker? value)
+     (append-map
+      (lambda (seg)
+        (define a (segment-a seg))
+        (define b (segment-b seg))
+        (define tangent (normalize-point (point- b a) 'equal-length-marker))
+        (define normal (left-normal tangent))
+        (define mid (midpoint a b))
+        (for/list ([i (in-range count)])
+          (define offset (* spacing (- i (/ (- count 1) 2.0))))
+          (define c (point+ mid (point* tangent offset)))
+          (list (point+ c (point* normal (* 0.5 size)))
+                (point+ c (point* normal (* -0.5 size))))))
+      (equal-length-marker-segments value))]
+    [(angle-marker? value)
+     (define spec (angle-marker-angle value))
+     (define start (angle-start spec))
+     (define sweep (angle-sweep spec))
+     (for/list ([i (in-range count)])
+       (arc-polyline (angle-spec-b spec) (+ radius (* spacing i)) start sweep progress))]
+    [(equal-angle-marker? value)
+     (append-map
+      (lambda (spec)
+        (define start (angle-start spec))
+        (define sweep (angle-sweep spec))
+        (for/list ([i (in-range count)])
+          (arc-polyline (angle-spec-b spec) (+ radius (* spacing i)) start sweep progress)))
+      (equal-angle-marker-angles value))]
+    [else '()]))
+
 ;; Four endpoints describe continuous normal/secondary and transient-highlight
 ;; composition. Numeric properties and native color expressions interpolate;
 ;; differing dash patterns cross-fade without an abrupt pattern change.
@@ -102,15 +163,27 @@
   (define environment (geometry-realization-values realization))
   (define label-table (label-positions realization theme #:labels labels))
   (define nodes
-    (filter (lambda (n) (memq (geometry-node-type n) '(Point Line Segment Ray Circle)))
+    (filter (lambda (n) (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker)))
             (geometry-program-nodes program)))
   (define ordered-nodes
-    (append (filter (lambda (n) (not (eq? (geometry-node-type n) 'Point))) nodes)
+    (append (filter (lambda (n) (memq (geometry-node-type n) '(Line Segment Ray Circle))) nodes)
+            (filter (lambda (n) (eq? (geometry-node-type n) 'Marker)) nodes)
             (filter (lambda (n) (eq? (geometry-node-type n) 'Point)) nodes)))
+  (define marker-counts
+    (let loop ([rest nodes] [length-index 1] [angle-index 1] [table (hash)])
+      (cond [(null? rest) table]
+            [else
+             (define id (geometry-node-id (car rest)))
+             (define value (hash-ref environment id))
+             (cond [(equal-length-marker? value)
+                    (loop (cdr rest) (add1 length-index) angle-index (hash-set table id length-index))]
+                   [(equal-angle-marker? value)
+                    (loop (cdr rest) length-index (add1 angle-index) (hash-set table id angle-index))]
+                   [else (loop (cdr rest) length-index angle-index table)])])))
   (define style-table
     (for/hash ([node (in-list nodes)])
       (define id (geometry-node-id node))
-      (define kind (geometry-node-type node))
+      (define kind (if (eq? (geometry-node-type node) 'Marker) (marker-style-kind (hash-ref environment id)) (geometry-node-type node)))
       (define overrides (object-style-overrides program id))
       (define styles
         (list (resolve-geometry-style theme kind 'normal overrides)
@@ -153,6 +226,17 @@
                (a:visual-with-stroke-width (a:visual-with-stroke-color outline stroke-color)
                                            (number 'stroke-width))
                (unit (* alpha reveal (number 'stroke-opacity)))))]
+            [(marker? value)
+             (define count (hash-ref marker-counts id 1))
+             (list
+              (a:visual-with-opacity
+               (a:visual-with-stroke-width
+                (a:visual-with-stroke-color
+                 (a:make-path-visual (polylines-path (marker-polylines value (car styles) reveal count))
+                                     #:id (key id 'marker) #:fill #f)
+                 stroke-color)
+                (number 'stroke-width))
+               (unit (* alpha (number 'stroke-opacity)))))]
             [else
              (define patterns (remove-duplicates (map (lambda (s) (hash-ref s 'dash)) styles)))
              (for/list ([pattern (in-list patterns)] [i (in-naturals)])

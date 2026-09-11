@@ -14,6 +14,7 @@
     (point [radius 0.055])
     (label [font-size 0.30])
     (circle (deemphasized (stroke [dash (7 5)])))
+    (marker (size 0.18) (spacing 0.08) (radius 0.26))
     (highlighted (stroke [width 4.5]))))
 
 (define example-theme (make-example-theme 'light))
@@ -33,8 +34,10 @@
   (step "Construct its perpendicular bisector."
     (expand [m (helper:perpendicular-bisector A B)]))
   (step "The line meets AB at M." [M (intersection m AB)])
-  (step "M is the midpoint, and the two lines are perpendicular." (highlight m M))
-  (result m M))
+  (step "M is the midpoint, and the two lines are perpendicular."
+    [right-angle (marker (perpendicular AB m #:at M))]
+    (highlight m M right-angle))
+  (result m M right-angle))
 
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline perpendicular-bisector-demo #:theme (make-example-theme theme-mode) #:aspect aspect))
