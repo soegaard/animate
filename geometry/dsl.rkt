@@ -45,6 +45,8 @@
            (for ([binding (in-list (cdr xs))])
              (define bs (syntax->list binding))
              (when (and bs (= (length bs) 2)) (visit-expression (cadr bs))))]
+          [(require assert)
+           (for-each visit-expression (cdr xs))]
           [(step) (for-each visit-action (step-body->action-forms (cdr xs)))]
           [else (void)])))
     (reverse found))

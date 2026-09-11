@@ -7,7 +7,8 @@
          "../main.rkt" "../render.rkt" "fixtures.rkt"
          (prefix-in eq: "../examples/equilateral-triangle.rkt")
          (prefix-in pb: "../examples/perpendicular-bisector.rkt")
-         (prefix-in pp: "../examples/perpendicular-through-point.rkt"))
+         (prefix-in pp: "../examples/perpendicular-through-point.rkt")
+         (prefix-in gal: "../examples/gallery.rkt"))
 (define (child group id)
   (or (findf (lambda (v) (eq? (a:visual-id v) id)) (a:group-visual-children group))
       (error 'test "no child ~a in ~a" id (a:visual-id group))))
@@ -40,8 +41,8 @@
     (define timeline (construction->timeline triangle))
     (check-exn exn:fail:geometry?
                (lambda () (geometry-timeline->scene timeline #:width 500 #:height 500))))
-  (test-case "all three distributed examples instantiate through their public API"
-    (for ([make (in-list (list eq:make-demo-scene pb:make-demo-scene pp:make-demo-scene))])
+  (test-case "all distributed examples instantiate through their public API"
+    (for ([make (in-list (list eq:make-demo-scene pb:make-demo-scene pp:make-demo-scene gal:make-demo-scene))])
       (check-true (a:scene? (make #:width 320 #:height 180)))))
   (test-case "native PNG output and narration metadata can be produced headlessly"
     (define directory (make-temporary-file "geometry-test-~a" 'directory))

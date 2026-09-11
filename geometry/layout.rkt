@@ -178,7 +178,7 @@
                        (and (andmap (lambda (id) (hash-has-key? environment id))
                                     (expression-references (geometry-check-expression c)))
                             (begin
-                              (unless (evaluate-expression (geometry-check-expression c) environment)
+                              (unless (relation-truthy? (evaluate-expression (geometry-check-expression c) environment))
                                 (geometry-error (geometry-check-origin c) "precondition failed: ~e"
                                                 (geometry-check-expression c)))
                               #t))) c)))
@@ -225,6 +225,10 @@
     (unless (null? pending) (geometry-error name "unresolved mathematical preconditions"))
     (for ([l (in-list (geometry-program-layout program))] #:when (eq? (car l) 'constrain))
       (unless (evaluate-expression (cadr l) environment) (geometry-error name "layout constraint failed: ~e" (cadr l))))
+    (for ([a (in-list (geometry-program-assertions program))])
+      (unless (relation-truthy? (evaluate-expression (geometry-check-expression a) environment))
+        (geometry-error (geometry-check-origin a) "assertion failed: ~e"
+                        (geometry-check-expression a))))
     (define anchors (anchor-points program environment))
     (define view (or fixed-view (fit-view anchors aspect margin padding)))
     (unless (andmap (lambda (p) (point-in-view? p view padding)) anchors)

@@ -103,6 +103,33 @@
                                              (geometry-program-nodes p))) 'Marker)
     (define r (realize-construction p))
     (check-true (marker? (construction-ref r 'right-angle))))
+
+  (test-case "assertions accept relations and are checked after realization"
+    (define ok
+      (compile '((given [A (point 0 0)] [B (point 2 0)] [m (line (point 1 -2) (point 1 2))])
+                 (step [AB (segment A B)] [M (intersection AB m)])
+                 (assert (midpoint-of M AB)
+                         (perpendicular AB m #:at M)))))
+    (check-true (geometry-program? ok))
+    (check-equal? (length (geometry-program-assertions ok)) 2)
+    (check-true (point? (construction-ref (realize-construction ok) 'M)))
+    (define bad
+      (compile '((given [A (point 0 0)] [B (point 2 0)] [m (line (point 0 -2) (point 0 2))])
+                 (step [AB (segment A B)] [M (intersection AB m)])
+                 (assert (midpoint-of M AB)))))
+    (check-exn exn:fail:geometry? (lambda () (realize-construction bad))))
+
+  (test-case "parallel and midpoint markers compile and realize"
+    (define p
+      (compile '((given [A (point 0 0)] [B (point 2 0)]
+                        [C (point 0 1)] [D (point 2 1)])
+                 (step [AB (segment A B)] [CD (segment C D)] [M (midpoint A B)])
+                 (step [pm (marker (parallel AB CD))]
+                       [mm (marker (midpoint-of M AB))]))))
+    (define r (realize-construction p))
+    (check-true (parallel-marker? (construction-ref r 'pm)))
+    (check-true (midpoint-marker? (construction-ref r 'mm))))
+
   (test-case "helper preconditions are checked on actual input values"
     (check-exn exn:fail:geometry?
                (lambda () (realize-construction expanded #:givens (hash 'B (point -2 0)))))))

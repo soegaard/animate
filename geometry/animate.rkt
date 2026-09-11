@@ -91,6 +91,21 @@
   (define b (angle-spec-b spec))
   (define u (point- (angle-spec-a spec) b))
   (atan (point-y u) (point-x u)))
+(define (curve-sample-midpoint curve)
+  (cond [(segment? curve) (midpoint (segment-a curve) (segment-b curve))]
+        [(ray? curve) (interpolate-point (ray-a curve) (ray-b curve) 0.35)]
+        [else (midpoint (line-a curve) (line-b curve))]))
+(define (parallel-arrow-pair curve size spacing count)
+  (define tangent (normalize-point (point- (curve-end curve) (curve-start curve)) 'parallel-marker))
+  (define normal (left-normal tangent))
+  (define base (curve-sample-midpoint curve))
+  (for/list ([i (in-range count)])
+    (define offset (* spacing (- i (/ (- count 1) 2.0))))
+    (define center (point+ base (point* tangent offset)))
+    (define tip (point+ center (point* tangent (* 0.45 size))))
+    (define wing-a (point+ center (point+ (point* tangent (* -0.35 size)) (point* normal (* 0.25 size)))))
+    (define wing-b (point+ center (point+ (point* tangent (* -0.35 size)) (point* normal (* -0.25 size)))))
+    (list wing-a tip wing-b)))
 (define (marker-polylines value styles progress count)
   (define size (hash-ref styles 'size))
   (define spacing (hash-ref styles 'spacing))
@@ -106,6 +121,9 @@
      (list (list (point+ at (point* u size))
                  (point+ at (point+ (point* u size) (point* v size)))
                  (point+ at (point* v size))))]
+    [(parallel-marker? value)
+     (append (parallel-arrow-pair (parallel-marker-first value) size spacing count)
+             (parallel-arrow-pair (parallel-marker-second value) size spacing count))]
     [(equal-length-marker? value)
      (append-map
       (lambda (seg)
@@ -117,8 +135,8 @@
         (for/list ([i (in-range count)])
           (define offset (* spacing (- i (/ (- count 1) 2.0))))
           (define c (point+ mid (point* tangent offset)))
-          (list (point+ c (point* normal (* 0.5 size)))
-                (point+ c (point* normal (* -0.5 size))))))
+          (list (point+ c (point* normal (* 0.4 size)))
+                (point+ c (point* normal (* -0.4 size))))))
       (equal-length-marker-segments value))]
     [(angle-marker? value)
      (define spec (angle-marker-angle value))
@@ -134,6 +152,17 @@
         (for/list ([i (in-range count)])
           (arc-polyline (angle-spec-b spec) (+ radius (* spacing i)) start sweep progress)))
       (equal-angle-marker-angles value))]
+    [(midpoint-marker? value)
+     (define seg (midpoint-marker-segment value))
+     (define p (midpoint-marker-point value))
+     (define a (segment-a seg))
+     (define b (segment-b seg))
+     (define tangent (normalize-point (point- b a) 'midpoint-marker))
+     (define normal (left-normal tangent))
+     (define (tick segmid)
+       (list (point+ segmid (point* normal (* 0.4 size)))
+             (point+ segmid (point* normal (* -0.4 size)))))
+     (list (tick (midpoint a p)) (tick (midpoint p b)))]
     [else '()]))
 
 ;; Four endpoints describe continuous normal/secondary and transient-highlight
@@ -170,16 +199,18 @@
             (filter (lambda (n) (eq? (geometry-node-type n) 'Marker)) nodes)
             (filter (lambda (n) (eq? (geometry-node-type n) 'Point)) nodes)))
   (define marker-counts
-    (let loop ([rest nodes] [length-index 1] [angle-index 1] [table (hash)])
+    (let loop ([rest nodes] [length-index 1] [angle-index 1] [parallel-index 1] [table (hash)])
       (cond [(null? rest) table]
             [else
              (define id (geometry-node-id (car rest)))
              (define value (hash-ref environment id))
              (cond [(equal-length-marker? value)
-                    (loop (cdr rest) (add1 length-index) angle-index (hash-set table id length-index))]
+                    (loop (cdr rest) (add1 length-index) angle-index parallel-index (hash-set table id length-index))]
                    [(equal-angle-marker? value)
-                    (loop (cdr rest) length-index (add1 angle-index) (hash-set table id angle-index))]
-                   [else (loop (cdr rest) length-index angle-index table)])])))
+                    (loop (cdr rest) length-index (add1 angle-index) parallel-index (hash-set table id angle-index))]
+                   [(parallel-marker? value)
+                    (loop (cdr rest) length-index angle-index (add1 parallel-index) (hash-set table id parallel-index))]
+                   [else (loop (cdr rest) length-index angle-index parallel-index table)])])))
   (define style-table
     (for/hash ([node (in-list nodes)])
       (define id (geometry-node-id node))

@@ -9,6 +9,7 @@
 
 (define curve-types '(Line Segment Ray Circle))
 (define linear-types '(Line Segment Ray))
+(define relation-types '(Relation AngleSpec))
 (define (lookup-type env id who)
   (hash-ref env id (lambda () (geometry-error who "unknown or forward geometry reference ~a" id))))
 (define (expect-type actual expected who expression)
@@ -18,7 +19,7 @@
   (unless (= (length xs) n)
     (geometry-error who "expected ~a arguments in ~e" n expression)))
 
-(define default-program-timing (geometry-timing 0.6 0.7 0.9 0.5))
+(define default-program-timing (geometry-timing 0.6 1.0 0.9 0.5))
 (define (nonnegative-real! who label value)
   (unless (and (finite-real? value) (>= value 0))
     (geometry-error who "~a must be a nonnegative real, received ~e" label value))
@@ -67,8 +68,8 @@
   (define (infer x) (infer-expression-type x env who))
   (define (all-of xs type)
     (for ([x (in-list xs)]) (expect-type (infer x) type who x)))
-  (define (marker-relation-type x)
-    (unless (and (list? x) (pair? x)) (geometry-error who "invalid marker relation ~e" x))
+  (define (relation-expression-type x)
+    (unless (and (list? x) (pair? x)) (geometry-error who "invalid relation expression ~e" x))
     (case (car x)
       [(angle)
        (expect-count (cdr x) 3 who x)
@@ -84,17 +85,32 @@
          ;; x = (perpendicular first second #:at point)
          (unless (eq? (cadddr x) '#:at) (geometry-error who "expected #:at in ~e" x))
          (expect-type (infer (list-ref x 4)) 'Point who x))
-       'MarkerRelation]
+       'Relation]
+      [(parallel)
+       (expect-count (cdr x) 2 who x)
+       (for ([arg (in-list (cdr x))])
+         (unless (memq (infer arg) linear-types)
+           (geometry-error who "parallel expects line, segment or ray arguments")))
+       'Relation]
       [(equal-length)
        (unless (>= (length (cdr x)) 2) (geometry-error who "equal-length expects at least two segments"))
        (all-of (cdr x) 'Segment)
-       'MarkerRelation]
+       'Relation]
       [(equal-angle)
        (unless (>= (length (cdr x)) 2) (geometry-error who "equal-angle expects at least two angles"))
        (for ([arg (in-list (cdr x))])
-         (expect-type (marker-relation-type arg) 'AngleSpec who arg))
-       'MarkerRelation]
-      [else (geometry-error who "unsupported marker relation ~a" (car x))]))
+         (expect-type (relation-expression-type arg) 'AngleSpec who arg))
+       'Relation]
+      [(collinear)
+       (unless (>= (length (cdr x)) 3) (geometry-error who "collinear expects at least three points"))
+       (all-of (cdr x) 'Point)
+       'Relation]
+      [(midpoint-of)
+       (expect-count (cdr x) 2 who x)
+       (expect-type (infer (cadr x)) 'Point who x)
+       (expect-type (infer (caddr x)) 'Segment who x)
+       'Relation]
+      [else (geometry-error who "unsupported relation expression ~a" (car x))]))
   (cond
     [(finite-real? e) 'Number]
     [(boolean? e) 'Boolean]
@@ -124,10 +140,14 @@
         (expect-count args 1 who e) (all-of args 'Segment) 'Number]
        [(marker)
         (expect-count args 1 who e)
-        (unless (memq (marker-relation-type (car args)) '(AngleSpec MarkerRelation))
-          (geometry-error who "marker expects a marker relation or angle"))
+        (unless (and (list? (car args)) (pair? (car args)))
+          (geometry-error who "marker expects a drawable relation or angle expression"))
+        (when (eq? (caar args) 'collinear)
+          (geometry-error who "collinear is assertable but has no built-in marker"))
+        (unless (memq (relation-expression-type (car args)) relation-types)
+          (geometry-error who "marker expects a drawable relation or angle"))
         'Marker]
-       [(angle perpendicular equal-length equal-angle) (marker-relation-type e)]
+       [(angle perpendicular parallel equal-length equal-angle collinear midpoint-of) (relation-expression-type e)]
        [(intersection intersections)
         (unless (>= (length args) 2) (geometry-error who "two curves are required in ~e" e))
         (for ([x (in-list (take args 2))])
@@ -236,6 +256,7 @@
   (define steps '())
   (define initial '())
   (define checks '())
+  (define assertions '())
   (define layouts '())
   (define styles '())
   (define timing default-program-timing)
@@ -326,6 +347,11 @@
     (set! checks
           (append checks
                   (for/list ([c (in-list (geometry-program-checks body))])
+                    (geometry-check (substitute-expression (geometry-check-expression c) substitutions)
+                                    (format "~a / helper ~a: ~a" name (car expression) (geometry-check-origin c))))))
+    (set! assertions
+          (append assertions
+                  (for/list ([c (in-list (geometry-program-assertions body))])
                     (geometry-check (substitute-expression (geometry-check-expression c) substitutions)
                                     (format "~a / helper ~a: ~a" name (car expression) (geometry-check-origin c))))))
     ;; Helper hints are weak defaults. Hard constraints remain hard.
@@ -446,6 +472,7 @@
       (for ([param (in-list parameters)]) (add! (car param) (cdr param) '(input) #t #t))
       (for ([b (in-list (cdar given-clauses))]) (parse-binding b #t)))
   (define deferred-checks '())
+  (define deferred-assertions '())
   (define outer-layout '())
   (define outer-style '())
   (define seen-timing? #f)
@@ -460,6 +487,7 @@
        (set! seen-result? #t)
        (set! outputs (cdr c))]
       [(require) (set! deferred-checks (append deferred-checks (cdr c)))]
+      [(assert) (set! deferred-assertions (append deferred-assertions (cdr c)))]
       [(layout) (set! outer-layout (append outer-layout (cdr c)))]
       [(style) (set! outer-style (append outer-style (cdr c)))]
       [(timing) (when seen-timing? (geometry-error name "duplicate timing clause"))
@@ -475,6 +503,10 @@
   (for ([e (in-list deferred-checks)])
     (expect-type (infer-expression-type e types name) 'Boolean name e)
     (set! checks (append checks (list (geometry-check e (format "~a precondition" name))))))
+  (for ([e (in-list deferred-assertions)])
+    (unless (memq (infer-expression-type e types name) '(Boolean Relation))
+      (geometry-error name "assert expects a Boolean or relation: ~e" e))
+    (set! assertions (append assertions (list (geometry-check e (format "~a assertion" name))))))
   (set! layouts (append layouts outer-layout))
   (for ([l (in-list layouts)])
     (match l
@@ -498,4 +530,4 @@
   (for ([s (in-list styles)])
     (unless (and (list? s) (pair? s) (symbol? (car s))) (geometry-error name "invalid object style ~e" s))
     (drawable! (car s)))
-  (geometry-program name nodes steps initial checks layouts styles timing outputs source))
+  (geometry-program name nodes steps initial checks assertions layouts styles timing outputs source))

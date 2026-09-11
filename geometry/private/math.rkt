@@ -5,14 +5,19 @@
 (require racket/list (only-in racket/math pi))
 (provide (struct-out point) (struct-out line) (struct-out segment)
          (struct-out ray) (struct-out circle)
-         (struct-out angle-spec) (struct-out perpendicular-marker)
+         (struct-out angle-spec)
+         (struct-out perpendicular-relation) (struct-out parallel-relation)
+         (struct-out equal-length-relation) (struct-out equal-angle-relation)
+         (struct-out collinear-relation) (struct-out midpoint-of-relation)
+         (struct-out perpendicular-marker) (struct-out parallel-marker)
          (struct-out equal-length-marker) (struct-out angle-marker)
-         (struct-out equal-angle-marker)
+         (struct-out equal-angle-marker) (struct-out midpoint-marker)
          (struct-out exn:fail:geometry) geometry-error finite-real?
          point+ point- point* dot cross norm distance midpoint circle-radius
-         distinct? noncollinear? on same-point? geometry-kind curve? marker?
-         marker-anchor-points marker-style-kind perpendicular-at? equal-segments?
-         equal-angles? angle-measure angle-directions angle-sweep
+         distinct? noncollinear? on same-point? geometry-kind curve? marker? relation?
+         marker-anchor-points marker-style-kind relation-holds? relation->marker
+         perpendicular-at? parallel-curves? equal-segments? equal-angles?
+         collinear-points? midpoint-of? angle-measure angle-directions angle-sweep
          curve-start curve-end intersections intersection clip-linear
          circle-points interpolate-point)
 
@@ -47,12 +52,20 @@
 ;; circle: its centre followed by the circumference point that defines its radius.
 (struct circle (center through) #:transparent #:guard check-pair)
 
-;; Marker values are semantic diagram annotations rather than Euclidean loci.
+;; Relations are mathematical facts; markers are one drawable presentation of them.
 (struct angle-spec (a b c) #:transparent)
+(struct perpendicular-relation (first second at) #:transparent)
+(struct parallel-relation (first second) #:transparent)
+(struct equal-length-relation (segments) #:transparent)
+(struct equal-angle-relation (angles) #:transparent)
+(struct collinear-relation (points) #:transparent)
+(struct midpoint-of-relation (point segment) #:transparent)
 (struct perpendicular-marker (first second at) #:transparent)
+(struct parallel-marker (first second) #:transparent)
 (struct equal-length-marker (segments) #:transparent)
 (struct angle-marker (angle) #:transparent)
 (struct equal-angle-marker (angles) #:transparent)
+(struct midpoint-marker (point segment) #:transparent)
 
 (define (point+ a b) (point (+ (point-x a) (point-x b)) (+ (point-y a) (point-y b))))
 (define (point- a b) (point (- (point-x a) (point-x b)) (- (point-y a) (point-y b))))
@@ -76,17 +89,25 @@
 (define (geometry-kind v)
   (cond [(point? v) 'Point] [(line? v) 'Line] [(segment? v) 'Segment]
         [(ray? v) 'Ray] [(circle? v) 'Circle] [(marker? v) 'Marker]
-        [(finite-real? v) 'Number]
+        [(relation? v) 'Relation] [(finite-real? v) 'Number]
         [else (geometry-error 'geometry-kind "not a supported geometry value: ~e" v)]))
 
+(define (relation? v)
+  (or (perpendicular-relation? v) (parallel-relation? v)
+      (equal-length-relation? v) (equal-angle-relation? v)
+      (collinear-relation? v) (midpoint-of-relation? v)))
+
 (define (marker? v)
-  (or (perpendicular-marker? v) (equal-length-marker? v)
-      (angle-marker? v) (equal-angle-marker? v)))
+  (or (perpendicular-marker? v) (parallel-marker? v)
+      (equal-length-marker? v) (angle-marker? v)
+      (equal-angle-marker? v) (midpoint-marker? v)))
 (define (marker-style-kind v)
   (cond [(perpendicular-marker? v) 'marker]
+        [(parallel-marker? v) 'marker]
         [(equal-length-marker? v) 'marker]
         [(angle-marker? v) 'marker]
         [(equal-angle-marker? v) 'marker]
+        [(midpoint-marker? v) 'marker]
         [else (geometry-error 'marker-style-kind "not a marker value: ~e" v)]))
 (define (unit-vector p who)
   (define n (norm p))
@@ -109,6 +130,70 @@
   (cond [(> theta pi) (- theta (* 2 pi))]
         [(<= theta (- pi)) (+ theta (* 2 pi))]
         [else theta]))
+(define (parallel-curves? a b)
+  (unless (and (linear? a) (linear? b))
+    (geometry-error 'parallel-curves? "expected two linear objects"))
+  (define u (linear-direction a))
+  (define v (linear-direction b))
+  (define scale (max 1 (distance (curve-start a) (curve-end a))
+                      (distance (curve-start b) (curve-end b))))
+  (near-zero? (cross u v) scale))
+(define (collinear-points? points)
+  (unless (and (list? points) (>= (length points) 3) (andmap point? points))
+    (geometry-error 'collinear-points? "expected at least three points"))
+  (define anchor (car points))
+  (define others (cdr points))
+  (define first-distinct
+    (for/first ([p (in-list others)] #:when (distinct? anchor p)) p))
+  (cond [(not first-distinct) #t]
+        [else
+         (define direction (point- first-distinct anchor))
+         (define scale (max 1 (norm direction)))
+         (for/and ([p (in-list others)])
+           (near-zero? (cross direction (point- p anchor)) scale))]))
+(define (midpoint-of? p s)
+  (unless (and (point? p) (segment? s))
+    (geometry-error 'midpoint-of? "expected a point and a segment"))
+  (and (on p s)
+       (let* ([a (segment-a s)] [b (segment-b s)]
+              [da (distance p a)] [db (distance p b)]
+              [scale (max 1 (distance a b))])
+         (near-zero? (- da db) scale))))
+(define (relation-holds? relation)
+  (cond [(perpendicular-relation? relation)
+         (perpendicular-at? (perpendicular-relation-first relation)
+                            (perpendicular-relation-second relation)
+                            (perpendicular-relation-at relation))]
+        [(parallel-relation? relation)
+         (parallel-curves? (parallel-relation-first relation)
+                           (parallel-relation-second relation))]
+        [(equal-length-relation? relation)
+         (equal-segments? (equal-length-relation-segments relation))]
+        [(equal-angle-relation? relation)
+         (equal-angles? (equal-angle-relation-angles relation))]
+        [(collinear-relation? relation)
+         (collinear-points? (collinear-relation-points relation))]
+        [(midpoint-of-relation? relation)
+         (midpoint-of? (midpoint-of-relation-point relation)
+                       (midpoint-of-relation-segment relation))]
+        [else (geometry-error 'relation-holds? "expected a relation value: ~e" relation)]))
+(define (relation->marker relation)
+  (cond [(perpendicular-relation? relation)
+         (perpendicular-marker (perpendicular-relation-first relation)
+                               (perpendicular-relation-second relation)
+                               (perpendicular-relation-at relation))]
+        [(parallel-relation? relation)
+         (parallel-marker (parallel-relation-first relation)
+                          (parallel-relation-second relation))]
+        [(equal-length-relation? relation)
+         (equal-length-marker (equal-length-relation-segments relation))]
+        [(equal-angle-relation? relation)
+         (equal-angle-marker (equal-angle-relation-angles relation))]
+        [(midpoint-of-relation? relation)
+         (midpoint-marker (midpoint-of-relation-point relation)
+                          (midpoint-of-relation-segment relation))]
+        [else (geometry-error 'relation->marker "no marker visualization for relation ~e" relation)]))
+
 (define (perpendicular-at? a b p)
   (unless (and (linear? a) (linear? b) (point? p))
     (geometry-error 'perpendicular-at? "expected two linear objects and a point"))
@@ -133,10 +218,14 @@
   (andmap (lambda (a) (near-zero? (- (angle-measure a) base) scale)) (cdr angles)))
 (define (marker-anchor-points v)
   (cond [(perpendicular-marker? v) (list (perpendicular-marker-at v))]
+        [(parallel-marker? v)
+         (list (midpoint (curve-start (parallel-marker-first v)) (curve-end (parallel-marker-first v)))
+               (midpoint (curve-start (parallel-marker-second v)) (curve-end (parallel-marker-second v))))]
         [(equal-length-marker? v)
          (map (lambda (s) (midpoint (segment-a s) (segment-b s))) (equal-length-marker-segments v))]
         [(angle-marker? v) (list (angle-spec-b (angle-marker-angle v)))]
         [(equal-angle-marker? v) (map angle-spec-b (equal-angle-marker-angles v))]
+        [(midpoint-marker? v) (list (midpoint-marker-point v))]
         [else '()]))
 
 (define (linear? v) (or (line? v) (segment? v) (ray? v)))

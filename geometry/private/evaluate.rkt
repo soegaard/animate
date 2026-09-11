@@ -3,8 +3,7 @@
 ;; Pure evaluation of the checked expression algebra. Free inputs and choices
 ;; are supplied by the realization pass; this module never chooses randomly.
 (require racket/list "math.rkt")
-(provide evaluate-expression)
-
+(provide evaluate-expression relation-truthy?)
 
 (define (eval-angle expression environment)
   (define values (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
@@ -16,11 +15,18 @@
   (when (or (same-point? a b 1) (same-point? c b 1))
     (geometry-error 'angle "angle rays must have positive length"))
   (angle-spec a b c))
+
+(define (linear-object? x) (or (line? x) (segment? x) (ray? x)))
+(define (relation-truthy? v)
+  (cond [(boolean? v) v]
+        [(relation? v) (relation-holds? v)]
+        [else (geometry-error 'assert "expected a Boolean or relation, received ~e" v)]))
+
 (define (eval-perpendicular expression environment)
   (define args (cdr expression))
   (define a (evaluate-expression (car args) environment))
   (define b (evaluate-expression (cadr args) environment))
-  (unless (and (or (line? a) (segment? a) (ray? a)) (or (line? b) (segment? b) (ray? b)))
+  (unless (and (linear-object? a) (linear-object? b))
     (geometry-error 'perpendicular "perpendicular expects linear objects"))
   (define at
     (cond [(= (length args) 2)
@@ -31,23 +37,55 @@
           [(and (= (length args) 4) (eq? (caddr args) '#:at))
            (evaluate-expression (cadddr args) environment)]
           [else (geometry-error 'perpendicular "expected optional #:at point")]))
-  (unless (perpendicular-at? a b at)
+  (define rel (perpendicular-relation a b at))
+  (unless (relation-holds? rel)
     (geometry-error 'perpendicular "relation does not hold at ~e" at))
-  (perpendicular-marker a b at))
+  rel)
+
+(define (eval-parallel expression environment)
+  (define curves (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
+  (unless (and (= (length curves) 2) (andmap linear-object? curves))
+    (geometry-error 'parallel "parallel expects two linear objects"))
+  (define rel (parallel-relation (car curves) (cadr curves)))
+  (unless (relation-holds? rel)
+    (geometry-error 'parallel "relation does not hold"))
+  rel)
+
 (define (eval-equal-length expression environment)
   (define segments (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
   (unless (and (>= (length segments) 2) (andmap segment? segments))
     (geometry-error 'equal-length "equal-length expects at least two segments"))
-  (unless (equal-segments? segments)
+  (define rel (equal-length-relation segments))
+  (unless (relation-holds? rel)
     (geometry-error 'equal-length "relation does not hold"))
-  (equal-length-marker segments))
+  rel)
+
 (define (eval-equal-angle expression environment)
   (define angles (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
   (unless (and (>= (length angles) 2) (andmap angle-spec? angles))
     (geometry-error 'equal-angle "equal-angle expects at least two angle specifications"))
-  (unless (equal-angles? angles)
+  (define rel (equal-angle-relation angles))
+  (unless (relation-holds? rel)
     (geometry-error 'equal-angle "relation does not hold"))
-  (equal-angle-marker angles))
+  rel)
+
+(define (eval-collinear expression environment)
+  (define points (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
+  (unless (and (>= (length points) 3) (andmap point? points))
+    (geometry-error 'collinear "collinear expects at least three points"))
+  (define rel (collinear-relation points))
+  (unless (relation-holds? rel)
+    (geometry-error 'collinear "relation does not hold"))
+  rel)
+
+(define (eval-midpoint-of expression environment)
+  (define values (map (lambda (x) (evaluate-expression x environment)) (cdr expression)))
+  (unless (and (= (length values) 2) (point? (car values)) (segment? (cadr values)))
+    (geometry-error 'midpoint-of "midpoint-of expects a point and a segment"))
+  (define rel (midpoint-of-relation (car values) (cadr values)))
+  (unless (relation-holds? rel)
+    (geometry-error 'midpoint-of "relation does not hold"))
+  rel)
 
 (define (evaluate-expression expression environment)
   (define (ev x) (evaluate-expression x environment))
@@ -72,12 +110,16 @@
          [(marker)
           (define rel (ev (car args)))
           (cond [(angle-spec? rel) (angle-marker rel)]
+                [(relation? rel) (relation->marker rel)]
                 [(marker? rel) rel]
-                [else (geometry-error 'marker "expected an angle or marker relation")])]
+                [else (geometry-error 'marker "expected an angle or relation")])]
          [(angle) (eval-angle expression environment)]
          [(perpendicular) (eval-perpendicular expression environment)]
+         [(parallel) (eval-parallel expression environment)]
          [(equal-length) (eval-equal-length expression environment)]
          [(equal-angle) (eval-equal-angle expression environment)]
+         [(collinear) (eval-collinear expression environment)]
+         [(midpoint-of) (eval-midpoint-of expression environment)]
          [(distance) (apply distance (map ev args))]
          [(midpoint) (apply midpoint (map ev args))]
          [(center) (circle-center (ev (car args)))]

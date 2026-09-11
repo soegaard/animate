@@ -63,6 +63,23 @@
     (check-true (andmap point-close?
                         (clip-linear (ray (point 0 0) (point 1 0)) -4 4 -3 3)
                         (list (point 0 0) (point 4 0)))))
+
+  (test-case "relations and relation markers cover common construction facts"
+    (define a (point 0 0))
+    (define b (point 4 0))
+    (define c (point 0 1))
+    (define d (point 4 1))
+    (define ab (segment a b))
+    (define cd (segment c d))
+    (define m (midpoint a b))
+    (check-true (parallel-curves? ab cd))
+    (check-true (midpoint-of? m ab))
+    (check-true (collinear-points? (list a m b)))
+    (define rel (parallel-relation ab cd))
+    (check-true (relation-holds? rel))
+    (check-true (parallel-marker? (relation->marker rel)))
+    (check-true (midpoint-marker? (relation->marker (midpoint-of-relation m ab)))))
+
   (test-case "bidirectional circle reveal begins at the defining point"
     (define c (circle (point 2 3) (point 4 3)))
     (check-true (andmap (lambda (p) (point-close? p (circle-through c))) (circle-points c 0)))

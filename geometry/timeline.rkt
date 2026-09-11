@@ -33,7 +33,7 @@
                   [(together) (revealed-ids (geometry-action-payload a))]
                   [else '()])) actions))
 
-(define default-geometry-timing (geometry-timing 0.6 0.7 0.9 0.5))
+(define default-geometry-timing (geometry-timing 0.6 1.0 0.9 0.5))
 
 (define (make-geometry-timeline realization #:theme [theme default-geometry-theme]
                                 #:read-delay [read-delay #f]

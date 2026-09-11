@@ -6,6 +6,7 @@
          (prefix-in output: "../render.rkt")
          "main.rkt")
 (provide render-geometry-frames! render-geometry-frames/report! render-geometry-stills!
+         render-geometry-frame-indices! geometry-frame-count
          write-geometry-subtitles! geometry-caption-cues)
 
 ;; Flatten expanded-helper narration into nonoverlapping caption spans.
@@ -29,6 +30,23 @@
   (format "~a:~a:~a,~a" (pad (quotient millis 3600000) 2)
           (pad (modulo (quotient millis 60000) 60) 2)
           (pad (modulo (quotient millis 1000) 60) 2) (pad (modulo millis 1000) 3)))
+(define (geometry-frame-count timeline fps)
+  (unless (and (geometry-timeline? timeline) (exact-positive-integer? fps))
+    (geometry-error 'geometry-frame-count "expected a geometry timeline and positive fps"))
+  (max 1 (inexact->exact (ceiling (* fps (geometry-timeline-duration timeline))))))
+
+(define (render-geometry-frame-indices! timeline indices directory #:width [width 1280] #:height [height 720]
+                                       #:fps [fps 30] #:supersample [supersample 1]
+                                       #:color-theme [color-theme #f] #:captions? [captions? #t]
+                                       #:labels [labels (hash)])
+  (unless (and (geometry-timeline? timeline) (list? indices) (andmap exact-nonnegative-integer? indices)
+               (exact-positive-integer? fps))
+    (geometry-error 'render-geometry-frame-indices! "invalid timeline, indices, or fps"))
+  (define scene (geometry-timeline->scene timeline #:width width #:height height
+                                         #:captions? captions? #:labels labels))
+  (output:render-frame-indices! scene indices directory #:fps fps
+                               #:theme color-theme #:supersample supersample))
+
 (define (write-geometry-subtitles! timeline path)
   (call-with-output-file path
     (lambda (out)

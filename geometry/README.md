@@ -12,7 +12,7 @@ Source compatibility was reviewed against commit
 `d189485eec4acf1e15e1fd05feb2043f35ffdb37` (`animate` 1.23.0).
 See [source notes](docs/SOURCE.md).
 
-**Validation status:** this delivery includes 63 RackUnit test cases, including
+**Validation status:** this delivery includes 74 RackUnit test cases, including
 native scene sampling and PNG output. A Racket executable was unavailable in the
 build environment, so these tests and the example renders have **not been run**.
 The source has undergone structural, local-import, and API review; this is not a
@@ -29,6 +29,7 @@ racket geometry/run-tests.rkt
 racket geometry/examples/equilateral-triangle.rkt
 racket geometry/examples/perpendicular-bisector.rkt
 racket geometry/examples/perpendicular-through-point.rkt
+racket geometry/examples/gallery.rkt
 ```
 
 The examples default to **step stills**, not hundreds of full-animation frames.
@@ -82,6 +83,7 @@ SRT files contain text and timing only; audio generation is not included.
 | `examples/equilateral-triangle.rkt` | Direct construction, initially hidden givens, a selected intersection, sequential joins, semantic coloring and deemphasis. |
 | `examples/perpendicular-bisector.rkt` | Free givens, layout preferences, an **expanded typed helper**, two intersections, midpoint, and dashed auxiliary circles. |
 | `examples/perpendicular-through-point.rkt` | Anonymous supporting geometry, `choose`, `#:other-than`, global realization, and helper circles that may extend outside the view. |
+| `examples/gallery.rkt` | Visual catalogue of drawable geometry, semantic markers, equality classes, presentation actions, and expanded reusable constructions. |
 
 `examples/helpers.rkt` contains the reusable perpendicular-bisector construction.
 The example runners' shared implementation is included in
@@ -184,7 +186,7 @@ Timing belongs in the construction DSL:
 ```racket
 (timing
   [opening-pause 0.6]
-  [read-delay 0.7]
+  [read-delay 1.0]
   [action-duration 0.9]
   [step-pause 0.5])
 ```
@@ -200,10 +202,42 @@ This version adds semantic diagram markers, including perpendicular markers and 
 
 ### Parallel rendering
 
-Full frame/video rendering uses 10 parallel workers by default. Override this with:
+Full frame/video rendering now uses **process-based parallel rendering** when
+`--workers` is greater than 1. The example runner launches separate Racket
+processes, each rendering a disjoint shard of the frame numbers, and then merges
+the finished PNG files before optional MP4 encoding. This avoids the limited CPU
+scaling seen with Racket parallel threads plus `racket/draw` rasterization.
+
+Override the worker count with:
 
 ```sh
 --workers 10
 ```
 
-The worker setting applies to full frame rendering (`--frames` and `--mp4`); selected step stills remain a small sequential render.
+The runner prints both the requested and actual worker count. The worker setting
+applies to full frame rendering (`--frames` and `--mp4`); selected step stills
+remain a small sequential render.
+
+
+The default narrated-step read delay is now 1.0 second.
+
+
+## Gallery example
+
+`examples/gallery.rkt` is a visual regression reel for the geometry layer. It
+shows the primitive drawable types, midpoint/perpendicular/parallel/equality/angle
+markers, label state changes, lighter auxiliary styling, restoration, temporary
+highlights, hide/show transitions, simultaneous actions, and an expanded helper.
+
+Render it like the other examples:
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+
+"$RACKET" geometry/examples/gallery.rkt --dark --workers 10 --frames /tmp/geometry-gallery
+"$RACKET" geometry/examples/gallery.rkt --dark --workers 10 \
+  --mp4 geometry-gallery.mp4 /tmp/geometry-gallery-video
+```
+
+Equal-length and midpoint ticks are now 20% shorter than in v0.5.4. The
+right-angle square keeps its previous size.

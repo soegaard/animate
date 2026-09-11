@@ -23,7 +23,7 @@
   (require (distinct? A B))
   (timing
     [opening-pause 0.6]
-    [read-delay 0.7]
+    [read-delay 1.0]
     [action-duration 0.9]
     [step-pause 0.5])
 
@@ -42,6 +42,7 @@
   (step "Let C be their intersection."
     [C (intersection cA cB #:side-of AB 'left)])
   (step "Join C to A and B." [AC (segment A C)] [BC (segment B C)])
+  (assert (equal-length AB AC BC))
   (step "This is the required equilateral triangle."
     [equal-sides (marker (equal-length AB AC BC))]
     (deemphasize cA cB) (highlight AB AC BC equal-sides))

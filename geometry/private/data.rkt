@@ -22,9 +22,9 @@
 ;; check: Boolean expression and useful source provenance.
 (struct geometry-check (expression origin) #:transparent)
 ;; program: name, topologically ordered nodes, steps, initial actions,
-;; mathematical preconditions, layout clauses, per-object style clauses,
+;; mathematical preconditions, post-realization assertions, layout clauses, per-object style clauses,
 ;; timing policy, public result ids, and definition source location.
-(struct geometry-program (name nodes steps initial checks layout styles timing results source) #:transparent)
+(struct geometry-program (name nodes steps initial checks assertions layout styles timing results source) #:transparent)
 ;; helper: name, ordered (name . type) inputs, declared result types, checked body.
 (struct construction-helper (name parameters result-types program) #:transparent)
 ;; view: Cartesian centre, world width, aspect ratio, fractional safe margin.

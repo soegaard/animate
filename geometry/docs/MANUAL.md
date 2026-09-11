@@ -170,7 +170,7 @@ A construction can declare its default exposition rhythm directly in the DSL:
 ```racket
 (timing
   [opening-pause 0.6]
-  [read-delay 0.7]
+  [read-delay 1.0]
   [action-duration 0.9]
   [step-pause 0.5])
 ```

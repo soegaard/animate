@@ -4,7 +4,7 @@
 
 (construction triangle
   (given [A (point -2 0)] [B (point 2 0)])
-  (timing [opening-pause 0.6] [read-delay 0.7] [action-duration 0.9] [step-pause 0.5])
+  (timing [opening-pause 0.6] [read-delay 1.0] [action-duration 0.9] [step-pause 0.5])
   (require (distinct? A B))
   (layout (focus A B C))
   (step "AB" [AB (segment A B)])
@@ -15,7 +15,7 @@
   (step "Result" (deemphasize cA cB) (highlight AB AC BC)))
 (construction bisector-demo
   (given [A (point)] [B (point)])
-  (timing [opening-pause 0.6] [read-delay 0.7] [action-duration 0.9] [step-pause 0.5])
+  (timing [opening-pause 0.6] [read-delay 1.0] [action-duration 0.9] [step-pause 0.5])
   (require (distinct? A B))
   (layout (focus A B M) (prefer (distance A B) 3.5))
   (step "AB" [AB (segment A B)])
@@ -23,7 +23,7 @@
   (step "Midpoint" [M (intersection m AB)]))
 (construction perpendicular
   (given [l (line (point -3 0) (point 3 0))] [P (point 0 0)])
-  (timing [opening-pause 0.6] [read-delay 0.7] [action-duration 0.9] [step-pause 0.5])
+  (timing [opening-pause 0.6] [read-delay 1.0] [action-duration 0.9] [step-pause 0.5])
   (require (on P l))
   (layout (focus A B C D P) (prefer (distance A P) 1.5))
   (step "A" [A (choose (point-on l #:except P))])
@@ -35,12 +35,12 @@
   (step "Conclusion" (deemphasize cP cA cB) (hide-label A B C D) (highlight m P)))
 (construction collapsed
   (given [A (point -2 0)] [B (point 2 0)] [C (point 1 3)])
-  (timing [opening-pause 0.6] [read-delay 0.7] [action-duration 0.9] [step-pause 0.5])
+  (timing [opening-pause 0.6] [read-delay 1.0] [action-duration 0.9] [step-pause 0.5])
   (step "Two helpers" [m1 (perpendicular-bisector A B)] [m2 (perpendicular-bisector B C)])
   (step "Circumcenter" [O (intersection m1 m2)]))
 (construction expanded
   (given [A (point -2 0)] [B (point 2 0)])
-  (timing [opening-pause 0.6] [read-delay 0.7] [action-duration 0.9] [step-pause 0.5])
+  (timing [opening-pause 0.6] [read-delay 1.0] [action-duration 0.9] [step-pause 0.5])
   (step "Helper" (expand [m (perpendicular-bisector A B)])))
 (construction state-demo
   (given [A (point 0 0)] [B (point 3 0)])
@@ -62,5 +62,5 @@
   (result M s))
 (construction pair-demo
   (given [A (point -2 0)] [B (point 2 0)])
-  (timing [opening-pause 0.6] [read-delay 0.7] [action-duration 0.9] [step-pause 0.5])
+  (timing [opening-pause 0.6] [read-delay 1.0] [action-duration 0.9] [step-pause 0.5])
   (step [(M AB) (pair-helper A B)]))

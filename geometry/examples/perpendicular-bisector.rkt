@@ -24,7 +24,7 @@
   (require (distinct? A B))
   (timing
     [opening-pause 0.6]
-    [read-delay 0.7]
+    [read-delay 1.0]
     [action-duration 0.9]
     [step-pause 0.5])
 
@@ -33,11 +33,15 @@
   (step "Start with an arbitrary segment AB." [AB (segment A B)])
   (step "Construct its perpendicular bisector."
     (expand [m (helper:perpendicular-bisector A B)]))
-  (step "The line meets AB at M." [M (intersection m AB)])
+  (step "The line meets AB at M."
+    [M (intersection m AB)]
+    [midmark (marker (midpoint-of M AB))])
+  (assert (midpoint-of M AB)
+          (perpendicular AB m #:at M))
   (step "M is the midpoint, and the two lines are perpendicular."
     [right-angle (marker (perpendicular AB m #:at M))]
-    (highlight m M right-angle))
-  (result m M right-angle))
+    (highlight m M midmark right-angle))
+  (result m M midmark right-angle))
 
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline perpendicular-bisector-demo #:theme (make-example-theme theme-mode) #:aspect aspect))
