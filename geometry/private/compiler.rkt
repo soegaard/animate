@@ -9,7 +9,7 @@
 
 (define curve-types '(Line Segment Ray Circle))
 (define linear-types '(Line Segment Ray))
-(define relation-types '(Relation AngleSpec))
+(define relation-types '(Relation Angle))
 (define (lookup-type env id who)
   (hash-ref env id (lambda () (geometry-error who "unknown or forward geometry reference ~a" id))))
 (define (expect-type actual expected who expression)
@@ -74,7 +74,7 @@
       [(angle)
        (expect-count (cdr x) 3 who x)
        (all-of (cdr x) 'Point)
-       'AngleSpec]
+       'Angle]
       [(perpendicular)
        (unless (or (= (length (cdr x)) 2) (= (length (cdr x)) 4))
          (geometry-error who "perpendicular expects two linear objects and optional #:at point"))
@@ -99,7 +99,7 @@
       [(equal-angle)
        (unless (>= (length (cdr x)) 2) (geometry-error who "equal-angle expects at least two angles"))
        (for ([arg (in-list (cdr x))])
-         (expect-type (relation-expression-type arg) 'AngleSpec who arg))
+         (expect-type (infer arg) 'Angle who arg))
        'Relation]
       [(collinear)
        (unless (>= (length (cdr x)) 3) (geometry-error who "collinear expects at least three points"))
@@ -123,14 +123,34 @@
        [(quote)
         (unless (and (= (length args) 1) (symbol? (car args)))
           (geometry-error who "only quoted selector symbols are allowed here: ~e" e))
-        'Selector]
+        (if (memq (car args) '(left right)) 'Side 'Selector)]
        [(point)
         (unless (or (null? args) (= (length args) 2))
           (geometry-error who "point expects zero (free given) or two arguments"))
         (all-of args 'Number) 'Point]
-       [(line segment ray circle)
+       [(line segment ray)
         (expect-count args 2 who e) (all-of args 'Point)
-        (case op [(line) 'Line] [(segment) 'Segment] [(ray) 'Ray] [else 'Circle])]
+        (case op [(line) 'Line] [(segment) 'Segment] [else 'Ray])]
+       [(circle)
+        (cond [(= (length args) 2) (all-of args 'Point)]
+              [(and (= (length args) 3) (eq? (cadr args) '#:radius))
+               (expect-type (infer (car args)) 'Point who e)
+               (expect-type (infer (caddr args)) 'Number who e)]
+              [else (geometry-error who "circle expects centre/through points or centre #:radius length")])
+        'Circle]
+       [(start-point end-point)
+        (expect-count args 1 who e)
+        (unless (memq (infer (car args)) linear-types)
+          (geometry-error who "~a expects a line, segment or ray" op))
+        'Point]
+       [(angle-first angle-vertex angle-last)
+        (expect-count args 1 who e) (all-of args 'Angle) 'Point]
+       [(side-of?)
+        (expect-count args 3 who e)
+        (expect-type (infer (car args)) 'Point who e)
+        (unless (memq (infer (cadr args)) linear-types)
+          (geometry-error who "side-of? expects a directed line, segment or ray"))
+        (expect-type (infer (caddr args)) 'Side who e) 'Boolean]
        [(midpoint distance)
         (expect-count args 2 who e) (all-of args 'Point)
         (if (eq? op 'midpoint) 'Point 'Number)]
@@ -140,11 +160,9 @@
         (expect-count args 1 who e) (all-of args 'Segment) 'Number]
        [(marker)
         (expect-count args 1 who e)
-        (unless (and (list? (car args)) (pair? (car args)))
-          (geometry-error who "marker expects a drawable relation or angle expression"))
-        (when (eq? (caar args) 'collinear)
+        (when (and (pair? (car args)) (eq? (caar args) 'collinear))
           (geometry-error who "collinear is assertable but has no built-in marker"))
-        (unless (memq (relation-expression-type (car args)) relation-types)
+        (unless (memq (infer (car args)) relation-types)
           (geometry-error who "marker expects a drawable relation or angle"))
         'Marker]
        [(angle perpendicular parallel equal-length equal-angle collinear midpoint-of) (relation-expression-type e)]
@@ -164,8 +182,7 @@
                      (unless (>= (length rest) 3) (geometry-error who "#:side-of needs a directed object and side"))
                      (unless (memq (infer (cadr rest)) '(Line Segment Ray))
                        (geometry-error who "#:side-of requires a directed line, segment or ray"))
-                     (unless (member (caddr rest) '((quote left) (quote right)))
-                       (geometry-error who "side must be 'left or 'right"))
+                     (expect-type (infer (caddr rest)) 'Side who e)
                      (loop (cdddr rest) (cons key seen))]
                     [(#:other-than #:near #:far-from)
                      (unless (>= (length rest) 2) (geometry-error who "missing point for ~a" key))
@@ -193,8 +210,12 @@
         (expect-count args 2 who e) (expect-type (infer (car args)) 'Point who e)
         (unless (memq (infer (cadr args)) curve-types) (geometry-error who "on expects a curve"))
         'Boolean]
-       [(and or) (all-of args 'Boolean) 'Boolean]
-       [(not) (expect-count args 1 who e) (all-of args 'Boolean) 'Boolean]
+       [(and or not)
+        (when (eq? op 'not) (expect-count args 1 who e))
+        (for ([x (in-list args)])
+          (unless (memq (infer x) '(Boolean Relation))
+            (geometry-error who "~a needs Boolean or relation operands" op)))
+        'Boolean]
        [(+ * - /)
         (when (and (memq op '(- /)) (null? args)) (geometry-error who "~a needs an argument" op))
         (all-of args 'Number) 'Number]
@@ -402,7 +423,7 @@
             (if (null? missing) '()
                 (list (geometry-step #f (list (geometry-action 'reveal missing #f)) (hash 'read-delay 0 'pause 0))))))
 
-  (define (parse-binding b [given? #f] [expanded? #f])
+  (define (parse-binding b [given? #f] [expanded? #f] [auxiliaries 'keep])
     (unless (and (list? b) (= (length b) 2)) (geometry-error name "expected [name expression], received ~e" b))
     (define lhs (car b))
     (define ids (if (symbol? lhs) (list lhs) lhs))
@@ -414,9 +435,25 @@
     (cond
       [(helper-call? e)
        (when given? (geometry-error name "a given cannot run a construction helper; use a step"))
+       (define old-count (length nodes))
        (define child-steps (instantiate! ids e #t))
-       (if expanded? (geometry-action 'expanded ids child-steps)
-           (geometry-action 'reveal ids #f))]
+       (define private-drawables
+         (for/list ([n (in-list (drop nodes old-count))]
+                    #:when (and (not (memq (geometry-node-id n) ids))
+                                (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker))))
+           (geometry-node-id n)))
+       (define completed-steps
+         (if (or (eq? auxiliaries 'keep) (null? private-drawables)) child-steps
+             (append child-steps
+                     (list (geometry-step #f
+                            (list (geometry-action
+                                   (if (eq? auxiliaries 'hide) 'hide 'deemphasize)
+                                   private-drawables #f))
+                            (hash 'read-delay 0 'pause 0))))))
+       (if expanded? (geometry-action 'expanded ids completed-steps)
+           (geometry-action 'reveal
+                            (filter (lambda (id) (memq (lookup-type types id name)
+                                                       '(Point Line Segment Ray Circle Marker))) ids) #f))]
       [else
        (when expanded? (geometry-error name "expand expects a construction-helper binding"))
        (define expression (lower-expression e))
@@ -435,7 +472,8 @@
           (expect-count ids 1 name b)
           (unless (memq type geometry-types) (geometry-error name "cannot bind a ~a as geometry" type))
           (add! (car ids) type expression given? #t)])
-       (geometry-action 'reveal ids #f)]))
+       (geometry-action 'reveal
+                        (if (memq type '(Point PointList Line Segment Ray Circle Marker)) ids '()) #f)]))
   (define (parse-action a [initial? #f])
     (unless (and (list? a) (pair? a)) (geometry-error name "invalid action ~e" a))
     (case (car a)
@@ -458,8 +496,23 @@
        (geometry-action 'together targets children)]
       [(expand)
        (when initial? (geometry-error name "expand belongs in a step"))
-       (expect-count (cdr a) 1 name a)
-       (parse-binding (cadr a) #f #t)]
+       (define auxiliaries
+         (match a
+           [(list 'expand binding) 'keep]
+           [(list 'expand binding '#:auxiliaries (list 'quote mode))
+            (unless (memq mode '(keep hide deemphasize))
+              (geometry-error name "auxiliaries must be 'keep, 'hide or 'deemphasize"))
+            mode]
+           [_ (geometry-error name "expand expects a helper binding and optional #:auxiliaries mode")]))
+       (parse-binding (cadr a) #f #t auxiliaries)]
+      [(assert)
+       (when initial? (geometry-error name "assert belongs at top level or in a step"))
+       (when (null? (cdr a)) (geometry-error name "assert needs an expression"))
+       (for ([e (in-list (cdr a))])
+         (unless (memq (infer-expression-type e types name) '(Boolean Relation))
+           (geometry-error name "assert expects a Boolean or relation: ~e" e))
+         (set! assertions (append assertions (list (geometry-check e (format "~a step assertion" name))))))
+       (geometry-action 'reveal '() #f)]
       [else
        (when initial? (geometry-error name "initially accepts presentation commands only"))
        (parse-binding a)]))
@@ -509,7 +562,8 @@
   (for-each known! outputs)
   (for ([a (in-list initial)]) (for-each drawable! (geometry-action-targets a)))
   (for ([e (in-list deferred-checks)])
-    (expect-type (infer-expression-type e types name) 'Boolean name e)
+    (unless (memq (infer-expression-type e types name) '(Boolean Relation))
+      (geometry-error name "require expects a Boolean or relation: ~e" e))
     (set! checks (append checks (list (geometry-check e (format "~a precondition" name))))))
   (for ([e (in-list deferred-assertions)])
     (unless (memq (infer-expression-type e types name) '(Boolean Relation))

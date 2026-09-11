@@ -1,0 +1,46 @@
+#lang racket/base
+
+;; A complete authoring example using the standard construction library.
+;; Loading it is headless; native rendering starts only in the main submodule.
+(require "../core.rkt" (prefix-in c: "../constructions.rkt")
+         "private/library-example.rkt")
+(provide incircle example-theme make-demo-timeline make-demo-scene)
+(define example-theme (make-library-theme 'light))
+
+(construction incircle
+  (given [A (point -2.5 -1.2)] [B (point 2.3 -1.2)] [C (point -0.4 2)])
+  (require (noncollinear? A B C))
+  (layout (focus A B C I T) (label-side I 'above-right) (label-side T 'below))
+  (style [k [color-family gold]])
+  (step "Start with triangle ABC." [AB (segment A B)] [BC (segment B C)] [CA (segment C A)])
+  (step "Bisect the angle at A."
+    (expand [ra (c:angle-bisector B A C)] #:auxiliaries 'hide))
+  (step "Bisect the angle at B." [rb (c:angle-bisector A B C)])
+  (step "The angle bisectors meet at the incenter I." [I (intersection ra rb)])
+  (step "Drop the perpendicular from I to AB."
+    (expand [h (c:drop-perpendicular (line A B) I)] #:auxiliaries 'hide))
+  (step "Its foot T determines the radius of the incircle."
+    [T (intersection h AB)] [IT (segment I T)])
+  (step "Draw the circle with centre I and radius IT." [k (circle I T)])
+  (step "The perpendicular distances to the other sides are the same."
+    [U (intersection (c:drop-perpendicular (line A C) I) CA)]
+    [V (intersection (c:drop-perpendicular (line B C) I) BC)]
+    [IU (segment I U)] [IV (segment I V)])
+  (step "The circle touches all three sides of the triangle."
+    [contact (marker (perpendicular AB IT #:at T))]
+    (hide ra rb h) (deemphasize IT IU IV))
+  (assert (on T AB) (on U CA) (on V BC)
+          (equal-length IT IU IV) (on U k) (on V k)
+          (perpendicular IT AB #:at T)
+          (perpendicular IU CA #:at U) (perpendicular IV BC #:at V))
+  (result I T U V k A B C))
+
+(define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [mode 'light])
+  (construction->timeline incircle #:aspect aspect #:theme (make-library-theme mode)))
+(define (make-demo-scene #:width [width 1280] #:height [height 720] #:theme-mode [mode 'light])
+  (library-example->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode mode)
+                          #:width width #:height height))
+(module+ main
+  (run-library-example "incircle"
+                        (lambda (aspect mode)
+                          (make-demo-timeline #:aspect aspect #:theme-mode mode))))

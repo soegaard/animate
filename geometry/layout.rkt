@@ -36,7 +36,9 @@
 ;; Important geometry is that shown at any time, not just in the final frame.
 (define (construction-visible-ids program)
   (define initial-ids
-    (for/list ([n (in-list (geometry-program-nodes program))] #:when (geometry-node-given? n))
+    (for/list ([n (in-list (geometry-program-nodes program))]
+               #:when (and (geometry-node-given? n)
+                           (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker))))
       (geometry-node-id n)))
   (define initial-visible
     (for/fold ([ids initial-ids]) ([a (in-list (geometry-program-initial program))])
@@ -225,10 +227,6 @@
     (unless (null? pending) (geometry-error name "unresolved mathematical preconditions"))
     (for ([l (in-list (geometry-program-layout program))] #:when (eq? (car l) 'constrain))
       (unless (evaluate-expression (cadr l) environment) (geometry-error name "layout constraint failed: ~e" (cadr l))))
-    (for ([a (in-list (geometry-program-assertions program))])
-      (unless (relation-truthy? (evaluate-expression (geometry-check-expression a) environment))
-        (geometry-error (geometry-check-origin a) "assertion failed: ~e"
-                        (geometry-check-expression a))))
     (define anchors (anchor-points program environment))
     (define view (or fixed-view (fit-view anchors aspect margin padding)))
     (unless (andmap (lambda (p) (point-in-view? p view padding)) anchors)
@@ -266,6 +264,11 @@
   (unless best
     (geometry-error name "no valid layout among ~a deterministic candidates. First diagnostic: ~a. Use layout pin, explicit givens/choices, a wider view, or more samples."
                     count (if (zero? (hash-count rejections)) "no candidate" (car (sort (hash-keys rejections) string<?)))))
+  ;; Assertions validate the selected realization; they are not layout constraints.
+  (for ([a (in-list (geometry-program-assertions program))])
+    (unless (relation-truthy? (evaluate-expression (geometry-check-expression a) (car best)))
+      (geometry-error (geometry-check-origin a) "assertion failed: ~e"
+                      (geometry-check-expression a))))
   (geometry-realization
    program (car best) (caddr best) (cadr best)
    (hash 'search-method 'deterministic-finite-candidates 'candidates-tested count

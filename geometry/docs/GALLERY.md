@@ -20,3 +20,25 @@ Inspect these differences:
 
 `--describe` reports annotation warnings. A warning is a request for inspection,
 not a claim that every dense arrangement has a collision-free solution.
+
+## v0.7.0: standard-library plates
+
+The existing object, marker, effect, reveal-direction and crowded-layout plates
+are preserved. New plates at the end demonstrate all eight library helpers:
+
+1. Constructed midpoint and perpendicular bisector, with half-length and
+   right-angle markers.
+2. Perpendicular at a point on a line, perpendicular from an external point,
+   and the parallel through the external point.
+3. Internal angle bisector, expanded segment copy onto a target ray, and copied
+   angle with an explicit target side.
+
+Expanded calls use `#:auxiliaries 'hide` when the next plate needs a clean view.
+Check that cleanup removes only that call's aids, leaving the caller's points,
+target rays and returned objects available. Captions describe mathematics rather
+than explaining which objects are being emphasized. The old helper demonstration
+now uses the public library via a re-export, exercising both helper import names
+in one construction.
+
+The standalone thirteen application videos are listed in CONSTRUCTIONS.md and
+rendered by `examples/render-library.sh`. They are not stitched into the gallery.

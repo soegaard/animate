@@ -12,7 +12,7 @@
   (define a (list-ref values 0))
   (define b (list-ref values 1))
   (define c (list-ref values 2))
-  (when (or (same-point? a b 1) (same-point? c b 1))
+  (when (or (not (distinct? a b)) (not (distinct? c b)))
     (geometry-error 'angle "angle rays must have positive length"))
   (angle-spec a b c))
 
@@ -30,16 +30,13 @@
     (geometry-error 'perpendicular "perpendicular expects linear objects"))
   (define at
     (cond [(= (length args) 2)
-           (define pts (intersections a b))
-           (unless (= (length pts) 1)
-             (geometry-error 'perpendicular "cannot infer unique intersection; use #:at"))
-           (car pts)]
+           (define pts (with-handlers ([exn:fail:geometry? (lambda (_) '())])
+                         (intersections a b)))
+           (and (= (length pts) 1) (car pts))]
           [(and (= (length args) 4) (eq? (caddr args) '#:at))
            (evaluate-expression (cadddr args) environment)]
           [else (geometry-error 'perpendicular "expected optional #:at point")]))
   (define rel (perpendicular-relation a b at))
-  (unless (relation-holds? rel)
-    (geometry-error 'perpendicular "relation does not hold at ~e" at))
   rel)
 
 (define (eval-parallel expression environment)
@@ -47,8 +44,6 @@
   (unless (and (= (length curves) 2) (andmap linear-object? curves))
     (geometry-error 'parallel "parallel expects two linear objects"))
   (define rel (parallel-relation (car curves) (cadr curves)))
-  (unless (relation-holds? rel)
-    (geometry-error 'parallel "relation does not hold"))
   rel)
 
 (define (eval-equal-length expression environment)
@@ -56,8 +51,6 @@
   (unless (and (>= (length segments) 2) (andmap segment? segments))
     (geometry-error 'equal-length "equal-length expects at least two segments"))
   (define rel (equal-length-relation segments))
-  (unless (relation-holds? rel)
-    (geometry-error 'equal-length "relation does not hold"))
   rel)
 
 (define (eval-equal-angle expression environment)
@@ -65,8 +58,6 @@
   (unless (and (>= (length angles) 2) (andmap angle-spec? angles))
     (geometry-error 'equal-angle "equal-angle expects at least two angle specifications"))
   (define rel (equal-angle-relation angles))
-  (unless (relation-holds? rel)
-    (geometry-error 'equal-angle "relation does not hold"))
   rel)
 
 (define (eval-collinear expression environment)
@@ -74,8 +65,6 @@
   (unless (and (>= (length points) 3) (andmap point? points))
     (geometry-error 'collinear "collinear expects at least three points"))
   (define rel (collinear-relation points))
-  (unless (relation-holds? rel)
-    (geometry-error 'collinear "relation does not hold"))
   rel)
 
 (define (eval-midpoint-of expression environment)
@@ -83,8 +72,6 @@
   (unless (and (= (length values) 2) (point? (car values)) (segment? (cadr values)))
     (geometry-error 'midpoint-of "midpoint-of expects a point and a segment"))
   (define rel (midpoint-of-relation (car values) (cadr values)))
-  (unless (relation-holds? rel)
-    (geometry-error 'midpoint-of "relation does not hold"))
   rel)
 
 (define (evaluate-expression expression environment)
@@ -106,7 +93,16 @@
          [(line) (apply line (map ev args))]
          [(segment) (apply segment (map ev args))]
          [(ray) (apply ray (map ev args))]
-         [(circle) (apply circle (map ev args))]
+         [(circle)
+          (if (and (= (length args) 3) (eq? (cadr args) '#:radius))
+              (circle-with-radius (ev (car args)) (ev (caddr args)))
+              (apply circle (map ev args)))]
+         [(start-point) (start-point (ev (car args)))]
+         [(end-point) (end-point (ev (car args)))]
+         [(angle-first) (angle-first (ev (car args)))]
+         [(angle-vertex) (angle-vertex (ev (car args)))]
+         [(angle-last) (angle-last (ev (car args)))]
+         [(side-of?) (apply side-of? (map ev args))]
          [(marker)
           (define rel (ev (car args)))
           (cond [(angle-spec? rel) (angle-marker rel)]
@@ -150,9 +146,9 @@
          [(distinct?) (apply distinct? (map ev args))]
          [(noncollinear?) (apply noncollinear? (map ev args))]
          [(on) (apply on (map ev args))]
-         [(and) (andmap ev args)]
-         [(or) (ormap ev args)]
-         [(not) (not (ev (car args)))]
+         [(and) (andmap (lambda (e) (relation-truthy? (ev e))) args)]
+         [(or) (ormap (lambda (e) (relation-truthy? (ev e))) args)]
+         [(not) (not (relation-truthy? (ev (car args))))]
          [(+) (apply + (map ev args))]
          [(-) (apply - (map ev args))]
          [(*) (apply * (map ev args))]

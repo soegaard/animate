@@ -8,8 +8,10 @@
 
 (define (initial-state program)
   (for/hash ([n (in-list (geometry-program-nodes program))])
-    (values (geometry-node-id n) (presentation (geometry-node-given? n)
-                                             (eq? (geometry-node-type n) 'Point) #f))))
+    (values (geometry-node-id n)
+            (presentation (and (geometry-node-given? n)
+                               (if (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker)) #t #f))
+                          (eq? (geometry-node-type n) 'Point) #f))))
 (define (apply-action state action)
   (for/fold ([state state]) ([id (in-list (geometry-action-targets action))])
     (define old (hash-ref state id))

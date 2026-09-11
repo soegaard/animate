@@ -19,7 +19,8 @@
          perpendicular-at? parallel-curves? equal-segments? equal-angles?
          collinear-points? midpoint-of? angle-measure angle-directions angle-sweep
          curve-start curve-end intersections intersection clip-linear
-         circle-points interpolate-point)
+         circle-points interpolate-point circle-with-radius
+         start-point end-point angle-first angle-vertex angle-last side-of?)
 
 ;; exn:fail:geometry carries the operation/construction and a diagnostic payload.
 (struct exn:fail:geometry exn:fail (who details) #:transparent)
@@ -89,7 +90,8 @@
 (define (geometry-kind v)
   (cond [(point? v) 'Point] [(line? v) 'Line] [(segment? v) 'Segment]
         [(ray? v) 'Ray] [(circle? v) 'Circle] [(marker? v) 'Marker]
-        [(relation? v) 'Relation] [(finite-real? v) 'Number]
+        [(relation? v) 'Relation] [(angle-spec? v) 'Angle]
+        [(memq v '(left right)) 'Side] [(finite-real? v) 'Number]
         [else (geometry-error 'geometry-kind "not a supported geometry value: ~e" v)]))
 
 (define (relation? v)
@@ -111,7 +113,7 @@
         [else (geometry-error 'marker-style-kind "not a marker value: ~e" v)]))
 (define (unit-vector p who)
   (define n (norm p))
-  (when (near-zero? n 1) (geometry-error who "degenerate direction"))
+  (when (zero? n) (geometry-error who "degenerate direction"))
   (point* p (/ 1 n)))
 (define (linear-direction c)
   (unit-vector (point- (curve-end c) (curve-start c)) 'linear-direction))
@@ -133,24 +135,17 @@
 (define (parallel-curves? a b)
   (unless (and (linear? a) (linear? b))
     (geometry-error 'parallel-curves? "expected two linear objects"))
-  (define u (linear-direction a))
-  (define v (linear-direction b))
-  (define scale (max 1 (distance (curve-start a) (curve-end a))
-                      (distance (curve-start b) (curve-end b))))
-  (near-zero? (cross u v) scale))
+  (near-zero? (cross (linear-direction a) (linear-direction b)) 1))
 (define (collinear-points? points)
   (unless (and (list? points) (>= (length points) 3) (andmap point? points))
     (geometry-error 'collinear-points? "expected at least three points"))
-  (define anchor (car points))
-  (define others (cdr points))
-  (define first-distinct
-    (for/first ([p (in-list others)] #:when (distinct? anchor p)) p))
-  (cond [(not first-distinct) #t]
-        [else
-         (define direction (point- first-distinct anchor))
-         (define scale (max 1 (norm direction)))
-         (for/and ([p (in-list others)])
-           (near-zero? (cross direction (point- p anchor)) scale))]))
+  (define a (car points))
+  (define b (for/first ([p (in-list (cdr points))] #:when (distinct? a p)) p))
+  (or (not b)
+      (let ([u (point- b a)])
+        (for/and ([p (in-list (cdr points))])
+          (define v (point- p a))
+          (near-zero? (cross u v) (* (norm u) (max (norm u) (norm v))))))))
 (define (midpoint-of? p s)
   (unless (and (point? p) (segment? s))
     (geometry-error 'midpoint-of? "expected a point and a segment"))
@@ -178,6 +173,8 @@
                        (midpoint-of-relation-segment relation))]
         [else (geometry-error 'relation-holds? "expected a relation value: ~e" relation)]))
 (define (relation->marker relation)
+  (unless (relation-holds? relation)
+    (geometry-error 'marker "relation does not hold: ~e" relation))
   (cond [(perpendicular-relation? relation)
          (perpendicular-marker (perpendicular-relation-first relation)
                                (perpendicular-relation-second relation)
@@ -195,18 +192,15 @@
         [else (geometry-error 'relation->marker "no marker visualization for relation ~e" relation)]))
 
 (define (perpendicular-at? a b p)
-  (unless (and (linear? a) (linear? b) (point? p))
-    (geometry-error 'perpendicular-at? "expected two linear objects and a point"))
-  (and (on p a) (on p b)
-       (let* ([u (linear-direction a)] [v (linear-direction b)]
-              [scale (max 1 (distance (curve-start a) (curve-end a))
-                          (distance (curve-start b) (curve-end b)))])
-         (near-zero? (dot u v) scale))))
+  (unless (and (linear? a) (linear? b))
+    (geometry-error 'perpendicular-at? "expected two linear objects"))
+  (and (point? p) (on p a) (on p b)
+       (near-zero? (dot (linear-direction a) (linear-direction b)) 1)))
 (define (equal-segments? segments)
   (unless (and (list? segments) (>= (length segments) 2) (andmap segment? segments))
     (geometry-error 'equal-segments? "expected at least two segments"))
   (define base (distance (segment-a (car segments)) (segment-b (car segments))))
-  (define scale (max 1 base))
+  (define scale base)
   (andmap (lambda (s)
             (near-zero? (- (distance (segment-a s) (segment-b s)) base) scale))
           (cdr segments)))
@@ -420,3 +414,23 @@
   (for/list ([i (in-range (+ count 1))])
     (define a (+ theta (- (* pi p)) (* 2 pi p (/ i count))))
     (point+ center (point (* r (cos a)) (* r (sin a))))))
+
+;; A transferable-compass circle. This does not construct a centre or a direction.
+;; The two-point circle constructor keeps its original through-point meaning.
+(define (circle-with-radius center radius)
+  (unless (and (point? center) (finite-real? radius) (> radius 0))
+    (geometry-error 'circle-with-radius "expected a point and a positive finite radius"))
+  (circle center (point+ center (point radius 0))))
+(define start-point curve-start)
+(define end-point curve-end)
+(define angle-first angle-spec-a)
+(define angle-vertex angle-spec-b)
+(define angle-last angle-spec-c)
+(define (side-of? p reference side)
+  (unless (and (point? p) (linear? reference) (memq side '(left right)))
+    (geometry-error 'side-of? "expected a point, a directed linear object, and left or right"))
+  (define u (point- (curve-end reference) (curve-start reference)))
+  (define v (point- p (curve-start reference)))
+  (define determinant (cross u v))
+  (and (not (near-zero? determinant (* (norm u) (max (norm u) (norm v)))))
+       (if (eq? side 'left) (> determinant 0) (< determinant 0))))

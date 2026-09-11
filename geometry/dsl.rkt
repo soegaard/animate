@@ -26,7 +26,11 @@
         (define op (syntax-e head))
         (unless (eq? op 'quote)
           (when (and (identifier? head) (not (memq op expression-heads)))
-            (unless (ormap (lambda (id) (free-identifier=? id head)) found)
+            ;; The checked datum refers to a helper by its *surface* name.
+            ;; Two prefixes may name the same lexical binding; retain both
+            ;; spellings in the runtime helper table.
+            (unless (ormap (lambda (id) (and (eq? (syntax-e id) (syntax-e head))
+                                             (free-identifier=? id head))) found)
               (set! found (cons head found))))
           (for-each visit-expression (cdr xs)))))
     (define (visit-action a)
@@ -34,7 +38,8 @@
       (when (and xs (pair? xs))
         (case (syntax-e (car xs))
           [(together) (for-each visit-action (cdr xs))]
-          [(expand) (when (= (length xs) 2) (visit-action (cadr xs)))]
+          [(expand) (when (>= (length xs) 2) (visit-action (cadr xs)))]
+          [(assert) (for-each visit-expression (cdr xs))]
           [(show hide show-label hide-label deemphasize normalize highlight) (void)]
           [else (when (= (length xs) 2) (visit-expression (cadr xs)))])))
     (for ([clause (in-list clauses)])

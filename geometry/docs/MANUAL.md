@@ -1,4 +1,4 @@
-# Implemented geometry DSL — v0.6.0
+# Implemented geometry DSL — v0.7.0
 
 This is the reference for the code in this delivery. It is narrower than the
 original design proposal: features listed as deferred below are not silently
@@ -25,11 +25,13 @@ The timeline does not execute a geometric construction afresh on every frame.
 (require "geometry/core.rkt")    ; mathematics, DSL, layout, themes, timeline
 (require "geometry/main.rkt")    ; all of core, plus native animate conversion
 (require "geometry/render.rkt")  ; effectful image/video/subtitle output
+(require (prefix-in c: "geometry/constructions.rkt")) ; standard library
 ```
 
 These examples assume the importing file is in the `animate` repository root.
 Adjust relative paths for another location. Installed collection paths are
-`animate/geometry/core`, `animate/geometry/main`, and `animate/geometry/render`.
+`animate/geometry/core`, `animate/geometry/main`, `animate/geometry/render`, and
+`animate/geometry/constructions`.
 
 The geometry primitives are not the same bindings as the native `animate` Visual
 constructors. Prefix an import when using both APIs.
@@ -81,7 +83,9 @@ The nested defining points are not independently drawn or labelled.
 ## 4. Geometry and expression vocabulary
 
 The public mathematical value types are `Point`, `Line`, `Segment`, `Ray`,
-`Circle`, and `Number`. Points use Cartesian coordinates with positive y upward.
+`Circle`, `Marker`, `Number`, `Angle`, `Side`, and `Relation`. Points use
+Cartesian coordinates with positive y upward. `Angle`, `Side`, `Relation`, and
+`Number` are nondrawable values; binding them does not create a visual action.
 A line, segment, ray, or circle needs distinct defining points.
 
 | Expression | Meaning |
@@ -92,6 +96,12 @@ A line, segment, ray, or circle needs distinct defining points.
 | `(line A B)` | Infinite line, directed from A toward B for selectors. |
 | `(ray A B)` | Ray starting at A and directed toward B. |
 | `(circle A B)` | Circle centred at A and passing through B. |
+| `(circle O #:radius r)` | Circle centred at O with a finite positive radius. |
+| `(start-point x)` / `(end-point x)` | First/second defining point of a Line, Segment, or Ray. |
+| `(angle A B C)` | Nondrawable Angle descriptor with vertex B. |
+| `(angle-first a)` / `(angle-vertex a)` / `(angle-last a)` | Defining points of an Angle. |
+| `'left` / `'right` | Values of type Side, usable as helper arguments. |
+| `(side-of? P l side)` | Whether P is strictly on the selected side of directed l. |
 | `(midpoint A B)` | Derived midpoint. |
 | `(distance A B)` | Numerical distance. |
 | `(length AB)` | Length of a segment. |
@@ -104,9 +114,9 @@ Arithmetic `+`, `-`, `*`, `/`, comparisons `=`, `<`, `>`, `<=`, `>=`, Boolean
 accepted in the checked expression algebra. `Number` values are useful for
 calculations and helper parameters; numerical displays are not implemented.
 Explicit presentation commands and visual layout/style targets must be drawable
-geometry, not `Number` bindings.
+geometry, not `Number`, `Angle`, `Side`, or `Relation` bindings.
 
-The DSL is deliberately a closed expression language in v0.1. It does **not**
+The DSL remains a closed expression language. It does **not**
 call `eval`, and arbitrary Racket applications or external variables inside a
 geometry expression are not supported. Helper names are the exception: the macro
 preserves their lexical Racket bindings. Supply concrete external data through
@@ -123,7 +133,8 @@ outside the DSL.
 [(C D) (intersections cA cB)]
 ```
 
-`#:side-of` accepts a directed line, segment, or ray and `'left` or `'right`.
+`#:side-of` accepts a directed line, segment, or ray and a `Side` value:
+`'left`, `'right`, or a named/typed helper parameter of that type.
 It is geometric orientation, not “top of the screen.” `#:other-than` first
 checks that the excluded point really is an intersection. `#:near` and
 `#:far-from` require a unique nearest/farthest candidate; ties are errors.
@@ -162,6 +173,46 @@ are checked during DSL elaboration, when the defining module is instantiated,
 before layout/rendering. This is **not** integration with Typed Racket, nor a
 promise that `raco make` alone evaluates every construction declaration. The
 included tests instantiate the modules as well.
+
+### Assertions and relation values
+
+`require` accepts a Boolean or Relation precondition and can reject a candidate
+realization. `assert` accepts a Boolean or Relation **postcondition**:
+
+```racket
+(assert (midpoint-of M AB) (perpendicular AB m #:at M))
+```
+
+A top-level assertion may refer forward. A step-local assertion uses only objects
+already introduced at that point:
+
+```racket
+(step "The two halves have equal length."
+  [AM (segment A M)] [MB (segment M B)]
+  (assert (equal-length AM MB)))
+```
+
+Neither form creates an object or consumes an action-duration slot. The surrounding
+step still has its narration/read delay/pause. Assertions are checked against the
+chosen realization **after layout selection**; a false assertion does not make the
+search try another candidate until the result happens to satisfy the claim.
+Helper assertions remain active even when the helper call is collapsed.
+
+Relation expressions produce first-class nondrawable values. Their truth is tested
+by `require`, `assert`, Boolean `and`/`or`/`not`, and marker creation, rather than
+assuming every relation value is true merely because it is not `#f`:
+
+```racket
+[claim (equal-length AB AC)]
+(assert claim)
+[marks (marker claim)]
+```
+
+The supported relation vocabulary remains `perpendicular`, `parallel`,
+`equal-length`, `equal-angle`, `collinear`, and `midpoint-of`.
+`collinear` has no built-in marker visualization. All checks are numerical, not
+formal proofs for every input. Ill-conditioned near-degeneracies can require a
+less extreme set of givens.
 
 ## 7. Timing
 
@@ -221,7 +272,7 @@ the DSL timing values.
 
 ## 8. Exposition and presentation
 
-Givens are shown initially by default. Named points have their identifier as a
+Drawable givens are shown initially by default; nondrawable values are never shown. Named points have their identifier as a
 label; curves are unlabelled unless explicitly requested. The optional first
 string in a `step` is narration metadata. The example renderer displays it as a
 caption by default and also exports it to SRT; it does not synthesize speech.
@@ -377,6 +428,26 @@ expression.
   (expand [m (perpendicular-bisector A B)]))
 ```
 
+An expanded helper can leave its local auxiliary objects alone (the default),
+hide them, or keep them subdued after completing its exposition:
+
+```racket
+(expand [M (c:bisect-segment A B)] #:auxiliaries 'keep)
+(expand [M (c:bisect-segment A B)] #:auxiliaries 'hide)
+(expand [M (c:bisect-segment A B)] #:auxiliaries 'deemphasize)
+```
+
+Cleanup affects only drawable identities created by that call, excluding public
+result aliases. Existing caller objects are not hidden or restyled. The cleanup
+is an uncaptioned action with the normal action duration and no independent
+reading/end pause. It changes presentation only; hidden nodes remain in the
+mathematical dependency graph. A result introduced by a helper retains the
+caller's identifier and normal label controls.
+
+The eight standard helpers are described in section 17 and in
+`docs/CONSTRUCTIONS.md`. `bisect-segment` is the constructed midpoint; it is not
+an alias for the coordinate-level `midpoint` operation.
+
 Calls receive distinct internal identities. Returned objects have the caller's
 names. Helper colors follow their result aliases; helper styles on input
 parameters do not restyle the caller's givens. Helper-local initial state applies
@@ -388,7 +459,8 @@ private objects stay hidden and do not contribute their full extents. Internal
 retain their weight. Hard mathematical/layout conditions remain hard.
 
 Helpers can be imported with ordinary Racket module imports, including
-`prefix-in`, as shown in the supplied bisector example. Recursive construction
+`prefix-in` and re-exports. Two different prefixes for the same helper are both
+recognized in one construction. This is shown in the supplied bisector example. Recursive construction
 helpers, named result records, and interactive expansion during playback are not
 implemented.
 
@@ -584,9 +656,9 @@ Supported relations:
 - `(equal-angle a1 a2 ...)` for two or more equal angle specifications.
 
 `parallel` marks matching directions with chevrons; `midpoint-of` marks the
-segment's two equal halves. Top-level `assert` clauses accept supported relations
-or Boolean expressions without adding visual objects. Checks are numerical for
-the realized candidate, not a proof for all possible givens.
+segment's two equal halves. Top-level and step-local `assert` forms accept supported
+relations or Boolean expressions without adding visual objects. Checks are numerical
+for the selected realization, not a proof for all possible givens.
 
 ### Example
 
@@ -789,7 +861,7 @@ A dense diagram may need a wider view, shorter text, or a placement hint.
 The example runner's `--describe` output now includes native annotation metrics,
 warnings, and selected label positions.
 
-## 16. Updated gallery and tests
+## 16. Gallery and tests
 
 `examples/gallery.rkt` retains the original plates and adds segment-direction,
 circle-direction, fade-only, Greek angle-label, and crowded-diagram plates.
@@ -811,3 +883,85 @@ RACKET="/Applications/Racket v9.3.0.2/bin/racket"
 `reveal-annotation-render-test.rkt` checks native metrics, custom text, stable
 sampling, gallery setup, and rasterization. See `docs/TESTING.md` for the build
 environment's validation status rather than assuming these tests were run there.
+
+
+## 17. Standard construction library
+
+The public, headless entry point is `constructions.rkt`:
+
+```racket
+(require "geometry/core.rkt"
+         (prefix-in c: "geometry/constructions.rkt"))
+```
+
+| Helper | Arguments | Result |
+|---|---|---|
+| `perpendicular-bisector` | Two distinct Points | Line |
+| `bisect-segment` | Two distinct Points | Point |
+| `erect-perpendicular` | Line, Point on the line | Line |
+| `drop-perpendicular` | Line, Point off the line | Line |
+| `angle-bisector` | Three noncollinear Points; middle point is vertex | Ray |
+| `parallel-through-point` | Line, Point off the line | Line |
+| `copy-segment` | Segment, target Ray | Point |
+| `copy-angle` | Angle, target Ray, Side | Ray |
+
+The constructions use circles, rays/lines and intersections rather than a hidden
+coordinate-level midpoint, projection, angle-bisector or parallel formula.
+Their input types and results are mandatory signatures; postconditions check the
+result. The library has no hard-coded color palette, timing policy, or renderer.
+
+`copy-segment` returns the **endpoint** on the target ray; construct a segment
+from it when required. `copy-angle` returns a ray at the target's starting point
+and requires an explicit `'left`/`'right` side. `angle-bisector` returns the
+internal bisector. Zero and straight source angles are rejected.
+
+`erect-perpendicular` defines its output Line from P toward the left of the input
+Line's direction. `drop-perpendicular` defines its output Line from external P
+toward the second circle intersection across the input Line. These documented
+orientations make subsequent ray construction unambiguous.
+
+For copying lengths, this version assumes a **transferable compass**. The form
+`(circle O #:radius r)` places its reveal through-point at `(O.x + r, O.y)`.
+It does not purport to expand a strictly collapsible-compass transfer algorithm.
+`(circle O P)` retains the original through-point/reveal semantics.
+
+See `docs/CONSTRUCTIONS.md` for all contracts, algorithms, limitations, and the
+thirteen application videos. The gallery adds plates showing all eight helpers
+and demonstrates cleanup after expanded calls. The old `examples/helpers.rkt`
+now re-exports the library's perpendicular bisector.
+
+```racket
+(construction midpoint-lesson
+  (given [A (point -2 0)] [B (point 2 0)])
+  (step "Join A to B." [AB (segment A B)])
+  (step "Construct the midpoint."
+    (expand [M (c:bisect-segment A B)] #:auxiliaries 'hide))
+  (step "The two parts have equal length."
+    [halves (marker (midpoint-of M AB))])
+  (assert (midpoint-of M AB))
+  (result M))
+```
+
+Run the library's mathematical, composition, and estimated-layout checks with
+just Racket base:
+
+```sh
+racket geometry/run-tests.rkt --library
+```
+
+The full `geometry/run-tests.rkt` adds the corresponding RackUnit groups and
+native integration tests. Render all thirteen library applications in both themes:
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket" \
+WORKERS=10 sh geometry/examples/render-library.sh both
+```
+
+The thirteen applications are square, circumcenter/circumcircle, incircle,
+triangle midline, reflection, SAS triangle copy, five equal parts, tangent at a
+circle point, orthocenter, regular hexagon, equilateral-triangle chain, parallel
+at a prescribed distance, and standalone angle copy. The batch yields 26 MP4s
+and retains PNGs/SRT files. It excludes the older three examples and gallery.
+
+The one-second reading delay, shorter equality ticks, unchanged right-angle size,
+light/dark palettes, and process-based worker renderer are retained.

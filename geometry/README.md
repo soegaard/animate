@@ -1,4 +1,4 @@
-# Geometry authoring for `animate` — v0.6.0
+# Geometry authoring for `animate` — v0.7.0
 
 A first implementation of the mathematical-authoring DSL: geometry, exposition,
 presentation state, layout, and styling remain separate.
@@ -8,25 +8,57 @@ presentation state, layout, and styling remain separate.
 required. The adapter uses the public `main.rkt`, `colors.rkt`, and `render.rkt`
 entry points of the containing checkout, not a separately installed copy.
 
-This version extends the geometry sources from commit
-`1e6610cd4fbe6e6224c87a9e55e4949a6ca54a05`. Its new rendering code uses Animate's
-public text, path, camera and Visual APIs.
+This version extends the geometry sources at commit
+`74798a8a97be8778e46995c2c0d139f705c8cd8d`. The unmodified baseline `geometry/`
+tree was verified against the repository. No parent repository files are replaced.
 
-**Validation status:** Racket is not installed in this build environment. Source
-structure, imports, constructor arities, baseline hashes and native API contracts
-were reviewed, but the Racket tests and native renders have **not been executed**
-here. The tests are included for the local run; see [testing](docs/TESTING.md).
+**Validation:** the new standard-library checks were executed on Racket CS
+9.3.0.8: **68 groups and 2,422 checks passed**. They cover mathematics, typed
+composition, deterministic sampling, and estimated annotation layout for all
+thirteen applications in both themes and the gallery. The full RackUnit suite
+and native Animate/pict/draw rasterization tests were **not** executed in this
+minimal runtime. See [testing](docs/TESTING.md) for the exact boundary.
 
-## New in v0.6.0
+## New in v0.7.0
 
-Object-specific, direction-selectable reveals and progressive marker strokes;
-measured-font, visibility-aware label/marker layout; placement hints and conflict
-diagnostics; and a reserved narration band. Right-angle size, shorter ticks,
-1-second read delay, light/dark modes, and process-based rendering are preserved.
-The gallery includes direction and dense-annotation plates.
+Eight reusable compass-and-straightedge constructions, thirteen application
+videos, and gallery plates using the new library. Helpers have typed arguments,
+postconditions, expanded/collapsed use, and optional auxiliary cleanup. The
+library uses a transferable compass; see the [construction reference](docs/CONSTRUCTIONS.md).
 
-The [implementation plan](docs/REVEAL-AND-LAYOUT-PLAN.md) and
-[manual](docs/MANUAL.md) describe the syntax and boundaries.
+```racket
+(require "geometry/core.rkt"
+         (prefix-in c: "geometry/constructions.rkt"))
+
+;; Within a construction:
+(step "Construct the midpoint."
+  (expand [M (c:bisect-segment A B)] #:auxiliaries 'hide))
+```
+
+The earlier object-specific reveals, measured-font annotation layout, one-second
+read delay, right-angle size, shorter ticks, light/dark modes, and process-based
+rendering are preserved. The [implementation plan](docs/STANDARD-LIBRARY-PLAN.md)
+and [manual](docs/MANUAL.md) describe the changes.
+
+## Standard-library applications
+
+The first eight videos are square-on-segment, circumcenter, incircle,
+triangle-midline, reflect-point, copy-triangle-sas, divide-segment-five, and
+tangent-at-point. Five more cover the orthocenter, regular hexagon,
+equilateral-triangle-chain, parallel-at-distance, and a standalone copy-angle.
+
+Run the base-only checks, then render all thirteen in both themes:
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt --library
+RACKET="$RACKET" WORKERS=10 sh geometry/examples/render-library.sh both
+```
+
+The batch script renders videos sequentially, using ten worker processes for
+each one's frames. `light` or `dark` selects just one theme; `GEOMETRY_OUTPUT`
+changes the output root. The gallery and the three original examples remain
+separately runnable. See [all examples and contracts](docs/CONSTRUCTIONS.md).
 
 ## Start here
 
@@ -80,14 +112,14 @@ racket geometry/examples/perpendicular-bisector.rkt \
 racket geometry/examples/perpendicular-through-point.rkt --describe
 ```
 
-All four example runners (including `gallery.rkt`) accept `--frames`, `--mp4 FILE`, `--describe`,
+All example runners accept `--frames`, `--mp4 FILE`, `--describe`,
 `--no-captions`, `--light`, `--dark`, `--workers N`, `--fps N`, `--width N`,
 `--height N`, `--supersample N`, and an
 optional output directory. Use separate directories for stills and full frames:
 the native renderer cleans its previous numbered frames in the chosen directory.
 SRT files contain text and timing only; audio generation is not included.
 
-## The three examples
+## Original examples and gallery
 
 | File | What it demonstrates |
 |---|---|
@@ -96,7 +128,7 @@ SRT files contain text and timing only; audio generation is not included.
 | `examples/perpendicular-through-point.rkt` | Anonymous supporting geometry, `choose`, `#:other-than`, global realization, and helper circles that may extend outside the view. |
 | `examples/gallery.rkt` | Visual catalogue of drawable geometry, semantic markers, equality classes, presentation actions, and expanded reusable constructions. |
 
-`examples/helpers.rkt` contains the reusable perpendicular-bisector construction.
+`examples/helpers.rkt` re-exports the standard perpendicular-bisector construction.
 The example runners' shared implementation is included in
 `examples/private/run-example.rkt`; they do not depend on a missing runner in the
 outer repository's examples directory.
@@ -177,7 +209,8 @@ feature in the design proposal.
 
 ## Scope of this version
 
-The three construction examples, typed reusable helpers, expanded/collapsed use,
+The original examples, eight standard constructions, thirteen application examples,
+expanded/collapsed use,
 visibility and label controls, themes, deterministic finite-candidate layout,
 explicit pins/overrides, native scenes, and output helpers are implemented.
 Geometry remains fixed after realization while its exposition animates. Layout
@@ -208,7 +241,7 @@ steps can override these defaults with `#:read-delay`, `#:duration`, and
 `#:pause`.
 
 
-This version adds semantic diagram markers, including perpendicular markers and equality markers.
+Semantic diagram markers include right-angle squares, parallel arrows, and length/angle equality marks.
 
 
 ### Parallel rendering

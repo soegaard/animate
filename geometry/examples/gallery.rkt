@@ -4,7 +4,8 @@
 ;; intentionally broad rather than a single Euclidean construction: object
 ;; kinds, semantic markers, presentation actions, and helper expansion all get
 ;; a short plate that can be inspected in light or dark mode.
-(require "../main.rkt" (prefix-in helper: "helpers.rkt"))
+(require "../core.rkt" (prefix-in helper: "helpers.rkt")
+         (prefix-in c: "../constructions.rkt") "private/library-example.rkt")
 (provide geometry-gallery example-theme make-demo-timeline make-demo-scene)
 
 (define (base-theme mode)
@@ -48,7 +49,11 @@
     (label-side crowded-C 'above)
     (label-at crowded-M (point 0.42 -0.32))
     (marker-position crowded-halves 0.42)
-    (marker-radius arc-letter 0.34))
+    (marker-radius arc-letter 0.34)
+    (label-text LA "A") (label-text LB "B") (label-text LM "M")
+    (label-text LP "P") (label-text LQ "Q") (label-text LH "H")
+    (label-text CA0 "A") (label-text CB0 "B") (label-text CC0 "C")
+    (label-text CO0 "O") (label-text CT "T"))
 
   ;; ------------------------------------------------------------------
   ;; Primitive drawable geometry.
@@ -227,9 +232,46 @@
       [HA (point -1 0)]
       [HB (point 1 0)]))
   (step #:pause 0.7
-    (expand [bisector (helper:perpendicular-bisector HA HB)]))
-  (step "The helper returns its requested result while its construction remains visible."
-    (highlight bisector)))
+    (expand [bisector (helper:perpendicular-bisector HA HB)] #:auxiliaries 'hide))
+  (step "The line is the perpendicular bisector of the segment."
+    (highlight bisector))
+  (step #:duration 0.35 #:pause 0 (hide HA HB bisector))
+
+  ;; ------------------------------------------------------------------
+  ;; The eight standard constructions, in three short application plates.
+  (step "A midpoint and a perpendicular bisector can be reused as known constructions."
+    [LA (point -2 0)] [LB (point 2 0)] [LS (segment LA LB)]
+    [LM (c:bisect-segment LA LB)] [Lm (c:perpendicular-bisector LA LB)])
+  (step "The midpoint gives two equal parts and the bisector meets them at a right angle."
+    [LMticks (marker (midpoint-of LM LS))]
+    [LMsquare (marker (perpendicular LS Lm #:at LM))])
+  (step #:duration 0.35 #:pause 0 (hide LA LB LS LM Lm LMticks LMsquare))
+
+  (step "A perpendicular can be erected at a point on a line."
+    [Ll (line (point -2 0) (point 2 0))] [LP (point -1 0)]
+    [Lerect (c:erect-perpendicular Ll LP)])
+  (step "A perpendicular can also be dropped from an external point."
+    [LQ (point 1 1.6)] [Ldrop (c:drop-perpendicular Ll LQ)]
+    [LH (intersection Ll Ldrop)])
+  (step "Through the external point, a parallel completes the diagram."
+    [Lparallel (c:parallel-through-point Ll LQ)]
+    [Larrows (marker (parallel Ll Lparallel))])
+  (step #:duration 0.35 #:pause 0
+    (hide Ll LP Lerect LQ Ldrop LH Lparallel Larrows))
+
+  (step "The angle bisector divides this source angle into equal parts."
+    [CA0 (point -2 1.3)] [CB0 (point -3 -0.5)] [CC0 (point -1.7 -0.5)]
+    [Cbase (segment CB0 CC0)] [Cside (segment CB0 CA0)]
+    [Cbisection (c:angle-bisector CC0 CB0 CA0)])
+  (step "Copy the base length onto a new ray."
+    [CO0 (point 1 -0.5)] [Ctarget (ray CO0 (point 2.5 -0.5))]
+    (expand [CT (c:copy-segment Cbase Ctarget)] #:auxiliaries 'hide))
+  (step "Copy the source angle onto that ray."
+    [Ccopied (c:copy-angle (angle CC0 CB0 CA0) Ctarget 'left)]
+    [Canglemark (marker (equal-angle (angle CC0 CB0 CA0)
+                                    (angle CT CO0 (end-point Ccopied))))])
+  (step "The same constructions can be combined into larger constructions."
+    (highlight Ccopied CT)))
 
 (define (gallery-view aspect)
   (make-geometry-view #:center (point 0 1/3)
@@ -244,11 +286,10 @@
                           #:aspect aspect))
 
 (define (make-demo-scene #:width [width 1280] #:height [height 720] #:theme-mode [theme-mode 'light])
-  (geometry-timeline->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
+  (library-example->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
                             #:width width #:height height))
 
 (module+ main
-  (require "private/run-example.rkt")
-  (run-geometry-example "gallery"
+  (run-library-example "gallery"
                         (lambda (aspect theme-mode)
                           (make-demo-timeline #:aspect aspect #:theme-mode theme-mode))))
