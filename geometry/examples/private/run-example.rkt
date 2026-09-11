@@ -193,7 +193,12 @@
   (cond [describe?
          (printf "~a: ~a seconds\n" name (geometry-timeline-duration timeline))
          (pretty-write (geometry-realization-diagnostics (geometry-timeline-realization timeline)))
-         (pretty-write (geometry-realization-choices (geometry-timeline-realization timeline)))]
+         (pretty-write (geometry-realization-choices (geometry-timeline-realization timeline)))
+         (define plan (geometry-timeline->annotation-plan timeline #:width width
+                                                          #:captions? captions?))
+         (printf "Annotation metrics: ~a\n" (annotation-plan-metrics plan))
+         (printf "Annotation warnings: ~a\n" (annotation-plan-warnings plan))
+         (pretty-write (annotation-plan-labels plan))]
         [shard-mode?
          (run-worker-shard!)]
         [else

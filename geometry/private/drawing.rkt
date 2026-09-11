@@ -3,7 +3,7 @@
 ;; Pure preparation of visible polylines and stable label anchors. The final
 ;; solid circle path uses native cubic Beziers in the animate adapter instead.
 (require racket/list (only-in racket/math pi)
-         "math.rkt" "data.rkt" "../layout.rkt" "../theme.rkt")
+         "math.rkt" "data.rkt" "reveal.rkt" "../layout.rkt" "../theme.rkt")
 (provide curve-polyline clipped-polylines dash-polylines label-positions
          object-style-overrides display-label)
 
@@ -15,23 +15,14 @@
   (define parts (regexp-split #rx"/" (symbol->string id)))
   (last parts))
 (define (curve-polyline value view progress)
-  (define p (max 0 (min 1 progress)))
-  (cond [(zero? p) '()]
-        [(circle? value) (circle-points value p)]
+  ;; Legacy flat-polyline helper. Rendering uses the multi-stroke representation
+  ;; directly so separate fronts never acquire a spurious connecting chord.
+  (cond [(circle? value) (circle-points value progress)]
         [else
-         (define-values (xmin xmax ymin ymax) (view-bounds view))
-         (define ends (clip-linear value xmin xmax ymin ymax))
-         (cond [(null? ends) '()]
-               [(or (segment? value) (ray? value))
-                (list (car ends) (interpolate-point (car ends) (cadr ends) p))]
-               [else
-                ;; A line grows from its defining pair rather than appearing
-                ;; to originate at an arbitrary off-screen infinity.
-                (define a (curve-start value))
-                (define b (curve-end value))
-                (define mid (midpoint a b))
-                (list (interpolate-point mid (car ends) p)
-                      (interpolate-point mid (cadr ends) p))])]))
+         (define strokes (curve-reveal-strokes value view progress))
+         (if (= (length strokes) 2)
+             (append (reverse (car strokes)) (cdr (cadr strokes)))
+             (if (null? strokes) '() (car strokes)))]))
 
 ;; Clip consecutive polyline edges and rejoin consecutive retained pieces.
 (define (clipped-polylines points view)

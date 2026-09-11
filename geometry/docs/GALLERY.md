@@ -1,21 +1,22 @@
-# Geometry gallery visual review
+# Gallery review — v0.6.0
 
-`examples/gallery.rkt` is a broad visual regression example rather than a single
-construction lesson. It is meant to make changes to the geometry renderer easy
-to inspect in one video.
+Render `geometry/examples/gallery.rkt` in both themes. The captions describe
+mathematics; the code still exercises presentation-state changes.
 
-Review these plates in both light and dark mode:
+Inspect these differences:
 
-- point, segment, line, ray, and circle;
-- midpoint ticks plus the right-angle square;
-- parallel-arrow markers;
-- one-, two-, and three-tick equal-length classes;
-- a single angle arc and a matching equal-angle pair;
-- label show/hide;
-- lighter auxiliary styling and restoration;
-- temporary highlight;
-- hide/show transitions and simultaneous actions;
-- expanded reusable construction steps.
+1. The three new segments draw left-to-right, right-to-left, and centre-out.
+2. The three equal-radius circles start at their named circumference points:
+   two fronts, clockwise, and counterclockwise. The separate fade-only circle
+   appears as a complete boundary.
+3. Squares, ticks, chevrons and angle arcs draw progressively. The square has
+   the previous side length; ticks are still 20% shorter.
+4. The Greek `α` label follows its angle arc. Labels of the dense triangle
+   avoid marker strokes and one another where feasible; M's pinned label and
+   C's preferred side demonstrate the overrides.
+5. Unrelated, hidden gallery plates do not influence the current labels.
+   Label positions remain fixed during hides, shows and temporary styling.
+6. The caption panel prevents construction lines/circles passing through text.
 
-The right-angle square uses the same `marker.size` as before. Equal-length and
-midpoint ticks use 80% of the previous tick length.
+`--describe` reports annotation warnings. A warning is a request for inspection,
+not a claim that every dense arrangement has a collision-free solution.

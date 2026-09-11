@@ -3,7 +3,7 @@
 ;; Elaboration and geometry-type checking. No eval, namespace mutation or GUI.
 ;; Builder mutation is local to elaboration; the returned graph is immutable.
 (require racket/list racket/match racket/string
-         "math.rkt" "data.rkt" "vocabulary.rkt")
+         "math.rkt" "data.rkt" "vocabulary.rkt" "reveal.rkt")
 (provide make-construction-program make-construction-helper
          infer-expression-type expression-references substitute-expression)
 
@@ -259,6 +259,7 @@
   (define assertions '())
   (define layouts '())
   (define styles '())
+  (define reveal-rules '())
   (define timing default-program-timing)
   (define outputs '())
   (define serial 0)
@@ -371,6 +372,11 @@
                   (for/list ([s (in-list (geometry-program-styles body))]
                              #:unless (assoc (car s) params))
                     (cons (hash-ref action-substitutions (car s)) (cdr s)))))
+    ;; Caller reveal rules, collected later, override helper-local defaults.
+    (set! reveal-rules
+          (append reveal-rules
+                  (for/list ([r (in-list (geometry-program-reveals body))])
+                    (list (hash-ref action-substitutions (car r)) (cadr r)))))
     (define mapped-initial
       (for/list ([a (in-list (geometry-program-initial body))]
                  #:when (ormap (lambda (id) (not (assoc id params))) (geometry-action-targets a)))
@@ -475,6 +481,7 @@
   (define deferred-assertions '())
   (define outer-layout '())
   (define outer-style '())
+  (define outer-reveals '())
   (define seen-timing? #f)
   (define seen-result? #f)
   (for ([c (in-list clauses)])
@@ -490,6 +497,7 @@
       [(assert) (set! deferred-assertions (append deferred-assertions (cdr c)))]
       [(layout) (set! outer-layout (append outer-layout (cdr c)))]
       [(style) (set! outer-style (append outer-style (cdr c)))]
+      [(reveal) (set! outer-reveals (append outer-reveals (cdr c))) ]
       [(timing) (when seen-timing? (geometry-error name "duplicate timing clause"))
                 (set! seen-timing? #t)
                 (set! timing (parse-timing-clause name c))]
@@ -512,6 +520,24 @@
     (match l
       [(list 'focus ids ...) (for-each drawable! ids)]
       [(list 'keep-visible ids ...) (for-each drawable! ids)]
+      [(list 'label-side id (list 'quote side))
+       (drawable! id)
+       (unless (memq side '(auto above below left right above-left above-right below-left below-right))
+         (geometry-error name "unknown label side ~e" side))]
+      [(list 'label-at id (list 'point (? finite-real? x) (? finite-real? y))) (drawable! id)]
+      [(list 'label-text id (? string? text))
+       (drawable! id)
+       (when (or (string-contains? text "\n") (string-contains? text "\r") (zero? (string-length text)))
+         (geometry-error name "label-text needs a nonempty, single-line string"))]
+      [(list 'marker-quadrant id quadrant)
+       (expect-type (lookup-type types id name) 'Marker name id)
+       (unless (memq quadrant '(1 2 3 4)) (geometry-error name "marker quadrant must be 1, 2, 3 or 4"))]
+      [(list 'marker-position id t)
+       (expect-type (lookup-type types id name) 'Marker name id)
+       (unless (and (finite-real? t) (< 0 t 1)) (geometry-error name "marker position must be between 0 and 1"))]
+      [(list 'marker-radius id r)
+       (expect-type (lookup-type types id name) 'Marker name id)
+       (unless (and (finite-real? r) (> r 0)) (geometry-error name "marker radius must be positive"))]
       [(list 'prefer e target extra ...)
        (unless (<= (length extra) 1) (geometry-error name "prefer accepts expression, target and optional weight"))
        (expect-type (infer-expression-type e types name) 'Number name e)
@@ -530,4 +556,12 @@
   (for ([s (in-list styles)])
     (unless (and (list? s) (pair? s) (symbol? (car s))) (geometry-error name "invalid object style ~e" s))
     (drawable! (car s)))
-  (geometry-program name nodes steps initial checks assertions layouts styles timing outputs source))
+  (set! reveal-rules (append reveal-rules outer-reveals))
+  (for ([r (in-list reveal-rules)])
+    (match r
+      [(list (? symbol? id) (? symbol? mode))
+       (drawable! id)
+       (unless (reveal-mode-valid? (lookup-type types id name) mode)
+         (geometry-error name "unsupported reveal ~a for ~a (~a)" mode id (lookup-type types id name)))]
+      [_ (geometry-error name "reveal expects [object mode], received ~e" r)]))
+  (geometry-program name nodes steps initial checks assertions layouts styles timing reveal-rules outputs source))

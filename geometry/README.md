@@ -1,4 +1,4 @@
-# Geometry authoring for `animate` — v0.1
+# Geometry authoring for `animate` — v0.6.0
 
 A first implementation of the mathematical-authoring DSL: geometry, exposition,
 presentation state, layout, and styling remain separate.
@@ -8,15 +8,25 @@ presentation state, layout, and styling remain separate.
 required. The adapter uses the public `main.rkt`, `colors.rkt`, and `render.rkt`
 entry points of the containing checkout, not a separately installed copy.
 
-Source compatibility was reviewed against commit
-`d189485eec4acf1e15e1fd05feb2043f35ffdb37` (`animate` 1.23.0).
-See [source notes](docs/SOURCE.md).
+This version extends the geometry sources from commit
+`1e6610cd4fbe6e6224c87a9e55e4949a6ca54a05`. Its new rendering code uses Animate's
+public text, path, camera and Visual APIs.
 
-**Validation status:** this delivery includes 74 RackUnit test cases, including
-native scene sampling and PNG output. A Racket executable was unavailable in the
-build environment, so these tests and the example renders have **not been run**.
-The source has undergone structural, local-import, and API review; this is not a
-claim of successful Racket compilation. See [testing](docs/TESTING.md).
+**Validation status:** Racket is not installed in this build environment. Source
+structure, imports, constructor arities, baseline hashes and native API contracts
+were reviewed, but the Racket tests and native renders have **not been executed**
+here. The tests are included for the local run; see [testing](docs/TESTING.md).
+
+## New in v0.6.0
+
+Object-specific, direction-selectable reveals and progressive marker strokes;
+measured-font, visibility-aware label/marker layout; placement hints and conflict
+diagnostics; and a reserved narration band. Right-angle size, shorter ticks,
+1-second read delay, light/dark modes, and process-based rendering are preserved.
+The gallery includes direction and dense-annotation plates.
+
+The [implementation plan](docs/REVEAL-AND-LAYOUT-PLAN.md) and
+[manual](docs/MANUAL.md) describe the syntax and boundaries.
 
 ## Start here
 
@@ -70,8 +80,9 @@ racket geometry/examples/perpendicular-bisector.rkt \
 racket geometry/examples/perpendicular-through-point.rkt --describe
 ```
 
-All three example runners accept `--frames`, `--mp4 FILE`, `--describe`,
-`--no-captions`, `--fps N`, `--width N`, `--height N`, `--supersample N`, and an
+All four example runners (including `gallery.rkt`) accept `--frames`, `--mp4 FILE`, `--describe`,
+`--no-captions`, `--light`, `--dark`, `--workers N`, `--fps N`, `--width N`,
+`--height N`, `--supersample N`, and an
 optional output directory. Use separate directories for stills and full frames:
 the native renderer cleans its previous numbered frames in the chosen directory.
 SRT files contain text and timing only; audio generation is not included.

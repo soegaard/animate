@@ -1,4 +1,4 @@
-# Implemented geometry DSL — v0.1
+# Implemented geometry DSL — v0.6.0
 
 This is the reference for the code in this delivery. It is narrower than the
 original design proposal: features listed as deferred below are not silently
@@ -333,10 +333,10 @@ override for the same name are an error. `#:samples` increases the deterministic
 candidate budget (default 256). Failure means no valid candidate was found in
 that budget; it is **not** a proof that the constraints are unsatisfiable.
 
-Automatic label placement is an eight-direction heuristic using approximate
-label boxes and the complete relevant diagram. It is frozen before animation,
-so labels do not jump around from frame to frame. It is not a measured-font
-collision solver. The adapter's `#:labels` argument accepts an immutable or
+Automatic native label placement now uses measured text boxes and a shared,
+visibility-aware label/marker placement pass. It is frozen before animation,
+so labels do not jump around from frame to frame. The pure core retains an
+estimated-metrics mode. Sections 14–15 describe reveal and placement metadata. The adapter's `#:labels` argument accepts an immutable or
 ordinary hash mapping an object identifier to an explicit label-centre point:
 
 ```racket
@@ -415,6 +415,9 @@ have a universal “muted” meaning independent of the native color theme.
 
 Supported kind selectors: `point`, `segment`, `line`, `ray`, `circle`.
 Supported state selectors: `normal`, `deemphasized`, `highlighted`.
+Marker subtypes additionally support `right-angle-marker`, `length-marker`,
+`parallel-marker`, and `angle-marker`; they inherit the generic `marker` rules.
+
 Supported paint/label selectors: `stroke`, `fill`, `label`.
 Kinds may contain channels or states; a state may contain channels; a
 kind/state combination may contain channels. Other selector nesting is rejected.
@@ -541,8 +544,8 @@ realized once; only exposition and visual treatments vary during playback.
 
 Intersection calculations are numerical and can become ill-conditioned near
 coincidence or tangency. Coincident/overlapping loci are reported rather than
-represented. Label placement uses approximate boxes and may need explicit
-placement. Typography, colors, and widths need visual validation on the target
+represented. Annotation placement is a bounded candidate search and may need explicit
+placement. The native adapter measures text; the pure core can estimate it. Typography, colors, and widths need visual validation on the target
 renderer and intended output size. Qualitative font choices come from the normal
 label style; transitions are intended for color, opacity, radius, stroke width,
 and numeric size, not animated font-family changes.
@@ -567,6 +570,8 @@ so they can be bound to names, styled, shown/hidden, highlighted, and returned f
 (marker (equal-length AB AC BC))
 (marker (angle A B C))
 (marker (equal-angle (angle A B C) (angle D E F)))
+(marker (parallel l1 l2))
+(marker (midpoint-of M AB))
 ```
 
 Supported relations:
@@ -577,6 +582,11 @@ Supported relations:
 - `(equal-length s1 s2 ...)` for two or more segments of equal length.
 - `(angle A B C)` for the angle with vertex `B`.
 - `(equal-angle a1 a2 ...)` for two or more equal angle specifications.
+
+`parallel` marks matching directions with chevrons; `midpoint-of` marks the
+segment's two equal halves. Top-level `assert` clauses accept supported relations
+or Boolean expressions without adding visual objects. Checks are numerical for
+the realized candidate, not a proof for all possible givens.
 
 ### Example
 
@@ -600,3 +610,204 @@ Useful properties are `size`, `spacing`, `radius`, `color`, and stroke width.
   [right-angle [color-family gold]]
   [equal-sides [size 0.16]])
 ```
+
+## 14. Object-specific reveals
+
+Fresh bindings now use a type-specific reveal. The mathematics and timing remain
+unchanged; only the path exposed at a given action progress changes.
+
+| Object | Default reveal | Alternatives |
+|---|---|---|
+| Point | Fade/scale into its fixed position (`pop`) | `fade` |
+| Segment | From its first endpoint (`from-start`) | `from-end`, `from-center`, `fade` |
+| Ray | From its finite origin (`from-start`) | `fade` |
+| Line | Outward from its defining region (`from-center`) | `fade` |
+| Circle | Two fronts from its through-point (`bidirectional`) | `clockwise`, `counterclockwise`, `fade` |
+| Marker | Draw each constituent glyph (`draw`) | `fade` |
+
+`auto` selects the default for any drawable kind. State commands are unchanged:
+`show` fades in the complete object, `hide` fades it out, and showing an object
+again does not replay its original construction stroke.
+
+A construction may override fresh-binding reveals:
+
+```racket
+(construction lesson
+  (given [A (point -2 0)] [B (point 2 0)])
+  (reveal
+    [AB from-end]
+    [cA clockwise])
+  (step "Join the two points." [AB (segment A B)])
+  (step "Draw the circle with centre A through B." [cA (circle A B)]))
+```
+
+The `reveal` clause can refer forward. Unsupported combinations such as a
+clockwise point reveal are rejected before realization. A reusable helper's
+rules follow its renamed objects; a caller's rule for a returned object wins.
+
+Segments and rays are revealed **before** viewport clipping. An offscreen
+endpoint does not become a new mathematical endpoint at the edge of the frame.
+For infinite lines, the defining midpoint is clamped onto the visible interval
+before the two fronts are formed. At zero progress there is no drawn stroke;
+at completion the whole visible curve is present.
+
+A default circle has two independent fronts starting exactly at the supplied
+through-point. Its final boundary and every intermediate solid arc use native
+cubic Beziers. Dash patterns start at the reveal origin rather than being
+re-centred at each frame.
+
+Every constituent tick, chevron, square or angle arc reveals progressively.
+Corresponding marks in a group share progress. Right-angle squares retain their
+existing side length; equality and midpoint ticks retain their 20% reduction.
+
+## 15. Labels and marker placement
+
+The renderer prepares an immutable `annotation-plan` once for a scene. It uses
+Animate's measured text boxes, the fixed view, and the timeline's visibility
+states. Invisible objects on another gallery plate no longer push a visible
+label away. Labels and markers are considered together, including potential
+collisions during fades and highlights.
+
+The placement pass tries several label sides/distances, tick positions,
+right-angle quadrants and angle radii. It prefers to avoid point discs, labels
+crossing curves, overlapping annotations, and the caption band. Geometry does
+not move. A label keeps one position throughout its lifetime, including
+hide/show cycles and out-of-order sampling. No layout search occurs per frame.
+
+### Label hints
+
+```racket
+(layout
+  (label-side A 'left)
+  (label-side B 'right)
+  (label-side C 'above)
+  (label-at M (point 0.42 -0.32))
+  (label-text alpha "α"))
+```
+
+`label-side` is a preference. Its values are `auto`, `above`, `below`, `left`,
+`right`, `above-left`, `above-right`, `below-left`, and `below-right`. A different
+side may be selected to avoid a stronger collision.
+
+`label-at` is a fixed label-centre location in world coordinates. It neither
+moves the mathematical object nor silently yields to automatic placement.
+The adapter's existing `#:labels` hash has higher precedence than `label-at`.
+Conflicting or offscreen fixed positions are retained and reported.
+
+`label-text` changes the displayed string, not the object's identity or its
+label visibility. Strings must be nonempty and single-line. For example:
+
+```racket
+(layout (label-text alpha "α"))
+(step "The arc identifies the angle α."
+  [alpha (marker (angle A O B))]
+  (show-label alpha))
+```
+
+For a marker spanning several objects, its one named label is anchored to the
+first member. Use separately named angle markers to label individual angles.
+
+### Marker hints
+
+```racket
+(layout
+  (marker-position equal-sides 0.42)
+  (marker-quadrant right-angle 2)
+  (marker-radius alpha 0.34))
+```
+
+`marker-position` fixes a fraction strictly between 0 and 1 along each marked
+segment or visible linear interval. For a midpoint marker, the same fraction
+is used on **each half**, not on the whole segment.
+
+`marker-quadrant` chooses 1, 2, 3 or 4. These are relative to the first object's
+directed axis and its left side: `(+,+)`, `(-,+)`, `(-,-)`, `(+,-)` respectively.
+Only quadrants whose marked arms actually lie on the supplied segments/rays
+are admitted. No new point or intersection is created. Impossible fixed
+quadrants are diagnosed instead of drawing a square on imaginary extensions.
+
+`marker-radius` fixes an angle arc's radius in local world units. The three
+marker hints are checked against the realized marker kind. Metadata may refer
+forward and is remapped through reusable helpers; caller hints take precedence.
+
+### Marker-specific themes
+
+Generic marker rules are inherited by the more specific selectors:
+
+```racket
+(geometry-theme
+  (marker
+    (stroke [width 2]))
+  (right-angle-marker [size 0.18])
+  (length-marker [size 0.18])
+  (parallel-marker [size 0.18])
+  (angle-marker [radius 0.28]))
+```
+
+For length/midpoint marks the rendered tick length is `0.8 × size`, preserving
+the accepted shorter ticks. Square side length is `size` without that factor.
+Stroke width remains cosmetic; sizes, radii and label offsets remain world
+lengths. Automatic layout changes placement, not the right-angle square size.
+
+Equality/parallel classes receive distinct tick/arc/chevron counts when they
+are visible together. Shared members and result aliases retain matching
+notation. Non-overlapping gallery plates can reuse counts. Pattern counts do
+not constitute a proof of any relation beyond the marker's checked statement.
+
+### Caption space
+
+When captions are enabled, the adapter measures the narration paragraphs and
+reserves a bottom band large enough for the tallest caption. Labels and markers
+avoid that band. A background panel prevents construction curves running through
+the caption. `#:captions? #f` / `--no-captions` removes both reserve and panel.
+Explicit scene backgrounds are also used for the panel.
+
+### Inspection and limits
+
+```racket
+(define plan
+  (geometry-timeline->annotation-plan timeline
+    #:width 1280 #:captions? #t))
+
+(annotation-plan-labels plan)
+(annotation-plan-marker-placements plan)
+(annotation-plan-marker-counts plan)
+(annotation-plan-texts plan)
+(annotation-plan-label-boxes plan)
+(annotation-plan-warnings plan)
+```
+
+The native plan reports `animate-text` metrics. The headless API
+`prepare-geometry-annotations` uses conservative estimated text boxes by default;
+it accepts `#:measure-label` (a procedure returning width and height in world
+units), `#:metrics`, `#:caption-height` and `#:world-per-pixel` for other clients.
+
+The bounded three-pass search is deterministic, not a guarantee of perfect
+packing. Warnings include `outside-safe-area`, `annotation-overlap`, and
+`label-geometry-overlap`. Pins are never silently moved to eliminate a warning.
+A dense diagram may need a wider view, shorter text, or a placement hint.
+The example runner's `--describe` output now includes native annotation metrics,
+warnings, and selected label positions.
+
+## 16. Updated gallery and tests
+
+`examples/gallery.rkt` retains the original plates and adds segment-direction,
+circle-direction, fade-only, Greek angle-label, and crowded-diagram plates.
+Narration describes the mathematical objects rather than announcing visual
+emphasis operations. Inspect it under both `--light` and `--dark`.
+
+The default one-second reading delay and the existing process-based `--workers`
+rendering are retained. Each worker prepares its own identical fixed annotation
+plan for the same view and font environment, then samples frames independently.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt
+"$RACKET" geometry/examples/gallery.rkt --dark --workers 10 \
+  --mp4 geometry-output/videos/dark/gallery.mp4 geometry-output/dark/gallery
+```
+
+`reveal-test.rkt` and `annotation-test.rkt` are included in the core test run.
+`reveal-annotation-render-test.rkt` checks native metrics, custom text, stable
+sampling, gallery setup, and rasterization. See `docs/TESTING.md` for the build
+environment's validation status rather than assuming these tests were run there.

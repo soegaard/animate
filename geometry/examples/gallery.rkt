@@ -34,6 +34,22 @@
     [action-duration 0.75]
     [step-pause 0.45])
 
+  ;; Reveal and layout metadata may refer forward to later plates.
+  (reveal [reverse-S from-end] [center-S from-center]
+          [clockwise-circle clockwise] [counterclockwise-circle counterclockwise]
+          [fade-circle fade])
+  (layout
+    (label-text fxP "P") (label-text fxS "s") (label-text fxC "c")
+    (label-text arc-letter "α")
+    (label-text crowded-A "A") (label-text crowded-B "B")
+    (label-text crowded-C "C (intersection)") (label-text crowded-M "M")
+    (label-text crowded-D "D") (label-text crowded-E "E")
+    (label-side crowded-A 'left) (label-side crowded-B 'right)
+    (label-side crowded-C 'above)
+    (label-at crowded-M (point 0.42 -0.32))
+    (marker-position crowded-halves 0.42)
+    (marker-radius arc-letter 0.34))
+
   ;; ------------------------------------------------------------------
   ;; Primitive drawable geometry.
   (step "A point is a drawable geometric object."
@@ -137,11 +153,11 @@
     (show-label fxS fxC))
   (step "Labels can also be removed again."
     (hide-label fxS fxC))
-  (step "Auxiliary geometry can be made lighter."
+  (step "The circle has a fixed centre and radius."
     (deemphasize fxC))
-  (step "Its normal style can be restored."
+  (step "Every point on the circle is the same distance from its centre."
     (normalize fxC))
-  (step "A highlight is temporary and leaves the stored state unchanged."
+  (step "The segment has two endpoints and a fixed length."
     (highlight fxP fxS))
   (step "Objects can be hidden."
     (hide fxP fxS fxC))
@@ -149,6 +165,60 @@
     (together (show fxP) (show fxS) (show fxC)))
   (step #:duration 0.35 #:pause 0
     (hide fxP fxS fxC))
+
+  ;; ------------------------------------------------------------------
+  ;; Endpoint and direction-specific reveals. The mathematical description does
+  ;; not need to talk about the renderer's drawing direction.
+  (step "Each segment joins its two endpoints."
+    [forward-S (segment (point -4 1.4) (point -2 1.4))]
+    [reverse-S (segment (point -1 1.4) (point 1 1.4))]
+    [center-S (segment (point 2 1.4) (point 4 1.4))])
+  (step #:duration 0.35 #:pause 0 (hide forward-S reverse-S center-S))
+  (step "A circumference point determines a circle's radius."
+    (together
+      [circle-U (point -3.5 1)] [circle-V (point -2.65 1)]
+      [circle-O (point 0 1)] [circle-Q (point 0.85 1)]
+      [circle-X (point 3.5 1)] [circle-Y (point 4.35 1)])
+    (hide-label circle-U circle-V circle-O circle-Q circle-X circle-Y))
+  (step "The three circles have equal radii."
+    (together
+      [two-front-circle (circle circle-U circle-V)]
+      [clockwise-circle (circle circle-O circle-Q)]
+      [counterclockwise-circle (circle circle-X circle-Y)]))
+  (step #:duration 0.35 #:pause 0
+    (hide circle-U circle-V circle-O circle-Q circle-X circle-Y
+          two-front-circle clockwise-circle counterclockwise-circle))
+  (step "This circle has the same radius."
+    [fade-circle (circle (point 0 1) (point 0.85 1))])
+  (step #:duration 0.35 #:pause 0 (hide fade-circle))
+
+  ;; ------------------------------------------------------------------
+  ;; A custom angle label and a dense diagram exercise the shared layout pass.
+  (step "The arc identifies the angle α."
+    (together
+      [angle-base (segment (point 0 0) (point 2 0))]
+      [angle-side (segment (point 0 0) (point 1 1.7))]
+      [arc-letter (marker (angle (point 2 0) (point 0 0) (point 1 1.7)))])
+    (show-label arc-letter))
+  (step #:duration 0.35 #:pause 0 (hide angle-base angle-side arc-letter))
+  (step "C and M lie on the same line."
+    (together
+      [crowded-A (point -2 0)] [crowded-B (point 2 0)]
+      [crowded-C (point 0 2)] [crowded-M (point 0 0)]
+      [crowded-D (point -0.2 0.55)] [crowded-E (point 0.3 0.8)]
+      [crowded-base (segment crowded-A crowded-B)]
+      [crowded-left (segment crowded-A crowded-C)]
+      [crowded-right (segment crowded-B crowded-C)]
+      [crowded-altitude (segment crowded-M crowded-C)]))
+  (step "AM and MB are equal, and CM is perpendicular to AB."
+    (together
+      [crowded-halves (marker (midpoint-of crowded-M crowded-base))]
+      [crowded-square (marker (perpendicular crowded-base crowded-altitude #:at crowded-M))]))
+  (step "The equal parts meet at M."
+    (highlight crowded-halves crowded-M))
+  (step #:duration 0.35 #:pause 0
+    (hide crowded-A crowded-B crowded-C crowded-M crowded-D crowded-E
+          crowded-base crowded-left crowded-right crowded-altitude crowded-halves crowded-square))
 
   ;; ------------------------------------------------------------------
   ;; Reusable construction expansion.

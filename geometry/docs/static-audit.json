@@ -1,16 +1,48 @@
 {
-  "racket_modules": 28,
-  "local_imports_checked": 58,
-  "test_cases": {
-    "tests/animate-test.rkt": 8,
-    "tests/drawing-test.rkt": 5,
-    "tests/dsl-test.rkt": 13,
-    "tests/layout-test.rkt": 9,
-    "tests/math-test.rkt": 9,
-    "tests/theme-test.rkt": 8,
-    "tests/timeline-test.rkt": 11
-  },
-  "total_test_cases": 63,
+  "version": "0.6.0",
+  "baseline_commit": "1e6610cd4fbe6e6224c87a9e55e4949a6ca54a05",
+  "racket_executed": false,
+  "native_renders_executed": false,
+  "checks": [
+    "reader delimiter matching",
+    "module/test form structure review",
+    "local require targets",
+    "acyclic local require graph",
+    "changed record constructor arities",
+    "ZIP integrity"
+  ],
+  "racket_files": 35,
+  "named_test_cases": 107,
+  "new_named_test_cases": 33,
   "errors": [],
-  "scope": "Structural source audit only; not Racket reading, expansion, compilation, RackUnit execution, or native rendering."
+  "native_entry_points": [
+    "colors.rkt",
+    "main.rkt",
+    "render.rkt"
+  ],
+  "changed_files": [
+    "README.md",
+    "animate-mathematical-authoring-dsl.md",
+    "animate.rkt",
+    "annotations.rkt",
+    "core.rkt",
+    "docs/GALLERY.md",
+    "docs/MANUAL.md",
+    "docs/REVEAL-AND-LAYOUT-PLAN.md",
+    "docs/SOURCE.md",
+    "docs/TESTING.md",
+    "docs/static-audit.json",
+    "examples/gallery.rkt",
+    "examples/private/run-example.rkt",
+    "private/compiler.rkt",
+    "private/data.rkt",
+    "private/drawing.rkt",
+    "private/marker-shapes.rkt",
+    "private/reveal.rkt",
+    "run-tests.rkt",
+    "tests/annotation-test.rkt",
+    "tests/reveal-annotation-render-test.rkt",
+    "tests/reveal-test.rkt",
+    "theme.rkt"
+  ]
 }

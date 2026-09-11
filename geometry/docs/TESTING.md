@@ -1,95 +1,58 @@
-# Validation and local test procedure
+# Testing — geometry v0.6.0
 
-## What was and was not executed
+## Validation performed for this archive
 
-A Racket/raco executable was not available in the build environment. Therefore:
+The baseline geometry/example source hashes were checked against Animate commit
+`1e6610cd4fbe6e6224c87a9e55e4949a6ca54a05`. New native API signatures were read
+from the same revision. Local validation checks reader delimiters, module and
+test-body structure, local require targets, the acyclic geometry dependency
+graph, changed-file inventory, and ZIP integrity.
 
-- **Racket compilation was not executed.**
-- **The RackUnit suite was not executed.**
-- **Native PNG/MP4 rendering and visual inspection were not executed.**
+**Racket is not installed in this build environment.** The compiler, RackUnit
+tests, example videos, and native font measurements have **not been executed**
+here. The archive does not claim an execution pass or benchmark result.
 
-Do not interpret the presence of test files, source review, or a structural audit
-as a report that those runtime tests passed.
+## Local verification
 
-The checks actually performed on the delivered source were delimiter balancing,
-structural inspection of module and test forms, local relative-import existence,
-and review of the native API signatures against the pinned repository source.
-`static-audit.json` records the structural/import audit. It is not Racket's reader
-or expander and cannot establish that a binding is available in every phase.
-
-## Included RackUnit coverage
-
-There are **74 test cases** across seven test files, containing multiple
-assertions per case:
-
-| File | Cases | Coverage |
-|---|---:|---|
-| `math-test.rkt` | 10 | Euclidean constructions, intersections, transforms, tangency, empty/overlapping loci, selectors, clipping. |
-| `dsl-test.rkt` | 19 | Checked graph, type/arity/reference errors, free/derived distinction, typed helpers, hygiene, multi-results, expansion, cardinality and preconditions. |
-| `layout-test.rkt` | 9 | Three classical constructions, deterministic choices, overrides, pins, fixed views, semantic fitting rather than full-circle bounds. |
-| `theme-test.rkt` | 9 | Units, family/state composition, exact overrides, nested stroke rules, inheritance, paint channels, invalid properties. |
-| `timeline-test.rkt` | 14 | Initial state, labels, no label flash, persistent state, transient highlights, seeking, no-ops, helper narration. |
-| `drawing-test.rkt` | 5 | Dash runs, clipping, deterministic labels, explicit label placement, helper display names. |
-| `animate-test.rkt` | 8 | Native tokens, exact colors, scene clock, arbitrary-time sampling, cosmetic widths, aspect checks, all distributed examples, PNG/subtitle/still-index output. |
-
-The native integration tests use temporary output directories and clean them
-up. They do not invoke FFmpeg or construct TeX formulas. They still require the
-ordinary dependencies of the containing `animate` checkout.
-
-## Run locally from the repository root
+From the Animate checkout root, after replacing `geometry/`:
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
-
-# Compile the public modules and all examples.
-"$RACKET" -l raco/main -- make \
-  geometry/main.rkt geometry/render.rkt \
-  geometry/examples/equilateral-triangle.rkt \
-  geometry/examples/perpendicular-bisector.rkt \
-  geometry/examples/perpendicular-through-point.rkt \
-  geometry/examples/gallery.rkt
-
-# Instantiate and exercise all geometry test modules.
 "$RACKET" geometry/run-tests.rkt
-
-# Render the step-by-step visual probes.
-"$RACKET" geometry/examples/equilateral-triangle.rkt
-"$RACKET" geometry/examples/perpendicular-bisector.rkt
-"$RACKET" geometry/examples/perpendicular-through-point.rkt
-"$RACKET" geometry/examples/gallery.rkt
 ```
 
-For just the pure layer:
+There are 107 named RackUnit cases in the registered test files (74 retained,
+33 new). To run the headless compiler/math/layout subset:
 
 ```sh
-racket geometry/run-tests.rkt --core
+"$RACKET" geometry/run-tests.rkt --core
 ```
 
-Equivalent direct full-suite invocation:
+New test files:
+
+| File | Cases | Focus |
+|---|---:|---|
+| `reveal-test.rkt` | 15 | Endpoint/clipping semantics, circle directions, progressive glyphs, helper metadata, unchanged marker dimensions. |
+| `annotation-test.rkt` | 13 | Measurer callback, temporal masks, explicit hints, marker notation, conflicts, deterministic placement, theme inheritance. |
+| `reveal-annotation-render-test.rkt` | 5 | Native font measurement, actual label strings, scene sampling, gallery construction, light/dark rasterization. |
+
+## Gallery check
 
 ```sh
-raco test geometry/tests
+mkdir -p geometry-output/videos/light geometry-output/videos/dark
+for mode in light dark
+do
+  "$RACKET" geometry/examples/gallery.rkt \
+    --"$mode" --workers 10 \
+    --mp4 "geometry-output/videos/${mode}/gallery.mp4" \
+    "geometry-output/${mode}/gallery" || break
+done
 ```
 
-No changes to the outer project's test runner are required. These are additional
-geometry tests, not a claim to replace or rerun the existing `animate` suite.
+`--describe` also prints measured annotation warnings and label locations without
+writing frames. It still loads the native adapter to measure text.
 
-## Visual review targets
-
-Check that circles reveal smoothly from their through-points; mathematical lines
-extend to the view boundary; important intersection points stay inside the view;
-labels remain stable and readable; same-step hidden labels do not flash; helper
-circles become subdued/dashed rather than disappearing; and highlighting returns
-to the prior style. The gallery should exercise every drawable type and built-in marker. The bisector example should visibly expand the typed helper,
-while hidden helper details in collapsed calls should remain absent.
-
-Compare selected frames in both chronological and reverse order through the
-native sampling API. The included integration test exercises repeated sampling
-at the same time after other times have been visited.
-
-The layout and label-placement algorithms are intentionally heuristic. Adjust a
-`layout` pin, a realization override, the explicit view, or `#:labels` when a
-particular diagram needs authorial placement.
-
-
-The example runner now uses process-based sharding for full-frame rendering when `--workers` is greater than 1.
+See `GALLERY.md` for visual review targets. Automatic placement is heuristic;
+inspect warnings and use a hint when a diagram remains too dense. As before,
+worker count alone is not a measurement of simultaneous CPU execution; the
+example runner retains its process-based renderer and global-frame merge.

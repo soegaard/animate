@@ -24,7 +24,7 @@
 ;; program: name, topologically ordered nodes, steps, initial actions,
 ;; mathematical preconditions, post-realization assertions, layout clauses, per-object style clauses,
 ;; timing policy, public result ids, and definition source location.
-(struct geometry-program (name nodes steps initial checks assertions layout styles timing results source) #:transparent)
+(struct geometry-program (name nodes steps initial checks assertions layout styles timing reveals results source) #:transparent)
 ;; helper: name, ordered (name . type) inputs, declared result types, checked body.
 (struct construction-helper (name parameters result-types program) #:transparent)
 ;; view: Cartesian centre, world width, aspect ratio, fractional safe margin.

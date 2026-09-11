@@ -1,1328 +1,813 @@
-# Mathematical Authoring DSL for `animate`
+# Implemented geometry DSL — v0.6.0
 
-## Status
+This is the reference for the code in this delivery. It is narrower than the
+original design proposal: features listed as deferred below are not silently
+accepted. See `README.md` for installation, example commands, and validation
+status.
 
-This document describes a proposed first version of a mathematical-authoring DSL for the Racket `animate` project.
+## 1. The six layers
 
-The DSL is aimed initially at **geometrical construction videos**. Its central design goal is that the source should read like the mathematical construction itself, while `animate` derives the visual presentation and animation from the mathematical structure.
+Mathematics is an immutable, typed dependency graph. Exposition is an ordered
+sequence of pedagogical steps. Timing controls the pedagogical rhythm: the pause
+before a step, the time allowed to read its narration, the duration of visual
+actions, and the pause after a completed step. Presentation records visibility,
+label visibility, and persistent deemphasis separately from transient highlighting.
+Layout chooses a representative realization and one fixed view. Styling describes
+geometry kinds, paint channels, and presentation-state treatments.
 
-The design is intentionally small. Features should be added when real constructions demonstrate a need for them.
+The compiler collects the complete construction before realizing its geometry.
+The timeline does not execute a geometric construction afresh on every frame.
+`hide` never removes an object from the mathematical graph.
 
----
-
-# 1. Design principles
-
-The DSL separates four concerns:
-
-1. **Mathematics** — what geometric objects exist and how they depend on each other.
-2. **Exposition** — when objects are introduced to the viewer.
-3. **Presentation state** — whether objects or labels are shown, hidden, deemphasized, or highlighted.
-4. **Layout** — how free givens and construction choices are concretely realized so that the resulting diagram works well in the view.
-
-A typical construction therefore has this shape:
-
-```racket
-(construction example
-  (given ...)
-  (require ...)
-  (layout ...)
-  (initially ...)
-  (step ...)
-  (step ...)
-  ...)
-```
-
-Not every construction needs every clause.
-
----
-
-# 2. A first example: equilateral triangle
+## 2. Entry points
 
 ```racket
-(construction equilateral-triangle
-  (given
-    [A (point -2 0)]
-    [B (point  2 0)])
-
-  (step
-    "Start with the segment AB."
-    [AB (segment A B)])
-
-  (step
-    "Draw a circle centred at A through B."
-    [cA (circle A B)])
-
-  (step
-    "Draw the corresponding circle centred at B."
-    [cB (circle B A)])
-
-  (step
-    "Let C be their intersection."
-    [C (intersection cA cB #:side-of AB 'left)])
-
-  (step
-    "Join C to A and B."
-    [AC (segment A C)]
-    [BC (segment B C)])
-
-  (step
-    "This is the required equilateral triangle."
-    (deemphasize cA cB)
-    (highlight AB AC BC)))
+(require "geometry/core.rkt")    ; mathematics, DSL, layout, themes, timeline
+(require "geometry/main.rkt")    ; all of core, plus native animate conversion
+(require "geometry/render.rkt")  ; effectful image/video/subtitle output
 ```
 
-This should read almost exactly like a ruler-and-compass construction.
+These examples assume the importing file is in the `animate` repository root.
+Adjust relative paths for another location. Installed collection paths are
+`animate/geometry/core`, `animate/geometry/main`, and `animate/geometry/render`.
 
-The bindings describe mathematical objects:
+The geometry primitives are not the same bindings as the native `animate` Visual
+constructors. Prefix an import when using both APIs.
 
-```racket
-[AB (segment A B)]
-[cA (circle A B)]
-```
-
-The surrounding `step` determines when the viewer learns about them.
-
----
-
-# 3. `construction`
+## 3. Standalone constructions
 
 ```racket
 (construction name
-  clause ...)
+  (given binding ...)
+  (require predicate ...)
+  (layout hint ...)
+  (style object-style ...)
+  (initially command ...)
+  (step optional-narration form ...)
+  ...
+  (result id ...))
 ```
 
-Defines one complete construction or construction-based exposition.
+`construction` **defines** `name` as a `geometry-program` value. It is not a
+function call that renders a video. Exactly one `given` clause is required;
+it may be empty. All other kinds of clause are optional. `result` is optional
+for standalone programs.
 
-Example:
+A binding is `[id expression]`. A multi-result binding is
+`[(id ...) expression]`. Ordinary geometry references must already be defined;
+forward references and duplicate names are errors. `layout`, `style`, and
+`initially` may refer forward. Names starting with `$` are reserved for generated
+helper identities.
+
+Bindings are construction-local symbolic names, not exported Racket variables.
+Use `(construction-ref realization 'A)` to inspect an actual realized value.
 
 ```racket
-(construction perpendicular-bisector-demo
-  ...)
+(given [A (point -2 0)]
+       [B (point)])
 ```
 
-A construction is not merely a sequence of drawing commands. It is compiled into a mathematical dependency graph plus an exposition plan.
-
-This distinction allows `animate` to:
-
-- inspect dependencies;
-- determine which geometric incidences matter;
-- solve layout globally;
-- realize free choices deterministically;
-- derive sensible reveal animations;
-- reuse constructions inside later constructions.
-
----
-
-# 4. `given`
-
-## 4.1 Concrete givens
-
-For a standalone construction, `given` introduces the objects supplied before the construction proper begins.
+`A` has explicit coordinates; `B` is a free given. Free `(point)` is accepted
+only as a named given. Outside the DSL, the ordinary `point` constructor requires
+two coordinates. Anonymous nested geometry is supported:
 
 ```racket
-(given
-  [A (point -2 0)]
-  [B (point  2 0)])
+(given [l (line (point -3 0) (point 3 0))]
+       [P (point 0 0)])
 ```
 
-By default, givens are visible at the beginning.
+The nested defining points are not independently drawn or labelled.
 
-A given may be any suitable geometric object, not only a point.
+## 4. Geometry and expression vocabulary
 
-For example:
+The public mathematical value types are `Point`, `Line`, `Segment`, `Ray`,
+`Circle`, and `Number`. Points use Cartesian coordinates with positive y upward.
+A line, segment, ray, or circle needs distinct defining points.
+
+| Expression | Meaning |
+|---|---|
+| `(point x y)` | Point at the supplied world coordinates. |
+| `(point)` | Free given point, within the DSL only. |
+| `(segment A B)` | Finite segment from A to B. |
+| `(line A B)` | Infinite line, directed from A toward B for selectors. |
+| `(ray A B)` | Ray starting at A and directed toward B. |
+| `(circle A B)` | Circle centred at A and passing through B. |
+| `(midpoint A B)` | Derived midpoint. |
+| `(distance A B)` | Numerical distance. |
+| `(length AB)` | Length of a segment. |
+| `(center c)` | Centre of a circle. |
+| `(intersection c d ...)` | Exactly one selected intersection. |
+| `(intersections c d)` | All isolated intersections, in deterministic order. |
+
+Arithmetic `+`, `-`, `*`, `/`, comparisons `=`, `<`, `>`, `<=`, `>=`, Boolean
+`and`, `or`, `not`, and predicates `distinct?`, `noncollinear?`, and `on` are
+accepted in the checked expression algebra. `Number` values are useful for
+calculations and helper parameters; numerical displays are not implemented.
+Explicit presentation commands and visual layout/style targets must be drawable
+geometry, not `Number` bindings.
+
+The DSL is deliberately a closed expression language in v0.1. It does **not**
+call `eval`, and arbitrary Racket applications or external variables inside a
+geometry expression are not supported. Helper names are the exception: the macro
+preserves their lexical Racket bindings. Supply concrete external data through
+`#:givens` or `#:choices`, or use the ordinary mathematical value constructors
+outside the DSL.
+
+## 5. Intersections
 
 ```racket
-(given
-  [l (line (point -3 0)
-           (point  3 0))]
-  [P (point 0 0)])
+[C (intersection cA cB #:side-of AB 'left)]
+[B (intersection cP l #:other-than A)]
+[P (intersection c l #:near Q)]
+[Q (intersection c l #:far-from P)]
+[(C D) (intersections cA cB)]
 ```
 
----
+`#:side-of` accepts a directed line, segment, or ray and `'left` or `'right`.
+It is geometric orientation, not “top of the screen.” `#:other-than` first
+checks that the excluded point really is an intersection. `#:near` and
+`#:far-from` require a unique nearest/farthest candidate; ties are errors.
 
-## 4.2 Free givens
+Without a selector, `intersection` requires exactly one point. It does not pick
+an arbitrary first point when two exist. A destructuring binding checks its
+expected cardinality during realization. Tangency produces one point; an empty
+intersection produces no points. Coincident circles and positive-length linear
+overlaps denote infinitely many points and are diagnosed rather than represented
+as a finite list. Disjoint collinear segments return no points; touching ones
+return their common endpoint.
 
-Coordinates are presentation details. A construction may instead specify an arbitrary given:
+For circle/circle intersections, the first result is on the left of the directed
+line from the first centre to the second. For circle/linear intersections, results
+are ordered along the linear object's defining direction. Segment and ray
+boundaries are respected. Use semantic selectors when the order matters to the
+explanation.
+
+The numerical kernel uses floating-point calculations where needed and a
+scale-relative tolerance. It is not an exact algebraic geometry engine.
+
+## 6. Preconditions and type checking
 
 ```racket
-(given
-  [A (point)]
-  [B (point)])
+(require (distinct? A B))
+(require (on P l))
+(require (noncollinear? A B C))
 ```
 
-Here `A` and `B` are mathematically arbitrary points. Their concrete coordinates are chosen later by the realization/layout system.
+These are mathematical checks, separate from layout preferences. Checks run as
+soon as their dependencies are realized. Helper preconditions are checked on the
+actual caller inputs. Invalid candidate geometry is rejected by realization.
 
-This is different from `choose`.
+Geometry types, primitive arities, helper signatures, and ordinary references
+are checked during DSL elaboration, when the defining module is instantiated,
+before layout/rendering. This is **not** integration with Typed Racket, nor a
+promise that `raco make` alone evaluates every construction declaration. The
+included tests instantiate the modules as well.
 
-- A free given is supplied by the problem.
-- `choose` represents freedom exercised by the construction.
+## 7. Timing
 
----
-
-# 5. `require`
-
-`require` states mathematical preconditions on the givens.
+A construction can declare its default exposition rhythm directly in the DSL:
 
 ```racket
-(require
-  (distinct? A B))
+(timing
+  [opening-pause 0.6]
+  [read-delay 1.0]
+  [action-duration 0.9]
+  [step-pause 0.5])
 ```
 
-or:
+The fields mean:
+
+- `opening-pause`: quiet time before the first step begins;
+- `read-delay`: time after a step's narration becomes current and before its
+  first visual action starts;
+- `action-duration`: default duration of each ordinary action;
+- `step-pause`: time after the final action of a step before the next step begins.
+
+For example,
 
 ```racket
-(require
-  (on P l))
+(step "Start with the segment AB."
+  [AB (segment A B)])
 ```
 
-Types and preconditions are intentionally separate.
+first makes the narration current, waits for `read-delay`, reveals `AB` over
+`action-duration`, and then rests for `step-pause`. With several sequential
+actions, `read-delay` occurs only once before the first action and `step-pause`
+only once after the last. A `(together ...)` group occupies one action slot.
 
-For example:
+Individual steps can override the construction defaults:
 
 ```racket
-P : Point
-l : Line
+(step #:read-delay 1.2
+      #:duration 1.4
+      #:pause 1.0
+  "This is the key step."
+  [C (intersection cA cB #:side-of AB 'left)])
 ```
 
-says what kinds of objects `P` and `l` are, while:
+`#:read-delay`, `#:duration`, and `#:pause` override `read-delay`,
+`action-duration`, and `step-pause` respectively for that step. Timing values
+must be nonnegative, except `action-duration`/`#:duration`, which must be
+positive. A construction may contain at most one top-level `timing` clause.
+
+Expanded helper steps inherit the outer construction's effective timing policy;
+the helper's mathematical and expository structure is retained without forcing a
+separate global clock policy on the caller.
+
+For compatibility with the initial prototype API, `construction->timeline` and
+`construction->scene` still accept `#:hold` and `#:opening-hold`; they are aliases
+for `#:step-pause` and `#:opening-pause`. Explicit API keyword arguments override
+the DSL timing values.
+
+## 8. Exposition and presentation
+
+Givens are shown initially by default. Named points have their identifier as a
+label; curves are unlabelled unless explicitly requested. The optional first
+string in a `step` is narration metadata. The example renderer displays it as a
+caption by default and also exports it to SRT; it does not synthesize speech.
 
 ```racket
-(on P l)
+(initially (hide A B))
+(step "Start with A and B." (show A B))
 ```
 
-states a mathematical relation between them.
+`initially` sets persistent state without an entrance animation. Later bindings
+introduce their geometry and reveal it at that step. Mathematical realization
+can look ahead to later objects even though the exposition has not introduced
+them yet.
 
-`require` is not a layout mechanism. It expresses conditions that must be true for the construction itself to be valid.
+| Command | Effect |
+|---|---|
+| `(show id ...)` | Show existing geometry, retaining its label preference and persistent style state. |
+| `(hide id ...)` | Hide the object and its label, without deleting its geometry. |
+| `(show-label id ...)` | Enable labels; a hidden object remains hidden. |
+| `(hide-label id ...)` | Disable labels independently of the object. |
+| `(deemphasize id ...)` | Enter a persistent secondary presentation state. |
+| `(normalize id ...)` | Restore normal persistent presentation. |
+| `(highlight id ...)` | Transient highlight; restore the previous persistent state afterward. |
 
----
+Showing an already shown object, hiding an already hidden object, and redundant
+persistent state changes are no-ops. Hiding and showing does not forget whether
+a label was disabled or an object was deemphasized.
 
-# 6. `step`
+Commands in one step are sequential. Multiple targets of **one** command animate
+together. Explicit `together` supports disjoint leaf actions/bindings:
 
 ```racket
-(step
-  "Narration associated with this step."
-  form ...)
+(step "Join C to both endpoints."
+  (together [AC (segment A C)]
+            [BC (segment B C)]))
 ```
 
-A `step` is a pedagogical unit.
+Nested `together`, expanded helpers inside `together`, and simultaneous actions
+on the same target are rejected in v0.1.
 
-It may:
-
-- introduce new mathematical objects;
-- change presentation state;
-- highlight existing objects;
-- perform several related actions.
-
-Example:
+Label changes for objects newly introduced in the same step are applied before
+those objects appear. Thus this does not flash the labels briefly:
 
 ```racket
-(step
-  "Draw a circle centred at A through B."
-  [cA (circle A B)])
+(step "Mark the intersections."
+  [(C D) (intersections cA cB)]
+  (hide-label C D))
 ```
 
-The string is narration or explanatory text associated with the step. It does not necessarily have to appear visually on screen.
+Use a later step to deliberately reveal those labels. `highlight` is not
+accepted in `initially`, because it is an event rather than an initial state.
 
-The same construction may later be rendered:
-
-- with narration;
-- with subtitles;
-- silently;
-- with alternative textual presentation.
-
----
-
-# 7. Bindings inside steps
-
-A binding introduces a mathematical object.
-
-```racket
-[AB (segment A B)]
-```
-
-means:
-
-> `AB` is the segment from `A` to `B`.
-
-Because the binding appears in a `step`, the object is also introduced visually at that step.
-
-This differs from:
-
-```racket
-(show AB)
-```
-
-which changes only the presentation state of an object that already exists.
-
----
-
-# 8. Basic geometry forms
-
-The first version should remain small.
-
-Likely core forms include:
-
-```racket
-(point ...)
-(segment A B)
-(line A B)
-(circle A B)
-(intersection ...)
-(intersections ...)
-```
-
-Additional forms should be introduced only as needed by actual constructions.
-
----
-
-## 8.1 `point`
-
-Explicit point:
-
-```racket
-(point 2 3)
-```
-
-Free point:
-
-```racket
-(point)
-```
-
-A free point is intended primarily for use as a given whose concrete realization will be selected by the layout system.
-
----
-
-## 8.2 `segment`
-
-```racket
-(segment A B)
-```
-
-Creates the finite segment from `A` to `B`.
-
-The distinction between `segment`, `line`, and later `ray` should be mathematically real. Intersection operations should respect it.
-
----
-
-## 8.3 `line`
-
-```racket
-(line A B)
-```
-
-Creates the infinite line through points `A` and `B`.
-
-For rendering, a line is clipped to the view. Its entire infinite extent is never required to fit.
-
----
-
-## 8.4 `circle`
-
-```racket
-(circle A B)
-```
-
-means:
-
-> the circle centred at `A` and passing through `B`.
-
-This syntax deliberately resembles a compass construction rather than requiring:
-
-```racket
-(circle #:center A
-        #:radius (distance A B))
-```
-
-The first version need not simulate a physical compass. It merely gives circles a pleasant canonical appearance animation.
-
-The exact reveal animation is a renderer decision and is not part of the DSL semantics.
-
----
-
-# 9. Intersections
-
-## 9.1 One selected intersection
-
-```racket
-(intersection c1 c2 ...)
-```
-
-returns one geometrically selected intersection.
-
-Because many pairs of objects may have more than one intersection, the DSL should support selectors that express geometric intent.
-
-Examples:
-
-```racket
-(intersection c1 c2
-              #:side-of AB 'left)
-```
-
-```racket
-(intersection c l
-              #:other-than A)
-```
-
-Possible future selectors include:
-
-```racket
-#:near P
-#:far-from P
-```
-
-Coordinate-dependent selectors should be avoided when a geometric description is available.
-
----
-
-## 9.2 All intersections
-
-When both intersections are relevant:
-
-```racket
-[(C D) (intersections c1 c2)]
-```
-
-This destructuring form is natural for constructions such as the perpendicular bisector.
-
-The implementation should define a deterministic ordering, even when authors do not normally rely on it.
-
----
-
-# 10. Presentation state
-
-Mathematical existence and visual visibility are separate.
-
-An object may continue to exist mathematically after it has been hidden or deemphasized.
-
-For example:
-
-```racket
-(hide cA)
-```
-
-does not destroy `cA`. It may still be used later:
-
-```racket
-[D (intersection cA l)]
-```
-
-The first version should distinguish persistent presentation state from temporary emphasis.
-
----
-
-# 11. `initially`
-
-```racket
-(initially
-  form ...)
-```
-
-Changes the presentation state before the first step.
-
-By default, givens are shown at the beginning. `initially` provides an escape hatch when a different opening is desired.
-
-Example:
-
-```racket
-(construction example
-  (given
-    [A (point -2 0)]
-    [B (point  2 0)])
-
-  (initially
-    (hide A B))
-
-  (step
-    "Start with two points A and B."
-    (show A B))
-
-  ... )
-```
-
-`given` still describes the mathematics. `initially` changes only the presentation.
-
----
-
-# 12. `show` and `hide`
-
-```racket
-(show A B)
-(hide cA cB)
-```
-
-These operations make existing objects visible or invisible.
-
-They are persistent state changes.
-
-Suggested semantics:
-
-- showing a hidden object animates its appearance;
-- showing an already visible object is a no-op;
-- hiding a visible object animates its disappearance;
-- hiding an already hidden object is a no-op.
-
-An authoring/debug mode may warn about redundant state changes.
-
----
-
-# 13. `show-label` and `hide-label`
-
-Point labels are usually inferred from binding names.
-
-For example:
-
-```racket
-[A (point -2 0)]
-```
-
-normally produces a visible point labelled `A`.
-
-Labels can be controlled independently:
-
-```racket
-(hide-label A B)
-(show-label A B)
-```
-
-This is useful when auxiliary point names would clutter the final diagram.
-
-Example:
-
-```racket
-(step
-  "This is the perpendicular bisector of AB."
-  (deemphasize cA cB)
-  (hide-label C D)
-  (highlight l))
-```
-
----
-
-# 14. `deemphasize` and `normalize`
-
-Some objects should remain visible but recede into the background.
-
-```racket
-(deemphasize cA cB)
-```
-
-is a persistent state change.
-
-The renderer may represent deemphasis using, for example:
-
-- gray;
-- lower opacity;
-- thinner strokes;
-- stippling or dashed strokes.
-
-The construction source does not specify the exact graphic treatment.
-
-To return an object to ordinary presentation:
-
-```racket
-(normalize cA cB)
-```
-
-`deemphasize` should not be confused with `highlight`.
-
----
-
-# 15. `highlight`
-
-```racket
-(highlight AB AC BC)
-```
-
-is a temporary attention event rather than a persistent presentation state.
-
-For example:
-
-```racket
-(step
-  "This is the required equilateral triangle."
-  (deemphasize cA cB)
-  (highlight AB AC BC))
-```
-
-means:
-
-1. leave the helper circles visible but secondary;
-2. briefly draw attention to the triangle.
-
-The exact highlight animation belongs to the renderer.
-
----
-
-# 16. Multiple forms in a step
-
-Forms in a step are normally performed in source order.
-
-For example:
-
-```racket
-(step
-  "Join C to A and B."
-  [AC (segment A C)]
-  [BC (segment B C)])
-```
-
-naturally draws `AC` and then `BC`.
-
-If simultaneous animation is desired, a future or optional form may be:
-
-```racket
-(together
-  [AC (segment A C)]
-  [BC (segment B C)])
-```
-
-This should be introduced only if actual examples demonstrate the need.
-
----
-
-# 17. `choose`
-
-Some constructions contain arbitrary choices.
-
-Example:
+## 9. Construction choices and layout
 
 ```racket
 [A (choose (point-on l #:except P))]
 ```
 
-This means:
+`choose` introduces a constrained free point, not random sampling during
+playback. `point-on` accepts a line, segment, ray, or circle, with an optional
+excluded point. A `choose` must be a named step binding; nested anonymous choices
+are not supported.
 
-> introduce a point `A` on `l`, different from `P`, chosen by the construction.
-
-`choose` does not immediately select a random coordinate.
-
-It introduces a constrained free object whose concrete realization is selected later.
-
-This is essential because the system should consider the complete construction before deciding which choice produces a good diagram.
-
----
-
-## 17.1 `choose` is deterministic
-
-Given the same:
-
-- construction;
-- view;
-- layout hints;
-- rendering settings;
-
-the same concrete realization should be selected.
-
-`choose` is therefore not random by default.
-
----
-
-## 17.2 Free givens versus `choose`
-
-These are mathematically different.
-
-```racket
-(given
-  [A (point)])
-```
-
-means:
-
-> `A` is arbitrary input supplied by the problem.
-
-Whereas:
-
-```racket
-[X (choose (point-on c))]
-```
-
-means:
-
-> the construction is allowed to choose a suitable `X`.
-
-Both may become unknowns in the realization problem, but their mathematical provenance differs.
-
----
-
-# 18. `layout`
+A free given belongs to the problem. A `choose` belongs to the method. Both are
+realized once, along with the consequences of all helper calls, using a
+deterministic finite candidate search. The same source, options, and inputs
+select the same realization within this implementation.
 
 ```racket
 (layout
-  hint ...)
-```
-
-provides presentation/layout guidance without changing the mathematics.
-
-For example:
-
-```racket
-(layout
-  (focus A B C D P)
+  (focus P A B C D)
   (prefer (distance A P) 1.5))
 ```
 
-Layout hints should normally be **soft preferences**.
+Implemented layout forms:
 
-The layout system is free to violate them when necessary to produce a valid and readable diagram.
-
----
-
-## 18.1 `focus`
-
-```racket
-(layout
-  (focus A B C D P))
-```
-
-means approximately:
-
-> these objects form the visual core of the construction; prefer a realization and framing in which they are comfortably visible and well balanced.
-
-It does not necessarily mean that their exact bounding box should fill the frame.
-
----
-
-## 18.2 `prefer`
-
-```racket
-(layout
-  (prefer (distance A P) 1.5))
-```
-
-means:
-
-> a distance around `1.5` is aesthetically desirable, but not mathematically required.
-
-A preference is not a theorem and is not part of the construction's correctness.
-
----
-
-## 18.3 Future hard layout constraints
-
-A stronger escape hatch may eventually be useful.
-
-For example:
-
-```racket
-(layout
-  (constrain (< (distance A P) 2)))
-```
-
-This should remain separate from mathematical `require`.
-
-- `require` states a precondition of the construction.
-- `constrain` would state a hard condition on one rendered realization.
-
-Such a feature should be added only when needed.
-
----
-
-# 19. Layout is based on semantic relevance
-
-The layout system should not simply try to fit the entire geometric extent of every object.
-
-For example, in a perpendicular construction, helper circles may extend far outside the frame. Only the relevant portions near important points and intersections need to remain legible.
-
-The guiding principle is:
-
-> Fit the semantically relevant parts of the construction, not necessarily the complete extents of its geometric objects.
-
-Examples:
-
-| Object | Typical visibility obligation |
+| Form | Meaning |
 |---|---|
-| Point | Point and relevant label |
-| Segment | Endpoints and segment |
-| Line | Relevant incidences; remaining line clipped |
-| Ray | Origin and relevant incidences; remaining ray clipped |
-| Circle | Center, defining points, intersection points, and relevant arcs |
-| Intersection | Point plus enough of the intersecting objects to make the incidence legible |
+| `(focus id ...)` | Include these objects' relevant anchors and prefer balanced placement. |
+| `(keep-visible id ...)` | Include these objects' relevant anchors in fitting. It does not issue a `show` command. |
+| `(prefer expression target)` | Soft numerical preference. |
+| `(prefer expression target weight)` | Same, with an explicit positive weight. |
+| `(constrain predicate)` | Hard condition on this realization. |
+| `(pin A (point x y))` | Exact realization of a free given/choice point; cannot move derived geometry. |
 
-The construction dependency graph should help infer these obligations automatically.
+Layout fits the points and incidences relevant at any time in the exposition,
+not just the final visible state. A circle contributes its centre and defining
+point; later named intersections contribute their own anchors. **Whole circles
+do not have to fit the view.** Lines and outlying helper arcs are clipped at the
+view boundary. A completely hidden, unused large helper does not force a zoom out.
 
----
-
-# 20. Anonymous geometry
-
-Not every object needs a name.
-
-For example:
-
-```racket
-[given-line
- (line (point -3 0)
-       (point  3 0))]
-```
-
-The nested points may exist only to realize the line. They need not be independently shown or labelled.
-
-A useful rule is:
-
-> Named bindings are author-visible construction objects. Nested expressions may create anonymous supporting geometry.
-
----
-
-# 21. Example: perpendicular bisector
+The default camera is fitted once and stays fixed throughout the exposition.
+Use an explicit view and choice as an escape hatch:
 
 ```racket
-(construction perpendicular-bisector
-  (given
-    [A (point -2 0)]
-    [B (point  2 0)])
+(define view
+  (make-geometry-view #:center (point 0 0)
+                      #:world-width 14 #:aspect 16/9 #:margin 0.1))
 
-  (step
-    "Start with the segment AB."
-    [AB (segment A B)])
-
-  (step
-    "Draw a circle centred at A through B."
-    [cA (circle A B)])
-
-  (step
-    "Draw a circle centred at B through A."
-    [cB (circle B A)])
-
-  (step
-    "The two circles meet at C and D."
-    [(C D) (intersections cA cB)])
-
-  (step
-    "Draw the line through C and D."
-    [l (line C D)])
-
-  (step
-    "This is the perpendicular bisector of AB."
-    (deemphasize cA cB)
-    (hide-label C D)
-    (highlight l)))
+(define timeline
+  (construction->timeline perpendicular-through-point
+    #:view view
+    #:choices (hash 'A (point -1.4 0))))
 ```
 
-This example motivates:
+`#:givens` overrides supplied input values; `#:choices` fixes named construction
+choices. Types and mathematical constraints still apply. A pin and an explicit
+override for the same name are an error. `#:samples` increases the deterministic
+candidate budget (default 256). Failure means no valid candidate was found in
+that budget; it is **not** a proof that the constraints are unsatisfiable.
 
-- `intersections`;
-- destructuring bindings;
-- `deemphasize`;
-- independent label control.
-
----
-
-# 22. Example: perpendicular through a point on a line
+Automatic native label placement now uses measured text boxes and a shared,
+visibility-aware label/marker placement pass. It is frozen before animation,
+so labels do not jump around from frame to frame. The pure core retains an
+estimated-metrics mode. Sections 14–15 describe reveal and placement metadata. The adapter's `#:labels` argument accepts an immutable or
+ordinary hash mapping an object identifier to an explicit label-centre point:
 
 ```racket
-(construction perpendicular-through-point
-  (given
-    [l (line (point -3 0)
-             (point  3 0))]
-    [P (point 0 0)])
-
-  (require
-    (on P l))
-
-  (layout
-    (focus P))
-
-  (step
-    "Choose a point A on the line."
-    [A (choose (point-on l #:except P))])
-
-  (step
-    "Draw a circle centred at P through A."
-    [cP (circle P A)])
-
-  (step
-    "Let B be the other intersection with the line."
-    [B (intersection cP l #:other-than A)])
-
-  (step
-    "Draw equal circles centred at A and B."
-    [cA (circle A B)]
-    [cB (circle B A)])
-
-  (step
-    "The circles meet at C and D."
-    [(C D) (intersections cA cB)])
-
-  (step
-    "Draw the line through C and D."
-    [m (line C D)])
-
-  (step
-    "This is the perpendicular to l through P."
-    (deemphasize cP cA cB)
-    (hide-label A B C D)
-    (highlight m P)))
+(geometry-timeline->scene timeline
+  #:labels (hash 'P (point 0 -0.45)))
 ```
 
-This example motivates:
+This changes label placement only, never the geometric point.
 
-- `choose`;
-- `#:other-than`;
-- `require`;
-- global realization and layout.
-
----
-
-# 23. Reusable constructions
-
-A construction may be abstracted and reused as a helper in later videos.
-
-Reusable constructions are defined with `define-construction`.
-
-The inputs are typed explicitly.
-
-Example:
+## 10. Typed reusable constructions
 
 ```racket
 (define-construction perpendicular-bisector
   (given [A : Point]
          [B : Point])
-
   (results Line)
-
-  (require
-    (distinct? A B))
-
-  (step
-    "Draw a circle centred at A through B."
-    [cA (circle A B)])
-
-  (step
-    "Draw a circle centred at B through A."
-    [cB (circle B A)])
-
-  (step
-    "The circles meet at C and D."
-    [(C D) (intersections cA cB)])
-
-  (step
-    "Draw the line through C and D."
-    [m (line C D)])
-
+  (require (distinct? A B))
+  (step "Draw the first circle." [cA (circle A B)])
+  (step "Draw the second circle." [cB (circle B A)])
+  (step "Mark their intersections." [(C D) (intersections cA cB)])
+  (step "Join the intersections." [m (line C D)])
   (result m))
 ```
 
-The public contract is:
+Input types and the result signature are mandatory. Positional multi-results
+use `(results Point Point Line)` with `(result C D m)` and a corresponding
+multi-result binding at the call site. The helper value is a checked descriptor,
+not an ordinary Racket geometry procedure; invoke it inside a construction DSL
+expression.
 
 ```racket
-(given [A : Point]
-       [B : Point])
+;; Collapsed: show only the public result as one known technique.
+(step "Construct the perpendicular bisector."
+  [m (perpendicular-bisector A B)])
 
-(results Line)
+;; Expanded: expose the same helper's internal construction steps.
+(step "Construct the perpendicular bisector."
+  (expand [m (perpendicular-bisector A B)]))
 ```
 
-The final:
+Calls receive distinct internal identities. Returned objects have the caller's
+names. Helper colors follow their result aliases; helper styles on input
+parameters do not restyle the caller's givens. Helper-local initial state applies
+when expanding that helper, not at the beginning of the outer video.
+
+All helper nodes and choices participate in the outer realization. Collapsed
+private objects stay hidden and do not contribute their full extents. Internal
+`prefer` hints have one quarter of their authored weight; explicit outer hints
+retain their weight. Hard mathematical/layout conditions remain hard.
+
+Helpers can be imported with ordinary Racket module imports, including
+`prefix-in`, as shown in the supplied bisector example. Recursive construction
+helpers, named result records, and interactive expansion during playback are not
+implemented.
+
+## 11. Themes, colors, and units
 
 ```racket
-(result m)
+(define lesson-theme
+  (geometry-theme
+    (stroke [width 2.5])
+    (point [radius 0.055] [color-family blue])
+    (label [font-size 0.30] [font-family roman] [font-style italic])
+    (circle [color-family aqua]
+      (deemphasized (stroke [dash (7 5)])))
+    (normal [color-variant d])
+    (deemphasized [color-variant c] [opacity 0.75])
+    (highlighted (stroke [width 4.5]))))
 ```
 
-identifies the object that supplies the declared result.
-
-The implementation should check that `m` really has type `Line`.
-
----
-
-# 24. Types in `define-construction`
-
-Input types are mandatory for reusable constructions.
-
-A likely initial type vocabulary includes:
-
-```text
-Point
-Segment
-Line
-Ray
-Circle
-```
-
-Possible future types include:
-
-```text
-Arc
-Angle
-Polygon
-Length
-Number
-```
-
-Types make reusable constructions checkable before rendering.
-
-For example:
-
-```racket
-(perpendicular-bisector some-circle A)
-```
-
-should be rejected because the helper expects two `Point`s.
-
-Local bindings may have inferred types.
-
-For example:
-
-```racket
-[cA (circle A B)]
-```
-
-naturally gives:
-
-```text
-cA : Circle
-```
-
----
-
-# 25. Multiple results
-
-A reusable construction may later support several results.
-
-For example:
-
-```racket
-(results Point Point Line)
-```
-
-paired with:
-
-```racket
-(result C D l)
-```
-
-A caller could then use destructuring:
-
-```racket
-[(C D l) (some-construction ...)]
-```
-
-Named public results may eventually be useful, but positional results are sufficient for the first version.
-
----
-
-# 26. Using one construction inside another
-
-Suppose `perpendicular-bisector` has already been defined:
-
-```racket
-(define-construction perpendicular-bisector
-  (given [A : Point]
-         [B : Point])
-  (results Line)
-  ...)
-```
-
-A later construction can use it:
-
-```racket
-(construction circumcenter
-  (given
-    [A (point)]
-    [B (point)]
-    [C (point)])
-
-  (require
-    (noncollinear? A B C))
-
-  (step
-    "Construct the perpendicular bisector of AB."
-    [m1 (perpendicular-bisector A B)])
-
-  (step
-    "Construct the perpendicular bisector of BC."
-    [m2 (perpendicular-bisector B C)])
-
-  (step
-    "Their intersection is the circumcenter."
-    [O (intersection m1 m2)]))
-```
-
-This allows later videos to use previously taught constructions as higher-level operations.
-
----
-
-# 27. Collapsed versus expanded helper constructions
-
-A reusable construction should retain its internal construction graph.
-
-That makes two presentation modes possible.
-
-Collapsed use:
-
-```racket
-[m1 (perpendicular-bisector A B)]
-```
-
-may present the helper as one known operation.
-
-Expanded use could eventually be requested explicitly:
-
-```racket
-(expand
-  [m1 (perpendicular-bisector A B)])
-```
-
-and replay its internal construction steps.
-
-This allows a series of videos to build a library of known techniques without losing the ability to show their internals when needed.
-
-The exact surface syntax for expansion is provisional.
-
----
-
-# 28. Layout across helper constructions
-
-Choices made inside helper constructions should not be realized independently.
-
-Instead, the outer construction should be able to solve all free givens and `choose` forms jointly.
-
-Conceptually:
-
-```text
-outer free givens
-        +
-choices in helper 1
-        +
-choices in helper 2
-        +
-outer layout hints
-        +
-view
-        ↓
-one global realization
-```
-
-This avoids local choices that later produce a poor global composition.
-
-Layout hints inside reusable helpers should be weak defaults. Outer layout guidance should be able to dominate them.
-
----
-
-# 29. Canonical reveal animations
-
-The DSL describes semantics, not exact animation mechanics.
-
-Each geometry type can have a default reveal animation.
-
-Possible defaults:
-
-| Object | Default reveal |
+A geometry theme extends the default geometry theme unless an explicit
+`#:extends parent` is provided. This is literal declarative syntax: `blue`, `a`,
+`roman`, and dash lists are data, not variable references. A color-family
+assignment selects a family; state rules choose the variant. The letters do not
+have a universal “muted” meaning independent of the native color theme.
+
+Supported kind selectors: `point`, `segment`, `line`, `ray`, `circle`.
+Supported state selectors: `normal`, `deemphasized`, `highlighted`.
+Marker subtypes additionally support `right-angle-marker`, `length-marker`,
+`parallel-marker`, and `angle-marker`; they inherit the generic `marker` rules.
+
+Supported paint/label selectors: `stroke`, `fill`, `label`.
+Kinds may contain channels or states; a state may contain channels; a
+kind/state combination may contain channels. Other selector nesting is rejected.
+
+`color-family`, `color-variant`, `color`, and `opacity` can affect the object's
+main appearance or an explicit channel. `width` and `dash` belong in a `stroke`
+rule. Point markers have a `radius`; labels have `font-size`, `font-family`,
+`font-face`, `font-style`, `font-weight`, and `offset`.
+
+**Units are inherited from `animate`:**
+
+| Property | Unit |
 |---|---|
-| Point | Fade/scale in, then label |
-| Segment | Stroke from first endpoint to second |
-| Line | Grow through defining points |
-| Circle | Animated stroke around circumference |
-| Intersection point | Subtle emphasis/fade-in |
-| `hide` | Fade out |
-| `highlight` | Temporary emphasis |
+| Coordinates, radius, label font size, label offset, layout distances | Local world length. |
+| Stroke width | Cosmetic stroke-width value, applied through the native Visual protocol. |
+| Dash on/off lengths | Cosmetic lengths converted using the selected camera width and output size. |
+| Opacity | Number in `[0,1]`. |
+| View margin | Fraction of each view dimension reserved at each edge. |
+| Durations | Seconds. |
 
-For circles, one possible future animation is to begin at the non-center defining point and draw around the circumference in both directions.
+For example, font size `0.30` in a 12-unit-wide world is 2.5% of the world width.
+The DSL does not automatically reinterpret `0.30` as a fraction or convert it to
+30 typographic points. A cosmetic width of `2` is **not** two world units.
 
-This is deliberately postponed. The DSL should not depend on the exact reveal style.
-
----
-
-# 30. Persistent state versus transient events
-
-A useful semantic distinction is:
-
-## Persistent presentation state
+Colors become native unresolved `animate/colors` palette/role tokens, and are
+resolved by the native color theme at the render boundary. The adapter uses the
+native stroke-width, stroke-color, fill-color, opacity, and color-mix APIs.
 
 ```racket
-show
-hide
-show-label
-hide-label
-deemphasize
-normalize
+(style
+  [cA [color-family blue]]
+  [cB [color-family aqua]]
+  [m  [color-family gold] (stroke [width 3])])
 ```
 
-These change the scene state until changed again.
+Style precedence is channel defaults, kind rules, label defaults/kind-label
+rules, normal rules, persistent-state rules, transient-highlight rules, and then
+object-specific overrides. Family-only overrides keep the state-selected
+variant. An exact `[color blue-a]`, `[color "#336699"]`, or `[color foreground]`
+overrides family resolution, but opacity and stroke width can still animate.
+`[color #f]` means transparent; `[color inherit]` resumes family resolution.
 
-## Transient events
+For an existing native color value or computed property, use the procedural
+amendment function rather than the literal macro:
 
 ```racket
-highlight
+(require (prefix-in c: "colors.rkt")) ; for a root-level authoring file
+(define custom-theme
+  (geometry-theme-set lesson-theme 'point
+    (list (list 'color (c:rgb-color 30 90 180)))))
 ```
 
-These temporarily draw attention and then return objects to their previous persistent state.
+A selector path such as `'(circle deemphasized stroke)` is also accepted by
+`geometry-theme-set`. Native color-theme selection is a separate render option:
+`#:color-theme` on the geometry output functions corresponds to the native
+renderer’s `#:theme`.
 
-This distinction should be preserved in the implementation.
+Circles are mathematical circumference curves in this version. Their interiors
+are not filled. Fill styling is used for point markers. Semantic role rules such
+as `auxiliary`/`result` are deferred; use explicit object styles and
+`deemphasize` instead.
 
----
-
-# 31. Construction graph and realization
-
-A construction should first be compiled into an abstract dependency graph.
-
-Example:
-
-```text
-A, B
- │
- ├── AB
- │
- ├── cA
- │
- └── cB
-      │
-      ├── C
-      └── D
-           │
-           └── l
-```
-
-Only after the complete construction is known should `animate` choose concrete values for:
-
-- free givens;
-- `choose` objects;
-- layout variables.
-
-This avoids greedy local choices that later produce poor diagrams.
-
----
-
-# 32. Realization and scoring
-
-A first implementation does not require a sophisticated symbolic constraint solver.
-
-For simple choices, the system may:
-
-1. generate a deterministic set of candidate realizations;
-2. construct the resulting geometry;
-3. reject invalid candidates;
-4. score the remaining candidates;
-5. choose the best one.
-
-Possible hard requirements:
-
-- mathematical preconditions hold;
-- required intersections exist;
-- important points are visible;
-- labels fit safely.
-
-Possible soft preferences:
-
-- important geometry occupies a healthy fraction of the view;
-- labels do not collide;
-- important features are not tiny;
-- important incidences stay away from the frame edge;
-- arbitrary givens avoid visually misleading special cases;
-- diagrams are balanced.
-
----
-
-# 33. Avoiding accidental special cases
-
-When realizing arbitrary givens, layout may prefer generic-looking instances.
-
-For example, an arbitrary segment need not always be perfectly horizontal.
-
-A slight rotation may better communicate that the construction is general.
-
-The layout system may therefore have weak default preferences against accidental:
-
-- horizontalness;
-- verticalness;
-- symmetry;
-- tangency;
-- coincident labels;
-- tiny angles;
-
-unless such properties are mathematically intrinsic or pedagogically useful.
-
----
-
-# 34. Suggested first-version core
-
-The first useful version could consist of:
-
-## Structure
+## 12. Realization, timelines, native scenes, and output
 
 ```racket
-construction
-define-construction
-given
-results
-result
-require
-layout
-initially
-step
+(define realized
+  (realize-construction program
+    #:samples 256 #:aspect 16/9 #:margin 0.1 #:padding 0.45))
+
+(define timeline
+  (make-geometry-timeline realized
+    #:theme lesson-theme #:action-duration 0.9 #:hold 0.8 #:opening-hold 0.6))
+
+(define frame (sample-geometry-timeline timeline 3.25))
+(define scene (geometry-timeline->scene timeline #:width 1280 #:height 720))
 ```
 
-## Geometry
+`construction->timeline` combines realization and exposition compilation and
+accepts those options plus `#:view`, `#:givens`, and `#:choices`.
+`construction->scene` adds output dimensions, `#:captions?`, `#:labels`, and
+`#:background`. `geometry-timeline->scene` rejects dimensions whose aspect ratio
+differs from the realized view; re-realize at the desired aspect first.
+
+`geometry-timeline->visual` returns a native group for one time, and
+`geometry-timeline->camera` returns the corresponding native camera. The native
+scene contains one immutable clock value and a pure relation Visual. Sampling
+in any order does not rerun layout or depend on a prior frame. Persistent cache
+keys are deliberately not claimed for the opaque relation closure.
+
+Introspection includes `geometry-program-nodes`, `construction-dependencies`,
+`construction-ref`, `geometry-realization-choices`,
+`geometry-realization-diagnostics`, `geometry-timeline-events`,
+`geometry-timeline-cues`, and `geometry-timeline-duration`. Transparent record
+accessors are exported from `core.rkt`.
+
+Fresh points fade/scale into place. Segments stroke toward their second endpoint;
+lines grow through their defining points. A solid circle uses cubic arc segments,
+revealing in both directions from its through-point. `show`/`hide` use opacity.
+Secondary styles interpolate, with cross-fading when dash patterns differ.
+Highlighting returns to the prior persistent style. These are renderer policies,
+not extra mathematical operations.
 
 ```racket
-point
-segment
-line
-circle
-intersection
-intersections
+(render-geometry-stills! timeline "geometry-output/stills")
+(render-geometry-frames! timeline "geometry-output/frames"
+  #:fps 30 #:supersample 2 #:mp4 "construction.mp4")
+(write-geometry-subtitles! timeline "construction.srt")
 ```
 
-## Choice and layout
+Output functions are in `render.rkt`. Full output additionally accepts
+`#:workers`; both image output functions accept dimensions, `#:fps`,
+`#:supersample`, `#:color-theme`, `#:captions?`, and `#:labels`. MP4 encoding uses
+the existing native FFmpeg support. Merely requiring the examples does not
+launch their command-line runner or write output.
+
+## 13. Explicit limits and extension points
+
+This version has no physical compass/straightedge animation, audio synthesis,
+formal proof checking, interactive dragging, animated givens, camera choreography,
+or general constraint solver. Free lines, arbitrary positive-length choice
+domains, named result records, recursive helpers, and arbitrary Racket geometry
+operations inside the DSL are not supported. Geometry and helper parameters are
+realized once; only exposition and visual treatments vary during playback.
+
+Intersection calculations are numerical and can become ill-conditioned near
+coincidence or tangency. Coincident/overlapping loci are reported rather than
+represented. Annotation placement is a bounded candidate search and may need explicit
+placement. The native adapter measures text; the pure core can estimate it. Typography, colors, and widths need visual validation on the target
+renderer and intended output size. Qualitative font choices come from the normal
+label style; transitions are intended for color, opacity, radius, stroke width,
+and numeric size, not animated font-family changes.
+
+The main extension boundaries are the checked expression vocabulary, numerical
+geometry operations, realization candidate generation/scoring, immutable
+presentation events, and the native adapter. More capable geometry or layout
+implementations can replace these without changing the mathematical meaning of
+`show`, `hide`, `deemphasize`, or `highlight`.
+
+
+
+## Semantic markers
+
+The DSL now supports semantic diagram markers. Markers are first-class drawable values,
+so they can be bound to names, styled, shown/hidden, highlighted, and returned from helpers.
+
+### Marker expressions
 
 ```racket
-choose
-focus
-prefer
+(marker (perpendicular AB m #:at M))
+(marker (equal-length AB AC BC))
+(marker (angle A B C))
+(marker (equal-angle (angle A B C) (angle D E F)))
+(marker (parallel l1 l2))
+(marker (midpoint-of M AB))
 ```
 
-## Presentation
+Supported relations:
+
+- `(perpendicular l m)` or `(perpendicular l m #:at P)` where `l` and `m` are lines,
+  segments, or rays. Without `#:at`, the construction must determine a unique
+  intersection point.
+- `(equal-length s1 s2 ...)` for two or more segments of equal length.
+- `(angle A B C)` for the angle with vertex `B`.
+- `(equal-angle a1 a2 ...)` for two or more equal angle specifications.
+
+`parallel` marks matching directions with chevrons; `midpoint-of` marks the
+segment's two equal halves. Top-level `assert` clauses accept supported relations
+or Boolean expressions without adding visual objects. Checks are numerical for
+the realized candidate, not a proof for all possible givens.
+
+### Example
 
 ```racket
-show
-hide
-show-label
-hide-label
-deemphasize
-normalize
-highlight
+(step "M is the midpoint, and the two lines are perpendicular."
+  [right-angle (marker (perpendicular AB m #:at M))]
+  (highlight m M right-angle))
 ```
 
-Everything else should be added only after a real construction demonstrates a need.
+### Styling markers
 
----
+Markers use the `marker` selector in themes and object styles.
+Useful properties are `size`, `spacing`, `radius`, `color`, and stroke width.
 
-# 35. Things deliberately postponed
+```racket
+(geometry-theme
+  (marker (size 0.18) (spacing 0.08) (radius 0.28)
+          (normal (color foreground))))
 
-The first version does **not** need:
+(style
+  [right-angle [color-family gold]]
+  [equal-sides [size 0.16]])
+```
 
-- physical compass rendering;
-- physical straightedge rendering;
-- detailed per-object animation syntax;
-- arbitrary style commands embedded in constructions;
-- sophisticated camera scripting;
-- a full constraint solver;
-- refinement types for every geometric relation;
-- named multi-results;
-- proof automation;
-- automatic theorem derivation;
-- explicit auxiliary-object declarations;
-- a large library of primitive constructions.
+## 14. Object-specific reveals
 
-These may become valuable later, but they should not obscure the core model.
+Fresh bindings now use a type-specific reveal. The mathematics and timing remain
+unchanged; only the path exposed at a given action progress changes.
 
----
+| Object | Default reveal | Alternatives |
+|---|---|---|
+| Point | Fade/scale into its fixed position (`pop`) | `fade` |
+| Segment | From its first endpoint (`from-start`) | `from-end`, `from-center`, `fade` |
+| Ray | From its finite origin (`from-start`) | `fade` |
+| Line | Outward from its defining region (`from-center`) | `fade` |
+| Circle | Two fronts from its through-point (`bidirectional`) | `clockwise`, `counterclockwise`, `fade` |
+| Marker | Draw each constituent glyph (`draw`) | `fade` |
 
-# 36. Summary
+`auto` selects the default for any drawable kind. State commands are unchanged:
+`show` fades in the complete object, `hide` fades it out, and showing an object
+again does not replay its original construction stroke.
 
-The central idea is:
+A construction may override fresh-binding reveals:
 
-> Geometry expressions say what objects are.  
-> `step` says when the audience learns about them.  
-> Presentation commands say how visible or prominent they are.  
-> `layout` guides how abstract geometry is realized for the view.
+```racket
+(construction lesson
+  (given [A (point -2 0)] [B (point 2 0)])
+  (reveal
+    [AB from-end]
+    [cA clockwise])
+  (step "Join the two points." [AB (segment A B)])
+  (step "Draw the circle with centre A through B." [cA (circle A B)]))
+```
 
-This gives constructions a useful life beyond one animation.
+The `reveal` clause can refer forward. Unsupported combinations such as a
+clockwise point reveal are rejected before realization. A reusable helper's
+rules follow its renamed objects; a caller's rule for a returned object wins.
 
-They can become:
+Segments and rays are revealed **before** viewport clipping. An offscreen
+endpoint does not become a new mathematical endpoint at the edge of the frame.
+For infinite lines, the defining midpoint is clamped onto the visible interval
+before the two fronts are formed. At zero progress there is no drawn stroke;
+at completion the whole visible curve is present.
 
-- reusable mathematical helpers;
-- inspectable dependency graphs;
-- sources for different animation styles;
-- foundations for later higher-level constructions;
-- potentially, eventually, foundations for mathematical explanation and proof-oriented authoring.
+A default circle has two independent fronts starting exactly at the supplied
+through-point. Its final boundary and every intermediate solid arc use native
+cubic Beziers. Dash patterns start at the reveal origin rather than being
+re-centred at each frame.
 
-The DSL should therefore remain semantic first and graphical second.
+Every constituent tick, chevron, square or angle arc reveals progressively.
+Corresponding marks in a group share progress. Right-angle squares retain their
+existing side length; equality and midpoint ticks retain their 20% reduction.
+
+## 15. Labels and marker placement
+
+The renderer prepares an immutable `annotation-plan` once for a scene. It uses
+Animate's measured text boxes, the fixed view, and the timeline's visibility
+states. Invisible objects on another gallery plate no longer push a visible
+label away. Labels and markers are considered together, including potential
+collisions during fades and highlights.
+
+The placement pass tries several label sides/distances, tick positions,
+right-angle quadrants and angle radii. It prefers to avoid point discs, labels
+crossing curves, overlapping annotations, and the caption band. Geometry does
+not move. A label keeps one position throughout its lifetime, including
+hide/show cycles and out-of-order sampling. No layout search occurs per frame.
+
+### Label hints
+
+```racket
+(layout
+  (label-side A 'left)
+  (label-side B 'right)
+  (label-side C 'above)
+  (label-at M (point 0.42 -0.32))
+  (label-text alpha "α"))
+```
+
+`label-side` is a preference. Its values are `auto`, `above`, `below`, `left`,
+`right`, `above-left`, `above-right`, `below-left`, and `below-right`. A different
+side may be selected to avoid a stronger collision.
+
+`label-at` is a fixed label-centre location in world coordinates. It neither
+moves the mathematical object nor silently yields to automatic placement.
+The adapter's existing `#:labels` hash has higher precedence than `label-at`.
+Conflicting or offscreen fixed positions are retained and reported.
+
+`label-text` changes the displayed string, not the object's identity or its
+label visibility. Strings must be nonempty and single-line. For example:
+
+```racket
+(layout (label-text alpha "α"))
+(step "The arc identifies the angle α."
+  [alpha (marker (angle A O B))]
+  (show-label alpha))
+```
+
+For a marker spanning several objects, its one named label is anchored to the
+first member. Use separately named angle markers to label individual angles.
+
+### Marker hints
+
+```racket
+(layout
+  (marker-position equal-sides 0.42)
+  (marker-quadrant right-angle 2)
+  (marker-radius alpha 0.34))
+```
+
+`marker-position` fixes a fraction strictly between 0 and 1 along each marked
+segment or visible linear interval. For a midpoint marker, the same fraction
+is used on **each half**, not on the whole segment.
+
+`marker-quadrant` chooses 1, 2, 3 or 4. These are relative to the first object's
+directed axis and its left side: `(+,+)`, `(-,+)`, `(-,-)`, `(+,-)` respectively.
+Only quadrants whose marked arms actually lie on the supplied segments/rays
+are admitted. No new point or intersection is created. Impossible fixed
+quadrants are diagnosed instead of drawing a square on imaginary extensions.
+
+`marker-radius` fixes an angle arc's radius in local world units. The three
+marker hints are checked against the realized marker kind. Metadata may refer
+forward and is remapped through reusable helpers; caller hints take precedence.
+
+### Marker-specific themes
+
+Generic marker rules are inherited by the more specific selectors:
+
+```racket
+(geometry-theme
+  (marker
+    (stroke [width 2]))
+  (right-angle-marker [size 0.18])
+  (length-marker [size 0.18])
+  (parallel-marker [size 0.18])
+  (angle-marker [radius 0.28]))
+```
+
+For length/midpoint marks the rendered tick length is `0.8 × size`, preserving
+the accepted shorter ticks. Square side length is `size` without that factor.
+Stroke width remains cosmetic; sizes, radii and label offsets remain world
+lengths. Automatic layout changes placement, not the right-angle square size.
+
+Equality/parallel classes receive distinct tick/arc/chevron counts when they
+are visible together. Shared members and result aliases retain matching
+notation. Non-overlapping gallery plates can reuse counts. Pattern counts do
+not constitute a proof of any relation beyond the marker's checked statement.
+
+### Caption space
+
+When captions are enabled, the adapter measures the narration paragraphs and
+reserves a bottom band large enough for the tallest caption. Labels and markers
+avoid that band. A background panel prevents construction curves running through
+the caption. `#:captions? #f` / `--no-captions` removes both reserve and panel.
+Explicit scene backgrounds are also used for the panel.
+
+### Inspection and limits
+
+```racket
+(define plan
+  (geometry-timeline->annotation-plan timeline
+    #:width 1280 #:captions? #t))
+
+(annotation-plan-labels plan)
+(annotation-plan-marker-placements plan)
+(annotation-plan-marker-counts plan)
+(annotation-plan-texts plan)
+(annotation-plan-label-boxes plan)
+(annotation-plan-warnings plan)
+```
+
+The native plan reports `animate-text` metrics. The headless API
+`prepare-geometry-annotations` uses conservative estimated text boxes by default;
+it accepts `#:measure-label` (a procedure returning width and height in world
+units), `#:metrics`, `#:caption-height` and `#:world-per-pixel` for other clients.
+
+The bounded three-pass search is deterministic, not a guarantee of perfect
+packing. Warnings include `outside-safe-area`, `annotation-overlap`, and
+`label-geometry-overlap`. Pins are never silently moved to eliminate a warning.
+A dense diagram may need a wider view, shorter text, or a placement hint.
+The example runner's `--describe` output now includes native annotation metrics,
+warnings, and selected label positions.
+
+## 16. Updated gallery and tests
+
+`examples/gallery.rkt` retains the original plates and adds segment-direction,
+circle-direction, fade-only, Greek angle-label, and crowded-diagram plates.
+Narration describes the mathematical objects rather than announcing visual
+emphasis operations. Inspect it under both `--light` and `--dark`.
+
+The default one-second reading delay and the existing process-based `--workers`
+rendering are retained. Each worker prepares its own identical fixed annotation
+plan for the same view and font environment, then samples frames independently.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt
+"$RACKET" geometry/examples/gallery.rkt --dark --workers 10 \
+  --mp4 geometry-output/videos/dark/gallery.mp4 geometry-output/dark/gallery
+```
+
+`reveal-test.rkt` and `annotation-test.rkt` are included in the core test run.
+`reveal-annotation-render-test.rkt` checks native metrics, custom text, stable
+sampling, gallery setup, and rasterization. See `docs/TESTING.md` for the build
+environment's validation status rather than assuming these tests were run there.

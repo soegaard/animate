@@ -14,8 +14,9 @@
    #:args () (void))
   (define names
     (append '("math-test.rkt" "dsl-test.rkt" "layout-test.rkt"
-              "theme-test.rkt" "timeline-test.rkt" "drawing-test.rkt")
-            (if core-only? '() '("animate-test.rkt"))))
+              "theme-test.rkt" "timeline-test.rkt" "drawing-test.rkt"
+              "reveal-test.rkt" "annotation-test.rkt")
+            (if core-only? '() '("animate-test.rkt" "reveal-annotation-render-test.rkt"))))
   (define executable
     (or (find-executable-path (find-system-path 'exec-file))
         (find-system-path 'exec-file)))
