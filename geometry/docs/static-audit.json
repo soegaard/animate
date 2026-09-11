@@ -1,0 +1,16 @@
+{
+  "racket_modules": 28,
+  "local_imports_checked": 58,
+  "test_cases": {
+    "tests/animate-test.rkt": 8,
+    "tests/drawing-test.rkt": 5,
+    "tests/dsl-test.rkt": 13,
+    "tests/layout-test.rkt": 9,
+    "tests/math-test.rkt": 9,
+    "tests/theme-test.rkt": 8,
+    "tests/timeline-test.rkt": 11
+  },
+  "total_test_cases": 63,
+  "errors": [],
+  "scope": "Structural source audit only; not Racket reading, expansion, compilation, RackUnit execution, or native rendering."
+}

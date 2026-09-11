@@ -1,0 +1,70 @@
+#lang racket/base
+(require rackunit racket/list (only-in racket/math pi) "../core.rkt")
+(define (point-close? p q [tolerance 1e-8]) (< (distance p q) tolerance))
+(module+ test
+  (test-case "primitive contracts and directed geometry"
+    (check-exn exn:fail:geometry? (lambda () (point +nan.0 0)))
+    (check-exn exn:fail:geometry? (lambda () (point 0 +inf.0)))
+    (for ([constructor (in-list (list line segment ray circle))])
+      (check-exn exn:fail:geometry? (lambda () (constructor (point 0 0) (point 0 0))))))
+  (test-case "equilateral triangle under translations, rotations and scales"
+    (for* ([angle (in-list (list 0 (/ pi 7) (/ pi 2) (- pi)))]
+           [scale (in-list '(0.1 1 10))])
+      (define a (point 3 -4))
+      (define b (point+ a (point (* scale (cos angle)) (* scale (sin angle)))))
+      (define c1 (circle a b)) (define c2 (circle b a))
+      (define c (intersection c1 c2 #:side-of (segment a b) 'left))
+      (define d (intersection c1 c2 #:side-of (segment a b) 'right))
+      (check-= (distance a c) scale 1e-8)
+      (check-= (distance b c) scale 1e-8)
+      (check-true (on c c1)) (check-true (on c c2))
+      (check-true (> (cross (point- b a) (point- c a)) 0))
+      (check-true (< (cross (point- b a) (point- d a)) 0))
+      (define m (line c d))
+      (check-true (on (midpoint a b) m))
+      (check-= (dot (point- b a) (point- d c)) 0 1e-8)))
+  (test-case "circle-line intersection and other-than selection"
+    (define p (point 0 0)) (define a (point -2 0))
+    (define l (line (point -3 0) (point 3 0)))
+    (define c (circle p a))
+    (check-true (point-close? (intersection c l #:other-than a) (point 2 0)))
+    (check-equal? (intersections c l) (intersections l c))
+    (check-exn exn:fail:geometry? (lambda () (intersection c l)))
+    (check-exn exn:fail:geometry? (lambda () (intersection c l #:other-than (point 0 1)))))
+  (test-case "tangent, empty, and coincident intersections"
+    (define c (circle (point 0 0) (point 1 0)))
+    (check-equal? (length (intersections c (line (point -2 1) (point 2 1)))) 1)
+    (check-equal? (length (intersections c (circle (point 2 0) (point 3 0)))) 1)
+    (check-equal? (intersections c (line (point -2 2) (point 2 2))) '())
+    (check-equal? (intersections c (circle (point 4 0) (point 5 0))) '())
+    (check-exn exn:fail:geometry? (lambda () (intersections c c))))
+  (test-case "finite segment and ray domains are respected"
+    (define c (circle (point 0 0) (point 2 0)))
+    (check-equal? (intersections c (segment (point -1 0) (point 1 0))) '())
+    (check-equal? (length (intersections c (ray (point 0 0) (point 1 0)))) 1)
+    (check-equal? (intersections (segment (point 0 0) (point 1 0))
+                                 (line (point 2 -1) (point 2 1))) '())
+    (check-false (on (point -1 0) (ray (point 0 0) (point 1 0)))))
+  (test-case "collinear disjoint, touching, and overlapping segments"
+    (define a (segment (point 0 0) (point 1 0)))
+    (check-equal? (intersections a (segment (point 2 0) (point 3 0))) '())
+    (check-true (point-close? (car (intersections a (segment (point 1 0) (point 2 0)))) (point 1 0)))
+    (check-exn exn:fail:geometry? (lambda () (intersections a (segment (point 0.5 0) (point 2 0))))))
+  (test-case "geometric selection ties are diagnosed"
+    (define c (circle (point 0 0) (point 1 0)))
+    (define l (line (point -2 0) (point 2 0)))
+    (check-exn exn:fail:geometry? (lambda () (intersection c l #:near (point 0 0))))
+    (check-true (point-close? (intersection c l #:near (point 2 0)) (point 1 0)))
+    (check-true (point-close? (intersection c l #:far-from (point 2 0)) (point -1 0))))
+  (test-case "infinite-line clipping has finite endpoints"
+    (define clipped (clip-linear (line (point 0 0) (point 0 2)) -4 4 -3 3))
+    (check-true (andmap point-close? clipped (list (point 0 -3) (point 0 3))))
+    (check-equal? (clip-linear (line (point 8 0) (point 8 2)) -4 4 -3 3) '())
+    (check-true (andmap point-close?
+                        (clip-linear (ray (point 0 0) (point 1 0)) -4 4 -3 3)
+                        (list (point 0 0) (point 4 0)))))
+  (test-case "bidirectional circle reveal begins at the defining point"
+    (define c (circle (point 2 3) (point 4 3)))
+    (check-true (andmap (lambda (p) (point-close? p (circle-through c))) (circle-points c 0)))
+    (check-true (andmap (lambda (p) (on p c)) (circle-points c 0.37)))
+    (check-true (point-close? (car (circle-points c 1)) (last (circle-points c 1))))))
