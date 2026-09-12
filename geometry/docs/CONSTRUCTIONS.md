@@ -233,3 +233,35 @@ boxes. They are not silently described as solved. Inspect the native `--describe
 report and the generated stills at the intended output size; a `label-side` or
 `label-at` hint remains available. Right-angle size and the shorter tick length
 are unchanged. Narration describes mathematics, not color or emphasis commands.
+
+
+## v0.8.1 audit corrections
+
+The eight exported names, argument types, return values, and transferable-compass
+assumption are unchanged. The helpers now use `(caption ...)` templates for
+object names, so expanding a source angle at a new vertex does not refer to the
+caller's wrong A/B/C. Distinct private points receive deterministic display names
+without changing their hygienic internal identities.
+
+The `copy-angle` helper chooses an interior point U on the first source segment
+and weakly prefers an opening of one third of that segment. It draws the source
+circle, obtains D on the second arm, explicitly draws the chord UD, then copies
+that opening and chord at the target. This avoids the former full-side opening
+that made D coincide with the original endpoint in common examples. The result
+is still the same angle for every valid compass opening.
+
+Expanded helpers explicitly show supporting lines/rays that are part of their
+instructions. Cleanup still removes only private auxiliaries, never caller
+objects or declared results. `bisect-segment` no longer draws a duplicate initial
+segment before expanding its perpendicular-bisector helper. The latter hides
+its private base at the conclusion instead of leaving a duplicate colored edge
+on top of a caller's segment.
+
+Applications teach a new construction once and reuse it collapsed when further
+expansion would obscure the purpose: the circumcenter uses known perpendicular
+bisectors; reflection uses a known perpendicular foot before showing distance
+copying; the hexagon uses known angle copying after showing a 60° triangle.
+The foundation demonstrations and gallery still support expanded use.
+
+See EXAMPLE-AUDIT.md for all thirteen applications, the original three videos,
+and the gallery, including the remaining native-render review checklist.

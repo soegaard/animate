@@ -1,25 +1,31 @@
-# Source and integration notes — v0.7.0
+# Source and integration notes — v0.8.1
 
-Baseline: `soegaard/animate` commit
-`74798a8a97be8778e46995c2c0d139f705c8cd8d` ("Update geometry DSL").
-The repository was read through the GitHub connector. The extracted v0.6.0
-starting archive's Git tree hash was computed as
-`dd6fa9deac1ab44528c08370acaf8e55f2f8fd31`, exactly matching that commit's
-`geometry/` tree. The implementation therefore preserves the user's current
-geometry changes rather than returning to an earlier prototype.
+This release extends the **delivered v0.8.0 review-bundle package**, not an older
+checkout. That is the package used to generate the user's supplied native review
+images. The repository main was read through the connected GitHub source and
+was at `c6903574f2326778fe900f474317a3a186415569` during this audit (geometry v0.7.0).
+Its older geometry files were not copied over the delivered v0.8.0 sources.
 
-Only the replacement `geometry/` folder is delivered. The parent `main.rkt`,
-`colors.rkt`, `render.rkt`, and native rendering implementations are not changed.
-The process-based frame renderer is preserved. New examples use the same runner,
-with lazy adapter loading so that their geometry can also be tested headlessly.
+Baseline archive:
+`animate-geometry-v0.8.0-review-bundles-20260912.zip`
 
-New headless entry point: `geometry/constructions.rkt`.
-Eight algorithms: `geometry/constructions/foundations.rkt`.
+SHA-256:
+`4d53daa4482b6559d6cd05c5b7298115ca3b54643c7481a3ef404be5876b1006`
+
+Review input:
+`geometry-review-upload-20260912-022955.zip`
+
+SHA-256:
+`2627fdcbb060cb538fe29c557ff4d2a732fc421c385d2dabf1e7f48359df2bda`
+
+Only a complete replacement `geometry/` directory is delivered. The outer
+`main.rkt`, `render.rkt`, `colors.rkt`, renderer, codecs, and dependencies are not
+modified. Process-based full-video rendering and sparse native review rendering
+retain their existing implementations. The only rendering adapter change is
+consistent world-relative caption sizing; new native tests use existing APIs.
+
 The two manual copies (`docs/MANUAL.md` and
-`animate-mathematical-authoring-dsl.md`) are identical.
-
-Testing runtime: upstream Racket CS 9.3.0.8 CI build, commit
-`dc4456af0d76f4193364e1879922ce0233f32529`. The downloaded runtime is used only
-for validation and is not included in the archive. See TESTING.md for executed
-checks versus native integration tests that still require the user's full
-installation.
+`animate-mathematical-authoring-dsl.md`) are identical. Runtime binaries, font
+files, the user's review images, and temporary build scripts are not included.
+Testing used the available upstream Racket CS 9.3.0.8 minimal runtime. Native
+macOS/Pict/Draw validation is explicitly separate; see `TESTING.md`.

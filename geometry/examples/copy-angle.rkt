@@ -10,14 +10,16 @@
 (construction copy-angle-demo
   (given [A (point -1.2 0)] [B (point -3 0)] [C (point -2.2 1.6)]
          [O (point 1 -0.2)] [target (ray O (point 3.3 0.2))])
-  (layout (focus A B C O) (label-text source-mark "α") (label-text target-mark "α"))
+  (layout (focus A B C O) (label-text source-mark "α") (label-text target-mark "α")
+          (label-side A 'below) (label-side B 'below-left) (label-side C 'above)
+          (label-side O 'left))
   (style [r [color-family gold]])
   (step "The source angle and a target ray are given."
     [BA (segment B A)] [BC (segment B C)]
     [source-mark (marker (angle A B C))] (show-label source-mark))
   (step "Copy the angle onto the right side of the target ray."
     (expand [r (c:copy-angle (angle A B C) target 'right)] #:auxiliaries 'hide))
-  (step "The two angles have equal measure."
+  (step #:pause 1.5 "The two angles have equal measure."
     [target-mark (marker (angle (end-point target) O (end-point r)))]
     (show-label target-mark))
   (assert (equal-angle (angle A B C) (angle (end-point target) O (end-point r)))

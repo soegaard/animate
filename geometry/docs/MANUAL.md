@@ -1,4 +1,4 @@
-# Implemented geometry DSL — v0.7.0
+# Implemented geometry DSL — v0.8.1
 
 This is the reference for the code in this delivery. It is narrower than the
 original design proposal: features listed as deferred below are not silently
@@ -25,6 +25,7 @@ The timeline does not execute a geometric construction afresh on every frame.
 (require "geometry/core.rkt")    ; mathematics, DSL, layout, themes, timeline
 (require "geometry/main.rkt")    ; all of core, plus native animate conversion
 (require "geometry/render.rkt")  ; effectful image/video/subtitle output
+(require "geometry/review.rkt")  ; sparse step-review images, contact sheets and ZIPs
 (require (prefix-in c: "geometry/constructions.rkt")) ; standard library
 ```
 
@@ -353,16 +354,26 @@ Implemented layout forms:
 |---|---|
 | `(focus id ...)` | Include these objects' relevant anchors and prefer balanced placement. |
 | `(keep-visible id ...)` | Include these objects' relevant anchors in fitting. It does not issue a `show` command. |
+| `(fit-circle id ...)` | Include each named circle's full extent in the fixed view. This is opt-in; it does not show the circle. |
 | `(prefer expression target)` | Soft numerical preference. |
 | `(prefer expression target weight)` | Same, with an explicit positive weight. |
 | `(constrain predicate)` | Hard condition on this realization. |
 | `(pin A (point x y))` | Exact realization of a free given/choice point; cannot move derived geometry. |
 
 Layout fits the points and incidences relevant at any time in the exposition,
-not just the final visible state. A circle contributes its centre and defining
-point; later named intersections contribute their own anchors. **Whole circles
-do not have to fit the view.** Lines and outlying helper arcs are clipped at the
-view boundary. A completely hidden, unused large helper does not force a zoom out.
+not just the final visible state. A through-point circle contributes its centre
+and defining point; later named intersections contribute their own anchors. A
+radius-only circle contributes its centre, not the synthetic circumference point
+used internally to start its reveal. **Whole helper circles do not have to fit
+the view.** Lines and outlying helper arcs are clipped at the view boundary. A
+completely hidden, unused large helper does not force a zoom out.
+
+Use `(layout (fit-circle k))` when the circle itself is the subject, as in a
+tangent or circumcircle lesson. The four axis extrema of `k` are added to the
+fit, with the ordinary margin and padding. The hint may refer forward. It is
+validated as a Circle and remains a hard requirement for an explicitly fixed
+view; the system does not silently zoom a fixed camera. This is separate from
+label placement and does not change the circle or make it visible.
 
 The default camera is fitted once and stays fixed throughout the exposition.
 Use an explicit view and choice as an escape hatch:
@@ -742,7 +753,12 @@ collisions during fades and highlights.
 
 The placement pass tries several label sides/distances, tick positions,
 right-angle quadrants and angle radii. It prefers to avoid point discs, labels
-crossing curves, overlapping annotations, and the caption band. Geometry does
+crossing curves, overlapping annotations, and the caption band. A curve retained
+in the final diagram has greater placement weight than a transient helper curve;
+this avoids sacrificing the finished diagram to a passing construction circle.
+An automatic label on an angle marker stays on the interior angular bisector,
+with alternative radial distances, rather than moving into an unrelated sector.
+An explicit `label-side` or `label-at` remains an escape hatch. Geometry does
 not move. A label keeps one position throughout its lifetime, including
 hide/show cycles and out-of-order sampling. No layout search occurs per frame.
 
@@ -828,7 +844,10 @@ not constitute a proof of any relation beyond the marker's checked statement.
 
 ### Caption space
 
-When captions are enabled, the adapter measures the narration paragraphs and
+When captions are enabled, the caption font size is `0.025 × world-width`,
+expressed in world units like Animate's other text dimensions. This gives the
+same relative text scale in a wide and a narrow construction view; there is no
+fixed world-size cap. The adapter measures the narration paragraphs and
 reserves a bottom band large enough for the tallest caption. Labels and markers
 avoid that band. A background panel prevents construction curves running through
 the caption. `#:captions? #f` / `--no-captions` removes both reserve and panel.
@@ -965,3 +984,128 @@ and retains PNGs/SRT files. It excludes the older three examples and gallery.
 
 The one-second reading delay, shorter equality ticks, unchanged right-angle size,
 light/dark palettes, and process-based worker renderer are retained.
+
+
+## 18. Review bundles instead of full videos
+
+Use a single launcher to review one example or all examples:
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/review-examples.rkt --example square-on-segment --dark
+"$RACKET" geometry/review-examples.rkt --all --both
+```
+
+`--all` selects all 17 examples, including the gallery. `--library` selects only
+the 13 application examples. `--list` prints valid names without rendering.
+`--output DIR` changes the default `geometry-review` output root. Each
+example/theme gets its own folder and ZIP: for example
+`geometry-review/dark/square-on-segment.zip`.
+
+Every authored step receives `step-001-read.png`, `step-001-during.png`, and
+`step-001-settled.png` (with the number incremented for later rows). The bundle
+also contains paginated contact sheets, `steps.txt`, `manifest.json`, and an
+offline `index.html`. Images default to 1280×720, matching the movie runner;
+`--width 960 --height 540` produces more compact images.
+
+The **read** state precedes the step's actions. **During** is inside an actual
+animation event, excluding reading delays and pauses. **Settled** is the exact
+completed state before the next step's caption/actions. Samples are computed from
+compiled step boundaries, not by dividing a narration interval into thirds.
+Boundary snapshots handle zero-delay/zero-pause steps without showing the wrong
+caption. Notes identify instantaneous and action-free steps, and steps containing
+more transitions than a single during image can show.
+
+Expanded helper steps are included recursively. Parent expansion steps get an
+overview row, and their children get individual rows. Generated setup/cleanup is
+not counted as an authored step. `--top-level-only` omits separate child rows
+without changing the construction or its movie.
+
+The direct example runner accepts `--review-stills DIR` and/or `--review-zip FILE`.
+`--review-zip` alone keeps images in the directory obtained by removing `.zip`.
+It also accepts `--review-top-level-only` and `--no-contact-sheet`. Review capture
+is sequential and sparse; `--workers` still applies only to full movie frames.
+`--frames`, `--mp4`, `--describe`, and worker-shard modes cannot be combined with
+review mode.
+
+A successful rerun replaces only a known managed review bundle. Unrelated files,
+movie frame directories, symlinks, and hand-added files cause a refusal instead
+of deletion. The ZIP is built from verified images using relative entry paths.
+See `docs/REVIEW-BUNDLES.md` for the full API and file-safety rules.
+
+`review-plan.rkt` is headless and exports the review step/sample records.
+`geometry-timeline-steps` returns the timeline compiler's new step-span metadata;
+the timeline record has an eighth `steps` field. Existing timeline and animation
+semantics are unchanged. `geometry-timeline->visual-sampler` prepares the full
+annotation layout once and accepts either a time or a frame snapshot from that
+timeline; review mode uses the same sampler and native drawing APIs as the videos.
+
+
+## 19. Review-driven corrections in v0.8.1
+
+### Helper-safe narration
+
+Use a structured caption when a reusable construction mentions diagram names:
+
+```racket
+(define-construction join-points
+  (given [A : Point] [B : Point])
+  (results Segment)
+  (step (caption "Join " A " to " B ".")
+    [s (segment A B)])
+  (result s))
+
+(construction lesson
+  (given [P (point 0 0)] [Q (point 2 0)])
+  (layout (label-text P "A′") (label-text Q "B′"))
+  (step "Join the copied endpoints."
+    (expand [PQ (join-points P Q)])))
+```
+
+The inner caption becomes `Join A′ to B′.` The symbols in `caption` are
+construction-object references, not literal words or Racket variables. A part
+must be a string or a named drawable object. Strings supply spacing and
+punctuation. A caption can name an object introduced in its own step; a missing,
+forward-to-a-later-step, or nondrawable reference is rejected.
+
+Templates survive nested helper expansion and are resolved once in the final
+standalone construction. Resolution uses the same `label-text` as the rendered
+labels. Public names are reserved. A distinct active private helper object gets
+a deterministic subscript when its proposed name is already used, for example
+`A₁`. Proven aliases and defining-point projections reuse the public object's
+name. This is not numerical point coalescing, and arbitrary nearby points are
+never merged.
+
+Ordinary string narration is unchanged and is never searched/replaced. Use
+`caption` for names that must follow helper substitution; use a string for
+name-independent narration. The standard helpers now do this themselves.
+`caption` does not show an object, enable its label, change timing, or create a
+new visual. Helpers remain independent of a concrete theme.
+
+### Matching angle notation
+
+Angle identity is defined by its vertex and two positive ray directions, not by
+how far the defining endpoints happen to be from the vertex. Reversing the two
+arms describes the same undirected angle for equality notation. Thus an angle
+marker and an equal-angle group using different points on the same rays can
+share the same arc pattern.
+
+An isolated single-angle indicator starts with one arc; it does not reserve a
+new equality class merely because it is another marker object. Distinct
+co-visible equality groups still receive different patterns. Use `equal-angle`
+when the notation is intended as an equality assertion. Two separately labelled
+α indicators in the angle-copy example now have the same one-arc treatment.
+
+### Reviewed examples
+
+`docs/EXAMPLE-AUDIT.md` records the findings in all 17 supplied examples, the
+changes, and the validation boundary. The source uses smaller pedagogical steps
+for repeated operations, shows the source chord in angle copying, and adds
+missing perpendicular feet/right-angle checks. Known sub-constructions are
+collapsed where expansion obscured the application. The standalone helper and
+gallery demonstrations retain expanded presentations.
+
+The right-angle square size, 20%-shorter equality/midpoint ticks, one-second
+default reading pause, two color themes, process renderer, and three-image
+review output are preserved. Revised examples have new step numbers and times;
+regenerate their review bundles rather than comparing filenames one-to-one.

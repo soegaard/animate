@@ -4,6 +4,8 @@
 ;; intentionally broad rather than a single Euclidean construction: object
 ;; kinds, semantic markers, presentation actions, and helper expansion all get
 ;; a short plate that can be inspected in light or dark mode.
+;; Sparse review: racket geometry/review-examples.rkt --example gallery --dark
+;; This writes triplets and paginated contact sheets without rendering a movie.
 (require "../core.rkt" (prefix-in helper: "helpers.rkt")
          (prefix-in c: "../constructions.rkt") "private/library-example.rkt")
 (provide geometry-gallery example-theme make-demo-timeline make-demo-scene)
@@ -53,26 +55,29 @@
     (label-text LA "A") (label-text LB "B") (label-text LM "M")
     (label-text LP "P") (label-text LQ "Q") (label-text LH "H")
     (label-text CA0 "A") (label-text CB0 "B") (label-text CC0 "C")
-    (label-text CO0 "O") (label-text CT "T"))
+    (label-text CO0 "O") (label-text CT "T")
+    (label-text segment-A "A") (label-text segment-B "B")
+    (label-text ray-origin "P") (label-text primitive-center "O") (label-text primitive-through "Q"))
 
   ;; ------------------------------------------------------------------
   ;; Primitive drawable geometry.
   (step "A point is a drawable geometric object."
     [P (point -4 3/2)])
   (step "A segment has two finite endpoints."
-    [S (segment (point -7/2 1/2) (point -3/2 1/2))]
-    (show-label S))
+    (hide P)
+    (together [segment-A (point -2 1)] [segment-B (point 2 1)])
+    [S (segment segment-A segment-B)])
   (step "A line extends in both directions."
-    [l (line (point -1 1) (point 1 3/2))]
-    (show-label l))
+    (hide S segment-A segment-B)
+    [l (line (point -1 1) (point 1 3/2))] (show-label l))
   (step "A ray has one endpoint and extends in one direction."
-    [r (ray (point 1/2 -1/4) (point 3/2 1/4))]
-    (show-label r))
+    (hide l) [ray-origin (point -1 0)]
+    [r (ray ray-origin (point 1 1))] (show-label r))
   (step "A circle is defined by its centre and a point on the circumference."
-    [c (circle (point 3 1) (point 7/2 1))]
-    (show-label c))
-  (step #:duration 0.35 #:pause 0
-    (together (hide P) (hide S) (hide l) (hide r) (hide c)))
+    (hide r ray-origin)
+    (together [primitive-center (point 0 1)] [primitive-through (point 1.5 1)])
+    [c (circle primitive-center primitive-through)])
+  (step #:duration 0.35 #:pause 0 (hide c primitive-center primitive-through))
 
   ;; ------------------------------------------------------------------
   ;; Midpoint and perpendicular markers share one clean diagram.
@@ -106,10 +111,10 @@
     (together
       [a1 (segment (point -9/2 1) (point -7/2 1))]
       [a2 (segment (point -9/2 1/4) (point -7/2 1/4))]
-      [b1 (segment (point -1/2 1) (point 1/2 1))]
-      [b2 (segment (point -1/2 1/4) (point 1/2 1/4))]
-      [d1 (segment (point 7/2 1) (point 9/2 1))]
-      [d2 (segment (point 7/2 1/4) (point 9/2 1/4))]
+      [b1 (segment (point -0.7 1) (point 0.7 1))]
+      [b2 (segment (point -0.7 1/4) (point 0.7 1/4))]
+      [d1 (segment (point 2.7 1) (point 4.5 1))]
+      [d2 (segment (point 2.7 1/4) (point 4.5 1/4))]
       [equal-one (marker (equal-length a1 a2))]
       [equal-two (marker (equal-length b1 b2))]
       [equal-three (marker (equal-length d1 d2))]))
@@ -148,6 +153,34 @@
     (hide A2 O2 B2 A3 O3 B3 o2a o2b o3a o3b equal-angles))
 
   ;; ------------------------------------------------------------------
+  ;; Arc counts distinguish three concurrent angle-equality groups.
+  (step "Matching arcs identify each pair of equal angles."
+    (together
+      [group1-1-base (segment (point -4 1.5) (point -3 1.5))]
+      [group1-1-side (segment (point -4 1.5) (point -3.1339745962155616 2.0))]
+      [group1-2-base (segment (point -4 -0.7) (point -3 -0.7))]
+      [group1-2-side (segment (point -4 -0.7) (point -3.1339745962155616 -0.19999999999999996))]
+      [angle-class-1 (marker (equal-angle
+        (angle (point -3 1.5) (point -4 1.5) (point -3.1339745962155616 2.0))
+        (angle (point -3 -0.7) (point -4 -0.7) (point -3.1339745962155616 -0.19999999999999996))))]
+      [group2-1-base (segment (point 0 1.5) (point 1 1.5))]
+      [group2-1-side (segment (point 0 1.5) (point 0.5 2.3660254037844384))]
+      [group2-2-base (segment (point 0 -0.7) (point 1 -0.7))]
+      [group2-2-side (segment (point 0 -0.7) (point 0.5 0.16602540378443864))]
+      [angle-class-2 (marker (equal-angle
+        (angle (point 1 1.5) (point 0 1.5) (point 0.5 2.3660254037844384))
+        (angle (point 1 -0.7) (point 0 -0.7) (point 0.5 0.16602540378443864))))]
+      [group3-1-base (segment (point 3.5 1.5) (point 4.5 1.5))]
+      [group3-1-side (segment (point 3.5 1.5) (point 3.5 2.5))]
+      [group3-2-base (segment (point 3.5 -0.7) (point 4.5 -0.7))]
+      [group3-2-side (segment (point 3.5 -0.7) (point 3.5 0.30000000000000004))]
+      [angle-class-3 (marker (equal-angle
+        (angle (point 4.5 1.5) (point 3.5 1.5) (point 3.5 2.5))
+        (angle (point 4.5 -0.7) (point 3.5 -0.7) (point 3.5 0.30000000000000004))))]
+    ))
+  (step #:duration 0.35 #:pause 0
+    (hide group1-1-base group1-1-side group1-2-base group1-2-side angle-class-1 group2-1-base group2-1-side group2-2-base group2-2-side angle-class-2 group3-1-base group3-1-side group3-2-base group3-2-side angle-class-3))
+
   ;; Presentation-state actions.
   (step "Several objects can appear together."
     (together
@@ -231,11 +264,12 @@
     (together
       [HA (point -1 0)]
       [HB (point 1 0)]))
+  (step "The segment joins the two given points." [helper-base (segment HA HB)])
   (step #:pause 0.7
     (expand [bisector (helper:perpendicular-bisector HA HB)] #:auxiliaries 'hide))
   (step "The line is the perpendicular bisector of the segment."
     (highlight bisector))
-  (step #:duration 0.35 #:pause 0 (hide HA HB bisector))
+  (step #:duration 0.35 #:pause 0 (hide HA HB bisector helper-base))
 
   ;; ------------------------------------------------------------------
   ;; The eight standard constructions, in three short application plates.
@@ -262,7 +296,10 @@
   (step "The angle bisector divides this source angle into equal parts."
     [CA0 (point -2 1.3)] [CB0 (point -3 -0.5)] [CC0 (point -1.7 -0.5)]
     [Cbase (segment CB0 CC0)] [Cside (segment CB0 CA0)]
-    [Cbisection (c:angle-bisector CC0 CB0 CA0)])
+    [Cbisection (c:angle-bisector CC0 CB0 CA0)]
+    [Cbisector-mark (marker (equal-angle
+      (angle CC0 CB0 (end-point Cbisection)) (angle (end-point Cbisection) CB0 CA0)))])
+  (step #:duration 0.35 #:pause 0 (hide Cbisection Cbisector-mark))
   (step "Copy the base length onto a new ray."
     [CO0 (point 1 -0.5)] [Ctarget (ray CO0 (point 2.5 -0.5))]
     (expand [CT (c:copy-segment Cbase Ctarget)] #:auxiliaries 'hide))
@@ -270,7 +307,7 @@
     [Ccopied (c:copy-angle (angle CC0 CB0 CA0) Ctarget 'left)]
     [Canglemark (marker (equal-angle (angle CC0 CB0 CA0)
                                     (angle CT CO0 (end-point Ccopied))))])
-  (step "The same constructions can be combined into larger constructions."
+  (step #:pause 1.5 "The same constructions can be combined into larger constructions."
     (highlight Ccopied CT)))
 
 (define (gallery-view aspect)

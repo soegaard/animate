@@ -1,25 +1,45 @@
-# Geometry authoring for `animate` — v0.7.0
+# Geometry authoring for `animate` — v0.8.1
 
 A first implementation of the mathematical-authoring DSL: geometry, exposition,
 presentation state, layout, and styling remain separate.
+
+## New in v0.8.1 — audit of the supplied review bundles
+
+The 17 examples were reviewed in both themes using 110 contact sheets and
+selected full-resolution frames. Fixes address helper names/captions, angle-copy
+chords and α notation, cropped primary circles, missing perpendicular feet,
+repeated-step pacing, and gallery plate cleanup. The complete findings are in
+[EXAMPLE-AUDIT.md](docs/EXAMPLE-AUDIT.md).
+
+Two small DSL additions support these corrections: `(caption "..." A "...")`
+for helper-safe object names, and `(layout (fit-circle k))` for a primary circle
+that must fit completely. See the [manual](docs/MANUAL.md). The accepted marker
+sizes, one-second reading delay, light/dark modes, and 10-process video rendering
+are preserved.
+
+**Executed on Racket CS 9.3.0.8:** 49 audit groups / 3,053 checks; 68 library
+groups / 2,484 checks; 60 review groups / 215,848 checks. These exercise the real
+headless geometry implementation. The full RackUnit suite and post-fix native
+Animate PNG/font/contact-sheet tests have **not** been run in this minimal
+runtime. Additional native tests are included for the user's installation.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt --audit
+"$RACKET" geometry/run-tests.rkt
+"$RACKET" geometry/review-examples.rkt --example copy-angle --dark
+```
 
 **Installation:** place this entire `geometry/` directory in the root of the
 `soegaard/animate` repository. No changes to the repository's existing files are
 required. The adapter uses the public `main.rkt`, `colors.rkt`, and `render.rkt`
 entry points of the containing checkout, not a separately installed copy.
 
-This version extends the geometry sources at commit
-`74798a8a97be8778e46995c2c0d139f705c8cd8d`. The unmodified baseline `geometry/`
-tree was verified against the repository. No parent repository files are replaced.
+This audited release extends the delivered v0.8.0 package used to produce the
+uploaded review images. It preserves the review tooling as well as the standard
+library. See [source notes](docs/SOURCE.md) for the baseline and input hashes.
 
-**Validation:** the new standard-library checks were executed on Racket CS
-9.3.0.8: **68 groups and 2,422 checks passed**. They cover mathematics, typed
-composition, deterministic sampling, and estimated annotation layout for all
-thirteen applications in both themes and the gallery. The full RackUnit suite
-and native Animate/pict/draw rasterization tests were **not** executed in this
-minimal runtime. See [testing](docs/TESTING.md) for the exact boundary.
-
-## New in v0.7.0
+## Standard construction library
 
 Eight reusable compass-and-straightedge constructions, thirteen application
 videos, and gallery plates using the new library. Helpers have typed arguments,
@@ -59,6 +79,33 @@ The batch script renders videos sequentially, using ten worker processes for
 each one's frames. `light` or `dark` selects just one theme; `GEOMETRY_OUTPUT`
 changes the output root. The gallery and the three original examples remain
 separately runnable. See [all examples and contracts](docs/CONSTRUCTIONS.md).
+
+## Small review bundles
+
+Capture three images per step—**read**, **during**, **settled**—with captions,
+paginated contact sheets, an offline browser index, and one uploadable ZIP per
+example/theme. Expanded helper steps are included by default. No movie or full
+frame sequence is rendered.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+
+# Start with a single example.
+"$RACKET" geometry/review-examples.rkt --example square-on-segment --dark
+
+# All 17 examples (including the gallery), in both themes.
+"$RACKET" geometry/review-examples.rkt --all --both
+
+# Only the 13 library applications, or a list of names.
+"$RACKET" geometry/review-examples.rkt --library --light
+"$RACKET" geometry/review-examples.rkt --list
+```
+
+Upload `geometry-review/dark/square-on-segment.zip` for the single-example run.
+See [review bundles](docs/REVIEW-BUNDLES.md) for direct example flags, size options,
+exact sampling behavior, and safe reruns. The review and full-video rendering
+paths are preserved; the audited examples intentionally have revised steps and
+timings. Regenerate their reviews from this release.
 
 ## Start here
 

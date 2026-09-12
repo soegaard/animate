@@ -3,7 +3,7 @@
 (require racket/cmdline racket/pretty racket/list racket/file racket/path racket/system racket/format
          (prefix-in native-colors: "../../../colors.rkt")
          (prefix-in output: "../../../render.rkt")
-         "../../main.rkt" "../../render.rkt")
+         "../../main.rkt" "../../render.rkt" "../../review.rkt")
 (provide run-geometry-example)
 
 ;; No GUI side effects on require. Invoked only from an example's main submodule.
@@ -54,6 +54,12 @@
 
 (define (run-geometry-example name factory)
   (define frames? #f)
+  (define review-directory #f)
+  (define review-zip #f)
+  (define contact-sheet? #t)
+  (define expanded-review? #t)
+  (define review-modifier? #f)
+  (define positional-directory #f)
   (define describe? #f)
   (define captions? #t)
   (define mp4 #f)
@@ -73,6 +79,10 @@
    #:program name
    #:once-each
    [("--frames") "Render every frame (the default is one still per step)." (set! frames? #t)]
+   [("--review-stills") dir "Render read/during/settled review images into DIR." (set! review-directory dir)]
+   [("--review-zip") path "Write a review ZIP; also keep its image directory." (set! review-zip path)]
+   [("--no-contact-sheet") "Omit paginated review contact sheets." (set! contact-sheet? #f) (set! review-modifier? #t)]
+   [("--review-top-level-only") "Only outer authored steps in the review." (set! expanded-review? #f) (set! review-modifier? #t)]
    [("--describe") "Print realization diagnostics without rendering." (set! describe? #t)]
    [("--no-captions") "Omit captions from the images; still write narration.srt." (set! captions? #f)]
    [("--mp4") path "Render frames and encode an MP4 using FFmpeg." (set! mp4 path) (set! frames? #t)]
@@ -93,7 +103,22 @@
    [("--shard-id") n "Internal use only." (set! shard-id (nonnegative-integer n "--shard-id"))]
    [("--shard-count") n "Internal use only." (set! shard-count (positive-integer n "--shard-count"))]
    #:args ([directory #f])
+   (set! positional-directory directory)
    (set! destination (or directory (build-path "geometry-output" name))))
+  (define review? (or review-directory review-zip))
+  (when (and review? (or frames? mp4 describe? shard-mode?))
+    (error name "review mode cannot be combined with --frames, --mp4, --describe, or worker-shard flags"))
+  (when (and review-modifier? (not review?))
+    (error name "review modifiers need --review-stills or --review-zip"))
+  (when (and review-directory positional-directory)
+    (error name "choose the review directory with --review-stills, not both it and a positional directory"))
+  (when review-zip
+    (unless (regexp-match? #px"(?i:\\.zip)$" review-zip)
+      (error name "--review-zip expects a filename ending in .zip")))
+  (when review?
+    (set! destination
+          (or review-directory positional-directory
+              (regexp-replace #px"(?i:\\.zip)$" review-zip ""))))
 
   (define timeline (make-timeline name factory width height theme-mode))
 
@@ -190,7 +215,25 @@
           (delete-directory/files staging-root))))
     (void))
 
-  (cond [describe?
+  (cond [review?
+         (printf "Rendering three review images per step (~a / ~a)...\n" name theme-mode)
+         (flush-output)
+         (define report
+           (render-geometry-review! timeline destination #:name name
+                                    #:width width #:height height #:fps fps #:supersample supersample
+                                    #:captions? captions? #:color-theme native-color-theme
+                                    #:theme-name (symbol->string theme-mode)
+                                    #:expanded? expanded-review? #:contact-sheet? contact-sheet?
+                                    #:zip review-zip))
+         (printf "Wrote ~a review images for ~a steps to ~a\n"
+                 (geometry-review-result-image-count report) (geometry-review-result-step-count report)
+                 (geometry-review-result-directory report))
+         (printf "Contact sheets: ~a; step captions: steps.txt; browser index: index.html\n"
+                 (length (geometry-review-result-contact-sheets report)))
+         (when (geometry-review-result-zip report)
+           (printf "Review ZIP: ~a\n" (geometry-review-result-zip report)))
+         (void)]
+        [describe?
          (printf "~a: ~a seconds\n" name (geometry-timeline-duration timeline))
          (pretty-write (geometry-realization-diagnostics (geometry-timeline-realization timeline)))
          (pretty-write (geometry-realization-choices (geometry-timeline-realization timeline)))

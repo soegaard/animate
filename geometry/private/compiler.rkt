@@ -3,7 +3,7 @@
 ;; Elaboration and geometry-type checking. No eval, namespace mutation or GUI.
 ;; Builder mutation is local to elaboration; the returned graph is immutable.
 (require racket/list racket/match racket/string
-         "math.rkt" "data.rkt" "vocabulary.rkt" "reveal.rkt")
+         "math.rkt" "data.rkt" "vocabulary.rkt" "reveal.rkt" "narration.rkt")
 (provide make-construction-program make-construction-helper
          infer-expression-type expression-references substitute-expression)
 
@@ -245,7 +245,7 @@
         [else e]))
 
 (define (make-construction-program name clauses helpers source)
-  (compile-program name clauses helpers source #f))
+  (finalize-program-narration (compile-program name clauses helpers source #f)))
 (define (make-construction-helper name clauses helpers source)
   (define givens (filter (lambda (c) (and (pair? c) (eq? (car c) 'given))) clauses))
   (define result-clauses (filter (lambda (c) (and (pair? c) (eq? (car c) 'results))) clauses))
@@ -332,7 +332,7 @@
        [(expanded) (map (lambda (s) (step-map s mapping)) (geometry-action-payload action))]
        [else (geometry-action-payload action)])))
   (define (step-map step mapping)
-    (geometry-step (geometry-step-narration step)
+    (geometry-step (map-caption (geometry-step-narration step) mapping)
                    (map (lambda (a) (action-map a mapping)) (geometry-step-actions step))
                    (geometry-step-timing step)))
   ;; Inlines a checked helper graph into the caller. Result aliases provide
@@ -406,7 +406,7 @@
                                                   (geometry-action-targets a))])
                     action-substitutions)))
     (define exposed-steps
-      (append (if (null? mapped-initial) '() (list (geometry-step #f mapped-initial (hash 'read-delay 0 'pause 0))))
+      (append (if (null? mapped-initial) '() (list (geometry-step #f mapped-initial (hash 'read-delay 0 'pause 0 'generated? #t))))
               (map (lambda (s) (step-map s action-substitutions)) (geometry-program-steps body))))
     (define (reveals a)
       (case (geometry-action-kind a)
@@ -421,7 +421,7 @@
     ;; Also handles a helper returning an input unchanged, with no internal steps.
     (append exposed-steps
             (if (null? missing) '()
-                (list (geometry-step #f (list (geometry-action 'reveal missing #f)) (hash 'read-delay 0 'pause 0))))))
+                (list (geometry-step #f (list (geometry-action 'reveal missing #f)) (hash 'read-delay 0 'pause 0 'generated? #t))))))
 
   (define (parse-binding b [given? #f] [expanded? #f] [auxiliaries 'keep])
     (unless (and (list? b) (= (length b) 2)) (geometry-error name "expected [name expression], received ~e" b))
@@ -449,7 +449,7 @@
                             (list (geometry-action
                                    (if (eq? auxiliaries 'hide) 'hide 'deemphasize)
                                    private-drawables #f))
-                            (hash 'read-delay 0 'pause 0))))))
+                            (hash 'read-delay 0 'pause 0 'generated? #t))))))
        (if expanded? (geometry-action 'expanded ids completed-steps)
            (geometry-action 'reveal
                             (filter (lambda (id) (memq (lookup-type types id name)
@@ -518,9 +518,15 @@
        (parse-binding a)]))
   (define (parse-step c)
     (define-values (timing-overrides body0) (parse-step-timing-overrides name (cdr c)))
-    (define narration (if (and (pair? body0) (string? (car body0))) (car body0) #f))
+    (define narration (if (and (pair? body0) (or (string? (car body0)) (caption-template? (car body0)))) (car body0) #f))
     (define body (if narration (cdr body0) body0))
     (define actions (map parse-action body))
+    (when (caption-template? narration)
+      (unless (pair? (cdr narration)) (geometry-error name "caption needs text or a named reference"))
+      (for ([part (in-list (cdr narration))])
+        (cond [(string? part) (void)]
+              [(symbol? part) (drawable! part)]
+              [else (geometry-error name "caption parts must be strings or drawable identifiers: ~e" part)])))
     (geometry-step narration actions timing-overrides))
 
   ;; Given declarations are collected before exposition. Layout/style/initial
@@ -574,6 +580,9 @@
     (match l
       [(list 'focus ids ...) (for-each drawable! ids)]
       [(list 'keep-visible ids ...) (for-each drawable! ids)]
+      [(list 'fit-circle ids ...)
+       (when (null? ids) (geometry-error name "fit-circle needs at least one circle"))
+       (for ([id (in-list ids)]) (expect-type (lookup-type types id name) 'Circle name l))]
       [(list 'label-side id (list 'quote side))
        (drawable! id)
        (unless (memq side '(auto above below left right above-left above-right below-left below-right))

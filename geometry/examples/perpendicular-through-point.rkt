@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require "../main.rkt")
+(require "../core.rkt" "private/library-example.rkt")
 (provide perpendicular-through-point example-theme make-demo-timeline make-demo-scene)
 
 (define (base-theme mode)
@@ -44,7 +44,7 @@
     [cA (circle A B)] [cB (circle B A)])
   (step "The circles meet at C and D." [(C D) (intersections cA cB)])
   (step "Draw the line through C and D." [m (line C D)])
-  (step "This is the perpendicular to l through P."
+  (step #:pause 1.5 "This is the perpendicular to l through P."
     [right-angle (marker (perpendicular l m #:at P))]
     (deemphasize cP cA cB) (hide-label A B C D) (highlight m P right-angle))
   (result m right-angle))
@@ -52,10 +52,9 @@
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline perpendicular-through-point #:theme (make-example-theme theme-mode) #:aspect aspect))
 (define (make-demo-scene #:width [width 1280] #:height [height 720] #:theme-mode [theme-mode 'light])
-  (geometry-timeline->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
+  (library-example->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
                             #:width width #:height height))
 (module+ main
-  (require "private/run-example.rkt")
-  (run-geometry-example "perpendicular-through-point"
+  (run-library-example "perpendicular-through-point"
                         (lambda (aspect theme-mode)
                           (make-demo-timeline #:aspect aspect #:theme-mode theme-mode))))

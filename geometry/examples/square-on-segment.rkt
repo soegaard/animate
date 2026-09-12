@@ -28,7 +28,7 @@
     [p (c:parallel-through-point (line A B) D)])
   (step "Their intersection is the fourth vertex C."
     [C (intersection m p)] [BC (segment B C)] [CD (segment C D)])
-  (step "The four equal sides and the right angle determine a square."
+  (step #:pause 1.5 "The four equal sides and the right angle determine a square."
     [sides (marker (equal-length AB BC CD AD))]
     [corner (marker (perpendicular AB AD #:at A))]
     (hide n up m p))

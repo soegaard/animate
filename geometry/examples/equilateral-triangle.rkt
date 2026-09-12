@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require "../main.rkt")
+(require "../core.rkt" "private/library-example.rkt")
 (provide equilateral-triangle example-theme make-demo-timeline make-demo-scene)
 
 (define (base-theme mode)
@@ -28,6 +28,7 @@
     [step-pause 0.5])
 
   (layout (focus A B C))
+  (layout (label-side A 'left) (label-side B 'right) (label-side C 'above))
   (style
     [cA [color-family blue]]
     [cB [color-family aqua]]
@@ -43,7 +44,7 @@
     [C (intersection cA cB #:side-of AB 'left)])
   (step "Join C to A and B." [AC (segment A C)] [BC (segment B C)])
   (assert (equal-length AB AC BC))
-  (step "This is the required equilateral triangle."
+  (step #:pause 1.5 "This is the required equilateral triangle."
     [equal-sides (marker (equal-length AB AC BC))]
     (deemphasize cA cB) (highlight AB AC BC equal-sides))
   (result C AB AC BC equal-sides))
@@ -51,10 +52,9 @@
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline equilateral-triangle #:theme (make-example-theme theme-mode) #:aspect aspect))
 (define (make-demo-scene #:width [width 1280] #:height [height 720] #:theme-mode [theme-mode 'light])
-  (geometry-timeline->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
+  (library-example->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
                             #:width width #:height height))
 (module+ main
-  (require "private/run-example.rkt")
-  (run-geometry-example "equilateral-triangle"
+  (run-library-example "equilateral-triangle"
                         (lambda (aspect theme-mode)
                           (make-demo-timeline #:aspect aspect #:theme-mode theme-mode))))

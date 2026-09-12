@@ -10,23 +10,33 @@
 (construction orthocenter
   (given [A (point -2.5 -1.2)] [B (point 2.3 -1.2)] [C (point -0.4 2)])
   (require (noncollinear? A B C))
-  (layout (focus A B C H) (label-side H 'above-right))
-  (step "Start with triangle ABC." [AB (segment A B)] [BC (segment B C)] [CA (segment C A)])
+  (layout (focus A B C H) (label-side H 'above-right)
+          (label-side A 'below-left) (label-side B 'below-right) (label-side C 'above)
+          (label-text Ta "T₁") (label-text Tb "T₂") (label-text Tc "T₃")
+          (label-side Ta 'right) (label-side Tb 'left) (label-side Tc 'below))
+  (style [ha [color-family gold]] [hb [color-family gold]] [hc [color-family gold]])
+  (step "Start with triangle ABC."
+    (together [AB (segment A B)] [BC (segment B C)] [CA (segment C A)]))
   (step "Construct the altitude from A to the line through B and C."
     (expand [a (c:drop-perpendicular (line B C) A)] #:auxiliaries 'hide))
+  (step (caption "The altitude meets BC at " Ta ".")
+    [Ta (intersection a (line B C))] [ha (segment A Ta)]
+    [corner-a (marker (perpendicular (line B C) ha #:at Ta))])
   (step "Construct the altitude from B." [b (c:drop-perpendicular (line A C) B)])
+  (step (caption "Its foot on AC is " Tb ".")
+    [Tb (intersection b (line A C))] [hb (segment B Tb)]
+    [corner-b (marker (perpendicular (line A C) hb #:at Tb))])
   (step "The two altitudes meet at H." [H (intersection a b)])
   (step "The altitude from C passes through the same point."
     [c (c:drop-perpendicular (line A B) C)])
-  (step "H is the orthocenter of the triangle."
-    [Ta (intersection a (line B C))] [Tb (intersection b (line A C))]
-    [Tc (intersection c (line A B))]
-    [ha (segment A Ta)] [hb (segment B Tb)] [hc (segment C Tc)]
-    [corner (marker (perpendicular (line A B) hc #:at Tc))]
-    (hide a b c))
+  (step (caption "The third foot is " Tc ".")
+    [Tc (intersection c (line A B))] [hc (segment C Tc)]
+    [corner (marker (perpendicular (line A B) hc #:at Tc))])
+  (step #:pause 1.5 "H is the orthocenter of the triangle." (hide a b c))
   (assert (on H c) (on H a) (on H b)
           (perpendicular ha (line B C) #:at Ta)
-          (perpendicular hb (line C A) #:at Tb))
+          (perpendicular hb (line C A) #:at Tb)
+          (perpendicular hc (line A B) #:at Tc))
   (result H A B C Ta Tb Tc))
 
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [mode 'light])

@@ -1,83 +1,81 @@
-# Validation — v0.7.0 standard constructions
+# Validation — v0.8.1 example audit
 
-## Executed in this delivery
+## Executed here
 
-A real minimal Racket CS runtime was obtained from the upstream Racket CI
-artifact built at `dc4456af0d76f4193364e1879922ce0233f32529`. It reports
-**Racket 9.3.0.8 [cs]**. The user's selected macOS runtime is 9.3.0.2; no macOS
-rasterization test is claimed from a Linux run.
+A real minimal **Racket CS 9.3.0.8** runtime was used. These are tests of the
+shipped geometry, compiler, timeline, annotation planner, and review planner, not
+an alternate geometry implementation:
 
-Executed successfully:
+| Command | Result |
+|---|---|
+| `racket geometry/run-tests.rkt --audit` | **49 groups, 3,053 checks passed** |
+| `racket geometry/run-tests.rkt --library` | **68 groups, 2,484 checks passed** |
+| `racket geometry/run-tests.rkt --review` | **60 groups, 215,848 checks passed** |
 
-```sh
-racket geometry/run-tests.rkt --library
-```
+The audit checks exercise nested caption substitution and public display names;
+invalid caption references; full-circle fit hints; radius-only circle anchors;
+ray-based angle identity; one-arc α notation; the visible source chord and its
+interior compass opening; helper-local name disambiguation; all three incircle
+and orthocenter right-angle markers; the two offset-parallel right angles;
+hexagon radius comparison; one/two/three gallery arc groups; angle-label sectors;
+and every authored review step/final annotation in all 17 examples in both themes.
 
-Result: **68 named groups, 2,422 checks passed**. The source is
-`tests/library-checks.rkt`; it requires only Racket base and the actual geometry
-implementation. `tests/library-test.rkt` registers these same groups in RackUnit.
-No mock geometry or substitute rendering backend is used to obtain this result.
+The library suite retains its independent mathematical oracles, transformed
+inputs, invalid contracts, eight helper signatures, auxiliary ownership,
+determinism, and all thirteen applications. The review suite covers exact
+boundary states, nested steps, three samples per row, file safety, replacement,
+rollback, and ZIP membership. Its file-output tests use a small PNG fixture;
+passing those tests does not claim native image rendering.
 
-Coverage includes the eight signatures/algorithm graphs; translations,
-rotations, scales 0.01/1/40 and reflected inputs; internal angle bisectors for
-acute/right/obtuse angles; both target sides of angle copying; invalid inputs;
-independent midpoint/projection/angle/triangle-center oracles; false relations;
-postcondition-vs-layout separation; step assertions; repeated/nested helper calls;
-cleanup protecting caller inputs/results; and two prefixes for one re-exported
-helper. It also loads all thirteen application modules in light and dark themes,
-checks their results independently, samples forward/backward and in ten shards,
-and checks reveal progress and repeatable estimated annotation placement.
+Results are in `audit-check-results.txt`, `library-check-results.txt`, and
+`review-check-results.txt`. Reader/import/archive checks are recorded in
+`static-audit.json`. `estimated-layout-audit.json` lists the conservative pure
+annotation results and remaining warnings. Actual native font metrics can differ.
 
-The updated gallery passes estimated annotation preparation without warnings
-in both themes. Some expanded helper intermediates in application examples
-still produce label/curve-overlap warnings with the conservative estimated
-font boxes. No application annotation is outside the safe region in these
-checks. These results do not substitute for native font measurements.
+## Visual material inspected
 
-Also checked: Racket reader acceptance of every Racket source, shell syntax of
-the batch renderer, baseline tree hash, and archive contents/integrity.
+The uploaded archive contained 34 example/theme bundles, 564 step rows, 1,692
+step PNGs, and 110 contact sheets. Every contact-sheet page in both themes was
+inspected, and selected ambiguous details were inspected at full resolution.
+These are **before-fix images supplied by the user**, not images rendered from
+the revised source. The audit did not separately open every one of the 1,692 PNGs
+at full resolution, and three samples per step cannot establish every property
+of continuous motion.
 
 ## Not executed here
 
-The minimal runtime does not include the complete Animate/pict/draw dependency
-set or the RackUnit/raco-test packages. Therefore the **complete existing
-RackUnit suite** and **native scene/bitmap/PNG tests** were not executed here.
-No generated MP4 or native screenshot is included as purported evidence.
+The minimal runtime lacks RackUnit and the full native Animate/Pict/Draw
+dependency set. Consequently the full registered RackUnit suite, the post-fix
+native font/bitmap/PNG/contact-sheet tests, and macOS video renders have **not**
+been executed here. No new screenshot is claimed as pixel-level proof.
 
-`tests/library-render-test.rkt` adds native scene sampling and rasterization
-checks for all thirteen examples in both themes, plus still-image/subtitle
-output. These are included for the full local environment.
+`tests/audit-render-test.rkt` adds real measured-font α-sector checks and native
+bitmap endings for copy-angle, tangent-at-point, circumcenter, and orthocenter in
+both themes. Existing native integration and review tests remain registered.
+`tests/audit-test.rkt` registers the base audit groups with RackUnit.
 
 ## Run locally
 
-From the `animate` repository root:
+From the Animate repository root:
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
-"$RACKET" geometry/run-tests.rkt --library
+"$RACKET" geometry/run-tests.rkt --audit
 "$RACKET" geometry/run-tests.rkt
 ```
 
-`--library` runs only the base-only new suite and stops immediately on failure.
-The normal command uses the same Racket executable to run all registered
-RackUnit modules and preserves a nonzero exit status. `--core` runs the
-non-native RackUnit modules, including the library tests.
+The normal command runs all registered core and native test modules with the
+same Racket executable and preserves the nonzero status on failure. `--core`
+requires RackUnit but omits native modules. `--library`, `--review`, and `--audit`
+are separate base-only modes.
 
-Render all thirteen application videos in both themes:
-
-```sh
-RACKET="$RACKET" WORKERS=10 sh geometry/examples/render-library.sh both
-```
-
-Render the updated gallery separately:
+Regenerate a focused review, then the full set after the tests pass:
 
 ```sh
-"$RACKET" geometry/examples/gallery.rkt --dark --workers 10 \
-  --mp4 geometry-output/videos/dark/gallery.mp4 geometry-output/dark/gallery
+"$RACKET" geometry/review-examples.rkt --example copy-angle --dark
+"$RACKET" geometry/review-examples.rkt --all --both --output geometry-review-v081
 ```
 
-For inexpensive first visual inspection, run an example without `--frames` or
-`--mp4` to produce step stills. `--describe` reports native annotation warnings
-without writing frames. Review the selected circle intersection, copied-side
-orientation, auxiliary cleanup, equal-length/equal-angle marks, and label
-collisions at the final output size.
+Check the native follow-up items in `EXAMPLE-AUDIT.md`, especially transient
+helper-label/curve intersections. Estimated annotation costs are a finite
+heuristic, not a guarantee of collision-free raster output.

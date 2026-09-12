@@ -8,7 +8,7 @@
          (struct-out geometry-program) (struct-out construction-helper)
          (struct-out geometry-view) (struct-out geometry-realization)
          (struct-out presentation) (struct-out geometry-event)
-         (struct-out geometry-cue) (struct-out geometry-timeline)
+         (struct-out geometry-cue) (struct-out geometry-step-span) (struct-out geometry-timeline)
          (struct-out geometry-appearance) (struct-out geometry-frame))
 
 ;; node: stable name, inferred type, expression datum, provenance, given?, public?.
@@ -39,8 +39,14 @@
 ;; cue: narration span in seconds and text (also usable for subtitles).
 (struct geometry-cue (start end text) #:transparent)
 ;; timeline: realized construction, geometry theme, events, narration cues,
-;; initial/final presentation maps and total duration in seconds.
-(struct geometry-timeline (realization theme events cues initial final duration) #:transparent)
+;; initial/final presentation maps, total duration, and compiled step boundaries.
+;; Step spans are metadata: adding them does not add pauses or change playback.
+(struct geometry-timeline (realization theme events cues initial final duration steps) #:transparent)
+;; path: source step index, followed by (expansion-action index, child-step index)
+;; pairs. Events include nested helper events. before/after are immutable maps.
+(struct geometry-step-span
+  (id path narration start action-start action-end end events before after generated? expanded?)
+  #:transparent)
 ;; appearance: show opacity, label opacity, curve reveal fraction,
 ;; continuous secondary-style weight, and transient highlight amount.
 (struct geometry-appearance (opacity label-opacity reveal secondary highlight) #:transparent)

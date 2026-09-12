@@ -10,10 +10,10 @@
 (construction reflect-point
   (given [l (line (point -3 0) (point 3 0))] [P (point -0.6 1.7)])
   (require (not (on P l)))
-  (layout (focus P H Q) (label-side P 'above) (label-side H 'left) (label-side Q 'below))
+  (layout (focus P H Q) (label-side P 'above) (label-side H 'above-left) (label-side Q 'below))
   (style [l [color axis]] [PH [color-family gold]] [HQ [color-family gold]])
   (step "Drop the perpendicular from P to the line."
-    (expand [n (c:drop-perpendicular l P)] #:auxiliaries 'hide))
+    [n (c:drop-perpendicular l P)])
   (step "Call the foot of the perpendicular H." [H (intersection n l)] [PH (segment P H)])
   (step "Continue from H along the perpendicular, away from P."
     [away (ray H (end-point n))])
@@ -24,7 +24,7 @@
     [equal-parts (marker (equal-length PH HQ))]
     [corner (marker (perpendicular l (line P Q) #:at H))]
     (hide n away))
-  (step "Q is the reflection of P across the line." (highlight Q))
+  (step #:pause 1.5 "Q is the reflection of P across the line." (highlight Q))
   (assert (on H l) (midpoint-of H (segment P Q))
           (perpendicular l (line P Q) #:at H))
   (result P H Q l))

@@ -67,9 +67,31 @@
     (append (construction-visible-ids program)
             (append-map (lambda (l) (if (memq (car l) '(focus keep-visible)) (cdr l) '()))
                         (geometry-program-layout program))))
+  (define node-table (for/hash ([n (in-list (geometry-program-nodes program))])
+                       (values (geometry-node-id n) n)))
+  (define (node-expression id)
+    (define e (geometry-node-expression (hash-ref node-table id)))
+    (if (and (symbol? e) (hash-has-key? node-table e)) (node-expression e) e))
+  (define (anchors id)
+    (define value (hash-ref environment id))
+    ;; A radius-only circle has a synthetic eastward reveal origin, not an
+    ;; authored incidence. That arbitrary point must not push the camera out.
+    (if (and (circle? value)
+             (match (node-expression id) [(list 'circle _ '#:radius _) #t] [_ #f]))
+        (list (circle-center value)) (value-anchors value)))
+  (define full-circles
+    (append-map (lambda (l) (if (eq? (car l) 'fit-circle) (cdr l) '()))
+                (geometry-program-layout program)))
   (define points
     (remove-duplicates
-     (append-map (lambda (id) (value-anchors (hash-ref environment id))) mentioned) equal?))
+     (append (append-map anchors mentioned)
+             (append-map
+              (lambda (id)
+                (define c (hash-ref environment id))
+                (define r (circle-radius c))
+                (map (lambda (offset) (point+ (circle-center c) offset))
+                     (list (point r 0) (point (- r) 0) (point 0 r) (point 0 (- r)))))
+              full-circles)) equal?))
   (if (>= (length points) 2) points
       (let ([fallback
              (append-map

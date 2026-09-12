@@ -1,6 +1,6 @@
 #lang racket/base
 
-(require "../main.rkt" (prefix-in helper: "helpers.rkt"))
+(require "../core.rkt" "private/library-example.rkt" (prefix-in helper: "helpers.rkt"))
 (provide perpendicular-bisector-demo example-theme make-demo-timeline make-demo-scene)
 
 (define (base-theme mode)
@@ -38,7 +38,7 @@
     [midmark (marker (midpoint-of M AB))])
   (assert (midpoint-of M AB)
           (perpendicular AB m #:at M))
-  (step "M is the midpoint, and the two lines are perpendicular."
+  (step #:pause 1.5 "M is the midpoint, and the two lines are perpendicular."
     [right-angle (marker (perpendicular AB m #:at M))]
     (highlight m M midmark right-angle))
   (result m M midmark right-angle))
@@ -46,10 +46,9 @@
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [theme-mode 'light])
   (construction->timeline perpendicular-bisector-demo #:theme (make-example-theme theme-mode) #:aspect aspect))
 (define (make-demo-scene #:width [width 1280] #:height [height 720] #:theme-mode [theme-mode 'light])
-  (geometry-timeline->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
+  (library-example->scene (make-demo-timeline #:aspect (/ width height) #:theme-mode theme-mode)
                             #:width width #:height height))
 (module+ main
-  (require "private/run-example.rkt")
-  (run-geometry-example "perpendicular-bisector"
+  (run-library-example "perpendicular-bisector"
                         (lambda (aspect theme-mode)
                           (make-demo-timeline #:aspect aspect #:theme-mode theme-mode))))

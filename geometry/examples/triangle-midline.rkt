@@ -10,16 +10,17 @@
 (construction triangle-midline
   (given [A (point -2.4 -1)] [B (point 2.2 -1)] [C (point -0.2 2)])
   (layout (focus A B C M N) (label-side M 'left) (label-side N 'right))
+  (layout (label-side A 'below-left) (label-side B 'below-right) (label-side C 'above))
   (style [MN [color-family gold]])
   (step "Start with triangle ABC." [AB (segment A B)] [BC (segment B C)] [AC (segment A C)])
   (step "Construct the midpoint M of AC."
     (expand [M (c:bisect-segment A C)] #:auxiliaries 'hide))
   (step "Construct the midpoint N of BC." [N (c:bisect-segment B C)])
   (step "Join the two midpoints." [MN (segment M N)])
-  (step "The matching marks identify the equal halves of each side."
+  (step "M and N divide their respective sides into equal halves."
     [halves-AC (marker (midpoint-of M AC))]
     [halves-BC (marker (midpoint-of N BC))])
-  (step "The midline is parallel to AB and has half its length."
+  (step #:pause 1.5 "The midline is parallel to AB and has half its length."
     [arrows (marker (parallel AB MN))])
   ;; Kernel midpoint is used only as a postcondition oracle, not as the algorithm.
   (assert (midpoint-of M AC) (midpoint-of N BC) (parallel AB MN)

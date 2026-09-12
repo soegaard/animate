@@ -38,14 +38,25 @@
           (set! label-masks (hash-set label-masks id (bitwise-ior bit (hash-ref label-masks id 0))))))))
   (values object-masks label-masks))
 (define (overlap-time? a b) (not (zero? (bitwise-and a b))))
+(define (same-direction? u v)
+  (define scale (* (norm u) (norm v)))
+  (and (> scale 0) (> (dot u v) 0) (<= (abs (cross u v)) (* 1e-9 scale))))
 (define (same-member? a b)
   (cond [(and (segment? a) (segment? b))
          (or (equal? a b) (and (equal? (segment-a a) (segment-b b))
                                (equal? (segment-b a) (segment-a b))))]
         [(and (angle-spec? a) (angle-spec? b))
-         (or (equal? a b) (and (equal? (angle-spec-b a) (angle-spec-b b))
-                               (equal? (angle-spec-a a) (angle-spec-c b))
-                               (equal? (angle-spec-c a) (angle-spec-a b))))]
+         (define vertex (angle-spec-b a))
+         (define other (angle-spec-b b))
+         (define u (point- (angle-spec-a a) vertex))
+         (define v (point- (angle-spec-c a) vertex))
+         (define x (point- (angle-spec-a b) other))
+         (define y (point- (angle-spec-c b) other))
+         (and (equal? vertex other)
+              (or (and (same-direction? u x) (same-direction? v y))
+                  (and (same-direction? u y) (same-direction? v x))))]
+        [(and (line? a) (line? b))
+         (and (on (line-a a) b) (on (line-b a) b))]
         [else (equal? a b)]))
 (define (allocate-marker-counts nodes env masks)
   (define marked (filter (lambda (n) (and (eq? (geometry-node-type n) 'Marker)
@@ -74,8 +85,13 @@
     (define forbidden
       (for/list ([old (in-list chosen)] #:when (and (eq? family (car old)) (overlap-time? mask (cadr old))))
         (caddr old)))
-    (define count (let loop ([n 1]) (if (memq n forbidden) (loop (add1 n)) n)))
-    (set! chosen (cons (list family mask count) chosen))
+    ;; A single angle arc is an indicator, not a fresh inequality class.
+    ;; If connected to an equality group it inherits that group's pattern.
+    (define equality-group? (ormap (lambda (id) (not (angle-marker? (hash-ref env id)))) group))
+    (define count (if equality-group?
+                       (let loop ([n 1]) (if (memq n forbidden) (loop (add1 n)) n))
+                       1))
+    (when equality-group? (set! chosen (cons (list family mask count) chosen)))
     (for ([id (in-list group)]) (set! table (hash-set table id count))))
   table)
 
@@ -228,6 +244,22 @@
     (define size (hash-ref dimensions id)) (define hw (car size)) (define hh (cdr size))
     (define pin (hash-ref overrides id (hash-ref h 'label-at #f)))
     (cond [pin (list (candidate pin (list (box pin hw hh)) '() 0))]
+          [(and (marker? (hash-ref env id))
+                (eq? (marker-family (hash-ref env id)) 'angle)
+                (eq? (hash-ref h 'label-side 'auto) 'auto))
+           ;; The label of an angle must stay in that angular sector. Generic
+           ;; compass directions can put alpha on the other side of the vertex.
+           ;; Move radially along the bisector; pins/explicit side hints remain
+           ;; escape hatches. Reserve enough room for the measured ink box.
+           (define spec (car (marker-members (hash-ref env id))))
+           (define vertex (angle-spec-b spec))
+           (define offset (point- anchor vertex))
+           (define radial (norm offset))
+           (define direction (point* offset (/ 1 radial)))
+           (define support (+ (* (abs (point-x direction)) hw) (* (abs (point-y direction)) hh)))
+           (for/list ([ring (in-list '(1 1.6 2.3 3.5 5))])
+             (define pos (point+ vertex (point* direction (+ radial support (* ring (max gap (hash-ref s 'offset)))))))
+             (candidate pos (list (box pos hw hh)) '() (* 0.1 (sub1 ring))))]
           [else
            (define side (hash-ref h 'label-side 'auto))
            (define point-radius (if (point? (hash-ref env id))
@@ -239,13 +271,17 @@
              (define pos (point+ anchor (point* d amount)))
              (candidate pos (list (box pos hw hh)) '()
                         (+ (* 0.1 (sub1 ring))
-                           (if (or (eq? side 'auto) (eq? side (car sd))) 0 50))))]))
+                           (if (or (eq? side 'auto) (eq? side (car sd))) 0 150))))]))
   (define (mask key)
     (hash-ref (if (eq? (car key) 'label) label-masks masks) (cdr key) 0))
   (define (cost key c)
     (define id (cdr key))
     (define label? (eq? (car key) 'label))
     (define temporal (mask key))
+    (define final-state (geometry-timeline-final timeline))
+    (define (in-final? object)
+      (define p (hash-ref final-state object #f))
+      (and p (presentation-shown? p)))
     (+ (candidate-preference c)
        (* 100000 (count (lambda (b) (not (box-contains? safe b))) (candidate-boxes c)))
        (for/sum ([(other chosen) (in-hash selection)]
@@ -260,7 +296,12 @@
                 (if (ormap (lambda (b) (box-overlap? b other-box)) (candidate-boxes c)) 3000 0)]
                [(and label? (curve? value))
                 (define padding (+ gap (* 0.5 world-per-pixel (hash-ref (style other) 'stroke-width))))
-                (if (ormap (lambda (b) (curve-crosses-box? value (expand-box b padding))) (candidate-boxes c)) 1000 0)]
+                (if (ormap (lambda (b) (curve-crosses-box? value (expand-box b padding))) (candidate-boxes c))
+                    ;; Do not spoil the final diagram merely to avoid a
+                    ;; short-lived construction circle. Final curves still
+                    ;; outrank a preferred label direction.
+                    (if (and (in-final? id) (in-final? other)) 1000 100)
+                    0)]
                [else 0]))))
   (define (choose! key cs)
     (define best (argmin (lambda (c) (cost key c)) cs))

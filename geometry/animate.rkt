@@ -9,7 +9,8 @@
          (prefix-in colors: "../colors.rkt")
          "core.rkt" "private/drawing.rkt" "private/reveal.rkt" "private/marker-shapes.rkt")
 (provide construction->scene geometry-timeline->scene geometry-timeline->visual
-         geometry-timeline->camera geometry-style-color geometry-timeline->annotation-plan)
+         geometry-timeline->camera geometry-style-color geometry-timeline->annotation-plan
+         geometry-timeline->visual-sampler)
 
 (define (vec p) (a:vec2 (point-x p) (point-y p)))
 (define (paint-key channel suffix) (string->symbol (format "~a-~a" channel suffix)))
@@ -96,7 +97,7 @@
          (define pict (a:visual->pict visual camera))
          (cons (* scale (pict-width pict)) (* scale (pict-height pict))))))
     (values (car dimensions) (cdr dimensions)))
-  (define caption-size (min 0.28 (* 0.025 (geometry-view-width view))))
+  (define caption-size (* 0.025 (geometry-view-width view)))
   (define caption-height
     (if captions?
         (for/fold ([height 0]) ([text (in-list (remove-duplicates (map geometry-cue-text (geometry-timeline-cues timeline))))])
@@ -247,8 +248,11 @@
           '()))
     (a:group (append body label) #:id id))
   (define-values (xmin xmax ymin ymax) (view-bounds view))
-  (lambda (time)
-    (define frame (sample-geometry-timeline timeline time))
+  (lambda (time-or-frame)
+    ;; Review boundary snapshots avoid leaking the next caption into a zero-pause
+    ;; step. Both paths use exactly the same frozen annotation/style preparation.
+    (define frame (if (geometry-frame? time-or-frame) time-or-frame
+                      (sample-geometry-timeline timeline time-or-frame)))
     (define text (geometry-frame-narration frame))
     (define caption
       (if (and captions? text)
@@ -271,6 +275,13 @@
 
 (define (default-root-id timeline)
   (key '$geometry (geometry-program-name (geometry-realization-program (geometry-timeline-realization timeline)))))
+;; Returns a reusable sampler accepting a time or a geometry-frame snapshot.
+;; Use snapshots from this same timeline; their per-object ids must match.
+(define (geometry-timeline->visual-sampler timeline #:width [width 1280]
+                                           #:id [id (default-root-id timeline)]
+                                           #:captions? [captions? #t] #:labels [labels (hash)]
+                                           #:background [background colors:theme-background])
+  (make-frame-builder timeline width id captions? labels background))
 (define (geometry-timeline->visual timeline time #:width [width 1280]
                                    #:id [id (default-root-id timeline)]
                                    #:captions? [captions? #t] #:labels [labels (hash)]

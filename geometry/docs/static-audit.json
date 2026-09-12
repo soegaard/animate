@@ -1,64 +1,233 @@
 {
-  "version": "0.7.0",
-  "repository": "soegaard/animate",
-  "baseline_commit": "74798a8a97be8778e46995c2c0d139f705c8cd8d",
-  "verified_baseline_geometry_tree": "dd6fa9deac1ab44528c08370acaf8e55f2f8fd31",
-  "validation": {
-    "runtime": "Racket 9.3.0.8 [cs]",
-    "executed_test_groups": 68,
-    "executed_checks": 2422,
-    "racket_reader_modules_accepted": 56,
-    "shell_syntax_check": "passed",
-    "full_rackunit_suite_executed": false,
-    "native_animate_rasterization_executed": false,
-    "estimated_annotation_plans": "13 applications x 2 themes plus gallery x 2 themes; passed; some intermediate label/curve overlap warnings remain",
-    "record": "docs/library-check-results.txt"
+  "release": "0.8.1",
+  "base_archive": "animate-geometry-v0.8.0-review-bundles-20260912.zip",
+  "base_sha256": "4d53daa4482b6559d6cd05c5b7298115ca3b54643c7481a3ef404be5876b1006",
+  "review_input": "geometry-review-upload-20260912-022955.zip",
+  "review_input_sha256": "2627fdcbb060cb538fe29c557ff4d2a732fc421c385d2dabf1e7f48359df2bda",
+  "racket": "9.3.0.8 [cs]",
+  "reader": {
+    "executed": true,
+    "modules": 69,
+    "result": "all accepted"
   },
-  "new_files": [
-    "constructions/foundations.rkt",
-    "constructions.rkt",
-    "docs/CONSTRUCTIONS.md",
-    "docs/STANDARD-LIBRARY-PLAN.md",
-    "docs/library-check-results.txt",
-    "examples/circumcenter.rkt",
-    "examples/copy-angle.rkt",
-    "examples/copy-triangle-sas.rkt",
-    "examples/divide-segment-five.rkt",
-    "examples/equilateral-triangle-chain.rkt",
-    "examples/incircle.rkt",
-    "examples/orthocenter.rkt",
-    "examples/parallel-at-distance.rkt",
-    "examples/private/library-example-names.rkt",
-    "examples/private/library-example.rkt",
-    "examples/reflect-point.rkt",
-    "examples/regular-hexagon.rkt",
-    "examples/render-library.sh",
-    "examples/square-on-segment.rkt",
-    "examples/tangent-at-point.rkt",
-    "examples/triangle-midline.rkt",
-    "tests/library-alias-fixture.rkt",
-    "tests/library-checks.rkt",
-    "tests/library-render-test.rkt",
-    "tests/library-test.rkt"
+  "shell_syntax": {
+    "executed": true,
+    "file": "examples/render-library.sh",
+    "result": "accepted"
+  },
+  "relative_local_module_paths_checked": 97,
+  "missing_local_module_paths": [],
+  "parent_repo_integrations": [
+    {
+      "source": "render.rkt",
+      "target": "../render.rkt"
+    },
+    {
+      "source": "review.rkt",
+      "target": "../main.rkt"
+    },
+    {
+      "source": "animate.rkt",
+      "target": "../main.rkt"
+    },
+    {
+      "source": "animate.rkt",
+      "target": "../colors.rkt"
+    },
+    {
+      "source": "tests/library-render-test.rkt",
+      "target": "../../main.rkt"
+    },
+    {
+      "source": "tests/library-render-test.rkt",
+      "target": "../../colors.rkt"
+    },
+    {
+      "source": "tests/audit-render-test.rkt",
+      "target": "../../main.rkt"
+    },
+    {
+      "source": "tests/audit-render-test.rkt",
+      "target": "../../colors.rkt"
+    },
+    {
+      "source": "tests/animate-test.rkt",
+      "target": "../../main.rkt"
+    },
+    {
+      "source": "tests/animate-test.rkt",
+      "target": "../../colors.rkt"
+    },
+    {
+      "source": "tests/reveal-annotation-render-test.rkt",
+      "target": "../../main.rkt"
+    },
+    {
+      "source": "tests/reveal-annotation-render-test.rkt",
+      "target": "../../colors.rkt"
+    },
+    {
+      "source": "tests/review-render-test.rkt",
+      "target": "../../main.rkt"
+    },
+    {
+      "source": "tests/review-render-test.rkt",
+      "target": "../../colors.rkt"
+    },
+    {
+      "source": "examples/private/run-example.rkt",
+      "target": "../../../colors.rkt"
+    },
+    {
+      "source": "examples/private/run-example.rkt",
+      "target": "../../../render.rkt"
+    }
   ],
-  "changed_files": [
-    "README.md",
-    "animate-mathematical-authoring-dsl.md",
-    "docs/GALLERY.md",
-    "docs/MANUAL.md",
-    "docs/SOURCE.md",
-    "docs/TESTING.md",
-    "dsl.rkt",
-    "examples/gallery.rkt",
-    "examples/helpers.rkt",
-    "layout.rkt",
-    "private/compiler.rkt",
-    "private/evaluate.rkt",
-    "private/math.rkt",
-    "private/vocabulary.rkt",
-    "run-tests.rkt",
-    "timeline.rkt"
+  "manual_copies_identical": true,
+  "native_graphics_executed": false,
+  "full_rackunit_suite_executed": false,
+  "base_tests": [
+    {
+      "mode": "--audit",
+      "groups": 49,
+      "checks": 3053,
+      "result": "pass",
+      "log": "docs/audit-check-results.txt"
+    },
+    {
+      "mode": "--library",
+      "groups": 68,
+      "checks": 2484,
+      "result": "pass",
+      "log": "docs/library-check-results.txt"
+    },
+    {
+      "mode": "--review",
+      "groups": 60,
+      "checks": 215848,
+      "result": "pass",
+      "log": "docs/review-check-results.txt"
+    }
   ],
-  "process_renderer_changed": false,
-  "manual_copies_identical": true
+  "changed_from_delivered_v080": [
+    "geometry/README.md",
+    "geometry/animate-mathematical-authoring-dsl.md",
+    "geometry/animate.rkt",
+    "geometry/annotations.rkt",
+    "geometry/constructions/foundations.rkt",
+    "geometry/docs/CONSTRUCTIONS.md",
+    "geometry/docs/GALLERY.md",
+    "geometry/docs/MANUAL.md",
+    "geometry/docs/REVIEW-BUNDLES.md",
+    "geometry/docs/SOURCE.md",
+    "geometry/docs/TESTING.md",
+    "geometry/docs/library-check-results.txt",
+    "geometry/docs/review-check-results.txt",
+    "geometry/docs/static-audit.json",
+    "geometry/dsl.rkt",
+    "geometry/examples/circumcenter.rkt",
+    "geometry/examples/copy-angle.rkt",
+    "geometry/examples/copy-triangle-sas.rkt",
+    "geometry/examples/divide-segment-five.rkt",
+    "geometry/examples/equilateral-triangle-chain.rkt",
+    "geometry/examples/equilateral-triangle.rkt",
+    "geometry/examples/gallery.rkt",
+    "geometry/examples/incircle.rkt",
+    "geometry/examples/orthocenter.rkt",
+    "geometry/examples/parallel-at-distance.rkt",
+    "geometry/examples/perpendicular-bisector.rkt",
+    "geometry/examples/perpendicular-through-point.rkt",
+    "geometry/examples/reflect-point.rkt",
+    "geometry/examples/regular-hexagon.rkt",
+    "geometry/examples/square-on-segment.rkt",
+    "geometry/examples/tangent-at-point.rkt",
+    "geometry/examples/triangle-midline.rkt",
+    "geometry/layout.rkt",
+    "geometry/private/compiler.rkt",
+    "geometry/private/review-bundle.rkt",
+    "geometry/run-tests.rkt"
+  ],
+  "added": [
+    "geometry/docs/CHANGES-0.8.1.md",
+    "geometry/docs/EXAMPLE-AUDIT.md",
+    "geometry/docs/audit-check-results.txt",
+    "geometry/docs/estimated-layout-audit.json",
+    "geometry/docs/example-audit.json",
+    "geometry/private/narration.rkt",
+    "geometry/tests/audit-checks.rkt",
+    "geometry/tests/audit-render-test.rkt",
+    "geometry/tests/audit-test.rkt"
+  ],
+  "removed": [],
+  "racket_source_sha256": {
+    "animate.rkt": "bb86e7a705d222978bf6f789ed0c5de57275caf3952285fa22650370078536da",
+    "annotations.rkt": "5618fcd88ed2b7e47ac3070f963cd44068b518589fa968cfa5d76d91db02f9d0",
+    "constructions/foundations.rkt": "e6fd7e18130df2cd9e0899e6decdc6a0b4f259d67f015c7bd388a82d2a4de298",
+    "constructions.rkt": "1639658c4c8d70a51d3fc3909fdd1969ccb9323b487ba614625e4edda5bc43f3",
+    "core.rkt": "d91aaf64a58ea96276770bed29f7ae17846e35ffd4ee2674645bed69891c1669",
+    "dsl.rkt": "e4eac3eef5105a9b51dfa99bc70fe9c2291a5a305c94dacf03f2b9aefb2aaac3",
+    "examples/circumcenter.rkt": "e9e2d1ae942885361edb9744b90d8a639b2f00bf8a3edc77c256d3b43ba19ae2",
+    "examples/copy-angle.rkt": "1ebc4ac1aa0cb3b8a8527624947aa8dd82a283ec5deea53ad27d03680b2ffd0d",
+    "examples/copy-triangle-sas.rkt": "be8d1f791119b4ebe0993366d2d895d4591950490a8313d6c662c1203d786d9e",
+    "examples/divide-segment-five.rkt": "6b9755ecb06e42e15d6c335e247618b24361b1ee40fcf2975f28e3f30c26b7e1",
+    "examples/equilateral-triangle-chain.rkt": "b8df29a2362411278fc427fb97e30ad15bdc8882990844d14febc2129ae90b70",
+    "examples/equilateral-triangle.rkt": "51c5934c2211149a1512c9d31d2294e6c03cb66e5355466cec6f2fae5a3efab6",
+    "examples/gallery.rkt": "ab6d5b37fa2b5de70384750fdb57c78818145359563c1edee5ebbd6bddd2651f",
+    "examples/helpers.rkt": "508ea4109ca8c22e53195495a79571d7a6cbde5251e95513a517bc560f851e2e",
+    "examples/incircle.rkt": "ce4989a66c2b7bd60f8f15d911287543ed9a45b6b5342fd556f42ffdd85468f5",
+    "examples/orthocenter.rkt": "50078e4f6c71f344a4f2d050670844a68ad71493362cf51616ef348825520976",
+    "examples/parallel-at-distance.rkt": "bad1343932a75883286cd4d9936ab074fbfa91f51b75302a1926a700c6b8fec5",
+    "examples/perpendicular-bisector.rkt": "75c02fda8a6eaee67a79bf9dea40930ab6e791b9b4f4f47b15d3c4e3645b2fd5",
+    "examples/perpendicular-through-point.rkt": "425ca100361898f8bdb70d7893007f9b805c72574a142a482f25a2e0c9c06317",
+    "examples/private/library-example-names.rkt": "ad18bbc0ef647dc2cb1e4c3712657e2fafd527cd83d78af88f139be56e468cfd",
+    "examples/private/library-example.rkt": "6fa5b043ae4261b60ad45e0cc9510c90e6905841c9b0192682dc6177c44ae242",
+    "examples/private/review-example-names.rkt": "0d1c61566bb7c4d1c39cb23c0e5a3b43dbbba842adcc359511485ea49ab71bc9",
+    "examples/private/run-example.rkt": "f61f3c5bab9a6c876d3a3c34a701b1d903632755d954c861026ab084cf6fe9a4",
+    "examples/reflect-point.rkt": "94202eadc8035ac2d6fe2435d8ea8900abdaa649c6c49d86ff86e8c5da36e80c",
+    "examples/regular-hexagon.rkt": "ae419fab0ec9dba8ea29d0185d3ab3c0cf507b75f775e548d99176b7b0249759",
+    "examples/square-on-segment.rkt": "acd01baa0517371ba3874f5156acd6ad2a0abb9800b1247d0c49b09ccfc23970",
+    "examples/tangent-at-point.rkt": "f36d7a75d1d40416c892d7f1a1e6f6fda3dd024255204dce8f31a32fee139207",
+    "examples/triangle-midline.rkt": "ac7882b795095459d76a9cf936d9bff2d39b96eb35b2c0301b4c02ba554d30b5",
+    "layout.rkt": "b628414e851f38bc2c30a96d232c32270482218943c9183c639404e364cb9084",
+    "main.rkt": "9d3426c46794168007eb867e5438a5c7cbe20225f7a03b276b9bcd232ecc37ab",
+    "private/compiler.rkt": "6b182a02245fd6d13926c80cbe9df76cbcca3eda2ea9598168c24dde29ebdbd9",
+    "private/data.rkt": "49fcf561e5811ec0c4dff7ccfc0a864a9c1d46ea24b077bf2cf7dc7beb780710",
+    "private/drawing.rkt": "866920b3f4597ae14e427aee2c27778b58ab01ec5755f0bc331fb8505542769e",
+    "private/evaluate.rkt": "8643405c53e93658fcc8444ae6d8d748fb88c5b967a62fc7fbdf1ace26b76439",
+    "private/marker-shapes.rkt": "8ef12451237940aeddaf045cf895b5e45e7d44c3da214c6ce1c6eafd05aefd16",
+    "private/math.rkt": "37042846bd693918637207982edef248aafd65af1fcd0d54c1ae3ebde42331b5",
+    "private/narration.rkt": "ee2c29abca10cdb5bc0c87dc06b84fa3cdee54d6ee01c83021ee3f6437a64cc0",
+    "private/reveal.rkt": "e73e631b78ceac62d7865e6bc5128b1f75407c26178460ba85963262621d6f89",
+    "private/review-bundle.rkt": "a21f29cf37b18ac73da80ae46c21b29bd3e16154bce6cab1ec8e686048c1ec5d",
+    "private/review-contact-sheet.rkt": "b1bd6f48d24ba67172caaca8220504d252381b3aaf8fc992682f1b6e7cce1c68",
+    "private/vocabulary.rkt": "173068712d368059981af38cff191733701409e788edec5cd0dfbfec04a80595",
+    "render.rkt": "550432114d91aec582b3439e1f7029df0b71a02712d4cf083a752434fceb2081",
+    "review-examples.rkt": "3003e4d42fbff6958d0503923abc0c3e3789c90170eb08b6fcc1acd6e8cf077a",
+    "review-plan.rkt": "7c73953ec1927085916df0d4d152086e7fa257628dbfc422ccf17f6d3d6ec663",
+    "review.rkt": "610f5b6a56967ad66a20bb8bdb656ab4efcc40333335020ad548a4d976fb6faa",
+    "run-tests.rkt": "d7389f9058b733e8b9aa2cb2eaf8d8ee7e34747805056de86c83dcfcedb0b355",
+    "tests/animate-test.rkt": "f325bc9dcb05a2ea3f589890e7d1c0251585b2d7e62f373e7a566e87719d8a04",
+    "tests/annotation-test.rkt": "b9b2a7f0475ce1c1317cf8564a4f9e09919192d7dc4dbad0edc008d6d2f747ad",
+    "tests/audit-checks.rkt": "6d5fa702f2b26deca85a012cd0d912780e3ca5e85bc9e19c9be071a23cac1c68",
+    "tests/audit-render-test.rkt": "90776890a60d9bd1255cc9764e405f432ac025acb09fd714593b8dd17a66b1f8",
+    "tests/audit-test.rkt": "34e760ad070e36fa2f5d84ec96c4c43d3e7ff04b2fbfdae476c7a4728621a679",
+    "tests/drawing-test.rkt": "bc5c1a2b411ebd5d2a98f49a46a3e7ab05bf218bd93c38edb2cc4189a2677035",
+    "tests/dsl-test.rkt": "b9f8751ae895d7acd4841d61a9c54f77448929e130bae8c0bac88ebb4352fccc",
+    "tests/fixtures.rkt": "b3e64f25f2afc90507a25034b540bc903954e18758f12dfffb01c001716b5fc8",
+    "tests/layout-test.rkt": "6488b93316284118641090fb2e122253eb242b999cc03b4f1ce490e5667d398b",
+    "tests/library-alias-fixture.rkt": "9f058fa0b2269acaf7c870f45fe42c27165715c3a707b926fc03de8f7c99273e",
+    "tests/library-checks.rkt": "23dfb3df686a7315abe94067d870dab050b7bb75fd181b215f012089829c1bff",
+    "tests/library-render-test.rkt": "2788d3147af09c1334acb34eaf8414b831caeddb256d30d7fa3422d2887c75ec",
+    "tests/library-test.rkt": "832c098a3603430c1afdb97ad106d3e706538e6a301f70ba0ebafbbce865c33f",
+    "tests/math-test.rkt": "b6f3e74544db02e54f70c7e34565cecf480df38344f4219b691ba5ad48739676",
+    "tests/reveal-annotation-render-test.rkt": "2fba6679580747b5201b579dd48789e0f0a65ffa6f26244ddc33525742b9f35a",
+    "tests/reveal-test.rkt": "ceaed9d21d053e055d25de6090413f7729c9bc6ef4e205341ee03952e3001543",
+    "tests/review-checks.rkt": "e4a75a8cc0276ebe1cd03a900dc5c9775c78c513ff1635a84904d939261d1b92",
+    "tests/review-render-test.rkt": "7df2e581af1ef449632c62479f88051b4b6a0c6dcbe596cdce1a71aa2bae39f2",
+    "tests/review-test.rkt": "59f6da52e37ae07628ba4bbaa9b78cae56065efe279062dc0968b97cd1d81611",
+    "tests/theme-test.rkt": "5c9639790a63865c67d08d07cbc103ee11df6dda06acedfe6bdd97f839379aa4",
+    "tests/timeline-test.rkt": "e931d07f140d09f73ccef9462713d0e5ebb96b2e5fb3279c3980538edfb124f6",
+    "theme.rkt": "ccc16acbc1ad9d86b4c464fa5fe176f60b5b7d4c3e6ee40b199f2821db4a1221",
+    "timeline.rkt": "3673aef64b7686febc93f5c4b3ec7fdb91e6accbdcfe32b1e95543089751a2b4"
+  }
 }

@@ -67,6 +67,8 @@
   (define time effective-opening-pause)
   (define events '())
   (define cues '())
+  (define spans '())
+  (define next-span-id 0)
   (define (add-event! actions duration)
     (define next (foldl (lambda (a s) (apply-action s a)) state actions))
     (define meaningful? (or (not (equal? next state))
@@ -75,8 +77,12 @@
       (set! events (append events (list (geometry-event time (+ time duration) actions state next))))
       (set! state next)
       (set! time (+ time duration))))
-  (define (visit-step! step)
+  (define (visit-step! step path)
+    (set! next-span-id (add1 next-span-id))
+    (define span-id next-span-id)
     (define start time)
+    (define before state)
+    (define first-event-index (length events))
     (define read-delay*
       (cond [(hash-has-key? (geometry-step-timing step) 'read-delay)
              (hash-ref (geometry-step-timing step) 'read-delay)]
@@ -87,6 +93,7 @@
     (define actions (geometry-step-actions step))
     (define new-ids (revealed-ids actions))
     (set! time (+ time read-delay*))
+    (define action-start time)
     ;; Configure labels before a newly introduced point appears, avoiding a
     ;; one-frame label flash for a same-step hide-label command.
     (for ([a (in-list (append-map leaf-actions actions))]
@@ -101,16 +108,27 @@
         (define next (apply-action state change))
         (set! events (append events (list (geometry-event time time (list change) state next))))
         (set! state next)))
-    (for ([a (in-list actions)])
+    (for ([a (in-list actions)] [action-index (in-naturals 1)])
       (if (eq? (geometry-action-kind a) 'expanded)
-          (for-each visit-step! (geometry-action-payload a))
+          (for ([child (in-list (geometry-action-payload a))] [child-index (in-naturals 1)])
+            (visit-step! child (append path (list action-index child-index))))
           (add-event! (leaf-actions a) action-duration*)))
+    (define action-end time)
     (set! time (+ time step-pause*))
+    (set! spans
+          (cons (geometry-step-span
+                 span-id path (geometry-step-narration step) start action-start action-end time
+                 (drop events first-event-index) before state
+                 (hash-ref (geometry-step-timing step) 'generated? #f)
+                 (and (ormap (lambda (a) (eq? (geometry-action-kind a) 'expanded)) actions) #t))
+                spans))
     (when (geometry-step-narration step)
       (set! cues (append cues (list (geometry-cue start time (geometry-step-narration step)))))))
-  (for-each visit-step! (geometry-program-steps program))
+  (for ([step (in-list (geometry-program-steps program))] [index (in-naturals 1)])
+    (visit-step! step (list index)))
   ;; Keep even an empty exposition a valid nonzero animate scene.
-  (geometry-timeline realization theme events cues initial state (if (> time 0) time 0.01)))
+  (geometry-timeline realization theme events cues initial state (if (> time 0) time 0.01)
+                     (sort spans < #:key geometry-step-span-id)))
 
 (define (unit x) (max 0 (min 1 x)))
 (define (smooth x) (define u (unit x)) (* u u (- 3 (* 2 u))))

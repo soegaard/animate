@@ -16,7 +16,11 @@
          (unless (pair? (cdr rest))
            (raise-syntax-error #f "step timing keyword needs a value" (car rest)))
          (loop (cddr rest))]
-        [else (if (and (pair? rest) (string? (syntax-e (car rest)))) (cdr rest) rest)])))
+        [else (if (and (pair? rest)
+                        (or (string? (syntax-e (car rest)))
+                            (let ([parts (syntax->list (car rest))])
+                              (and (pair? parts) (eq? (syntax-e (car parts)) 'caption)))))
+                   (cdr rest) rest)])))
   (define (helper-identifiers clauses)
     (define found '())
     (define (visit-expression e)
