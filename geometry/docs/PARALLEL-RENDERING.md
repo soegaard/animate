@@ -41,3 +41,37 @@ merge, local shard filenames are therefore remapped back to their assigned globa
 frame indices (`frame-000000.png`, `frame-000001.png`, ...). The merge verifies both
 the per-shard file count and the final total frame count, and refuses accidental
 filename replacement.
+
+## Static-frame reuse for geometry timelines
+
+After process-based sharding was working, the next bottleneck was repeated
+rasterization of frames during `opening-pause`, `read-delay`, and `step-pause`.
+Those spans often have no active geometry event, so many requested frame indices
+sample the exact same geometry snapshot (and the same caption when captions are
+shown).
+
+The geometry renderer now performs a lightweight planning pass before native PNG
+output:
+
+1. Sample the immutable geometry timeline at each requested frame index.
+2. Build a semantic key from the per-object appearances and, when captions are
+   enabled, the visible narration text.
+3. Keep only the first occurrence of each unique visual state.
+4. Render those representative indices through the existing native renderer.
+5. Materialize the full numbered frame sequence by copying the representative
+   PNG to the remaining duplicate frame names.
+
+This optimization is intentionally implemented in `geometry/render.rkt`, not in
+Animate's generic scene renderer. General Animate scenes may depend on time in
+arbitrary user-defined ways, while geometry timelines have explicit immutable
+presentation events and narration cues, so semantic equality is cheap and safe
+to detect here.
+
+### Consequences
+
+- Movie timing is unchanged.
+- Output filenames remain `frame-000000.png`, `frame-000001.png`, ... .
+- MP4 encoding and review tooling need no changes.
+- Single-worker and shard-worker rendering both benefit automatically.
+- Disk usage is still one PNG per numbered frame; the optimization saves CPU time
+  by avoiding duplicate rasterization rather than by changing the output format.

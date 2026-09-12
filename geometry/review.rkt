@@ -20,14 +20,17 @@
                                   #:fps [fps 30] #:supersample [supersample 1]
                                   #:color-theme [color-theme #f] #:theme-name [theme-name "light"]
                                   #:captions? [captions? #t] #:labels [labels (hash)]
-                                  #:expanded? [expanded? #t] #:contact-sheet? [contact-sheet? #t]
+                                  #:expanded? [expanded? #t]
+                                  #:include-cleanup? [include-cleanup? #f]
+                                  #:contact-sheet? [contact-sheet? #t]
                                   #:zip [zip-path #f])
   (unless (and (geometry-timeline? timeline) (exact-positive-integer? width)
                (exact-positive-integer? height) (exact-positive-integer? fps)
                (exact-positive-integer? supersample) (boolean? contact-sheet?)
-               (boolean? captions?) (boolean? expanded?))
+               (boolean? captions?) (boolean? expanded?) (boolean? include-cleanup?))
     (error 'render-geometry-review! "invalid timeline or review options"))
-  (define plan (make-geometry-review-plan timeline #:expanded? expanded?))
+  (define plan (make-geometry-review-plan timeline #:expanded? expanded?
+                                         #:include-cleanup? include-cleanup?))
   (define visual-at (geometry-timeline->visual-sampler timeline #:width width
                                                        #:captions? captions? #:labels labels))
   (define camera (geometry-timeline->camera timeline #:width width #:height height))
@@ -43,7 +46,8 @@
   (write-geometry-review-bundle!
    timeline plan directory #:name name #:theme theme-name
    #:width width #:height height #:fps fps #:supersample supersample
-   #:captions? captions? #:expanded? expanded? #:zip zip-path #:render-sample! render-one!
+   #:captions? captions? #:expanded? expanded? #:include-cleanup? include-cleanup?
+   #:zip zip-path #:render-sample! render-one!
    #:contact-sheets!
    (and contact-sheet?
         (lambda (rows staging)

@@ -87,3 +87,43 @@ step rows per page; full-size Read / During / Settled PNGs are retained. The
 library demonstrations include their expanded steps. For a smaller outer-step
 overview, add `--top-level-only`. These options do not change the gallery's
 narration or playback.
+
+
+## v0.8.3 shared refinements
+
+The standard-library plates inherit the P/Q/R/S-style helper names and the new
+line/ray-behind-segment rendering order. Their deliberately equilateral/regular
+figures remain regular: only the application examples described as arbitrary
+triangles were reshaped. Review both themes with the existing gallery command.
+
+
+## v0.9.0: transformations and semantic labels
+
+The existing plates are retained. After the construction-library plates, the
+gallery adds reflection, translation, rotation and dilation of segment geometry,
+followed by a scalene triangle annotated using all four Label constructors.
+Symbolic lengths/angles are replaced by computed measurements and restored.
+Old objects and independent labels are explicitly hidden between plates.
+
+Review these additions for:
+
+1. Source segments remain in place while newly constructed image segments appear.
+   The half-turn uses O as centre; the dilation multiplies lengths by one half.
+2. Labels on the image remain upright and use the image's geometry. Optional angle
+   arcs lie in the named angular sectors. Measured values and symbolic names are
+   visibly distinct states, not overlapping duplicates.
+3. Hiding a Label removes that annotation; hiding only its text retains its angle
+   arc. Automatic point names are explicitly disabled when independent names are
+   used. Supporting lines still draw behind finite gold segments.
+
+The two focused examples are useful before rendering the complete gallery:
+
+```sh
+"$RACKET" geometry/review-examples.rkt --example transformations --both --output geometry-review-v090
+"$RACKET" geometry/review-examples.rkt --example semantic-labels --both --output geometry-review-v090
+```
+
+The estimated annotation pass reports no conflicts in these two examples or the
+updated gallery in either theme. Native font metrics may differ; the supplied
+native integration tests and review renders still need to be run on the target
+installation. This is not a claim of native visual validation.

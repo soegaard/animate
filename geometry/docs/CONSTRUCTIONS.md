@@ -177,7 +177,7 @@ end of the locus. `side-of?` checks which strict half-plane a point occupies.
 | `regular-hexagon.rkt` | Repeated sixty-degree angle and radius copies | Six distinct successive vertices on the circle; equal sides. |
 | `equilateral-triangle-chain.rkt` | Repeated side and angle copies | Three adjacent equal equilateral triangles. |
 | `parallel-at-distance.rkt` | Erect, copy prescribed distance, parallel | Perpendicular distance equals the supplied segment length. |
-| `copy-angle.rkt` | A right-side angle copy | Equal non-reflex angles, with labels α. |
+| `copy-angle.rkt` | A left-side angle copy, matching the source | Equal non-reflex angles, with labels α. |
 
 The first eight are the primary composition suite. The remaining five implement
 the additional examples discussed. Examples use fixed nondegenerate illustrative
@@ -265,3 +265,13 @@ The foundation demonstrations and gallery still support expanded use.
 
 See EXAMPLE-AUDIT.md for all thirteen applications, the original three videos,
 and the gallery, including the remaining native-render review checklist.
+
+
+### Example refinements (v0.8.3)
+
+General-triangle examples use clearly unequal sides, not near-equilateral
+exemplars. The standalone angle copy uses `'left`; the helper still accepts both
+sides. Standard temporary intersections use P/Q/R/S-style names. The square's
+gold base is drawn in front of supporting lines; the hexagon's primary circle
+uses purple, distinct from its aqua helper circles. Point-relative `label-offset`
+hints keep the five division labels near their points. See `EXAMPLE-REFINEMENTS.md`.

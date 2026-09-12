@@ -3,9 +3,9 @@
 ;; Headless mathematical authoring API. This module does not load animate,
 ;; pict, a GUI, TeX, or any rendering backend.
 (require "dsl.rkt" "private/math.rkt" "private/data.rkt"
-         "layout.rkt" "theme.rkt" "timeline.rkt" "annotations.rkt")
+         "layout.rkt" "theme.rkt" "timeline.rkt" "annotations.rkt" "transformations.rkt" "labels.rkt")
 (provide (all-from-out "dsl.rkt" "private/math.rkt" "private/data.rkt"
-                       "layout.rkt" "theme.rkt" "timeline.rkt" "annotations.rkt")
+                       "layout.rkt" "theme.rkt" "timeline.rkt" "annotations.rkt" "transformations.rkt" "labels.rkt")
          construction->timeline)
 
 ;; construction->timeline : geometry-program? ... -> geometry-timeline?

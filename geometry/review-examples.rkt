@@ -15,6 +15,7 @@
   (define output-root "geometry-review")
   (define width 1280) (define height 720) (define supersample 1) (define fps 30)
   (define contact-sheet? #t) (define captions? #t) (define expanded? #t)
+  (define include-cleanup? #f)
   (define (select! value)
     (when selection (error 'review-examples "choose only one of --all, --library, --example"))
     (set! selection value))
@@ -27,7 +28,7 @@
   (command-line
    #:program "geometry/review-examples.rkt"
    #:once-each
-   [("--all") "Review all 17 examples, including the original three and gallery." (select! 'all)]
+   [("--all") "Review all 19 examples, including transformations, semantic labels, and gallery." (select! 'all)]
    [("--library") "Review only the 13 standard-library application examples." (select! 'library)]
    [("--example") name "Review one named example; use --list for available names." (select! name)]
    [("--list") "List example names without rendering." (set! list? #t)]
@@ -42,6 +43,7 @@
    [("--no-contact-sheet") "Omit overview contact sheets." (set! contact-sheet? #f)]
    [("--no-captions") "Omit on-image captions; still include step text in the bundle." (set! captions? #f)]
    [("--top-level-only") "Only authored outer steps, without separate expanded helper rows." (set! expanded? #f)]
+   [("--include-cleanup") "Include silent cleanup/no-op rows (omitted by default)." (set! include-cleanup? #t)]
    #:args () (void))
   (cond
     [list?
@@ -67,7 +69,8 @@
                          "--fps" (number->string fps) "--supersample" (number->string supersample))
                    (if contact-sheet? '() '("--no-contact-sheet"))
                    (if captions? '() '("--no-captions"))
-                   (if expanded? '() '("--review-top-level-only"))))
+                   (if expanded? '() '("--review-top-level-only"))
+                   (if include-cleanup? '("--review-include-cleanup") '())))
          (define code (apply system*/exit-code executable args))
          (unless (zero? code)
            (eprintf "Review failed: ~a / ~a. Earlier bundles have been kept.\n" name mode)

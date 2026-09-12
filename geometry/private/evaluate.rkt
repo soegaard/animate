@@ -2,7 +2,7 @@
 
 ;; Pure evaluation of the checked expression algebra. Free inputs and choices
 ;; are supplied by the realization pass; this module never chooses randomly.
-(require racket/list "math.rkt")
+(require racket/list "math.rkt" "../transformations.rkt" "../labels.rkt")
 (provide evaluate-expression relation-truthy?)
 
 (define (eval-angle expression environment)
@@ -78,7 +78,7 @@
   (define (ev x) (evaluate-expression x environment))
   (define result
     (cond
-      [(or (finite-real? expression) (boolean? expression)) expression]
+      [(or (finite-real? expression) (boolean? expression) (string? expression)) expression]
       [(symbol? expression)
        (hash-ref environment expression
                  (lambda () (geometry-error 'evaluate "unrealized reference ~a" expression)))]
@@ -87,6 +87,40 @@
        (define args (cdr expression))
        (case op
          [(quote) (car args)]
+         [(vector) (apply geometry-vector (map ev args))]
+         [(vector-between) (apply vector-between (map ev args))]
+         [(vector-x) (geometry-vector-x (ev (car args)))]
+         [(vector-y) (geometry-vector-y (ev (car args)))]
+         [(degrees) (degrees (ev (car args)))]
+         [(identity-transform) (identity-transform)]
+         [(translation) (translation (ev (car args)))]
+         [(rotation) (apply rotation (map ev args))]
+         [(reflection) (reflection (ev (car args)))]
+         [(dilation) (apply dilation (map ev args))]
+         [(compose-transform) (apply compose-transform (map ev args))]
+         [(inverse-transform) (inverse-transform (ev (car args)))]
+         [(transformation-scale) (transformation-scale (ev (car args)))]
+         [(transformation-orientation) (transformation-orientation (ev (car args)))]
+         [(transform) (apply transform (map ev args))]
+         [(translate) (apply translate (map ev args))]
+         [(rotate) (apply rotate (map ev args))]
+         [(reflect) (apply reflect (map ev args))]
+         [(dilate) (apply dilate (map ev args))]
+         [(point-label segment-label length-label angle-label)
+          (define target (ev (car args)))
+          (define rest (cdr args))
+          (define text (and (pair? rest) (not (keyword? (car rest))) (ev (car rest))))
+          (when text (set! rest (cdr rest)))
+          (define options
+            (let loop ([xs rest] [table (hash)])
+              (if (null? xs) table (loop (cddr xs) (hash-set table (car xs) (ev (cadr xs)))))))
+          (case op
+            [(point-label) (point-label target text)]
+            [(segment-label) (segment-label target text)]
+            [(length-label) (length-label target text #:precision (hash-ref options '#:precision 2)
+                                          #:unit (hash-ref options '#:unit ""))]
+            [(angle-label) (angle-label target text #:precision (hash-ref options '#:precision 0)
+                                        #:arc? (hash-ref options '#:arc? #t))])]
          [(point)
           (when (null? args) (geometry-error 'point "a free point must be a named given"))
           (apply point (map ev args))]

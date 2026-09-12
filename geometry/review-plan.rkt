@@ -6,7 +6,8 @@
          "core.rkt")
 (provide (struct-out geometry-review-sample)
          (struct-out geometry-review-step)
-         make-geometry-review-plan geometry-review-samples)
+         make-geometry-review-plan geometry-review-samples
+         geometry-review-span-reviewable?)
 
 ;; Each step has exactly three samples. frame is ready for the native visual
 ;; sampler; its layout still comes from the complete, unmodified timeline.
@@ -22,6 +23,25 @@
                                         (prefix? (geometry-step-span-path other)
                                                  (geometry-step-span-path span))))
         (geometry-step-span-narration other))))
+
+(define (cleanup-action? action)
+  (case (geometry-action-kind action)
+    [(hide hide-label deemphasize normalize) #t]
+    [(together) (andmap cleanup-action? (geometry-action-payload action))]
+    [else #f]))
+
+;; Silent maintenance steps are useful in the movie but usually add only blank
+;; or duplicate rows to an audit bundle. Narrated steps always remain. Silent
+;; reveals/highlights/shows remain because they introduce visible information.
+(define (geometry-review-span-reviewable? span spans #:include-cleanup? [include-cleanup? #f])
+  (or include-cleanup?
+      (geometry-step-span-narration span)
+      (let ([events (geometry-step-span-events span)])
+        (and (pair? events)
+             (for/or ([event (in-list events)])
+               (for/or ([action (in-list (geometry-event-actions event))])
+                 (not (cleanup-action? action))))))))
+
 (define (state-frame state t text)
   (geometry-frame
    t
@@ -55,15 +75,21 @@
                   (/ (+ (geometry-event-start e) (geometry-event-end e)) 2)]
                  [else (+ (geometry-event-start e) remaining)]))]))
 
-(define (make-geometry-review-plan timeline #:expanded? [expanded? #t])
+(define (make-geometry-review-plan timeline #:expanded? [expanded? #t]
+                                  #:include-cleanup? [include-cleanup? #f])
   (unless (geometry-timeline? timeline)
     (raise-argument-error 'make-geometry-review-plan "geometry-timeline?" timeline))
   (unless (boolean? expanded?)
     (raise-argument-error 'make-geometry-review-plan "boolean?" expanded?))
+  (unless (boolean? include-cleanup?)
+    (raise-argument-error 'make-geometry-review-plan "boolean?" include-cleanup?))
   (define spans (geometry-timeline-steps timeline))
   (define selected
     (filter (lambda (s) (and (not (geometry-step-span-generated? s))
-                            (or expanded? (= (length (geometry-step-span-path s)) 1)))) spans))
+                            (or expanded? (= (length (geometry-step-span-path s)) 1))
+                            (geometry-review-span-reviewable? s spans
+                                                             #:include-cleanup? include-cleanup?)))
+            spans))
   ;; A construction with no steps still has an initial diagram to inspect.
   (define review-spans
     (if (pair? selected) selected

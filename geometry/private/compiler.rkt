@@ -114,6 +114,7 @@
   (cond
     [(finite-real? e) 'Number]
     [(boolean? e) 'Boolean]
+    [(string? e) 'Text]
     [(symbol? e) (lookup-type env e who)]
     [(not (and (list? e) (pair? e))) (geometry-error who "invalid geometry expression ~e" e)]
     [else
@@ -124,6 +125,85 @@
         (unless (and (= (length args) 1) (symbol? (car args)))
           (geometry-error who "only quoted selector symbols are allowed here: ~e" e))
         (if (memq (car args) '(left right)) 'Side 'Selector)]
+       [(vector)
+        (expect-count args 2 who e) (all-of args 'Number) 'Vector]
+       [(vector-between)
+        (expect-count args 2 who e) (all-of args 'Point) 'Vector]
+       [(vector-x vector-y)
+        (expect-count args 1 who e) (all-of args 'Vector) 'Number]
+       [(degrees)
+        (expect-count args 1 who e) (all-of args 'Number) 'Number]
+       [(identity-transform)
+        (expect-count args 0 who e) 'Transform]
+       [(translation)
+        (expect-count args 1 who e) (all-of args 'Vector) 'Transform]
+       [(rotation dilation)
+        (expect-count args 2 who e)
+        (expect-type (infer (car args)) 'Point who e)
+        (expect-type (infer (cadr args)) 'Number who e)
+        (when (and (eq? op 'dilation) (number? (cadr args)) (zero? (cadr args)))
+          (geometry-error who "dilation scale must be nonzero"))
+        'Transform]
+       [(reflection)
+        (expect-count args 1 who e) (all-of args 'Line) 'Transform]
+       [(compose-transform)
+        (all-of args 'Transform) 'Transform]
+       [(inverse-transform transformation-scale transformation-orientation)
+        (expect-count args 1 who e) (all-of args 'Transform)
+        (if (eq? op 'inverse-transform) 'Transform 'Number)]
+       [(transform translate rotate reflect dilate)
+        (expect-count args (if (memq op '(rotate dilate)) 3 2) who e)
+        (define object (if (eq? op 'transform) (cadr args) (car args)))
+        (define type (infer object))
+        (unless (memq type '(Point Line Segment Ray Circle Angle Relation Marker))
+          (geometry-error who "~a cannot transform ~a; recreate labels on transformed geometry" op type))
+        (case op
+          [(transform) (expect-type (infer (car args)) 'Transform who e)]
+          [(translate) (expect-type (infer (cadr args)) 'Vector who e)]
+          [(reflect) (expect-type (infer (cadr args)) 'Line who e)]
+          [else
+           (expect-type (infer (cadr args)) 'Point who e)
+           (expect-type (infer (caddr args)) 'Number who e)
+           (when (and (eq? op 'dilate) (number? (caddr args)) (zero? (caddr args)))
+             (geometry-error who "dilation scale must be nonzero"))])
+        type]
+       [(point-label segment-label length-label angle-label)
+        (unless (pair? args) (geometry-error who "~a needs a target" op))
+        (expect-type (infer (car args))
+                     (case op [(point-label) 'Point] [(angle-label) 'Angle] [else 'Segment]) who e)
+        (define rest (cdr args))
+        (define has-text? (and (pair? rest) (not (keyword? (car rest)))))
+        (when has-text?
+          (expect-type (infer (car rest)) 'Text who e)
+          (when (and (string? (car rest))
+                     (or (string=? (string-trim (car rest)) "")
+                         (regexp-match? #rx"[\r\n\t]" (car rest))))
+            (geometry-error who "label text must be a nonempty single line without tabs"))
+          (set! rest (cdr rest)))
+        (when (and (memq op '(point-label segment-label)) (not has-text?))
+          (geometry-error who "~a requires text" op))
+        (let loop ([remaining rest] [seen '()])
+          (unless (null? remaining)
+            (unless (and (pair? (cdr remaining)) (keyword? (car remaining)))
+              (geometry-error who "expected label keyword/value pairs in ~e" e))
+            (define key (car remaining)) (define value (cadr remaining))
+            (when (memq key seen) (geometry-error who "duplicate label option ~a" key))
+            (case key
+              [(#:precision)
+               (unless (memq op '(length-label angle-label)) (geometry-error who "~a does not accept #:precision" op))
+               (expect-type (infer value) 'Number who e)
+               (when (and (number? value) (not (and (exact-integer? value) (<= 0 value 12))))
+                 (geometry-error who "label precision must be an integer from 0 to 12"))]
+              [(#:unit)
+               (unless (and (eq? op 'length-label) (not has-text?))
+                 (geometry-error who "#:unit is for measured length labels only"))
+               (expect-type (infer value) 'Text who e)]
+              [(#:arc?)
+               (unless (eq? op 'angle-label) (geometry-error who "#:arc? belongs to angle-label"))
+               (expect-type (infer value) 'Boolean who e)]
+              [else (geometry-error who "unknown label option ~a" key)])
+            (loop (cddr remaining) (cons key seen))))
+        'Label]
        [(point)
         (unless (or (null? args) (= (length args) 2))
           (geometry-error who "point expects zero (free given) or two arguments"))
@@ -298,7 +378,7 @@
   (define (known! id)
     (lookup-type types id name) id)
   (define (drawable! id)
-    (unless (memq (lookup-type types id name) '(Point Line Segment Ray Circle Marker))
+    (unless (memq (lookup-type types id name) '(Point Line Segment Ray Circle Marker Label))
       (geometry-error name "presentation and visual layout need a drawable object or marker, not ~a" id))
     id)
   (define (helper-call? e)
@@ -376,17 +456,23 @@
                   (for/list ([c (in-list (geometry-program-assertions body))])
                     (geometry-check (substitute-expression (geometry-check-expression c) substitutions)
                                     (format "~a / helper ~a: ~a" name (car expression) (geometry-check-origin c))))))
-    ;; Helper hints are weak defaults. Hard constraints remain hard.
-    (set! layouts
-          (append layouts
-                  (for/list ([l (in-list (geometry-program-layout body))])
-                    (define transformed (substitute-expression l substitutions))
-                    (if (eq? (car transformed) 'prefer)
-                        (append (take transformed 3) (list (* 1/4 (if (= (length transformed) 4) (cadddr transformed) 1))))
-                        transformed))))
     (define action-substitutions (hash-copy substitutions))
     (for ([id (in-list ids)] [result (in-list (geometry-program-results body))])
       (hash-set! action-substitutions result id))
+    ;; Annotation hints follow visible result aliases just like styles and
+    ;; reveals. Geometric constraints keep referencing the internal graph.
+    ;; Caller hints are collected later and override the helper's defaults.
+    (set! layouts
+          (append layouts
+                  (for/list ([l (in-list (geometry-program-layout body))])
+                    (define annotation?
+                      (memq (car l) '(label-side label-at label-offset label-position label-outside-of label-text
+                                                marker-quadrant marker-position marker-radius)))
+                    (define transformed
+                      (substitute-expression l (if annotation? action-substitutions substitutions)))
+                    (if (eq? (car transformed) 'prefer)
+                        (append (take transformed 3) (list (* 1/4 (if (= (length transformed) 4) (cadddr transformed) 1))))
+                        transformed))))
     ;; Helper styling follows result aliases, but never restyles caller inputs.
     (set! styles
           (append styles
@@ -440,7 +526,7 @@
        (define private-drawables
          (for/list ([n (in-list (drop nodes old-count))]
                     #:when (and (not (memq (geometry-node-id n) ids))
-                                (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker))))
+                                (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker Label))))
            (geometry-node-id n)))
        (define completed-steps
          (if (or (eq? auxiliaries 'keep) (null? private-drawables)) child-steps
@@ -453,7 +539,7 @@
        (if expanded? (geometry-action 'expanded ids completed-steps)
            (geometry-action 'reveal
                             (filter (lambda (id) (memq (lookup-type types id name)
-                                                       '(Point Line Segment Ray Circle Marker))) ids) #f))]
+                                                       '(Point Line Segment Ray Circle Marker Label))) ids) #f))]
       [else
        (when expanded? (geometry-error name "expand expects a construction-helper binding"))
        (define expression (lower-expression e))
@@ -473,7 +559,7 @@
           (unless (memq type geometry-types) (geometry-error name "cannot bind a ~a as geometry" type))
           (add! (car ids) type expression given? #t)])
        (geometry-action 'reveal
-                        (if (memq type '(Point PointList Line Segment Ray Circle Marker)) ids '()) #f)]))
+                        (if (memq type '(Point PointList Line Segment Ray Circle Marker Label)) ids '()) #f)]))
   (define (parse-action a [initial? #f])
     (unless (and (list? a) (pair? a)) (geometry-error name "invalid action ~e" a))
     (case (car a)
@@ -588,6 +674,16 @@
        (unless (memq side '(auto above below left right above-left above-right below-left below-right))
          (geometry-error name "unknown label side ~e" side))]
       [(list 'label-at id (list 'point (? finite-real? x) (? finite-real? y))) (drawable! id)]
+      [(list 'label-offset id (list 'point (? finite-real? dx) (? finite-real? dy)))
+       (unless (memq (lookup-type types id name) '(Point Label))
+         (geometry-error name "label-offset expects a Point or semantic Label"))]
+      [(list 'label-position id t)
+       (expect-type (lookup-type types id name) 'Label name id)
+       (unless (and (finite-real? t) (< 0 t 1))
+         (geometry-error name "label position must be between 0 and 1"))]
+      [(list 'label-outside-of id reference)
+       (expect-type (lookup-type types id name) 'Label name id)
+       (expect-type (lookup-type types reference name) 'Point name reference)]
       [(list 'label-text id (? string? text))
        (drawable! id)
        (when (or (string-contains? text "\n") (string-contains? text "\r") (zero? (string-length text)))
@@ -599,7 +695,8 @@
        (expect-type (lookup-type types id name) 'Marker name id)
        (unless (and (finite-real? t) (< 0 t 1)) (geometry-error name "marker position must be between 0 and 1"))]
       [(list 'marker-radius id r)
-       (expect-type (lookup-type types id name) 'Marker name id)
+       (unless (memq (lookup-type types id name) '(Marker Label))
+         (geometry-error name "marker-radius expects a Marker or angle Label"))
        (unless (and (finite-real? r) (> r 0)) (geometry-error name "marker radius must be positive"))]
       [(list 'prefer e target extra ...)
        (unless (<= (length extra) 1) (geometry-error name "prefer accepts expression, target and optional weight"))

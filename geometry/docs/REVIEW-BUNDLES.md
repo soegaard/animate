@@ -30,7 +30,8 @@ directories, so the two runs do not overwrite one another.
 ## All examples, the library only, or a list
 
 ```sh
-# All 17 examples, including the original three, the 13 applications and gallery.
+# All 19 examples: original three, thirteen applications, two new demonstrations,
+# and gallery.
 "$RACKET" geometry/review-examples.rkt --all --dark
 
 # Both themes: one ZIP per example per theme (34 ZIPs, not one giant upload).
@@ -115,6 +116,25 @@ highlight, or subtle motion jitter. Such rows are noted in the metadata. They
 are a compact visual review aid, not a replacement for checking playback when
 motion itself is in question.
 
+## Silent cleanup rows
+
+Silent authored steps whose visible effects are only cleanup operations such as
+`hide`, `hide-label`, `deemphasize`, or `normalize` are omitted from review
+bundles by default. Silent no-op/value-only steps are omitted as well. They still
+run in the movie and still affect the state seen by following review rows; only
+their redundant triplet is suppressed. A silent step that reveals, shows, or
+highlights something remains review-worthy.
+
+To inspect every authored row, including silent cleanup/no-op rows:
+
+```sh
+"$RACKET" geometry/review-examples.rkt \
+  --example transformations --dark --include-cleanup
+```
+
+The direct example-runner spelling is `--review-include-cleanup`. The manifest
+records whether cleanup rows were requested.
+
 ## Expanded helpers
 
 The default includes outer authored steps **and** the steps inside `(expand ...)`,
@@ -157,7 +177,8 @@ appearance. Use the same dimensions as the intended movie for final typography
 and spacing checks.
 
 Other options are `--supersample N`, `--fps N`, `--no-captions`,
-`--no-contact-sheet`, and `--output DIR` (default `geometry-review`).
+`--no-contact-sheet`, `--include-cleanup`, and `--output DIR` (default
+`geometry-review`).
 `--no-captions` removes captions and their reserved space from the images, but
 `steps.txt`, the manifest, and the contact-sheet headings still carry the text.
 
@@ -168,7 +189,7 @@ processes for a small review. No external `zip` utility is required.
 
 ## Direct example-runner options
 
-Every one of the 17 examples also supports the review mode directly:
+Every one of the 19 examples also supports the review mode directly:
 
 ```sh
 # Images, metadata and contact sheets; no ZIP unless requested.
@@ -185,7 +206,8 @@ Every one of the 17 examples also supports the review mode directly:
   --review-zip uploads/incircle-dark.zip
 ```
 
-The direct-runner spelling of `--top-level-only` is `--review-top-level-only`.
+The direct-runner spelling of `--top-level-only` is `--review-top-level-only`;
+the spelling of `--include-cleanup` is `--review-include-cleanup`.
 `--no-contact-sheet` has the same spelling in both commands. Contact sheets are
 on by default; no separate flag is needed to enable them.
 
@@ -221,6 +243,7 @@ directory so it cannot accidentally include itself.
     #:color-theme color:animate-dark-theme
     #:theme-name "dark"
     #:expanded? #t
+    #:include-cleanup? #f
     #:contact-sheet? #t
     #:zip "review/incircle.zip"))
 
@@ -231,7 +254,8 @@ directory so it cannot accidentally include itself.
 ```
 
 `geometry/review-plan.rkt` provides `make-geometry-review-plan` and
-`geometry-review-samples` without importing the native drawing backend. A review
+`geometry-review-samples` without importing the native drawing backend.
+`make-geometry-review-plan` accepts `#:include-cleanup?`; it defaults to `#f`. A review
 step records its source span, caption, samples, and notes. Each sample contains
 its phase, timestamp, filename and immutable `geometry-frame` snapshot.
 
@@ -248,7 +272,7 @@ while rendering exact step boundaries.
 ## Tests
 
 ```sh
-# Planning, all 17 example timelines in both themes, file safety and ZIP contents.
+# Planning, all 19 example timelines in both themes, file safety and ZIP contents.
 # Requires Racket base only; PNG-fixture tests are not native geometry renders.
 "$RACKET" geometry/run-tests.rkt --review
 
@@ -263,7 +287,7 @@ See `docs/TESTING.md` for the execution status of this delivery.
 
 v0.8.1 changes the examples' authored steps and some layouts. Rebuild the bundles
 after replacing `geometry/`; old step filenames do not identify the same action
-in the new source. The manifest records `geometry_version: "0.8.1"`. All-example
+in the new source. Historical v0.8.1 bundles recorded `geometry_version: "0.8.1"`; current bundles record `0.9.1`. All-example
 and single-example selection, both-theme output, and three samples per step are
 unchanged.
 
@@ -274,3 +298,19 @@ Use a separate root when retaining both old and new reviews:
 ```
 
 The input-based audit and follow-up checklist are in `EXAMPLE-AUDIT.md`.
+
+
+## Transformation and semantic-label reviews (v0.9.1)
+
+`--example transformations` and `--example semantic-labels` select the
+standalone demonstrations. In v0.9.1 the default review omits their silent
+cleanup/no-op rows; add `--include-cleanup` when those state transitions are the
+subject of the audit. Both also belong to `--all`; neither changes the
+thirteen-example `--library` selection. The gallery retains the previous plates
+and adds transformation and label plates. All use the same read/during/settled
+snapshot machinery and preserve per-example/theme ZIP isolation.
+
+Transformation objects are realized before review sampling. The review does not
+animate a geometric rotation or reflection: it records the normal reveal of the
+resulting image. Label strings and placements are fixed for that realization.
+The ordinary visibility commands control their review states.

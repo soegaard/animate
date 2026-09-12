@@ -13,10 +13,10 @@
 (struct geometry-theme-value (rules) #:transparent)
 (define geometry-theme? geometry-theme-value?)
 (define geometry-theme-rules geometry-theme-value-rules)
-(define selectors '(stroke fill label point line segment ray circle marker right-angle-marker length-marker parallel-marker angle-marker normal deemphasized highlighted))
+(define selectors '(stroke fill label point line segment ray circle semantic-label point-label segment-label length-label angle-label marker right-angle-marker length-marker parallel-marker angle-marker normal deemphasized highlighted))
 (define states '(normal deemphasized highlighted))
 (define (selector-path? path)
-  (define kinds '(point line segment ray circle marker right-angle-marker length-marker parallel-marker angle-marker))
+  (define kinds '(point line segment ray circle semantic-label point-label segment-label length-label angle-label marker right-angle-marker length-marker parallel-marker angle-marker))
   (define channels '(stroke fill label))
   (match path
     [(list x) (memq x selectors)]
@@ -78,6 +78,9 @@
       (point (radius 0.055) (highlighted (radius 0.08)))
       (label (font-size 0.30) (font-family roman) (font-style italic)
              (offset 0.16) (color foreground))
+      (semantic-label (offset 0.14) (label (color foreground) (font-style normal)))
+      (point-label (label (font-style italic)))
+      (angle-label (radius 0.28) (stroke (width 2)) (color foreground))
       (circle (color-family aqua))
       (marker (size 0.18) (spacing 0.08) (radius 0.28)
               (normal (color foreground))
@@ -94,6 +97,9 @@
       (point (radius 0.055) (highlighted (radius 0.08)))
       (label (font-size 0.30) (font-family roman) (font-style italic)
              (offset 0.16) (color foreground))
+      (semantic-label (offset 0.14) (label (color foreground) (font-style normal)))
+      (point-label (label (font-style italic)))
+      (angle-label (radius 0.28) (stroke (width 2)) (color foreground))
       (circle (color-family aqua))
       (marker (size 0.18) (spacing 0.08) (radius 0.28)
               (normal (color foreground))
@@ -166,13 +172,20 @@
     (for/fold ([s (rule s path)]) ([ch (in-list '(stroke fill label))])
       (rule s (append path (list ch)) ch)))
   (define s0 (for/fold ([s initial-style]) ([ch (in-list '(stroke fill))]) (rule s (list ch) ch)))
-  (define kinds (if (memq type '(right-angle-marker length-marker parallel-marker angle-marker))
-                    (list 'marker type) (list type)))
+  (define kinds
+    (cond [(memq type '(right-angle-marker length-marker parallel-marker angle-marker)) (list 'marker type)]
+          [(memq type '(point-label segment-label length-label angle-label)) (list 'semantic-label type)]
+          [(eq? type 'label) (list 'semantic-label)]
+          [else (list type)]))
   (define (kind-scopes s tail)
     (for/fold ([s s]) ([kind (in-list kinds)]) (scope s (cons kind tail))))
-  (define s1 (kind-scopes s0 '()))
-  (define s2 (for/fold ([s (rule s1 '(label) 'label)]) ([kind (in-list kinds)])
-               (rule s (list kind 'label) 'label)))
+  ;; For first-class labels, generic text defaults are the base, not a
+  ;; later override of the label kind's own font size/offset.
+  (define label-kind? (memq type '(label semantic-label point-label segment-label length-label angle-label)))
+  (define s1 (kind-scopes (if label-kind? (rule s0 '(label) 'label) s0) '()))
+  (define s2 (if label-kind? s1
+                (for/fold ([s (rule s1 '(label) 'label)]) ([kind (in-list kinds)])
+                  (rule s (list kind 'label) 'label))))
   (define s3 (kind-scopes (scope s2 '(normal)) '(normal)))
   (define s4 (if (eq? state 'normal) s3 (kind-scopes (scope s3 (list state)) (list state))))
   (define s5 (if highlight? (kind-scopes (scope s4 '(highlighted)) '(highlighted)) s4))

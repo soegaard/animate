@@ -4,6 +4,7 @@
 ;; and its installed dependencies, but no TeX formula construction or FFmpeg.
 (require rackunit racket/list racket/file
          (prefix-in a: "../../main.rkt") (prefix-in color: "../../colors.rkt")
+         (prefix-in output: "../../render.rkt")
          "../main.rkt" "../render.rkt" "fixtures.rkt"
          (prefix-in eq: "../examples/equilateral-triangle.rkt")
          (prefix-in pb: "../examples/perpendicular-bisector.rkt")
@@ -44,6 +45,25 @@
   (test-case "all distributed examples instantiate through their public API"
     (for ([make (in-list (list eq:make-demo-scene pb:make-demo-scene pp:make-demo-scene gal:make-demo-scene))])
       (check-true (a:scene? (make #:width 320 #:height 180)))))
+  (test-case "full-frame rendering reuses identical static geometry frames"
+    (define directory (make-temporary-file "geometry-static-frame-test-~a" 'directory))
+    (dynamic-wind
+      void
+      (lambda ()
+        (define timeline
+          (construction->timeline triangle
+                                  #:opening-hold 0.5
+                                  #:read-delay 0.5
+                                  #:action-duration 0.1
+                                  #:hold 0.5))
+        (define report
+          (render-geometry-frames/report! timeline directory #:width 320 #:height 180 #:fps 10))
+        (check-equal? (length (output:render-diagnostics-paths report))
+                      (output:render-diagnostics-frame-count report))
+        (check-true
+         (for/or ([milliseconds (in-list (output:render-diagnostics-frame-milliseconds report))])
+           (zero? milliseconds))))
+      (lambda () (delete-directory/files directory))))
   (test-case "native PNG output and narration metadata can be produced headlessly"
     (define directory (make-temporary-file "geometry-test-~a" 'directory))
     (dynamic-wind

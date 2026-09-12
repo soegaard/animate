@@ -15,6 +15,11 @@
           (label-side A 'left) (label-side B 'right)
           (label-text P1 "P₁") (label-text P2 "P₂") (label-text P3 "P₃")
           (label-text P4 "P₄") (label-text P5 "P₅")
+          ;; Keep each label near its point, in the clear wedge between the
+          ;; auxiliary ray and the backward extensions of the parallels.
+          (label-offset P1 (point -0.54 -0.08)) (label-offset P2 (point -0.54 -0.08))
+          (label-offset P3 (point -0.54 -0.08)) (label-offset P4 (point -0.54 -0.08))
+          (label-offset P5 (point -0.54 -0.08))
           (label-text X1 "X₁") (label-text X2 "X₂") (label-text X3 "X₃") (label-text X4 "X₄")
           (label-side X1 'above) (label-side X2 'above)
           (label-side X3 'above) (label-side X4 'above))

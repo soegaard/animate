@@ -3,9 +3,19 @@
 ;; Pure preparation of visible polylines and stable label anchors. The final
 ;; solid circle path uses native cubic Beziers in the animate adapter instead.
 (require racket/list (only-in racket/math pi)
-         "math.rkt" "data.rkt" "reveal.rkt" "../layout.rkt" "../theme.rkt")
+         "math.rkt" "data.rkt" "reveal.rkt" "../labels.rkt" "../layout.rkt" "../theme.rkt")
 (provide curve-polyline clipped-polylines dash-polylines label-positions
-         object-style-overrides display-label)
+         object-style-overrides display-label ordered-drawable-nodes)
+
+;; Construction lines/rays go behind finite objects even if introduced
+;; later. Otherwise an expanded helper can repaint a caller's colored edge.
+;; Within each layer preserve source order; markers and points stay in front.
+(define (ordered-drawable-nodes nodes)
+  (append (filter (lambda (n) (memq (geometry-node-type n) '(Line Ray))) nodes)
+          (filter (lambda (n) (memq (geometry-node-type n) '(Segment Circle))) nodes)
+          (filter (lambda (n) (eq? (geometry-node-type n) 'Marker)) nodes)
+          (filter (lambda (n) (eq? (geometry-node-type n) 'Point)) nodes)
+          (filter (lambda (n) (eq? (geometry-node-type n) 'Label)) nodes)))
 
 (define (object-style-overrides program id)
   (append-map cdr (filter (lambda (s) (eq? (car s) id)) (geometry-program-styles program))))
@@ -106,6 +116,7 @@
                         (geometry-program-steps program))))
   (define (anchor value)
     (cond [(point? value) value]
+          [(semantic-label? value) (label-anchor value)]
           [(marker? value) (if (null? (marker-anchor-points value)) (point 0 0) (car (marker-anchor-points value)))]
           [(circle? value) (circle-through value)]
           [(segment? value) (midpoint (segment-a value) (segment-b value))]
@@ -122,17 +133,17 @@
          (< (list-ref a 2) (list-ref b 3)) (< (list-ref b 2) (list-ref a 3))))
   (unless (hash? overrides) (geometry-error 'label-positions "#:labels must be a hash"))
   (for ([(id p) (in-hash overrides)])
-    (unless (and (hash-has-key? env id) (or (point? (hash-ref env id)) (curve? (hash-ref env id))) (point? p))
+    (unless (and (hash-has-key? env id) (or (point? (hash-ref env id)) (curve? (hash-ref env id)) (semantic-label? (hash-ref env id))) (point? p))
       (geometry-error 'label-positions "label override must name geometry and supply a point: ~a" id)))
   (for/hash ([node (in-list (geometry-program-nodes program))]
              #:when (and (memq (geometry-node-id node) ids)
-                         (or (eq? (geometry-node-type node) 'Point)
+                         (or (memq (geometry-node-type node) '(Point Label))
                              (memq (geometry-node-id node) named-labels))))
     (define id (geometry-node-id node))
     (define p (anchor (hash-ref env id)))
     (define style (resolve-geometry-style theme (geometry-node-type node) 'normal (object-style-overrides program id)))
     (define size (hash-ref style 'font-size))
-    (define half-width (* 0.34 size (max 1 (string-length (display-label id)))))
+    (define half-width (* 0.34 size (max 1 (string-length (if (semantic-label? (hash-ref env id)) (semantic-label-text (hash-ref env id)) (display-label id))))))
     (define half-height (* 0.6 size))
     (define offset (+ (hash-ref style 'radius) (hash-ref style 'offset) half-height))
     (define (box q) (list (- (point-x q) half-width) (+ (point-x q) half-width)

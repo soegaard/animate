@@ -123,7 +123,7 @@
         (define val (hash-ref (v-of t) (geometry-node-id n)))
         (unless (or (equal? val (hash-ref (v-of t) 'A)) (equal? val (hash-ref (v-of t) 'B)))
           (check (not (member (annotation-text (p-of t) (geometry-node-id n)) '("A" "B"))) "private point reused public name")))
-      (check (for/or ([s (captions t)]) (regexp-match? #rx"Choose A₁" s)) "resolved selection caption missing")))
+      (check (member "Choose Q on the line, different from A." (captions t)) "resolved selection caption missing")))
   (cons "final incircle and orthocenter display all three right-angle markers"
     (lambda ()
       (for ([name '("incircle" "orthocenter")])

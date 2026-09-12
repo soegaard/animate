@@ -7,8 +7,9 @@
 (provide triangle-midline example-theme make-demo-timeline make-demo-scene)
 (define example-theme (make-library-theme 'light))
 
+;; Deliberately scalene and acute: the result should not rely on symmetry.
 (construction triangle-midline
-  (given [A (point -2.4 -1)] [B (point 2.2 -1)] [C (point -0.2 2)])
+  (given [A (point -2.4 -1)] [B (point 2.2 -1)] [C (point -1.05 1.5)])
   (layout (focus A B C M N) (label-side M 'left) (label-side N 'right))
   (layout (label-side A 'below-left) (label-side B 'below-right) (label-side C 'above))
   (style [MN [color-family gold]])

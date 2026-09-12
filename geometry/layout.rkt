@@ -4,7 +4,7 @@
 ;; This is deliberately a finite candidate search, not a complete solver.
 (require racket/list racket/match (only-in racket/math pi)
          "private/math.rkt" "private/data.rkt" "private/compiler.rkt"
-         "private/evaluate.rkt")
+         "private/evaluate.rkt" "transformations.rkt" "labels.rkt")
 (provide make-geometry-view realize-construction construction-ref
          construction-dependencies construction-visible-ids
          realization-anchor-points view-bounds point-in-view?)
@@ -38,7 +38,7 @@
   (define initial-ids
     (for/list ([n (in-list (geometry-program-nodes program))]
                #:when (and (geometry-node-given? n)
-                           (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker))))
+                           (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker Label))))
       (geometry-node-id n)))
   (define initial-visible
     (for/fold ([ids initial-ids]) ([a (in-list (geometry-program-initial program))])
@@ -61,6 +61,7 @@
         [(ray? value) (list (ray-a value))]
         [(circle? value) (list (circle-center value) (circle-through value))]
         [(marker? value) (marker-anchor-points value)]
+        [(semantic-label? value) (list (label-anchor value))]
         [else '()]))
 (define (anchor-points program environment)
   (define mentioned
@@ -165,7 +166,9 @@
   (for ([(id value) (in-hash given-values)])
     (define n (hash-ref node-table id (lambda () (geometry-error name "unknown given override ~a" id))))
     (unless (geometry-node-given? n) (geometry-error name "~a is not a given" id))
-    (unless (eq? (geometry-kind value) (geometry-node-type n)) (geometry-error name "wrong type for given ~a" id)))
+    (unless (eq? (cond [(semantic-label? value) 'Label] [(transformation? value) 'Transform]
+                       [(geometry-vector? value) 'Vector] [(string? value) 'Text]
+                       [else (geometry-kind value)]) (geometry-node-type n)) (geometry-error name "wrong type for given ~a" id)))
   (define pins
     (for/fold ([pins (hash)]) ([l (in-list (geometry-program-layout program))] #:when (eq? (car l) 'pin))
       (when (hash-has-key? pins (cadr l)) (geometry-error name "duplicate pin for ~a" (cadr l)))

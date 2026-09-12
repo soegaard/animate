@@ -1,4 +1,4 @@
-# Implemented geometry DSL — v0.8.1
+# Implemented geometry DSL — v0.9.2
 
 This is the reference for the code in this delivery. It is narrower than the
 original design proposal: features listed as deferred below are not silently
@@ -27,12 +27,15 @@ The timeline does not execute a geometric construction afresh on every frame.
 (require "geometry/render.rkt")  ; effectful image/video/subtitle output
 (require "geometry/review.rkt")  ; sparse step-review images, contact sheets and ZIPs
 (require (prefix-in c: "geometry/constructions.rkt")) ; standard library
+;; core.rkt/main.rkt already re-export transformations.rkt and labels.rkt.
+;; The latter two are also available as focused headless entry points.
 ```
 
 These examples assume the importing file is in the `animate` repository root.
 Adjust relative paths for another location. Installed collection paths are
 `animate/geometry/core`, `animate/geometry/main`, `animate/geometry/render`, and
-`animate/geometry/constructions`.
+`animate/geometry/constructions`. Focused new entry points are
+`animate/geometry/transformations` and `animate/geometry/labels`.
 
 The geometry primitives are not the same bindings as the native `animate` Visual
 constructors. Prefix an import when using both APIs.
@@ -84,9 +87,11 @@ The nested defining points are not independently drawn or labelled.
 ## 4. Geometry and expression vocabulary
 
 The public mathematical value types are `Point`, `Line`, `Segment`, `Ray`,
-`Circle`, `Marker`, `Number`, `Angle`, `Side`, and `Relation`. Points use
-Cartesian coordinates with positive y upward. `Angle`, `Side`, `Relation`, and
-`Number` are nondrawable values; binding them does not create a visual action.
+`Circle`, `Marker`, `Label`, `Number`, `Angle`, `Side`, `Relation`, `Vector`,
+`Transform`, and `Text`. Points use Cartesian coordinates with positive y upward.
+`Angle`, `Side`, `Relation`, `Number`, `Vector`, `Transform`, and `Text` are
+nondrawable values; binding them does not create a visual action. `Label` is an
+independently controlled annotation attached to geometry.
 A line, segment, ray, or circle needs distinct defining points.
 
 | Expression | Meaning |
@@ -113,9 +118,12 @@ A line, segment, ray, or circle needs distinct defining points.
 Arithmetic `+`, `-`, `*`, `/`, comparisons `=`, `<`, `>`, `<=`, `>=`, Boolean
 `and`, `or`, `not`, and predicates `distinct?`, `noncollinear?`, and `on` are
 accepted in the checked expression algebra. `Number` values are useful for
-calculations and helper parameters; numerical displays are not implemented.
+calculations and helper parameters. Length and angle Labels can display computed
+measurements; generic numeric-display widgets are not part of this DSL.
 Explicit presentation commands and visual layout/style targets must be drawable
-geometry, not `Number`, `Angle`, `Side`, or `Relation` bindings.
+geometry or Label values, not Number, Angle, Side, Relation, Vector, Transform,
+or Text bindings. See section 21 for transformation expressions and semantic
+label constructors.
 
 The DSL remains a closed expression language. It does **not**
 call `eval`, and arbitrary Racket applications or external variables inside a
@@ -616,6 +624,25 @@ Output functions are in `render.rkt`. Full output additionally accepts
 the existing native FFmpeg support. Merely requiring the examples does not
 launch their command-line runner or write output.
 
+During `read-delay`, `opening-pause`, and `step-pause`, geometry often has no
+active visual event. In v0.8.2-style rendering, those semantically identical
+frames are not rasterized repeatedly. The renderer first samples the immutable
+geometry timeline, collapses duplicate visual states (including the
+caption when captions are enabled), renders one representative PNG for each
+unique static state, and then materializes the ordinary numbered frame sequence
+from those representatives. Animated spans are still rendered frame-by-frame.
+This optimization applies automatically to `render-geometry-frames!`,
+`render-geometry-frames/report!`, and shard-local `render-geometry-frame-indices!`.
+It does not change the movie timing or the `frame-000000.png` naming convention.
+
+### Drawing order
+
+Lines and rays are rendered behind segments and circles; markers and points
+follow in front. Source order is retained within each of these four groups.
+A later helper line therefore no longer repaints an existing gold segment blue.
+The object's color remains its own theme/style color; this does not change its
+mathematics, visibility, reveal timing, or the helper's color outside that segment.
+
 ## 13. Explicit limits and extension points
 
 This version has no physical compass/straightedge animation, audio synthesis,
@@ -758,7 +785,7 @@ in the final diagram has greater placement weight than a transient helper curve;
 this avoids sacrificing the finished diagram to a passing construction circle.
 An automatic label on an angle marker stays on the interior angular bisector,
 with alternative radial distances, rather than moving into an unrelated sector.
-An explicit `label-side` or `label-at` remains an escape hatch. Geometry does
+An explicit `label-side`, `label-at`, or point-relative `label-offset` remains an escape hatch. Geometry does
 not move. A label keeps one position throughout its lifetime, including
 hide/show cycles and out-of-order sampling. No layout search occurs per frame.
 
@@ -780,6 +807,24 @@ side may be selected to avoid a stronger collision.
 `label-at` is a fixed label-centre location in world coordinates. It neither
 moves the mathematical object nor silently yields to automatic placement.
 The adapter's existing `#:labels` hash has higher precedence than `label-at`.
+
+`label-offset` pins an automatic **Point** label relative to its realized point.
+It also accepts an independent **Label**, relative to that Label's target point,
+segment midpoint, or angle vertex (see section 21):
+
+```racket
+(layout (label-offset P1 (point -0.54 -0.08)))
+```
+
+The two finite literal numbers are local-world offsets from the point to the
+label centre, not absolute coordinates or pixel distances. This keeps a label
+near its point while allowing the givens to change. It leaves the point and font
+size unchanged. The planner reserves the pinned text box and reports unresolved
+collisions without moving it. Precedence is `#:labels`, then `label-at`, then
+`label-offset`, then automatic placement/`label-side`. Helper-relative offsets
+follow the caller's result aliases; later caller hints override the helper's
+hint of the same kind. The five Pᵢ labels in `divide-segment-five.rkt` use this.
+
 Conflicting or offscreen fixed positions are retained and reported.
 
 `label-text` changes the displayed string, not the object's identity or its
@@ -890,6 +935,9 @@ emphasis operations. Inspect it under both `--light` and `--dark`.
 The default one-second reading delay and the existing process-based `--workers`
 rendering are retained. Each worker prepares its own identical fixed annotation
 plan for the same view and font environment, then samples frames independently.
+Within each worker, semantically identical static frames are collapsed so that
+long reading pauses and between-step holds do not repeatedly rerasterize the
+same image.
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
@@ -996,17 +1044,21 @@ RACKET="/Applications/Racket v9.3.0.2/bin/racket"
 "$RACKET" geometry/review-examples.rkt --all --both
 ```
 
-`--all` selects all 17 examples, including the gallery. `--library` selects only
+`--all` selects all 19 examples, including the gallery and the transformation/semantic-label demonstrations. `--library` selects only
 the 13 application examples. `--list` prints valid names without rendering.
 `--output DIR` changes the default `geometry-review` output root. Each
 example/theme gets its own folder and ZIP: for example
 `geometry-review/dark/square-on-segment.zip`.
 
-Every authored step receives `step-001-read.png`, `step-001-during.png`, and
-`step-001-settled.png` (with the number incremented for later rows). The bundle
-also contains paginated contact sheets, `steps.txt`, `manifest.json`, and an
-offline `index.html`. Images default to 1280×720, matching the movie runner;
-`--width 960 --height 540` produces more compact images.
+Every review-worthy authored step receives `step-001-read.png`,
+`step-001-during.png`, and `step-001-settled.png` (with the number incremented
+for later rows). Silent cleanup-only and silent no-op steps are omitted by
+default because they normally contribute only duplicate or blank audit rows;
+they remain part of the movie timeline. Use `--include-cleanup` to restore those
+rows when debugging presentation state. The bundle also contains paginated
+contact sheets, `steps.txt`, `manifest.json`, and an offline `index.html`. Images
+default to 1280×720, matching the movie runner; `--width 960 --height 540`
+produces more compact images.
 
 The **read** state precedes the step's actions. **During** is inside an actual
 animation event, excluding reading delays and pauses. **Settled** is the exact
@@ -1017,14 +1069,16 @@ caption. Notes identify instantaneous and action-free steps, and steps containin
 more transitions than a single during image can show.
 
 Expanded helper steps are included recursively. Parent expansion steps get an
-overview row, and their children get individual rows. Generated setup/cleanup is
-not counted as an authored step. `--top-level-only` omits separate child rows
-without changing the construction or its movie.
+overview row, and their children get individual rows. Generated setup/cleanup is never counted as an authored step. Silent authored
+cleanup/no-op rows are also omitted by default; `--include-cleanup` restores
+those authored rows. `--top-level-only` omits separate child rows without
+changing the construction or its movie.
 
 The direct example runner accepts `--review-stills DIR` and/or `--review-zip FILE`.
 `--review-zip` alone keeps images in the directory obtained by removing `.zip`.
-It also accepts `--review-top-level-only` and `--no-contact-sheet`. Review capture
-is sequential and sparse; `--workers` still applies only to full movie frames.
+It also accepts `--review-top-level-only`, `--review-include-cleanup`, and
+`--no-contact-sheet`. Review capture is sequential and sparse; `--workers` still
+applies only to full movie frames.
 `--frames`, `--mp4`, `--describe`, and worker-shard modes cannot be combined with
 review mode.
 
@@ -1109,3 +1163,373 @@ The right-angle square size, 20%-shorter equality/midpoint ticks, one-second
 default reading pause, two color themes, process renderer, and three-image
 review output are preserved. Revised examples have new step numbers and times;
 regenerate their review bundles rather than comparing filenames one-to-one.
+
+
+## 20. Example refinements in v0.8.3
+
+The circumcenter, incircle, orthocenter, SAS-copy and triangle-midline examples now
+use distinctly scalene acute input triangles. The standalone angle copy is to
+the left of its target ray, matching the original angle's side of BA. Division
+labels use nearby point-relative pins. The standard helper intersections use
+P/Q/R/S-style names rather than X/Y, with captions resolved to the same labels.
+
+The hexagon's primary circumcircle has a purple family separate from its aqua
+helpers. Finite edges are drawn over supporting lines/rays so the square's given
+segment remains gold. The gallery inherits shared helper/layout changes while
+retaining its deliberately regular figures. See `docs/EXAMPLE-REFINEMENTS.md`
+for all eleven requested example corrections, regression checks, validation
+boundaries, and commands to regenerate review bundles.
+
+
+## 21. Mathematical transformations and semantic labels
+
+### Mathematical images, not animation transforms
+
+These operations construct **new geometry**. The original object is unchanged.
+The new object can be intersected, used in assertions, labelled, passed to a
+construction helper, and shown using its ordinary reveal policy. A rotation
+operation does not animate an object travelling around its centre.
+
+Within a `construction` or `define-construction`:
+
+```racket
+[Ap (reflect A l)]
+[Bp (rotate B O (degrees 60))]
+[Cp (translate C (vector 4 0))]
+[Dp (dilate D O 2)]
+```
+
+Coordinates, vector components and label distances use local world units.
+Angles supplied to `rotate` and `rotation` use radians. `(degrees 60)` explicitly
+converts degrees to radians; `60deg` is not DSL syntax. Positive rotation is
+counterclockwise in the mathematical Cartesian plane.
+
+### Reusable transformations
+
+A `Transform` is an immutable, nondrawable similarity. A `Vector` is an immutable,
+nondrawable displacement, distinct from a Point.
+
+```racket
+[v (vector-between A B)]
+[T (translation v)]
+[R (rotation O (degrees 90))]
+[M (reflection l)]
+[D (dilation O 3/2)]
+
+[A2 (transform T A)]
+[AB2 (transform T AB)]
+[k2 (transform T k)]
+```
+
+| Expression | Type and meaning |
+|---|---|
+| `(vector dx dy)` | Vector with finite components. |
+| `(vector-between A B)` | Vector B − A. |
+| `(vector-x v)`, `(vector-y v)` | Number components. |
+| `(identity-transform)` | Identity Transform. |
+| `(translation v)` | Translation by Vector v. |
+| `(rotation O theta)` | Rotation about Point O, in radians. |
+| `(reflection l)` | Reflection in an infinite Line. |
+| `(dilation O k)` | Dilation about O by finite, nonzero k. |
+| `(compose-transform T S ...)` | Composition, **rightmost first**. No arguments gives identity. |
+| `(inverse-transform T)` | Inverse Transform. |
+| `(transformation-scale T)` | Positive length factor. |
+| `(transformation-orientation T)` | +1 for orientation-preserving, −1 for reversing. |
+| `(transform T object)` | The image, retaining the object's type. |
+
+The direct forms `translate`, `rotate`, `reflect`, and `dilate` put the object
+first; `transform` puts the reusable Transform first.
+
+For example:
+
+```racket
+[T (compose-transform
+     (translation (vector 4 0))
+     (rotation O (degrees 90)))]
+[A2 (transform T A)]   ; first rotate about O, then translate
+[undo (inverse-transform T)]
+```
+
+Negative dilation is allowed: it places an image point on the opposite ray from
+the centre and scales its distance by `abs(k)`. In two dimensions this still
+preserves orientation. Zero is rejected because it would collapse lines, rays,
+circles and angles to points. Overflow, underflow to a singular transformation,
+and degenerate defining geometry are errors, not silent type changes.
+
+`reflection` requires a Line. To reflect in the supporting line of a segment,
+write `(line (start-point AB) (end-point AB))` explicitly.
+
+### Supported image types
+
+Point, Segment, Line, Ray, Circle, Angle, Relation and Marker are supported.
+A ray's origin and defining direction are transformed together. A circle's
+centre and defining circumference point are transformed together; its radius
+is multiplied by the Transform's positive length factor. An Angle keeps its
+middle-point vertex. Reflection reverses its signed sweep but preserves its
+unsigned measure.
+
+Relation and Marker values are transformed semantically by mapping their
+underlying geometry. A transformed Marker is redrawn at the current theme's
+annotation sizes; its glyph strokes are not stretched. A false Relation is not
+made true by transforming it. Use `assert` to check a claim as before.
+
+Only similarities are supported: there is no shear or nonuniform scale and no
+ellipse-valued image of a circle. Transformation, Number, Text, Vector and Label
+values cannot themselves be transformed by `transform`.
+
+Source styling, labels, display names, and reveal hints do not silently transfer
+to an image. The new object has its own identity and ordinary type defaults.
+Use `style`, `reveal`, and labels on that new object. The eight standard
+straightedge/compass constructions still use their original construction
+algorithms; these operations do not replace them with coordinate shortcuts.
+
+### Procedural entry points
+
+The tables above describe the checked DSL. `core.rkt` and `main.rkt` re-export
+both new modules; they can also be required separately:
+
+```racket
+(require "geometry/transformations.rkt" "geometry/labels.rkt")
+```
+
+Outside the DSL, use `(geometry-vector dx dy)` and the accessors
+`geometry-vector-x` / `geometry-vector-y`. Racket's own `vector` remains its
+ordinary vector constructor. The other transformation and label procedures use
+the same names and argument order as the DSL forms. An ordinary angle value is
+constructed with `angle-spec`, not the DSL-only `angle` expression. Typed helper
+values are still invoked within a construction, not as ordinary procedures.
+
+### Typed helper composition
+
+Transforms and labels can be helper inputs or results. Text is also a type, so
+label text can be supplied by a caller rather than embedded in helper code.
+
+```racket
+(define-construction labelled-image
+  (given [source : Segment]
+         [mapping : Transform]
+         [name : Text])
+  (results Segment Label)
+  (step "Construct and label the image."
+    [image (transform mapping source)]
+    [caption (length-label image name)])
+  (layout (label-position caption 0.4))
+  (result image caption))
+
+;; Within a caller:
+(step "Construct the reflected segment."
+  (expand [(AB2 length-name)
+           (labelled-image AB (reflection l) "a′")]
+          #:auxiliaries 'hide))
+```
+
+The output aliases retain the helper's annotation hints. Transform, Vector and
+Text bindings do not produce visual actions or consume an action duration.
+A narrated step can still have a reading delay and ending pause.
+
+### Four kinds of semantic label
+
+A `Label` is a first-class, drawable annotation attached to geometric data.
+It is not a point or curve and cannot be used as an intersection operand.
+
+```racket
+[name-A (point-label A "A′")]
+[base-note (segment-label AB "5 cm")]
+[a (length-label BC "a")]
+[alpha (angle-label (angle B A C) "α")]
+```
+
+A label can be returned from a helper, shown or hidden, highlighted, or given
+its own theme/style. Its position is found by the shared annotation planner,
+not entered as a text coordinate. Text stays upright and horizontal beside a
+sloping segment or reflected figure.
+
+An `angle-label` draws a single indicating arc by default. This arc does **not**
+assert equality with other angles. For matching equality notation use an
+`equal-angle` marker as before, and suppress the label's additional arc:
+
+```racket
+[alpha (angle-label (angle B A C) "α" #:arc? #f)]
+```
+
+An angle label requires a nondegenerate minor angle strictly between 0 and 180
+degrees, with the geometry tolerance applied near the endpoints. Right angles
+are allowed and measured as 90°; use a perpendicular marker when a square is the
+appropriate notation.
+
+### Computed measurements
+
+Omit the text to display a measurement taken from the target:
+
+```racket
+[a-value (length-label BC #:precision 2 #:unit "cm")]
+[alpha-value (angle-label (angle B A C) #:precision 1)]
+```
+
+Lengths default to two decimal places; angles default to zero decimal places
+and a degree symbol. `#:precision` must be an exact integer from 0 to 12.
+Decimal formatting uses Racket's `real->decimal-string`, including its rounding;
+precision zero is normalized to omit any trailing decimal point.
+rule and fixed number of decimal places.
+
+A unit is a **display suffix**, not a conversion. Saying `#:unit "cm"` assumes
+that a world-unit length is to be interpreted as a centimetre. There is no unit
+algebra in this release. Text must be a nonempty single line without tabs.
+
+Authored text is authoritative: `(segment-label AB "5 cm")` and
+`(length-label AB "a")` do not assert a numerical length. With explicit text,
+formatting precision has no effect and `#:unit` is rejected; include any units
+in the text itself. The numeric form is the one to use when the displayed
+measurement must follow the geometry.
+
+Formatting is resolved when the geometry is realized. Changing a given and
+realizing the construction again recomputes dependent label values. It is not a
+per-frame numeric updater.
+
+To label an image, label its transformed target:
+
+```racket
+[AB2 (dilate AB O 2)]
+[length-AB2 (length-label AB2 #:precision 1)]
+```
+
+The lettering is not scaled or mirrored. The length is measured from AB2.
+
+### Independent labels versus automatic names
+
+Points still have automatic name labels. An independent `point-label` does not
+silently suppress that name or rename the point in structured captions:
+
+```racket
+(initially (hide-label A))
+(step "This point is A′."
+  [name-A (point-label A "A′")])
+```
+
+For a simple rename with no independent annotation lifetime, keep using:
+
+```racket
+(layout (label-text A "A′"))
+```
+
+That existing form also supplies the point's name in structured captions. Label
+identifiers in captions are identifiers, not live substitutions of computed
+measurement text; refer to geometry or use authored text for those explanations.
+
+`hide name-A` hides the Label. `hide-label name-A` hides only its text; for an
+angle Label the indicating arc remains until the whole Label is hidden.
+Showing/hiding the target does not cascade to independent Labels, just as it
+does not cascade to independent Markers. This permits a dimensional annotation
+to remain while a helper curve is removed. Authors control both explicitly.
+
+### Placement
+
+The native adapter measures text using Animate's existing text/Pict path. The
+pure core can use estimated metrics. Both use the same placement rules and
+co-visibility information. Labels reserve ink space against points, curves,
+markers, other labels and the caption band.
+
+Length and segment labels try several fractions along the target and both sides
+of its normal. The text is not rotated. Angle labels remain on the angular
+bisector, with alternative radial distances. Their optional arcs participate
+in the same planner. Point labels use candidates around their target point.
+
+Positions are chosen once and remain fixed through hide/show, highlighting,
+review sampling, and out-of-order frame access.
+
+```racket
+(layout
+  ;; In triangle ABC the conventional side label a, attached to BC, is outside
+  ;; the triangle: choose the half-plane opposite the third vertex A.
+  (label-outside-of a A)
+  (label-position a 0.4)
+  (marker-radius alpha 0.34)
+  (label-offset name-A (point -0.4 0.1)))
+```
+
+`label-position` applies to length/segment Labels only. Its fraction must be
+strictly between 0 and 1, measured from the segment's first endpoint. It fixes
+the longitudinal fraction while leaving the normal clearance automatic.
+
+`label-outside-of` also applies to length/segment Labels. It names a Point on
+the *inside* side of the supporting line; the label is constrained to the
+opposite half-plane. Thus for triangle `ABC` the conventional labels are:
+
+```racket
+(layout
+  (label-outside-of a A) ; a labels BC
+  (label-outside-of b B) ; b labels CA
+  (label-outside-of c C)) ; c labels AB
+```
+
+The reference point must not lie on the segment's supporting line.
+`label-outside-of` is a geometric layout constraint, not merely a screen-space
+preference, so it remains correct for sloping and transformed triangles. Do not
+combine it with an explicit non-`auto` `label-side` for the same Label.
+`label-side` retains its existing meaning as a preferred world direction when
+no outside constraint is supplied.
+
+`label-offset` now accepts Label as well as Point. For a Label it is relative
+to the target point, segment midpoint, or angle vertex. An exact relative pin
+wins over automatic `label-position` and side preferences. As before, an
+absolute `label-at` overrides a relative pin, and an adapter `#:labels` override
+has the highest priority.
+
+`marker-radius` accepts an angle Label, including one with its arc suppressed,
+and controls the radial starting point for its placement. Other marker-specific
+hints continue to require the corresponding Marker type.
+
+`label-text` can override a Label's displayed text as a presentation escape
+hatch. Such an override intentionally replaces even a computed measurement;
+it is not a numerical assertion.
+
+The planner is heuristic. Impossible pins and very crowded/narrow-angle diagrams
+can still produce explicit overlap/outside-safe-area warnings. It does not move
+the underlying mathematical geometry or invent a claim to make labels fit.
+
+### Themes and drawing order
+
+```racket
+(geometry-theme
+  (label [font-size 0.28])
+  (semantic-label [offset 0.14])
+  (length-label (label [font-style italic]))
+  (angle-label [radius 0.28] (stroke [width 2])))
+```
+
+Available selectors are `semantic-label`, `point-label`, `segment-label`,
+`length-label`, and `angle-label`. Generic text defaults form the base, followed
+by semantic-label, then the specific kind, then state rules and explicit object
+styles. Font sizes, offsets and arc radii remain world lengths; stroke widths
+remain Animate's cosmetic widths. No new font or color palette is bundled.
+
+First-class Labels are drawn after geometric objects so later support lines
+cannot paint over their text. The existing line/ray-behind-segment order,
+right-angle sizes and shortened equality ticks are unchanged.
+
+### Examples, review and tests
+
+New standalone examples: `transformations.rkt` and `semantic-labels.rkt`. The
+gallery also contains all four transformation kinds and symbolic/numeric labels.
+All support light/dark themes, review triplets, ordinary videos and process
+workers. The review registry now has **19 examples**; `--library` still means
+the thirteen compass-and-straightedge applications.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt --transform-labels
+"$RACKET" geometry/run-tests.rkt
+"$RACKET" geometry/review-examples.rkt --example transformations --both --output geometry-review-v091
+"$RACKET" geometry/review-examples.rkt --example semantic-labels --both --output geometry-review-v091
+"$RACKET" geometry/review-examples.rkt --example gallery --both --output geometry-review-v091
+```
+
+For a video:
+
+```sh
+"$RACKET" geometry/examples/transformations.rkt --dark --workers 10 \
+  --mp4 geometry-output/videos/dark/transformations.mp4 geometry-output/dark/transformations
+```
+
+See `TRANSFORMATIONS-AND-LABELS-PLAN.md` for the implementation plan and
+`TRANSFORM-LABEL-VALIDATION.md` for what was actually executed.

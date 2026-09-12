@@ -7,8 +7,9 @@
 (provide circumcenter example-theme make-demo-timeline make-demo-scene)
 (define example-theme (make-library-theme 'light))
 
+;; Deliberately scalene and acute: the result should not rely on symmetry.
 (construction circumcenter
-  (given [A (point -2 -1)] [B (point 2.4 -1)] [C (point 0.3 2)])
+  (given [A (point -2 -1)] [B (point 2.4 -1)] [C (point -0.65 1.35)])
   (require (noncollinear? A B C))
   (layout (focus A B C O) (fit-circle k)
           (label-side A 'below-left) (label-side B 'below-right)

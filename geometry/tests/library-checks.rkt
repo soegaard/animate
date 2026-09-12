@@ -421,7 +421,7 @@
      (define u (unit (direction (v 'target)))) (define w (unit (direction (v 'r))))
      (define a (unit (point- (v 'A) (v 'B)))) (define b (unit (point- (v 'C) (v 'B))))
      (near (dot u w) (dot a b))
-     (ensure (negative? (cross u w)) "right-side copied angle")]
+     (ensure (positive? (cross u w)) "left-side copied angle")]
     [else (error 'check-application "missing independent oracle for ~a" name)])
   (check-sampling t)
   (define a (prepare-geometry-annotations t))

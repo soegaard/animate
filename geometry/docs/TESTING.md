@@ -1,3 +1,24 @@
+# Testing — v0.9.1
+
+The v0.9.1 review refinements were exercised with the same genuine minimal Racket CS runtime used for v0.9.0. The five base-only suites pass: **69 transformation/label groups / 1,017 checks**, **68 standard-library groups / 2,552 checks**, **53 audit groups / 3,183 checks**, **26 refinement groups / 387 checks**, and **65 review groups / 227,055 checks**. The actual reader accepts all 79 source modules. Native font/PNG integration tests are included but cannot run in this minimal runtime.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt --transform-labels
+"$RACKET" geometry/run-tests.rkt
+```
+
+The `--transform-labels`, `--library`, `--audit`, `--refinements`, and `--review`
+options run their real base-only check modules. `--core` runs RackUnit tests but
+excludes native rendering modules. With no option, the runner includes all
+registered core and native integration tests. Flags are mutually exclusive.
+
+Current v0.9.1 base-only results are summarized in `CHANGES-0.9.1.md`. The v0.9.0 `v090-*-results.txt` files and earlier visual audit records below are retained as release history, not current native-render claims.
+
+---
+
+## Historical validation records
+
 # Validation — v0.8.1 example audit
 
 ## Executed here
@@ -79,3 +100,19 @@ Regenerate a focused review, then the full set after the tests pass:
 Check the native follow-up items in `EXAMPLE-AUDIT.md`, especially transient
 helper-label/curve intersections. Estimated annotation costs are a finite
 heuristic, not a guarantee of collision-free raster output.
+
+
+## v0.8.3 example-refinement regression checks
+
+`racket geometry/run-tests.rkt --refinements` executes
+`tests/example-refinement-checks.rkt` with only Racket base. All 26 groups and 387
+checks passed on Racket CS 9.3.0.8. They enforce clearly scalene/acute example
+inputs, left-side angle copying, close division labels, helper-label/caption
+agreement, supporting-line draw order, a distinct hexagon circle family and
+relative label-pin typing/precedence/alias propagation.
+
+The full RackUnit run includes the wrapper `example-refinement-test.rkt` and six
+native cases in `example-refinement-render-test.rkt`. The native cases are not
+claimed as executed in the build environment. Existing library/audit/review
+base-only suites were rerun successfully; their current results are recorded
+alongside `example-refinement-check-results.txt` and `reader-check-results.txt`.

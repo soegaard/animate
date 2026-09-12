@@ -141,6 +141,7 @@
                                        #:width [width 1280] #:height [height 720]
                                        #:supersample [supersample 1] #:fps [fps 30]
                                        #:captions? [captions? #t] #:expanded? [expanded? #t]
+                                       #:include-cleanup? [include-cleanup? #f]
                                        #:zip [zip-path #f]
                                        #:render-sample! render-sample!
                                        #:contact-sheets! [contact-sheets! #f])
@@ -148,7 +149,7 @@
                (safe-leaf? name) (string? theme) (path-string? directory)
                (exact-positive-integer? width) (exact-positive-integer? height)
                (exact-positive-integer? supersample) (exact-positive-integer? fps)
-               (boolean? captions?) (boolean? expanded?)
+               (boolean? captions?) (boolean? expanded?) (boolean? include-cleanup?)
                (procedure-arity-includes? render-sample! 2)
                (or (not contact-sheets!) (procedure-arity-includes? contact-sheets! 2))
                (or (not zip-path) (path-string? zip-path)))
@@ -191,12 +192,12 @@
      (write-index! plan staging name theme sheet-names)
      (define files (sort (append names sheet-names '("steps.txt" "index.html" "manifest.json")) string<?))
      (define manifest
-       (hash 'format review-manifest-format 'version 1 'geometry_version "0.8.1"
+       (hash 'format review-manifest-format 'version 1 'geometry_version "0.9.1"
              'name name 'theme theme 'width width 'height height
              'raster_width (* width supersample) 'raster_height (* height supersample)
              'reference_fps fps 'sampling "exact action times and explicit step-boundary states; not rounded to movie frames"
              'duration_seconds (seconds (geometry-timeline-duration timeline))
-             'captions captions? 'expanded_steps expanded?
+             'captions captions? 'expanded_steps expanded? 'include_cleanup_steps include-cleanup?
              'step_count (length plan) 'image_count (length samples)
              'contact_sheets sheet-names 'files files 'steps (map step->json plan)))
      (call-with-output-file (build-path staging "manifest.json")

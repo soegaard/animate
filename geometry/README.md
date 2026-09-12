@@ -1,7 +1,111 @@
-# Geometry authoring for `animate` — v0.8.1
+# Geometry authoring for `animate` — v0.9.2
+
+
+## New in v0.9.2 — zero-precision semantic labels
+
+Measured semantic labels now normalize Racket's zero-precision decimal spelling,
+so `#:precision 0` produces `90°` rather than `90.°` and `5` rather than `5.`.
+Rounding at all precisions is otherwise unchanged. Regression checks cover both
+angle and length labels.
+
+
+## New in v0.9.1 — review refinements
+
+The dark-theme review of the transformation and semantic-label examples led to
+four refinements:
+
+- the standalone transformation plates use a tighter camera and stronger
+  correspondence geometry for reflection, translation, and dilation;
+- measured labels in the semantic-label example sit closer to their geometry;
+- triangle side labels can use `(label-outside-of label opposite-vertex)` so
+  `a`, `b`, and `c` stay on the conventional outside of the triangle;
+- review bundles omit silent cleanup/no-op authored rows by default. Use
+  `--include-cleanup` (or direct-runner `--review-include-cleanup`) to restore
+  them for debugging.
+
+The movie timeline is unchanged by review-row filtering.
+
+Executed in the minimal Racket CS runtime: **69 transformation/label groups /
+1,017 checks**, **65 review groups / 227,055 checks**, **68 library groups /
+2,552 checks**, **53 audit groups / 3,183 checks**, and **26 refinement groups /
+387 checks** passed. Native PNG/font integration remains a local-checkout test.
+
+## New: mathematical transformations and semantic labels
+
+Reflect, rotate, translate and dilate Points, Segments, Lines, Rays, Circles,
+Angles, Relations and Markers. Named `Transform` values support composition,
+inversion, and typed helper arguments/results. These construct image geometry;
+they do not animate a moving or morphing object.
+
+```racket
+;; Inside a construction:
+[T (reflection mirror)]
+[AB2 (transform T AB)]
+[a2 (length-label AB2 "a′")]
+[alpha (angle-label (angle A B C) #:precision 1)]
+```
+
+The new first-class `Label` type covers point names, segment notes, symbolic or
+measured lengths, and symbolic or measured angles with optional arcs. Text is
+placed by the shared annotation planner and remains upright. Named labels have
+independent visibility; hide an existing automatic point name when replacing it
+with an independent point-label.
+
+Two new example videos, `transformations.rkt` and `semantic-labels.rkt`, plus new
+gallery plates demonstrate the additions. The review registry contains **19
+examples**; `--library` still selects the thirteen construction applications.
+The v0.8.3 example corrections and the existing render/review paths are retained.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt --transform-labels
+"$RACKET" geometry/run-tests.rkt
+"$RACKET" geometry/review-examples.rkt --example transformations --both --output geometry-review-v091
+"$RACKET" geometry/review-examples.rkt --example semantic-labels --both --output geometry-review-v091
+```
+
+Read the [implementation plan](docs/TRANSFORMATIONS-AND-LABELS-PLAN.md),
+[reference guide](docs/TRANSFORMATIONS-AND-LABELS.md), and
+[validation record](docs/TRANSFORM-LABEL-VALIDATION.md). The mathematical and
+headless integration checks were executed on Racket CS 9.3.0.8. Native PNG/font
+integration tests are supplied, but were **not executed** in the minimal build
+runtime. The validation record distinguishes these explicitly.
+
+---
 
 A first implementation of the mathematical-authoring DSL: geometry, exposition,
 presentation state, layout, and styling remain separate.
+
+## New in v0.8.2.1 — static-frame reuse syntax fix
+
+Full-frame geometry rendering now reuses semantically identical pause frames instead of rerasterizing them. This maintenance release fixes two delimiter errors in the first v0.8.2 package (`geometry/render.rkt` and its new native integration test). The full `geometry/` tree has been parsed successfully with the Racket 9.3.0.8 reader before packaging.
+
+
+## New in v0.8.3 — refinements from the user's video notes
+
+Distinctly scalene general-triangle examples, a same-side angle copy, closer
+P₁...P₅ labels, P/Q/R/S-style helper names, a purple primary hexagon circle, and
+gold edges protected from supporting-line overpainting. The new `label-offset`
+hint fixes a label relative to a named point. Helper annotation hints now follow
+caller-visible result aliases.
+
+[All eleven example corrections](docs/EXAMPLE-REFINEMENTS.md) include the
+validation results and rerender instructions. Static-frame reuse and all
+v0.8.2.2 syntax/import fixes are retained unchanged. Process rendering, review
+bundles, reading delay and accepted marker sizes are also retained.
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+"$RACKET" geometry/run-tests.rkt --refinements
+"$RACKET" geometry/run-tests.rkt
+"$RACKET" geometry/review-examples.rkt --all --both --output geometry-review-v083
+```
+
+Executed in the minimal Racket CS 9.3.0.8 runtime: 26 refinement groups / 387
+checks, 68 library groups / 2,484 checks, 49 audit groups / 3,051 checks and 60
+review groups / 215,848 checks. All 72 Racket modules pass the actual reader.
+The native RackUnit/PNG/font integration tests are included but have not been
+executed here; no regenerated native frames are bundled.
 
 ## New in v0.8.1 — audit of the supplied review bundles
 
@@ -93,7 +197,7 @@ RACKET="/Applications/Racket v9.3.0.2/bin/racket"
 # Start with a single example.
 "$RACKET" geometry/review-examples.rkt --example square-on-segment --dark
 
-# All 17 examples (including the gallery), in both themes.
+# All 19 examples (including the gallery), in both themes.
 "$RACKET" geometry/review-examples.rkt --all --both
 
 # Only the 13 library applications, or a list of names.

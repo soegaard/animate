@@ -123,6 +123,16 @@
        (near (geometry-step-span-start (geometry-review-step-span row))
              (geometry-step-span-action-start (geometry-review-step-span row)))
        (ensure (= (length (geometry-review-step-samples row)) 3) "silent samples")))
+   (cons "silent cleanup and no-op rows are omitted by default but can be requested"
+     (lambda ()
+       (define t (timeline '(step "Join." [AB (segment A B)])
+                           '(step #:pause 0 (hide AB))
+                           '(step #:read-delay 0 #:pause 0 (show A))))
+       (define default-plan (make-geometry-review-plan t))
+       (define complete-plan (make-geometry-review-plan t #:include-cleanup? #t))
+       (ensure (= (length default-plan) 1) "cleanup/no-op rows were not omitted")
+       (ensure (= (length complete-plan) 3) "include-cleanup did not restore all authored rows")
+       (ensure (equal? (geometry-review-step-caption (car default-plan)) "Join.") "wrong surviving row")))
    (cons "narration-only and no-op steps preserve repeated images"
      (lambda ()
        (define t (timeline '(step "Observe A." (show A))))
@@ -198,9 +208,9 @@
          (sample-geometry-timeline t (geometry-review-sample-time s)))
        (ensure (equal? plan (make-geometry-review-plan t)) "determinism")
        (ensure (equal? before (format "~s" t)) "timeline mutation")))
-   (cons "selection registry includes all 17 movies and excludes helper modules"
+   (cons "selection registry includes all 19 movies and excludes helper modules"
      (lambda ()
-       (ensure (= (length (select-review-examples 'all)) 17) "all count")
+       (ensure (= (length (select-review-examples 'all)) 19) "all count")
        (ensure (= (length (select-review-examples 'library)) 13) "library count")
        (ensure (equal? (select-review-examples "incircle") '("incircle")) "single selection")
        (ensure (member "gallery" (select-review-examples 'all)) "gallery")
@@ -324,8 +334,12 @@
   (define factory (dynamic-require (build-path examples (string-append name ".rkt")) 'make-demo-timeline))
   (define t (factory #:theme-mode mode))
   (define plan (make-geometry-review-plan t))
-  (define expected (filter (lambda (s) (not (geometry-step-span-generated? s))) (geometry-timeline-steps t)))
-  (ensure (= (length plan) (length expected)) "not every authored/expanded step was included" name)
+  (define spans (geometry-timeline-steps t))
+  (define expected
+    (filter (lambda (s) (and (not (geometry-step-span-generated? s))
+                             (geometry-review-span-reviewable? s spans)))
+            spans))
+  (ensure (= (length plan) (length expected)) "review-worthy authored/expanded step count differs" name)
   (ensure (= (length (geometry-review-samples plan)) (* 3 (length expected))) "wrong image count")
   (define ids (sort (hash-keys (geometry-timeline-initial t)) symbol<?))
   (for ([row (in-list plan)])

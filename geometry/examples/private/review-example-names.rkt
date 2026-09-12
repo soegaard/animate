@@ -6,7 +6,7 @@
 ;; example movies by a filesystem glob. All names export make-demo-timeline.
 (define review-example-names
   (append '("equilateral-triangle" "perpendicular-bisector" "perpendicular-through-point")
-          library-example-names '("gallery")))
+          library-example-names '("transformations" "semantic-labels" "gallery")))
 (define (select-review-examples selection)
   (cond [(eq? selection 'all) review-example-names]
         [(eq? selection 'library) library-example-names]

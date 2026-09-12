@@ -7,8 +7,9 @@
 (provide incircle example-theme make-demo-timeline make-demo-scene)
 (define example-theme (make-library-theme 'light))
 
+;; Deliberately scalene and acute: the result should not rely on symmetry.
 (construction incircle
-  (given [A (point -2.5 -1.2)] [B (point 2.3 -1.2)] [C (point -0.4 2)])
+  (given [A (point -2.5 -1.2)] [B (point 2.3 -1.2)] [C (point -1.05 1.35)])
   (require (noncollinear? A B C))
   (layout (focus A B C I T) (fit-circle k)
           (label-side A 'below-left) (label-side B 'below-right) (label-side C 'above)

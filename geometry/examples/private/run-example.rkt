@@ -58,6 +58,7 @@
   (define review-zip #f)
   (define contact-sheet? #t)
   (define expanded-review? #t)
+  (define include-cleanup-review? #f)
   (define review-modifier? #f)
   (define positional-directory #f)
   (define describe? #f)
@@ -83,6 +84,7 @@
    [("--review-zip") path "Write a review ZIP; also keep its image directory." (set! review-zip path)]
    [("--no-contact-sheet") "Omit paginated review contact sheets." (set! contact-sheet? #f) (set! review-modifier? #t)]
    [("--review-top-level-only") "Only outer authored steps in the review." (set! expanded-review? #f) (set! review-modifier? #t)]
+   [("--review-include-cleanup") "Include silent cleanup/no-op rows in the review." (set! include-cleanup-review? #t) (set! review-modifier? #t)]
    [("--describe") "Print realization diagnostics without rendering." (set! describe? #t)]
    [("--no-captions") "Omit captions from the images; still write narration.srt." (set! captions? #f)]
    [("--mp4") path "Render frames and encode an MP4 using FFmpeg." (set! mp4 path) (set! frames? #t)]
@@ -223,7 +225,9 @@
                                     #:width width #:height height #:fps fps #:supersample supersample
                                     #:captions? captions? #:color-theme native-color-theme
                                     #:theme-name (symbol->string theme-mode)
-                                    #:expanded? expanded-review? #:contact-sheet? contact-sheet?
+                                    #:expanded? expanded-review?
+                                    #:include-cleanup? include-cleanup-review?
+                                    #:contact-sheet? contact-sheet?
                                     #:zip review-zip))
          (printf "Wrote ~a review images for ~a steps to ~a\n"
                  (geometry-review-result-image-count report) (geometry-review-result-step-count report)

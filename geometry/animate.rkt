@@ -151,17 +151,16 @@
   (define label-texts (annotation-plan-texts annotation-layout))
   (define placements (annotation-plan-marker-placements annotation-layout))
   (define nodes
-    (filter (lambda (n) (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker)))
+    (filter (lambda (n) (memq (geometry-node-type n) '(Point Line Segment Ray Circle Marker Label)))
             (geometry-program-nodes program)))
-  (define ordered-nodes
-    (append (filter (lambda (n) (memq (geometry-node-type n) '(Line Segment Ray Circle))) nodes)
-            (filter (lambda (n) (eq? (geometry-node-type n) 'Marker)) nodes)
-            (filter (lambda (n) (eq? (geometry-node-type n) 'Point)) nodes)))
+  (define ordered-nodes (ordered-drawable-nodes nodes))
   (define marker-counts (annotation-plan-marker-counts annotation-layout))
   (define style-table
     (for/hash ([node (in-list nodes)])
       (define id (geometry-node-id node))
-      (define kind (if (eq? (geometry-node-type node) 'Marker) (marker-style-type (hash-ref environment id)) (geometry-node-type node)))
+      (define kind (cond [(semantic-label? (hash-ref environment id)) (label-style-type (hash-ref environment id))]
+                         [(eq? (geometry-node-type node) 'Marker) (marker-style-type (hash-ref environment id))]
+                         [else (geometry-node-type node)]))
       (define overrides (object-style-overrides program id))
       (define styles
         (list (resolve-geometry-style theme kind 'normal overrides)
@@ -207,7 +206,9 @@
                (a:visual-with-stroke-width (a:visual-with-stroke-color outline stroke-color)
                                            (number 'stroke-width))
                (unit (* alpha reveal (number 'stroke-opacity)))))]
-            [(marker? value)
+            [(and (semantic-label? value) (not (label-angle-marker value))) '()]
+            [(or (marker? value) (label-angle-marker value))
+             (define drawn-marker (if (marker? value) value (label-angle-marker value)))
              (define count (hash-ref marker-counts id 1))
              (define placement (hash-ref placements id (marker-placement 0.5 1 (number 'radius))))
              (define marker-style
@@ -220,7 +221,7 @@
                 (a:visual-with-stroke-width
                  (a:visual-with-stroke-color
                   (a:make-path-visual
-                   (strokes-path (marker-strokes value marker-style placement count view reveal) view pattern pixels)
+                   (strokes-path (marker-strokes drawn-marker marker-style placement count view reveal) view pattern pixels)
                    #:id (key id (if (zero? i) 'marker (format "marker-~a" i))) #:fill #f)
                   stroke-color) (number 'stroke-width))
                 (unit (* alpha weight (number 'stroke-opacity)))))]

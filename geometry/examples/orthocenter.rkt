@@ -7,10 +7,11 @@
 (provide orthocenter example-theme make-demo-timeline make-demo-scene)
 (define example-theme (make-library-theme 'light))
 
+;; Deliberately scalene and acute: the result should not rely on symmetry.
 (construction orthocenter
-  (given [A (point -2.5 -1.2)] [B (point 2.3 -1.2)] [C (point -0.4 2)])
+  (given [A (point -2.5 -1.2)] [B (point 2.3 -1.2)] [C (point -0.9 1.6)])
   (require (noncollinear? A B C))
-  (layout (focus A B C H) (label-side H 'above-right)
+  (layout (focus A B C H) (label-offset H (point 0.38 -0.6))
           (label-side A 'below-left) (label-side B 'below-right) (label-side C 'above)
           (label-text Ta "T₁") (label-text Tb "T₂") (label-text Tc "T₃")
           (label-side Ta 'right) (label-side Tb 'left) (label-side Tc 'below))

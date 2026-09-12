@@ -12,7 +12,7 @@
          (struct-out perpendicular-marker) (struct-out parallel-marker)
          (struct-out equal-length-marker) (struct-out angle-marker)
          (struct-out equal-angle-marker) (struct-out midpoint-marker)
-         (struct-out exn:fail:geometry) geometry-error finite-real?
+         (struct-out exn:fail:geometry) geometry-error finite-real? prop:geometry-type
          point+ point- point* dot cross norm distance midpoint circle-radius
          distinct? noncollinear? on same-point? geometry-kind curve? marker? relation?
          marker-anchor-points marker-style-kind relation-holds? relation->marker
@@ -87,8 +87,10 @@
   (define v (point- c a))
   (and (distinct? a b) (distinct? a c)
        (not (near-zero? (cross u v) (* (norm u) (norm v))))))
+(define-values (prop:geometry-type geometry-typed? geometry-type-ref)
+  (make-struct-type-property 'geometry-type))
 (define (geometry-kind v)
-  (cond [(point? v) 'Point] [(line? v) 'Line] [(segment? v) 'Segment]
+  (cond [(geometry-typed? v) (geometry-type-ref v)] [(string? v) 'Text] [(point? v) 'Point] [(line? v) 'Line] [(segment? v) 'Segment]
         [(ray? v) 'Ray] [(circle? v) 'Circle] [(marker? v) 'Marker]
         [(relation? v) 'Relation] [(angle-spec? v) 'Angle]
         [(memq v '(left right)) 'Side] [(finite-real? v) 'Number]

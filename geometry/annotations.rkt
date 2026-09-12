@@ -6,20 +6,20 @@
 ;; plate. It never runs while sampling a frame.
 (require racket/list (only-in racket/math pi)
          "private/math.rkt" "private/data.rkt" "private/drawing.rkt"
-         "private/reveal.rkt" "private/marker-shapes.rkt" "theme.rkt" "layout.rkt")
+         "private/reveal.rkt" "private/marker-shapes.rkt" "theme.rkt" "layout.rkt" "labels.rkt")
 (provide (struct-out annotation-plan) prepare-geometry-annotations
          geometry-visibility-masks annotation-hints annotation-text
          allocate-marker-counts)
 (struct annotation-plan (labels marker-placements marker-counts texts label-boxes warnings metrics) #:transparent)
 (struct candidate (value boxes edges preference) #:transparent)
-(define hint-keys '(label-side label-at label-text marker-quadrant marker-position marker-radius))
+(define hint-keys '(label-side label-at label-offset label-position label-outside-of label-text marker-quadrant marker-position marker-radius))
 (define (annotation-hints program id)
   (for/fold ([h (hash)]) ([rule (in-list (geometry-program-layout program))]
                         #:when (and (memq (car rule) hint-keys) (eq? (cadr rule) id)))
     (define v (caddr rule))
     (hash-set h (car rule)
               (case (car rule) [(label-side) (cadr v)]
-                [(label-at) (apply point (cdr v))] [else v]))))
+                [(label-at label-offset) (apply point (cdr v))] [else v]))))
 (define (annotation-text program id)
   (hash-ref (annotation-hints program id) 'label-text (lambda () (display-label id))))
 (define (geometry-visibility-masks timeline)
@@ -37,6 +37,13 @@
         (when (presentation-label? p)
           (set! label-masks (hash-set label-masks id (bitwise-ior bit (hash-ref label-masks id 0))))))))
   (values object-masks label-masks))
+(define (annotation-marker v)
+  (if (marker? v) v (label-angle-marker v)))
+(define (angle-annotation? v)
+  (or (and (marker? v) (eq? (marker-family v) 'angle))
+      (and (semantic-label? v) (eq? (semantic-label-kind v) 'angle))))
+(define (annotation-angle v)
+  (if (semantic-label? v) (semantic-label-target v) (car (marker-members v))))
 (define (overlap-time? a b) (not (zero? (bitwise-and a b))))
 (define (same-direction? u v)
   (define scale (* (norm u) (norm v)))
@@ -167,22 +174,42 @@
   (define view (geometry-realization-view realization))
   (define-values (masks label-masks) (geometry-visibility-masks timeline))
   (define nodes (filter (lambda (n) (and (hash-has-key? masks (geometry-node-id n))
-                                        (memq (geometry-node-type n) '(Point Segment Ray Line Circle Marker))))
+                                        (memq (geometry-node-type n) '(Point Segment Ray Line Circle Marker Label))))
                         (geometry-program-nodes program)))
   (define ids (map geometry-node-id nodes))
-  (define marker-ids (filter (lambda (id) (marker? (hash-ref env id))) ids))
+  (define marker-ids (filter (lambda (id) (annotation-marker (hash-ref env id))) ids))
   (define label-ids (filter (lambda (id) (hash-has-key? label-masks id)) ids))
   (for ([(id pos) (in-hash overrides)])
     (unless (and (hash-has-key? env id) (point? pos)
-                 (let ([v (hash-ref env id)]) (or (point? v) (curve? v) (marker? v))))
+                 (let ([v (hash-ref env id)]) (or (point? v) (curve? v) (marker? v) (semantic-label? v))))
       (geometry-error 'prepare-geometry-annotations "label override needs a drawable name and point: ~e" id)))
   (define hints (for/hash ([id (in-list ids)]) (values id (annotation-hints program id))))
-  (define texts (for/hash ([id (in-list label-ids)]) (values id (annotation-text program id))))
+  (define texts
+    (for/hash ([id (in-list label-ids)])
+      (define v (hash-ref env id))
+      (values id (if (semantic-label? v)
+                      (hash-ref (hash-ref hints id) 'label-text (semantic-label-text v))
+                      (annotation-text program id)))))
+  (for ([id (in-list ids)])
+    (define v (hash-ref env id)) (define h (hash-ref hints id))
+    (when (and (hash-has-key? h 'label-position)
+               (not (and (semantic-label? v) (memq (semantic-label-kind v) '(length segment)))))
+      (geometry-error 'label-layout "label-position requires a length-label or segment-label: ~a" id))
+    (when (hash-has-key? h 'label-outside-of)
+      (unless (and (semantic-label? v) (memq (semantic-label-kind v) '(length segment)))
+        (geometry-error 'label-layout "label-outside-of requires a length-label or segment-label: ~a" id))
+      (when (and (hash-has-key? h 'label-side)
+                 (not (eq? (hash-ref h 'label-side 'auto) 'auto)))
+        (geometry-error 'label-layout "label-outside-of and an explicit label-side cannot both control ~a" id)))
+    (when (and (semantic-label? v) (hash-has-key? h 'marker-radius)
+               (not (eq? (semantic-label-kind v) 'angle)))
+      (geometry-error 'label-layout "marker-radius requires an angle-label: ~a" id)))
   (define styles
     (for/hash ([n (in-list nodes)])
       (define id (geometry-node-id n))
       (define v (hash-ref env id))
-      (define kind (if (marker? v) (marker-style-type v) (geometry-node-type n)))
+      (define kind (cond [(semantic-label? v) (label-style-type v)]
+                         [(marker? v) (marker-style-type v)] [else (geometry-node-type n)]))
       (define local (object-style-overrides program id))
       (values id (list (resolve-geometry-style theme kind 'normal local)
                       (resolve-geometry-style theme kind 'deemphasized local)
@@ -208,7 +235,7 @@
   (define selection (hash))
   (define marker-candidates
     (for/hash ([id (in-list marker-ids)])
-      (define value (hash-ref env id)) (define h (hash-ref hints id))
+      (define value (annotation-marker (hash-ref env id))) (define h (hash-ref hints id))
       (when (and (hash-has-key? h 'marker-quadrant) (not (perpendicular-marker? value)))
         (geometry-error 'marker-layout "marker-quadrant requires a right-angle marker: ~a" id))
       (when (and (hash-has-key? h 'marker-position) (not (memq (marker-family value) '(length parallel))))
@@ -225,9 +252,16 @@
           (candidate p (map (lambda (edge) (edge-box edge gap)) edges) edges (* 0.02 rank))))
       (set! placements (hash-set placements id (candidate-value (car candidates))))
       (values id candidates)))
-  (define (label-anchor id)
+  (define (object-label-anchor id)
     (define value (hash-ref env id))
     (cond [(point? value) value]
+          [(semantic-label? value)
+           (if (eq? (semantic-label-kind value) 'angle)
+               (marker-label-anchor (angle-marker (semantic-label-target value)) (style id)
+                                    (hash-ref placements id
+                                      (marker-placement 0.5 1 (hash-ref (hash-ref hints id) 'marker-radius (hash-ref (style id) 'radius))))
+                                    1 view)
+               (label-anchor value))]
           [(marker? value) (marker-label-anchor value (style id) (hash-ref placements id)
                                                 (hash-ref counts id 1) view)]
           [(circle? value) (circle-through value)]
@@ -240,18 +274,23 @@
                (midpoint (car ends) (cadr ends)))]))
   (define (label-candidates id)
     (define s (style id)) (define h (hash-ref hints id))
-    (define anchor (label-anchor id))
+    (define anchor (object-label-anchor id))
     (define size (hash-ref dimensions id)) (define hw (car size)) (define hh (cdr size))
-    (define pin (hash-ref overrides id (hash-ref h 'label-at #f)))
+    ;; Absolute placement wins over a point-relative pin; the adapter's label
+    ;; override remains the highest-priority escape hatch.
+    (define relative-pin
+      (and (hash-has-key? h 'label-offset)
+           (point+ (if (semantic-label? (hash-ref env id)) (label-anchor (hash-ref env id)) anchor)
+                   (hash-ref h 'label-offset))))
+    (define pin (hash-ref overrides id (hash-ref h 'label-at relative-pin)))
     (cond [pin (list (candidate pin (list (box pin hw hh)) '() 0))]
-          [(and (marker? (hash-ref env id))
-                (eq? (marker-family (hash-ref env id)) 'angle)
+          [(and (angle-annotation? (hash-ref env id))
                 (eq? (hash-ref h 'label-side 'auto) 'auto))
            ;; The label of an angle must stay in that angular sector. Generic
            ;; compass directions can put alpha on the other side of the vertex.
            ;; Move radially along the bisector; pins/explicit side hints remain
            ;; escape hatches. Reserve enough room for the measured ink box.
-           (define spec (car (marker-members (hash-ref env id))))
+           (define spec (annotation-angle (hash-ref env id)))
            (define vertex (angle-spec-b spec))
            (define offset (point- anchor vertex))
            (define radial (norm offset))
@@ -260,6 +299,47 @@
            (for/list ([ring (in-list '(1 1.6 2.3 3.5 5))])
              (define pos (point+ vertex (point* direction (+ radial support (* ring (max gap (hash-ref s 'offset)))))))
              (candidate pos (list (box pos hw hh)) '() (* 0.1 (sub1 ring))))]
+          [(and (semantic-label? (hash-ref env id))
+                (memq (semantic-label-kind (hash-ref env id)) '(length segment)))
+           (define seg (semantic-label-target (hash-ref env id)))
+           (define u (point- (segment-b seg) (segment-a seg)))
+           (define tangent (point* u (/ 1 (norm u))))
+           (define normal (point (- (point-y tangent)) (point-x tangent)))
+           (define side (hash-ref h 'label-side 'auto))
+           (define preferred (assoc side sides))
+           (define fraction (hash-ref h 'label-position #f))
+           ;; For a triangle side, `label-outside-of` names the opposite vertex.
+           ;; The label is constrained to the half-plane opposite that point,
+           ;; rather than merely preferring a screen direction.
+           (define outside-id (hash-ref h 'label-outside-of #f))
+           (define signs
+             (if outside-id
+                 (let* ([reference (hash-ref env outside-id
+                                             (lambda () (geometry-error 'label-layout
+                                                                        "unknown label-outside-of point ~a" outside-id)))]
+                        [_ (unless (point? reference)
+                             (geometry-error 'label-layout "label-outside-of reference must be a Point: ~a" outside-id))]
+                        [offset (point- reference (segment-a seg))]
+                        [side-cross (cross u offset)]
+                        [scale (* (norm u) (max 1 (norm offset)))])
+                   (when (<= (abs side-cross) (* 1e-10 scale))
+                     (geometry-error 'label-layout
+                                     "label-outside-of reference ~a lies on the segment's supporting line" outside-id))
+                   ;; positive cross means the reference lies along +normal;
+                   ;; choose the opposite normal for the outside label.
+                   (list (if (positive? side-cross) -1 1)))
+                 '(1 -1)))
+           (for*/list ([ring (in-list '(0.75 1.1 1.7 2.4))]
+                       [t (in-list (if fraction (list fraction) '(0.5 0.4 0.6 0.3 0.7)))]
+                       [sign (in-list signs)])
+             (define direction (point* normal sign))
+             (define support (+ (* (abs (point-x normal)) hw) (* (abs (point-y normal)) hh)))
+             (define pos
+               (point+ (interpolate-point (segment-a seg) (segment-b seg) t)
+                       (point* direction (+ support gap (* ring (hash-ref s 'offset))))))
+             (candidate pos (list (box pos hw hh)) '()
+                        (+ (* 0.12 (sub1 ring)) (* 0.2 (abs (- t 0.5)))
+                           (if (or (not preferred) (>= (dot direction (cdr preferred)) 0)) 0 150))))]
           [else
            (define side (hash-ref h 'label-side 'auto))
            (define point-radius (if (point? (hash-ref env id))
@@ -310,7 +390,8 @@
       (set! placements (hash-set placements (cdr key) (candidate-value best)))))
   ;; Register explicit label pins first, so square quadrants/other labels avoid
   ;; them rather than asking the author to move a fixed annotation.
-  (for ([id (in-list label-ids)] #:when (or (hash-has-key? overrides id) (hash-has-key? (hash-ref hints id) 'label-at)))
+  (for ([id (in-list label-ids)] #:when (or (hash-has-key? overrides id) (hash-has-key? (hash-ref hints id) 'label-at)
+                                               (hash-has-key? (hash-ref hints id) 'label-offset)))
     (choose! (cons 'label id) (label-candidates id)))
   (for ([pass (in-range 3)])
     (for ([id (in-list marker-ids)]) (choose! (cons 'marker id) (hash-ref marker-candidates id)))

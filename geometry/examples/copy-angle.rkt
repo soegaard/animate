@@ -17,13 +17,13 @@
   (step "The source angle and a target ray are given."
     [BA (segment B A)] [BC (segment B C)]
     [source-mark (marker (angle A B C))] (show-label source-mark))
-  (step "Copy the angle onto the right side of the target ray."
-    (expand [r (c:copy-angle (angle A B C) target 'right)] #:auxiliaries 'hide))
+  (step "Copy the angle onto the left side of the target ray."
+    (expand [r (c:copy-angle (angle A B C) target 'left)] #:auxiliaries 'hide))
   (step #:pause 1.5 "The two angles have equal measure."
     [target-mark (marker (angle (end-point target) O (end-point r)))]
     (show-label target-mark))
   (assert (equal-angle (angle A B C) (angle (end-point target) O (end-point r)))
-          (side-of? (end-point r) target 'right))
+          (side-of? (end-point r) target 'left))
   (result r O A B C))
 
 (define (make-demo-timeline #:aspect [aspect 16/9] #:theme-mode [mode 'light])

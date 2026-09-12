@@ -48,6 +48,15 @@
     (label-text crowded-C "C (intersection)") (label-text crowded-M "M")
     (label-text crowded-D "D") (label-text crowded-E "E")
     (label-side crowded-A 'left) (label-side crowded-B 'right)
+    (label-text tfA "A") (label-text tfB "B") (label-text tfAp "A′") (label-text tfBp "B′")
+    (label-text tfAt "A′") (label-text tfBt "B′") (label-text tfAr "A′") (label-text tfBr "B′")
+    (label-text tfAd "A′") (label-text tfBd "B′") (label-text origin "O")
+    (label-text slA "A") (label-text slB "B") (label-text slC "C")
+    (label-side slA 'below-left) (label-side slB 'below-right)
+    (label-side slName 'above)
+    (label-outside-of slBase slC)
+    (label-outside-of slSideA slA) (label-outside-of slSideB slB)
+    (label-outside-of slMeasured slA)
     (label-side crowded-C 'above)
     (label-at crowded-M (point 0.42 -0.32))
     (marker-position crowded-halves 0.42)
@@ -308,7 +317,57 @@
     [Canglemark (marker (equal-angle (angle CC0 CB0 CA0)
                                     (angle CT CO0 (end-point Ccopied))))])
   (step #:pause 1.5 "The same constructions can be combined into larger constructions."
-    (highlight Ccopied CT)))
+    (highlight Ccopied CT))
+  (step #:duration 0.3 #:pause 0
+    (hide CA0 CB0 CC0 CO0 CT Cbase Cside Ctarget Ccopied Canglemark))
+
+  ;; First-class transformations preserve the kind of the image geometry.
+  (style [tfSp [color-family gold]] [tfSt [color-family gold]]
+         [tfSr [color-family gold]] [tfSd [color-family gold]]
+         [tfAxis [color muted]])
+  (step "Reflect segment AB in the vertical line."
+    [tfA (point -3 0.4)] [tfB (point -1.8 1.4)] [tfS (segment tfA tfB)]
+    [tfAxis (line (point -0.5 -1.8) (point -0.5 2))] [tfMirror (reflection tfAxis)])
+  (step "The image segment has the same length."
+    (together [tfAp (transform tfMirror tfA)] [tfBp (reflect tfB tfAxis)])
+    [tfSp (transform tfMirror tfS)]
+    [tfLength (length-label tfS "a")] [tfLengthP (length-label tfSp "a")])
+  (assert (equal-length tfS tfSp))
+  (step #:duration 0.3 #:pause 0 (hide tfAxis tfAp tfBp tfSp tfLengthP))
+  (step "Translation adds the same vector to both endpoints."
+    [tfMove (translation (vector 4 0))]
+    (together [tfAt (transform tfMove tfA)] [tfBt (transform tfMove tfB)])
+    [tfSt (transform tfMove tfS)] [tfLengthT (length-label tfSt "a")])
+  (step #:duration 0.3 #:pause 0 (hide tfAt tfBt tfSt tfLengthT))
+  (step "A half-turn about O also preserves the length."
+    (show origin) (show-label origin)
+    [tfSpin (rotation origin (degrees 180))]
+    (together [tfAr (transform tfSpin tfA)] [tfBr (rotate tfB origin (degrees 180))])
+    [tfSr (transform tfSpin tfS)] [tfLengthR (length-label tfSr "a")])
+  (step #:duration 0.3 #:pause 0 (hide tfAr tfBr tfSr tfLengthR))
+  (step "A dilation about O by one half halves the length."
+    [tfScale (dilation origin 1/2)]
+    (together [tfAd (dilate tfA origin 1/2)] [tfBd (transform tfScale tfB)])
+    [tfSd (transform tfScale tfS)] [tfLengthD (length-label tfSd "a/2")])
+  (assert (equal-length tfS tfSt tfSr))
+  (step #:duration 0.3 #:pause 0
+    (hide tfA tfB tfS tfAd tfBd tfSd tfLength tfLengthD origin))
+
+  ;; Labels are named annotations, with their own presentation state.
+  (step "Triangle ABC has a base of length 4 cm."
+    [slA (point -2 0)] [slB (point 2 0)] [slC (point -0.8 2)]
+    [slAB (segment slA slB)] [slBC (segment slB slC)] [slCA (segment slC slA)]
+    (hide-label slC)
+    [slName (point-label slC "C")] [slBase (segment-label slAB "4 cm")])
+  (step "The remaining side lengths are a and b, and the angle at A is α."
+    (together [slSideA (length-label slBC "a")] [slSideB (length-label slCA "b")]
+              [slAngle (angle-label (angle slB slA slC) "α")]))
+  (step "Length and angle labels can also show measured values."
+    (hide slSideA slAngle)
+    (together [slMeasured (length-label slBC #:precision 2 #:unit "cm")]
+              [slDegrees (angle-label (angle slB slA slC) #:precision 1)]))
+  (step #:pause 1.5 "These symbols describe the same triangle."
+    (hide slMeasured slDegrees) (show slSideA slAngle)))
 
 (define (gallery-view aspect)
   (make-geometry-view #:center (point 0 1/3)

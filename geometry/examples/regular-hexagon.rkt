@@ -13,6 +13,8 @@
           (label-side A 'right) (label-side B 'above-right) (label-side C 'above-left)
           (label-side D 'left) (label-side E 'below-left) (label-side F 'below-right)
           (label-text seed-angle "60°"))
+  ;; The circumcircle is the subject; auxiliary circles retain the aqua family.
+  (style [k [color-family purple]])
   (step "Start with a circle of radius OA." [k (circle O A)] [OA (segment O A)])
   (step "A circle centred at A through O locates the next vertex."
     [cA (circle A O)])

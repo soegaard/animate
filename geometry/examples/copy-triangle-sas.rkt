@@ -7,8 +7,9 @@
 (provide copy-triangle-sas example-theme make-demo-timeline make-demo-scene)
 (define example-theme (make-library-theme 'light))
 
+;; Deliberately scalene and acute: the result should not rely on symmetry.
 (construction copy-triangle-sas
-  (given [A (point -4 -0.8)] [B (point -1.6 -0.8)] [C (point -3.1 1.5)]
+  (given [A (point -4 -0.8)] [B (point -1.6 -0.8)] [C (point -3.25 0.55)]
          [O (point 1 -1)] [target (ray O (point 3.5 -0.3))])
   (layout (focus A B C O B2 C2)
           (label-text O "A′") (label-text B2 "B′") (label-text C2 "C′")
