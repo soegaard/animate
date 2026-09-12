@@ -1,19 +1,28 @@
-# Testing — v0.9.1
+# Testing — v0.9.8
 
-The v0.9.1 review refinements were exercised with the same genuine minimal Racket CS runtime used for v0.9.0. The five base-only suites pass: **69 transformation/label groups / 1,017 checks**, **68 standard-library groups / 2,552 checks**, **53 audit groups / 3,183 checks**, **26 refinement groups / 387 checks**, and **65 review groups / 227,055 checks**. The actual reader accepts all 79 source modules. Native font/PNG integration tests are included but cannot run in this minimal runtime.
+The deliberate compass-transfer choreography was exercised with the same genuine
+minimal Racket CS runtime used for recent geometry releases. Base-only suites
+currently pass: **7 compass groups / 65 checks**, **69 transformation/label groups
+/ 1,055 checks**, **68 standard-library groups / 2,562 checks**, **53 audit groups
+/ 3,571 checks**, **26 refinement groups / 387 checks**, and **66 review groups /
+234,055 checks**. All **81 Racket modules** also pass the reader.
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
-"$RACKET" geometry/run-tests.rkt --transform-labels
+"$RACKET" geometry/run-tests.rkt --compass
 "$RACKET" geometry/run-tests.rkt
 ```
 
-The `--transform-labels`, `--library`, `--audit`, `--refinements`, and `--review`
-options run their real base-only check modules. `--core` runs RackUnit tests but
-excludes native rendering modules. With no option, the runner includes all
+`--compass`, `--transform-labels`, `--library`, `--audit`, `--refinements`, and
+`--review` run their real base-only check modules. `--core` runs RackUnit tests
+but excludes native rendering modules. With no option, the runner includes all
 registered core and native integration tests. Flags are mutually exclusive.
 
-Current v0.9.1 base-only results are summarized in `CHANGES-0.9.1.md`. The v0.9.0 `v090-*-results.txt` files and earlier visual audit records below are retained as release history, not current native-render claims.
+The minimal runtime lacks the complete enclosing Animate/Pict/Draw/RackUnit
+installation, so native rendering is still a local-checkout test. The registered
+native compass case checks that a source-attention frame contains both the
+transient `c/compass-guide` carrier and `c/compass-attention` halo and that both
+are absent after the reveal settles.
 
 ---
 
@@ -44,7 +53,7 @@ and every authored review step/final annotation in all 17 examples in both theme
 The library suite retains its independent mathematical oracles, transformed
 inputs, invalid contracts, eight helper signatures, auxiliary ownership,
 determinism, and all thirteen applications. The review suite covers exact
-boundary states, nested steps, three samples per row, file safety, replacement,
+boundary states, nested steps, three samples for ordinary rows and five for compass rows, file safety, replacement,
 rollback, and ZIP membership. Its file-output tests use a small PNG fixture;
 passing those tests does not claim native image rendering.
 
@@ -60,7 +69,7 @@ step PNGs, and 110 contact sheets. Every contact-sheet page in both themes was
 inspected, and selected ambiguous details were inspected at full resolution.
 These are **before-fix images supplied by the user**, not images rendered from
 the revised source. The audit did not separately open every one of the 1,692 PNGs
-at full resolution, and three samples per step cannot establish every property
+at full resolution, and sparse review samples cannot establish every property
 of continuous motion.
 
 ## Not executed here

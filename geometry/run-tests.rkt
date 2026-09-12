@@ -12,6 +12,7 @@
   (define audit-only? #f)
   (define refinements-only? #f)
   (define transform-labels-only? #f)
+  (define compass-only? #f)
   (command-line
    #:program "geometry/run-tests.rkt"
    #:once-each
@@ -21,9 +22,13 @@
    [("--audit") "Run review-driven example audit checks (Racket base only)." (set! audit-only? #t)]
    [("--refinements") "Run the example-review refinements (Racket base only)." (set! refinements-only? #t)]
    [("--transform-labels") "Run transformation and semantic label checks (Racket base only)." (set! transform-labels-only? #t)]
+   [("--compass") "Run compass-transfer circle reveal checks (Racket base only)." (set! compass-only? #t)]
    #:args () (void))
-  (when (> (for/sum ([flag (in-list (list core-only? library-only? review-only? audit-only? refinements-only? transform-labels-only?))]) (if flag 1 0)) 1)
-    (error 'geometry/run-tests "choose at most one of --core, --library, --review, --audit, --refinements, and --transform-labels"))
+  (when (> (for/sum ([flag (in-list (list core-only? library-only? review-only? audit-only? refinements-only? transform-labels-only? compass-only?))]) (if flag 1 0)) 1)
+    (error 'geometry/run-tests "choose at most one of --core, --library, --review, --audit, --refinements, --transform-labels, and --compass"))
+  (when compass-only?
+    ((dynamic-require (build-path tests-directory "compass-checks.rkt") 'run-compass-checks))
+    (exit 0))
   (when transform-labels-only?
     ((dynamic-require (build-path tests-directory "transform-label-checks.rkt") 'run-transform-label-checks))
     (exit 0))
@@ -42,7 +47,7 @@
   (define names
     (append '("math-test.rkt" "dsl-test.rkt" "layout-test.rkt"
               "theme-test.rkt" "timeline-test.rkt" "drawing-test.rkt"
-              "reveal-test.rkt" "annotation-test.rkt" "library-test.rkt" "review-test.rkt" "audit-test.rkt" "example-refinement-test.rkt" "transform-label-test.rkt")
+              "reveal-test.rkt" "compass-test.rkt" "annotation-test.rkt" "library-test.rkt" "review-test.rkt" "audit-test.rkt" "example-refinement-test.rkt" "transform-label-test.rkt")
             (if core-only? '() '("animate-test.rkt" "reveal-annotation-render-test.rkt" "library-render-test.rkt" "review-render-test.rkt" "audit-render-test.rkt" "example-refinement-render-test.rkt" "transform-label-render-test.rkt"))))
   (define executable
     (or (find-executable-path (find-system-path 'exec-file))

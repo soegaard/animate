@@ -1,4 +1,4 @@
-# Implemented geometry DSL — v0.9.2
+# Implemented geometry DSL — v0.9.3
 
 This is the reference for the code in this delivery. It is narrower than the
 original design proposal: features listed as deferred below are not silently
@@ -504,7 +504,7 @@ A geometry theme extends the default geometry theme unless an explicit
 assignment selects a family; state rules choose the variant. The letters do not
 have a universal “muted” meaning independent of the native color theme.
 
-Supported kind selectors: `point`, `segment`, `line`, `ray`, `circle`.
+Supported geometric kind selectors: `point`, `segment`, `line`, `ray`, `circle`. The presentation-only `compass-guide` and `compass-attention` selectors style the movable transferred-radius carrier and its attention halo.
 Supported state selectors: `normal`, `deemphasized`, `highlighted`.
 Marker subtypes additionally support `right-angle-marker`, `length-marker`,
 `parallel-marker`, and `angle-marker`; they inherit the generic `marker` rules.
@@ -732,12 +732,20 @@ unchanged; only the path exposed at a given action progress changes.
 | Segment | From its first endpoint (`from-start`) | `from-end`, `from-center`, `fade` |
 | Ray | From its finite origin (`from-start`) | `fade` |
 | Line | Outward from its defining region (`from-center`) | `fade` |
-| Circle | Two fronts from its through-point (`bidirectional`) | `clockwise`, `counterclockwise`, `fade` |
+| Circle | Two fronts from its through-point (`bidirectional`), or automatic compass transfer when a radius comes from a visible length/distance | `compass`, `clockwise`, `counterclockwise`, `bidirectional`, `fade` |
 | Marker | Draw each constituent glyph (`draw`) | `fade` |
 
-`auto` selects the default for any drawable kind. State commands are unchanged:
-`show` fades in the complete object, `hide` fades it out, and showing an object
-again does not replay its original construction stroke.
+`auto` selects the default for any drawable kind. For a radius-defined circle,
+`auto` additionally inspects the radius provenance. If the radius is directly a
+segment length or point-to-point distance (possibly through Number aliases and
+expanded-helper argument/result aliases), it uses the `compass` reveal. Literal
+radii and arbitrary arithmetic keep the ordinary circle reveal. A two-point
+`(circle O P)` remains `bidirectional` by default.
+
+State commands are unchanged: `show` fades in the complete object, `hide` fades
+it out, and showing an object again does not replay its original construction
+stroke. The transient compass guide exists only during the original `reveal`
+action and is not a geometry node.
 
 A construction may override fresh-binding reveals:
 
@@ -754,6 +762,9 @@ A construction may override fresh-binding reveals:
 The `reveal` clause can refer forward. Unsupported combinations such as a
 clockwise point reveal are rejected before realization. A reusable helper's
 rules follow its renamed objects; a caller's rule for a returned object wins.
+Explicit `[c compass]` also works for `(circle O P)`, using `OP` as the transferred
+measure. Forcing `compass` on a radius with no geometric provenance, such as
+`(circle O #:radius 3)`, is diagnosed when the rendered scene is prepared.
 
 Segments and rays are revealed **before** viewport clipping. An offscreen
 endpoint does not become a new mathematical endpoint at the edge of the frame.
@@ -766,9 +777,62 @@ through-point. Its final boundary and every intermediate solid arc use native
 cubic Beziers. Dash patterns start at the reveal origin rather than being
 re-centred at each frame.
 
-Every constituent tick, chevron, square or angle arc reveals progressively.
-Corresponding marks in a group share progress. Right-angle squares retain their
-existing side length; equality and midpoint ticks retain their 20% reduction.
+### Compass-transfer circle reveal
+
+For a circle whose radius is copied from visible geometry, the mathematical
+object is still an ordinary Circle. The presentation layer retains the original
+radius expression and derives a temporary movable carrier from forms such as:
+
+```racket
+[c1 (circle O #:radius (length AB))]
+[c2 (circle O #:radius (distance A B))]
+[r  (length AB)]
+[c3 (circle O #:radius r)]
+```
+
+The fresh reveal is deliberately slower and more explicit than an ordinary
+curve reveal. Unless action duration is explicitly overridden, a compass reveal
+gets a **10.0 second** action. Within that action the carrier:
+
+1. is drawn directly on top of the source measure;
+2. moves a small distance onto a nearby line parallel to the source;
+3. receives a single glow-like attention pulse;
+4. moves rigidly to the new circle centre without changing length or direction;
+5. receives a second attention pulse after arrival; and
+6. rotates once counterclockwise while its free endpoint traces the circle.
+
+The parallel offset chooses the side that best stays inside the usable frame and
+away from the caption band. The eventual carrier orientation at the new centre
+continues to prefer an early sweep that stays visible. The source geometry itself
+never moves.
+
+The carrier's length is constant through offset, transport, and sweep. During
+the sweep its moving endpoint is exactly the endpoint of the partial circle arc.
+The carrier fades near the end of the sweep and is absent from the settled state,
+so later `show`/`hide` operations never replay the transfer.
+
+Automatic provenance deliberately recognizes only a direct `(length segment)` or
+`(distance point point)` chain. Expressions such as `(* 2 (length AB))`, `(+ r 1)`,
+or a literal radius do not invent a source and therefore use the ordinary reveal.
+
+Two semantic theme selectors style the temporary presentation:
+
+- `compass-guide` is the solid movable carrier;
+- `compass-attention` is the wide translucent under-stroke used for each pulse.
+
+Both use the theme's highlight color by default. They are presentation-only and
+do not participate in layout, labels, assertions, intersections, helper results,
+or the final geometry graph.
+
+Review bundles use seven samples for compass rows:
+`read`, `pickup`, `source-attention`, `transport`, `target-attention`, `sweep`, and
+`settled`. These samples are specified in reveal-progress space; review planning
+inverts the timeline's smoothstep easing before choosing timestamps.
+
+The `divide-segment-five` library example deliberately repeats the same
+compass-transfer construction five times. Its construction circles remain visible
+as an accumulated record of equal steps, then fade together after the fifth point
+has been established.
 
 ## 15. Labels and marker placement
 
@@ -987,10 +1051,19 @@ Line's direction. `drop-perpendicular` defines its output Line from external P
 toward the second circle intersection across the input Line. These documented
 orientations make subsequent ray construction unambiguous.
 
+Standard copying helpers mark their pedagogically visible construction circles
+with `fit-circle`, so the realization camera fits complete auxiliary
+circumferences rather than only the centre of a radius-defined circle. This is
+particularly important for large copied lengths near the caption band.
+
 For copying lengths, this version assumes a **transferable compass**. The form
-`(circle O #:radius r)` places its reveal through-point at `(O.x + r, O.y)`.
-It does not purport to expand a strictly collapsible-compass transfer algorithm.
-`(circle O P)` retains the original through-point/reveal semantics.
+`(circle O #:radius r)` still realizes an ordinary circle numerically, but when
+`r` is traceable to a segment length or point distance its first reveal now shows
+that transfer explicitly with the temporary compass carrier described in
+Section 14. A literal or arithmetically derived radius falls back to the ordinary
+circle reveal. This presentation does not purport to expand a strictly
+collapsible-compass transfer algorithm. `(circle O P)` retains its original
+through-point/two-front semantics unless `[c compass]` is requested explicitly.
 
 See `docs/CONSTRUCTIONS.md` for all contracts, algorithms, limitations, and the
 thirteen application videos. The gallery adds plates showing all eight helpers
@@ -1066,7 +1139,12 @@ completed state before the next step's caption/actions. Samples are computed fro
 compiled step boundaries, not by dividing a narration interval into thirds.
 Boundary snapshots handle zero-delay/zero-pause steps without showing the wrong
 caption. Notes identify instantaneous and action-free steps, and steps containing
-more transitions than a single during image can show.
+more transitions than a single action image can show. Steps containing a compass
+circle reveal receive seven review samples: `read`, `pickup`, `source-attention`, `transport`, `target-attention`, `sweep`, and `settled`.
+Compass action samples target reveal progress rather than raw event progress; the
+planner inverts the timeline's smoothstep easing before choosing their timestamps.
+Mixed contact sheets use per-thumbnail phase labels instead of ambiguous global
+column headings.
 
 Expanded helper steps are included recursively. Parent expansion steps get an
 overview row, and their children get individual rows. Generated setup/cleanup is never counted as an authored step. Silent authored

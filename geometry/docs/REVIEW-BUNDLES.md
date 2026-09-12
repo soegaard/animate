@@ -79,12 +79,19 @@ Full narration is repeated above the thumbnails. Thumbnails are 384 pixels wide;
 the separate step images retain full resolution. `index.html` is an offline
 browser index with clickable full-size images and no external resources.
 
+Contact sheets deliberately have no page-wide phase headings: ordinary rows use
+`read/during/settled`, while compass rows use
+`read/pickup/source-attention/transport/target-attention/sweep/settled`. Each
+thumbnail is labeled with its own phase and time below the image.
+
 `steps.txt` contains the step text, source path, exact sample times and notes.
 `manifest.json` adds machine-readable timing boundaries, action kinds/targets,
 actual captions shown, dimensions and a complete file inventory. It records
 `image_count` separately from the number of contact sheets.
 
-## What the three samples mean
+## What the review samples mean
+
+Standard rows contain three samples. Compass-circle rows contain seven samples so the complete transfer choreography can be audited.
 
 **Read:** the unchanged figure before this step's actions, normally at the middle
 of the reading interval. The step's new narration is visible. Captions currently
@@ -103,7 +110,24 @@ Times come from the timeline compiler's recorded step boundaries, not thirds of
 a caption's duration and not rounded movie-frame indices. `--fps` records the
 reference movie rate only; it does not change the number of review images.
 `read` and `settled` use explicit boundary states, with the same frozen layout as
-movie rendering. `during` uses ordinary timeline sampling.
+movie rendering. `during` uses ordinary timeline sampling. Compass-circle rows
+replace `during` with five action samples:
+
+**Pickup:** the movable carrier is being drawn over the source measure.
+
+**Source attention:** the carrier has lifted onto a nearby parallel and the first
+attention halo is at its peak.
+
+**Transport:** the copied segment is moving rigidly to the new centre.
+
+**Target attention:** the carrier has arrived at the new centre and the second
+attention halo is at its peak.
+
+**Sweep:** the carrier rotates around the new centre while the circle is traced.
+
+These compass sample positions are specified in terms of the object's *reveal
+progress*. Because the timeline applies smoothstep easing to action time, the
+planner inverts that easing before choosing timestamps.
 
 A no-action/narration-only step intentionally has repeated geometry in its three
 images. A zero-reading-delay or zero-ending-pause step uses the exact boundary
@@ -287,8 +311,8 @@ See `docs/TESTING.md` for the execution status of this delivery.
 
 v0.8.1 changes the examples' authored steps and some layouts. Rebuild the bundles
 after replacing `geometry/`; old step filenames do not identify the same action
-in the new source. Historical v0.8.1 bundles recorded `geometry_version: "0.8.1"`; current bundles record `0.9.1`. All-example
-and single-example selection, both-theme output, and three samples per step are
+in the new source. Historical v0.8.1 bundles recorded `geometry_version: "0.8.1"`; current bundles record `0.9.5.1`. All-example
+and single-example selection, both-theme output, and variable three- or five-sample rows are
 unchanged.
 
 Use a separate root when retaining both old and new reviews:

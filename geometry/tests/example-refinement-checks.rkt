@@ -4,7 +4,7 @@
 ;; exercise the real DSL, helper expansion, annotation planner, and drawing order.
 (require racket/list racket/runtime-path racket/string
          (only-in racket/math pi)
-         "../core.rkt" "../private/compiler.rkt" "../private/drawing.rkt")
+         "../core.rkt" "../private/compiler.rkt" "../private/drawing.rkt" "../private/reveal.rkt")
 (provide example-refinement-check-groups run-example-refinement-checks)
 (define-runtime-path examples "../examples")
 (define counter (make-parameter #f))
@@ -111,6 +111,45 @@
             ;; text box. No parallel, auxiliary ray, or point may do so.
             (check (circle? (hash-ref env (caddr w))) "division label intersects ray/parallel/point" w)))))))
 
+(define divide-circle-groups
+  (for/list ([mode '(light dark)])
+    (cons (format "division uses five visible transferred-radius circles / ~a" mode)
+      (lambda ()
+        (define t (build "divide-segment-five" mode))
+        (define p (program-of t))
+        (define env (env-of t))
+        (define unit-length (distance (segment-a (hash-ref env 'unit))
+                                     (segment-b (hash-ref env 'unit))))
+        (define circle-ids '(c1 c2 c3 c4 c5))
+        (define centers '(A P1 P2 P3 P4))
+        (for ([cid circle-ids] [center-id centers])
+          (define c (hash-ref env cid))
+          (check (circle? c) "missing construction circle" cid)
+          (same (circle-center c) (hash-ref env center-id))
+          (near (circle-radius c) unit-length)
+          (define-values (reveal-mode source) (resolve-circle-reveal p cid env))
+          (check (eq? reveal-mode 'compass) "division circle did not use compass reveal" cid)
+          (check (compass-source? source) "division circle lost source provenance" cid)
+          (near (distance (compass-source-a source) (compass-source-b source)) unit-length))
+        ;; After P5 has been established, one silent cleanup step fades all
+        ;; accumulated construction circles together.
+        (define cleanup
+          (findf
+           (lambda (step)
+             (and (not (geometry-step-narration step))
+                  (for/or ([a (in-list (geometry-step-actions step))])
+                    (and (eq? (geometry-action-kind a) 'hide)
+                         (andmap (lambda (cid) (memq cid (geometry-action-targets a)))
+                                 circle-ids)))))
+           (geometry-program-steps p)))
+        (check cleanup "missing collective circle fade after P5")
+        (define hidden
+          (append-map geometry-action-targets
+                      (filter (lambda (a) (eq? (geometry-action-kind a) 'hide))
+                              (geometry-step-actions cleanup))))
+        (for ([cid circle-ids])
+          (check (memq cid hidden) "construction circle not faded after P5" cid))))))
+
 (define naming-groups
   (for*/list ([name '("parallel-at-distance" "tangent-at-point")] [mode '(light dark)])
     (cons (format "helper points use Q, R, S, not X/Y: ~a / ~a" name mode)
@@ -210,7 +249,7 @@
         (same (hash-ref (annotation-plan-labels (prepare-geometry-annotations t)) 'answer) (point 1.6 0.15))))))
 
 (define example-refinement-check-groups
-  (append triangle-groups direction-groups label-groups naming-groups
+  (append triangle-groups direction-groups label-groups divide-circle-groups naming-groups
           layering-groups color-groups relative-pin-groups))
 (define (run-example-refinement-checks)
   (define counts (box 0))

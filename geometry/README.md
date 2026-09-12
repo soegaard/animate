@@ -1,4 +1,39 @@
-# Geometry authoring for `animate` — v0.9.2
+# Geometry authoring for `animate` — v0.9.8
+
+
+## New in v0.9.7 — deliberate compass-transfer choreography
+
+Radius-defined circles whose radius comes from visible geometry now use a slower,
+more explicit transfer animation. The mathematical circle is unchanged; the
+presentation temporarily creates a movable copy of the source measure:
+
+1. draw the carrier directly over the source segment/distance;
+2. lift it slightly onto a parallel line;
+3. pulse a glow-like attention halo;
+4. move the carrier rigidly to the new centre;
+5. pulse the attention halo again on arrival; and
+6. sweep the carrier around the centre while tracing the circle.
+
+The default compass action lasts **10.0 seconds**, unless the caller explicitly
+overrides action duration. The carrier is presentation-only and disappears at
+completion. Review bundles now capture seven states for compass rows:
+`read`, `pickup`, `source-attention`, `transport`, `target-attention`, `sweep`,
+and `settled`.
+
+`divide-segment-five.rkt` now uses this transfer for all five equal compass steps.
+The five construction circles accumulate visibly and fade out together after P₅
+is marked, making the repeated equal-radius construction explicit.
+
+```racket
+[c (circle O #:radius (length AB))]       ; automatic compass transfer
+[d (circle P #:radius (distance A B))]   ; likewise
+(reveal [e compass])                     ; explicit for a two-point circle
+```
+
+Literal/arithmetic radii fall back to the ordinary circle reveal, and
+`(circle O P)` remains bidirectional by default.
+
+See [the implementation/reference note](docs/COMPASS-CIRCLE-REVEAL.md).
 
 
 ## New in v0.9.2 — zero-precision semantic labels

@@ -44,6 +44,18 @@
     (define s (resolve-geometry-style t 'Point 'normal))
     (check-equal? (hash-ref s 'fill-family) 'gold)
     (check-equal? (hash-ref s 'stroke-family) 'blue))
+  (test-case "compass carrier and attention halo have independent semantic styles"
+    (for ([theme (in-list (list default-light-geometry-theme default-dark-geometry-theme))])
+      (define guide (resolve-geometry-style theme 'compass-guide 'normal))
+      (define attention (resolve-geometry-style theme 'compass-attention 'normal))
+      (check-= (hash-ref guide 'stroke-width) 2.5 1e-12)
+      (check-equal? (hash-ref guide 'dash) 'solid)
+      (check-equal? (hash-ref guide 'stroke-color) 'highlight)
+      (check-= (hash-ref guide 'opacity) 1 1e-12)
+      (check-= (hash-ref attention 'stroke-width) 9 1e-12)
+      (check-equal? (hash-ref attention 'dash) 'solid)
+      (check-equal? (hash-ref attention 'stroke-color) 'highlight)
+      (check-= (hash-ref attention 'opacity) 0.45 1e-12)))
   (test-case "unsupported rules and invalid numeric styles are diagnosed"
     (check-exn exn:fail:geometry? (lambda () (geometry-theme (stroke [width -1]))))
     (check-exn exn:fail:geometry? (lambda () (geometry-theme (point [width 2]))))

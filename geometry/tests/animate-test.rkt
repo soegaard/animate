@@ -5,14 +5,21 @@
 (require rackunit racket/list racket/file
          (prefix-in a: "../../main.rkt") (prefix-in color: "../../colors.rkt")
          (prefix-in output: "../../render.rkt")
-         "../main.rkt" "../render.rkt" "fixtures.rkt"
+         "../main.rkt" "../render.rkt" "../review-plan.rkt" "fixtures.rkt"
          (prefix-in eq: "../examples/equilateral-triangle.rkt")
          (prefix-in pb: "../examples/perpendicular-bisector.rkt")
          (prefix-in pp: "../examples/perpendicular-through-point.rkt")
          (prefix-in gal: "../examples/gallery.rkt"))
+(define (maybe-child group id)
+  (findf (lambda (v) (eq? (a:visual-id v) id)) (a:group-visual-children group)))
 (define (child group id)
-  (or (findf (lambda (v) (eq? (a:visual-id v) id)) (a:group-visual-children group))
+  (or (maybe-child group id)
       (error 'test "no child ~a in ~a" id (a:visual-id group))))
+(construction compass-native-demo
+  (given [A (point -2 0)] [B (point 0 0)] [O (point 2 1)])
+  (initially (hide-label A B O))
+  (step [AB (segment A B)])
+  (step [c (circle O #:radius (length AB))]))
 (module+ test
   (test-case "family variants become native unresolved palette tokens"
     (define style (resolve-geometry-style default-geometry-theme 'Circle 'deemphasized))
@@ -64,6 +71,30 @@
          (for/or ([milliseconds (in-list (output:render-diagnostics-frame-milliseconds report))])
            (zero? milliseconds))))
       (lambda () (delete-directory/files directory))))
+  (test-case "native compass reveal adds a transient carrier and glow attention"
+    (define timeline
+      (construction->timeline compass-native-demo #:read-delay 0 #:action-duration 1 #:hold 0 #:opening-hold 0))
+    (define plan (make-geometry-review-plan timeline))
+    (define circle-row (cadr plan))
+    (define source-attention
+      (findf (lambda (sample) (eq? (geometry-review-sample-phase sample) 'source-attention))
+             (geometry-review-step-samples circle-row)))
+    (check-not-false source-attention)
+    (define attention-frame
+      (geometry-timeline->visual timeline (geometry-review-sample-time source-attention)))
+    (define circle-attention (child attention-frame 'c))
+    (check-not-false (maybe-child circle-attention 'c/compass-guide))
+    (check-not-false (maybe-child circle-attention 'c/compass-attention))
+    (define circle-event
+      (findf (lambda (event)
+               (ormap (lambda (action) (memq 'c (geometry-action-targets action)))
+                      (geometry-event-actions event)))
+             (geometry-timeline-events timeline)))
+    (check-not-false circle-event)
+    (define settled (geometry-timeline->visual timeline (geometry-event-end circle-event)))
+    (define circle-settled (child settled 'c))
+    (check-false (maybe-child circle-settled 'c/compass-guide))
+    (check-false (maybe-child circle-settled 'c/compass-attention)))
   (test-case "native PNG output and narration metadata can be produced headlessly"
     (define directory (make-temporary-file "geometry-test-~a" 'directory))
     (dynamic-wind

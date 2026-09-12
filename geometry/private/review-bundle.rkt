@@ -84,11 +84,19 @@
                 'shown_narration (json-caption (geometry-frame-narration (geometry-review-sample-frame s)))
                 'note (geometry-review-sample-note s)))))
 
+(define (sample-counts plan)
+  (map (lambda (row) (length (geometry-review-step-samples row))) plan))
+(define (sample-count-summary plan)
+  (define counts (remove-duplicates (sort (sample-counts plan) <)))
+  (cond [(null? counts) "0 images per step"]
+        [(= (length counts) 1) (format "~a images per step" (car counts))]
+        [else (format "~a–~a images per step" (car counts) (last counts))]))
+
 (define (write-steps! plan directory name theme)
   (call-with-output-file (build-path directory "steps.txt")
     (lambda (out)
-      (fprintf out "~a / ~a\n~a steps; 3 images per step.\n\n" name theme (length plan))
-      (display "Read: unchanged pre-action state. During: one actual action sample.\nSettled: completed post-action state, before the next step.\nExpanded overview rows include their child steps. Synthetic helper setup/cleanup\nis folded into the overview rather than shown as additional authored steps.\n\n" out)
+      (fprintf out "~a / ~a\n~a steps; ~a.\n\n" name theme (length plan) (sample-count-summary plan))
+      (display "Read: unchanged pre-action state. Settled: completed post-action state, before the next step.\nMost rows include one action sample (During). Compass-circle rows instead include Pickup, Source-Attention,\nTransport, Target-Attention, and Sweep samples so the full transfer choreography can be reviewed. Expanded\noverview rows include their child steps. Synthetic helper setup/cleanup is folded into the overview rather\nthan shown as additional authored steps.\n\n" out)
       (for ([row (in-list plan)])
         (define span (geometry-review-step-span row))
         (fprintf out "STEP ~a  [source ~a]~a\n~a\n"
@@ -109,9 +117,12 @@
 (define (write-index! plan directory name theme sheet-names)
   (call-with-output-file (build-path directory "index.html")
     (lambda (out)
-      (display "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Geometry review</title>\n<style>body{font:16px/1.45 system-ui,sans-serif;margin:24px;background:#f5f6f8;color:#18202a}main{max-width:1500px;margin:auto}section{margin:24px 0;padding:16px;background:white;border:1px solid #ccd2da;border-radius:6px}h2{font-size:19px;margin:0 0 6px}.frames{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}figure{margin:0}img{width:100%;height:auto;border:1px solid #ddd}figcaption,small{color:#4b5563}a{color:#164b88}code{white-space:pre-wrap}@media(max-width:650px){.frames{grid-template-columns:1fr}}</style><main>\n" out)
+      (define image-count (apply + (sample-counts plan)))
+      (display "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Geometry review</title>\n<style>body{font:16px/1.45 system-ui,sans-serif;margin:24px;background:#f5f6f8;color:#18202a}main{max-width:1700px;margin:auto}section{margin:24px 0;padding:16px;background:white;border:1px solid #ccd2da;border-radius:6px}h2{font-size:19px;margin:0 0 6px}.frames{display:grid;gap:12px}figure{margin:0}img{width:100%;height:auto;border:1px solid #ddd}figcaption,small{color:#4b5563}a{color:#164b88}code{white-space:pre-wrap}@media(max-width:650px){.frames{grid-template-columns:1fr !important}}</style><main>\n" out)
       (fprintf out "<h1>~a / ~a</h1><p>~a steps · ~a images. Click an image for full resolution.</p>\n"
-               (html name) (html theme) (length plan) (* 3 (length plan)))
+               (html name) (html theme) (length plan) image-count)
+      (fprintf out "<p>Review rows contain ~a. Standard rows use read/during/settled. Compass-circle rows use read/pickup/source-attention/transport/target-attention/sweep/settled.</p>"
+               (html (sample-count-summary plan)))
       (display "<p><a href=\"steps.txt\">Step captions and sample times</a> · <a href=\"manifest.json\">Manifest</a></p>" out)
       (when (pair? sheet-names)
         (display "<p>Contact sheets: " out)
@@ -120,6 +131,7 @@
         (display "</p>" out))
       (for ([row (in-list plan)])
         (define span (geometry-review-step-span row))
+        (define sample-count (length (geometry-review-step-samples row)))
         (fprintf out "<section id=\"step-~a\"><h2>Step ~a~a</h2><p>~a</p><small>Source path: ~a</small>\n"
                  (geometry-review-step-number row) (geometry-review-step-number row)
                  (if (geometry-step-span-expanded? span) " — expanded overview" "")
@@ -127,7 +139,7 @@
                  (html (string-join (map number->string (geometry-step-span-path span)) ".")))
         (for ([note (in-list (geometry-review-step-notes row))])
           (fprintf out "<p><small>~a</small></p>" (html note)))
-        (display "<div class=\"frames\">" out)
+        (fprintf out "<div class=\"frames\" style=\"grid-template-columns:repeat(~a,minmax(0,1fr))\">" sample-count)
         (for ([s (in-list (geometry-review-step-samples row))])
           (define file (geometry-review-sample-filename s))
           (fprintf out "<figure><a href=\"~a\"><img loading=\"lazy\" src=\"~a\" alt=\"~a\"></a><figcaption>~a · ~a s</figcaption></figure>"
@@ -164,9 +176,10 @@
       (error 'geometry-review "ZIP must be a regular file outside the review directory: ~a" archive)))
   (define samples (geometry-review-samples plan))
   (define names (map geometry-review-sample-filename samples))
-  (unless (and (= (length names) (* 3 (length plan))) (andmap safe-leaf? names)
+  (unless (and (andmap (lambda (row) (>= (length (geometry-review-step-samples row)) 3)) plan)
+               (andmap safe-leaf? names)
                (= (length names) (length (remove-duplicates names))))
-    (error 'geometry-review "review plan must assign three unique safe filenames to each step"))
+    (error 'geometry-review "review plan must assign at least three unique safe filenames to each step"))
   (make-directory* parent)
   (define staging (make-temporary-file ".geometry-review-~a" 'directory parent))
   (define temporary-zip #f)
@@ -192,7 +205,7 @@
      (write-index! plan staging name theme sheet-names)
      (define files (sort (append names sheet-names '("steps.txt" "index.html" "manifest.json")) string<?))
      (define manifest
-       (hash 'format review-manifest-format 'version 1 'geometry_version "0.9.1"
+       (hash 'format review-manifest-format 'version 1 'geometry_version "0.9.8"
              'name name 'theme theme 'width width 'height height
              'raster_width (* width supersample) 'raster_height (* height supersample)
              'reference_fps fps 'sampling "exact action times and explicit step-boundary states; not rounded to movie frames"

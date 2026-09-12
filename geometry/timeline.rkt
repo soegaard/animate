@@ -2,9 +2,11 @@
 
 ;; Immutable, random-access presentation timelines. No frame-to-frame updaters.
 (require racket/list (only-in racket/math pi)
-         "private/math.rkt" "private/data.rkt" "theme.rkt")
+         "private/math.rkt" "private/data.rkt" "private/reveal.rkt" "theme.rkt")
 (provide make-geometry-timeline sample-geometry-timeline geometry-timeline-narration-at
          default-geometry-timing)
+
+(define default-compass-action-duration 10.0)
 
 (define (initial-state program)
   (for/hash ([n (in-list (geometry-program-nodes program))])
@@ -52,6 +54,10 @@
                (or (not opening-hold) (and (finite-real? opening-hold) (>= opening-hold 0))))
     (geometry-error 'make-geometry-timeline "invalid realization, theme or duration"))
   (define program (geometry-realization-program realization))
+  (define environment (geometry-realization-values realization))
+  (define node-table
+    (for/hash ([node (in-list (geometry-program-nodes program))])
+      (values (geometry-node-id node) node)))
   (define base-timing (or (geometry-program-timing program) default-geometry-timing))
   (define effective-opening-pause (cond [opening-hold opening-hold] [opening-pause opening-pause]
                                         [else (geometry-timing-opening-pause base-timing)]))
@@ -69,6 +75,16 @@
   (define cues '())
   (define spans '())
   (define next-span-id 0)
+  (define (compass-reveal-target? id)
+    (and (hash-has-key? node-table id)
+         (eq? (geometry-node-type (hash-ref node-table id)) 'Circle)
+         (call-with-values (lambda () (resolve-circle-reveal program id environment))
+           (lambda (mode _source) (eq? mode 'compass)))))
+  (define (compass-reveal-actions? actions)
+    (for/or ([a (in-list actions)])
+      (and (eq? (geometry-action-kind a) 'reveal)
+           (for/or ([id (in-list (geometry-action-targets a))])
+             (compass-reveal-target? id)))))
   (define (add-event! actions duration)
     (define next (foldl (lambda (a s) (apply-action s a)) state actions))
     (define meaningful? (or (not (equal? next state))
@@ -88,10 +104,17 @@
              (hash-ref (geometry-step-timing step) 'read-delay)]
             [(geometry-step-narration step) effective-read-delay]
             [else 0]))
+    (define step-duration-overridden? (hash-has-key? (geometry-step-timing step) 'duration))
     (define action-duration* (hash-ref (geometry-step-timing step) 'duration effective-action-duration))
     (define step-pause* (hash-ref (geometry-step-timing step) 'pause effective-step-pause))
     (define actions (geometry-step-actions step))
     (define new-ids (revealed-ids actions))
+    (define auto-compass-duration?
+      (and (not action-duration) (not step-duration-overridden?)))
+    (define (event-duration leafs)
+      (if (and auto-compass-duration? (compass-reveal-actions? leafs))
+          (max action-duration* default-compass-action-duration)
+          action-duration*))
     (set! time (+ time read-delay*))
     (define action-start time)
     ;; Configure labels before a newly introduced point appears, avoiding a
@@ -112,7 +135,7 @@
       (if (eq? (geometry-action-kind a) 'expanded)
           (for ([child (in-list (geometry-action-payload a))] [child-index (in-naturals 1)])
             (visit-step! child (append path (list action-index child-index))))
-          (add-event! (leaf-actions a) action-duration*)))
+          (add-event! (leaf-actions a) (event-duration (leaf-actions a)))))
     (define action-end time)
     (set! time (+ time step-pause*))
     (set! spans

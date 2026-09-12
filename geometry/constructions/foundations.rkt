@@ -122,6 +122,10 @@
 (define-construction copy-segment
   (given [source : Segment] [target : Ray])
   (results Point)
+  ;; The transferred-radius circle is explanatory geometry, not just an
+  ;; intersection device. Fit its full circumference so it does not run under
+  ;; the caption band in constructions that use a large source segment.
+  (layout (fit-circle c))
   (initially (hide-label O))
   (step #:duration 0.2 "Use the starting point of the target ray."
     [O (start-point target)] (show target))
@@ -145,7 +149,10 @@
   ;; U chooses only a convenient compass opening. The resulting angle does not
   ;; depend on that choice. A segment domain avoids the old full-side opening,
   ;; which made D coincide (or nearly coincide) with the source endpoint C.
-  (layout (prefer (distance B U) (/ (distance B A) 3)))
+  ;; All three construction circles are pedagogically visible, so fit their
+  ;; full circumferences rather than only their centres/through-points.
+  (layout (prefer (distance B U) (/ (distance B A) 3))
+          (fit-circle c cO cP))
   (step #:duration 0.15 #:pause 0 "Use the source angle and the target ray."
     [A (angle-first source)] [B (angle-vertex source)] [C (angle-last source)]
     [O (start-point target)]

@@ -146,7 +146,7 @@ signatures of all eight standard helpers are unchanged. Captions describe
 mathematical actions; they do not announce emphasis/deemphasis operations.
 
 The 10-process video renderer, global frame naming, review all/single-example
-selection, ZIP layout, and three samples per authored review step are preserved.
+selection, ZIP layout, and three-sample ordinary rows and five-sample compass rows are preserved.
 The examples' authored steps, endings, and chosen representative layouts change
 where listed above. No outer Animate repository file is replaced.
 

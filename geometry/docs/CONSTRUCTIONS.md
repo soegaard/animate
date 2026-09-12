@@ -134,14 +134,19 @@ intersection with the target ray is Q. This uses the new elementary compass form
 (circle O #:radius (length AB))
 ```
 
-The radius must be positive and finite. In this form the circle's through-point
-for reveal animation is chosen on the positive world-x axis at that radius.
-`(circle O P)` still starts revealing at the explicitly supplied P.
+The radius must be positive and finite. Because this radius is traceable to
+`(length AB)`, the first reveal automatically shows the transferable-compass
+operation: a movable copy of AB is drawn over the source, lifted to a nearby
+parallel, highlighted, transported to O, highlighted again, and swept around
+while tracing the circle. The mathematical circle itself is unchanged.
+`(circle O P)` still uses its explicitly supplied P and the ordinary two-front
+reveal unless `compass` is requested explicitly.
 
 This library uses a **transferable compass**, the usual fixed-opening model in
-these videos. It does not expand a strict collapsible-compass length-transfer
-construction into Euclid I.2. That distinction is explicit rather than hidden in
-a helper claiming to use only two-point circles.
+these videos. The new reveal makes that assumption visible, but it does not
+expand a strict collapsible-compass length-transfer construction into Euclid
+I.2. That distinction is explicit rather than hidden in a helper claiming to use
+only two-point circles.
 
 ### Copy an angle onto a ray
 
@@ -171,7 +176,7 @@ end of the locus. `side-of?` checks which strict half-plane a point occupies.
 | `triangle-midline.rkt` | Two constructed midpoints | Half-side marks, parallel midline, half base length. |
 | `reflect-point.rkt` | Drop and copy length beyond the foot | Mirror line perpendicular to PQ and through its midpoint. |
 | `copy-triangle-sas.rkt` | Two length copies and one angle copy | All corresponding sides match; included angles match. |
-| `divide-segment-five.rkt` | Five unit copies, four parallels | Division points at fifths; five equal lengths. |
+| `divide-segment-five.rkt` | Five repeated compass-transfer circles, four parallels | Division points at fifths; five equal lengths. The five construction circles accumulate, then fade together after P₅. |
 | `tangent-at-point.rkt` | Erect at a radius endpoint | Perpendicular to the radius at the given circumference point. |
 | `orthocenter.rkt` | Three dropped perpendiculars | All three altitude lines concurrent. |
 | `regular-hexagon.rkt` | Repeated sixty-degree angle and radius copies | Six distinct successive vertices on the circle; equal sides. |

@@ -8,6 +8,7 @@
   (test-case "reveal modes are checked by object kind"
     (check-true (reveal-mode-valid? 'Segment 'from-end))
     (check-true (reveal-mode-valid? 'Circle 'clockwise))
+    (check-true (reveal-mode-valid? 'Circle 'compass))
     (check-false (reveal-mode-valid? 'Point 'clockwise))
     (check-equal? (default-reveal-mode 'Line) 'from-center))
   (test-case "segment starts offscreen, not at the viewport edge"
@@ -47,6 +48,103 @@
     (define c (circle (point 0 0) (point 0.8 0)))
     (check-true (< (reveal-arc-sweep (car (curve-reveal-strokes c view 0.5 'clockwise))) 0))
     (check-true (> (reveal-arc-sweep (car (curve-reveal-strokes c view 0.5 'counterclockwise))) 0)))
+  (test-case "compass reveal lifts, pulses, transports and traces the same tip"
+    (define c (circle-with-radius (point 0 2) 2))
+    (define source (compass-source (point 0 0) (point 2 0)))
+    ;; Halfway through the draw phase, exactly half of the copied segment is visible.
+    (define pickup (compass-circle-reveal c source (/ compass-draw-end 2)))
+    (check-true (null? (compass-reveal-state-circle-strokes pickup)))
+    (define pickup-line (car (compass-reveal-state-guide-strokes pickup)))
+    (near (car pickup-line) (point 0 0))
+    (near (cadr pickup-line) (point 1 0))
+    ;; The copied segment then lifts onto a nearby parallel line.
+    (define lifted (compass-circle-reveal c source compass-offset-end))
+    (define lifted-line (car (compass-reveal-state-guide-strokes lifted)))
+    (check-= (distance (car lifted-line) (cadr lifted-line)) 2 1e-8)
+    (check-= (point-y (car lifted-line)) (point-y (cadr lifted-line)) 1e-8)
+    (check-true (> (point-y (car lifted-line)) 0))
+    ;; The source attention phase peaks while the lifted carrier is stationary.
+    (define source-pulse
+      (compass-circle-reveal c source compass-review-source-attention-progress))
+    (check-= (compass-reveal-state-guide-attention source-pulse) 1 1e-8)
+    ;; Transport preserves length and ends with one endpoint at the circle centre.
+    (define transported (compass-circle-reveal c source compass-review-transport-progress))
+    (define transported-line (car (compass-reveal-state-guide-strokes transported)))
+    (check-= (distance (car transported-line) (cadr transported-line)) 2 1e-8)
+    (define ready (compass-circle-reveal c source compass-transport-end))
+    (define ready-line (car (compass-reveal-state-guide-strokes ready)))
+    (near (car ready-line) (point 0 2))
+    (near (cadr ready-line) (point 2 2))
+    ;; Arrival gets a second attention pulse before the sweep starts.
+    (define target-pulse
+      (compass-circle-reveal c source compass-review-target-attention-progress))
+    (check-= (compass-reveal-state-guide-attention target-pulse) 1 1e-8)
+    (near (caar (compass-reveal-state-guide-strokes target-pulse)) (circle-center c))
+    ;; The dedicated review sweep point is halfway around the circle.
+    (define half (compass-circle-reveal c source compass-review-sweep-progress))
+    (define half-arc (car (compass-reveal-state-circle-strokes half)))
+    (define half-guide (car (compass-reveal-state-guide-strokes half)))
+    (check-= (reveal-arc-sweep half-arc) pi 1e-8)
+    (near (last (reveal-arc-points half-arc)) (cadr half-guide))
+    (near (car half-guide) (circle-center c))
+    (define done (compass-circle-reveal c source 1))
+    (define done-arc (car (compass-reveal-state-circle-strokes done)))
+    (check-= (reveal-arc-sweep done-arc) (* 2 pi) 1e-8)
+    (check-true (reveal-arc-closed? done-arc))
+    (check-= (compass-reveal-state-guide-opacity done) 0 1e-8)
+    (check-= (compass-reveal-state-guide-attention done) 0 1e-8))
+  (test-case "automatic compass provenance follows length, distance and number aliases"
+    (define p
+      (compile '((given [A (point -2 0)] [B (point 0 0)] [O (point 3 0)])
+                 (step [AB (segment A B)])
+                 (step [r (length AB)])
+                 (step [c1 (circle O #:radius r)])
+                 (step [c2 (circle O #:radius (distance A B))])
+                 (step [c3 (circle O #:radius 2)])
+                 (step [c4 (circle O #:radius (* 2 (length AB)))]))))
+    (define realization (realize-construction p))
+    (define env (geometry-realization-values realization))
+    (for ([id '(c1 c2)])
+      (define-values (mode source) (resolve-circle-reveal p id env))
+      (check-equal? mode 'compass)
+      (check-true (compass-source? source))
+      (check-= (distance (compass-source-a source) (compass-source-b source)) 2 1e-8))
+    (for ([id '(c3 c4)])
+      (define-values (fallback-mode fallback-source) (resolve-circle-reveal p id env))
+      (check-equal? fallback-mode 'bidirectional)
+      (check-false fallback-source)))
+  (test-case "explicit compass accepts a through-point circle and rejects source-free radius"
+    (define through
+      (compile '((given [O (point 0 0)] [P (point 2 0)])
+                 (reveal [c compass])
+                 (step [c (circle O P)]))))
+    (define through-env (geometry-realization-values (realize-construction through)))
+    (define-values (mode source) (resolve-circle-reveal through 'c through-env))
+    (check-equal? mode 'compass)
+    (near (compass-source-a source) (point 0 0))
+    (near (compass-source-b source) (point 2 0))
+    (define literal
+      (compile '((given [O (point 0 0)])
+                 (reveal [c compass])
+                 (step [c (circle O #:radius 2)]))))
+    (define literal-env (geometry-realization-values (realize-construction literal)))
+    (check-exn exn:fail:geometry?
+               (lambda () (resolve-circle-reveal literal 'c literal-env))))
+  (test-case "compass provenance survives helper argument and result aliases"
+    (define-construction make-radius-circle
+      (given [source : Segment] [O : Point])
+      (results Circle)
+      (step [r (length source)])
+      (step [c (circle O #:radius r)])
+      (result c))
+    (construction p
+      (given [A (point -2 0)] [B (point 0 0)] [O (point 3 0)])
+      (step [AB (segment A B)])
+      (step (expand [c (make-radius-circle AB O)])))
+    (define env (geometry-realization-values (realize-construction p)))
+    (define-values (mode source) (resolve-circle-reveal p 'c env))
+    (check-equal? mode 'compass)
+    (check-= (distance (compass-source-a source) (compass-source-b source)) 2 1e-8))
   (test-case "zero reveals are empty; fade uses complete geometry"
     (define s (segment (point -1 0) (point 1 0)))
     (check-equal? (curve-reveal-strokes s view 0) '())
@@ -80,6 +178,9 @@
                          (reveal [s from-end]) (step [s (segment A B)]))))
     (check-equal? (geometry-program-reveals p) '((s from-end)))
     (check-equal? (resolve-reveal-mode p 's 'Segment) 'from-end)
+    (define cp (compile '((given [O (point 0 0)] [P (point 1 0)])
+                          (reveal [c compass]) (step [c (circle O P)]))))
+    (check-equal? (resolve-reveal-mode cp 'c 'Circle) 'compass)
     (check-exn exn:fail:geometry? (lambda () (compile '((given [A (point 0 0)]) (reveal [A clockwise]))))))
   (test-case "helper reveal metadata follows the result alias"
     (define-construction h (given [A : Point] [B : Point]) (results Segment)

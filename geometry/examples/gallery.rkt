@@ -66,7 +66,8 @@
     (label-text CA0 "A") (label-text CB0 "B") (label-text CC0 "C")
     (label-text CO0 "O") (label-text CT "T")
     (label-text segment-A "A") (label-text segment-B "B")
-    (label-text ray-origin "P") (label-text primitive-center "O") (label-text primitive-through "Q"))
+    (label-text ray-origin "P") (label-text primitive-center "O") (label-text primitive-through "Q")
+    (label-text compass-A "A") (label-text compass-B "B") (label-text compass-O "O"))
 
   ;; ------------------------------------------------------------------
   ;; Primitive drawable geometry.
@@ -235,6 +236,18 @@
   (step #:duration 0.35 #:pause 0
     (hide circle-U circle-V circle-O circle-Q circle-X circle-Y
           two-front-circle clockwise-circle counterclockwise-circle))
+
+  ;; Radius provenance: the temporary stippled carrier is presentation-only.
+  ;; The mathematical construction remains an ordinary radius-defined circle.
+  (step "The length AB will be used as the radius of another circle."
+    (together
+      [compass-A (point -3 1)] [compass-B (point -1 1)]
+      [compass-O (point 2 1)] [compass-source (segment compass-A compass-B)]))
+  (step "Set the compass to AB and draw the circle centred at O."
+    [compass-circle (circle compass-O #:radius (length compass-source))])
+  (step #:duration 0.35 #:pause 0
+    (hide compass-A compass-B compass-O compass-source compass-circle))
+
   (step "This circle has the same radius."
     [fade-circle (circle (point 0 1) (point 0.85 1))])
   (step #:duration 0.35 #:pause 0 (hide fade-circle))

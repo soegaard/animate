@@ -14,7 +14,6 @@
                (exact-positive-integer? rows-per-page))
     (error 'geometry-review "invalid contact-sheet options"))
   (define gutter 12)
-  (define width (+ (* 3 thumb-width) (* 4 gutter)))
   (define thumb-height (max 1 (inexact->exact (round (/ thumb-width aspect)))))
   (define pages (quotient (+ (length plan) (sub1 rows-per-page)) rows-per-page))
   (define background (if (equal? theme "dark") (make-color 22 28 36) (make-color 246 247 249)))
@@ -52,9 +51,11 @@
     (for/list ([page (in-range pages)])
       (define rows (take (drop plan (* page rows-per-page))
                          (min rows-per-page (- (length plan) (* page rows-per-page)))))
+      (define columns (apply max (map (lambda (row) (length (geometry-review-step-samples row))) rows)))
+      (define width (+ (* columns thumb-width) (* (add1 columns) gutter)))
       (define row-lines (map (lambda (row) (wrap (heading row) (- width (* 2 gutter)))) rows))
       (define row-heights (map (lambda (lines) (+ (* 20 (length lines)) thumb-height 52)) row-lines))
-      (define height (+ 88 (apply + row-heights) gutter))
+      (define height (+ 68 (apply + row-heights) gutter))
       (define canvas (make-bitmap width height))
       (define dc (new bitmap-dc% [bitmap canvas]))
       (define filename
@@ -68,11 +69,11 @@
          (send dc set-text-foreground foreground) (send dc set-font title-font)
          (send dc draw-text (format "~a / ~a — review ~a/~a" name theme (add1 page) pages) gutter 12)
          (send dc set-font body-font) (send dc set-text-foreground muted)
-         (send dc draw-text "Three states per step. Full-size images and exact times are in the bundle." gutter 42)
-         (for ([label (in-list '("Read — before action" "During — action sample" "Settled — after action"))]
-               [col (in-naturals)])
-           (send dc draw-text label (+ gutter (* col (+ thumb-width gutter))) 66))
-         (define y 88)
+         (send dc draw-text "Rows may have either three or seven samples; each thumbnail is labeled below." gutter 42)
+         ;; Do not use global phase headings: mixed three- and seven-sample rows
+         ;; would place ordinary `during`/`settled` images under compass-only
+         ;; `measure`/`transport` headings. Per-thumbnail labels are unambiguous.
+         (define y 68)
          (for ([row (in-list rows)] [lines (in-list row-lines)] [row-height (in-list row-heights)])
            (send dc set-font heading-font) (send dc set-text-foreground foreground)
            (for ([line (in-list lines)] [line-number (in-naturals)])

@@ -18,14 +18,26 @@ cross or visually divide the newly copied angle. Captions use the displayed
 names, including helper-local substitutions, and still do not announce
 highlighting or deemphasis.
 
-The gallery currently has **66 review rows / 198 images per theme** with expanded
-steps included. Synthetic setup/cleanup is not an extra review row. Step numbers
+The gallery currently has **60 default review rows / 180 step images per theme** with expanded
+steps included and silent cleanup rows omitted. Synthetic setup/cleanup is not an extra review row. Step numbers
 have changed relative to the input v0.8.0 bundle.
 
 Native post-fix rendering still needs verification. In addition to the points
 above, inspect the existing demonstrations below for regressions.
 
 ---
+
+
+## v0.9.3: compass-transfer plate
+
+A later circle plate shows the radius provenance used by transferable-compass
+constructions. A visible segment AB supplies the radius of a circle centred at O.
+During the fresh reveal a temporary dashed copy is drawn on AB, transported to O,
+and swept once while the circle is traced. The temporary carrier is gone in the
+settled image and does not alter the underlying geometry graph.
+
+Review bundles capture this plate with seven samples: `read`, `pickup`, `source-attention`, `transport`, `target-attention`, `sweep`, and `settled`. The two attention samples show the glow pulses before and after transport. `copy-segment` and `copy-angle` use the same behavior
+automatically when their radius is a direct length/distance.
 
 ## Existing reveal/layout demonstrations
 

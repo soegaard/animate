@@ -171,6 +171,24 @@
       (for* ([style (in-list styles)] [channel (in-list '(stroke fill label))])
         (geometry-style-color style channel))
       (values id styles)))
+  ;; Circle radius provenance is resolved once, before playback.  Ordinary
+  ;; circles keep their existing reveal; a radius copied from visible geometry
+  ;; receives the compass-transfer presentation without changing the circle.
+  (define reveal-table
+    (for/hash ([node (in-list nodes)])
+      (define id (geometry-node-id node))
+      (if (eq? (geometry-node-type node) 'Circle)
+          (let-values ([(mode source) (resolve-circle-reveal program id environment)])
+            (values id (cons mode source)))
+          (values id (cons (resolve-reveal-mode program id (geometry-node-type node)) #f)))))
+  (define compass-guide-style
+    (resolve-geometry-style theme 'compass-guide 'normal))
+  (define compass-guide-color
+    (geometry-style-color compass-guide-style 'stroke))
+  (define compass-attention-style
+    (resolve-geometry-style theme 'compass-attention 'normal))
+  (define compass-attention-color
+    (geometry-style-color compass-attention-style 'stroke))
   (define (object-group node frame)
     (define id (geometry-node-id node))
     (define value (hash-ref environment id))
@@ -178,7 +196,9 @@
     (define styles (hash-ref style-table id))
     (define weights (style-weights appearance))
     (define (number property) (style-number styles weights property))
-    (define mode (resolve-reveal-mode program id (geometry-node-type node)))
+    (define reveal-info (hash-ref reveal-table id))
+    (define mode (car reveal-info))
+    (define compass-source (cdr reveal-info))
     (define progress (geometry-appearance-reveal appearance))
     (define alpha (* (geometry-appearance-opacity appearance) (number 'opacity)
                      (if (eq? mode 'fade) progress 1)))
@@ -225,6 +245,71 @@
                    #:id (key id (if (zero? i) 'marker (format "marker-~a" i))) #:fill #f)
                   stroke-color) (number 'stroke-width))
                 (unit (* alpha weight (number 'stroke-opacity)))))]
+            [(and (circle? value) (eq? mode 'compass))
+             (define state (compass-circle-reveal value compass-source reveal #:view view #:caption-band caption-height))
+             (define patterns (remove-duplicates (map (lambda (s) (hash-ref s 'dash)) styles)))
+             (define circle-visuals
+               (for/list ([pattern (in-list patterns)] [i (in-naturals)])
+                 (define weight
+                   (for/sum ([s (in-list styles)] [w (in-list weights)]
+                             #:when (equal? pattern (hash-ref s 'dash))) w))
+                 (a:visual-with-opacity
+                  (a:visual-with-stroke-width
+                   (a:visual-with-stroke-color
+                    (a:make-path-visual
+                     (strokes-path (compass-reveal-state-circle-strokes state)
+                                   view pattern pixels)
+                     #:id (key id (format "stroke-~a" i)) #:fill #f)
+                    stroke-color)
+                   (number 'stroke-width))
+                  (unit (* alpha weight (number 'stroke-opacity))))))
+             ;; The transient guide is presentation-only: it is not a geometry
+             ;; node, does not affect annotation layout, and is absent at the
+             ;; settled endpoint so show/hide never replays the construction.
+             (define guide-opacity
+               (* (geometry-appearance-opacity appearance)
+                  (compass-reveal-state-guide-opacity state)
+                  (hash-ref compass-guide-style 'opacity)
+                  (hash-ref compass-guide-style 'stroke-opacity)))
+             (define attention-opacity
+               (* (geometry-appearance-opacity appearance)
+                  (compass-reveal-state-guide-attention state)
+                  (hash-ref compass-attention-style 'opacity)
+                  (hash-ref compass-attention-style 'stroke-opacity)))
+             (define guide-strokes (compass-reveal-state-guide-strokes state))
+             (define attention-visuals
+               (if (and (> attention-opacity 0) (pair? guide-strokes))
+                   (list
+                    ;; A wide translucent under-stroke gives the temporary
+                    ;; carrier the same single-pulse visual language as an
+                    ;; attention/glow effect without adding mutable scene state.
+                    (a:visual-with-opacity
+                     (a:visual-with-stroke-width
+                      (a:visual-with-stroke-color
+                       (a:make-path-visual
+                        (strokes-path guide-strokes
+                                      view (hash-ref compass-attention-style 'dash) pixels)
+                        #:id (key id 'compass-attention) #:fill #f)
+                       compass-attention-color)
+                      (hash-ref compass-attention-style 'stroke-width))
+                     (unit attention-opacity)))
+                   '()))
+             (append
+              circle-visuals
+              attention-visuals
+              (if (and (> guide-opacity 0) (pair? guide-strokes))
+                  (list
+                   (a:visual-with-opacity
+                    (a:visual-with-stroke-width
+                     (a:visual-with-stroke-color
+                      (a:make-path-visual
+                       (strokes-path guide-strokes
+                                     view (hash-ref compass-guide-style 'dash) pixels)
+                       #:id (key id 'compass-guide) #:fill #f)
+                      compass-guide-color)
+                     (hash-ref compass-guide-style 'stroke-width))
+                    (unit guide-opacity)))
+                  '()))]
             [else
              (define patterns (remove-duplicates (map (lambda (s) (hash-ref s 'dash)) styles)))
              (for/list ([pattern (in-list patterns)] [i (in-naturals)])

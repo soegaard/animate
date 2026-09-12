@@ -5,7 +5,7 @@
 ;; covers that separate integration boundary in a complete Animate checkout.
 (require racket/list racket/file racket/path racket/port racket/runtime-path
          racket/string json file/unzip
-         "../core.rkt" "../review-plan.rkt" "../private/review-bundle.rkt"
+         "../core.rkt" "../review-plan.rkt" "../private/reveal.rkt" "../private/review-bundle.rkt"
          "../private/compiler.rkt" "../examples/private/review-example-names.rkt")
 (provide review-check-groups run-review-checks)
 (define-runtime-path examples "../examples")
@@ -340,7 +340,7 @@
                              (geometry-review-span-reviewable? s spans)))
             spans))
   (ensure (= (length plan) (length expected)) "review-worthy authored/expanded step count differs" name)
-  (ensure (= (length (geometry-review-samples plan)) (* 3 (length expected))) "wrong image count")
+  (ensure (andmap (lambda (row) (member (length (geometry-review-step-samples row)) '(3 7))) plan) "unexpected per-step image count")
   (define ids (sort (hash-keys (geometry-timeline-initial t)) symbol<?))
   (for ([row (in-list plan)])
     (define span (geometry-review-step-span row))
@@ -354,11 +354,11 @@
               "time outside step" name (geometry-review-step-number row))
       (ensure (equal? ids (sort (hash-keys (geometry-frame-appearances (geometry-review-sample-frame s))) symbol<?))
               "sample object ids differ"))
-    (when (pair? events)
-      (define time (geometry-review-sample-time (cadr samples)))
+    (for ([sample (in-list samples)] #:when (memq (geometry-review-sample-phase sample) '(during pickup source-attention transport target-attention sweep)))
+      (define time (geometry-review-sample-time sample))
       (ensure (ormap (lambda (e) (< (geometry-event-start e) time (geometry-event-end e))) events)
-              "during fell in a pause or at an action boundary" name time))
-    (for ([s (in-list (list (car samples) (caddr samples)))]
+              "action sample fell in a pause or at an action boundary" name time (geometry-review-sample-phase sample)))
+    (for ([s (in-list (list (car samples) (last samples)))]
           [state (in-list (list (geometry-step-span-before span) (geometry-step-span-after span)))])
       (for ([(id p) (in-hash state)])
         (define a (app s id))
@@ -366,8 +366,52 @@
         (ensure (= (geometry-appearance-highlight a) 0) "boundary has transient highlight"))))
   (ensure (equal? plan (make-geometry-review-plan t)) "nondeterministic plan"))
 
+(define extra-review-groups
+  (list
+   (cons "compass circle rows receive seven choreography samples"
+     (lambda ()
+       (define program
+         (compile
+          (append givens
+                  (list timing
+                        '(step "Set the radius." [AB (segment A B)])
+                        '(step "Draw the transferred circle." [k (circle C #:radius (length AB))])))))
+       (define plan (make-geometry-review-plan (construction->timeline program)))
+       (define row (cadr plan))
+       (define samples (geometry-review-step-samples row))
+       (define phases (map geometry-review-sample-phase samples))
+       (ensure (equal? phases '(read pickup source-attention transport target-attention sweep settled))
+               "compass phase order")
+       (ensure (equal? (map geometry-review-sample-filename samples)
+                       '("step-002-read.png"
+                         "step-002-pickup.png"
+                         "step-002-source-attention.png"
+                         "step-002-transport.png"
+                         "step-002-target-attention.png"
+                         "step-002-sweep.png"
+                         "step-002-settled.png"))
+               "compass filenames")
+       ;; Review timestamps target semantic reveal progress, not raw event
+       ;; progress. The timeline applies smoothstep, so the planner must invert
+       ;; that easing before selecting times.
+       (define (phase-sample phase)
+         (findf (lambda (sample) (eq? (geometry-review-sample-phase sample) phase)) samples))
+       (near (geometry-appearance-reveal (app (phase-sample 'pickup) 'k))
+             compass-review-pickup-progress)
+       (near (geometry-appearance-reveal (app (phase-sample 'source-attention) 'k))
+             compass-review-source-attention-progress)
+       (near (geometry-appearance-reveal (app (phase-sample 'transport) 'k))
+             compass-review-transport-progress)
+       (near (geometry-appearance-reveal (app (phase-sample 'target-attention) 'k))
+             compass-review-target-attention-progress)
+       (near (geometry-appearance-reveal (app (phase-sample 'sweep) 'k))
+             compass-review-sweep-progress)
+       (ensure (member "Compass circle reveal: this row includes dedicated pickup, source-attention, transport, target-attention, and sweep samples."
+                       (geometry-review-step-notes row))
+               "missing compass note")))))
+
 (define review-check-groups
-  (append basic-groups
+  (append basic-groups extra-review-groups
           (for*/list ([name (in-list review-example-names)] [mode (in-list '(light dark))])
             (cons (format "all steps and samples: ~a / ~a" name mode)
                   (lambda () (check-example name mode))))))
