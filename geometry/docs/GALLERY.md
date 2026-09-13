@@ -1,3 +1,15 @@
+# Gallery subtitle export — v0.10.0
+
+The gallery's existing narration now feeds Animate subtitle metadata as well as
+its visible caption panel. `--mp4 gallery.mp4` also writes `gallery.srt`; no new
+visual plate or timing change is required. Use `--subtitles-only --srt gallery.srt
+--vtt gallery.vtt` to refresh files without generating PNGs. On-screen captions
+remain enabled by default. The batch dark renderer includes the gallery last.
+
+See [SUBTITLES.md](SUBTITLES.md) for the complete workflow.
+
+---
+
 # Gallery review — v0.8.1
 
 ## Corrections from the uploaded contact sheets

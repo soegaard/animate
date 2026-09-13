@@ -1,4 +1,4 @@
-# Implemented geometry DSL — v0.9.2
+# Implemented geometry DSL — v0.10.2
 
 This is the reference for the code in this delivery. It is narrower than the
 original design proposal: features listed as deferred below are not silently
@@ -26,6 +26,7 @@ The timeline does not execute a geometric construction afresh on every frame.
 (require "geometry/main.rkt")    ; all of core, plus native animate conversion
 (require "geometry/render.rkt")  ; effectful image/video/subtitle output
 (require "geometry/review.rkt")  ; sparse step-review images, contact sheets and ZIPs
+(require "geometry/subtitles.rkt") ; Animate subtitle values, authored timeline bridge, SRT/WebVTT
 (require (prefix-in c: "geometry/constructions.rkt")) ; standard library
 ;; core.rkt/main.rkt already re-export transformations.rkt and labels.rkt.
 ;; The latter two are also available as focused headless entry points.
@@ -35,7 +36,8 @@ These examples assume the importing file is in the `animate` repository root.
 Adjust relative paths for another location. Installed collection paths are
 `animate/geometry/core`, `animate/geometry/main`, `animate/geometry/render`, and
 `animate/geometry/constructions`. Focused new entry points are
-`animate/geometry/transformations` and `animate/geometry/labels`.
+`animate/geometry/transformations`, `animate/geometry/labels`,
+`animate/geometry/captions` and `animate/geometry/subtitles`.
 
 The geometry primitives are not the same bindings as the native `animate` Visual
 constructors. Prefix an import when using both APIs.
@@ -504,7 +506,7 @@ A geometry theme extends the default geometry theme unless an explicit
 assignment selects a family; state rules choose the variant. The letters do not
 have a universal “muted” meaning independent of the native color theme.
 
-Supported kind selectors: `point`, `segment`, `line`, `ray`, `circle`.
+Supported geometric kind selectors: `point`, `segment`, `line`, `ray`, `circle`. The presentation-only `compass-guide` and `compass-attention` selectors style the movable transferred-radius carrier and its attention halo.
 Supported state selectors: `normal`, `deemphasized`, `highlighted`.
 Marker subtypes additionally support `right-angle-marker`, `length-marker`,
 `parallel-marker`, and `angle-marker`; they inherit the generic `marker` rules.
@@ -732,12 +734,20 @@ unchanged; only the path exposed at a given action progress changes.
 | Segment | From its first endpoint (`from-start`) | `from-end`, `from-center`, `fade` |
 | Ray | From its finite origin (`from-start`) | `fade` |
 | Line | Outward from its defining region (`from-center`) | `fade` |
-| Circle | Two fronts from its through-point (`bidirectional`) | `clockwise`, `counterclockwise`, `fade` |
+| Circle | Two fronts from its through-point (`bidirectional`), or automatic compass transfer when a radius comes from a visible length/distance | `compass`, `clockwise`, `counterclockwise`, `bidirectional`, `fade` |
 | Marker | Draw each constituent glyph (`draw`) | `fade` |
 
-`auto` selects the default for any drawable kind. State commands are unchanged:
-`show` fades in the complete object, `hide` fades it out, and showing an object
-again does not replay its original construction stroke.
+`auto` selects the default for any drawable kind. For a radius-defined circle,
+`auto` additionally inspects the radius provenance. If the radius is directly a
+segment length or point-to-point distance (possibly through Number aliases and
+expanded-helper argument/result aliases), it uses the `compass` reveal. Literal
+radii and arbitrary arithmetic keep the ordinary circle reveal. A two-point
+`(circle O P)` remains `bidirectional` by default.
+
+State commands are unchanged: `show` fades in the complete object, `hide` fades
+it out, and showing an object again does not replay its original construction
+stroke. The transient compass guide exists only during the original `reveal`
+action and is not a geometry node.
 
 A construction may override fresh-binding reveals:
 
@@ -754,6 +764,9 @@ A construction may override fresh-binding reveals:
 The `reveal` clause can refer forward. Unsupported combinations such as a
 clockwise point reveal are rejected before realization. A reusable helper's
 rules follow its renamed objects; a caller's rule for a returned object wins.
+Explicit `[c compass]` also works for `(circle O P)`, using `OP` as the transferred
+measure. Forcing `compass` on a radius with no geometric provenance, such as
+`(circle O #:radius 3)`, is diagnosed when the rendered scene is prepared.
 
 Segments and rays are revealed **before** viewport clipping. An offscreen
 endpoint does not become a new mathematical endpoint at the edge of the frame.
@@ -766,9 +779,62 @@ through-point. Its final boundary and every intermediate solid arc use native
 cubic Beziers. Dash patterns start at the reveal origin rather than being
 re-centred at each frame.
 
-Every constituent tick, chevron, square or angle arc reveals progressively.
-Corresponding marks in a group share progress. Right-angle squares retain their
-existing side length; equality and midpoint ticks retain their 20% reduction.
+### Compass-transfer circle reveal
+
+For a circle whose radius is copied from visible geometry, the mathematical
+object is still an ordinary Circle. The presentation layer retains the original
+radius expression and derives a temporary movable carrier from forms such as:
+
+```racket
+[c1 (circle O #:radius (length AB))]
+[c2 (circle O #:radius (distance A B))]
+[r  (length AB)]
+[c3 (circle O #:radius r)]
+```
+
+The fresh reveal is deliberately slower and more explicit than an ordinary
+curve reveal. Unless action duration is explicitly overridden, a compass reveal
+gets a **10.0 second** action. Within that action the carrier:
+
+1. is drawn directly on top of the source measure;
+2. moves a small distance onto a nearby line parallel to the source;
+3. receives a single glow-like attention pulse;
+4. moves rigidly to the new circle centre without changing length or direction;
+5. receives a second attention pulse after arrival; and
+6. rotates once counterclockwise while its free endpoint traces the circle.
+
+The parallel offset chooses the side that best stays inside the usable frame and
+away from the caption band. The eventual carrier orientation at the new centre
+continues to prefer an early sweep that stays visible. The source geometry itself
+never moves.
+
+The carrier's length is constant through offset, transport, and sweep. During
+the sweep its moving endpoint is exactly the endpoint of the partial circle arc.
+The carrier fades near the end of the sweep and is absent from the settled state,
+so later `show`/`hide` operations never replay the transfer.
+
+Automatic provenance deliberately recognizes only a direct `(length segment)` or
+`(distance point point)` chain. Expressions such as `(* 2 (length AB))`, `(+ r 1)`,
+or a literal radius do not invent a source and therefore use the ordinary reveal.
+
+Two semantic theme selectors style the temporary presentation:
+
+- `compass-guide` is the solid movable carrier;
+- `compass-attention` is the wide translucent under-stroke used for each pulse.
+
+Both use the theme's highlight color by default. They are presentation-only and
+do not participate in layout, labels, assertions, intersections, helper results,
+or the final geometry graph.
+
+Review bundles use seven samples for compass rows:
+`read`, `pickup`, `source-attention`, `transport`, `target-attention`, `sweep`, and
+`settled`. These samples are specified in reveal-progress space; review planning
+inverts the timeline's smoothstep easing before choosing timestamps.
+
+The `divide-segment-five` library example deliberately repeats the same
+compass-transfer construction five times. Its construction circles remain visible
+as an accumulated record of equal steps, then fade together after the fifth point
+has been established.
 
 ## 15. Labels and marker placement
 
@@ -987,10 +1053,19 @@ Line's direction. `drop-perpendicular` defines its output Line from external P
 toward the second circle intersection across the input Line. These documented
 orientations make subsequent ray construction unambiguous.
 
+Standard copying helpers mark their pedagogically visible construction circles
+with `fit-circle`, so the realization camera fits complete auxiliary
+circumferences rather than only the centre of a radius-defined circle. This is
+particularly important for large copied lengths near the caption band.
+
 For copying lengths, this version assumes a **transferable compass**. The form
-`(circle O #:radius r)` places its reveal through-point at `(O.x + r, O.y)`.
-It does not purport to expand a strictly collapsible-compass transfer algorithm.
-`(circle O P)` retains the original through-point/reveal semantics.
+`(circle O #:radius r)` still realizes an ordinary circle numerically, but when
+`r` is traceable to a segment length or point distance its first reveal now shows
+that transfer explicitly with the temporary compass carrier described in
+Section 14. A literal or arithmetically derived radius falls back to the ordinary
+circle reveal. This presentation does not purport to expand a strictly
+collapsible-compass transfer algorithm. `(circle O P)` retains its original
+through-point/two-front semantics unless `[c compass]` is requested explicitly.
 
 See `docs/CONSTRUCTIONS.md` for all contracts, algorithms, limitations, and the
 thirteen application videos. The gallery adds plates showing all eight helpers
@@ -1066,7 +1141,12 @@ completed state before the next step's caption/actions. Samples are computed fro
 compiled step boundaries, not by dividing a narration interval into thirds.
 Boundary snapshots handle zero-delay/zero-pause steps without showing the wrong
 caption. Notes identify instantaneous and action-free steps, and steps containing
-more transitions than a single during image can show.
+more transitions than a single action image can show. Steps containing a compass
+circle reveal receive seven review samples: `read`, `pickup`, `source-attention`, `transport`, `target-attention`, `sweep`, and `settled`.
+Compass action samples target reveal progress rather than raw event progress; the
+planner inverts the timeline's smoothstep easing before choosing their timestamps.
+Mixed contact sheets use per-thumbnail phase labels instead of ambiguous global
+column headings.
 
 Expanded helper steps are included recursively. Parent expansion steps get an
 overview row, and their children get individual rows. Generated setup/cleanup is never counted as an authored step. Silent authored
@@ -1533,3 +1613,187 @@ For a video:
 
 See `TRANSFORMATIONS-AND-LABELS-PLAN.md` for the implementation plan and
 `TRANSFORM-LABEL-VALIDATION.md` for what was actually executed.
+
+
+## 22. Subtitles via Animate (v0.10.2)
+
+
+**On-screen captions remain enabled by default.** Exporting subtitles does not
+remove them, add a second caption overlay, or change the construction timing.
+This version uses Animate's public `subtitle`, `make-authored-timeline` and
+`write-subtitles!` APIs instead of maintaining a separate SRT serializer.
+
+## Normal video rendering
+
+Run from the Animate repository root:
+
+```sh
+RACKET="/Applications/Racket v9.3.0.2/bin/racket"
+
+"$RACKET" geometry/examples/copy-triangle-sas.rkt \
+  --dark --workers 10 \
+  --mp4 geometry-output/videos/dark/copy-triangle-sas.mp4 \
+  geometry-output/dark/copy-triangle-sas
+```
+
+Output includes:
+
+```text
+geometry-output/videos/dark/copy-triangle-sas.mp4
+geometry-output/videos/dark/copy-triangle-sas.srt
+geometry-output/dark/copy-triangle-sas/narration.srt
+geometry-output/dark/copy-triangle-sas/frame-000000.png
+...
+```
+
+The sidecar next to the MP4 has the same text and timing as `narration.srt`.
+The latter is retained for compatibility. The MP4 also contains that narration
+as a selectable MP4 `mov_text` subtitle stream. The embedded track defaults to
+ISO 639-2 language code `eng`, which QuickTime Player identifies as English
+rather than `Unknown language`. Use `--subtitle-language dan` for Danish or
+another three-letter ISO 639-2 code. The mux step copies the already
+encoded video stream instead of re-encoding it. The separate SRT remains
+available for YouTube or another platform's subtitle-file upload.
+
+`geometry/render-all-dark.rkt` is included. Its existing command runs tests,
+then every registered dark-theme example, with the gallery last:
+
+```sh
+"$RACKET" geometry/render-all-dark.rkt
+```
+
+Every MP4 now also gets its own matching SRT. Workers still render frames; only
+the parent writes subtitle files, using the full, unsharded timeline.
+
+## Explicit filenames and WebVTT
+
+```sh
+"$RACKET" geometry/examples/copy-angle.rkt \
+  --dark --workers 10 \
+  --mp4 output/copy-angle.mp4 \
+  --srt output/copy-angle.en.srt \
+  --vtt output/copy-angle.en.vtt \
+  output/frames/copy-angle
+```
+
+`--srt FILE` replaces the automatic MP4-sidecar filename, not the legacy
+`narration.srt` in the frame directory. `--vtt FILE` is an additional, opt-in
+WebVTT export. Parent directories are created as needed. Identical SRT targets
+are written once; an SRT/VTT collision or a path that would overwrite the MP4
+or one of its frame files is rejected before rendering.
+
+## Export without rerendering
+
+```sh
+"$RACKET" geometry/examples/copy-triangle-sas.rkt \
+  --dark --subtitles-only \
+  --srt output/copy-triangle-sas.srt \
+  --vtt output/copy-triangle-sas.vtt
+```
+
+This realizes the construction and compiles its timing, but renders no PNGs,
+creates no frame directory, and invokes no FFmpeg. It still needs the enclosing
+Animate installation, because Animate supplies the subtitle data and writer.
+Use the same source version and timeline settings as the video: exporting from
+a different timing revision cannot retime an already encoded movie.
+
+`--subtitles-only` needs `--srt` and/or `--vtt`; it cannot be combined with movie,
+frame, review or describe mode, or a positional frame directory.
+
+## Captions and subtitle files are independent
+
+No flag is needed to retain captions. `--captions` explicitly enables them;
+`--no-captions` opts out of the visual caption layer. Neither flag suppresses
+subtitle export. For example, this is available for a future caption-free video:
+
+```sh
+"$RACKET" geometry/examples/copy-angle.rkt \
+  --dark --no-captions --mp4 output/clean-copy-angle.mp4 \
+  output/frames/clean-copy-angle
+```
+
+The video has no on-screen geometry captions, but `output/clean-copy-angle.srt`
+still contains the complete timed narration and the MP4 contains the same
+selectable subtitle track. Point names and semantic mathematical labels are not
+subtitles and remain part of the diagram.
+
+## Racket API
+
+```racket
+(require "geometry/subtitles.rkt")
+
+;; Native Animate subtitle values; exact times in seconds.
+(define entries (geometry-timeline->subtitles timeline))
+
+;; A real authored timeline containing the geometry scene AND subtitle metadata.
+;; Captions default to #t, as they do for geometry-timeline->scene.
+(define authored
+  (geometry-timeline->authored-timeline timeline
+                                      #:width 1280 #:height 720))
+
+(write-geometry-subtitles! timeline "lesson.srt")
+(write-geometry-subtitles! timeline "lesson.vtt" #:format 'webvtt)
+```
+
+The bridge is also exported by `geometry/main.rkt`.
+`geometry-timeline->authored-timeline` accepts `#:width`, `#:height`, `#:captions?`
+and `#:labels`. It is intended for callers who want an actual scene with
+Animate authoring metadata; it uses the existing geometry scene adapter.
+
+The standalone writer uses a timing-only native scene as a host for Animate's
+existing writer contract. It does not prepare the diagram's labels or render
+its Visuals. Its output is written to a sibling temporary file and published
+after successful serialization, preserving the previous file on a write failure.
+
+The existing rendering functions also accept export destinations:
+
+```racket
+(require "geometry/render.rkt")
+
+(render-geometry-frames! timeline "frames"
+                         #:mp4 "lesson.mp4"
+                         #:srt "lesson.en.srt"
+                         #:vtt "lesson.en.vtt")
+```
+
+`render-geometry-frames/report!` accepts the same options and retains its return
+type. `render-geometry-stills!` accepts `#:srt` and `#:vtt` as well. Workers using
+`render-geometry-frame-indices!` do not export fragments of a subtitle track.
+
+## Timing and expanded helpers
+
+`geometry-caption-cues`, now exported by the headless `geometry/core.rkt` and
+focused `geometry/captions.rkt`, computes effective narration without loading
+Animate. It collects cue boundaries, resolves each interval with the **same
+shortest-enclosing-cue rule** as on-screen narration, and merges adjacent equal
+text. A child helper's caption supersedes its parent's only for that child's
+interval; the parent can resume afterward. Silent gaps are not bridged.
+
+Zero-duration cues do not produce subtitle entries. Whitespace-only captions
+are omitted when converting to native subtitle values. Exact/inexact numeric
+representations of the same boundary are deduplicated numerically. Cue times
+remain in seconds until Animate serializes them with millisecond precision;
+they are not rounded to the movie's frame grid. Unicode point names and text
+are retained, and Animate normalizes CRLF line endings in the output.
+
+The ten-second compass default, pickup/lift/attention/transfer/sweep choreography,
+and repeated five-circle construction are unchanged. Subtitle timing comes
+from the final compiled timeline, so those durations and all reading pauses
+are included automatically. No duration is inferred from text length.
+
+## Review and batch integration
+
+The gallery and all other existing examples use this support through the shared
+runner. Their mathematical source and review sampling are unchanged. A direct
+review command can also request external subtitle files, but those files must
+remain outside the managed review directory and use a path different from the
+review ZIP, so safe review reruns continue to work.
+
+## Tests
+
+```sh
+"$RACKET" geometry/run-tests.rkt --subtitles  # base-only cue/target checks
+"$RACKET" geometry/run-tests.rkt              # includes native integration
+```
+
+See `SUBTITLE-VALIDATION.md` for which checks were executed for this delivery.

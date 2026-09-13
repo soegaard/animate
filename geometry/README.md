@@ -1,4 +1,60 @@
-# Geometry authoring for `animate` — v0.9.8
+# Geometry authoring for `animate` — v0.10.2
+
+
+
+## New in v0.10.2 — subtitle language metadata
+
+Embedded MP4 subtitle tracks now default to ISO 639-2 language code `eng`, so
+QuickTime Player reports **English** instead of **Unknown language**. The language
+is configurable per render with `--subtitle-language CODE`, for example `dan`
+for Danish. This changes only MP4 track metadata; the SRT/VTT text and timing are
+unchanged.
+
+```sh
+"$RACKET" geometry/examples/copy-triangle-sas.rkt \
+  --dark --mp4 output/copy-triangle-sas.mp4 \
+  --subtitle-language eng \
+  output/frames/copy-triangle-sas
+```
+
+The language-tagging pass uses FFmpeg stream copy, so the video is not
+re-encoded.
+
+## New in v0.10.1 — selectable subtitles inside MP4
+
+`--mp4` now keeps the external `.srt` sidecar **and** muxes that same track into
+the MP4 as an MP4 `mov_text` subtitle stream. QuickTime Player and other players
+can therefore enable/disable the subtitle track. The video stream is copied
+during the mux step, so adding subtitles does not cause a second video encode.
+
+On-screen geometry captions remain enabled by default exactly as before. This
+means a normal render contains both the permanently rendered pedagogical caption
+and a selectable subtitle track; use `--no-captions` only when you explicitly
+want a clean video with subtitles controlled entirely by the player.
+
+The sidecar remains the recommended file to upload separately to YouTube.
+
+
+## New in v0.10.0 — subtitles, with captions still on
+
+MP4 rendering now also produces a matching `.srt` sidecar. The existing captions
+stay in the video by default, and the legacy `narration.srt` in the frame folder
+is retained. `--srt FILE` chooses a custom filename, `--vtt FILE` adds WebVTT, and
+`--subtitles-only` exports without rendering frames or encoding video.
+
+Geometry now delegates subtitle formatting to Animate's existing public writer.
+`geometry-timeline->subtitles` and `geometry-timeline->authored-timeline` expose
+the native metadata bridge. See [SUBTITLES.md](docs/SUBTITLES.md) for commands,
+API reference, and caption/subtitle independence.
+[Validation notes](docs/SUBTITLE-VALIDATION.md) distinguish the executed headless
+and CLI-contract checks from the included native integration tests.
+
+```sh
+"/Applications/Racket v9.3.0.2/bin/racket" geometry/render-all-dark.rkt
+```
+
+This still tests first, then renders all examples in dark mode with the gallery
+last. Videos **and matching SRT files** go under `geometry-output/videos/dark/`; each MP4 also contains a selectable subtitle track.
 
 
 ## New in v0.9.7 — deliberate compass-transfer choreography

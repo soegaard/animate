@@ -1,7 +1,7 @@
 #lang racket/base
 
 ;; Run all geometry tests, then render every registered example in dark mode,
-;; followed by the gallery in dark mode.
+;; followed by the gallery in dark mode. Each MP4 gets a matching SRT sidecar.
 ;;
 ;; Intended location:
 ;;   animate/geometry/render-all-dark.rkt
@@ -122,4 +122,4 @@
       (path->string gallery-frames))
 
 (printf "\n=== complete ===\n")
-(printf "Videos: ~a\n" (path->string videos-directory))
+(printf "Videos and SRT subtitles: ~a\n" (path->string videos-directory))

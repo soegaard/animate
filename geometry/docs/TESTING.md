@@ -1,3 +1,14 @@
+# v0.10.2 subtitle checks
+
+`geometry/run-tests.rkt --subtitles` runs the new base-only narration and export-
+planning checks. The full test command also includes real Animate serializer, caption-visibility,
+MP4 `mov_text` muxing, ISO 639-2 language metadata, and one-/two-worker CLI integration tests.
+
+See [SUBTITLE-VALIDATION.md](SUBTITLE-VALIDATION.md) for the executed-test boundary
+and [SUBTITLES.md](SUBTITLES.md) for usage. Captions remain enabled by default.
+
+---
+
 # Testing — v0.9.8
 
 The deliberate compass-transfer choreography was exercised with the same genuine

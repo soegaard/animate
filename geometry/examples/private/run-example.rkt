@@ -3,7 +3,8 @@
 (require racket/cmdline racket/pretty racket/list racket/file racket/path racket/system racket/format
          (prefix-in native-colors: "../../../colors.rkt")
          (prefix-in output: "../../../render.rkt")
-         "../../main.rkt" "../../render.rkt" "../../review.rkt")
+         "../../main.rkt" "../../render.rkt" "../../review.rkt"
+         "../../private/subtitle-output.rkt")
 (provide run-geometry-example)
 
 ;; No GUI side effects on require. Invoked only from an example's main submodule.
@@ -64,6 +65,10 @@
   (define describe? #f)
   (define captions? #t)
   (define mp4 #f)
+  (define srt #f)
+  (define vtt #f)
+  (define subtitles-only? #f)
+  (define subtitle-language "eng")
   (define fps 30)
   (define width 1280)
   (define height 720)
@@ -80,14 +85,19 @@
    #:program name
    #:once-each
    [("--frames") "Render every frame (the default is one still per step)." (set! frames? #t)]
-   [("--review-stills") dir "Render read/during/settled review images into DIR." (set! review-directory dir)]
+   [("--review-stills") dir "Render sparse review images (including compass phases) into DIR." (set! review-directory dir)]
    [("--review-zip") path "Write a review ZIP; also keep its image directory." (set! review-zip path)]
    [("--no-contact-sheet") "Omit paginated review contact sheets." (set! contact-sheet? #f) (set! review-modifier? #t)]
    [("--review-top-level-only") "Only outer authored steps in the review." (set! expanded-review? #f) (set! review-modifier? #t)]
    [("--review-include-cleanup") "Include silent cleanup/no-op rows in the review." (set! include-cleanup-review? #t) (set! review-modifier? #t)]
    [("--describe") "Print realization diagnostics without rendering." (set! describe? #t)]
-   [("--no-captions") "Omit captions from the images; still write narration.srt." (set! captions? #f)]
-   [("--mp4") path "Render frames and encode an MP4 using FFmpeg." (set! mp4 path) (set! frames? #t)]
+   [("--captions") "Show on-screen captions (default); independent of subtitle export." (set! captions? #t)]
+   [("--no-captions") "Omit on-screen captions; subtitle exports are unchanged." (set! captions? #f)]
+   [("--srt") path "Write an SRT file; overrides the default MP4-sidecar filename." (set! srt path)]
+   [("--vtt") path "Also write a WebVTT file." (set! vtt path)]
+   [("--subtitles-only") "Export --srt/--vtt without rendering images or encoding video." (set! subtitles-only? #t)]
+   [("--subtitle-language") code "ISO 639-2 subtitle language code for embedded MP4 tracks; default eng." (set! subtitle-language code)]
+   [("--mp4") path "Render an MP4 with a selectable subtitle track plus a same-basename SRT file (captions remain on)." (set! mp4 path) (set! frames? #t)]
    [("--light") "Use the animate light theme and matching geometry palette (default)."
                  (set! theme-mode 'light)
                  (set! native-color-theme native-colors:animate-light-theme)]
@@ -107,7 +117,16 @@
    #:args ([directory #f])
    (set! positional-directory directory)
    (set! destination (or directory (build-path "geometry-output" name))))
+  (unless (regexp-match? #px"^[A-Za-z]{3}$" subtitle-language)
+    (error name "--subtitle-language expects a three-letter ISO 639-2 code, received ~e" subtitle-language))
+  (set! subtitle-language (string-downcase subtitle-language))
   (define review? (or review-directory review-zip))
+  (when (and subtitles-only? (or review? frames? mp4 describe? shard-mode? positional-directory))
+    (error name "--subtitles-only cannot be combined with rendering, --describe, worker flags, or a frame directory"))
+  (when (and subtitles-only? (not (or srt vtt)))
+    (error name "--subtitles-only needs --srt FILE and/or --vtt FILE"))
+  (when (and shard-mode? (or srt vtt subtitles-only?))
+    (error name "subtitle files are written by the parent, not a worker shard"))
   (when (and review? (or frames? mp4 describe? shard-mode?))
     (error name "review mode cannot be combined with --frames, --mp4, --describe, or worker-shard flags"))
   (when (and review-modifier? (not review?))
@@ -122,7 +141,25 @@
           (or review-directory positional-directory
               (regexp-replace #px"(?i:\\.zip)$" review-zip ""))))
 
+  ;; Preflight all export paths before rendering or cleaning frame output.
+  ;; Review extras must remain outside the managed bundle directory, otherwise
+  ;; they would invalidate its manifest and make a later safe rerun fail.
+  (define subtitle-plan
+    (geometry-subtitle-output-plan
+     #:directory (and (not review?) (not describe?) (not subtitles-only?) (not shard-mode?) destination)
+     #:mp4 mp4 #:srt srt #:vtt vtt))
+  (when review?
+    (define review-parts (explode-path (simplify-path (path->complete-path destination))))
+    (for ([entry (in-list subtitle-plan)])
+      (define parts (explode-path (car entry)))
+      (when (or (and (<= (length review-parts) (length parts))
+                     (equal? review-parts (take parts (length review-parts))))
+                (and review-zip (equal? (car entry) (simplify-path (path->complete-path review-zip)))))
+        (error name "subtitle export must be outside the review bundle and use a different path from its ZIP: ~a" (car entry)))))
   (define timeline (make-timeline name factory width height theme-mode))
+  (define (announce-subtitles!)
+    (for ([entry (in-list subtitle-plan)])
+      (printf "Subtitles (~a): ~a\n" (cdr entry) (car entry))))
 
   (define (run-worker-shard!)
     (unless (< shard-id shard-count)
@@ -199,7 +236,7 @@
              path
              (frame-index->destination-path destination global-index)
              #f)))
-        (write-geometry-subtitles! timeline (build-path destination "narration.srt"))
+        (write-geometry-subtitle-outputs! timeline subtitle-plan)
         (define elapsed (- (current-inexact-milliseconds) render-start))
         (define paths (directory-frame-paths destination))
         (unless (= (length paths) frame-count)
@@ -209,16 +246,20 @@
                 workers actual-workers)
         (printf "Render time: ~a ms\n" (inexact->exact (round elapsed)))
         (when mp4
-          (output:encode-mp4! destination mp4 #:fps fps #:width width #:height height)
-          (printf "Encoded ~a\n" mp4))
+          (encode-geometry-mp4! timeline destination mp4 #:fps fps #:width width #:height height #:srt srt
+                              #:subtitle-language subtitle-language)
+          (printf "Encoded ~a with selectable subtitles\n" mp4))
         (void))
       (lambda ()
         (when (directory-exists? staging-root)
           (delete-directory/files staging-root))))
     (void))
 
-  (cond [review?
-         (printf "Rendering three review images per step (~a / ~a)...\n" name theme-mode)
+  (cond [subtitles-only?
+         (write-geometry-subtitle-outputs! timeline subtitle-plan)
+         (announce-subtitles!)]
+        [review?
+         (printf "Rendering sparse review images (~a / ~a)...\n" name theme-mode)
          (flush-output)
          (define report
            (render-geometry-review! timeline destination #:name name
@@ -236,6 +277,8 @@
                  (length (geometry-review-result-contact-sheets report)))
          (when (geometry-review-result-zip report)
            (printf "Review ZIP: ~a\n" (geometry-review-result-zip report)))
+         (write-geometry-subtitle-outputs! timeline subtitle-plan)
+         (announce-subtitles!)
          (void)]
         [describe?
          (printf "~a: ~a seconds\n" name (geometry-timeline-duration timeline))
@@ -245,7 +288,9 @@
                                                           #:captions? captions?))
          (printf "Annotation metrics: ~a\n" (annotation-plan-metrics plan))
          (printf "Annotation warnings: ~a\n" (annotation-plan-warnings plan))
-         (pretty-write (annotation-plan-labels plan))]
+         (pretty-write (annotation-plan-labels plan))
+         (write-geometry-subtitle-outputs! timeline subtitle-plan)
+         (announce-subtitles!)]
         [shard-mode?
          (run-worker-shard!)]
         [else
@@ -260,18 +305,20 @@
                                                              #:supersample supersample
                                                              #:captions? captions?
                                                              #:color-theme native-color-theme
-                                                             #:mp4 mp4)]
+                                                             #:mp4 mp4 #:srt srt #:vtt vtt
+                                                             #:subtitle-language subtitle-language)]
                        [paths (output:render-diagnostics-paths report)]
                        [actual-workers (output:render-diagnostics-workers report)])
                   (printf "Wrote ~a frames to ~a\n" (length paths) destination)
                   (printf "Workers: requested ~a, actual ~a\n" workers actual-workers)
                   (printf "Render time: ~a ms\n"
                           (inexact->exact (round (output:render-diagnostics-elapsed-milliseconds report))))
-                  (when mp4 (printf "Encoded ~a\n" mp4)))
+                  (when mp4 (printf "Encoded ~a with selectable subtitles\n" mp4)))
                 (run-process-sharded-render!))]
            [else
             (define paths
               (render-geometry-stills! timeline destination #:width width #:height height
                                        #:fps fps #:supersample supersample #:captions? captions?
-                                       #:color-theme native-color-theme))
-            (printf "Wrote ~a step stills to ~a\n" (length paths) destination)])]))
+                                       #:color-theme native-color-theme #:srt srt #:vtt vtt))
+            (printf "Wrote ~a step stills to ~a\n" (length paths) destination)])
+         (announce-subtitles!)]))

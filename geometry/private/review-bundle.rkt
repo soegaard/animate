@@ -205,7 +205,7 @@
      (write-index! plan staging name theme sheet-names)
      (define files (sort (append names sheet-names '("steps.txt" "index.html" "manifest.json")) string<?))
      (define manifest
-       (hash 'format review-manifest-format 'version 1 'geometry_version "0.9.8"
+       (hash 'format review-manifest-format 'version 1 'geometry_version "0.10.0"
              'name name 'theme theme 'width width 'height height
              'raster_width (* width supersample) 'raster_height (* height supersample)
              'reference_fps fps 'sampling "exact action times and explicit step-boundary states; not rounded to movie frames"

@@ -5,7 +5,11 @@
 ;; kinds, semantic markers, presentation actions, and helper expansion all get
 ;; a short plate that can be inspected in light or dark mode.
 ;; Sparse review: racket geometry/review-examples.rkt --example gallery --dark
-;; This writes triplets and paginated contact sheets without rendering a movie.
+;; This writes sparse phase stills and paginated sheets without a movie.
+;; Video + matching SRT (visual captions remain enabled):
+;;   racket geometry/examples/gallery.rkt --dark --mp4 gallery.mp4 gallery-frames
+;; Subtitle-only refresh, using this gallery's current source and timings:
+;;   racket geometry/examples/gallery.rkt --dark --subtitles-only --srt gallery.srt --vtt gallery.vtt
 (require "../core.rkt" (prefix-in helper: "helpers.rkt")
          (prefix-in c: "../constructions.rkt") "private/library-example.rkt")
 (provide geometry-gallery example-theme make-demo-timeline make-demo-scene)

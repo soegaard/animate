@@ -4,35 +4,18 @@
 ;; for pixels and encoding; this module adds narration and selected step stills.
 (require racket/list racket/file racket/path racket/format
          (prefix-in output: "../render.rkt")
-         "main.rkt")
+         "main.rkt" "private/subtitle-output.rkt")
 (provide render-geometry-frames! render-geometry-frames/report! render-geometry-stills!
-         render-geometry-frame-indices! geometry-frame-count
+         render-geometry-frame-indices! geometry-frame-count encode-geometry-mp4!
          write-geometry-subtitles! geometry-caption-cues)
 
 (struct frame-reuse-plan (requested-count unique-indices local->unique first-local-by-unique)
   #:transparent)
 
-;; Flatten expanded-helper narration into nonoverlapping caption spans.
-(define (geometry-caption-cues timeline)
-  (define boundaries
-    (sort (remove-duplicates
-           (append-map (lambda (c) (list (geometry-cue-start c) (geometry-cue-end c)))
-                       (geometry-timeline-cues timeline))) <))
-  (define reversed '())
-  (for ([from (in-list boundaries)] [to (in-list (if (null? boundaries) '() (cdr boundaries)))])
-    (define text (geometry-timeline-narration-at timeline (/ (+ from to) 2)))
-    (when text
-      (if (and (pair? reversed) (equal? text (geometry-cue-text (car reversed)))
-               (= from (geometry-cue-end (car reversed))))
-          (set! reversed (cons (geometry-cue (geometry-cue-start (car reversed)) to text) (cdr reversed)))
-          (set! reversed (cons (geometry-cue from to text) reversed)))))
-  (reverse reversed))
-(define (timestamp seconds)
-  (define millis (inexact->exact (round (* 1000 seconds))))
-  (define (pad n count) (~r n #:min-width count #:pad-string "0"))
-  (format "~a:~a:~a,~a" (pad (quotient millis 3600000) 2)
-          (pad (modulo (quotient millis 60000) 60) 2)
-          (pad (modulo (quotient millis 1000) 60) 2) (pad (modulo millis 1000) 3)))
+(define (subtitle-language-code? value)
+  (or (not value)
+      (and (string? value) (regexp-match? #px"^[A-Za-z]{3}$" value))))
+
 (define (geometry-frame-count timeline fps)
   (unless (and (geometry-timeline? timeline) (exact-positive-integer? fps))
     (geometry-error 'geometry-frame-count "expected a geometry timeline and positive fps"))
@@ -167,18 +150,39 @@
                                          #:color-theme color-theme #:captions? captions?
                                          #:labels labels)))
 
-(define (write-geometry-subtitles! timeline path)
-  (call-with-output-file path
-    (lambda (out)
-      (for ([cue (in-list (geometry-caption-cues timeline))] [index (in-naturals 1)])
-        (fprintf out "~a\n~a --> ~a\n~a\n\n" index (timestamp (geometry-cue-start cue))
-                 (timestamp (geometry-cue-end cue)) (geometry-cue-text cue))))
-    #:exists 'truncate/replace)
-  path)
+;; Encode the visual frame sequence, keep an SRT sidecar, and then use
+;; Animate's authored-video muxer to add that SRT as an MP4 mov_text track.
+;; The video stream is copied during muxing; subtitle embedding does not trigger
+;; a second video encode. On a mux failure the already encoded visual MP4 stays
+;; intact because mux-geometry-subtitles-into-mp4! publishes atomically.
+(define (encode-geometry-mp4! timeline directory mp4
+                              #:fps [fps 30] #:width [width 1280] #:height [height 720]
+                              #:srt [srt #f] #:subtitle-language [subtitle-language "eng"])
+  (unless (and (geometry-timeline? timeline) (path-string? directory) (path-string? mp4)
+               (exact-positive-integer? fps) (exact-positive-integer? width)
+               (exact-positive-integer? height) (or (not srt) (path-string? srt))
+               (subtitle-language-code? subtitle-language))
+    (geometry-error 'encode-geometry-mp4! "invalid timeline, paths, fps, width, height, SRT path, or subtitle language"))
+  (define track-srt (geometry-mp4-subtitle-path mp4 srt))
+  ;; Ensure the exact subtitle file that will be muxed was generated from this
+  ;; timeline, even when this helper is called independently of frame rendering.
+  (write-geometry-subtitles! timeline track-srt)
+  (make-directory* (path-only (path->complete-path mp4)))
+  (output:encode-mp4! directory mp4 #:fps fps #:width width #:height height)
+  (mux-geometry-subtitles-into-mp4! timeline mp4 track-srt #:language subtitle-language)
+  mp4)
+
 (define (render-geometry-frames/report! timeline directory #:width [width 1280] #:height [height 720]
                                         #:fps [fps 30] #:workers [workers 1] #:supersample [supersample 1]
                                         #:color-theme [color-theme #f] #:captions? [captions? #t]
-                                        #:labels [labels (hash)] #:mp4 [mp4 #f])
+                                        #:labels [labels (hash)] #:mp4 [mp4 #f]
+                                        #:srt [srt #f] #:vtt [vtt #f]
+                                        #:subtitle-language [subtitle-language "eng"])
+  (unless (subtitle-language-code? subtitle-language)
+    (geometry-error 'render-geometry-frames/report!
+                    "subtitle language must be #f or a three-letter ISO 639-2 code"))
+  (define subtitle-plan
+    (geometry-subtitle-output-plan #:directory directory #:mp4 mp4 #:srt srt #:vtt vtt))
   (define report
     (render-geometry-frame-indices/report!
      timeline
@@ -188,24 +192,31 @@
      #:fps fps #:workers workers
      #:supersample supersample
      #:color-theme color-theme #:captions? captions? #:labels labels))
-  (write-geometry-subtitles! timeline (build-path directory "narration.srt"))
+  (write-geometry-subtitle-outputs! timeline subtitle-plan)
   (when mp4
-    (output:encode-mp4! directory mp4 #:fps fps #:width width #:height height))
+    (encode-geometry-mp4! timeline directory mp4 #:fps fps #:width width #:height height #:srt srt
+                         #:subtitle-language subtitle-language))
   report)
 
 (define (render-geometry-frames! timeline directory #:width [width 1280] #:height [height 720]
                                  #:fps [fps 30] #:workers [workers 1] #:supersample [supersample 1]
                                  #:color-theme [color-theme #f] #:captions? [captions? #t]
-                                 #:labels [labels (hash)] #:mp4 [mp4 #f])
+                                 #:labels [labels (hash)] #:mp4 [mp4 #f]
+                                 #:srt [srt #f] #:vtt [vtt #f]
+                                 #:subtitle-language [subtitle-language "eng"])
   (output:render-diagnostics-paths
    (render-geometry-frames/report! timeline directory #:width width #:height height
                                    #:fps fps #:workers workers #:supersample supersample
                                    #:color-theme color-theme #:captions? captions?
-                                   #:labels labels #:mp4 mp4)))
+                                   #:labels labels #:mp4 mp4 #:srt srt #:vtt vtt
+                                   #:subtitle-language subtitle-language)))
 (define (render-geometry-stills! timeline directory #:width [width 1280] #:height [height 720]
                                 #:fps [fps 30] #:color-theme [color-theme #f]
                                 #:captions? [captions? #t] #:labels [labels (hash)]
-                                #:supersample [supersample 1])
+                                #:supersample [supersample 1]
+                                #:srt [srt #f] #:vtt [vtt #f])
+  (define subtitle-plan
+    (geometry-subtitle-output-plan #:directory directory #:srt srt #:vtt vtt))
   (unless (exact-positive-integer? fps) (geometry-error 'render-geometry-stills! "fps must be a positive integer"))
   (define (index-before time)
     (max 0 (sub1 (inexact->exact (floor (* fps time))))))
@@ -223,5 +234,5 @@
         (fprintf out "~a\t~a\t~a\n" path (exact->inexact (/ i fps))
                  (or (geometry-timeline-narration-at timeline (/ i fps)) ""))))
     #:exists 'truncate/replace)
-  (write-geometry-subtitles! timeline (build-path directory "narration.srt"))
+  (write-geometry-subtitle-outputs! timeline subtitle-plan)
   paths)

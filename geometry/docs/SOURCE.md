@@ -1,3 +1,22 @@
+# v0.10.0 source provenance
+
+Geometry baseline: the delivered `geometry-v0.9.8-ten-second-repeated-compass.zip`.
+SHA-256: `ab60e33b2582305a27c7775db5fd69ad821561cf7f2ae6ed56bbf7f547c193e7`.
+
+The connected Animate default branch was checked at commit
+`2c3e84a9058d8e8d1e8b1d8ccd1c5da1e094c254`. Public `authoring.rkt`, `render.rkt`,
+and the native subtitle writer in `private/section-renderer.rkt` were inspected.
+The baseline's `geometry/render.rkt` and shared example runner have the same Git
+blob hashes as that commit (`e3388a065a807f936450f12ae776631e6cbd5a17` and
+`ed820411a258832635f5522ea16ce602859e5c80`, respectively). This delivery preserves
+the supplied baseline's later geometry documentation and accepted examples.
+
+Only `geometry/` is distributed. No native Animate implementation, external
+packages, runtimes, fonts, renderer test doubles or generated video files are
+included. See `SUBTITLE-VALIDATION.md` for executed versus native-only checks.
+
+---
+
 # v0.9.0 source provenance
 
 Implementation baseline: the complete delivered
