@@ -1,0 +1,2456 @@
+{
+  "version": "0.3.3",
+  "modules": [
+    {
+      "bindings": [
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "abbreviate",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(1 2)",
+          "kind": "procedure",
+          "name": "after",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "within"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "all-matching",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "name"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "apply-math-operation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "name"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "apply-rewrite",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "apply-rule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "reason"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "assert-step",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "at-path",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "relationship"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "both-sides",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "pair"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "cancel-addends",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "factor",
+            "keep-one?"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "cancel-factor",
+          "required-keywords": [
+            "factor"
+          ]
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-branch-derivation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-branch-guard",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-branch-name",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-branch?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-derivation-branches",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-derivation-coverage",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-derivation-prefix",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "case-derivation?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "check-case-coverage",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "for",
+            "value"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "check-solution",
+          "required-keywords": [
+            "for",
+            "value"
+          ]
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "checkpoint-at",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "syntax",
+          "name": "choreograph",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "constant",
+          "name": "classroom",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "duration"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "compact",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "for"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "conclude",
+          "required-keywords": [
+            "for"
+          ]
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "context-add-restrictions",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "context-assume",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "context-expand",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "context-facts",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "context-inconsistent?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "context-prove",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(2 3)",
+          "kind": "procedure",
+          "name": "context-real?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(2 3)",
+          "kind": "procedure",
+          "name": "context-signs",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "parameter",
+          "name": "current-math-prover",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "parameter",
+          "name": "current-math-validation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "multiplication"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "datum->tex",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(1 2)",
+          "kind": "procedure",
+          "name": "datum-paths",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "datum-ref",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "syntax",
+          "name": "define-math-rule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "procedure",
+          "name": "denominator",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-final",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-initial",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-states",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "derivation-step",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-steps",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-verification",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "syntax",
+          "name": "derive",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "syntax",
+          "name": "derive-cases",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "derive/proc",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "each-branch",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(2 3)",
+          "kind": "procedure",
+          "name": "established",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "mode"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "evaluate",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "exn:fail:math-code",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "exn:fail:math-details",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "exn:fail:math?",
+          "required-keywords": []
+        },
+        {
+          "name": "explain-math",
+          "kind": "procedure",
+          "arity": "1",
+          "allowed-keywords": [
+            "caption",
+            "duration"
+          ],
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "multiplication"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "format-math-source",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "free-of?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "held-substitute",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "hold",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "procedure",
+          "name": "lhs",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "make-case-derivation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "check",
+            "merge",
+            "requires",
+            "version"
+          ],
+          "arity": "4",
+          "kind": "procedure",
+          "name": "make-math-rule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "occurrence",
+            "within"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "matching",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "context",
+            "id"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math->string",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "multiplication"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math->tex",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint-case-path",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint-index",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint-segment",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint-state",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint-step",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint-time",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-checkpoint?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "assuming",
+            "definitions",
+            "real"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "math-context",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-context-assumptions",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-context-definitions",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-context-of",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-context-real",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-context-restrictions",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-context?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-datum",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-datum?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-id",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "math-inspect",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "math-occurrence-at",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-occurrences",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-operation-name",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-operation-selector",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-operation?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "anchor",
+            "duration",
+            "font-size",
+            "history",
+            "max-visible-rows",
+            "multiplication",
+            "new-parts",
+            "pause-between-groups",
+            "reflow",
+            "removed-parts",
+            "row-gap",
+            "start-group"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "math-presentation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-presentation?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-revision",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-rule-name",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-rule?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "math-select",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-span-end",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-span-path",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-span-role",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-span-start",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-span?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-spans",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source-text",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-source?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "scope"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "math-with-context",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(1 2)",
+          "kind": "procedure",
+          "name": "merge-verifications",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "procedure",
+          "name": "numerator",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "occurrence-datum",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "occurrence-id",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "occurrence-path",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "occurrence?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "procedure",
+          "name": "operator-of",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "path-link-kind",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "path-link-source",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "path-link-subtree?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "path-link-target",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "path-link?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-checkpoints",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-duration",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "plan-inspect",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-schedule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-segment-context",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-segment-derivation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-segment-groups",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-segment-path",
+          "required-keywords": []
+        },
+        {
+          "name": "plan-segment-shared?",
+          "kind": "procedure",
+          "arity": "1",
+          "allowed-keywords": [],
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-segment-verdict",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "plan-segment?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "plan-with-choreography",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "duration"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "prepare-space",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "allow-unverified?",
+            "case",
+            "case-layout",
+            "groups",
+            "style"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "present",
+          "required-keywords": []
+        },
+        {
+          "name": "presentation-phase-annotation",
+          "kind": "procedure",
+          "arity": "1",
+          "allowed-keywords": [],
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-phase-duration",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-phase-effect",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-phase-kind",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-phase-layout",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-phase?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-plan-allow-unverified?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-plan-choreography",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-plan-segments",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-plan-source",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-plan-style",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-plan?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-anchor",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-duration",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-font-size",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-history",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-max-visible-rows",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-multiplication",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-new-parts",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-pause-between-groups",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-reflow",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-removed-parts",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-row-gap",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style-start-group",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "presentation-style?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "reduce-identities",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(2 3 4)",
+          "kind": "procedure",
+          "name": "refuted",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "remove-unit",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "order"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "reorder-addends",
+          "required-keywords": [
+            "order"
+          ]
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "resolve-one",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "resolve-selector",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "duration",
+            "effect",
+            "layout"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "retire-cancelled",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "duration",
+            "effect",
+            "layout"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "retire-removed",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "duration",
+            "effect"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "reveal-created",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-after",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-before",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-bindings",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-details",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-focus",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-links",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-name",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-relation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-rule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-trace",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-verification",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step-version",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-step?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at",
+            "using"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "rewrite-to",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(0 1)",
+          "kind": "procedure",
+          "name": "rhs",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-duration",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-group",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-kind",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-phase",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-segment",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-start",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase-step",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "scheduled-phase?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "selector?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "solution-check-derivation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "solution-check-problem",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "solution-check-value",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "solution-check-variable",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "solution-check-verification",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "solution-check?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "square-solutions",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "substitute",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "3",
+          "kind": "procedure",
+          "name": "template-bindings",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "trace-descendants",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "trace-relation-details",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "trace-relation-kind",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "trace-relation-sources",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "trace-relation-targets",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "trace-relation?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "duration"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "transition",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "(2 3 4 5)",
+          "kind": "procedure",
+          "name": "unknown",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "use-rule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification-details",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification-message",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification-method",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification-obligations",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification-proposition",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification-status",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verification?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "whole",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "at"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "zero-product",
+          "required-keywords": []
+        }
+      ],
+      "module": "main.rkt",
+      "syntax": [
+        "abbreviate",
+        "all-matching",
+        "apply-math-operation",
+        "apply-rewrite",
+        "assert-step",
+        "both-sides",
+        "cancel-addends",
+        "cancel-factor",
+        "check-solution",
+        "choreograph",
+        "compact",
+        "conclude",
+        "datum->tex",
+        "define-math-rule",
+        "derive",
+        "derive-cases",
+        "evaluate",
+        "format-math-source",
+        "make-math-rule",
+        "matching",
+        "math",
+        "math-context",
+        "math-presentation",
+        "math-with-context",
+        "prepare-space",
+        "present",
+        "reduce-identities",
+        "remove-unit",
+        "reorder-addends",
+        "retire-cancelled",
+        "retire-removed",
+        "reveal-created",
+        "rewrite-to",
+        "square-solutions",
+        "substitute",
+        "transition",
+        "use-rule",
+        "zero-product"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "constant",
+          "name": "default-math-cache-directory",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "cache-directory",
+            "font-size",
+            "id",
+            "theme"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math->visual!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "camera",
+            "renderers",
+            "theme"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "math-plan->pict!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "cache-directory",
+            "camera",
+            "id",
+            "theme",
+            "title"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-plan->scene!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "cache-directory",
+            "camera",
+            "theme"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepare-math-plan!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-layout-diagnostics",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-layout-source",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-layout-state",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-layout-tokens",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-layout?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-background",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-camera",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-diagnostics",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-foreground",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-layouts",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-max-rows",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-plan",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-row-gap",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan-schedule",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-math-plan?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-asset",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-height",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-id",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-path",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-role",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-text",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-width",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-x",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token-y",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "prepared-token?",
+          "required-keywords": []
+        }
+      ],
+      "module": "render.rkt",
+      "syntax": [
+        "math->visual!",
+        "math-plan->pict!",
+        "math-plan->scene!",
+        "prepare-math-plan!"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "allowed-keywords": [
+            "timeout"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "call-with-math-services!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "context",
+            "timeout"
+          ],
+          "arity": "3",
+          "kind": "procedure",
+          "name": "cas-calculate!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "timeout"
+          ],
+          "arity": "4",
+          "kind": "procedure",
+          "name": "cas-query!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "4",
+          "kind": "procedure",
+          "name": "cas-result",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-result-diagnostics",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-result-evidence",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-result-status",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-result-value",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-result?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "4",
+          "kind": "procedure",
+          "name": "cas-service",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-service-capabilities",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-service-name",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-service-query",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-service-version",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "cas-service?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "extended",
+            "local"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "math-services",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-services-extended",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-services-local",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "math-services?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "constant",
+          "name": "struct:cas-result",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "constant",
+          "name": "struct:cas-service",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "services",
+            "timeout"
+          ],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "verify-derivation!",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [
+            "services",
+            "timeout"
+          ],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "verify-proposition!",
+          "required-keywords": []
+        }
+      ],
+      "module": "cas.rkt",
+      "syntax": [
+        "call-with-math-services!",
+        "cas-calculate!",
+        "cas-query!",
+        "cas-result",
+        "cas-service",
+        "math-services",
+        "verify-derivation!",
+        "verify-proposition!"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "allowed-keywords": [
+            "loader",
+            "module",
+            "query",
+            "version"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "calcura-service",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "datum->calcura-input",
+          "required-keywords": []
+        }
+      ],
+      "module": "cas/calcura.rkt",
+      "syntax": [
+        "calcura-service"
+      ]
+    },
+    {
+      "bindings": [
+        {
+          "allowed-keywords": [
+            "loader",
+            "module",
+            "version"
+          ],
+          "arity": "0",
+          "kind": "procedure",
+          "name": "racket-cas-service",
+          "required-keywords": []
+        }
+      ],
+      "module": "cas/racket-cas.rkt",
+      "syntax": [
+        "racket-cas-service"
+      ]
+    }
+  ],
+  "documented_bindings": [
+    "abbreviate",
+    "after",
+    "all-matching",
+    "apply-math-operation",
+    "apply-rewrite",
+    "apply-rule",
+    "assert-step",
+    "at-path",
+    "both-sides",
+    "calcura-service",
+    "call-with-math-services!",
+    "cancel-addends",
+    "cancel-factor",
+    "cas-calculate!",
+    "cas-query!",
+    "cas-result",
+    "cas-result-diagnostics",
+    "cas-result-evidence",
+    "cas-result-status",
+    "cas-result-value",
+    "cas-result?",
+    "cas-service",
+    "cas-service-capabilities",
+    "cas-service-name",
+    "cas-service-query",
+    "cas-service-version",
+    "cas-service?",
+    "case-branch-derivation",
+    "case-branch-guard",
+    "case-branch-name",
+    "case-branch?",
+    "case-derivation-branches",
+    "case-derivation-coverage",
+    "case-derivation-prefix",
+    "case-derivation?",
+    "check-case-coverage",
+    "check-solution",
+    "checkpoint-at",
+    "choreograph",
+    "classroom",
+    "compact",
+    "conclude",
+    "context-add-restrictions",
+    "context-assume",
+    "context-expand",
+    "context-facts",
+    "context-inconsistent?",
+    "context-prove",
+    "context-real?",
+    "context-signs",
+    "current-math-prover",
+    "current-math-validation",
+    "datum->calcura-input",
+    "datum->tex",
+    "datum-paths",
+    "datum-ref",
+    "default-math-cache-directory",
+    "define-math-rule",
+    "denominator",
+    "derivation-final",
+    "derivation-initial",
+    "derivation-states",
+    "derivation-step",
+    "derivation-steps",
+    "derivation-verification",
+    "derivation?",
+    "derive",
+    "derive-cases",
+    "derive/proc",
+    "each-branch",
+    "established",
+    "evaluate",
+    "exn:fail:math-code",
+    "exn:fail:math-details",
+    "exn:fail:math?",
+    "format-math-source",
+    "free-of?",
+    "held-substitute",
+    "hold",
+    "lhs",
+    "make-case-derivation",
+    "make-math-rule",
+    "matching",
+    "math",
+    "math->string",
+    "math->tex",
+    "math->visual!",
+    "math-checkpoint-case-path",
+    "math-checkpoint-index",
+    "math-checkpoint-segment",
+    "math-checkpoint-state",
+    "math-checkpoint-step",
+    "math-checkpoint-time",
+    "math-checkpoint?",
+    "math-context",
+    "math-context-assumptions",
+    "math-context-definitions",
+    "math-context-of",
+    "math-context-real",
+    "math-context-restrictions",
+    "math-context?",
+    "math-datum",
+    "math-datum?",
+    "math-id",
+    "math-inspect",
+    "math-occurrence-at",
+    "math-occurrences",
+    "math-operation-name",
+    "math-operation-selector",
+    "math-operation?",
+    "math-plan->pict!",
+    "math-plan->scene!",
+    "math-presentation",
+    "math-presentation?",
+    "math-revision",
+    "math-rule-name",
+    "math-rule?",
+    "math-select",
+    "math-services",
+    "math-services-extended",
+    "math-services-local",
+    "math-services?",
+    "math-source-span-end",
+    "math-source-span-path",
+    "math-source-span-role",
+    "math-source-span-start",
+    "math-source-span?",
+    "math-source-spans",
+    "math-source-text",
+    "math-source?",
+    "math-with-context",
+    "math?",
+    "merge-verifications",
+    "numerator",
+    "occurrence-datum",
+    "occurrence-id",
+    "occurrence-path",
+    "occurrence?",
+    "operator-of",
+    "path-link-kind",
+    "path-link-source",
+    "path-link-subtree?",
+    "path-link-target",
+    "path-link?",
+    "plan-checkpoints",
+    "plan-duration",
+    "plan-inspect",
+    "plan-schedule",
+    "plan-segment-context",
+    "plan-segment-derivation",
+    "plan-segment-groups",
+    "plan-segment-path",
+    "plan-segment-verdict",
+    "plan-segment?",
+    "plan-with-choreography",
+    "prepare-math-plan!",
+    "prepare-space",
+    "prepared-layout-diagnostics",
+    "prepared-layout-source",
+    "prepared-layout-state",
+    "prepared-layout-tokens",
+    "prepared-layout?",
+    "prepared-math-plan-background",
+    "prepared-math-plan-camera",
+    "prepared-math-plan-diagnostics",
+    "prepared-math-plan-foreground",
+    "prepared-math-plan-layouts",
+    "prepared-math-plan-max-rows",
+    "prepared-math-plan-plan",
+    "prepared-math-plan-row-gap",
+    "prepared-math-plan-schedule",
+    "prepared-math-plan?",
+    "prepared-token-asset",
+    "prepared-token-height",
+    "prepared-token-id",
+    "prepared-token-path",
+    "prepared-token-role",
+    "prepared-token-text",
+    "prepared-token-width",
+    "prepared-token-x",
+    "prepared-token-y",
+    "prepared-token?",
+    "present",
+    "presentation-phase-duration",
+    "presentation-phase-effect",
+    "presentation-phase-kind",
+    "presentation-phase-layout",
+    "presentation-phase?",
+    "presentation-plan-allow-unverified?",
+    "presentation-plan-choreography",
+    "presentation-plan-segments",
+    "presentation-plan-source",
+    "presentation-plan-style",
+    "presentation-plan?",
+    "presentation-style-anchor",
+    "presentation-style-duration",
+    "presentation-style-font-size",
+    "presentation-style-history",
+    "presentation-style-max-visible-rows",
+    "presentation-style-multiplication",
+    "presentation-style-new-parts",
+    "presentation-style-pause-between-groups",
+    "presentation-style-reflow",
+    "presentation-style-removed-parts",
+    "presentation-style-row-gap",
+    "presentation-style-start-group",
+    "presentation-style?",
+    "racket-cas-service",
+    "reduce-identities",
+    "refuted",
+    "remove-unit",
+    "reorder-addends",
+    "resolve-one",
+    "resolve-selector",
+    "retire-cancelled",
+    "retire-removed",
+    "reveal-created",
+    "rewrite-step-after",
+    "rewrite-step-before",
+    "rewrite-step-bindings",
+    "rewrite-step-details",
+    "rewrite-step-focus",
+    "rewrite-step-links",
+    "rewrite-step-name",
+    "rewrite-step-relation",
+    "rewrite-step-rule",
+    "rewrite-step-trace",
+    "rewrite-step-verification",
+    "rewrite-step-version",
+    "rewrite-step?",
+    "rewrite-to",
+    "rhs",
+    "scheduled-phase-duration",
+    "scheduled-phase-group",
+    "scheduled-phase-kind",
+    "scheduled-phase-phase",
+    "scheduled-phase-segment",
+    "scheduled-phase-start",
+    "scheduled-phase-step",
+    "scheduled-phase?",
+    "selector?",
+    "solution-check-derivation",
+    "solution-check-problem",
+    "solution-check-value",
+    "solution-check-variable",
+    "solution-check-verification",
+    "solution-check?",
+    "square-solutions",
+    "struct:cas-result",
+    "struct:cas-service",
+    "substitute",
+    "template-bindings",
+    "trace-descendants",
+    "trace-relation-details",
+    "trace-relation-kind",
+    "trace-relation-sources",
+    "trace-relation-targets",
+    "trace-relation?",
+    "transition",
+    "unknown",
+    "use-rule",
+    "verification-details",
+    "verification-message",
+    "verification-method",
+    "verification-obligations",
+    "verification-proposition",
+    "verification-status",
+    "verification?",
+    "verify-derivation!",
+    "verify-proposition!",
+    "whole",
+    "zero-product"
+  ]
+}

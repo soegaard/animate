@@ -1,0 +1,5 @@
+TEST house style: source contracts and immediate struct-field documentation
+TEST house style: pure model dependency closure
+TEST house style: explicit public facade and removed raw constructors
+TEST house style: defining reference coverage
+986 checks passed; 0 failed.

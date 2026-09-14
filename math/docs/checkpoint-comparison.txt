@@ -1,0 +1,4 @@
+linear-concrete: identical mathematical checkpoint tree
+linear-general: identical mathematical checkpoint tree
+quadratic-concrete: identical mathematical checkpoint tree
+quadratic-general: identical mathematical checkpoint tree

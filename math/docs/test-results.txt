@@ -1,0 +1,26 @@
+TEST held syntax and selection
+TEST exact algebra and domain guards
+TEST occurrence lineage and custom rules
+TEST four examples and all parameter cases
+TEST presentation schedule and strict/draft boundaries
+TEST CAS contracts, failure states and bounded execution
+TEST optional CAS adapter transport and construction hooks
+TEST notation and semantic markers
+TEST native adapter contract model: four examples
+TEST native adapter contract model: held cancellation and layout
+TEST general linear equation: coefficient grid
+TEST general quadratic: positive, negative and zero coefficients
+TEST semantic SVG ownership and source range contracts
+TEST house style: immutable input snapshots and protocol boundaries
+TEST house style: exact default timing and validated choreography
+TEST house style: failed CAS calls never supply mathematical evidence
+TEST review: complete token partitions and metric-independent identity
+TEST review: cancellation preserves separators between surviving addends
+TEST review: numeric results replace entire focused expressions
+TEST review: split copies whole bases before introducing complete radicals
+TEST review: reordered additive focuses crossfade as coherent units
+TEST review: whole-relation replacement never leaves a bare relation glyph
+TEST review: case-start copies appear at their destination row
+TEST review: one shared quadratic prefix and stand-alone case restoration
+TEST review: clean assumptions retain genuine exclusions and inset keeps checkpoint
+1815 checks passed; 0 failed.

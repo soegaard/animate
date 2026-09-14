@@ -1,0 +1,3 @@
+TEST TeX layout unchanged by semantic markers
+Compared 70 complete formulas (140 TeX pages).
+70 checks passed; 0 failed.

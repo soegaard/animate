@@ -1,0 +1,10 @@
+#lang rhombus
+
+// The held math API and the lesson are ordinary Racket values.
+// This example inspects the lesson without preparing TeX or rendering frames.
+import:
+  "animate/math" open
+  "animate/math/examples/linear-concrete" open
+
+println(#{math->tex}(after(solution)))
+println(#{plan-duration}(plan))
