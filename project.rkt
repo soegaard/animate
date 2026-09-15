@@ -20,6 +20,7 @@
          racket/runtime-path
          racket/set
          racket/string
+         file/sha1
          "authoring.rkt"
          (only-in "colors.rkt"
                   animate-light-theme
@@ -37,12 +38,16 @@
          "private/3d/label-layout-preparation3d.rkt"
          "private/3d/renderer3d.rkt"
          "private/3d/view3d-visual.rkt"
+         (only-in "private/camera.rkt" camera-cache-identity)
          "private/doctor.rkt"
          "private/ffmpeg-capabilities.rkt"
          "private/scene-frame-grid.rkt"
          "private/scene-state.rkt"
          "private/render-color-context.rkt"
          "private/render-typography-context.rkt"
+         "private/render-preparation-manifest.rkt"
+         "private/render-source-loader.rkt"
+         "private/render-source-model.rkt"
          "private/visual-model.rkt"
          "version.rkt")
 
@@ -66,6 +71,38 @@
          module-binding-source?
          module-binding-source-module-path
          module-binding-source-binding
+         module-builder-source
+         module-builder-source?
+         module-builder-source-module-path
+         module-builder-source-binding
+         module-builder-source-options
+         module-builder-source-prepare
+         module-builder-source-seed
+         source-build-seed?
+         source-transfer-data?
+         source-build-context?
+         source-build-context-module-path
+         source-build-context-binding
+         source-build-context-options
+         source-build-context-asset-base
+         source-build-context-assets
+         source-build-context-width
+         source-build-context-height
+         source-build-context-camera-policy
+         source-build-context-theme
+         source-build-context-typography
+         source-build-context-fps
+         source-build-context-quality
+         source-build-context-seed
+         source-build-context-base-fingerprint
+         source-build-context-preparation
+         source-preparation
+         source-preparation?
+         source-preparation-payload
+         source-preparation-artifacts
+         source-preparation-dependencies
+         source-preparation-frame-reuse
+         source-preparation-diagnostics
          scene-source
          scene-source?
          scene-source-scene
@@ -86,11 +123,18 @@
          render-spec-renderer3d
          render-spec-supersample
          render-spec-workers
+         render-spec-worker-mode
          render-spec-quality
          render-spec-theme
          render-spec-typography
          render-spec-with-theme
          render-spec-with-typography
+         render-worker-policy?
+         render-worker-policy-requested-mode
+         render-worker-policy-resolved-mode
+         render-worker-policy-restartable?
+         render-worker-policy-reason
+         resolve-render-worker-policy
          preview-spec
          preview-spec?
          preview-spec-fps
@@ -145,6 +189,12 @@
          (struct-out project-plan)
          (struct-out project-tool-identities)
          (struct-out prepared-project)
+         prepared-project-source-build-context
+         prepared-project-source-preparation
+         prepared-project-input-manifest
+         prepared-project-preparation-manifest
+         prepared-project-preparation-elapsed-milliseconds
+         prepared-project-worker-policy
          (struct-out renderer-capabilities)
          (struct-out project-check-report)
          normalize-project
@@ -199,6 +249,12 @@
 (define module-binding-source? module-binding-source-value?)
 (define module-binding-source-module-path module-binding-source-value-module-path)
 (define module-binding-source-binding module-binding-source-value-binding)
+(define module-builder-source? module-builder-source-value?)
+(define module-builder-source-module-path module-builder-source-value-module-path)
+(define module-builder-source-binding module-builder-source-value-binding)
+(define module-builder-source-options module-builder-source-value-options)
+(define module-builder-source-prepare module-builder-source-value-prepare)
+(define module-builder-source-seed module-builder-source-value-seed)
 (define scene-source? scene-source-value?)
 (define scene-source-scene scene-source-value-value)
 (define timeline-source? timeline-source-value?)
@@ -207,7 +263,7 @@
 (define scene-program-source-program scene-program-source-value-value)
 
 (struct render-spec-value
-  (fps width height camera renderers renderer-options renderer3d supersample workers quality theme typography)
+  (fps width height camera renderers renderer-options renderer3d supersample workers worker-mode quality theme typography)
   #:transparent
   #:constructor-name make-render-spec)
 
@@ -221,6 +277,7 @@
 (define render-spec-renderer3d render-spec-value-renderer3d)
 (define render-spec-supersample render-spec-value-supersample)
 (define render-spec-workers render-spec-value-workers)
+(define render-spec-worker-mode render-spec-value-worker-mode)
 (define render-spec-quality render-spec-value-quality)
 (define render-spec-theme render-spec-value-theme)
 (define render-spec-typography render-spec-value-typography)
@@ -337,6 +394,16 @@
   (check-symbol 'module-binding-source binding)
   (make-module-binding-source module-path binding))
 
+; module-builder-source : path-string? symbol? [#:options hash?]
+;                         [#:prepare (or/c symbol? #f)] [#:seed source-build-seed?]
+;                         -> module-builder-source?
+;;   Declares one restartable module builder with fixed preparation contracts.
+(define (module-builder-source module-path binding
+                               #:options [options #hasheq()]
+                               #:prepare [prepare #f]
+                               #:seed [seed 0])
+  (make-module-builder-source module-path binding options prepare seed))
+
 ; scene-source : scene? -> scene-source?
 ;;   Declares a directly supplied immutable Scene for a local interactive use.
 (define (scene-source value)
@@ -369,6 +436,7 @@
                      #:renderer3d [renderer3d 'software]
                      #:supersample [supersample 1]
                      #:workers [workers 1]
+                     #:worker-mode [worker-mode 'auto]
                      #:quality [quality 'final]
                      #:theme [theme animate-light-theme]
                      #:typography [typography animate-typography-theme])
@@ -377,6 +445,11 @@
   (check-positive-integer 'render-spec "height" height)
   (check-positive-integer 'render-spec "supersample" supersample)
   (check-positive-integer 'render-spec "workers" workers)
+  (unless (memq worker-mode '(auto in-process subprocess))
+    (raise-argument-error
+     'render-spec
+     "'auto, 'in-process, or 'subprocess as #:worker-mode"
+     worker-mode))
   (unless (or (eq? renderers 'default) (list? renderers))
     (raise-argument-error 'render-spec "'default or list?" renderers))
   (unless (hash? renderer-options)
@@ -402,7 +475,7 @@
                     (if (list? renderers) (append renderers '()) renderers)
                     (immutable-hash-snapshot renderer-options)
                     renderer3d
-                    supersample workers quality theme typography))
+                    supersample workers worker-mode quality theme typography))
 
 ;; render-spec-with-theme : render-spec? color-theme? -> render-spec?
 ;; Replaces only the immutable color snapshot while preserving every raster,
@@ -422,6 +495,7 @@
                #:renderer3d (render-spec-renderer3d value)
                #:supersample (render-spec-supersample value)
                #:workers (render-spec-workers value)
+               #:worker-mode (render-spec-worker-mode value)
                #:quality (render-spec-quality value)
                #:theme theme
                #:typography (render-spec-typography value)))
@@ -444,9 +518,106 @@
                #:renderer3d (render-spec-renderer3d value)
                #:supersample (render-spec-supersample value)
                #:workers (render-spec-workers value)
+               #:worker-mode (render-spec-worker-mode value)
                #:quality (render-spec-quality value)
                #:theme (render-spec-theme value)
                #:typography typography))
+
+
+;;;
+;;; Worker Policy
+;;;
+
+(struct render-worker-policy (requested-mode resolved-mode restartable? reason)
+  #:transparent)
+
+;; render-worker-policy records a pure execution-mode decision.
+;;  - requested-mode  (or/c 'auto 'in-process 'subprocess) authored intent.
+;;  - resolved-mode   (or/c 'in-process 'subprocess)       selected future executor.
+;;  - restartable?    boolean?                              source reconstruction capability.
+;;  - reason          symbol?                               deterministic resolution explanation.
+
+; resolve-render-worker-policy : source-specification? render-spec? -> render-worker-policy?
+;;   Resolves or rejects final-worker policy without loading a source or rendering.
+(define (resolve-render-worker-policy source render)
+  (check-source 'resolve-render-worker-policy source)
+  (unless (render-spec? render)
+    (raise-argument-error
+     'resolve-render-worker-policy
+     "render-spec?"
+     render))
+  (define restartable? (restartable-render-source? source))
+  (define requested-mode (render-spec-worker-mode render))
+  (define workers (render-spec-workers render))
+  (when (and (not (eq? (render-spec-renderer3d render) 'software))
+             (> workers 1))
+    (raise-arguments-error
+     'resolve-render-worker-policy
+     "#:workers 1 for the existing single-context OpenGL backend"
+     "workers" workers
+     "renderer3d" (render-spec-renderer3d render)))
+  (case requested-mode
+    [(in-process)
+     (render-worker-policy requested-mode 'in-process restartable? 'explicit-in-process)]
+    [(subprocess)
+     (unless restartable?
+       (raise-arguments-error
+        'resolve-render-worker-policy
+        "a module-binding-source or module-builder-source for subprocess rendering"
+        "source" source
+        "worker-mode" requested-mode))
+     (check-subprocess-render-capability! render)
+     (render-worker-policy requested-mode 'subprocess #t 'explicit-subprocess)]
+    [(auto)
+     (cond
+       [(not restartable?)
+        (if (= workers 1)
+            (render-worker-policy requested-mode 'in-process #f 'direct-single-worker)
+            (raise-arguments-error
+             'resolve-render-worker-policy
+             "a restartable module source when #:workers is greater than 1"
+             "workers" workers
+             "source" source
+             "hint" "Use #:worker-mode 'in-process to retain the existing local renderer."))]
+       [(= workers 1)
+        (render-worker-policy requested-mode 'in-process #t 'restartable-single-worker)]
+       [else
+        (check-subprocess-render-capability! render)
+        (render-worker-policy requested-mode 'subprocess #t 'restartable-multi-worker)])]
+    [else (error 'resolve-render-worker-policy "unreachable worker mode")]))
+
+; restartable-render-source? : source-specification? -> boolean?
+;;   Recognizes declarations that a future child process can reconstruct.
+(define (restartable-render-source? source)
+  (or (module-binding-source? source)
+      (module-builder-source? source)))
+
+; check-subprocess-render-capability! : render-spec? -> void?
+;;   Rejects live backend configuration that PR-A cannot transfer to a child.
+(define (check-subprocess-render-capability! render)
+  (unless (eq? (render-spec-renderer3d render) 'software)
+    (raise-arguments-error
+     'resolve-render-worker-policy
+     "the software renderer for first-release subprocess rendering"
+     "renderer3d" (render-spec-renderer3d render)))
+  (unless (eq? (render-spec-renderers render) 'default)
+    (raise-arguments-error
+     'resolve-render-worker-policy
+     "the default renderer set or a future module-backed renderer factory"
+     "renderers" (render-spec-renderers render)))
+  (unless (source-transfer-data? (render-spec-renderer-options render))
+    (raise-arguments-error
+     'resolve-render-worker-policy
+     "bounded transferable renderer options for subprocess rendering"
+     "renderer-options" (render-spec-renderer-options render))))
+
+; render-worker-policy->datum : render-worker-policy? -> immutable-hash?
+;;   Produces the serializable portion of one pure worker-policy decision.
+(define (render-worker-policy->datum policy)
+  (hasheq 'requested-mode (render-worker-policy-requested-mode policy)
+          'resolved-mode (render-worker-policy-resolved-mode policy)
+          'restartable? (render-worker-policy-restartable? policy)
+          'reason (render-worker-policy-reason policy)))
 
 ; preview-spec : ... -> preview-spec?
 ;;   Describes preview resolution, cache budget, isolation mode, and audio intent.
@@ -623,8 +794,15 @@
     (normalize-project project #:directory directory))
   (define paths
     (make-project-path-plan normalized target))
+  (define source
+    (animate-project-source normalized))
+  (define worker-policy
+    (resolve-render-worker-policy source (animate-project-render normalized)))
   (project-plan normalized target
-                (source-plan-for (animate-project-source normalized))
+                (source-plan-for source
+                                 worker-policy
+                                 (animate-project-render normalized)
+                                 (animate-project-assets normalized))
                 paths
                 (animate-project-render normalized)
                 (animate-project-encoder normalized)
@@ -723,15 +901,37 @@
    (build-path cache-root cache-id "manifest.rktd")
    (build-path cache-root cache-id "execution.log")))
 
-(define (source-plan-for source)
+(define (source-plan-for source worker-policy render assets)
   (cond
     [(module-binding-source? source)
      (hasheq 'kind 'module-binding
              'module-path (module-binding-source-module-path source)
-             'binding (module-binding-source-binding source))]
-    [(scene-source? source) (hasheq 'kind 'direct-scene)]
-    [(timeline-source? source) (hasheq 'kind 'direct-timeline)]
-    [(scene-program-source? source) (hasheq 'kind 'direct-program)]
+             'binding (module-binding-source-binding source)
+             'worker-policy (render-worker-policy->datum worker-policy))]
+    [(module-builder-source? source)
+     (define context
+       (project-source-build-context
+        source
+        render
+        assets))
+     (hasheq 'kind 'module-builder
+             'module-path (module-builder-source-module-path source)
+             'binding (module-builder-source-binding source)
+             'prepare (module-builder-source-prepare source)
+             'options (module-builder-source-options source)
+             'seed (module-builder-source-seed source)
+             'base-fingerprint
+             (source-build-context-base-fingerprint context)
+             'worker-policy (render-worker-policy->datum worker-policy))]
+    [(scene-source? source)
+     (hasheq 'kind 'direct-scene
+             'worker-policy (render-worker-policy->datum worker-policy))]
+    [(timeline-source? source)
+     (hasheq 'kind 'direct-timeline
+             'worker-policy (render-worker-policy->datum worker-policy))]
+    [(scene-program-source? source)
+     (hasheq 'kind 'direct-program
+             'worker-policy (render-worker-policy->datum worker-policy))]
     [else (error 'source-plan-for "unreachable source kind")]))
 
 
@@ -750,14 +950,81 @@
 ;; prepared-project is the non-rendering result of loading the source and
 ;; resolving a selected target. It never contains output files or frame bitmaps.
 
+; prepared-project-source-build-context : prepared-project?
+;                                         -> (or/c source-build-context? #f)
+;;   Returns the immutable builder context retained during preparation, if any.
+(define (prepared-project-source-build-context prepared)
+  (unless (prepared-project? prepared)
+    (raise-argument-error
+     'prepared-project-source-build-context
+     "prepared-project?"
+     prepared))
+  (hash-ref (prepared-project-diagnostics prepared) 'source-build-context #f))
+
+; prepared-project-source-preparation : prepared-project?
+;                                        -> (or/c source-preparation? #f)
+;;   Returns the completed shared preparation retained for a module builder.
+(define (prepared-project-source-preparation prepared)
+  (unless (prepared-project? prepared)
+    (raise-argument-error
+     'prepared-project-source-preparation
+     "prepared-project?"
+     prepared))
+  (hash-ref (prepared-project-diagnostics prepared) 'source-preparation #f))
+
+; prepared-project-input-manifest : prepared-project? -> render-input-manifest?
+;;   Returns the local tracked-input identity verified before worker use and publication.
+(define (prepared-project-input-manifest prepared)
+  (unless (prepared-project? prepared)
+    (raise-argument-error
+     'prepared-project-input-manifest "prepared-project?" prepared))
+  (hash-ref (prepared-project-diagnostics prepared) 'input-manifest))
+
+; prepared-project-preparation-manifest : prepared-project?
+;                                         -> (or/c render-preparation-manifest? false/c)
+;;   Returns the completed parent preparation handoff for a module builder, if any.
+(define (prepared-project-preparation-manifest prepared)
+  (unless (prepared-project? prepared)
+    (raise-argument-error
+     'prepared-project-preparation-manifest "prepared-project?" prepared))
+  (hash-ref (prepared-project-diagnostics prepared) 'preparation-manifest #f))
+
+; prepared-project-preparation-elapsed-milliseconds : prepared-project? -> nonnegative-real?
+;;   Reports parent-observed source preparation elapsed time for execution accounting.
+(define (prepared-project-preparation-elapsed-milliseconds prepared)
+  (unless (prepared-project? prepared)
+    (raise-argument-error
+     'prepared-project-preparation-elapsed-milliseconds "prepared-project?" prepared))
+  (hash-ref (prepared-project-diagnostics prepared)
+            'preparation-elapsed-milliseconds
+            0))
+
+; prepared-project-worker-policy : prepared-project? -> render-worker-policy?
+;;   Returns the pure execution policy selected before this source was loaded.
+(define (prepared-project-worker-policy prepared)
+  (unless (prepared-project? prepared)
+    (raise-argument-error
+     'prepared-project-worker-policy
+     "prepared-project?"
+     prepared))
+  (hash-ref (prepared-project-diagnostics prepared) 'worker-policy))
+
 ; prepare-project! : project-plan? -> prepared-project?
 ;;   Loads the declared source, resolves its target frame indices, and records
 ;; tool/cache identities without writing any artifact.
 (define (prepare-project! plan)
   (unless (project-plan? plan)
     (raise-argument-error 'prepare-project! "project-plan?" plan))
-  (define source-value
-    (load-project-source (animate-project-source (project-plan-project plan))))
+  (define project (project-plan-project plan))
+  (define source (animate-project-source project))
+  (define source-preparation-started
+    (current-inexact-monotonic-milliseconds))
+  (define-values (source-value source-preparation source-context)
+    (load-project-source source
+                         (animate-project-render project)
+                         (animate-project-assets project)))
+  (define source-preparation-elapsed
+    (- (current-inexact-monotonic-milliseconds) source-preparation-started))
   (define-values (scene timeline program)
     (source-value->components source-value))
   (define target-indices
@@ -777,13 +1044,48 @@
                 (animate-project-output (project-plan-project plan)))
                'mp4)
           (ffmpeg-tool-identity doctor-report))))
+  (define preparation-tool-identities
+    (project-preparation-tool-identities))
+  (define preparation-manifest
+    (and source-preparation
+         source-context
+         (make-render-preparation-manifest!
+          source-context source-preparation
+          #:tool-identities preparation-tool-identities)))
+  (define input-manifest
+    (cond
+      [preparation-manifest
+       (render-preparation-manifest-input-manifest preparation-manifest)]
+      [(module-builder-source? source)
+       (build-render-input-manifest!
+        (module-builder-source-module-path source)
+        (source-build-context-assets source-context)
+        #:runtime preparation-tool-identities)]
+      [(module-binding-source? source)
+       (build-render-input-manifest!
+        (module-binding-source-module-path source)
+        (project-assets->manifest-descriptors (animate-project-assets project))
+        #:runtime preparation-tool-identities)]
+      [else
+       ;; Direct values remain explicitly local and have no honest module-file
+       ;; identity.  They cannot gain persistent cache claims in this stage.
+       #f]))
   (define cache-info
-    (cacheability-for-source (animate-project-source (project-plan-project plan))))
+    (cacheability-for-source source source-preparation preparation-manifest))
+  (define worker-policy
+    (resolve-render-worker-policy source (animate-project-render project)))
   (prepared-project plan source-value scene timeline program target-indices
                     tools cache-info
                     (hasheq 'release-version animate-version
                             'release-stage animate-stage
-                            'frame-count (length target-indices))))
+                            'frame-count (length target-indices)
+                            'source-build-context source-context
+                            'source-preparation source-preparation
+                            'preparation-manifest preparation-manifest
+                            'input-manifest input-manifest
+                            'preparation-elapsed-milliseconds
+                            (if source-preparation source-preparation-elapsed 0)
+                            'worker-policy worker-policy)))
 
 ;; prepare-project-label-layout3d : animate-project? #:view symbol? ...
 ;;                                      -> prepared-label-layout3d?
@@ -1185,7 +1487,19 @@
    (hasheq 'frame-indices (prepared-project-target-frame-indices prepared)
            'cacheability (cacheability->datum
                           (prepared-project-cache-identities prepared))
-           'diagnostics (prepared-project-diagnostics prepared))))
+           ;; The live context retains complete theme objects for builder code;
+           ;; inspection data deliberately excludes it and the preparation
+           ;; payload until PR-E defines a narrow preparation-manifest codec.
+           'diagnostics
+           (for/hasheq ([(key value)
+                         (in-hash (prepared-project-diagnostics prepared))]
+                        #:unless (memq key '(source-build-context
+                                             source-preparation
+                                             worker-policy)))
+             (values key value))
+           'worker-policy
+           (render-worker-policy->datum
+            (prepared-project-worker-policy prepared)))))
 
 ; write-project-plan : project-plan? path-string? -> path-string?
 ;;   Writes a single readable datum for an external tool or release artifact.
@@ -1229,6 +1543,13 @@
      (make-module-binding-source
       (normalize-path (module-binding-source-module-path source) base-directory)
       (module-binding-source-binding source))]
+    [(module-builder-source? source)
+     (make-module-builder-source
+      (normalize-path (module-builder-source-module-path source) base-directory)
+      (module-builder-source-binding source)
+      (module-builder-source-options source)
+      (module-builder-source-prepare source)
+      (module-builder-source-seed source))]
     [else source]))
 
 (define (normalize-output output base-directory)
@@ -1280,6 +1601,7 @@
   (when (and (preview-spec-audio? (animate-project-preview project))
              (not (or (timeline-source? source)
                       (module-binding-source? source)
+                      (module-builder-source? source)
                       (ormap (lambda (asset)
                                (eq? (project-asset-role asset) 'audio))
                              assets))))
@@ -1288,15 +1610,126 @@
      "audio preview requires an authored timeline, module source, or audio asset"
      "preview-audio?" #t)))
 
-(define (load-project-source source)
+(define (load-project-source source render assets)
   (cond
     [(module-binding-source? source)
-     (dynamic-require (module-binding-source-module-path source)
-                      (module-binding-source-binding source))]
-    [(scene-source? source) (scene-source-scene source)]
-    [(timeline-source? source) (timeline-source-timeline source)]
-    [(scene-program-source? source) (scene-program-source-program source)]
+     (values
+      (dynamic-require (module-binding-source-module-path source)
+                       (module-binding-source-binding source))
+      #f
+      #f)]
+    [(module-builder-source? source)
+     (load-module-builder-source!
+      source
+      (project-source-build-context source render assets))]
+    [(scene-source? source) (values (scene-source-scene source) #f #f)]
+    [(timeline-source? source) (values (timeline-source-timeline source) #f #f)]
+    [(scene-program-source? source) (values (scene-program-source-program source) #f #f)]
     [else (error 'load-project-source "unreachable source kind")]))
+
+; project-source-build-context : module-builder-source? render-spec?
+;                                (listof project-asset?) -> source-build-context?
+;;   Builds the immutable construction snapshot for one normalized module source.
+(define (project-source-build-context source render assets)
+  (unless (module-builder-source? source)
+    (raise-argument-error
+     'project-source-build-context
+     "module-builder-source?"
+     source))
+  (define module-path
+    (path->complete-path (module-builder-source-module-path source)))
+  (define asset-base
+    (or (path-only module-path) module-path))
+  (define asset-descriptors
+    (source-transfer-data-snapshot
+     'module-builder-source
+     (for/list ([asset (in-list assets)])
+       (hasheq 'path (path->string (project-asset-path asset))
+               'role (project-asset-role asset)
+               'metadata (project-asset-metadata asset)))))
+  (define camera-policy
+    (project-source-camera-policy render))
+  (make-source-build-context
+   (path->string module-path)
+   (module-builder-source-binding source)
+   (module-builder-source-options source)
+   (path->string asset-base)
+   asset-descriptors
+   (render-spec-width render)
+   (render-spec-height render)
+   camera-policy
+   (render-spec-theme render)
+   (render-spec-typography render)
+   (render-spec-fps render)
+   (render-spec-quality render)
+   (module-builder-source-seed source)
+   (source-build-base-fingerprint source render asset-descriptors camera-policy)
+   #f))
+
+; project-source-camera-policy : render-spec? -> immutable-transfer-data?
+;;   Produces the portable camera declaration visible to a restartable builder.
+(define (project-source-camera-policy render)
+  (define camera (render-spec-camera render))
+  (cond
+    [(not camera) #hasheq((kind . scene-camera))]
+    [else
+     (define identity (camera-cache-identity camera))
+     (unless identity
+       (raise-arguments-error
+        'module-builder-source
+        "a camera with a portable semantic background for restartable source construction"
+        "camera" camera))
+     (source-transfer-data-snapshot
+      'module-builder-source
+      (hasheq 'kind 'explicit-camera
+              'identity identity))]))
+
+; source-build-base-fingerprint : module-builder-source? render-spec? immutable-list?
+;                                  immutable-transfer-data? -> string?
+;;   Computes pre-preparation identity from semantic construction inputs only.
+(define (source-build-base-fingerprint source render assets camera-policy)
+  (sha1
+   (open-input-string
+    (format
+     "~s"
+     (canonical-source-data
+      (hasheq
+       'version 'animate-source-build-v1
+       'module-path (path->string (module-builder-source-module-path source))
+       'binding (module-builder-source-binding source)
+       'options (module-builder-source-options source)
+       'seed (module-builder-source-seed source)
+       'assets assets
+       'width (render-spec-width render)
+       'height (render-spec-height render)
+       'camera-policy camera-policy
+       'theme (theme->datum (render-spec-theme render))
+       'typography (typography-theme->datum (render-spec-typography render))
+       'fps (render-spec-fps render)
+       'quality (render-spec-quality render)))))))
+
+; canonical-source-data : source-transfer-data? -> immutable-datum?
+;;   Sorts map entries so build identity ignores hash insertion order.
+(define (canonical-source-data value)
+  (cond
+    [(hash? value)
+     (cons
+      'hash
+      (sort
+       (for/list ([(key entry) (in-hash value)])
+         (cons (canonical-source-data key)
+               (canonical-source-data entry)))
+       string<?
+       #:key (lambda (entry) (format "~s" (car entry)))))]
+    [(pair? value)
+     (cons (canonical-source-data (car value))
+           (canonical-source-data (cdr value)))]
+    [(vector? value)
+     (vector->immutable-vector
+      (list->vector
+       (for/list ([entry (in-vector value)])
+         (canonical-source-data entry))))]
+    [else value]))
 
 (define (source-value->components source-value)
   (cond
@@ -1358,12 +1791,46 @@
              #:when (>= index (ceiling->exact (* start fps))))
     index))
 
-(define (cacheability-for-source source)
-  (if (module-binding-source? source)
-      (cacheability 'persistent '() #f)
-      (cacheability 'memory-only
-                    '("direct values may contain opaque procedures; declare a module binding or explicit cache key for persistent reuse")
-                    #f)))
+(define (cacheability-for-source source preparation preparation-manifest)
+  ;; A builder becomes persistent only through an explicit declaration from a
+  ;; supported preparer plus its complete verified manifest.  This remains
+  ;; intentionally narrower than "all module code is reproducible".
+  (cond
+    [(module-binding-source? source) (cacheability 'persistent '() #f)]
+    [(and (module-builder-source? source)
+          preparation
+          preparation-manifest
+          (render-preparation-manifest-persistent-cache-eligible?
+           preparation-manifest preparation))
+     (cacheability 'persistent '() #f)]
+    [(module-builder-source? source)
+     (cacheability
+      'memory-only
+      '("module builder requires an explicit persistent-cache-eligible? preparation manifest")
+      #f)]
+    [else
+     (cacheability
+      'memory-only
+      '("direct values may contain opaque procedures; declare a module binding or explicit cache key for persistent reuse")
+      #f)]))
+
+; project-preparation-tool-identities : -> immutable-transfer-data?
+;;   Captures only known local runtime identities that can affect preparation output.
+(define (project-preparation-tool-identities)
+  (hasheq 'schema 'animate-preparation-tools-v1
+          'animate-version animate-version
+          'animate-stage animate-stage
+          'racket-executable
+          (path->string (find-system-path 'exec-file))
+          'animate-main
+          (path->string (collection-file-path "main.rkt" "animate"))))
+
+; project-assets->manifest-descriptors : (listof project-asset?) -> immutable-list?
+;;   Converts normalized asset records to the narrow file descriptors verifier accepts.
+(define (project-assets->manifest-descriptors assets)
+  (for/list ([asset (in-list assets)])
+    (hasheq 'path (path->string (project-asset-path asset))
+            'role (project-asset-role asset))))
 
 (define (doctor-has-capability? doctor requirement)
   (case requirement
@@ -1472,12 +1939,13 @@
 
 (define (check-source who value)
   (unless (or (module-binding-source? value)
+              (module-builder-source? value)
               (scene-source? value)
               (timeline-source? value)
               (scene-program-source? value))
     (raise-argument-error
      who
-     "module-binding-source?, scene-source?, timeline-source?, or scene-program-source?"
+     "module-binding-source?, module-builder-source?, scene-source?, timeline-source?, or scene-program-source?"
      value)))
 
 (define (check-specification who value predicate)

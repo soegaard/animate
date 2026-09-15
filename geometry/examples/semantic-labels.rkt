@@ -1,6 +1,7 @@
 #lang racket/base
 (require "../core.rkt" "private/library-example.rkt")
-(provide semantic-labels-demo example-theme make-demo-timeline make-demo-scene)
+(provide semantic-labels-demo example-theme make-demo-timeline make-demo-scene
+         geometry-render-preparer geometry-render-builder)
 (define example-theme (make-library-theme 'light))
 (construction semantic-labels-demo
   (given [A (point -2.5 -1)] [B (point 2.5 -1)] [C (point -1.5 1.8)])

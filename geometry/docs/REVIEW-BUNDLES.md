@@ -235,8 +235,8 @@ the spelling of `--include-cleanup` is `--review-include-cleanup`.
 `--no-contact-sheet` has the same spelling in both commands. Contact sheets are
 on by default; no separate flag is needed to enable them.
 
-Review mode cannot be mixed with `--frames`, `--mp4`, `--describe`, or internal
-worker-shard modes. Existing movie/still commands keep their earlier behavior.
+Review mode cannot be mixed with `--frames`, `--mp4`, or `--describe`. It stays
+local and sparse; full movie work uses the shared generic executor separately.
 
 ## Safe reruns
 

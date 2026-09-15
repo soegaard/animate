@@ -634,8 +634,12 @@ caption when captions are enabled), renders one representative PNG for each
 unique static state, and then materializes the ordinary numbered frame sequence
 from those representatives. Animated spans are still rendered frame-by-frame.
 This optimization applies automatically to `render-geometry-frames!`,
-`render-geometry-frames/report!`, and shard-local `render-geometry-frame-indices!`.
-It does not change the movie timing or the `frame-000000.png` naming convention.
+`render-geometry-frames/report!`, and direct local
+`render-geometry-frame-indices!` calls. The example CLI supplies the same
+geometry-owned witness to Animate's generic project executor; that executor
+does the representative scheduling and alias materialization for subprocess
+full-frame renders. It does not change the movie timing or the
+`frame-000000.png` naming convention.
 
 ### Drawing order
 
@@ -1159,8 +1163,7 @@ The direct example runner accepts `--review-stills DIR` and/or `--review-zip FIL
 It also accepts `--review-top-level-only`, `--review-include-cleanup`, and
 `--no-contact-sheet`. Review capture is sequential and sparse; `--workers` still
 applies only to full movie frames.
-`--frames`, `--mp4`, `--describe`, and worker-shard modes cannot be combined with
-review mode.
+`--frames`, `--mp4`, and `--describe` cannot be combined with review mode.
 
 A successful rerun replaces only a known managed review bundle. Unrelated files,
 movie frame directories, symlinks, and hand-added files cause a refusal instead

@@ -486,13 +486,15 @@ steps can override these defaults with `#:read-delay`, `#:duration`, and
 Semantic diagram markers include right-angle squares, parallel arrows, and length/angle equality marks.
 
 
-### Parallel rendering
+### Parallel full-frame rendering
 
-Full frame/video rendering now uses **process-based parallel rendering** when
-`--workers` is greater than 1. The example runner launches separate Racket
-processes, each rendering a disjoint shard of the frame numbers, and then merges
-the finished PNG files before optional MP4 encoding. This avoids the limited CPU
-scaling seen with Racket parallel threads plus `racket/draw` rasterization.
+Full frame/video commands use Animate's shared project executor. The example
+module supplies an explicit restartable builder/preparer pair, so `--workers`
+uses the generic worker policy instead of a geometry-specific shard launcher.
+With one worker the `auto` policy stays local; with more workers a supported
+module-backed example uses the shared subprocess service. Geometry keeps the
+semantic static-frame-reuse decision, while the generic executor owns worker
+processes, protocol, cache, staging, and alias materialization.
 
 Override the worker count with:
 
@@ -500,9 +502,13 @@ Override the worker count with:
 --workers 10
 ```
 
-The runner prints both the requested and actual worker count. The worker setting
-applies to full frame rendering (`--frames` and `--mp4`); selected step stills
-remain a small sequential render.
+The runner prints the requested capacity plus parent-observed started/completing
+workers. The worker setting applies to full frame rendering (`--frames` and
+`--mp4`); selected step stills and review bundles remain small local renders.
+Subtitles and MP4 muxing remain parent-side. See
+[parallel rendering](docs/PARALLEL-RENDERING.md) and
+[static-frame reuse](docs/STATIC-FRAME-REUSE-PLAN.md) for the ownership and
+cache boundaries.
 
 
 The default narrated-step read delay is now 1.0 second.

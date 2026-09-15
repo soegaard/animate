@@ -1,77 +1,58 @@
-# Plan for better parallel rendering
+# Geometry full-frame rendering through the shared executor
 
-## Problem
+## What `--workers` does
 
-Thread-based full-frame rendering reported the requested worker count, but real CPU
-usage stayed near one core and renders became slower with more workers. That points to
-serialization in the expensive rasterization path (`pict` / `racket/draw`) rather than a
-lack of worker creation.
+The standard geometry example commands use Animate's generic project executor
+for full-frame output (`--frames` and `--mp4`). The command declares a
+restartable module source rather than manually launching another copy of the
+example.
 
-## Strategy
+- With `--workers 1`, the executor's `auto` policy selects its normal local
+  renderer.
+- With more workers, the same policy selects the shared subprocess service
+  when the module-backed source is supported. The parent reports the requested
+  capacity, started workers, and workers that completed work.
+- The worker service owns process launch, protocol validation, source loading,
+  deadlines, logging, staging, and shutdown. Geometry does not have hidden
+  worker command-line flags or a shard merger.
 
-1. Keep the existing single-process path for `--workers 1`.
-2. For `--workers > 1`, switch the geometry example runner to **process-based sharding**.
-3. Compute the total frame count once from the timeline duration and fps.
-4. Launch `N` separate Racket processes, each re-running the same example module in a
-   hidden `--worker-shard` mode.
-5. Each worker reconstructs the same immutable timeline and renders only its shard of
-   frame indices.
-6. The parent waits for all workers, merges the `frame-*.png` files into the requested
-   output directory, writes `narration.srt`, and optionally runs FFmpeg.
-7. Print both the requested and actual worker count.
+Each worker reconstructs the same explicit example builder from its module
+path and frozen options (dimensions, FPS, light/dark mode, and caption mode).
+It does not receive an in-memory scene or geometry timeline from the parent.
 
-## Why this design
+## Output and publication
 
-- It avoids relying on parallel threads for `racket/draw` rasterization.
-- Each worker gets a separate Racket runtime and separate native drawing state.
-- The geometry examples are deterministic, so reconstructing the timeline in each child
-  process is safe and reproducible.
-- The design does not require serializing an arbitrary `animate` scene with closures.
+The generic executor first publishes a complete PNG sequence into a generated,
+private sibling directory. Only after that succeeds does the geometry command
+move the numbered PNGs into the requested public directory:
 
-## Scope of the implementation
+```
+frame-000000.png
+frame-000001.png
+...
+```
 
-This implementation improves the geometry example runner (`geometry/examples/*.rkt`) and
-keeps the outer `animate` repository untouched. It therefore gives a practical multicore
-path immediately for the geometry-construction videos.
+The command removes only these managed frame names (and its managed still/SRT
+sidecars) from a reused public directory. The private generic directory is
+created for one invocation and removed afterward. Its persistent frame cache
+is deliberately retained in `.animate-geometry-render-cache` beside the public
+output directory; it can make an otherwise identical later render start zero
+workers.
 
-## Shard merge correctness
+Subtitles and MP4 muxing remain parent-side operations. Sparse still and review
+commands remain local geometry operations and do not request a full movie
+worker session.
 
-`render-frame-indices!` numbers files locally within each shard. During the parent
-merge, local shard filenames are therefore remapped back to their assigned global
-frame indices (`frame-000000.png`, `frame-000001.png`, ...). The merge verifies both
-the per-shard file count and the final total frame count, and refuses accidental
-filename replacement.
+## Geometry's semantic reuse boundary
 
-## Static-frame reuse for geometry timelines
+`geometry/private/frame-reuse.rkt` owns the meaning of two geometry frames
+being visually identical: per-object appearances, plus narration only while
+on-screen captions are enabled. Its preparer supplies that versioned witness to
+the generic project planner. The generic executor validates, schedules, caches,
+and materializes representatives and aliases, but it does not inspect a
+geometry timeline or subtitle format.
 
-After process-based sharding was working, the next bottleneck was repeated
-rasterization of frames during `opening-pause`, `read-delay`, and `step-pause`.
-Those spans often have no active geometry event, so many requested frame indices
-sample the exact same geometry snapshot (and the same caption when captions are
-shown).
-
-The geometry renderer now performs a lightweight planning pass before native PNG
-output:
-
-1. Sample the immutable geometry timeline at each requested frame index.
-2. Build a semantic key from the per-object appearances and, when captions are
-   enabled, the visible narration text.
-3. Keep only the first occurrence of each unique visual state.
-4. Render those representative indices through the existing native renderer.
-5. Materialize the full numbered frame sequence by copying the representative
-   PNG to the remaining duplicate frame names.
-
-This optimization is intentionally implemented in `geometry/render.rkt`, not in
-Animate's generic scene renderer. General Animate scenes may depend on time in
-arbitrary user-defined ways, while geometry timelines have explicit immutable
-presentation events and narration cues, so semantic equality is cheap and safe
-to detect here.
-
-### Consequences
-
-- Movie timing is unchanged.
-- Output filenames remain `frame-000000.png`, `frame-000001.png`, ... .
-- MP4 encoding and review tooling need no changes.
-- Single-worker and shard-worker rendering both benefit automatically.
-- Disk usage is still one PNG per numbered frame; the optimization saves CPU time
-  by avoiding duplicate rasterization rather than by changing the output format.
+Low-level APIs accepting an already captured geometry timeline, such as
+`render-geometry-frame-indices!`, remain local renderer APIs. They are useful
+for direct library callers; use an example command or a restartable project
+source when subprocess execution is required.

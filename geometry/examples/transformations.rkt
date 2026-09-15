@@ -2,7 +2,8 @@
 
 ;; Image geometry is constructed, not moved by an animation updater.
 (require "../core.rkt" "private/library-example.rkt")
-(provide transformations-demo example-theme make-demo-timeline make-demo-scene)
+(provide transformations-demo example-theme make-demo-timeline make-demo-scene
+         geometry-render-preparer geometry-render-builder)
 (define example-theme (make-library-theme 'light))
 (construction transformations-demo
   (given [O (point 0 0)])

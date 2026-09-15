@@ -10,10 +10,11 @@
 ;;; Imports and Exports
 ;;;
 ;; Imports
-(require "../main.rkt" "../render.rkt")
+(require "../main.rkt" "../render.rkt" "private/library-example.rkt")
 
 ;; Exports
-(provide problem solution plan negative-one-check negative-five-check make-demo-scene)
+(provide problem solution plan negative-one-check negative-five-check make-demo-scene
+         math-render-preparer math-render-builder)
 
 ;;;
 ;;; Construction and Operations

@@ -4,7 +4,7 @@
 ;; for pixels and encoding; this module adds narration and selected step stills.
 (require racket/list racket/file racket/path racket/format
          (prefix-in output: "../render.rkt")
-         "main.rkt" "private/subtitle-output.rkt")
+         "main.rkt" "private/frame-reuse.rkt" "private/subtitle-output.rkt")
 (provide render-geometry-frames! render-geometry-frames/report! render-geometry-stills!
          render-geometry-frame-indices! geometry-frame-count encode-geometry-mp4!
          write-geometry-subtitles! geometry-caption-cues)
@@ -15,14 +15,6 @@
 (define (subtitle-language-code? value)
   (or (not value)
       (and (string? value) (regexp-match? #px"^[A-Za-z]{3}$" value))))
-
-(define (geometry-frame-count timeline fps)
-  (unless (and (geometry-timeline? timeline) (exact-positive-integer? fps))
-    (geometry-error 'geometry-frame-count "expected a geometry timeline and positive fps"))
-  (max 1 (inexact->exact (ceiling (* fps (geometry-timeline-duration timeline))))))
-
-(define (frame-index->time-seconds index fps)
-  (exact->inexact (/ index fps)))
 
 (define (managed-frame-file-name? path)
   (regexp-match? #rx"^frame-[0-9]+\\.png$"
@@ -40,25 +32,25 @@
               (format "frame-~a.png"
                       (~r local-index #:min-width 6 #:pad-string "0"))))
 
-(define (frame-visual-key frame captions?)
-  (list (geometry-frame-appearances frame)
-        (and captions? (geometry-frame-narration frame))))
-
 (define (make-frame-reuse-plan timeline frame-indices fps captions?)
-  (define seen (make-hash))
+  (define unique-by-representative (make-hash))
   (define unique-indices-rev '())
   (define unique-count 0)
   (define requested-count (length frame-indices))
   (define local->unique (make-vector requested-count #f))
   (define first-local-by-unique '())
-  (for ([frame-index (in-list frame-indices)] [local-index (in-naturals 0)])
-    (define frame (sample-geometry-timeline timeline (frame-index->time-seconds frame-index fps)))
-    (define key (frame-visual-key frame captions?))
-    (define existing (hash-ref seen key #f))
+  (for ([mapping (in-list
+                  (geometry-frame-reuse-representatives
+                   timeline frame-indices fps captions?))]
+        [local-index (in-naturals 0)])
+    (define frame-index (car mapping))
+    (define representative-frame-index (cadr mapping))
+    (define existing
+      (hash-ref unique-by-representative representative-frame-index #f))
     (cond [existing
            (vector-set! local->unique local-index existing)]
           [else
-           (hash-set! seen key unique-count)
+           (hash-set! unique-by-representative representative-frame-index unique-count)
            (vector-set! local->unique local-index unique-count)
            (set! unique-indices-rev (cons frame-index unique-indices-rev))
            (set! first-local-by-unique (cons local-index first-local-by-unique))

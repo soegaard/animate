@@ -125,6 +125,21 @@
       (check-false (regexp-match? #rx"id=\"bar\"" child))
       (check-equal (svg-view-box child) '(0 0 20 10))
       (check-true (regexp-match? #rx"#ABCDEF" (recolor-svg child "#ABCDEF")))
+      (define glyphs-a
+        "<svg xmlns='http://www.w3.org/2000/svg'><defs><path id='g2' d='M2 2'/><path id='g1' d='M1 1'/></defs><use href='#g1'/></svg>")
+      (define glyphs-b
+        "<svg xmlns='http://www.w3.org/2000/svg'><defs><path id='g1' d='M1 1'/><path id='g2' d='M2 2'/></defs><use href='#g1'/></svg>")
+      (check-equal (canonicalize-svg-definitions glyphs-a)
+                   (canonicalize-svg-definitions glyphs-b)
+                   'glyph-definition-order-is-content-independent)
+      (define glyphs-with-whitespace
+        "<svg xmlns='http://www.w3.org/2000/svg'><defs>\n<path id='g2' d='M2 2'/>\n<path id='g1' d='M1 1'/>\n</defs><use href='#g1'/></svg>")
+      (define canonical-glyphs-with-whitespace
+        (canonicalize-svg-definitions glyphs-with-whitespace))
+      (check-true
+       (< (caar (regexp-match-positions #rx"id=\"g1\"" canonical-glyphs-with-whitespace))
+          (caar (regexp-match-positions #rx"id=\"g2\"" canonical-glyphs-with-whitespace)))
+       'glyph-definition-order-ignores-interstitial-whitespace)
       (for ([datum
              (in-list
                '((= (expt x 2) 4)

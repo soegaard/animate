@@ -4,7 +4,8 @@
 ;; Loading it is headless; native rendering starts only in the main submodule.
 (require "../core.rkt" (prefix-in c: "../constructions.rkt")
          "private/library-example.rkt")
-(provide circumcenter example-theme make-demo-timeline make-demo-scene)
+(provide circumcenter example-theme make-demo-timeline make-demo-scene
+         geometry-render-preparer geometry-render-builder)
 (define example-theme (make-library-theme 'light))
 
 ;; Deliberately scalene and acute: the result should not rely on symmetry.

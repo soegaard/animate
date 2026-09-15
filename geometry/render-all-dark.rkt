@@ -44,7 +44,7 @@
  #:program "geometry/render-all-dark.rkt"
  #:once-each
  [("--workers") n
-  "Worker processes per video; default 10."
+  "Shared renderer worker capacity per video; default 10."
   (set! workers (positive-integer n "--workers"))]
  [("--output") dir
   "Output root; default geometry-output."

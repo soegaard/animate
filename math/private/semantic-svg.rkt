@@ -20,7 +20,7 @@
 ;; Exports
 (provide
   annotate-math-source (struct-out semantic-marker) svg-marker-ids isolate-svg-marker
-  recolor-svg svg-view-box crop-svg svg->xexpr xexpr->svg)
+  recolor-svg canonicalize-svg-definitions svg-view-box crop-svg svg->xexpr xexpr->svg)
 
 ;;;
 ;;; Data Representation
@@ -90,6 +90,56 @@
 (define (attr x key [fallback #f])
   (define entry (and (element? x) (assq key (cadr x))))
   (if entry (cadr entry) fallback))
+
+; glyph-definition? : any/c -> boolean?
+;;   Recognizes a named direct path definition emitted by dvisvgm for a glyph.
+(define (glyph-definition? value)
+  (and (element? value)
+       (eq? (car value) 'path)
+       (string? (attr value 'id))))
+
+; sort-glyph-definition-runs : list? -> list?
+;;   Stabilizes direct glyph definitions while retaining every non-glyph definition
+;;   element and whitespace position. SVG definition order does not affect references.
+(define (sort-glyph-definition-runs entries)
+  (define (insert-glyph glyph ordered)
+    (cond
+      [(null? ordered) (list glyph)]
+      [(string<? (attr glyph 'id) (attr (car ordered) 'id))
+       (cons glyph ordered)]
+      [else (cons (car ordered) (insert-glyph glyph (cdr ordered)))]))
+  (define (sort-glyphs glyphs)
+    (let loop ([remaining glyphs] [ordered '()])
+      (if (null? remaining)
+        ordered
+        (loop (cdr remaining) (insert-glyph (car remaining) ordered)))))
+  (define ordered-glyphs
+    (sort-glyphs (filter glyph-definition? entries)))
+  (let loop ([remaining entries] [remaining-glyphs ordered-glyphs])
+    (cond
+      [(null? remaining) '()]
+      [(glyph-definition? (car remaining))
+       (cons (car remaining-glyphs)
+             (loop (cdr remaining) (cdr remaining-glyphs)))]
+      [else (cons (car remaining) (loop (cdr remaining) remaining-glyphs))])))
+
+; canonicalize-svg-definitions : string? -> string?
+;;   Makes dvisvgm's otherwise nondeterministic glyph-definition order stable before
+;;   content-addressing a prepared SVG. It leaves drawable order and all non-glyph
+;;   definition elements alone.
+(define (canonicalize-svg-definitions source)
+  (unless (string? source)
+    (raise-argument-error 'canonicalize-svg-definitions "string?" source))
+  (define (walk value)
+    (if (element? value)
+      (let ([children (map walk (cddr value))])
+        (cons (car value)
+              (cons (cadr value)
+                    (if (eq? (car value) 'defs)
+                      (sort-glyph-definition-runs children)
+                      children))))
+      value))
+  (xexpr->svg (walk (svg->xexpr source))))
 
 ; marker? : any/c -> boolean?
 ;;   Recognizes an XML element or an owned semantic marker.

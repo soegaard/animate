@@ -1,7 +1,8 @@
 #lang racket/base
 
 (require "../core.rkt" "private/library-example.rkt")
-(provide equilateral-triangle example-theme make-demo-timeline make-demo-scene)
+(provide equilateral-triangle example-theme make-demo-timeline make-demo-scene
+         geometry-render-preparer geometry-render-builder)
 
 (define (base-theme mode)
   (case mode

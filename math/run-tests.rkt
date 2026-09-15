@@ -16,6 +16,7 @@
   "tests/native-contract.rkt"
   "tests/property-test.rkt"
   "tests/house-style-test.rkt"
+  "tests/prepared-plan-codec-test.rkt"
   "tests/choreography-test.rkt")
 
 (run-core-tests)
@@ -25,6 +26,8 @@
 (run-property-tests)
 
 (run-house-style-tests)
+
+(run-prepared-plan-codec-tests)
 
 (run-choreography-tests)
 

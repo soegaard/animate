@@ -1,52 +1,46 @@
-# Plan: avoid rendering identical geometry frames
+# Geometry semantic static-frame reuse
 
 ## Goal
 
-Reduce render time for geometry videos by avoiding repeated rasterization of
-frames whose visual content is unchanged during `opening-pause`, `read-delay`,
-and `step-pause`.
+Avoid rerasterizing geometry frames whose visible content is unchanged during
+`opening-pause`, `read-delay`, and `step-pause`, without teaching Animate's
+generic renderer how to sample a geometry timeline.
 
-## Observations
+## Domain-owned planning
 
-1. Geometry timelines are immutable and random-access.
-2. During static spans, `sample-geometry-timeline` returns the same per-object
-   appearances at every sampled time.
-3. When captions are enabled, narration text must be included in the equality
-   test; with captions disabled, narration can be ignored.
-4. The generic Animate renderer should remain unchanged because arbitrary scenes
-   may depend on time in author-defined ways.
+`geometry/private/frame-reuse.rkt` is pure and owns the semantic relation. For
+each requested source-frame index, it samples the immutable geometry timeline
+and maps that index to the first matching representative using:
 
-## Implementation strategy
+1. the complete per-object appearance map; and
+2. visible narration text only when captions are enabled.
 
-1. Add a geometry-specific planning pass in `geometry/render.rkt`.
-2. For a requested list of frame indices, sample the geometry timeline first.
-3. Build a semantic key from:
-   - the `geometry-frame` appearances, and
-   - the visible narration text when captions are on.
-4. Keep only the first occurrence of each unique visual state.
-5. Render those representative frame indices through the existing native
-   `render-frame-indices/report!` API.
-6. Materialize the full requested numbered frame sequence by copying the
-   representative PNGs to the duplicate destination names.
-7. Return ordinary render diagnostics and preserve subtitle writing and MP4
-   assembly.
-8. Reuse the same optimization for shard-local rendering, so multi-process
-   `--workers` mode benefits too.
+Subtitle metadata is intentionally absent from this key. Captions therefore
+prevent reuse across a narration change, while turning captions off permits
+reuse when appearances are otherwise equal.
 
-## API / behaviour
+The geometry module builder runs this planning once during project preparation.
+It sends a bounded, versioned frame-reuse witness with the source construction
+fingerprint to the generic project planner. Workers receive only the frozen
+preparation and the representative jobs; they reconstruct the same timeline but
+do not recompute the semantic witness.
 
-- No DSL change.
-- No change to frame numbering.
-- No new command-line flag required.
-- Captions still determine whether narration changes affect frame equality.
-- `render-geometry-frame-indices!` remains the shard boundary used by the
-  example runner.
+## Generic execution and observable result
 
-## Validation
+The generic executor validates the witness against the selected source frame
+grid, rasterizes each representative once, and materializes the remaining
+numbered output slots as aliases. Persistent cache hits are accounted for before
+worker sizing. Its report distinguishes cache hits, representative raster jobs,
+aliases, and materialized output frames.
 
-1. Add a render integration test with nonzero opening/read/hold pauses.
-2. Confirm that:
-   - the full set of frame files is still produced,
-   - the reported frame count is unchanged,
-   - some per-frame render durations are zero because those frames were reused.
-3. Re-run the example workflow and compare wall-clock render times.
+The public result remains a complete ordinary PNG sequence with the original
+frame numbering and timing. Subtitle generation, MP4 muxing, stills, and review
+presentation remain separate parent/local operations.
+
+## Direct local API
+
+`geometry/render.rkt` retains its local timeline-value rendering helpers and
+uses the same pure relation for their direct reuse behavior. Those helpers do
+not themselves infer a restartable source from an arbitrary captured timeline.
+Use an example module's explicit builder/preparer pair when a full-frame render
+needs generic subprocess execution.

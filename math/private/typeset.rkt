@@ -30,7 +30,7 @@
 (provide
   (struct-out prepared-token) (struct-out prepared-layout) typeset-state! token-visual
   token-with-position token-with-id token-scaled default-math-cache-directory
-  current-math-typesetter bitmap-visible-bounds)
+  current-math-typesetter current-math-typeset-observer bitmap-visible-bounds)
 
 ;;;
 ;;; Construction and Operations
@@ -141,7 +141,9 @@
                 (math-source-text source)
                 (math-source-span-start span)
                 (math-source-span-end span))
-              (write-asset! (recolor-svg cropped foreground) cache-directory)
+              (write-asset!
+               (canonicalize-svg-definitions (recolor-svg cropped foreground))
+               cache-directory)
               (* unit (- (+ x (/ w 2)) (/ width 2)))
               (* unit (- (/ height 2) (+ y (/ h 2))))
               (* unit w)
@@ -156,6 +158,26 @@
 (define current-math-typesetter
   (make-parameter semantic-typeset!
     (lambda (typesetter) (check-procedure 'current-math-typesetter typesetter 5))))
+
+; default-math-typeset-observer : math? -> void?
+;;   Leaves ordinary production preparation silent.  Native integration tests can
+;;   set ANIMATE_MATH_TYPESET_EVENT_LOG to observe every process that reaches the
+;;   effect boundary without adding a test-only branch to a worker builder.
+(define (default-math-typeset-observer state)
+  (define event-log (getenv "ANIMATE_MATH_TYPESET_EVENT_LOG"))
+  (when event-log
+    (call-with-output-file event-log
+      #:exists 'append
+      (lambda (out)
+        (fprintf out "~s ~s\n" (math-id state) (math-revision state)))))
+  (void))
+
+; current-math-typeset-observer : (parameter/c (math? . -> . any/c))
+;;   Instruments the one complete-formula effect boundary for focused tests.
+(define current-math-typeset-observer
+  (make-parameter default-math-typeset-observer
+    (lambda (observer)
+      (check-procedure 'current-math-typeset-observer observer 1))))
 
 ;;;
 ;;; Typesetter Dispatch
@@ -174,6 +196,7 @@
     (raise-argument-error 'typeset-state! "multiplication style" multiplication))
   (unless (path-string? directory)
     (raise-argument-error 'typeset-state! "path-string?" directory))
+  ((current-math-typeset-observer) state)
   (define prepared
     ((current-math-typesetter) state font-size multiplication foreground directory))
   (unless (prepared-layout? prepared)

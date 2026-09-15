@@ -33,9 +33,15 @@
          "3d/label-layout3d.rkt"
          "3d/label-layout-preparation3d.rkt"
          "3d/renderer3d.rkt"
+         "process-frame-executor.rkt"
          "png-renderer.rkt"
+         "render-frame-job.rkt"
+         "render-job-plan.rkt"
+         "render-preparation-lease.rkt"
+         "render-preparation-manifest.rkt"
          "render-color-context.rkt"
          "render-typography-context.rkt"
+         "render-worker-protocol.rkt"
          "section-renderer.rkt"
          "doctor.rkt"
          "video-assembly.rkt"
@@ -48,6 +54,8 @@
          render-project-frame!
          execute-prepared-project!
          current-project-artifact-opener
+         (struct-out project-frame-execution-diagnostics)
+         project-frame-execution-diagnostics->datum
          (struct-out project-execution-report))
 
 ;; This is a runtime path rather than a `require`: ordinary project rendering
@@ -71,6 +79,25 @@
 ;; renderer diagnostics payload. It describes *what execution did*, instead of
 ;; exposing an implementation-owned prepared value as the primary result.
 
+(struct project-frame-execution-diagnostics
+  (mode requested-worker-capacity workers-started workers-completing
+        requested-frame-count rendered-frame-count reused-frame-count
+        source-frame-indices output-frame-indices elapsed-milliseconds paths
+        native-diagnostics subprocess-report work-accounting)
+  #:transparent)
+
+;; project-frame-execution-diagnostics records the one frame execution path
+;; selected for a project target.
+;;  - mode is the already-resolved worker policy, never an inferred label.
+;;  - requested-worker-capacity is authored capacity; started/completing are
+;;    parent-observed counts. `workers-completing` is #f when the native PNG
+;;    renderer has no corresponding per-worker completion identity.
+;;  - source-frame-indices/output-frame-indices preserve target-to-local slots.
+;;  - native-diagnostics/subprocess-report retain the implementation-specific
+;;    reports without forcing ordinary callers to choose an execution backend.
+;;  - work-accounting is an immutable, canonical stage/reuse breakdown that
+;;    never counts materialized aliases as newly rasterized frames.
+
 ;; The opener is a render-side effect, deliberately absent from animate/project
 ;; and from immutable planning. Parameterizing it gives headless callers and
 ;; tests a way to decide how completed files should be presented without
@@ -82,6 +109,40 @@
      (unless (procedure? opener)
        (raise-argument-error 'current-project-artifact-opener "procedure?" opener))
      opener)))
+
+; project-work-accounting : prepared-project? ... -> immutable-hash?
+;;   Produces canonical preparation, integrity, cache, reuse, and raster counts.
+(define (project-work-accounting prepared
+                                 #:persistent-cache-hits [persistent-cache-hits 0]
+                                 #:aliases [aliases 0]
+                                 #:representatives [representatives 0]
+                                 #:rasterized [rasterized 0]
+                                 #:materialized [materialized 0]
+                                 #:input-verification-events
+                                 [input-verification-events 0]
+                                 #:input-verification-failures
+                                 [input-verification-failures '()])
+  (define preparation (prepared-project-source-preparation prepared))
+  (define input-manifest (prepared-project-input-manifest prepared))
+  (hasheq
+   'source-preparation-performed? (and preparation #t)
+   'source-preparation-reused? #f
+   'preparation-elapsed-milliseconds
+   (prepared-project-preparation-elapsed-milliseconds prepared)
+   'preparation-artifacts-created
+   (if preparation (length (source-preparation-artifacts preparation)) 0)
+   'preparation-artifacts-reused 0
+   'tracked-input-count
+   (if input-manifest (length (hash-ref input-manifest 'entries)) 0)
+   'input-manifest-identity
+   (and input-manifest (render-input-manifest-identity input-manifest))
+   'input-verification-events input-verification-events
+   'input-verification-failures input-verification-failures
+   'persistent-frame-cache-hits persistent-cache-hits
+   'frame-reuse-aliases aliases
+   'representative-raster-jobs representatives
+   'frames-rasterized rasterized
+   'materialized-output-frames materialized))
 
 
 ;;;
@@ -182,6 +243,12 @@
      "an authored timeline when #:write-sections? is requested"
      "source" (animate-project-source project)
      "write-sections?" #t))
+  ;; Reject a request that the subprocess protocol cannot faithfully execute before creating a
+  ;; frame cache directory, touching an old PNG, or starting a child process.
+  ;; The policy was chosen during planning; this is the execution-side check
+  ;; for the narrower final-frame protocol contract.
+  (check-prepared-project-subprocess-capability!
+   prepared prepared-label-layout)
   (check-overwrite-policy output primary)
   (define export-frames?
     (or (eq? (output-spec-format output) 'png-sequence)
@@ -192,7 +259,7 @@
   (define-values (diagnostics reused-frames?)
     (render-or-reuse-prepared-frames prepared frame-root prepared-label-layout))
   (define frame-paths
-    (render-diagnostics-paths diagnostics))
+    (project-frame-execution-diagnostics-paths diagnostics))
   (define-values (artifact audio-rebuilt? subtitle-path
                   encoded-segments reused-segments segment-cache-event)
     (case (output-spec-format output)
@@ -370,6 +437,10 @@
   (define project (project-plan-project (prepared-project-plan prepared)))
   (define cache (animate-project-cache project))
   (define policy (cache-spec-policy cache))
+  (define worker-policy (prepared-project-worker-policy prepared))
+  (define source-frame-indices (prepared-project-target-frame-indices prepared))
+  (define output-frame-indices
+    (build-list (length source-frame-indices) values))
   (define key
     (and (cache-domain-enabled? cache 'frames)
          (project-frame-cache-key prepared prepared-label-layout)))
@@ -377,57 +448,379 @@
     (project-local-frame-paths frame-root
                                (length (prepared-project-target-frame-indices prepared))))
   (define cache-path (build-path frame-root frame-cache-file-name))
+  (define persistent-hit-output-indices
+    (if (and key (memq policy '(read-only read-write)))
+        (frame-cache-hit-output-indices cache-path key expected-paths)
+        '()))
   (cond
-    [(and key
-          (memq policy '(read-only read-write))
-          (frame-cache-valid? cache-path key expected-paths))
-     (values (render-diagnostics expected-paths (length expected-paths) 0 0 '()
-                                 0 0 0 animate-version animate-stage)
+    [(= (length persistent-hit-output-indices) (length expected-paths))
+     (define native-diagnostics
+       (render-diagnostics expected-paths (length expected-paths) 0 0 '()
+                           0 0 0 animate-version animate-stage))
+     ;; A valid persistent hit must not allocate an executor, even when the
+     ;; newly requested mode would otherwise select subprocess workers.
+     (values
+      (project-frame-execution-diagnostics
+       (render-worker-policy-resolved-mode worker-policy)
+       (render-spec-workers (animate-project-render project))
+       0 0
+       (length expected-paths) 0 (length expected-paths)
+       source-frame-indices output-frame-indices 0 expected-paths
+       native-diagnostics #f
+       (project-work-accounting prepared
+                                #:persistent-cache-hits (length expected-paths)
+                                #:materialized (length expected-paths)))
              #t)]
     [else
      (define diagnostics
-       (render-prepared-frames prepared frame-root prepared-label-layout))
+       (render-prepared-frames
+        prepared frame-root prepared-label-layout persistent-hit-output-indices))
      (when (and key (memq policy '(read-write refresh)))
        (write-frame-cache! cache-path key))
      (values diagnostics #f)]))
 
-(define (render-prepared-frames prepared frame-root prepared-label-layout)
+(define (render-prepared-frames prepared frame-root prepared-label-layout
+                                persistent-hit-output-indices)
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define render (animate-project-render project))
-  (call-with-project-renderer3d
-   render
-   (lambda ()
-     (if (eq? (render-spec-renderers render) 'default)
-         (keyword-apply
-          render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:theme #:typography #:workers)
-          (list (project-render-camera prepared)
-                #t
-                (render-spec-fps render)
-                prepared-label-layout
-                (render-spec-supersample render)
-                (render-spec-theme render)
-                (render-spec-typography render)
-                (render-spec-workers render))
-          (list (prepared-project-scene prepared)
-                (prepared-project-target-frame-indices prepared)
-                frame-root))
-         (keyword-apply
-          render-frame-indices/report!
-          '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:theme #:typography #:workers)
-          (list (project-render-camera prepared)
-                #t
-                (render-spec-fps render)
-                prepared-label-layout
-                (render-spec-renderers render)
-                (render-spec-supersample render)
-                (render-spec-theme render)
-                (render-spec-typography render)
-                (render-spec-workers render))
-          (list (prepared-project-scene prepared)
-                (prepared-project-target-frame-indices prepared)
-                frame-root))))))
+  (case (render-worker-policy-resolved-mode
+         (prepared-project-worker-policy prepared))
+    [(in-process)
+     (render-prepared-frames/in-process!
+      prepared frame-root prepared-label-layout)]
+    [(subprocess)
+     (render-prepared-frames/subprocess!
+      prepared frame-root persistent-hit-output-indices)]
+    [else
+     (error 'render-prepared-frames "unreachable resolved worker mode")]))
+
+; render-prepared-frames/in-process! : prepared-project? path-string?
+;                                      (or/c prepared-label-layout3d? false/c)
+;                                      -> project-frame-execution-diagnostics?
+;;   Preserves the established local PNG renderer and normalizes its report.
+(define (render-prepared-frames/in-process! prepared frame-root prepared-label-layout)
+  (define plan (prepared-project-plan prepared))
+  (define project (project-plan-project plan))
+  (define render (animate-project-render project))
+  (define native-diagnostics
+    (call-with-project-renderer3d
+     render
+     (lambda ()
+       (if (eq? (render-spec-renderers render) 'default)
+           (keyword-apply
+            render-frame-indices/report!
+            '(#:camera #:clean? #:fps #:prepared-label-layout #:supersample #:theme #:typography #:workers)
+            (list (project-render-camera prepared)
+                  #t
+                  (render-spec-fps render)
+                  prepared-label-layout
+                  (render-spec-supersample render)
+                  (render-spec-theme render)
+                  (render-spec-typography render)
+                  (render-spec-workers render))
+            (list (prepared-project-scene prepared)
+                  (prepared-project-target-frame-indices prepared)
+                  frame-root))
+           (keyword-apply
+            render-frame-indices/report!
+            '(#:camera #:clean? #:fps #:prepared-label-layout #:renderers #:supersample #:theme #:typography #:workers)
+            (list (project-render-camera prepared)
+                  #t
+                  (render-spec-fps render)
+                  prepared-label-layout
+                  (render-spec-renderers render)
+                  (render-spec-supersample render)
+                  (render-spec-theme render)
+                  (render-spec-typography render)
+                  (render-spec-workers render))
+            (list (prepared-project-scene prepared)
+                  (prepared-project-target-frame-indices prepared)
+                  frame-root))))))
+  (define source-frame-indices (prepared-project-target-frame-indices prepared))
+  (project-frame-execution-diagnostics
+   'in-process
+   (render-spec-workers render)
+   (render-diagnostics-workers native-diagnostics)
+   #f
+   (length source-frame-indices)
+   (render-diagnostics-frame-count native-diagnostics)
+   0
+   source-frame-indices
+   (build-list (length source-frame-indices) values)
+   (render-diagnostics-elapsed-milliseconds native-diagnostics)
+   (render-diagnostics-paths native-diagnostics)
+   native-diagnostics
+   #f
+   (project-work-accounting
+    prepared
+    #:representatives (render-diagnostics-frame-count native-diagnostics)
+    #:rasterized (render-diagnostics-frame-count native-diagnostics)
+    #:materialized (render-diagnostics-frame-count native-diagnostics))))
+
+; render-prepared-frames/subprocess! : prepared-project? path-string?
+;                                      -> project-frame-execution-diagnostics?
+;;   Executes final PNG jobs through the shared worker supervisor and publishes them
+;;   into the established local project frame directory.
+(define (render-prepared-frames/subprocess! prepared frame-root
+                                             persistent-hit-output-indices)
+  (define plan (prepared-project-plan prepared))
+  (define project (project-plan-project plan))
+  (define render (animate-project-render project))
+  ;; Native rendering cleans only Animate-owned frame names before it starts.
+  ;; The shared executor refuses to overwrite a slot, so preserve that exact
+  ;; cache-miss lifecycle here without touching cache metadata or foreign files.
+  (delete-project-old-frames! frame-root persistent-hit-output-indices)
+  (define source (prepared-project->render-worker-source prepared))
+  (define reuse-plan (prepared-project->frame-reuse-plan prepared))
+  (define lease-manager (make-preparation-lease-manager))
+  (define lease
+    (acquire-preparation-lease!
+     lease-manager (prepared-project-preparation-manifest prepared)))
+  (define report
+    (dynamic-wind
+     void
+     (lambda ()
+       (render-final-frame-jobs!
+        source
+        (prepared-project->final-render-jobs prepared)
+        frame-root
+        #:workers (render-spec-workers render)
+        #:input-manifest (prepared-project-input-manifest prepared)
+        #:reuse-plan reuse-plan
+        #:persistent-cache-output-indices persistent-hit-output-indices))
+     (lambda () (release-preparation-lease! lease))))
+  (project-frame-execution-diagnostics
+   'subprocess
+   (render-spec-workers render)
+   (process-frame-execution-report-workers-started report)
+   (process-frame-execution-report-workers-completing report)
+   (process-frame-execution-report-requested-frame-count report)
+   (process-frame-execution-report-completed-frame-count report)
+   0
+   (process-frame-execution-report-source-frame-indices report)
+   (process-frame-execution-report-output-frame-indices report)
+   (process-frame-execution-report-elapsed-milliseconds report)
+   (process-frame-execution-report-output-paths report)
+   #f
+   report
+   (project-work-accounting
+    prepared
+    #:persistent-cache-hits
+    (process-frame-execution-report-persistent-cache-hit-count report)
+    #:aliases (process-frame-execution-report-frame-reuse-alias-count report)
+    #:representatives
+    (process-frame-execution-report-representative-frame-count report)
+    #:rasterized (process-frame-execution-report-rasterized-frame-count report)
+    #:materialized (process-frame-execution-report-materialized-frame-count report)
+    #:input-verification-events
+    (process-frame-execution-report-input-verification-events report)
+    #:input-verification-failures
+    (process-frame-execution-report-input-verification-failures report))))
+
+; check-prepared-project-subprocess-capability! : prepared-project?
+;                                                  (or/c prepared-label-layout3d? false/c)
+;                                                  -> void?
+;;   Rejects final-render inputs that cannot be consumed by the current worker
+;;   before project execution creates or replaces any output.
+(define (check-prepared-project-subprocess-capability!
+         prepared prepared-label-layout)
+  (define policy (prepared-project-worker-policy prepared))
+  (when (eq? (render-worker-policy-resolved-mode policy) 'subprocess)
+    (define project
+      (project-plan-project (prepared-project-plan prepared)))
+    (define render (animate-project-render project))
+    (unless (eq? (render-spec-renderers render) 'default)
+      (raise-arguments-error
+       'execute-prepared-project!
+       "the default renderer set for subprocess final rendering"
+       "renderers" (render-spec-renderers render)))
+    (unless (eq? (render-spec-renderer3d render) 'software)
+      (raise-arguments-error
+       'execute-prepared-project!
+       "the software renderer for subprocess final rendering"
+       "renderer3d" (render-spec-renderer3d render)))
+    (unless (empty-immutable-renderer-options?
+             (render-spec-renderer-options render))
+      (raise-arguments-error
+       'execute-prepared-project!
+       "an empty immutable renderer-options map for subprocess final rendering"
+       "renderer-options" (render-spec-renderer-options render)))
+    (when prepared-label-layout
+      (raise-arguments-error
+       'execute-prepared-project!
+       "no prepared label layout for subprocess final rendering until a worker-side consumer exists"
+       "prepared-label-layout" prepared-label-layout))
+    ;; These conversions are the protocol's actual semantic acceptance tests;
+    ;; do them before `make-directory*` below rather than discovering an
+    ;; unsupported camera or source snapshot after a child is launched.
+    (camera->final-render-datum (project-render-camera prepared))
+    (theme->datum (render-spec-theme render))
+    (typography-theme->datum (render-spec-typography render))
+    (prepared-project->render-worker-source prepared))
+  (void))
+
+; empty-immutable-renderer-options? : any/c -> boolean?
+;;   Recognizes the deliberately empty custom-renderer input currently accepted.
+(define (empty-immutable-renderer-options? value)
+  (and (immutable? value) (hash? value) (zero? (hash-count value))))
+
+; prepared-project->render-worker-source : prepared-project? -> render-worker-source?
+;;   Converts one normalized restartable declaration into the shared source
+;;   protocol without serializing the parent Scene or duplicating the loader.
+(define (prepared-project->render-worker-source prepared)
+  (define project
+    (project-plan-project (prepared-project-plan prepared)))
+  (define source (animate-project-source project))
+  (cond
+    [(module-binding-source? source)
+     (render-worker-module-value-source
+      (normalized-module-path-string (module-binding-source-module-path source))
+      (module-binding-source-binding source))]
+    [(module-builder-source? source)
+     (define context (prepared-project-source-build-context prepared))
+     (unless context
+       (raise-arguments-error
+        'prepared-project->render-worker-source
+        "a source-build context retained by module-builder preparation"
+        "source" source))
+     (render-worker-module-builder-source
+      (normalized-module-path-string (module-builder-source-module-path source))
+      (module-builder-source-binding source)
+      (module-builder-source-options source)
+      (module-builder-source-prepare source)
+      (module-builder-source-seed source)
+      (render-worker-build-context
+       (source-build-context-asset-base context)
+       (source-build-context-assets context)
+       (source-build-context-width context)
+       (source-build-context-height context)
+       (source-build-context-camera-policy context)
+       (theme->datum (source-build-context-theme context))
+       (typography-theme->datum (source-build-context-typography context))
+       (source-build-context-fps context)
+       (source-build-context-quality context)
+       (source-build-context-seed context)
+       (source-build-context-base-fingerprint context))
+      (prepared-project-preparation-manifest prepared))]
+    [else
+     (raise-arguments-error
+      'prepared-project->render-worker-source
+      "a module-binding-source or module-builder-source"
+      "source" source)]))
+
+; normalized-module-path-string : path-string? -> string?
+;;   Freezes the exact absolute source location sent to a child worker.
+(define (normalized-module-path-string value)
+  (path->string (path->complete-path value)))
+
+; prepared-project->final-render-jobs : prepared-project?
+;                                       -> (listof final-render-frame-job?)
+;;   Builds one request per selected source frame with canonical local output
+;;   slots. Shared builder preparation remains at source-load scope through the
+;;   verified manifest, never in a per-frame carrier.
+(define (prepared-project->final-render-jobs prepared)
+  (define plan (prepared-project-plan prepared))
+  (define project (project-plan-project plan))
+  (define render (animate-project-render project))
+  (define source-fingerprint (prepared-project-source-fingerprint prepared))
+  (define session-id (prepared-project-session-id prepared))
+  (define camera (project-render-camera prepared))
+  (for/list ([source-index
+              (in-list (prepared-project-target-frame-indices prepared))]
+             [output-index (in-naturals)])
+    (make-final-render-frame-job
+     session-id source-fingerprint 0 output-index source-index output-index
+     (render-spec-fps render)
+     #:camera camera
+     #:supersample (render-spec-supersample render)
+     #:theme-datum (theme->datum (render-spec-theme render))
+     #:typography-datum (typography-theme->datum (render-spec-typography render))
+     #:renderer-kind 'default
+     #:renderer-inputs #hasheq())))
+
+; prepared-project->frame-reuse-plan : prepared-project?
+;                                     -> (or/c render-frame-reuse-plan? false/c)
+;;   Restricts an optional domain witness to this selected target without inspecting scenes.
+(define (prepared-project->frame-reuse-plan prepared)
+  (define preparation (prepared-project-source-preparation prepared))
+  (define context (prepared-project-source-build-context prepared))
+  (cond
+    [(and preparation
+          context
+          (source-preparation-frame-reuse preparation))
+     (make-render-frame-reuse-plan
+      (prepared-project-target-frame-indices prepared)
+      (source-build-context-base-fingerprint context)
+      (datum->frame-reuse-witness
+       (source-preparation-frame-reuse preparation)))]
+    [else #f]))
+
+; prepared-project-source-fingerprint : prepared-project? -> immutable-hash?
+;;   Produces execution identity for one restartable source without changing
+;;   the persistent project frame-cache key or transferring a live Scene.
+(define (prepared-project-source-fingerprint prepared)
+  (define project
+    (project-plan-project (prepared-project-plan prepared)))
+  (define source (animate-project-source project))
+  (cond
+    [(module-binding-source? source)
+     (hasheq 'kind 'module-binding
+             'module-path
+             (normalized-module-path-string
+              (module-binding-source-module-path source))
+             'binding (module-binding-source-binding source)
+             'input-manifest
+             (and (prepared-project-input-manifest prepared)
+                  (render-input-manifest-identity
+                   (prepared-project-input-manifest prepared))))]
+    [(module-builder-source? source)
+     (define context (prepared-project-source-build-context prepared))
+     (hasheq 'kind 'module-builder
+             'module-path
+             (normalized-module-path-string
+              (module-builder-source-module-path source))
+             'binding (module-builder-source-binding source)
+             'options (module-builder-source-options source)
+             'prepare (module-builder-source-prepare source)
+             'seed (module-builder-source-seed source)
+             'build-context-fingerprint
+             (and context (source-build-context-base-fingerprint context))
+             'input-manifest
+             (and (prepared-project-input-manifest prepared)
+                  (render-input-manifest-identity
+                   (prepared-project-input-manifest prepared)))
+             'preparation-manifest
+             (and (prepared-project-preparation-manifest prepared)
+                  (render-preparation-manifest-identity
+                   (prepared-project-preparation-manifest prepared))))]
+    [else
+     (raise-arguments-error
+      'prepared-project-source-fingerprint
+      "a restartable project source"
+      "source" source)]))
+
+; prepared-project-session-id : prepared-project? -> string?
+;;   Allocates a bounded process-session label unrelated to cache identity.
+(define (prepared-project-session-id prepared)
+  (define project
+    (project-plan-project (prepared-project-plan prepared)))
+  (format "project-~a-~a"
+          (animate-project-id project)
+          (gensym 'render)))
+
+; delete-project-old-frames! : path-string? (listof exact-nonnegative-integer?) -> void?
+;;   Removes stale canonical slots while preserving verified persistent frame hits.
+(define (delete-project-old-frames! directory preserved-output-indices)
+  (when (directory-exists? directory)
+    (for ([entry (in-list (directory-list directory))])
+      (define text (path->string entry))
+      (define match (regexp-match #px"^frame-([0-9]{6,})\\.png$" text))
+      (when (and match
+                 (not (member (string->number (cadr match))
+                              preserved-output-indices)))
+        (delete-file (build-path directory entry)))))
+  (void))
 
 ;; A renderer selection belongs to the project declaration, whereas the
 ;; retained renderer instance belongs to one render operation.  In particular,
@@ -474,21 +867,41 @@
   (define plan (prepared-project-plan prepared))
   (define project (project-plan-project plan))
   (define source (animate-project-source project))
-  (and (module-binding-source? source)
-       (let ([module-path (module-binding-source-module-path source)])
-         (and (file-exists? module-path)
-              (list 'animate-project-frame-cache-v3
-                    animate-version animate-stage
-                    (call-with-input-file module-path sha1)
-                    (project-frame-render-identity prepared prepared-label-layout)
-                    ;; Audio belongs to the later mix/mux stage. Its source
-                    ;; bytes must not turn a semantically identical scene
-                    ;; frame into a cache miss; visual and formula assets do.
-                    (for/list ([asset (in-list (animate-project-assets project))]
-                               #:unless (eq? (project-asset-role asset) 'audio))
-                      (list (project-asset-path asset)
-                            (and (file-exists? (project-asset-path asset))
-                                 (call-with-input-file (project-asset-path asset) sha1)))))))))
+  (define input-manifest (prepared-project-input-manifest prepared))
+  (and (eq? (cacheability-mode (prepared-project-cache-identities prepared))
+            'persistent)
+       input-manifest
+       (list 'animate-project-frame-cache-v5
+             animate-version animate-stage
+             ;; The execution manifest verifies every declared local input,
+             ;; including narration. Frame reuse deliberately projects that
+             ;; snapshot to the inputs capable of changing pixels: audio must
+             ;; not invalidate otherwise valid PNGs.
+             (render-input-manifest-visual-identity input-manifest)
+             (and (module-builder-source? source)
+                  (prepared-project-preparation-manifest prepared)
+                  (render-preparation-manifest-identity
+                   (prepared-project-preparation-manifest prepared)))
+             (project-frame-render-identity prepared prepared-label-layout))))
+
+; render-input-manifest-visual-identity : render-input-manifest? -> string?
+;;   Derives a deterministic PNG-input identity while retaining audio only for
+;;   session integrity checks and later audio assembly, never frame reuse.
+(define (render-input-manifest-visual-identity manifest)
+  (unless (render-input-manifest? manifest)
+    (raise-argument-error
+     'render-input-manifest-visual-identity "render-input-manifest?" manifest))
+  (define visual-datum
+    (hasheq
+     'schema 'animate-render-visual-inputs-v1
+     'entries
+     (for/list ([entry (in-list (hash-ref manifest 'entries))]
+                #:unless (eq? (hash-ref entry 'role) 'audio))
+       entry)
+     ;; Runtime/loader identity affects source reconstruction and remains a
+     ;; visual input even though its key is not a file path.
+     'runtime (hash-ref manifest 'runtime)))
+  (sha1 (open-input-string (format "~s" (stable-cache-datum visual-datum)))))
 
 ;; This identity contains only inputs that can affect a rendered frame. It is
 ;; intentionally distinct from the project plan and encoder identity: output
@@ -596,6 +1009,19 @@
        (with-handlers ([exn:fail? (lambda (_error) #f)])
          (and (equal? (call-with-input-file path read) key)
               (andmap file-exists? expected-paths)))))
+
+; frame-cache-hit-output-indices : path? any/c immutable-list?
+;                                  -> immutable-list?
+;;   Finds verified existing slots for one current target before worker sizing.
+(define (frame-cache-hit-output-indices path key expected-paths)
+  (if (and (file-exists? path)
+           (with-handlers ([exn:fail? (lambda (_error) #f)])
+             (equal? (call-with-input-file path read) key)))
+      (for/list ([expected-path (in-list expected-paths)]
+                 [output-index (in-naturals)]
+                 #:when (file-exists? expected-path))
+        output-index)
+      '()))
 
 (define (write-frame-cache! path key)
   (call-with-output-file path
@@ -766,6 +1192,95 @@
   (values primary (and audio-rebuilt? #t) subtitle-path
           encoded-segments reused-segments segment-cache-event))
 
+; project-frame-execution-diagnostics->datum : project-frame-execution-diagnostics?
+;                                               -> immutable-hash?
+;;   Produces the serializable execution facts retained in a project manifest
+;;   and command result without exposing live renderer or process objects.
+(define (project-frame-execution-diagnostics->datum diagnostics)
+  (unless (project-frame-execution-diagnostics? diagnostics)
+    (raise-argument-error
+     'project-frame-execution-diagnostics->datum
+     "project-frame-execution-diagnostics?"
+     diagnostics))
+  (hasheq
+   'mode (project-frame-execution-diagnostics-mode diagnostics)
+   'requested-worker-capacity
+   (project-frame-execution-diagnostics-requested-worker-capacity diagnostics)
+   'workers-started
+   (project-frame-execution-diagnostics-workers-started diagnostics)
+   'workers-completing
+   (project-frame-execution-diagnostics-workers-completing diagnostics)
+   'requested-frame-count
+   (project-frame-execution-diagnostics-requested-frame-count diagnostics)
+   'rendered-frame-count
+   (project-frame-execution-diagnostics-rendered-frame-count diagnostics)
+   'reused-frame-count
+   (project-frame-execution-diagnostics-reused-frame-count diagnostics)
+   'work-accounting
+   (project-frame-execution-diagnostics-work-accounting diagnostics)
+   'elapsed-milliseconds
+   (project-frame-execution-diagnostics-elapsed-milliseconds diagnostics)
+   'frame-map
+   (for/list ([source-index
+               (in-list
+                (project-frame-execution-diagnostics-source-frame-indices
+                 diagnostics))]
+              [output-index
+               (in-list
+                (project-frame-execution-diagnostics-output-frame-indices
+                 diagnostics))])
+     (hasheq 'source-frame-index source-index
+             'output-frame-index output-index))
+   'subprocess
+   (and (project-frame-execution-diagnostics-subprocess-report diagnostics)
+        (process-frame-execution-report->datum
+         (project-frame-execution-diagnostics-subprocess-report diagnostics)))))
+
+; process-frame-execution-report->datum : process-frame-execution-report?
+;                                          -> immutable-hash?
+;;   Narrows a closed final-frame report to manifest-safe process and cleanup evidence.
+(define (process-frame-execution-report->datum report)
+  (hasheq
+   'worker-pids (process-frame-execution-report-worker-pids report)
+   'worker-resource-statuses
+   (process-frame-execution-report-worker-resource-statuses report)
+   'startup-milliseconds
+   (process-frame-execution-report-startup-milliseconds report)
+   'worker-timings
+   (process-frame-execution-report-worker-timings report)
+   'raster-execution-milliseconds
+   (process-frame-execution-report-raster-execution-milliseconds report)
+   'publication-milliseconds
+   (process-frame-execution-report-publication-milliseconds report)
+   'elapsed-milliseconds
+   (process-frame-execution-report-elapsed-milliseconds report)
+   'canceled? (process-frame-execution-report-canceled? report)
+   'persistent-cache-hits
+   (process-frame-execution-report-persistent-cache-hit-count report)
+   'frame-reuse-aliases
+   (process-frame-execution-report-frame-reuse-alias-count report)
+   'representative-raster-jobs
+   (process-frame-execution-report-representative-frame-count report)
+   'frames-rasterized
+   (process-frame-execution-report-rasterized-frame-count report)
+   'materialized-output-frames
+   (process-frame-execution-report-materialized-frame-count report)
+   'input-verification-events
+   (process-frame-execution-report-input-verification-events report)
+   'input-verification-failures
+   (process-frame-execution-report-input-verification-failures report)
+   'assignments
+   (for/list ([assignment
+               (in-list (process-frame-execution-report-assignments report))])
+     (hasheq 'source-frame-index
+             (process-frame-assignment-source-frame-index assignment)
+             'output-frame-index
+             (process-frame-assignment-output-frame-index assignment)
+             'request-id (process-frame-assignment-request-id assignment)
+             'worker-pid (process-frame-assignment-worker-pid assignment)
+             'elapsed-milliseconds
+             (process-frame-assignment-elapsed-milliseconds assignment)))))
+
 ;; The manifest is a machine-readable immutable datum next to cache artefacts.
 ;; It makes a completed output independently inspectable without asking the
 ;; preview process to retain state.
@@ -784,6 +1299,9 @@
               'reused-segments (project-execution-report-reused-segments report)
               'audio-rebuilt? (project-execution-report-audio-rebuilt? report)
               'cache-events (project-execution-report-cache-events report)
+              'frame-execution
+              (project-frame-execution-diagnostics->datum
+               (project-execution-report-diagnostics report))
               'warnings (project-execution-report-warnings report))
       out)
      (newline out))

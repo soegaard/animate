@@ -65,7 +65,36 @@
                          prepare-project-label-layout3d
                          project-target-section project-plan->datum
                          render-spec-theme render-spec-typography
-                         render-spec-with-theme render-spec-with-typography))])
+                         render-spec-with-theme render-spec-with-typography
+                         module-builder-source module-builder-source?
+                         module-builder-source-module-path
+                         module-builder-source-binding
+                         module-builder-source-options
+                         module-builder-source-prepare module-builder-source-seed
+                         source-build-seed? source-transfer-data?
+                         source-preparation source-preparation?
+                         source-preparation-payload source-preparation-artifacts
+                         source-preparation-dependencies source-preparation-frame-reuse
+                         source-preparation-diagnostics
+                         source-build-context? source-build-context-module-path
+                         source-build-context-binding source-build-context-options
+                         source-build-context-asset-base source-build-context-assets
+                         source-build-context-width source-build-context-height
+                         source-build-context-camera-policy source-build-context-theme
+                         source-build-context-typography source-build-context-fps
+                         source-build-context-quality source-build-context-seed
+                         source-build-context-base-fingerprint
+                         source-build-context-preparation
+                         render-spec-worker-mode resolve-render-worker-policy
+                         render-worker-policy? render-worker-policy-requested-mode
+                         render-worker-policy-resolved-mode
+                         render-worker-policy-restartable? render-worker-policy-reason
+                         prepared-project-source-build-context
+                         prepared-project-source-preparation
+                         prepared-project-input-manifest
+                         prepared-project-preparation-manifest
+                         prepared-project-preparation-elapsed-milliseconds
+                         prepared-project-worker-policy))])
     (check-not-eq? (public-binding "../project.rkt" name) absent))
   (for ([name (in-list '(text-treatment text-treatment?
                          text-treatment-background text-treatment-border-color

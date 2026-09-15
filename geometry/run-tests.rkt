@@ -53,7 +53,7 @@
     (append '("math-test.rkt" "dsl-test.rkt" "layout-test.rkt"
               "theme-test.rkt" "timeline-test.rkt" "drawing-test.rkt"
               "reveal-test.rkt" "compass-test.rkt" "annotation-test.rkt" "library-test.rkt" "review-test.rkt" "audit-test.rkt" "example-refinement-test.rkt" "transform-label-test.rkt" "subtitle-test.rkt")
-            (if core-only? '() '("animate-test.rkt" "reveal-annotation-render-test.rkt" "library-render-test.rkt" "review-render-test.rkt" "audit-render-test.rkt" "example-refinement-render-test.rkt" "transform-label-render-test.rkt" "subtitle-render-test.rkt"))))
+            (if core-only? '() '("animate-test.rkt" "reveal-annotation-render-test.rkt" "library-render-test.rkt" "review-render-test.rkt" "audit-render-test.rkt" "example-refinement-render-test.rkt" "transform-label-render-test.rkt" "subtitle-render-test.rkt" "process-render-migration-test.rkt"))))
   (define executable
     (or (find-executable-path (find-system-path 'exec-file))
         (find-system-path 'exec-file)))

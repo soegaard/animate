@@ -21,7 +21,8 @@ effectful preparation and execution.
 @defproc[(animate-project
           [#:id id symbol?]
           [#:source source (or/c module-binding-source? scene-source?
-                                  timeline-source? scene-program-source?)]
+                                  timeline-source? scene-program-source?
+                                  module-builder-source?)]
           [#:render render render-spec? (render-spec)]
           [#:preview preview preview-spec? (preview-spec)]
           [#:output output output-spec? (output-spec)]
@@ -43,6 +44,82 @@ Declares a reloadable source suited to project workers and persistent caches.
 }
 
 @defproc[(module-binding-source? [value any/c]) boolean?]{Recognizes a reloadable module binding source.}
+
+@defproc[(module-builder-source
+          [module-path path-string?]
+          [binding symbol?]
+          [#:options options hash? #hasheq()]
+          [#:prepare prepare (or/c symbol? #f) #f]
+          [#:seed seed source-build-seed? 0])
+         module-builder-source?]{
+Declares a restartable source that a fresh process can rebuild by loading one
+module export. The @racket[binding] export accepts exactly a build context, a
+copied immutable options map, and either @racket[#f] or the completed
+preparation payload. @racket[#:prepare], when supplied, names an export that
+accepts the context and options and returns @racket[source-preparation?].
+Planning normalizes this declaration but does not load either export.
+}
+
+@defproc[(module-builder-source? [value any/c]) boolean?]{Recognizes a module-builder source.}
+@defproc[(module-builder-source-module-path [source module-builder-source?]) path-string?]{Returns the declared module path.}
+@defproc[(module-builder-source-binding [source module-builder-source?]) symbol?]{Returns the fixed builder export name.}
+@defproc[(module-builder-source-options [source module-builder-source?]) immutable?]{Returns the copied immutable builder options map.}
+@defproc[(module-builder-source-prepare [source module-builder-source?]) (or/c symbol? #f)]{Returns the optional preparer export name.}
+@defproc[(module-builder-source-seed [source module-builder-source?]) source-build-seed?]{Returns the deterministic builder seed.}
+
+@defproc[(source-build-seed? [value any/c]) boolean?]{
+Recognizes an exact nonnegative seed accepted by the selected Racket CS
+@racket[random-seed] API. The current accepted range is 0 through
+@racket[#x7fffffff]; invalid seeds are rejected rather than truncated.
+}
+
+@defproc[(source-transfer-data? [value any/c]) boolean?]{
+Recognizes the bounded acyclic data representation for builder options and
+preparation values. It accepts finite reals, booleans, symbols, keywords,
+characters, strings, bytes, pairs, vectors, and hashes, copying containers and
+mutable leaves into immutable values. Procedures, ports, bitmap/native values,
+cycles, and oversized or deeply nested values are rejected.
+}
+
+@defproc[(source-preparation
+          [#:payload payload source-transfer-data? #f]
+          [#:artifacts artifacts list? '()]
+          [#:dependencies dependencies list? '()]
+          [#:frame-reuse frame-reuse (or/c source-transfer-data? #f) #f]
+          [#:diagnostics diagnostics hash? #hasheq()])
+         source-preparation?]{
+Creates immutable data returned by a module preparer. Payloads should be
+versioned adapter data rather than a scene or callback. Large assets belong in
+completed artifact files identified by the small artifact manifest.
+}
+@defproc[(source-preparation? [value any/c]) boolean?]{Recognizes completed shared source preparation.}
+@defproc[(source-preparation-payload [value source-preparation?]) source-transfer-data?]{Returns the builder payload.}
+@defproc[(source-preparation-artifacts [value source-preparation?]) list?]{Returns completed artifact descriptions.}
+@defproc[(source-preparation-dependencies [value source-preparation?]) list?]{Returns additional declared source/input identities.}
+@defproc[(source-preparation-frame-reuse [value source-preparation?]) (or/c source-transfer-data? #f)]{Returns optional domain-owned frame-reuse data.}
+@defproc[(source-preparation-diagnostics [value source-preparation?]) hash?]{Returns immutable preparation evidence.}
+
+@defproc[(source-build-context? [value any/c]) boolean?]{
+Recognizes the immutable construction context supplied to module preparers and
+builders. It contains only construction-relevant configuration; worker count,
+PID, batch assignment, retry identity, and staging paths are intentionally
+absent.
+}
+@defproc[(source-build-context-module-path [context source-build-context?]) string?]{Returns the normalized source location.}
+@defproc[(source-build-context-binding [context source-build-context?]) symbol?]{Returns the selected builder binding.}
+@defproc[(source-build-context-options [context source-build-context?]) immutable?]{Returns copied builder options.}
+@defproc[(source-build-context-asset-base [context source-build-context?]) string?]{Returns the stable source-relative asset base.}
+@defproc[(source-build-context-assets [context source-build-context?]) list?]{Returns normalized declared asset descriptors.}
+@defproc[(source-build-context-width [context source-build-context?]) exact-positive-integer?]{Returns target raster width.}
+@defproc[(source-build-context-height [context source-build-context?]) exact-positive-integer?]{Returns target raster height.}
+@defproc[(source-build-context-camera-policy [context source-build-context?]) source-transfer-data?]{Returns the explicit or scene-camera construction policy.}
+@defproc[(source-build-context-theme [context source-build-context?]) color-theme?]{Returns the complete selected colour theme snapshot.}
+@defproc[(source-build-context-typography [context source-build-context?]) typography-theme?]{Returns the complete selected typography snapshot.}
+@defproc[(source-build-context-fps [context source-build-context?]) exact-positive-integer?]{Returns the semantic frame rate.}
+@defproc[(source-build-context-quality [context source-build-context?]) symbol?]{Returns the declared semantic quality setting.}
+@defproc[(source-build-context-seed [context source-build-context?]) source-build-seed?]{Returns the scoped random seed.}
+@defproc[(source-build-context-base-fingerprint [context source-build-context?]) string?]{Returns the pre-preparation construction identity. Worker count and worker mode do not affect it.}
+@defproc[(source-build-context-preparation [context source-build-context?]) (or/c source-preparation? #f)]{Returns completed preparation for a builder, or @racket[#f] while a preparer runs.}
 
 @defproc[(scene-source [scene scene?]) scene-source?]{
 Declares an in-memory Scene source for local planning and preview.
@@ -68,6 +145,7 @@ Declares an in-memory source-program source.
                       [#:renderer3d renderer3d any/c 'software]
                       [#:supersample supersample exact-positive-integer? 1]
                       [#:workers workers exact-positive-integer? 1]
+                      [#:worker-mode worker-mode (or/c 'auto 'in-process 'subprocess) 'auto]
                       [#:theme theme color-theme? animate-light-theme]
                       [#:typography typography typography-theme?
                                      animate-typography-theme])
@@ -82,6 +160,31 @@ project declaration.}
 }
 
 @defproc[(render-spec? [value any/c]) boolean?]{Recognizes a final-render configuration.}
+
+@defproc[(render-spec-worker-mode [specification render-spec?])
+         (or/c 'auto 'in-process 'subprocess)]{
+Returns the requested final-worker mode. In @racket['auto], a restartable
+module source uses local execution for one worker and selects future
+subprocess execution for more than one; direct in-memory sources with more
+than one worker are rejected unless they explicitly choose @racket['in-process].
+PR-A resolves this policy but does not yet start final-render worker processes.
+}
+
+@defproc[(resolve-render-worker-policy
+          [source (or/c module-binding-source? module-builder-source?
+                        scene-source? timeline-source? scene-program-source?)]
+          [render render-spec?])
+         render-worker-policy?]{
+Purely resolves a source/render declaration into an execution policy. It rejects
+unsupported subprocess combinations before a project loads a source or mutates
+an output path. The initial subprocess policy accepts only software rendering,
+the default renderer set, and bounded renderer options.
+}
+@defproc[(render-worker-policy? [value any/c]) boolean?]{Recognizes a pure worker-policy decision.}
+@defproc[(render-worker-policy-requested-mode [policy render-worker-policy?]) (or/c 'auto 'in-process 'subprocess)]{Returns author intent.}
+@defproc[(render-worker-policy-resolved-mode [policy render-worker-policy?]) (or/c 'in-process 'subprocess)]{Returns the selected executor kind.}
+@defproc[(render-worker-policy-restartable? [policy render-worker-policy?]) boolean?]{Reports whether the source can be reconstructed from a declaration.}
+@defproc[(render-worker-policy-reason [policy render-worker-policy?]) symbol?]{Returns the deterministic resolution reason.}
 
 @defproc[(render-spec-theme [specification render-spec?]) color-theme?]{
 Returns the complete immutable theme snapshot selected for final rendering.
@@ -189,7 +292,11 @@ reading source files, locating tools, creating directories, or rendering.
 
 Loads the declared source, validates its type and selected target, fingerprints
 inputs/tools, and determines frame indices.  Preparation may read files and
-tools but does not render frames or create final artifacts.
+tools but does not render frames or create final artifacts.  For a
+@racket[module-builder-source] with @racket[#:prepare], the preparer runs once
+in this parent-side operation.  Its bounded payload and completed artifact
+manifest are then verified when a fresh worker reconstructs the builder; a
+worker does not invoke the preparer again.
 }
 
 @defproc[(prepare-project-label-layout3d
@@ -213,6 +320,40 @@ direct per-frame layout unless the author supplies a table.  Preparation
 measures 2D templates without constructing an optional live OpenGL renderer.}
 
 @defproc[(prepared-project? [value any/c]) boolean?]{Recognizes an effectfully prepared but unrendered project.}
+
+@defproc[(prepared-project-source-build-context [prepared prepared-project?])
+         (or/c source-build-context? #f)]{
+Returns the context actually supplied to a module builder, or @racket[#f] for a
+direct or module-value source.
+}
+@defproc[(prepared-project-source-preparation [prepared prepared-project?])
+         (or/c source-preparation? #f)]{
+Returns completed shared preparation retained for a module builder, if one was
+declared.
+}
+@defproc[(prepared-project-input-manifest [prepared prepared-project?])
+         immutable?]{
+Returns the bounded local-input snapshot for a restartable module source.  The
+executor checks the represented module/dependency and declared asset contents
+before child startup, after child readiness, and before publication.  It is an
+inspection value; callers should not treat it as an editable cache API.
+}
+@defproc[(prepared-project-preparation-manifest [prepared prepared-project?])
+         (or/c immutable? #f)]{
+Returns the parent-to-worker preparation handoff for a prepared module builder,
+or @racket[#f] when no preparer was declared.  Path-bearing artifacts are
+content-identified files under the source asset root; invalid or changed
+artifacts cause execution to fail before a worker accepts final frames.
+}
+@defproc[(prepared-project-preparation-elapsed-milliseconds
+          [prepared prepared-project?])
+         nonnegative-real?]{
+Returns the parent-observed elapsed time spent loading and preparing the
+restartable source.  It is reported separately from worker startup and frame
+rasterization.
+}
+@defproc[(prepared-project-worker-policy [prepared prepared-project?])
+         render-worker-policy?]{Returns the policy resolved before source loading.}
 
 @defproc[(check-project! [plan project-plan?]) project-check-report?]{
 Prepares a project only far enough to validate its declared source, assets,

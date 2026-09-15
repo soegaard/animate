@@ -85,7 +85,7 @@ RACKET="/Applications/Racket v9.3.0.2/bin/racket"
 # Actual native rendering / random-access visual probes.
 "$RACKET" math/run-probes.rkt --dark math-output/review-v0.3/probes
 
-# Render the first lesson with ten native frame workers and encode an MP4.
+# Render the first lesson with ten shared subprocess frame workers and encode an MP4.
 "$RACKET" math/examples/linear-concrete.rkt \
   --workers 10 \
   --mp4 math-output/videos/linear-concrete.mp4 \
@@ -124,6 +124,22 @@ Useful example flags:
 Also supported: `--fps`, `--width`, `--height`, `--supersample`, `--light`, and
 `--help`. The optional positional argument is the frames directory.
 Without `--steps` or `--list-cases`, the example renders frames.
+
+Ordinary rendering uses Animate's source-aware project executor. The parent
+selects the case, camera, and appearance, then completes TeX and formula-layout
+preparation exactly once. Restarted workers validate and rebind that prepared
+layout data before rendering; they do not prepare formulas themselves. With
+`--workers 1` rendering stays in-process; higher values use the shared
+restartable subprocess workers. Only the supported `--light` and `--dark`
+themes are accepted, and `--fps` is intentionally a positive integer because
+the shared executor renders an integer frame grid.
+
+Prepared SVGs are content-addressed in the ignored
+`examples/.animate-math-preparation-artifacts-v1/` directory. They are checked
+as source-preparation artifacts for the current render rather than stored as a
+persistent preparation manifest. `--steps` and `--list-cases` stop before
+preparation, rendering, output cleanup, or MP4 encoding. PNG rendering accepts
+odd dimensions; the H.264 `yuv420p` MP4 encoder requires even width and height.
 
 ## Minimal authoring example
 
@@ -166,8 +182,8 @@ The public reference is [scribblings/math.scrbl](scribblings/math.scrbl),
 registered by this subcollection's `info.rkt`. It defines all **275 public
 bindings**. [INTEGRATION.md](INTEGRATION.md) explains the module boundaries.
 
-**Executed validation:** **1,815** mathematical/property/adapter-contract checks
-and **986** separate source/dependency/reference audit checks passed. All four
+**Executed validation:** **1,817** mathematical/property/adapter-contract checks
+and **1,036** separate source/dependency/reference audit checks passed. All four
 mathematical checkpoint trees match 0.2.0 exactly. **70** complete TeX formulas
 were rendered with and without semantic markers; all **70 PNG pairs** were
 byte-identical. See [docs/validation.md](docs/validation.md).

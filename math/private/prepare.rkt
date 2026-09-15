@@ -13,6 +13,7 @@
   (only-in racket/list append-map argmin remove-duplicates)
   "native.rkt"
   "typeset.rkt"
+  "prepared-plan-model.rkt"
   "datum.rkt"
   "model.rkt"
   "derivation.rkt"
@@ -20,7 +21,8 @@
   "validation.rkt")
 
 ;; Exports
-(provide prepare-math-plan! theme-colors (struct-out prepared-math-plan))
+(provide prepare-math-plan! theme-colors current-math-preparation-observer
+         (struct-out prepared-math-plan))
 
 ;;;
 ;;; Construction and Operations
@@ -30,20 +32,6 @@
 (define (animate-binding name)
   (native 'animate name))
 
-(struct prepared-math-plan (plan layouts schedule camera foreground background row-gap max-rows diagnostics)
-  #:transparent)
-
-;; prepared-math-plan is an immutable record. Its fields have the following roles.
-;;  - plan  presentation-plan?  original immutable presentation
-;;  - layouts  immutable-hash?  checkpoint states to prepared layouts
-;;  - schedule  (listof scheduled-phase?)  ordered frozen phase schedule
-;;  - camera  any/c  explicit native camera used during preparation
-;;  - foreground  string?  prepared ink color
-;;  - background  string?  prepared background color
-;;  - row-gap  positive-real?  measured row separation in world units
-;;  - max-rows  exact-positive-integer?  visible row limit
-;;  - diagnostics  (listof string?)  notes in checkpoint order, never hash iteration
-;;    order
 ; theme-colors : symbol? -> (values string? string?)
 ;;   Selects the explicit foreground and background for the supported light or dark
 ;;   theme.
@@ -52,6 +40,28 @@
     [(light) (values "#171B24" "#FFFFFF")]
     [(dark) (values "#F1F3F8" "#121620")]
     [else (raise-argument-error 'animate/math "'light or 'dark" theme)]))
+
+; default-math-preparation-observer : presentation-plan? -> void?
+;;   Is silent except for the opt-in native integration event log.  Child
+;;   builders inherit the environment, so an unexpected preparation in a child
+;;   is visible to the same focused test evidence as parent preparation.
+(define (default-math-preparation-observer plan)
+  (define event-log (getenv "ANIMATE_MATH_PREPARATION_EVENT_LOG"))
+  (when event-log
+    (call-with-output-file event-log
+      #:exists 'append
+      (lambda (out)
+        (fprintf out "~s ~a\n"
+                 (presentation-plan-style plan)
+                 (length (math-preparation-states plan))))))
+  (void))
+
+; current-math-preparation-observer : (parameter/c (presentation-plan? . -> . any/c))
+;;   Instruments one complete lesson-preparation invocation for focused tests.
+(define current-math-preparation-observer
+  (make-parameter default-math-preparation-observer
+    (lambda (observer)
+      (check-procedure 'current-math-preparation-observer observer 1))))
 
 ; anchor-layout : symbol? symbol? -> prepared-layout?
 ;;   Anchors prepared parts to a relation sign without changing their mathematical
@@ -81,19 +91,12 @@
           #:cache-directory [cache-directory default-math-cache-directory])
   (unless (presentation-plan? plan)
     (raise-argument-error 'prepare-math-plan! "presentation-plan?" plan))
+  ((current-math-preparation-observer) plan)
   (define-values (foreground background) (theme-colors theme))
   (define cam (or camera ((animate-binding 'make-camera) #:background background)))
   (define style (presentation-plan-style plan))
   (define schedule (plan-schedule plan))
-  (define explanation-states
-    (for/list ([entry (in-list schedule)] #:when (eq? (scheduled-phase-kind entry) 'explain))
-      (car (presentation-phase-annotation (scheduled-phase-phase entry)))))
-  (define ordered-states
-    (remove-duplicates
-      (append
-        (append-map (lambda (segment) (derivation-states (plan-segment-derivation segment)))
-                    (presentation-plan-segments plan))
-        explanation-states)))
+  (define ordered-states (math-preparation-states plan))
   (define cache (make-hash))
   (define layouts0
     (for/hash ([state (in-list ordered-states)])
@@ -143,6 +146,10 @@
           (apply min
             (map (lambda (t) (- (prepared-token-y t) (/ (prepared-token-height t) 2))) ts))))))
   (define row-gap (max (presentation-style-row-gap style) (+ max-height 1/4)))
+  (define explanation-states
+    (for/list ([entry (in-list schedule)]
+               #:when (eq? (scheduled-phase-kind entry) 'explain))
+      (car (presentation-phase-annotation (scheduled-phase-phase entry)))))
   (define world-height
     (* world-width
       (/ ((animate-binding 'camera-height) cam) ((animate-binding 'camera-width) cam))))

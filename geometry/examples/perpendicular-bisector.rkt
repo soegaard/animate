@@ -1,7 +1,8 @@
 #lang racket/base
 
 (require "../core.rkt" "private/library-example.rkt" (prefix-in helper: "helpers.rkt"))
-(provide perpendicular-bisector-demo example-theme make-demo-timeline make-demo-scene)
+(provide perpendicular-bisector-demo example-theme make-demo-timeline make-demo-scene
+         geometry-render-preparer geometry-render-builder)
 
 (define (base-theme mode)
   (case mode

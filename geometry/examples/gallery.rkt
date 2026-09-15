@@ -12,7 +12,8 @@
 ;;   racket geometry/examples/gallery.rkt --dark --subtitles-only --srt gallery.srt --vtt gallery.vtt
 (require "../core.rkt" (prefix-in helper: "helpers.rkt")
          (prefix-in c: "../constructions.rkt") "private/library-example.rkt")
-(provide geometry-gallery example-theme make-demo-timeline make-demo-scene)
+(provide geometry-gallery example-theme make-demo-timeline make-demo-scene
+         geometry-render-preparer geometry-render-builder)
 
 (define (base-theme mode)
   (case mode

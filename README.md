@@ -17,6 +17,15 @@ geometry, and sampled timelines without opening a GUI or writing files.
 `animate/preview` module adds interactive inspection. Rendering and media
 output are being collected behind a deliberate render boundary.
 
+Project declarations now also distinguish a reloadable module value from an
+explicit `module-builder-source`. A builder receives an immutable
+construction context, copied options, and an optional data-only preparation
+payload; it is the supported future path for subprocess reconstruction without
+serializing scenes or closures. `render-spec` records `auto`, `in-process`, or
+`subprocess` worker policy explicitly. The current PR-A slice only validates
+and resolves these declarations—final PNG rendering remains on the existing
+local path until the subprocess executor stages arrive.
+
 SCENE-3D-A provides an immutable, right-handed spatial algebra in `animate/3d`:
 `vec3` coordinates, linear and affine maps, normalized-quaternion rotations,
 decomposed transforms, bounds, rays, and planes. SCENE-3D-B builds the first

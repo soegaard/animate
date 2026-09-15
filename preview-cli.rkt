@@ -51,6 +51,7 @@
 (define range #f)
 (define theme-name #f)
 (define theme-file #f)
+(define render-worker-mode #f)
 
 ;; The command line intentionally exposes a fixed reviewed catalog. It never
 ;; consults a mutable global palette registry or silently falls back when an
@@ -112,6 +113,13 @@
                 (set! theme-name (string->symbol value))]
    [("--theme-file") value "Read a versioned color-theme datum file."
                      (set! theme-file value)]
+   [("--worker-mode") value "Use auto, in-process, or subprocess final-frame workers."
+                       (define parsed (string->symbol value))
+                       (unless (memq parsed '(auto in-process subprocess))
+                         (raise-user-error
+                          'raco-animate
+                          "--worker-mode expects auto, in-process, or subprocess"))
+                       (set! render-worker-mode parsed)]
    #:args (command . rest)
    (cons command rest)))
 
@@ -134,17 +142,44 @@
                   ", ")))))]
     [else #f]))
 
+;; Applies the command's explicit worker-mode override without changing any
+;; other semantic render declaration. This stays at the command boundary: the
+;; public project API already exposes render-spec's #:worker-mode directly.
+(define (render-spec-with-command-worker-mode value worker-mode)
+  (if (not worker-mode)
+      value
+      (render-spec #:fps (render-spec-fps value)
+                   #:width (render-spec-width value)
+                   #:height (render-spec-height value)
+                   #:camera (render-spec-camera value)
+                   #:renderers (render-spec-renderers value)
+                   #:renderer-options (render-spec-renderer-options value)
+                   #:renderer3d (render-spec-renderer3d value)
+                   #:supersample (render-spec-supersample value)
+                   #:workers (render-spec-workers value)
+                   #:worker-mode worker-mode
+                   #:quality (render-spec-quality value)
+                   #:theme (render-spec-theme value)
+                   #:typography (render-spec-typography value))))
+
 (define (load-project-argument module-path binding-string)
   (define binding (string->symbol binding-string))
   (define value (dynamic-require module-path binding))
   (unless (animate-project? value)
     (raise-arguments-error 'raco-animate "a binding whose value is animate-project?"
                            "binding" binding "value" value))
-  (if command-theme
+  (define original-render (animate-project-render value))
+  (define themed-render
+    (if command-theme
+        (render-spec-with-theme original-render command-theme)
+        original-render))
+  (define overridden-render
+    (render-spec-with-command-worker-mode themed-render render-worker-mode))
+  (if (or command-theme render-worker-mode)
       (animate-project
        #:id (animate-project-id value)
        #:source (animate-project-source value)
-       #:render (render-spec-with-theme (animate-project-render value) command-theme)
+       #:render overridden-render
        #:preview (animate-project-preview value)
        #:output (animate-project-output value)
        #:encoder (animate-project-encoder value)
@@ -239,7 +274,10 @@
    (write (hasheq 'artifact-paths (project-execution-report-artifact-paths report)
                   'elapsed-milliseconds (project-execution-report-elapsed-milliseconds report)
                   'rendered-frames (project-execution-report-rendered-frames report)
-                  'reused-frames (project-execution-report-reused-frames report)))
+                  'reused-frames (project-execution-report-reused-frames report)
+                  'frame-execution
+                  (project-frame-execution-diagnostics->datum
+                   (project-execution-report-diagnostics report))))
    (newline)]
   [(and (>= (length arguments) 4) (equal? (car arguments) "cache")
         (member (cadr arguments) '("list" "clear")))
