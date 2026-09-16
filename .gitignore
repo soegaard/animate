@@ -3,6 +3,8 @@ rendered-examples/
 tmp/
 compiled/
 math/examples/.animate-math-preparation-artifacts-v1/
+slides-output/
+slides/private/.animate-slide-preparation-v1/
 *.zo
 *.dep
 /doc/

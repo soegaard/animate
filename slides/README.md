@@ -1,51 +1,41 @@
 # animate/slides — themeable layouts
 
-**Version 0.1.4, source preview.** Based on `soegaard/animate` commit
-`6608411f8176404f80063cdebc439c898b465e0f` (16 September 2026).
+**Version 0.1.4.** Integrated into the Animate repository on 16 September 2026.
 
 Immutable slides → prepared layout and timing → **Pict or ordinary native Scene**.
 The public authoring vocabulary is unprefixed within Animate. `slide` is syntax;
 `make-slide` is the procedural constructor. No second video encoder is introduced.
 
-**Validation status:** the v0.1.3 target run reported all 33 named integration
-cases green and the repeat-2 visual review completed 158 Pict/Scene comparisons
-with zero probe errors. v0.1.4 fixes the one exact-cut parity discrepancy found in
-that review and improves two portrait/focus compositions; its three new regression
-cases still need to be rerun on the target checkout. See
-[validation.md](docs/validation.md).
+**Validation status:** all 36 named unit and integration tests pass, and the
+repeat-2 visual review completed 158 Pict/Scene comparisons with zero probe
+errors. See [validation.md](docs/validation.md).
 
-## Install into the updated checkout
+## Use in this checkout
 
-Unpack the archive **in the root of your existing `animate` checkout**. It adds
-`slides/` and one generic adapter file, `private/prepared-pict-visual.rkt`.
-Then run the guarded integration script:
+The implementation and its native integration are part of this repository. From
+the checkout root, compile the public modules and run the suite directly:
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
 RACO="/Applications/Racket v9.3.0.2/bin/raco"
 
-"$RACKET" slides/install.rkt
 "$RACO" make -l animate/slides -l animate/slides/pict \
-  -l animate/slides/scene -l animate/slides/render -l animate/slides/project
-"$RACKET" slides/run-tests.rkt
+  -l animate/slides/scene -l animate/slides/render -l animate/slides/math \
+  -l animate/slides/geometry -l animate/slides/project
+"$RACKET" slides/run-tests.rkt --math --geometry --media --project
 ```
 
-This assumes your checkout is already linked as the `animate` collection, as for
-the existing math and geometry examples. No new package dependencies are needed.
+No new package dependencies are needed. CI runs this complete command in its
+headless Racket 9.3 lane.
 
-The integration script checks every anchor before writing. It applies narrowly
-scoped edits to three existing files; it does not replace them with old copies:
+The repository owns the three narrowly scoped native integrations:
 
 - `private/pict-adapter.rkt`: render a generic prepared Pict or sampled native
   viewport using the normal renderer.
 - `math/private/prepare.rkt`: accept explicit foreground/background colors and a
   minimum formula fitting scale; existing defaults are unchanged.
-- `math/private/animate-adapter.rkt`: expose an internal end-of-step callback for
-  exact mathematical cue times.
-
-The script is idempotent. An unfamiliar source version fails preflight rather
-than applying a guessed patch. Review changes with `git diff`. No GitHub branch,
-commit, or push is created by this archive.
+- `math/private/animate-adapter.rkt`: exposes an internal end-of-step callback
+  for exact mathematical cue times.
 
 ## A first example
 

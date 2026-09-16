@@ -93,8 +93,9 @@
                    raco-path root-path
                    (append
                     (list "make" "main.rkt" "3d.rkt" "authoring.rkt" "preview.rkt"
-                          "render.rkt" "project.rkt")
+                          "render.rkt" "project.rkt" "math.rkt" "slides.rkt")
                     (relative-racket-files root-path "examples")
+                    (relative-racket-files root-path "slides")
                     (relative-racket-files root-path "tests")))
         (run-check 'tests
                    "full test suite"
@@ -253,7 +254,14 @@
                                     animate/preview
                                     animate/render
                                     animate/project
-                                    animate/experimental))])
+                                    animate/experimental
+                                    animate/slides
+                                    animate/slides/pict
+                                    animate/slides/scene
+                                    animate/slides/render
+                                    animate/slides/math
+                                    animate/slides/geometry
+                                    animate/slides/project))])
     (system* racket-path
              "-e"
              (format "(require ~a)" module-path))))

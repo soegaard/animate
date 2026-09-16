@@ -39,8 +39,9 @@ def walk(node, filename):
                 external.append(record)
                 continue
             record['resolved'] = str(relative)
-            # Overlay parent-native files are absent intentionally. Only missing
-            # paths owned by slides/ are errors; other paths are recorded as native.
+            # Only missing paths owned by slides/ are errors; existing parent
+            # modules are recorded as internal dependencies, and absent paths
+            # outside slides/ are recorded as native dependencies.
             if str(relative).startswith('slides/'):
                 internal.append(record)
                 if not resolved.is_file():

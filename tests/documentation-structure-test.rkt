@@ -32,6 +32,7 @@
                     "guide/interactive-preview.scrbl"
                     "guide/rendering-a-video.scrbl"
                     "guide/project-planning.scrbl"
+                    "guide/slides.scrbl"
                     "concepts/immutable-scenes.scrbl"
                     "concepts/formula-source-maps.scrbl"
                     "concepts/relation-phases.scrbl"
@@ -56,6 +57,7 @@
                      (chapter guide-root "interactive-preview.scrbl")
                      (chapter guide-root "rendering-a-video.scrbl")
                      (chapter guide-root "project-planning.scrbl")
+                     (chapter guide-root "slides.scrbl")
                      (chapter concepts-root "immutable-scenes.scrbl")
                      (chapter concepts-root "formula-source-maps.scrbl")
                      (chapter concepts-root "relation-phases.scrbl")

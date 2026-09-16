@@ -54,6 +54,8 @@
   '("tmp"
     "html"
     "rendered-examples"
+    "slides-output"
+    "slides/private/.animate-slide-preparation-v1"
     ".git"
     ".DS_Store"
     "examples/.DS_Store"

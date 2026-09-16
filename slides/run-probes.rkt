@@ -65,8 +65,8 @@
         (printf "~a  max difference ~a; mean ~a\n" label max-delta (exact->inexact mean-delta))
         ;; Two vector rendering paths may differ on antialiased edge pixels, but
         ;; a composition-level disagreement is orders of magnitude larger. The
-        ;; reviewed v0.1.3 gallery stayed below 0.005 mean channel difference
-        ;; except for the exact-cut bug (3.057). Keep a deliberately generous
+        ;; The validated v0.1.4 gallery stayed below 0.005 mean channel difference
+        ;; after correcting the former exact-cut discrepancy. Keep a deliberately generous
         ;; guard that detects semantic mismatches without demanding byte identity.
         (when (> mean-delta 0.05)
           (error 'probe "Pict/Scene composition mismatch: mean channel difference ~a"

@@ -69,6 +69,7 @@ jobs:
           raco pkg show animate
       - run: raco test tests
       - run: raco test tests/scene-bq-br-test.rkt
+      - run: racket slides/run-tests.rkt --math --geometry --media --project
 
   documentation-and-examples:
     name: Documentation and examples

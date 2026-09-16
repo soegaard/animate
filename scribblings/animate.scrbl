@@ -13,6 +13,13 @@
                      animate/render
                      animate/project
                      animate/experimental
+                     animate/slides
+                     animate/slides/pict
+                     animate/slides/scene
+                     animate/slides/render
+                     animate/slides/math
+                     animate/slides/geometry
+                     animate/slides/project
                      animate/3d
                      animate/3d/render)
           "../version.rkt")
@@ -39,6 +46,7 @@ spellings are removed rather than retained as compatibility aliases.
 @include-section["guide/interactive-preview.scrbl"]
 @include-section["guide/rendering-a-video.scrbl"]
 @include-section["guide/project-planning.scrbl"]
+@include-section["guide/slides.scrbl"]
 @include-section["concepts/immutable-scenes.scrbl"]
 @include-section["concepts/formula-source-maps.scrbl"]
 @include-section["concepts/relation-phases.scrbl"]

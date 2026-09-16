@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Added `animate/slides`, a first-class themeable-layout subcollection for
+  immutable slide, timing, and storyboard descriptions. Its named content roles
+  resolve through explicit appearance and format data to static Picts or
+  ordinary native Scenes; the public Pict, Scene, mathematics, geometry,
+  rendering, and project adapters are covered by the regular CI and package
+  checks.
+
 - Added immutable semantic typography. Presentation roles such as
   `title-text`, `body-text`, and `code-text` resolve late through an explicit
   `typography-theme`, independently of the existing color theme. Typography

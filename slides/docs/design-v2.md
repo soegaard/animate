@@ -3,7 +3,11 @@
 
 **Revision 2 — 16 September 2026.** Updated for unprefixed authoring within `animate`, with separate `slide` syntax and procedural `make-slide`. The layout, timing, preparation, and output contracts remain unchanged.
 
-**Status:** proposed API and design, not an implemented subsystem. The examples specify the intended authoring experience. Modules and names under `animate/slides` do not yet exist. Existing APIs from `animate`, `animate/math`, `animate/render`, `pict`, and `slideshow` are identified separately below. No implementation accompanies this guide.
+**Status:** historical design document. `animate/slides` now implements the
+core authoring, layout, timing, Pict, Scene, mathematics, geometry, rendering,
+and project interfaces described here. This document retains ideas that remain
+outside the implemented scope; use `api.md`, `user-guide.md`, and
+`validation.md` for the current contract and validation evidence.
 
 The central model is:
 
@@ -37,7 +41,7 @@ slide + optional timed build
 
 A storyboard also converts to an ordinary authored timeline when it contains narration, subtitles, or section information. There is no new frame renderer and no second global animation clock.
 
-The current repository already has semantic typography, immutable project declarations, authored media timelines, and an explicit preparation boundary in `animate/math`. This proposal builds on those facilities rather than replacing them. See source notes R1–R4.
+The current repository already has semantic typography, immutable project declarations, authored media timelines, and an explicit preparation boundary in `animate/math`. The implementation builds on those facilities rather than replacing them. See source notes R1–R4.
 
 ## 2. Your first slide: one description, two outputs
 
@@ -52,7 +56,7 @@ The primary authoring environment is ordinary Racket with `animate`. Supported c
          animate/slides/scene)
 ```
 
-Authors should not need `prefix-in`, `except-in`, or `rename-in` to combine these modules. The same requirement applies when adding `animate/math` with `animate/slides/math`, or the corresponding geometry adapter. This is a design and validation requirement for the proposed subsystem, not a claim that the unimplemented modules have passed import tests.
+Authors should not need `prefix-in`, `except-in`, or `rename-in` to combine these modules. The same requirement applies when adding `animate/math` with `animate/slides/math`, or the corresponding geometry adapter; the supported combinations have regression coverage.
 
 Choose concise names where their meaning is clear. Keep a qualifying word when it distinguishes an actual concept within `animate`, rather than to avoid vocabulary in an unrelated library:
 

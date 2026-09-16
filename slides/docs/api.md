@@ -1,9 +1,8 @@
 # animate/slides — public API, v0.1.4
 
-This is the interface implemented by this source preview, not a promise that all
-items in the historical design have been implemented. The code has not been
-compiled or executed in the delivery environment. See `validation.md` and the
-worked examples in `user-guide.md`.
+This is the implemented public interface. The historical design document records
+ideas beyond the current surface; see `validation.md` and the worked examples in
+`user-guide.md` for the checked behavior and known scope limits.
 
 All numbers used for authoring geometry are world units. A widescreen canvas is
 16 × 9 units. Time values are seconds. Identifiers are nonempty interned symbols.

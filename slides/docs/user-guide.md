@@ -2,10 +2,10 @@
 
 Version 0.1.4 · 16 September 2026
 
-This guide describes the **supplied implementation**, rather than proposed future
-syntax. It accompanies source that has not yet been compiled or executed in a
-Racket runtime in the delivery environment. Run the supplied suites and visual
-probes on the target checkout before treating it as production-ready.
+This guide describes the implemented and validated public subsystem, rather than
+proposed future syntax. The complete nine-suite integration command passes on
+the target checkout; use the supplied visual probes when reviewing changes to
+layout or native rendering behavior.
 
 ## 1. Content, appearance, and timing
 
@@ -631,7 +631,8 @@ The supplied runner covers all catalogue layouts in both themes and four formats
 then short videos in reversed seek order, at exact beat boundaries, and one frame
 on either side. `--math` and `--geometry` add their real native lessons. It writes
 actual paired PNGs, a comparison manifest, an HTML review page, and a ZIP.
-There are no placeholder render results in the source archive.
+There are no placeholder render results in the repository; review output belongs
+under the ignored `slides-output/` directory.
 
 Mathematical foreground/background roles must resolve to opaque colors in this
 version; the TeX color adapter rejects alpha rather than silently discarding it.

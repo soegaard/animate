@@ -1,5 +1,5 @@
 #lang racket/base
-;; Run after slides/install.rkt. Core suites do not invoke TeX or FFmpeg.
+;; Core suites do not invoke TeX or FFmpeg; optional integration suites are explicit.
 (require racket/cmdline racket/runtime-path racket/list rackunit/text-ui)
 (module+ main
 (define-runtime-path tests-directory "tests")

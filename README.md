@@ -9,6 +9,13 @@
 This repository is a Manim-like animation system for Racket, with optional
 Rhombus examples.
 
+Themeable, immutable slide layouts are available in
+[`animate/slides`](slides/README.md). A slide separates named content roles
+from appearance and timing, then resolves to either a static Pict or the
+ordinary native Scene timeline. The same subcollection includes Pict, Scene,
+mathematics, geometry, rendering, and project adapters; its complete
+integration suite runs in the standard CI workflow.
+
 SCENE-EM began the repository-coherence pass after the source-addressable
 formula and relation foundations in SCENE-EJ–EL. The central API stays
 headless: `require animate` constructs immutable scenes, formulas, relations,

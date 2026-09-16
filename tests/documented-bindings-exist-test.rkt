@@ -52,6 +52,15 @@
   ;; constructor uses an explicit marker name instead.
   (check-eq? (public-binding "../main.rkt" 'angle) absent)
   (check-not-eq? (public-binding "../main.rkt" 'angle-marker) absent)
+  (for ([name (in-list '(slide? make-slide slide-ref slide-layout
+                         slide-appearance slide-notes storyboard? storyboard))])
+    (check-not-eq? (public-binding "../slides.rkt" name) absent))
+  (for ([name (in-list '(slide->pict storyboard->pict storyboard->picts))])
+    (check-not-eq? (public-binding "../slides/pict.rkt" name) absent))
+  (for ([name (in-list '(slide->scene storyboard->scene))])
+    (check-not-eq? (public-binding "../slides/scene.rkt" name) absent))
+  (for ([name (in-list '(prepare-slide! prepare-storyboard!))])
+    (check-not-eq? (public-binding "../slides/render.rkt" name) absent))
   (for ([name (in-list '(scene-program? scene-block-spec? make-scene-program))])
     (check-not-eq? (public-binding "../authoring.rkt" name) absent))
   (for ([name (in-list '(open-program-preview open-scene-preview preview-available?

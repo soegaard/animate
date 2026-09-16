@@ -2,7 +2,7 @@
 ;; The containing repository remains the animate package. This is its optional
 ;; slides subcollection; there is no independent runtime dependency installation.
 (define version "0.1.4")
-(define pkg-desc "Themeable immutable slide authoring with Pict and native Scene adapters (source preview)")
+(define pkg-desc "Themeable immutable slide authoring with Pict and native Scene adapters")
 ;; Optional effectful integrations are selected by slides/run-tests.rkt flags.
 (define test-omit-paths
   '("examples"
