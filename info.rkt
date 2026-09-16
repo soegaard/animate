@@ -54,6 +54,7 @@
   '("tmp"
     "html"
     "rendered-examples"
+    ".animate-cache"
     "slides-output"
     "slides/private/.animate-slide-preparation-v1"
     ".git"

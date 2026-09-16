@@ -2,7 +2,8 @@
 ;; Generic runner. Authoring modules contain no command-line or rendering effects.
 (require racket/cmdline racket/path racket/runtime-path racket/file
          animate/project animate/render
-         "main.rkt" "render.rkt" "scene.rkt" "project.rkt")
+         "main.rkt" "render.rkt" "scene.rkt" "project.rkt"
+         "private/project-artifacts.rkt")
 (module+ main
 (define-runtime-path here ".")
 (define workers 1) (define fps 30) (define width 1280) (define height 720)
@@ -18,7 +19,7 @@
    [("--width") n "Output width" (set! width (positive-integer n 'width))]
    [("--height") n "Output height" (set! height (positive-integer n 'height))]
    [("--frames") "Write PNG frames without MP4 encoding" (set! mode 'png-sequence)]
-   [("--in-process") "Prepare directly; needed for geometry content in this release" (set! in-process? #t)]
+   [("--in-process") "Prepare directly and explicitly use the in-process renderer" (set! in-process? #t)]
    [("--output") path "Output root directory" (set! output path)]
    #:args (source) source))
 (define module (path->complete-path file))
@@ -42,6 +43,8 @@
     #:encoder (encoder-spec #:codec (if (eq? mode 'mp4) 'h264 'none))
     #:cache (cache-spec #:policy 'off)))
 (define report (render-project! project))
-(for ([path (in-list (project-execution-report-artifact-paths report))]) (displayln path))
+(for ([path (in-list (project-artifact-path-list
+                      (project-execution-report-artifact-paths report)))])
+  (displayln path))
 
 )

@@ -1,6 +1,6 @@
 #lang racket/base
 (require racket/list (only-in racket/math pi)
-         "data.rkt" "check.rkt" "appearance.rkt" "schedule.rkt" "arrange.rkt"
+         "data.rkt" "check.rkt" "appearance.rkt" "schedule.rkt" "arrange.rkt" "transition.rkt" "semantic-plan.rkt"
          "../../colors.rkt")
 (provide sample-slide sample-storyboard validate-bridges storyboard-time prefix-frame canonical-scene-time)
 (define (sample-slide source [selection #f])
@@ -116,6 +116,19 @@
 (define (validate-bridges board)
   (for ([bridge (in-list (prepared-storyboard-value-bridges board))])
     (define-values (from to) (bridge-frames board bridge))
+    (define tr (prepared-bridge-transition bridge))
+    (when (memq (transition-value-effect tr) '(push wipe cover uncover))
+      (for ([f (in-list (list from to))])
+        (unless (= (rgba-color-alpha (frame-value-background f)) 1)
+          (slides-error 'transition-background '()
+                        "directional transitions require opaque slide backgrounds"))))
+    (when (eq? (transition-value-effect tr) 'fade-through)
+      (define destination (find-shot board (prepared-bridge-to bridge)))
+      (define theme (prepared-slide-value-theme
+                     (prepared-clip-value-slide (prepared-shot-clip destination))))
+      (define color (resolve-color (transition-value-color tr) (theme-value-colors theme)))
+      (unless (= (rgba-color-alpha color) 1)
+        (slides-error 'transition-color '() "fade-through requires an opaque midpoint color")))
     (for ([key (in-list (transition-value-keys (prepared-bridge-transition bridge)))])
       (for ([endpoint (in-list (list from to))] [side (in-list '(source destination))])
         (define leaves (key-leaves endpoint key))
@@ -123,56 +136,66 @@
                                           "requested continuity key is absent"))
         (unless (ormap (lambda (l) (> (frame-leaf-opacity l) 0)) leaves)
           (slides-error 'invisible-match (list key side) "requested continuity key is invisible at the bridge endpoint")))))
-  board)
-(define (lerp a b p) (+ a (* p (- b a))))
-(define (box-lerp a b p)
-  (box-value (lerp (box-value-x a) (box-value-x b) p) (lerp (box-value-y a) (box-value-y b) p)
-             (lerp (box-value-width a) (box-value-width b) p) (lerp (box-value-height a) (box-value-height b) p)))
-(define (compatible? a b)
-  (and (asset-identity (frame-leaf-asset a))
-       (equal? (asset-identity (frame-leaf-asset a)) (asset-identity (frame-leaf-asset b)))
-       (= (frame-leaf-time a) (frame-leaf-time b))
-       (not (frame-leaf-clip a)) (not (frame-leaf-clip b))))
-(define (bridge-frame board bridge t)
+  (define planned
+    (for/list ([bridge (in-list (prepared-storyboard-value-bridges board))])
+      (define tr (prepared-bridge-transition bridge))
+      (define-values (from to) (bridge-frames board bridge))
+      (struct-copy prepared-bridge bridge
+        [plan (if (eq? (transition-value-effect tr) 'match)
+                  (for/list ([key (in-list (transition-value-keys tr))])
+                    (compile-match-plan key (key-leaves from key) (key-leaves to key)
+                                        (transition-value-depth tr)))
+                  '())])))
+  (struct-copy prepared-storyboard-value board [bridges planned]))
+(define (matched-bridge-frame board bridge p)
   (define-values (from to) (bridge-frames board bridge))
-  (define transition (prepared-bridge-transition bridge))
-  (define p (progress t (prepared-bridge-start bridge) (transition-value-duration transition)))
-  (cond [(= p 0) from] [(= p 1) to]
-        [else
-         (define matched-from '()) (define matched-to '()) (define matched '())
-         (for ([key (in-list (transition-value-keys transition))])
-           (define aa (key-leaves from key)) (define bb (key-leaves to key))
-           (when (= (length aa) (length bb))
-             (define pairs
-               (if (= (length aa) 1) (list (cons (car aa) (car bb)))
-                   (for/list ([a (in-list aa)])
-                     (cons a (findf (lambda (b) (equal? (cddr (frame-leaf-path a)) (cddr (frame-leaf-path b)))) bb)))))
-             (when (andmap (lambda (pair) (and (cdr pair) (compatible? (car pair) (cdr pair)))) pairs)
-               (for ([pair (in-list pairs)])
-                 (define a (car pair)) (define b (cdr pair))
-                 (set! matched-from (cons a matched-from)) (set! matched-to (cons b matched-to))
-                 (set! matched
-                       (cons (struct-copy frame-leaf b
-                               [asset (frame-leaf-asset a)]
-                               [box (box-lerp (frame-leaf-box a) (frame-leaf-box b) p)]
-                               [opacity (lerp (frame-leaf-opacity a) (frame-leaf-opacity b) p)]
-                               [scale (lerp (frame-leaf-scale a) (frame-leaf-scale b) p)]) matched))))))
-         (define (fade unmatched removed weight)
-           (for/list ([l (in-list unmatched)] #:unless (memq l removed))
-             (struct-copy frame-leaf l [opacity (* weight (frame-leaf-opacity l))])))
-         (frame-value (frame-value-format from)
-                      (rgba-color-lerp (frame-value-background from) (frame-value-background to) p)
-                      (append (fade (frame-value-leaves from) matched-from (- 1 p))
-                              (fade (frame-value-leaves to) matched-to p) (reverse matched))
-                      (for/fold ([h (frame-value-slots from)]) ([(k v) (in-hash (frame-value-slots to))]) (hash-set h k v))
-                      (frame-value-safe-box to)
-                      ;; Chrome uses the same explicit bridge alpha in both
-                      ;; adapters, independently of content clocks.
-                      (if (equal? (frame-value-decorations from) (frame-value-decorations to))
-                          (frame-value-decorations from)
-                          (append
-                           (map (lambda (d) (list (car d) (cadr d) (- 1 p))) (frame-value-decorations from))
-                           (map (lambda (d) (list (car d) (cadr d) p)) (frame-value-decorations to))))) ]))
+  (cond
+    [(= p 0) from] [(= p 1) to]
+    [else
+     (define plans (prepared-bridge-plan bridge))
+     (unless plans
+       (slides-error 'unprepared-match '() "semantic matching must be planned before sampling"))
+     (define keys (map match-plan-key plans))
+     (define base (blend-frames from to p))
+     (struct-copy frame-value base
+       [leaves
+        (append
+         (filter (lambda (l) (not (memq (frame-leaf-key l) keys)))
+                 (frame-value-leaves base))
+         (append-map (lambda (plan) (sample-match-plan plan p)) plans))])]))
+
+(define (bridge-frame board bridge time)
+  (define tr (prepared-bridge-transition bridge))
+  (define p (transition-progress (transition-value-easing tr)
+               (progress time (prepared-bridge-start bridge) (transition-value-duration tr))))
+  (define-values (from to) (bridge-frames board bridge))
+  ;; A reduced-motion storyboard keeps bridge durations, speech alignment, and
+  ;; all endpoint states. Only spatial motion is replaced with a crossfade.
+  (define reduced? (eq? (storyboard-value-motion (prepared-storyboard-value-source board)) 'reduced))
+  (define effect (if (and reduced? (memq (transition-value-effect tr)
+                                        '(match push wipe cover uncover zoom)))
+                     'crossfade (transition-value-effect tr)))
+  (cond
+    [(= p 0) from]
+    [(= p 1) to]
+    [else
+     (case effect
+       [(match) (matched-bridge-frame board bridge p)]
+       [(crossfade) (blend-frames from to p)]
+       [(push wipe cover uncover)
+        (directional-bridge from to effect (transition-value-direction tr) p)]
+       [(zoom)
+        (define scale (transition-value-scale tr))
+        (blend-frames (zoom-frame from (+ 1 (* p (- (/ 1 scale) 1))))
+                      (zoom-frame to (+ scale (* p (- 1 scale)))) p)]
+       [(fade-through)
+        ;; Semantic transition colors resolve against the destination theme.
+        (define destination (find-shot board (prepared-bridge-to bridge)))
+        (define theme (prepared-slide-value-theme
+                       (prepared-clip-value-slide (prepared-shot-clip destination))))
+        (fade-through-frame from to
+          (resolve-color (transition-value-color tr) (theme-value-colors theme)) p)]
+       [else (slides-error 'transition-effect '() "unknown prepared transition")])]))
 (define (storyboard-time b selected)
   (define t (case selected [(end) (prepared-storyboard-value-duration b)] [(start) 0] [else selected]))
   (unless (and (nonnegative-number? t) (<= t (+ 1e-8 (prepared-storyboard-value-duration b))))

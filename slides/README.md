@@ -1,43 +1,65 @@
 # animate/slides — themeable layouts
 
-**Version 0.1.4.** Integrated into the Animate repository on 16 September 2026.
+**Version 0.4.0 — parent-prepared geometry workers.** Built on the integrated repository at
+`0c5f863e8ccbfc4388123adce388a4443689323e` plus the v0.3.1 semantic-gallery updates.
 
-Immutable slides → prepared layout and timing → **Pict or ordinary native Scene**.
-The public authoring vocabulary is unprefixed within Animate. `slide` is syntax;
-`make-slide` is the procedural constructor. No second video encoder is introduced.
+Immutable slides resolve to Picts or ordinary native Scenes. In addition to the
+existing transition family, `match` now supports nested named parts and replay
+between witnessed math, geometry, and native Scene checkpoints.
 
-**Validation status:** all 36 named unit and integration tests pass, and the
-repeat-2 visual review completed 158 Pict/Scene comparisons with zero probe
-errors. See [validation.md](docs/validation.md).
+**Validation:** Racket 9.3.0.2 compiled the public modules and passed all **105
+named cases across sixteen suite files**, including the optional mixed-domain
+worker suite. The run also produced a real two-worker geometry gallery MP4.
+See [validation-v040.md](docs/validation-v040.md) for the exact scope and
+[semantic-matching.md](docs/semantic-matching.md) for the design, API, examples,
+and explicit limitations.
 
-## Use in this checkout
+## Browse the gallery
 
-The implementation and its native integration are part of this repository. From
-the checkout root, compile the public modules and run the suite directly:
+The gallery contains **42 selectable examples**: twelve layouts, twenty-three
+transition examples, and seven native integration examples. It explains the APIs
+and exports reusable storyboard sources as well as pictures and optional videos.
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
-RACO="/Applications/Racket v9.3.0.2/bin/raco"
 
-"$RACO" make -l animate/slides -l animate/slides/pict \
-  -l animate/slides/scene -l animate/slides/render -l animate/slides/math \
-  -l animate/slides/geometry -l animate/slides/project
-"$RACKET" slides/run-tests.rkt --math --geometry --media --project
+# Data-only catalogue: no rendering or external preparation.
+"$RACKET" slides/run-gallery.rkt --list
+
+# Playable transition gallery: HTML, MP4s, posters, timestamp strips, review ZIP.
+"$RACKET" slides/run-gallery.rkt --category transitions \
+  --videos --workers 10 --dark slides-output/transitions-v040
+
+open slides-output/transitions-v040/index.html
+
+# Complete light gallery. Math requires TeX/dvisvgm; videos also require FFmpeg.
+"$RACKET" slides/run-gallery.rkt --videos --workers 10 \
+  --light slides-output/gallery-v040
+
+# Portrait layout comparison, without MP4 encoding.
+"$RACKET" slides/run-gallery.rkt --category layouts \
+  --format portrait --dark slides-output/portrait-v040
+
+# A focused gallery of real domain integration.
+"$RACKET" slides/run-gallery.rkt --category integration \
+  --videos --workers 10 slides-output/integration-v040
 ```
 
-No new package dependencies are needed. CI runs this complete command in its
-headless Racket 9.3 lane.
+Use a fresh output directory. The sibling ZIP includes final videos and images,
+not temporary project frames. **Geometry now uses the same module-backed project
+workers as math and ordinary slides.** The parent realizes the construction and
+freezes annotation layout once; workers reconstruct verified prepared data.
+The console and manifest report actual worker starts. `--in-process` remains an
+explicit one-worker override. Static previews use the shared Pict composition.
+See [Geometry workers](docs/geometry-workers.md) for the plan, contract, and checks.
 
-The repository owns the three narrowly scoped native integrations:
+`slides/examples/gallery.rkt` is also an executable gallery entry point. Its
+original `gallery-slides` and `gallery-film` specimen exports remain available
+for the diagnostic probes.
 
-- `private/pict-adapter.rkt`: render a generic prepared Pict or sampled native
-  viewport using the normal renderer.
-- `math/private/prepare.rkt`: accept explicit foreground/background colors and a
-  minimum formula fitting scale; existing defaults are unchanged.
-- `math/private/animate-adapter.rkt`: exposes an internal end-of-step callback
-  for exact mathematical cue times.
+Full instructions: [Gallery and transitions](docs/gallery-and-transitions.md).
 
-## A first example
+## A first slide
 
 ```racket
 #lang racket/base
@@ -59,81 +81,102 @@ The repository owns the three narrowly scoped native integrations:
 (define animation (slide->scene opening))
 ```
 
-A plain slide has no implicit movie duration. Its Pict is the populated static
-composition; its Scene has duration zero. `hold-slide` or `build-slide` supplies
-time. Both adapters consume the same prepared rectangles, opacity values, local
-content clocks, and transition state.
+A plain slide has no implicit movie duration. `hold-slide` or `build-slide`
+supplies time. Deferred slide paragraphs are `paragraph-content`, leaving
+Animate's existing native `paragraph` operation unchanged.
 
-**Naming refinement:** deferred slide paragraphs are `paragraph-content`, not
-`paragraph`, because Animate already exports a concrete native `paragraph` Visual
-constructor. All supplied combinations of slide, math, Scene, and project APIs
-use ordinary imports without user-side renaming. Third-party Pict/Slideshow names
-may still require `only-in` or `prefix-in` at their integration boundary.
+## Slide transitions
 
-## Examples and real rendering
+```racket
+(slide-transition #:effect 'push #:direction 'left
+                  #:duration 0.8 #:easing 'smooth)
 
-The source modules in `examples/` only export descriptions. Rendering is explicit:
+(slide-transition #:effect 'wipe #:direction 'up #:duration 1)
 
-```sh
-# Nineteen-and-six-tenths-second silent lesson, using ten subprocess workers.
-"$RACKET" slides/render-example.rkt --workers 10 \
-  slides/examples/function-lesson.rkt
+(slide-transition #:effect 'zoom #:scale 0.82 #:duration 0.9)
 
-# Narrated mathematical choreography: silent draft narration plus subtitles.
-# Actual TeX and dvisvgm preparation happens once in the parent.
-"$RACKET" slides/render-example.rkt --workers 10 \
-  slides/examples/math-lesson.rkt
+(slide-transition #:effect 'fade-through #:color "#101820" #:duration 0.8)
 
-# Geometry embedding is native, but this release does not have its portable codec.
-"$RACKET" slides/render-example.rkt --in-process \
-  slides/examples/geometry-lesson.rkt
-
-# PNG output without encoding.
-"$RACKET" slides/render-example.rkt --frames --workers 10 \
-  --output slides-output/frames slides/examples/native-scene.rkt
+(slide-transition #:effect 'match #:keys '(topic) #:duration 0.7)
 ```
 
-MP4 uses the existing H.264/AAC project path and requires FFmpeg. Recorded
-narration additionally uses `ffprobe`; mathematical content requires the same
-LaTeX/dvisvgm installation as `animate/math`. On macOS, add `/Library/TeX/texbin`
-to PATH when that is where your TeX distribution exposes its programs.
-The runner refuses existing output destinations according to the ordinary
-project overwrite policy; choose a new `--output` root for another run.
+Cut, crossfade, match, push, wipe, cover, uncover, zoom, and fade-through are
+available. Direction describes travel: left means an incoming composition enters
+from the right. Easing is linear, smooth, ease-in, ease-out, or ease-in-out.
+Backgrounds, decorations, and content clipping follow the transition together.
 
-## Validation and gallery
+Bridges add their own duration and freeze both endpoint content clocks. Reduced
+motion substitutes same-duration crossfades for spatial transitions, including
+matched relocation. Matching remains conservative: it is not an automatic glyph
+or mathematical-expression morph.
+
+## Gallery as a storyboard
+
+```racket
+(require animate/slides animate/slides/gallery)
+
+(define film
+  (make-slide-gallery #:entries '(layout-title+figure push-left math-derivation)
+                      #:theme lecture-dark))
+```
+
+Prepare and convert `film` using the ordinary slide APIs. The catalogue module is
+safe to require for metadata-only inspection; native example builders are loaded
+when selected.
+
+The ready-made transition tour exports an ordinary `film` value:
 
 ```sh
-# Default suites: model, layout, timing, native output, and preparation codec.
-"$RACKET" slides/run-tests.rkt
+"$RACKET" slides/render-example.rkt --workers 10 \
+  slides/examples/gallery-tour.rkt
+```
 
-# Real optional integrations, not mocks.
+## Compile, test, and visually review
+
+```sh
+RACO="/Applications/Racket v9.3.0.2/bin/raco"
+
+"$RACO" make -l animate/slides -l animate/slides/pict \
+  -l animate/slides/scene -l animate/slides/render \
+  -l animate/slides/math -l animate/slides/geometry -l animate/slides/project \
+  -l animate/slides/gallery slides/run-gallery.rkt &&
 "$RACKET" slides/run-tests.rkt --math --geometry --media --project
 
-# All twelve layouts, light/dark, four formats; then timed examples in reverse
-# seek order and immediately around beat/transition boundaries.
-"$RACKET" slides/run-probes.rkt --repeat 2 slides-output/probes-v1
-
-# Include mathematical and geometrical lessons in the same final review runner.
-"$RACKET" slides/run-probes.rkt --repeat 2 --math --geometry \
-  slides-output/probes-v1-full
+"$RACKET" slides/run-probes.rkt --repeat 2 --math --geometry --gallery \
+  slides-output/review-v040
 ```
 
-The runner writes PNG pairs, `index.html`, `manifest.json`, and a sibling ZIP.
-It refuses to mix a prior probe directory with a new run. The manifest records
-actual per-channel differences and repeatability failures; matching semantics
-does not promise identical antialiasing on every platform.
+The complete runner now contains **105 named cases across sixteen suite files**; these are
+supplied tests, not a claim that this version passed them here. The existing CI
+command picks them up through `slides/run-tests.rkt`. The expanded visual runner
+covers transition interiors, exact endpoints, both themes, portrait/widescreen,
+and real mathematical/geometry content in one review ZIP.
 
-## Documentation
+## Documentation and limits
 
-Read [the implementation guide](docs/user-guide.md) for short and medium examples,
-theme inheritance, custom layouts, narration, native interoperability, and the
-production workflow. [API reference](docs/api.md) lists the supported surface.
-The previously agreed [revision-2 design](docs/design-v2.md) is retained as design
-history, **not** as a claim that every proposed diagnostic or extension exists.
+[API reference](docs/api.md) · [New gallery/transition guide](docs/gallery-and-transitions.md)
+· [Core authoring guide](docs/user-guide.md) · [Validation](docs/validation-v040.md)
+· [Changes](CHANGES.md)
 
-Current boundaries include fade/instant reveals, whole-slot crossfade replacement,
-text-only bullet items, opaque-Pict matching by crossfade, and in-process-only
-geometry preparation. Slot groups can receive native animation after conversion;
-the interior of an embedded native viewport is not exposed as ordinary outer
-Scene selection paths. Font-fallback/figure-resolution advisories and an
-interactive layout editor are not implemented.
+Geometry preparation belongs to the parent; rendering can use subprocess workers.
+No new automatic text/formula morph,
+forced alignment, speech generation, interactive layout editor, or arbitrary
+renderer-factory transfer is claimed. Mathematical context headings and working
+margins remain owned by the existing math adapter. The preparation payload is now
+version 4; prepare again instead of reusing an older payload.
+
+## Semantic continuity
+
+```racket
+(content-state (math-content plan) #:at '(subtract-five start) #:viewport '(12 7))
+(slide-transition #:effect 'match #:keys '(equation) #:depth 'semantic #:duration 4)
+```
+
+`semantic-group` / `semantic-part` expose explicitly named children.
+`content-state` freezes a checkpoint from an existing domain plan. A compatible
+matched bridge replays that plan while moving the containing slot.
+`storyboard-match-report` exposes the prepared correspondence without live handles.
+
+The gallery entries are `semantic-parts`, `semantic-math`, `semantic-geometry`,
+and `semantic-math-geometry`. The full guide is
+[Semantic continuity between slides](docs/semantic-matching.md).

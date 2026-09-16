@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Extended `animate/slides` with a 42-entry gallery, directional and semantic
+  transitions, and parent-prepared geometry content that can use the ordinary
+  project worker pool. Named semantic parts and witnessed math, geometry, or
+  native Scene checkpoints preserve supported domain continuity without adding
+  a second renderer or scheduler.
+
 - Added `animate/slides`, a first-class themeable-layout subcollection for
   immutable slide, timing, and storyboard descriptions. Its named content roles
   resolve through explicit appearance and format data to static Picts or

@@ -1,7 +1,8 @@
 #lang racket/base
 (require racket/list racket/match
          "data.rkt" "check.rkt" "model.rkt" "appearance.rkt" "layout.rkt"
-         "content.rkt" "arrange.rkt" "schedule.rkt" "media.rkt" "sample.rkt")
+         "content.rkt" "arrange.rkt" "schedule.rkt" "media.rkt" "sample.rkt"
+         "preparation-session.rkt")
 (provide resolve-slide resolve-storyboard prepared-slide? prepared-slide-clip? prepared-storyboard?
          prepared-duration)
 (define prepared-slide? prepared-slide-value?)
@@ -11,7 +12,12 @@
   (cond [(prepared-slide-value? v) 0] [(prepared-clip-value? v) (prepared-clip-value-duration v)]
         [(prepared-storyboard-value? v) (prepared-storyboard-value-duration v)]
         [else (raise-argument-error 'prepared-duration "prepared slide, clip, or storyboard" v)]))
-(define (resolve-slide input #:theme [requested-theme #f] #:format [requested-format #f]
+(define (resolve-slide input #:theme [theme #f] #:format [fmt #f]
+                       #:effects? [effects? #f] #:asset-base [base #f])
+  (call-with-preparation-session
+   (lambda () (resolve-slide/session input #:theme theme #:format fmt
+                                     #:effects? effects? #:asset-base base))))
+(define (resolve-slide/session input #:theme [requested-theme #f] #:format [requested-format #f]
                        #:effects? [effects? #f] #:asset-base [asset-base #f])
   (define context (and (contextual-value? input) input))
   (define source (if context (contextual-value-source context) input))
@@ -80,7 +86,10 @@
      (if (clip-value? source)
          (compile-slide-clip prepared source (lambda (n) (prepare-narration n effects? asset-base)))
          prepared)]))
-(define (resolve-storyboard input #:effects? [effects? #f] #:asset-base [asset-base #f])
+(define (resolve-storyboard input #:effects? [effects? #f] #:asset-base [base #f])
+  (call-with-preparation-session
+   (lambda () (resolve-storyboard/session input #:effects? effects? #:asset-base base))))
+(define (resolve-storyboard/session input #:effects? [effects? #f] #:asset-base [asset-base #f])
   (cond [(prepared-storyboard-value? input) input]
         [(storyboard-value? input)
          (define shots '()) (define bridges '()) (define cursor 0) (define pending #f) (define previous #f)
@@ -89,7 +98,7 @@
                  [else
                   (define clip (resolve-slide (bound-source input (shot-value-clip entry)) #:effects? effects? #:asset-base asset-base))
                   (when (and previous pending (> (transition-value-duration pending) 0))
-                    (set! bridges (append bridges (list (prepared-bridge previous (shot-value-id entry) pending cursor))))
+                    (set! bridges (append bridges (list (prepared-bridge previous (shot-value-id entry) pending cursor #f))))
                     (set! cursor (+ cursor (transition-value-duration pending))))
                   (set! shots (append shots (list (prepared-shot (shot-value-id entry) clip cursor))))
                   (set! previous (shot-value-id entry))

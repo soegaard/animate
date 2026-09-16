@@ -1,10 +1,13 @@
 #lang racket/base
-(require racket/list racket/match "data.rkt" "check.rkt" "appearance.rkt" "layout.rkt")
+(require racket/list racket/match "data.rkt" "check.rkt" "appearance.rkt" "layout.rkt"
+         (only-in "../../colors.rkt" color-spec? color-spec->datum datum->color-spec))
 (provide make-slide slide? slide-id slide-layout slide-slots slide-appearance slide-notes slide-ref
          make-slot slot-content paragraph-content pict-content image-content/proc make-bullets
          build-slide hold-slide slide-clip? slide-clip-slide beat beat? beat-name
          make-narration narration? reveal-slot conceal-slot emphasize-slot replace-content play-content
          storyboard storyboard? storyboard-id storyboard-theme storyboard-format storyboard-motion storyboard-subtitles? storyboard-shot storyboard-cut slide-transition
+         slide-transition? slide-transition-effect slide-transition-duration slide-transition-keys
+         slide-transition-direction slide-transition-easing slide-transition-scale slide-transition-color slide-transition-depth
          storyboard-ref storyboard-with-theme storyboard-with-format check-storyboard
          slide-action? content? bound-source)
 
@@ -144,16 +147,60 @@
   (unless (clip-value? clip)
     (raise-argument-error 'storyboard-shot "slide clip; use hold-slide for a static slide" clip))
   (shot-value id clip))
-(define (storyboard-cut) (transition-value 'cut 0 '()))
-(define (slide-transition #:effect [effect 'crossfade] #:duration [duration 0.6] #:keys [keys '()])
-  (check-enum 'slide-transition effect '(crossfade match))
+(define slide-transition? transition-value?)
+(define slide-transition-effect transition-value-effect)
+(define slide-transition-duration transition-value-duration)
+(define slide-transition-keys transition-value-keys)
+(define slide-transition-direction transition-value-direction)
+(define slide-transition-easing transition-value-easing)
+(define slide-transition-scale transition-value-scale)
+(define slide-transition-color transition-value-color)
+(define slide-transition-depth transition-value-depth)
+
+;; A cut is a separate, zero-duration boundary. Every animated bridge reserves
+;; its own strictly positive interval and freezes the two local content clocks.
+(define (storyboard-cut) (transition-value 'cut 0 '() #f 'linear #f #f 'slot))
+(define (slide-transition #:effect [effect 'crossfade]
+                          #:duration [duration 0.6]
+                          #:keys [keys '()]
+                          #:direction [direction #f]
+                          #:easing [easing 'linear]
+                          #:scale [scale #f]
+                          #:color [color #f]
+                          #:depth [depth #f])
+  (check-enum 'slide-transition effect
+              '(crossfade match push wipe cover uncover zoom fade-through))
   (check-number 'slide-transition duration #t)
+  (check-enum 'slide-transition easing '(linear smooth ease-in ease-out ease-in-out))
   (unless (list? keys) (raise-argument-error 'slide-transition "list of continuity keys" keys))
   (for-each (lambda (k) (check-id 'slide-transition k)) keys)
   (unique! 'slide-transition keys)
-  (when (and (eq? effect 'crossfade) (pair? keys))
+  (when (and (not (eq? effect 'match)) (pair? keys))
     (slides-error 'transition-keys '() "continuity keys require #:effect 'match"))
-  (transition-value effect duration keys))
+  (when depth
+    (check-enum 'slide-transition depth '(auto slot semantic))
+    (unless (eq? effect 'match)
+      (slides-error 'transition-option '() "#:depth applies only to match")))
+  (define directional? (memq effect '(push wipe cover uncover)))
+  (when direction
+    (check-enum 'slide-transition direction '(left right up down))
+    (unless directional?
+      (slides-error 'transition-option '() "#:direction applies only to push, wipe, cover, or uncover")))
+  (when scale
+    (unless (and (positive-number? scale) (< scale 1))
+      (raise-argument-error 'slide-transition "finite real strictly between 0 and 1 as #:scale" scale))
+    (unless (eq? effect 'zoom)
+      (slides-error 'transition-option '() "#:scale applies only to zoom")))
+  (when color
+    (unless (color-spec? color) (raise-argument-error 'slide-transition "color-spec? as #:color" color))
+    (unless (eq? effect 'fade-through)
+      (slides-error 'transition-option '() "#:color applies only to fade-through")))
+  (transition-value effect duration keys
+                    (and directional? (or direction 'left)) easing
+                    (and (eq? effect 'zoom) (or scale 0.85))
+                    (and (eq? effect 'fade-through)
+                         (datum->color-spec (color-spec->datum (or color "#000000"))))
+                    (if (eq? effect 'match) (or depth 'auto) 'slot)))
 (define (storyboard #:id [id 'storyboard] #:theme [theme lecture-light]
                     #:format [format widescreen] #:motion [motion 'normal]
                     #:subtitles? [subtitles? #t] . entries)

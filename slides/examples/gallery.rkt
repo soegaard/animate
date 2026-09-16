@@ -39,3 +39,7 @@
                       (for/list ([name (in-list (hash-keys (slide-slots s)))])
                         (reveal-slot name #:duration 1)))
                (beat 'hold #:duration 1))))))
+
+;; The original specimens remain available to run-probes; direct invocation
+;; opens the author-facing catalogue workflow instead of doing nothing.
+(module+ main (require (submod "../run-gallery.rkt" main)))

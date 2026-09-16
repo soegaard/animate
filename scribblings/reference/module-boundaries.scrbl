@@ -13,7 +13,8 @@
                      animate/slides/render
                      animate/slides/math
                      animate/slides/geometry
-                     animate/slides/project))
+                     animate/slides/project
+                     animate/slides/gallery))
 
 @title[#:tag "reference-module-boundaries"]{Public Module Boundaries}
 
@@ -28,7 +29,8 @@
                     animate/slides/render
                     animate/slides/math
                     animate/slides/geometry
-                    animate/slides/project)]
+                    animate/slides/project
+                    animate/slides/gallery)]
 
 @itemlist[
  @item{@racketmodname[animate] defines scenes, Visuals, animation requests,
@@ -53,8 +55,10 @@
        rendering, and project-source adapters.}
  @item{@racketmodname[animate/slides/math] and
        @racketmodname[animate/slides/geometry] wrap the corresponding Animate
-       subsystems as slide content; geometry remains in-process because it has
-       no portable preparation codec.}]
+       subsystems as slide content; geometry uses parent-prepared portable data
+       when it is rendered through a project worker.}
+ @item{@racketmodname[animate/slides/gallery] defines the data-only gallery
+       catalogue and its selective storyboard constructor.}]
 
 @racketmodname[animate/experimental] contains explicit lower-level escape
 hatches such as @racket[derived-visual].  Prefer @racket[relation-visual] for

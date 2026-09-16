@@ -261,7 +261,8 @@
                                     animate/slides/render
                                     animate/slides/math
                                     animate/slides/geometry
-                                    animate/slides/project))])
+                                    animate/slides/project
+                                    animate/slides/gallery))])
     (system* racket-path
              "-e"
              (format "(require ~a)" module-path))))

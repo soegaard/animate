@@ -7,6 +7,7 @@
          "data.rkt" "check.rkt" "prepare.rkt" "codec.rkt" "scene-output.rkt")
 (provide slides-source-preparer slides-source-builder)
 (define-runtime-path runtime-source "project-runtime.rkt")
+(define-runtime-path geometry-render-source "../../geometry/animate.rkt")
 (define (load-board options)
   (define module (hash-ref options 'module))
   (define binding (hash-ref options 'binding))
@@ -37,13 +38,21 @@
     (prepared-storyboard->payload! prepared preparation-base))
   (define user-manifest (build-render-input-manifest! source-path assets))
   (define adapter-manifest (build-render-input-manifest! runtime-source '()))
+  (define geometry-artifacts
+    (filter (lambda (a) (eq? (hash-ref a 'role #f) 'slide-prepared-geometry)) artifacts))
+  ;; Geometry's adapter is lazily loaded, so it is not a static import of this
+  ;; module. Track its actual source/dependencies explicitly in the manifest.
+  (define geometry-dependencies
+    (if (null? geometry-artifacts) '()
+        (hash-ref (build-render-input-manifest! geometry-render-source '()) 'entries)))
   (pr:source-preparation
    #:payload payload #:artifacts artifacts
-   #:dependencies (remove-duplicates (append (hash-ref user-manifest 'entries) (hash-ref adapter-manifest 'entries)) equal?)
+   #:dependencies (remove-duplicates (append (hash-ref user-manifest 'entries) (hash-ref adapter-manifest 'entries) geometry-dependencies) equal?)
    #:diagnostics (hash 'schema 'animate-slides-source-v1 'preparation-owner 'parent
                        'duration (prepared-storyboard-value-duration prepared)
                        'shots (length (prepared-storyboard-value-shots prepared))
-                       'drawing-artifacts (length artifacts))))
+                       'drawing-artifacts (length artifacts)
+                       'geometry-artifacts (length geometry-artifacts))))
 (define (slides-source-builder context options payload)
   (define board (load-board options))
   (check-context context board)

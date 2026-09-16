@@ -10,6 +10,7 @@
 (struct layout-node (kind name children basis grow gap align valign padding minimum maximum) #:transparent)
 (struct layout-value (id slots wide standard portrait fallback) #:transparent)
 (struct content-value (kind payload options) #:transparent)
+(struct semantic-part-value (id content box align valign fit) #:transparent)
 (struct slot-value (content key align valign fit) #:transparent)
 (struct slide-value (id layout slots theme notes) #:transparent)
 (struct narration-value (text audio draft-duration at source-start duration captions asset-base) #:transparent)
@@ -17,7 +18,9 @@
 (struct beat-value (name duration narration tail actions) #:transparent)
 (struct clip-value (slide initial poster motion beats hold?) #:transparent)
 (struct shot-value (id clip) #:transparent)
-(struct transition-value (effect duration keys) #:transparent)
+;; All transition configuration is immutable data, so parent preparation and
+;; worker reconstruction use exactly the same sampling policy.
+(struct transition-value (effect duration keys direction easing scale color depth) #:transparent)
 (struct storyboard-value (id theme format motion subtitles? entries) #:transparent)
 (struct contextual-value (source theme format subtitle-height motion) #:transparent)
 
@@ -39,7 +42,10 @@
 (struct prepared-narration (text audio start duration source-start captions) #:transparent)
 (struct prepared-clip-value (slide events beats duration initial poster hold?) #:transparent)
 (struct prepared-shot (id clip start) #:transparent)
-(struct prepared-bridge (from to transition start) #:transparent)
+(struct prepared-bridge (from to transition start plan) #:transparent)
+;; Prepared correspondence is immutable and computed before frame sampling.
+(struct match-pair (source target mode replay from-time to-time reason) #:transparent)
+(struct match-plan (key pairs outgoing incoming reason) #:transparent)
 (struct prepared-storyboard-value (source shots bridges duration diagnostics) #:transparent)
 
 ;; Render commands are a shared, renderer-neutral snapshot, not another scene

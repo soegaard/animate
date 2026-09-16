@@ -6,7 +6,7 @@
          racket/list
          "../../main.rkt" "../../authoring.rkt" "../../project.rkt"
          "../../math/main.rkt" "../../typography.rkt" "../../colors.rkt"
-         "../main.rkt" "../scene.rkt" "../pict.rkt" "../render.rkt" "../math.rkt" "../project.rkt"
+         "../main.rkt" "../gallery.rkt" "../scene.rkt" "../pict.rkt" "../render.rkt" "../math.rkt" "../project.rkt"
          (only-in pict pict? pict-width pict-height)
          "../private/data.rkt" "../private/sample.rkt" "helpers.rkt")
 (provide tests)
@@ -79,6 +79,25 @@
      (check-equal? (frame-leaf-time (find-leaf (sample-slide p 3) '(figure))) 2)
      (define s (slide->scene p))
      (check-true (pict? (scene-state->pict (scene-sample s 2) #:camera (scene-camera-at s 2)))))
+   (test-case "embedded native endpoints tolerate exact/inexact clock agreement"
+     (define inner
+       (scene-wait
+        (scene-add (make-scene)
+                   (circle #:id 'endpoint-disc #:radius 1 #:fill "blue"))
+        67/10))
+     ;; The parent beat uses an inexact spelling of the exact child duration.
+     ;; Endpoint rendering must canonicalize that infinitesimal numeric mismatch
+     ;; before calling the child's closed-interval Scene sampler.
+     (define p
+       (prepare-slide!
+        (build-slide
+         (slide #:layout 'figure-full [figure (scene-content inner)])
+         (beat 'play
+           #:narration (narration "Reach the endpoint." #:draft-duration 6.7)
+           (play-content 'figure)))))
+     (define leaf (find-leaf (sample-slide p 'end) '(figure)))
+     (check-= (frame-leaf-time leaf) 67/10 1e-8)
+     (check-true (scene? (slide->scene p))))
    (test-case "math descriptors do not typeset on construction"
      (define problem (math '(= (+ x 1) 2) #:id 'small #:context (math-context #:real '(x))))
      (define plan (present (derive problem [subtract (both-sides 'subtract 1)])))

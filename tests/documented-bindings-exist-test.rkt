@@ -61,6 +61,9 @@
     (check-not-eq? (public-binding "../slides/scene.rkt" name) absent))
   (for ([name (in-list '(prepare-slide! prepare-storyboard!))])
     (check-not-eq? (public-binding "../slides/render.rkt" name) absent))
+  (for ([name (in-list '(slide-gallery-entries slide-gallery-categories
+                         select-slide-gallery-entries make-slide-gallery))])
+    (check-not-eq? (public-binding "../slides/gallery.rkt" name) absent))
   (for ([name (in-list '(scene-program? scene-block-spec? make-scene-program))])
     (check-not-eq? (public-binding "../authoring.rkt" name) absent))
   (for ([name (in-list '(open-program-preview open-scene-preview preview-available?

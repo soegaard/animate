@@ -18,6 +18,7 @@
   (for/fold ([m 0]) ([x (in-bytes a)] [y (in-bytes b)]) (max m (abs (- x y)))))
 (define (sample-signature frame)
   (list (frame-value-format frame) (frame-value-background frame) (frame-value-slots frame)
+        (frame-value-decorations frame) (frame-value-safe-box frame)
         (for/list ([l (in-list (frame-value-leaves frame))])
           (list (frame-leaf-path l) (frame-leaf-box l) (frame-leaf-time l)
                 (frame-leaf-opacity l) (frame-leaf-scale l) (frame-leaf-clip l)

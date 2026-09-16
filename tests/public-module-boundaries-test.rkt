@@ -46,4 +46,6 @@
   (check-not-eq? (module-binding "../slides/render.rkt" 'prepare-slide!) absent)
   (check-not-eq? (module-binding "../slides/project.rkt" 'make-storyboard-source) absent)
   (check-not-eq? (module-binding "../slides/math.rkt" 'math-content) absent)
-  (check-not-eq? (module-binding "../slides/geometry.rkt" 'geometry-content) absent))
+  (check-not-eq? (module-binding "../slides/geometry.rkt" 'geometry-content) absent)
+  (check-not-eq? (module-binding "../slides/gallery.rkt" 'slide-gallery-entries) absent)
+  (check-not-eq? (module-binding "../slides/gallery.rkt" 'make-slide-gallery) absent))

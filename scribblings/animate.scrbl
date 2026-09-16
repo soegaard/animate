@@ -20,6 +20,7 @@
                      animate/slides/math
                      animate/slides/geometry
                      animate/slides/project
+                     animate/slides/gallery
                      animate/3d
                      animate/3d/render)
           "../version.rkt")

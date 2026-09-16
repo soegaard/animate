@@ -7,10 +7,15 @@
          (only-in pict pict-width pict-height)
          (prefix-in a: "../main.rkt")
          (prefix-in colors: "../colors.rkt")
-         "core.rkt" "private/drawing.rkt" "private/reveal.rkt" "private/marker-shapes.rkt")
+         "core.rkt" "private/drawing.rkt" "private/reveal.rkt" "private/marker-shapes.rkt"
+         "private/render-preparation.rkt"
+         (only-in "private/render-preparation-codec.rkt" snapshot-geometry-render-preparation))
 (provide construction->scene geometry-timeline->scene geometry-timeline->visual
          geometry-timeline->camera geometry-style-color geometry-timeline->annotation-plan
-         geometry-timeline->visual-sampler)
+         geometry-timeline->visual-sampler
+         prepare-geometry-render! prepared-geometry-render?
+         prepared-geometry-render-pixels prepared-geometry-render-duration
+         prepared-geometry->visual-sampler current-geometry-render-preparation-observer)
 
 (define (vec p) (a:vec2 (point-x p) (point-y p)))
 (define (paint-key channel suffix) (string->symbol (format "~a-~a" channel suffix)))
@@ -137,9 +142,32 @@
    (colors:color-mix (list-ref colors 0) (list-ref colors 1) s)
    (colors:color-mix (list-ref colors 2) (list-ref colors 3) s) h))
 
-(define (make-frame-builder timeline pixels root-id captions? labels [background colors:theme-background])
-  (unless (and (geometry-timeline? timeline) (exact-positive-integer? pixels) (symbol? root-id))
-    (geometry-error 'geometry-timeline->visual "invalid timeline, pixel width or root id"))
+;; Parent-only observation hook. Workers call prepared-geometry->visual-sampler,
+;; never this preparation function. The optional log is also inherited by child
+;; processes, making an accidental worker-side layout pass observable in tests.
+(define current-geometry-render-preparation-observer
+  (make-parameter
+   (lambda (timeline pixels)
+     (define log (getenv "ANIMATE_GEOMETRY_PREPARATION_EVENT_LOG"))
+     (when log
+       (call-with-output-file log #:exists 'append
+         (lambda (out) (fprintf out "(layout ~s ~s)\n" pixels
+                                (geometry-timeline-duration timeline))))))
+   (lambda (value)
+     (unless (and (procedure? value) (procedure-arity-includes? value 2))
+       (raise-argument-error 'current-geometry-render-preparation-observer
+                             "procedure accepting two arguments" value))
+     value)))
+
+;; prepare-geometry-render! : geometry-timeline? ... -> prepared-geometry-render?
+;; Freeze annotation metrics, label/marker placement, all style endpoints and
+;; reveal provenance exactly once, before the native sampler is constructed.
+(define (prepare-geometry-render! timeline #:width [pixels 1280]
+                                  #:captions? [captions? #t] #:labels [labels (hash)])
+  (unless (and (geometry-timeline? timeline) (exact-positive-integer? pixels)
+               (boolean? captions?) (hash? labels))
+    (geometry-error 'prepare-geometry-render! "invalid timeline, pixel width, captions policy, or labels"))
+  ((current-geometry-render-preparation-observer) timeline pixels)
   (define realization (geometry-timeline-realization timeline))
   (define program (geometry-realization-program realization))
   (define view (geometry-realization-view realization))
@@ -189,8 +217,57 @@
     (resolve-geometry-style theme 'compass-attention 'normal))
   (define compass-attention-color
     (geometry-style-color compass-attention-style 'stroke))
-  (define (object-group node frame)
-    (define id (geometry-node-id node))
+  ;; Retain only renderer-consumed values. In particular, source programs and
+  ;; unevaluated expressions cannot cross this boundary and cannot be re-run.
+  (define playback
+    (geometry-timeline
+     #f #f
+     (for/list ([geometry-event* (in-list (geometry-timeline-events timeline))])
+       (struct-copy geometry-event geometry-event*
+         [actions (for/list ([action (in-list (geometry-event-actions geometry-event*))])
+                    (struct-copy geometry-action action [payload #f]))]))
+     (geometry-timeline-cues timeline)
+     (geometry-timeline-initial timeline) (geometry-timeline-final timeline)
+     (geometry-timeline-duration timeline) '()))
+  (snapshot-geometry-render-preparation
+   (prepared-geometry-render
+    pixels captions? view (map geometry-node-id ordered-nodes)
+    (for/hash ([node (in-list ordered-nodes)])
+      (define id (geometry-node-id node)) (values id (hash-ref environment id)))
+    playback label-table label-texts placements marker-counts style-table reveal-table
+    caption-size caption-y caption-height compass-guide-style compass-attention-style)))
+
+(define (prepared-geometry-render-duration prepared)
+  (geometry-timeline-duration (prepared-geometry-render-playback prepared)))
+
+;; prepared-geometry->visual-sampler : prepared-geometry-render? ... -> procedure?
+;; Worker-safe reconstruction. This function performs no realization, text
+;; measurement, annotation search, style resolution, or reveal-provenance search.
+(define (prepared-geometry->visual-sampler prepared #:id [root-id '$geometry-prepared]
+                                         #:background [background colors:theme-background])
+  (unless (and (prepared-geometry-render? prepared) (symbol? root-id)
+               (colors:color-spec? background))
+    (geometry-error 'prepared-geometry->visual-sampler "invalid prepared input, root id, or background"))
+  (define pixels (prepared-geometry-render-pixels prepared))
+  (define captions? (prepared-geometry-render-captions? prepared))
+  (define view (prepared-geometry-render-view prepared))
+  (define timeline (prepared-geometry-render-playback prepared))
+  (define ordered-nodes (prepared-geometry-render-order prepared))
+  (define environment (prepared-geometry-render-environment prepared))
+  (define label-table (prepared-geometry-render-labels prepared))
+  (define label-texts (prepared-geometry-render-texts prepared))
+  (define placements (prepared-geometry-render-placements prepared))
+  (define marker-counts (prepared-geometry-render-counts prepared))
+  (define style-table (prepared-geometry-render-styles prepared))
+  (define reveal-table (prepared-geometry-render-reveals prepared))
+  (define caption-size (prepared-geometry-render-caption-size prepared))
+  (define caption-y (prepared-geometry-render-caption-y prepared))
+  (define caption-height (prepared-geometry-render-caption-height prepared))
+  (define compass-guide-style (prepared-geometry-render-guide-style prepared))
+  (define compass-attention-style (prepared-geometry-render-attention-style prepared))
+  (define compass-guide-color (geometry-style-color compass-guide-style 'stroke))
+  (define compass-attention-color (geometry-style-color compass-attention-style 'stroke))
+  (define (object-group id frame)
     (define value (hash-ref environment id))
     (define appearance (hash-ref (geometry-frame-appearances frame) id))
     (define styles (hash-ref style-table id))
@@ -358,6 +435,15 @@
                              #:line-alignment 'center))
           '()))
     (a:group (append (map (lambda (n) (object-group n frame)) ordered-nodes) caption) #:id root-id)))
+
+;; Existing public entry points keep exactly their previous behavior and now
+;; share the same prepared-data path as subprocess reconstruction.
+(define (make-frame-builder timeline pixels root-id captions? labels [background colors:theme-background])
+  (unless (symbol? root-id)
+    (geometry-error 'geometry-timeline->visual "invalid root id"))
+  (prepared-geometry->visual-sampler
+   (prepare-geometry-render! timeline #:width pixels #:captions? captions? #:labels labels)
+   #:id root-id #:background background))
 
 (define (default-root-id timeline)
   (key '$geometry (geometry-program-name (geometry-realization-program (geometry-timeline-realization timeline)))))

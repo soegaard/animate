@@ -3,7 +3,7 @@
          (only-in racket/draw read-bitmap)
          (prefix-in p: pict)
          file/sha1
-         "data.rkt" "check.rkt" "appearance.rkt" "text.rkt" "media.rkt")
+         "data.rkt" "check.rkt" "appearance.rkt" "text.rkt" "media.rkt" "semantic-model.rkt")
 (provide prepare-content intrinsic-content content-fit asset-cue-time native-operation)
 (define-runtime-path native-module "native.rkt")
 (define (native-operation name) (dynamic-require native-module name))
@@ -51,6 +51,8 @@
      (unless (send bitmap ok?) (slides-error 'image-decode (list (path->string path)) "cannot decode image"))
      (struct-copy asset (pict-asset (p:bitmap bitmap) (list 'image (call-with-input-file path sha1)))
                   [metadata (hash 'source (path->string path))])]
+    [(content-state? content)
+     ((native-operation 'prepare-native-state) content role ctx)]
     [else ((native-operation 'prepare-native-content) content role rectangle ctx)]))
 (define (place-asset a rectangle path key align valign fit)
   (define w (asset-width a)) (define h (asset-height a))
@@ -88,6 +90,8 @@
 (define (prepare-content content role rectangle ctx path key align valign fit)
   (define theme (content-context-value-theme ctx))
   (cond
+    [(semantic-group? content)
+     (prepare-semantic-group content role rectangle ctx path key align valign fit)]
     [(and (content-value? content) (eq? (content-value-kind content) 'bullets))
      (when (not (eq? fit 'natural))
        (slides-error 'text-fitting path "bullet lists use natural typography; edit the font size instead of scaling the list"))
@@ -112,7 +116,20 @@
      (define a (single-asset content role rectangle ctx #:align align))
      (list (place-asset a rectangle path key align valign fit))]))
 (define (intrinsic-content content role width ctx)
-  (cond [(and (content-value? content) (eq? (content-value-kind content) 'bullets))
+  (cond
+    [(semantic-group? content)
+     (values (hash-ref (content-value-options content) 'width)
+             (hash-ref (content-value-options content) 'height))]
+    [(content-state? content)
+     (define viewport (hash-ref (content-value-options content) 'viewport))
+     (values width (* width (/ (cadr viewport) (car viewport))))]
+    [(and (content-value? content) (memq (content-value-kind content) '(math geometry)))
+     ;; Viewport components have no natural text height. Use their declared
+     ;; preferred aspect for content-sized regions, then prepare only in the
+     ;; final assigned rectangle. Never realize a million-unit-tall viewport
+     ;; merely to ask for intrinsic dimensions (notably in portrait columns).
+     (values width (/ width (hash-ref (content-value-options content) 'aspect 16/9)))]
+    [(and (content-value? content) (eq? (content-value-kind content) 'bullets))
          (define entries (bullet-assets content role width (content-context-value-theme ctx)))
          (values (apply max 0 (map (lambda (e) (asset-width (cdr e))) entries))
                  (+ (apply + (map (lambda (e) (asset-height (cdr e))) entries))
@@ -120,3 +137,50 @@
         [else
          (define a (single-asset content role (box-value 0 0 width 1000000) ctx))
          (values (asset-width a) (asset-height a))]))
+
+
+;; Prepare each declared child once in local group units, then place the group
+;; inside its outer layout slot. No group-size-dependent typesetting in frames.
+(define (prepare-semantic-group content role rectangle ctx path key align valign fit)
+  (when (eq? fit 'cover)
+    (slides-error 'semantic-fitting path "semantic groups support contain or natural fitting, not cover"))
+  (define gw (hash-ref (content-value-options content) 'width))
+  (define gh (hash-ref (content-value-options content) 'height))
+  (define envelope (asset 'group #f gw gh gh 0 'end (hash) #f (hash)))
+  (define outer (prepared-leaf-box (place-asset envelope rectangle path key align valign fit)))
+  (define sx (/ (box-value-width outer) gw))
+  (define sy (/ (box-value-height outer) gh))
+  (define (place b)
+    (box-value (+ (box-value-x outer) (* sx (box-value-x b)))
+               (+ (box-value-y outer) (* sy (box-value-y b)))
+               (* sx (box-value-width b)) (* sy (box-value-height b))))
+  (define (normalized b)
+    (box-value (/ (box-value-x b) gw) (/ (box-value-y b) gh)
+               (/ (box-value-width b) gw) (/ (box-value-height b) gh)))
+  (append-map
+   (lambda (part)
+     (define child-path (append path (list (semantic-part-value-id part))))
+     (define b (semantic-part-value-box part))
+     (define children
+       (prepare-content (semantic-part-value-content part) role b
+                        (struct-copy content-context-value ctx [box b]) child-path key
+                        (semantic-part-value-align part) (semantic-part-value-valign part)
+                        (semantic-part-value-fit part)))
+     (for/list ([leaf (in-list children)])
+       (define a (prepared-leaf-asset leaf))
+       (unless (= (asset-duration a) 0)
+         (slides-error 'semantic-animated-child child-path
+                       "wrap animated semantic children in content-state; group builds have no implicit child clocks"))
+       (define meta (asset-metadata a))
+       (define chain (hash-ref meta 'semantic-chain #f))
+       (define local-chain
+         (if chain (cons (normalized (car chain)) (cdr chain))
+                   (list (normalized (prepared-leaf-box leaf)))))
+       (define metadata
+         (hash-set (hash-set meta 'semantic-path (cdr (prepared-leaf-path leaf)))
+                   'semantic-chain (cons outer local-chain)))
+       (struct-copy prepared-leaf leaf
+         [asset (struct-copy asset a [metadata metadata])]
+         [box (place (prepared-leaf-box leaf))]
+         [clip (and (prepared-leaf-clip leaf) (place (prepared-leaf-clip leaf)))])))
+   (content-value-payload content)))

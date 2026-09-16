@@ -8,7 +8,12 @@
                   diagnostic? diagnostic-severity diagnostic-code diagnostic-path
                   diagnostic-message diagnostic-details
                   exn:fail:slides? exn:fail:slides-code exn:fail:slides-path exn:fail:slides-details))
-(provide (all-from-out "private/appearance.rkt" "private/layout.rkt" "private/syntax.rkt")
+(require (only-in "private/semantic-model.rkt"
+                  semantic-group semantic-group? semantic-part semantic-part?
+                  content-state content-state?))
+(provide semantic-group semantic-group? semantic-part semantic-part?
+         content-state content-state?
+         (all-from-out "private/appearance.rkt" "private/layout.rkt" "private/syntax.rkt")
          (except-out (all-from-out "private/model.rkt")
                      make-slot image-content/proc bound-source)
          diagnostic? diagnostic-severity diagnostic-code diagnostic-path diagnostic-message diagnostic-details

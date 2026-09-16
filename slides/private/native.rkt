@@ -6,11 +6,13 @@
          (prefix-in p: pict)
          (prefix-in a: "../../main.rkt")
          (prefix-in c: "../../colors.rkt")
+         (prefix-in ty: "../../typography.rkt")
          (prefix-in at: "../../authoring.rkt")
          "../../private/prepared-pict-visual.rkt"
-         "data.rkt" "check.rkt" "appearance.rkt")
+         "data.rkt" "check.rkt" "appearance.rkt" "preparation-session.rkt"
+         (only-in "schedule.rkt" content-time))
 (provide prepare-native-content native-asset->pict native-asset->visual
-         native-bundle->asset build-math-bundle)
+         native-bundle->asset build-math-bundle build-geometry-bundle prepare-native-state freeze-native-state)
 (define-runtime-path math-render "../../math/render.rkt")
 (define-runtime-path math-compiler "../../math/private/animate-adapter.rkt")
 (define-runtime-path geometry-adapter "../../geometry/animate.rkt")
@@ -61,6 +63,33 @@
                  #:on-step-end (lambda (scn segment name) (mark scn segment name 'end))))
   (for ([key (in-hash-keys ambiguous)]) (hash-remove! times key))
   (native-bundle scn camera colors typography (make-immutable-hash (hash->list times)) #f '()))
+;; The source boundary records realization separately from layout for tests.
+;; Neither this operation nor prepare-geometry-render! is called by the decoder.
+(define (log-geometry-realization!)
+  (define log (getenv "ANIMATE_GEOMETRY_PREPARATION_EVENT_LOG"))
+  (when log
+    (call-with-output-file log #:exists 'append
+      (lambda (out) (displayln "(realize)" out)))))
+
+(define (build-geometry-bundle prepared camera colors typography cues)
+  (define sampler
+    ((dynamic-require geometry-adapter 'prepared-geometry->visual-sampler)
+     prepared #:id '$slide-geometry))
+  (define duration ((dynamic-require geometry-adapter 'prepared-geometry-render-duration) prepared))
+  (unless (= (a:camera-width camera)
+             ((dynamic-require geometry-adapter 'prepared-geometry-render-pixels) prepared))
+    (slides-error 'geometry-viewport '() "prepared geometry pixel width differs from its captured viewport"))
+  (define clock (a:parameter '$slide-geometry-clock 0))
+  (define relation
+    (a:relation-visual (a:group '() #:id '$slide-geometry)
+       #:depends-on (list (a:value-dependency '$slide-geometry-clock)) #:structure 'root-only
+       (lambda (ctx template) (sampler (a:relation-context-value-ref ctx '$slide-geometry-clock)))))
+  (define initial (a:scene-add (a:scene-set-value (a:make-scene #:camera camera) clock) relation))
+  (define scn (if (> duration 0)
+                  (a:scene-play initial (a:value-to clock duration) #:duration duration #:easing a:linear)
+                  initial))
+  (native-bundle scn camera colors typography cues #f '()))
+
 (define (prepare-native-content content role rectangle ctx)
   (define descriptor (and (content-value? content) content))
   (define kind (if descriptor (content-value-kind descriptor) 'visual))
@@ -83,11 +112,16 @@
      (native-bundle->asset (build-math-bundle prepared colors typography) poster
                            (hash 'kind 'math 'prepared-math prepared 'source-content content 'background? #f))]
     [(geometry)
+     (preparation-ref!
+      (list 'geometry content (box-value-width rectangle) (box-value-height rectangle) colors typography)
+      (lambda ()
      (define timeline? (dynamic-require geometry-core 'geometry-timeline?))
      (define timeline
        (if (timeline? value) value
-           ((dynamic-require geometry-core 'construction->timeline) value
-             #:aspect (/ (box-value-width rectangle) (box-value-height rectangle)))))
+           (begin
+             (log-geometry-realization!)
+             ((dynamic-require geometry-core 'construction->timeline) value
+               #:aspect (/ (box-value-width rectangle) (box-value-height rectangle))))))
      (define view ((dynamic-require geometry-core 'geometry-realization-view)
                    ((dynamic-require geometry-core 'geometry-timeline-realization) timeline)))
      (define aspect ((dynamic-require geometry-core 'geometry-view-aspect) view))
@@ -103,20 +137,25 @@
                       #:center (a:vec2 ((dynamic-require geometry-core 'point-x) center)
                                       ((dynamic-require geometry-core 'point-y) center))
                       #:background (c:rgba-color 0 0 0 0)))
-     (define sampler ((dynamic-require geometry-adapter 'geometry-timeline->visual-sampler)
-                       timeline #:width width #:captions? #f #:id '$slide-geometry))
-     (define duration ((dynamic-require geometry-core 'geometry-timeline-duration) timeline))
-     (define clock (a:parameter '$slide-geometry-clock 0))
-     (define relation
-       (a:relation-visual (a:group '() #:id '$slide-geometry)
-          #:depends-on (list (a:value-dependency '$slide-geometry-clock)) #:structure 'root-only
-          (lambda (ctx template) (sampler (a:relation-context-value-ref ctx '$slide-geometry-clock)))))
-     (define initial (a:scene-add (a:scene-set-value (a:make-scene #:camera camera) clock) relation))
-     (define scn (if (> duration 0)
-                     (a:scene-play initial (a:value-to clock duration) #:duration duration #:easing a:linear)
-                     initial))
-     (native-bundle->asset (native-bundle scn camera colors typography (hash) #f '()) poster
-                           (hash 'kind 'geometry 'source-content content 'background? #f))]
+     (define prepared
+       ((dynamic-require geometry-adapter 'prepare-geometry-render!) timeline #:width width #:captions? #f))
+     (define cue-table (make-hash))
+     (define ambiguous-cues (make-hash))
+     (for* ([span (in-list ((dynamic-require geometry-core 'geometry-timeline-steps) timeline))]
+            [entry (in-list '((start . geometry-step-span-start)
+                             (action-start . geometry-step-span-action-start)
+                             (action-end . geometry-step-span-action-end)
+                             (end . geometry-step-span-end)))])
+       (define key (list ((dynamic-require geometry-core 'geometry-step-span-id) span) (car entry)))
+       (define time ((dynamic-require geometry-core (cdr entry)) span))
+       (if (hash-has-key? cue-table key)
+           (hash-set! ambiguous-cues key #t)
+           (hash-set! cue-table key time)))
+     (for ([key (in-hash-keys ambiguous-cues)]) (hash-remove! cue-table key))
+     (define cues (make-immutable-hash (hash->list cue-table)))
+     (native-bundle->asset (build-geometry-bundle prepared camera colors typography cues) poster
+                           (hash 'kind 'geometry 'source-content content 'background? #f
+                                 'prepared-geometry prepared))))]
     [(scene)
      (define timeline (and (at:authored-timeline? value) value))
      (define scn (if timeline (at:authored-timeline-scene timeline) value))
@@ -149,11 +188,28 @@
      (native-bundle->asset (native-bundle scn viewport colors typography (hash) #f '()) poster
                            (hash 'kind 'visual 'source-content content 'background? #f))]
     [else (slides-error 'content-kind (list kind) "unsupported content kind")]))
+(define native-time-epsilon 1e-9)
+(define (canonical-native-time scn time [cues '()])
+  ;; Slide clocks can be inexact even when an embedded Scene was authored with
+  ;; exact rational durations.  Treat values infinitesimally close to the two
+  ;; closed-interval endpoints as those exact endpoints; do not otherwise alter
+  ;; local seeking semantics.
+  (define duration (a:scene-duration scn))
+  (cond
+    [(<= (abs time) native-time-epsilon) 0]
+    [(<= (abs (- time duration)) native-time-epsilon) duration]
+    [else
+     (or (for/first ([cue (in-list (sort (remove-duplicates cues =) <))]
+                     #:when (<= (abs (- time cue)) native-time-epsilon))
+           cue)
+         time)]))
 (define (sample-bundle a time)
   (define bundle (asset-value a))
   (define scn (native-bundle-scene bundle))
-  (define state (a:scene-sample scn time))
-  (define camera (a:scene-camera-at scn time))
+  (define t (canonical-native-time scn (hash-ref (asset-metadata a) 'state-time time)
+                                   (hash-values (native-bundle-cues bundle))))
+  (define state (a:scene-sample scn t))
+  (define camera (a:scene-camera-at scn t))
   (values state (if (hash-ref (asset-metadata a) 'background? #f) camera (without-background camera)) bundle))
 (define (native-asset->pict a time)
   (define-values (state camera bundle) (sample-bundle a time))
@@ -165,3 +221,42 @@
   (define-values (state camera bundle) (sample-bundle a time))
   (prepared-scene-panel state camera #:width (asset-width a) #:height (asset-height a)
                         #:id id #:theme (native-bundle-colors bundle) #:typography (native-bundle-typography bundle)))
+
+
+;; Freeze a witnessed state of an existing domain Scene. Retain the whole native
+;; plan as evidence; a semantic bridge can replay it without inventing pairings.
+(define (freeze-native-state base declaration)
+  (unless (eq? (asset-kind base) 'native)
+    (slides-error 'semantic-state-kind '() "content-state needs a native domain asset"))
+  (define bundle (asset-value base))
+  (define scn (native-bundle-scene bundle))
+  (define selected
+    (canonical-native-time scn
+      (content-time base (hash-ref (content-value-options declaration) 'at))))
+  (define inner (content-value-payload declaration))
+  (define origin
+    (list inner (hash-ref (content-value-options declaration) 'viewport)
+          (c:color-theme-fingerprint (native-bundle-colors bundle))
+          (ty:typography-theme-fingerprint (native-bundle-typography bundle))))
+  (define metadata
+    (hash-set
+     (hash-set
+      (hash-set
+       (hash-set (asset-metadata base) 'source-content declaration)
+       'state-base base) 'state-time selected) 'state-origin origin))
+  (struct-copy asset base [duration 0] [poster 'end] [cues (hash)] [identity #f]
+               [metadata metadata]))
+(define (prepare-native-state declaration role ctx)
+  (define viewport (hash-ref (content-value-options declaration) 'viewport))
+  (define canonical-box (box-value 0 0 (car viewport) (cadr viewport)))
+  (define inner (content-value-payload declaration))
+  (define colors (native-theme ctx))
+  (define typography (native-typography ctx))
+  (define base
+    (preparation-ref!
+     (list 'native-state inner viewport colors typography
+           (theme-spacing (content-context-value-theme ctx) 'math-minimum-scale))
+     (lambda ()
+       (prepare-native-content inner role canonical-box
+                               (struct-copy content-context-value ctx [box canonical-box])))))
+  (freeze-native-state base declaration))

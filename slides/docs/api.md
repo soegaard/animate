@@ -1,8 +1,9 @@
-# animate/slides — public API, v0.1.4
+# animate/slides — public API, v0.4.0
 
 This is the implemented public interface. The historical design document records
-ideas beyond the current surface; see `validation.md` and the worked examples in
-`user-guide.md` for the checked behavior and known scope limits.
+ideas beyond the current surface; see `validation-v040.md` and the worked
+examples in `user-guide.md` for validated behavior and known scope limits. The
+gallery and transition features are documented in `gallery-and-transitions.md`.
 
 All numbers used for authoring geometry are world units. A widescreen canvas is
 16 × 9 units. Time values are seconds. Identifiers are nonempty interned symbols.
@@ -243,17 +244,69 @@ The syntax captures a source-relative asset base; the procedure does not.
             #:motion 'normal #:subtitles? #t entry ...)
 (storyboard-shot occurrence-id clip)
 (storyboard-cut)
-(slide-transition #:effect 'crossfade #:duration 0.6 #:keys '())
+(slide-transition #:effect 'crossfade #:duration 0.6 #:keys '()
+                  #:direction #f #:easing 'linear #:scale #f #:color #f #:depth #f)
 ```
 
 A storyboard begins and ends with a shot. Shots must have unique occurrence IDs;
 the same slide/clip may be used more than once under different occurrences.
 Adjacent shots imply a zero-time cut. A transition occupies an additional
 interval, holding the outgoing clip at its endpoint and the incoming clip at its
-start. Consecutive transitions are errors. Effects are `'crossfade` and `'match`;
-keys are accepted only for matching. Missing, ambiguous, or hidden endpoints are
-diagnosed. Opaque pictures/scenes and different text crossfade rather than receive
-an invented internal morph.
+start. Consecutive transitions are errors. `storyboard-cut` is the separate
+zero-duration cut; all other transitions require a positive finite duration.
+
+| Effect | Behavior and options |
+|---|---|
+| `'crossfade` | Fade the source out while the destination fades in. |
+| `'match` | Move compatible content named by `#:keys`; unmatched or incompatible content crossfades. |
+| `'push` | Move both compositions by one canvas extent. |
+| `'wipe` | Keep both compositions stationary; move the reveal boundary. |
+| `'cover` | Move the destination over a stationary source. |
+| `'uncover` | Move the source away from a stationary destination. |
+| `'zoom` | Source grows from 1 to `1/scale`; destination grows from `scale` to 1, with a crossfade. |
+| `'fade-through` | Fade to an opaque intermediate color, then reveal the destination. |
+
+For push/wipe/cover/uncover, `#:direction` is `'left`, `'right`, `'up`, or `'down`
+(default `'left`). Direction names describe travel, not the incoming edge: left
+means the destination enters from the right; a leftward wipe reveals it from
+its right edge. Backgrounds, decorations, and existing crops participate.
+These four effects require opaque endpoint backgrounds.
+
+`#:easing` is `'linear` (the unchanged default), `'smooth` (cubic smoothstep),
+`'ease-in`, `'ease-out`, or `'ease-in-out` (quadratic curves). The same eased
+progress controls all geometry, masks, and opacity. No arbitrary procedure is
+stored in a transferable transition description.
+
+`#:scale` is exclusive to zoom: a finite number strictly between 0 and 1,
+default 0.85. `#:color` is exclusive to fade-through: an Animate color
+specification, default black. Semantic colors resolve under the destination
+slide's theme and must resolve to an opaque color. The intermediate frame is
+solid when eased progress is 1/2; asymmetric easing changes its clock time.
+Inapplicable keywords are errors, not silently ignored settings.
+
+Keys are accepted only for matching. Missing, ambiguous, or hidden endpoints
+are diagnosed. Matching defaults to `#:depth 'auto`: it plans recursive named children and
+witnessed domain-state replay, then falls back to conservative prepared-asset
+matching or crossfade. `#:depth 'semantic` requires a supported correspondence;
+`#:depth 'slot` disables the new mechanisms. See [Semantic matching](semantic-matching.md)
+for exact endpoint, timing, and fallback contracts. No glyph similarity search is used.
+
+Storyboard `#:motion 'reduced` replaces match, push, wipe, cover, uncover, and
+zoom with a crossfade of the **same duration and easing**. Cuts and fade-through
+retain their behavior. Per-clip motion overrides govern clip actions, not the
+storyboard's bridge policy.
+
+`slide-transition?` recognizes all transition descriptions, including cuts.
+The read-only accessors are `slide-transition-effect`, `slide-transition-duration`,
+`slide-transition-keys`, `slide-transition-direction`, `slide-transition-easing`,
+`slide-transition-depth`,
+`slide-transition-scale`, and `slide-transition-color`. Inapplicable direction,
+scale, and color fields are `#f`; effective defaults are stored explicitly.
+Colors are normalized through the native color-data codec so configuration
+round-trips preserve their semantic value.
+
+The portable preparation schema is `animate-slides-preparation-v2`. Rebuild
+prepared storyboards when upgrading; v1 payloads are explicitly rejected.
 
 `storyboard?`, `storyboard-id`, `storyboard-theme`, `storyboard-format`,
 `storyboard-motion`, and `storyboard-subtitles?` inspect the description.
@@ -357,9 +410,14 @@ integrated mathematical preparation path.
 ## `animate/slides/math` and `animate/slides/geometry`
 
 ```racket
-(math-content presentation-plan #:poster 'end #:fit 'contain)
-(geometry-content program-or-timeline #:poster 'end #:fit 'contain)
+(math-content presentation-plan #:poster 'end #:fit 'contain #:aspect 16/9)
+(geometry-content program-or-timeline #:poster 'end #:fit 'contain #:aspect 16/9)
 ```
+
+`#:aspect` is a positive finite preferred width/height ratio used for intrinsic
+measurement in content-sized regions. It prevents an unbounded measurement
+viewport from triggering native preparation. It does not change mathematical
+meaning or stretch geometry: preparation still receives the actual slot region.
 
 Both support `'contain` and `'natural` fitting. Their constructors are pure and do
 not typeset or render. Mathematical preparation uses the existing domain plan and
@@ -373,10 +431,12 @@ version's TeX preparation takes `#RRGGBB`. A formula scale below the theme's
 margins are retained; an arbitrary native child semantic-selection API is not
 provided by these adapters.
 
-Geometry uses the existing prepared native visual sampler. Direct preparation,
-Pict output, Scene output, and in-process rendering are included. Geometry does
-not yet have a portable preparation codec in this subsystem, so its source-worker
-route reports that limitation. Use the supplied runner's `--in-process` option.
+Geometry supports direct Pict/Scene output and the module-backed subprocess
+route. The parent captures realized drawable values, event timing, styles, label
+and marker placement, and compass provenance. Workers decode this data without
+realizing the construction or repeating annotation layout. Ready timelines keep
+their supplied realization; source modules must still avoid top-level preparation.
+See [Geometry workers](geometry-workers.md).
 
 ## `animate/slides/project`
 
@@ -395,3 +455,51 @@ implemented. No encoder or process pool is created by authoring these values.
 
 The supported practical entry point is `slides/render-example.rkt`, which loads
 an exported `film` storyboard and configures the normal project executor.
+
+
+## `animate/slides/gallery`
+
+This optional module exports an ordered, immutable catalogue and a storyboard
+factory. Listing and selecting catalogue entries does not typeset mathematics,
+realize geometry, read media, or write render output.
+
+```racket
+slide-gallery-entries
+slide-gallery-categories ; '(layouts transitions integration)
+(select-slide-gallery-entries #:entries #f #:category #f)
+(make-slide-gallery #:entries #f #:category #f
+                    #:theme lecture-light #:format widescreen #:motion 'normal)
+```
+
+The catalogue has 42 entries: 12 layouts, 23 transition examples, and 7 native
+integration examples. `#:entries` is either `#f` or a nonempty duplicate-free
+list of entry symbols. Explicit order is preserved. `#:category` is `#f`,
+`'layouts`, `'transitions`, or `'integration`; combining it with explicit entries
+requires every entry to belong to that category. Unknown IDs and categories fail.
+
+`make-slide-gallery` returns an ordinary immutable storyboard, lazily loading the
+builders for selected examples. Preparation and output remain explicit. An
+aggregate gallery containing geometry can use the ordinary module-backed worker
+route, including semantic snapshots nested alongside mathematical content.
+
+Entry inspection uses `slide-gallery-entry?` and the accessors
+`slide-gallery-entry-id`, `slide-gallery-entry-category`, `slide-gallery-entry-title`,
+`slide-gallery-entry-description`, `slide-gallery-entry-requirements`,
+`slide-gallery-entry-example`, and `slide-gallery-entry-source`. Requirements are
+symbols (`math`, `geometry`); source is a path relative to `slides/`.
+
+The command-line entry points are `slides/run-gallery.rkt` and
+`slides/examples/gallery.rkt`. They write HTML, timestamped PNGs, reusable
+storyboard sources, a manifest, and an optional MP4 per entry. `--list` only lists
+entries. `--videos --workers 10` enables the ordinary project rendering route;
+geometry entries honor the same worker capacity. `--in-process` explicitly selects local rendering. The default output is
+`slides-output/gallery`; it must not already exist. See
+[gallery-and-transitions.md](gallery-and-transitions.md) for all commands.
+
+
+## Semantic content (v0.4.0)
+
+`animate/slides` exports `semantic-group`, `semantic-part`, and `content-state`,
+with their predicates. `animate/slides/render` exports `storyboard-match-report`.
+Their signatures, invariants, current domain support, and complete examples are
+in [Semantic continuity between slides](semantic-matching.md).

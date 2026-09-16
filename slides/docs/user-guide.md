@@ -1,11 +1,11 @@
 # Themeable layouts: implementation guide
 
-Version 0.1.4 · 16 September 2026
+Version 0.4.0 · 17 September 2026
 
-This guide describes the implemented and validated public subsystem, rather than
-proposed future syntax. The complete nine-suite integration command passes on
-the target checkout; use the supplied visual probes when reviewing changes to
-layout or native rendering behavior.
+This guide describes the implemented and tested public subsystem, rather than
+proposed future syntax. Racket 9.3.0.2 passes the complete 105-case suite,
+including actual math, geometry, media, and subprocess coverage. Run the visual
+probes when reviewing layout or rendering changes on another host.
 
 ## 1. Content, appearance, and timing
 
@@ -330,9 +330,11 @@ shots without a transition receive a zero-duration cut.
 A role is not an identity. Both slides can have `title` slots without sharing a
 heading. A continuity key explicitly requests a conceptual correspondence.
 Matching identical prepared text retains it and interpolates its position/size.
-Different text or reflowed lines crossfade. Opaque Picts and arbitrary native
-components currently crossfade even when keyed; no unsupported internal matching
-is invented. Mathematical term matching remains the responsibility of `animate/math`.
+Different text or reflowed lines retain their conservative fallback. In v0.3.0,
+`semantic-group` exposes named children and `content-state` exposes witnessed
+native checkpoints, so `match` can also preserve semantic continuity inside a slot.
+The exact support and fallback rules are in [Semantic matching](semantic-matching.md).
+Mathematical term choreography still belongs to `animate/math`.
 
 Missing keys and wholly invisible matched endpoints fail preparation. Ambiguous
 keys within a slide fail construction. Source and destination chrome/colors are
@@ -631,8 +633,8 @@ The supplied runner covers all catalogue layouts in both themes and four formats
 then short videos in reversed seek order, at exact beat boundaries, and one frame
 on either side. `--math` and `--geometry` add their real native lessons. It writes
 actual paired PNGs, a comparison manifest, an HTML review page, and a ZIP.
-There are no placeholder render results in the repository; review output belongs
-under the ignored `slides-output/` directory.
+There are no placeholder render results in the source archive; generated review
+output belongs under the ignored `slides-output/` directory.
 
 Mathematical foreground/background roles must resolve to opaque colors in this
 version; the TeX color adapter rejects alpha rather than silently discarding it.
@@ -651,3 +653,22 @@ preparation codec, and font/low-resolution advisories.
 
 Most importantly, **implementation status is not test status**. Read the validation
 report, run the code against the target checkout, and review the real gallery.
+
+
+## 17. Semantic continuity between layouts
+
+The [semantic-matching guide](semantic-matching.md) documents recursive named parts,
+mathematical checkpoint replay, geometry timeline continuity, and mixed domain
+content. `match` uses explicit continuity keys and prepared semantic evidence; it
+does not infer correspondences from visual similarity.
+
+Use `#:depth 'auto` for semantic matching with conservative fallback,
+`#:depth 'semantic` to require supported semantic correspondence, and
+`#:depth 'slot` for the previous outer-slot behavior. `semantic-group` provides
+scoped child identities; `content-state` freezes a checkpoint in an existing
+math, geometry, or native Scene timeline so that a bridge can replay the witnessed
+interval while the containing slot changes placement.
+
+The gallery entries `semantic-parts`, `semantic-math`, `semantic-geometry`, and
+`semantic-math-geometry` exercise these cases. The gallery review rendered all four
+entries successfully in dark widescreen mode on Racket 9.3.0.2.
