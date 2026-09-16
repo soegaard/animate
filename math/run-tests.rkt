@@ -17,7 +17,10 @@
   "tests/property-test.rkt"
   "tests/house-style-test.rkt"
   "tests/prepared-plan-codec-test.rkt"
-  "tests/choreography-test.rkt")
+  "tests/choreography-test.rkt"
+  "tests/composite-moves-test.rkt"
+  "tests/gallery-test.rkt"
+         "tests/gallery-cli-test.rkt")
 
 (run-core-tests)
 
@@ -30,5 +33,11 @@
 (run-prepared-plan-codec-tests)
 
 (run-choreography-tests)
+
+(run-composite-moves-tests)
+
+(run-gallery-tests)
+
+(run-gallery-cli-tests)
 
 (report!)

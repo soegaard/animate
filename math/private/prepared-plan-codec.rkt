@@ -38,7 +38,7 @@
 
 ; math-preparation-payload-schema : symbol?
 ;;   Names the versioned portable prepared-plan payload grammar.
-(define math-preparation-payload-schema 'animate-math-prepared-plan-v1)
+(define math-preparation-payload-schema 'animate-math-prepared-plan-v2)
 
 ; math-context->datum : math-context? -> immutable-hash?
 ;;   Canonicalizes the semantic state context without relying on hash iteration.
@@ -104,6 +104,15 @@
                  (hasheq 'state-key (math-state-layout-key (car annotation))
                          'caption (cadr annotation))))))
 
+; move-node->datum : derivation-node? -> immutable-hash?
+;;   Records the mathematical hierarchy independently of presentation-group choices.
+(define (move-node->datum node)
+  (hasheq 'path (derivation-node-path node)
+          'leaf? (and (derivation-node-step node) #t)
+          'children
+          (vector->immutable-vector
+           (list->vector (map move-node->datum (derivation-node-children node))))))
+
 ; presentation-plan->datum : presentation-plan? -> immutable-hash?
 ;;   Captures plan/case/schedule decisions that a worker must reproduce exactly.
 (define (presentation-plan->datum plan)
@@ -112,13 +121,16 @@
       (hasheq 'path (plan-segment-path segment)
               'shared? (plan-segment-shared? segment)
               'groups (plan-segment-groups segment)
+              'move-tree (vector->immutable-vector
+                          (list->vector (map move-node->datum
+                                             (derivation-tree (plan-segment-derivation segment)))))
               'states
               (vector->immutable-vector
                (list->vector
                 (map math-state-layout-key
                      (derivation-states
                       (plan-segment-derivation segment))))))))
-  (hasheq 'schema 'animate-math-presentation-plan-v1
+  (hasheq 'schema 'animate-math-presentation-plan-v2
           'style (presentation-style->datum (presentation-plan-style plan))
           'segments
           (vector->immutable-vector (list->vector segments))

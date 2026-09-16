@@ -13,9 +13,27 @@
 @title[#:tag "animate-math"]{Semantic Mathematics for Animate}
 @author{Animate math subsystem}
 
-Version 0.3.0. This reference describes the implemented public API, not proposed
+Version 0.5.0. This reference describes the implemented public API, not proposed
 future capabilities. Keep the @tt{math/} folder in the root of the
 @tt{animate} repository.
+
+@section{Concept gallery}
+
+The example @tt{math/examples/gallery.rkt} presents 25 selectable concept plates
+in five chapters, with 31 replays including presentation comparisons. Run
+@tt{--list-plates} or @tt{--list-chapters} without loading the native renderer.
+@tt{--plate additive-cancellation} selects one demonstration; @tt{--chapter moves}
+selects the hierarchy and recipe examples. The complete planned duration is
+299.1 seconds.
+
+Movie output uses the existing shared process renderer and parent-only formula
+preparation. @tt{--review-stills} creates native stills, contact sheets, and an HTML
+index; @tt{--review-zip} additionally packages the review. The gallery's unrelated
+plates are not mathematical cases. Grouping and history comparison views reuse the
+same derivation while varying only presentation policy.
+
+The full catalogue, command examples, and safety/validation distinctions are in
+@tt{math/docs/gallery.md}. The gallery does not add bindings to the algebra facade.
 
 @section{Start with held data}
 
@@ -984,10 +1002,101 @@ or reassociate terms. Conflicting repeated metavariables raise an error.
 @subsection{Derivations and branches}
 
 
+@defform[(steps [name operation] ...)]{
+Constructs a nonempty reusable mathematical recipe. Each name is a literal identifier;
+each operation is a @racket[math-operation?] or nested @racket[step-sequence?]. Sibling
+names are unique. No mathematical state is advanced until the recipe is used in a
+named @racket[derive] slot. Recipes carry no presentation timing or native resources.
+@racketblock[
+(define (subtract-and-cancel amount)
+  (steps [subtract (both-sides 'subtract amount)]
+         [cancel (cancel-addends #:at (lhs))]))
+(derive problem [isolate-term (subtract-and-cancel 5)])]
+A recipe is not an elementary operation: use it in @racket[derive], not as an
+argument to @racket[apply-math-operation] or @racket[each-branch]. For branchwise
+recipes, wrap their elementary operations in @racket[each-branch] explicitly.
+}
+
+@defproc[(steps/proc [entries list?]) step-sequence?]{
+Constructs a recipe from a nonempty ordered list of pairs
+@racket[(cons name operation)]. The cdr is an elementary operation or another
+recipe. Copies and validates the sibling list; duplicate symbols and invalid
+operations are rejected before any operation is applied.
+}
+
+@defproc[(step-sequence? [value any/c]) boolean?]{
+Recognizes an immutable unapplied recipe created by @racket[steps] or @racket[steps/proc].
+The raw constructor is private.
+}
+
+@defproc[(derivation-tree [record derivation?]) (listof derivation-node?)]{
+Returns ordered applied root nodes. Their elementary leaves are exactly
+@racket[derivation-steps], in order. Composite nodes do not create extra checkpoints.
+}
+
+@defproc[(derivation-node? [value any/c]) boolean?]{
+Recognizes one applied elementary leaf or composite move. Its raw constructor is private.
+}
+
+@defproc[(derivation-node-path [record derivation-node?]) (listof symbol?)]{
+Returns its nonempty derivation-relative hierarchical address. Case paths are separate.
+This is an authoring address, not a mathematical occurrence ID or a rendered view ID.
+}
+
+@defproc[(derivation-node-before [record derivation-node?]) math?]{
+Returns the exact input state of the first elementary descendant.
+}
+
+@defproc[(derivation-node-after [record derivation-node?]) math?]{
+Returns the exact output state of the last elementary descendant.
+}
+
+@defproc[(derivation-node-children [record derivation-node?]) (listof derivation-node?)]{
+Returns ordered children for a composite and an empty list for an elementary leaf.
+}
+
+@defproc[(derivation-node-step [record derivation-node?]) (or/c rewrite-step? #f)]{
+Returns the original primitive rewrite for a leaf, or @racket[#f] for a composite.
+No opaque replacement rewrite is fabricated for a composite.
+}
+
+@defproc[(derivation-node-at [source (or/c derivation? case-derivation? solution-check?)]
+                            [address (or/c symbol? (listof symbol?))]) derivation-node?]{
+Looks up an exact nonempty hierarchical path, or an unambiguous local symbol.
+Repeated child names in different moves require full paths. A symbol is not allowed
+to guess a case branch. A case-qualified path prepends branch names to the move path.
+Unknown or ambiguous addresses raise a mathematical diagnostic.
+@racketblock[
+(derivation-node-at solution '(isolate-term cancel-five))
+(derivation-node-at general-solution '(ordinary isolate-x))]
+}
+
+@defproc[(derivation-node-relation [record derivation-node?]) symbol?]{
+Conservatively summarizes leaf relationships. Identical kinds are retained;
+expression/equation equivalences together give @racket['equivalence]; equivalences
+plus implications give @racket['implication]; equivalences plus specializations give
+@racket['specialization]. Other mixtures, including implication plus specialization,
+are @racket['mixed]. This does not strengthen any child into equivalence.
+}
+
+@defproc[(derivation-node-verification [record derivation-node?]) verification?]{
+Combines ordered primitive evidence without adding endpoint checks or external CAS
+calls. Established child checks do not imply that the move preserves all solutions;
+inspect @racket[derivation-node-relation] separately.
+}
+
+@defproc[(derivation-step-paths [record derivation?]) (listof (listof symbol?))]{
+Returns full nonempty leaf paths in chronological order. Even a flat leaf has a
+one-element path here. Schedule accessors retain a symbol for a flat root leaf
+and return a full symbol list for a nested leaf.
+}
+
 @defform[(derive initial [name operation] ...)]{
 Evaluates each operation expression and applies it in declaration order. Names
 are captured as symbols. The input is a held state or an existing linear
-derivation. Duplicate step names are rejected.
+derivation. Entries accept elementary operations or recipes. Names must be unique
+among siblings; child names may repeat in different moves. An empty derivation is
+allowed. Every elementary checkpoint and occurrence trace is retained unchanged.
 @racketblock[
 (derive (math '(= (+ (* 3 x) 5) 17)
               #:context (math-context #:real '(x)))
@@ -1002,8 +1111,9 @@ derivation. Duplicate step names are rejected.
 Appends named operations in order while rejecting duplicate step names.
 
 The second argument is an ordered list of pairs whose car is a symbol
-step name and whose cdr is an operation. Step names must be unique along the
-linear derivation. An existing derivation is extended without mutation.
+step name and whose cdr is an elementary operation or recipe. Top-level names must
+be unique in the extended derivation; child names are sibling-local. No partial
+derivation is returned on failure, and an existing derivation is never mutated.
 }
 
 
@@ -1012,7 +1122,8 @@ Builds named parameter cases, checks guard coverage, and adds the guard to each
 branch's immutable context. A branch can instead have the form
 @racket[[name guard #:then factory]], where the factory consumes the scoped state
 and returns a derivation or a nested case tree. Ordinary step names are local to
-a branch; a complete presentation path must have unique step names.
+a branch. Branch entries can contain recipes. Top-level names must remain unique
+along a complete path including the prefix; nested names are resolved by full paths.
 }
 
 @defproc[(make-case-derivation [initial (or/c math? derivation?)]
@@ -1046,7 +1157,8 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 @defproc[(derivation-steps [record derivation?])
          (listof rewrite-step?)]{
-Returns the steps field: chronological applied steps.
+Returns the chronological elementary rewrite list, not the move tree. Nested recipes
+are flattened here without dropping states or replacing their original witnesses.
 
 This accessor is pure. It does not copy, reorder, render, or mutate the record.
 }
@@ -1173,14 +1285,18 @@ Returns a unique endpoint or named checkpoint, requiring an explicit branch for 
 
 Without a label, a linear derivation returns its final state. A case tree
 has no unique final state: select a branch path or inspect its branches explicitly.
-A named path uses branch symbols followed by the step name.
+A named path uses any required branch symbols followed by a move/leaf path.
+Both composite and elementary addresses are accepted; a composite returns its final
+child's state. Unqualified symbols must be unambiguous in the requested scope.
 }
 
 
 @defproc[(derivation-step [d (or/c derivation? case-derivation?)]
          [label (or/c symbol? (listof symbol?))])
          rewrite-step?]{
-Looks up a named step or case path without silently selecting a branch.
+Looks up an elementary leaf by hierarchical path or unambiguous symbol. A composite
+address raises an error: use @racket[derivation-node-at] for inspection or @racket[after]
+for its endpoint. Case paths precede derivation-relative move/leaf paths.
 }
 
 
@@ -1539,16 +1655,19 @@ Provides the exact-time, staged, retained-history classroom style.
 
 @defproc[(present [source (or/c derivation? case-derivation? solution-check?)]
          #:style [style math-presentation? classroom]
-         #:groups [groups (or/c list? hash? #f) #f]
+         #:groups [groups (or/c 'top-level 'steps list? hash? #f) #f]
          #:case [case-path (or/c symbol? (listof symbol?) #f) #f]
          #:case-layout [case-layout (or/c 'complete-paths 'shared-prefix) 'complete-paths]
          #:allow-unverified? [allow? boolean? #f])
          presentation-plan?]{
 Builds an explicit presentation while retaining verification status and case context.
 
-Groups partition steps exactly once in order. For several selected cases,
-supply a hash from case-path lists to group lists; otherwise a single group list
-is accepted. The case selector is a symbol or a list of branch symbols. Strict
+Groups partition elementary steps exactly once in order. @racket['top-level]
+(and the default @racket[#f]) uses one group per top-level move or elementary root;
+@racket['steps] uses one per elementary rewrite. Explicit groups may name moves or
+leaves; move references expand before partition validation. For several cases,
+either symbolic mode applies to every case, or a hash maps case paths to modes or
+group lists. Missing hash entries use the top-level default. The case selector is a symbol or a list of branch symbols. Strict
 presentation rejects unverified derivations unless @racket[#:allow-unverified? #t]
 is supplied; that flag must be a boolean and causes a visible warning.
 
@@ -1563,8 +1682,11 @@ single @racket[#:case] always restores its full prefix, irrespective of layout.
 
 @defform[(choreograph plan [step-key phase ...] ...)]{
 Adds explicit phase sequences to a presentation without changing its mathematical
-derivation. Keys are captured as symbols or case-path lists. Each list is
-nonempty, and duplicate keys in one call are rejected.
+derivation. Keys are captured as symbols or nonempty lists. Complete case-plus-step
+paths take precedence over derivation-relative paths, then local-name shorthand,
+then defaults. Shorthand matching different relative leaf paths is rejected.
+Composite moves are not elementary phase targets. Duplicate keys in one call are
+rejected. Use a precise address to replace an existing precise override.
 @racketblock[
 (choreograph plan
   [cancel-five (retire-cancelled #:duration 2/5)
@@ -1745,8 +1867,9 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 
 @defproc[(plan-segment-groups [record plan-segment?])
-         (listof (listof symbol?))]{
-Returns the groups field: ordered partition of all step names.
+         list?]{
+Returns the normalized ordered partition of elementary keys. A flat root leaf uses
+a symbol; a nested leaf uses its complete derivation-relative symbol path.
 
 This accessor is pure. It does not copy, reorder, render, or mutate the record.
 }
@@ -1834,8 +1957,9 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 
 @defproc[(scheduled-phase-step [record scheduled-phase?])
-         (or/c symbol? #f)]{
-Returns the step field: step name or false for group/segment phases.
+         (or/c symbol? (listof symbol?) #f)]{
+Returns the canonical derivation-relative leaf key: a symbol for a flat root leaf,
+a full symbol list for a nested leaf, or @racket[#f] for group/segment phases.
 
 This accessor is pure. It does not copy, reorder, render, or mutate the record.
 }
@@ -1904,8 +2028,9 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 
 @defproc[(math-checkpoint-step [record math-checkpoint?])
-         (or/c symbol? #f)]{
-Returns the step field: committed step or initial state.
+         (or/c symbol? (listof symbol?) #f)]{
+Returns the canonical committed leaf key (symbol or full relative symbol path),
+or @racket[#f] for the initial state.
 
 This accessor is pure. It does not copy, reorder, render, or mutate the record.
 }

@@ -30,7 +30,7 @@
 ;; Exports
 (provide
   math-plan->scene! prepare-math-plan! math->visual! math-plan->pict!
-  (struct-out prepared-math-plan) matching-token-index)
+  (struct-out prepared-math-plan) matching-token-index append-prepared-math-plan!)
 
 ;;;
 ;;; Construction and Operations
@@ -121,19 +121,23 @@
     (- (apply max (map (lambda (t) (+ (prepared-token-y t) (/ (prepared-token-height t) 2))) raw))
        (apply min (map (lambda (t) (- (prepared-token-y t) (/ (prepared-token-height t) 2))) raw))))
   (define inset-scale
-    (min 7/10 (/ 4/5 ink-height)
+    ;; Explanatory insets should read as part of the current explanation rather
+    ;; than as footnotes at the frame edge. Permit a slightly larger prepared
+    ;; inset and position it higher in the reserved lower band so it sits closer
+    ;; to the active equation while remaining distinct from the working row.
+    (min 4/5 (/ 21/20 ink-height)
          (/ (- ((animate-binding 'camera-world-width) camera) 6/5) ink-width)))
   (define ink
     (clone-view (map (lambda (t) (token-scaled t inset-scale)) raw) id 'explanation))
   (define-values (cx cy) (token-center ink))
-  (define tokens (translate ink (- cx) (- (+ (- (/ height 2)) 9/10) cy)))
+  (define tokens (translate ink (- cx) (- (+ (- (/ height 2)) 3/2) cy)))
   (define caption-id (string->symbol (format "~a.explanation-caption" id)))
   (define scene-with-caption
     (if (string=? caption "") scn
         ((animate-binding 'scene-add) scn
           ((animate-binding 'plain-text) caption #:id caption-id
-            #:center ((animate-binding 'vec2) 0 (+ (- (/ height 2)) 3/10))
-            #:font-size (min 1/5
+            #:center ((animate-binding 'vec2) 0 (+ (- (/ height 2)) 4/5))
+            #:font-size (min 23/100
                              (/ (- ((animate-binding 'camera-world-width) camera) 6/5)
                                 (max 1 (* 14/25 (string-length caption)))))
             #:color (prepared-math-plan-foreground prepared)))))
@@ -152,7 +156,9 @@
 ;   (values scene? list? exact-nonnegative-integer?)
 ;;   Lowers typed semantic units to native batches, with a visibility barrier for replacements.
 (define (compile-math-step scn prepared segment-index step destination old id view)
-  (define name (rewrite-step-name step))
+  (define segment
+    (list-ref (presentation-plan-segments (prepared-math-plan-plan prepared)) segment-index))
+  (define name (derivation-step-key (plan-segment-derivation segment) step))
   (define unit-plan (plan-token-transition step old destination))
   (define kind (token-transition-kind unit-plan))
   (define matches (token-transition-matches unit-plan))
@@ -221,7 +227,7 @@
   (define entries
     (filter (lambda (p)
               (and (= (scheduled-phase-segment p) segment-index)
-                   (eq? (scheduled-phase-step p) name)
+                   (equal? (scheduled-phase-step p) name)
                    (not (eq? (scheduled-phase-kind p) 'checkpoint))))
             (prepared-math-plan-schedule prepared)))
   (define kinds (map scheduled-phase-kind entries))
@@ -279,7 +285,11 @@
          (math-error 'choreograph 'unsafe-reflow "Cancel or retire first; compact survivors afterward." name))
        (if (and (eq? kind 'cancellation) (pair? created)
                 (not (memq 'reveal-created kinds)))
-           (begin (move! (* 3/4 seconds)) (reveal! (* 1/4 seconds)))
+           ;; For implicit cancellation reveals such as 3x/3 -> 1·x, establish the
+           ;; created destination material before survivor compaction completes. This
+           ;; avoids a momentary visually-finished x that would make the following
+           ;; remove-unit step look like it is undoing the display.
+           (begin (reveal! (* 1/4 seconds)) (move! (* 3/4 seconds)))
            (move! seconds))]
       [(transition)
        ;; Even a simultaneous-layout request cannot mix new numeric results
@@ -327,6 +337,26 @@
         #:camera camera
         #:theme (or theme 'light)
         #:cache-directory directory)))
+  (define-values (scn _visual-ids _checkpoint-id)
+    (append-prepared-math-plan!
+      ((animate-binding 'make-scene) #:camera (prepared-math-plan-camera prepared))
+      prepared #:title title #:id id))
+  scn)
+
+; append-prepared-math-plan! : scene? prepared-math-plan? [#:title string?]
+;   [#:id symbol?] [#:top-margin positive-real?] [#:on-step (or/c #f procedure?)]
+;   -> (values scene? (listof symbol?) symbol?)
+;;   Appends one prepared plan to an existing native timeline and returns its owned ids.
+;;   The optional inspector runs only while compiling, adds no time, and never samples.
+(define (append-prepared-math-plan! initial-scene prepared
+          #:title [title "Mathematical derivation"] #:id [id 'math-lesson]
+          #:top-margin [top-margin 2] #:on-step [on-step #f])
+  (unless (prepared-math-plan? prepared)
+    (raise-argument-error 'append-prepared-math-plan! "prepared-math-plan?" prepared))
+  (check-symbol 'append-prepared-math-plan! id)
+  (unless (string? title) (raise-argument-error 'append-prepared-math-plan! "string?" title))
+  (check-positive-real 'append-prepared-math-plan! top-margin)
+  (when on-step (check-procedure 'append-prepared-math-plan! on-step 3))
   (define plan (prepared-math-plan-plan prepared))
   (define style (presentation-plan-style plan))
   (define cam (prepared-math-plan-camera prepared))
@@ -334,10 +364,10 @@
     (*
       ((animate-binding 'camera-world-width) cam)
       (/ ((animate-binding 'camera-height) cam) ((animate-binding 'camera-width) cam))))
-  (define top (- (/ world-height 2) 2))
+  (define top (- (/ world-height 2) top-margin))
   (define foreground (prepared-math-plan-foreground prepared))
   (define gap (prepared-math-plan-row-gap prepared))
-  (define scn ((animate-binding 'make-scene) #:camera cam))
+  (define scn initial-scene)
   (define view 0)
   (define all-on-scene '())
   (define heading-ids '())
@@ -419,10 +449,11 @@
     (set! view (add1 view))
     (set! scn (add-tokens scn active))
     (set! scn (commit-checkpoint! scn))
+    (when on-step (set! scn (on-step scn segment-index #f)))
     (set! scn ((animate-binding 'scene-wait) scn 4/5))
     (define groups
       (if (eq? (presentation-style-history style) 'keep-all-checkpoints)
-        (map (lambda (s) (list (rewrite-step-name s))) (derivation-steps d))
+        (map list (derivation-step-keys d))
         (plan-segment-groups segment)))
     (for ([group (in-list groups)] [group-index (in-naturals)])
       (define case-handoff-reuse?
@@ -489,6 +520,7 @@
         (set! active-row row)
         (set! scn (remove-tokens scn (append-map cadr discarded))))
       (for ([name (in-list group)])
+        (when on-step (set! scn (on-step scn segment-index name)))
         (define step (derivation-step d name))
         (define destination (at-row (rewrite-step-after step) active-row))
         (define-values (next-scene next-tokens next-view)
@@ -510,7 +542,7 @@
             'verdict))))
     (set! scn ((animate-binding 'scene-wait) scn 1))
     (set! all-on-scene (append active (append-map cadr history))))
-  scn)
+  (values scn (append (map prepared-token-id all-on-scene) heading-ids) checkpoint-key))
 
 ;;;
 ;;; Static Visual and Pict Adapters

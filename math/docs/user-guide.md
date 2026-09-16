@@ -1,7 +1,16 @@
 # Semantic mathematical animation: user guide
 
-**Implementation 0.3.0.** This document describes the supplied source, not future
+**Concept gallery:** [25 selectable demonstrations](gallery.md) are included in
+version 0.5.0. They exercise this API, composite moves, and native presentation.
+
+
+**Implementation 0.4.0.** This document describes the supplied source, not future
 API promises. The original design is archived separately as `proposal-v0.1.md`.
+
+For the new author-facing path, start with **[Named mathematical moves](composite-moves.md)**.
+It documents the implemented `steps` recipes, hierarchical addresses, default grouping,
+case semantics, inspection commands, and portable rendering boundary. The flat
+examples below remain supported elementary building blocks.
 
 ## 1. Separate mathematical meaning from presentation
 
@@ -253,8 +262,11 @@ accepted as an identity. It is an internal checking aid, not a second public CAS
 'replace`, `#:reflow 'simultaneous`, and explicit multiplication. New/removed
 parts currently support `'fade`; unsupported effects are rejected.
 
-Groups partition all step names once and in order. Use unique names along a
-complete case path, including its shared prefix. There is no silent skipping or
+Groups partition all elementary steps once and in order. Named `steps` recipes
+retain a move hierarchy. `#:groups 'top-level` (the default) groups by outer moves;
+`#:groups 'steps` groups by elementary leaves. Explicit groups may select move or
+leaf paths. Top-level names are unique along a complete case path, including its
+prefix; nested names need only be unique among siblings. There is no silent skipping or
 reordering of mathematical steps.
 
 ```racket
@@ -283,9 +295,8 @@ beside old arithmetic. Unaffected subexpressions remain visible.
 
 Cancellation holds survivors still during retirement and pauses; only `compact`
 moves them. Square-root splits copy the common left-hand expression into the
-branch destinations before introducing complete radical right sides. Reorders
-move signed terms as rigid units on separated paths; a minus sign never travels
-independently of its term. Metric differences between SVG crops do not invalidate
+branch destinations before introducing complete radical right sides. Reorders retire and reveal the entire focused additive expression while preserving
+surrounding structure; signs never travel independently of their terms. Metric differences between SVG crops do not invalidate
 mathematical occurrence identity. At checkpoints the exact prepared endpoint
 assets replace the temporary moving views.
 

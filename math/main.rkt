@@ -18,6 +18,7 @@
   "private/select.rkt"
   "private/operations.rkt"
   "private/derivation.rkt"
+  "private/steps.rkt"
   "private/rules.rkt"
   "private/format.rkt"
   "private/presentation.rkt")
@@ -46,6 +47,11 @@
   reorder-addends zero-product square-solutions abbreviate each-branch substitute conclude
   assert-step define-math-rule make-math-rule math-rule? math-rule-name use-rule apply-rule
   apply-rewrite template-bindings
+  ;; Composable mathematical moves and their inspection hierarchy.
+  steps steps/proc step-sequence? derivation-tree derivation-node?
+  derivation-node-path derivation-node-before derivation-node-after
+  derivation-node-children derivation-node-step derivation-node-at
+  derivation-node-relation derivation-node-verification derivation-step-paths
   ;; Derivations and their inspection data.
   derive derive/proc derive-cases make-case-derivation derivation? derivation-initial
   derivation-steps derivation-final case-branch? case-branch-name case-branch-guard

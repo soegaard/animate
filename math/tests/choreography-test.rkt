@@ -80,7 +80,7 @@
 ; phase-by-name : presentation-plan? symbol? symbol? -> scheduled-phase?
 ;;   Finds the requested phase in the declared chronological lesson schedule.
 (define (phase-by-name plan step kind)
-  (findf (lambda (p) (and (eq? (scheduled-phase-step p) step)
+  (findf (lambda (p) (and (eq? (let ([key (scheduled-phase-step p)]) (if (pair? key) (last key) key)) step)
                           (eq? (scheduled-phase-kind p) kind)))
          (plan-schedule plan)))
 
@@ -290,7 +290,7 @@
           (findf (lambda (phase)
                    (and (= (scheduled-phase-segment phase) segment-index)
                         (= (scheduled-phase-group phase) 0)
-                        (eq? (scheduled-phase-step phase) 'single-root)
+                        (equal? (scheduled-phase-step phase) '(take-root single-root))
                         (eq? (scheduled-phase-kind phase) 'transition)))
                  (plan-schedule qg:plan)))
         (check-true first-step-phase 'case-first-step-present)
@@ -300,7 +300,7 @@
     (lambda ()
       (check-equal (length (filter plan-segment-shared? (presentation-plan-segments qg:plan))) 1)
       (check-equal (count (lambda (p) (and (eq? (scheduled-phase-kind p) 'checkpoint)
-                                          (eq? (scheduled-phase-step p) 'make-square)))
+                                          (equal? (scheduled-phase-step p) '(complete-square make-square))))
                           (plan-schedule qg:plan)) 1 'complete-square-once)
       (check-true (< (plan-duration qg:plan) 60) 'shorter-without-deleting-cases)
       (for ([path '((quadratic two-real-roots) (quadratic one-real-root) (quadratic no-real-roots))])

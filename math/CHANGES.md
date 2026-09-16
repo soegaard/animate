@@ -1,3 +1,56 @@
+# 0.5.1 — Mathematical concept gallery
+
+- Add 25 independently selectable plates and 31 replays in five chapters, including
+  held arithmetic, structural/occurrence selection, cancellation, distribution,
+  domain conditions, inequalities, alternatives, candidate checks, named/nested
+  moves, recipes, grouping, history, timing, insets, and shared prefixes.
+- Add `examples/gallery.rkt` with native-independent listing/inspection, repeatable
+  plate selection, chapters, light/dark output, API labels, and a normal shared
+  process-renderer movie path.
+- Append prepared plans through the existing native compiler with private ownership
+  reporting; no raw clip concatenation, new sampler, or artificial case derivation.
+  The existing public compiler defaults and four lesson sources are unchanged.
+- Fit each replay separately; reserve caption and optional hierarchy columns. Compile
+  the current-step tree indicator from existing semantic step addresses.
+- Transfer verified, bounded per-view v2 payload files through the generic preparation
+  artifact manifest and leases. Explicitly track lazy and native runtime imports.
+- Add native still/contact-sheet/HTML/ZIP review and optional real 1/N-worker pixel
+  parity, preparation-accounting, and zero-worker cache-hit probes.
+- Keep output replacement explicit and scoped to recognized gallery directories.
+  Encode one parent-side MP4 to a temporary sibling before publication.
+- Add gallery mathematical, scheduling, complete native-contract, real-file integrity,
+  and fresh-process producer/consumer tests. Native raster checks remain separate.
+
+See `docs/gallery.md` and `docs/validation.md`. No parent repository files are changed.
+
+---
+
+# 0.4.0 — Named composite mathematical moves
+
+Based on Animate `525253b2c8d6aa47bf7a5ddad1c51f82d322ccb0` (including the process-rendering update).
+
+- Add pure `steps` / `steps/proc` recipes and applied move trees with stable
+  hierarchical addresses. Elementary operations, mathematical revisions,
+  occurrence provenance and domain checks are retained unchanged.
+- Add move inspection and conservative relationship/evidence summaries.
+- Derive presentation groups from top-level moves; allow elementary grouping and
+  explicit move/path partitions without skipping any primitive checkpoint.
+- Resolve hierarchical and case-specific choreography; preserve shared-prefix
+  behavior and selected-case overrides.
+- Migrate all four lessons without changing their mathematical checkpoints,
+  timings, typed transition behavior or native animation requests.
+- Keep inspection native-independent and add `--tree`. Preserve fixed generic
+  source callback arities and explicitly track lazy runtime dependencies.
+- Version the portable payload as v2 with move-tree identity. Retain one-time
+  parent preparation, SVG canonicalization, and the generic process renderer.
+- Add flat-versus-structured parity fixtures, fresh-process contract round trips,
+  and optional `run-probes.rkt --compare-flat` native pixel checks.
+
+See `docs/composite-moves.md` and `docs/validation.md` for the implemented contracts
+and exact validation evidence. No parent repository files are changed.
+
+---
+
 # 0.3.3 — cancellation separators and case handoff
 
 - Preserve an additive separator when the same two adjacent surviving addends

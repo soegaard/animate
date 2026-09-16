@@ -13,7 +13,7 @@
 
 ; version : string?
 ;;   Identifies the math subcollection revision independently of the parent.
-(define version "0.3.3")
+(define version "0.5.0")
 
 ; scribblings : list?
 ;;   Registers the subcollection reference with package documentation setup.
@@ -32,8 +32,11 @@
 ; test-omit-paths : (listof path-string?)
 ;;   Keeps source audits, native renderers, and TeX probes separate from model tests.
 (define test-omit-paths
-  '("run-probes.rkt"
+  '("run-process-contracts.rkt"
+    "run-probes.rkt"
+    "run-gallery-probes.rkt"
     "run-style-checks.rkt"
     "examples"
     "tests/native-integration.rkt"
+    "tests/gallery-native-probes.rkt"
     "tests/tex-layout-probe.rkt"))

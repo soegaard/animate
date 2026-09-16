@@ -28,26 +28,29 @@
 ;;   Gives the explicit worked derivation, including parameter branches where needed.
 (define solution
   (derive problem
-    [subtract-five (both-sides 'subtract 5)]
-    [cancel-five (cancel-addends #:at (lhs))]
-    [evaluate-twelve (evaluate #:at (rhs))]
-    [divide-three (both-sides 'divide 3)]
-    [reduce-left (cancel-factor #:at (lhs) #:factor 3 #:keep-one? #t)]
-    [remove-one (remove-unit #:at (lhs))]
-    [evaluate-four (evaluate #:at (rhs))]))
+    [isolate-term
+     (steps
+       [subtract-five (both-sides 'subtract 5)]
+       [cancel-five (cancel-addends #:at (lhs))]
+       [evaluate-twelve (evaluate #:at (rhs))])]
+    [isolate-x
+     (steps
+       [divide-three (both-sides 'divide 3)]
+       [reduce-left (cancel-factor #:at (lhs) #:factor 3 #:keep-one? #t)]
+       [remove-one (remove-unit #:at (lhs))]
+       [evaluate-four (evaluate #:at (rhs))])]))
 
 ; plan : presentation-plan?
 ;;   Gives the deterministic classroom presentation for the worked solution.
 (define plan
   (choreograph
-    (present solution
-      #:style classroom
-      #:groups
-      '((subtract-five cancel-five evaluate-twelve)
-         (divide-three reduce-left remove-one evaluate-four)))
-    [subtract-five (prepare-space #:duration 1/2) (reveal-created #:duration 2/5)]
-    [cancel-five (retire-cancelled #:duration 2/5) (hold 1/2) (compact #:duration 2/5)]
-    [remove-one (retire-removed #:duration 3/10) (hold 1/2) (compact #:duration 3/10)]))
+    (present solution #:style classroom #:groups 'top-level)
+    [(isolate-term subtract-five)
+     (prepare-space #:duration 1/2) (reveal-created #:duration 2/5)]
+    [(isolate-term cancel-five)
+     (retire-cancelled #:duration 2/5) (hold 1/2) (compact #:duration 2/5)]
+    [(isolate-x remove-one)
+     (retire-removed #:duration 3/10) (hold 1/2) (compact #:duration 3/10)]))
 
 ; answer-check : solution-check?
 ;;   Checks the isolated root against the original equation.

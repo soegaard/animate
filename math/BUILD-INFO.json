@@ -1,0 +1,27 @@
+{
+  "version": "0.5.1",
+  "feature": "mathematical-concept-gallery",
+  "gallery_patch": "readability-and-transition-refinement",
+  "baseline_repository": "soegaard/animate",
+  "baseline_commit": "525253b2c8d6aa47bf7a5ddad1c51f82d322ccb0",
+  "baseline_math_tree": "28cc6aa392806c9859bc9d62a6d93735dfe47e7b",
+  "math_payload_schema": "animate-math-prepared-plan-v2",
+  "parent_files_changed": false,
+  "public_binding_count": 289,
+  "native_render_validation": "Not executed here. Run math/run-gallery-probes.rkt locally; synthetic tests are not native raster validation.",
+  "previous_math_version": "0.4.0",
+  "previous_math_archive_sha256": "15b7cf065a44ccf06d04ca8406ec8e271a6e75fb80b7a91495d4cc33a9beb751",
+  "gallery_plate_count": 25,
+  "gallery_replay_count": 31,
+  "gallery_duration_seconds": "299.1",
+  "gallery_payload_schema": "animate-math-gallery-preparation-v1",
+  "validation_runtime": "Linux Racket CS v9.3.0.8",
+  "tests": {
+    "math_checks": 4718,
+    "gallery_checks_included": 2619,
+    "style_checks": 1279,
+    "fresh_process_contracts": 6,
+    "producer_consumer_processes": 12,
+    "native_gallery_rendered_here": false
+  }
+}

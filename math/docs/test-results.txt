@@ -14,6 +14,7 @@ TEST semantic SVG ownership and source range contracts
 TEST house style: immutable input snapshots and protocol boundaries
 TEST house style: exact default timing and validated choreography
 TEST house style: failed CAS calls never supply mathematical evidence
+TEST prepared mathematical plan codec
 TEST review: complete token partitions and metric-independent identity
 TEST review: cancellation preserves separators between surviving addends
 TEST review: numeric results replace entire focused expressions
@@ -23,4 +24,17 @@ TEST review: whole-relation replacement never leaves a bare relation glyph
 TEST review: case-start copies appear at their destination row
 TEST review: one shared quadratic prefix and stand-alone case restoration
 TEST review: clean assumptions retain genuine exclusions and inset keeps checkpoint
-1815 checks passed; 0 failed.
+TEST composite moves: reusable recipes and exact elementary lineage
+TEST composite moves: duplicate names, transactional construction, and scope
+TEST composite moves: conditions and relationship summaries stay conservative
+TEST composite moves: presentation partitions and exact hierarchical overrides
+TEST composite moves: case scopes, prefix grouping, and override specificity
+TEST composite moves: all four lessons preserve every checkpoint and native contract
+TEST composite moves: portable preparation retains paths and never typesets on rebind
+TEST gallery: catalogue and selection are pure and deterministic
+TEST gallery: mathematical endpoints, guards, and provenance
+TEST gallery: review addresses and global times cover every replay
+TEST gallery: every plate compiles and cleans its native ids
+TEST gallery: portable files, fresh builders, and shared-project declarations
+TEST gallery: real CLI inspection and pre-output rejection
+4718 checks passed; 0 failed.

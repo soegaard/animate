@@ -28,10 +28,15 @@
 ;;   Includes intermediate frames from every transformation family by default.
 (define dense? #t)
 
+; compare-flat? : boolean?
+;;   Adds direct native pixel comparison against the frozen pre-moves lesson declarations.
+(define compare-flat? #f)
+
 (command-line
   #:once-each
   ["--dark" "Render dark probes." (set! theme 'dark)]
+  ["--compare-flat" "Compare native pixels with the frozen flat lessons." (set! compare-flat? #t)]
   ["--checkpoints-only" "Only render mathematical checkpoints." (set! dense? #f)]
   #:args ([directory output]) (set! output directory))
 
-(run-native-integration! output #:theme theme #:dense? dense?)
+(run-native-integration! output #:theme theme #:dense? dense? #:compare-flat? compare-flat?)

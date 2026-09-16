@@ -1,5 +1,5 @@
 {
-  "version": "0.3.3",
+  "version": "0.5.0",
   "modules": [
     {
       "bindings": [
@@ -348,6 +348,69 @@
           "allowed-keywords": [],
           "arity": "1",
           "kind": "procedure",
+          "name": "derivation-node-after",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "2",
+          "kind": "procedure",
+          "name": "derivation-node-at",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node-before",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node-children",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node-path",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node-relation",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node-step",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node-verification",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-node?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
           "name": "derivation-states",
           "required-keywords": []
         },
@@ -362,7 +425,21 @@
           "allowed-keywords": [],
           "arity": "1",
           "kind": "procedure",
+          "name": "derivation-step-paths",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
           "name": "derivation-steps",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "derivation-tree",
           "required-keywords": []
         },
         {
@@ -1510,6 +1587,27 @@
           "required-keywords": []
         },
         {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "step-sequence?",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "",
+          "kind": "syntax",
+          "name": "steps",
+          "required-keywords": []
+        },
+        {
+          "allowed-keywords": [],
+          "arity": "1",
+          "kind": "procedure",
+          "name": "steps/proc",
+          "required-keywords": []
+        },
+        {
           "allowed-keywords": [
             "at"
           ],
@@ -1694,6 +1792,7 @@
         "reveal-created",
         "rewrite-to",
         "square-solutions",
+        "steps",
         "substitute",
         "transition",
         "use-rule",
@@ -2241,9 +2340,20 @@
     "denominator",
     "derivation-final",
     "derivation-initial",
+    "derivation-node-after",
+    "derivation-node-at",
+    "derivation-node-before",
+    "derivation-node-children",
+    "derivation-node-path",
+    "derivation-node-relation",
+    "derivation-node-step",
+    "derivation-node-verification",
+    "derivation-node?",
     "derivation-states",
     "derivation-step",
+    "derivation-step-paths",
     "derivation-steps",
+    "derivation-tree",
     "derivation-verification",
     "derivation?",
     "derive",
@@ -2428,6 +2538,9 @@
     "solution-check-verification",
     "solution-check?",
     "square-solutions",
+    "step-sequence?",
+    "steps",
+    "steps/proc",
     "struct:cas-result",
     "struct:cas-service",
     "substitute",

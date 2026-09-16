@@ -10,13 +10,14 @@
 ;;;
 ;; Imports
 (require
-  (only-in racket/list append-map remove-duplicates)
+  (only-in racket/list append-map last remove-duplicates)
   (only-in racket/match match-define)
   (for-syntax racket/base syntax/parse)
   "datum.rkt"
   "model.rkt"
   "context.rkt"
   "operations.rkt"
+  "steps.rkt"
   "evidence.rkt"
   "validation.rkt")
 
@@ -24,18 +25,31 @@
 (provide
   derive derive/proc derive-cases make-case-derivation (struct-out derivation)
   (struct-out case-branch) (struct-out case-derivation) (struct-out solution-check) after
-  derivation-step derivation-states derivation-verification derivation-prefix check-solution)
+  derivation-step derivation-states derivation-verification derivation-prefix check-solution
+  (struct-out derivation-node) derivation-node-at derivation-node-relation
+  derivation-node-verification derivation-step-paths derivation-step-keys
+  derivation-step-key derivation-leaf-nodes node-leaf-nodes derivation-append)
 
 ;;;
 ;;; Data Representation
 ;;;
-(struct derivation (initial steps final)
+(struct derivation (initial steps final tree)
   #:transparent)
 
 ;; derivation is an immutable record. Its fields have the following roles.
 ;;  - initial  math?  initial checkpoint
 ;;  - steps  (listof rewrite-step?)  chronological applied steps
 ;;  - final  math?  last checkpoint, or initial state for an empty derivation
+;;  - tree  (listof derivation-node?)  ordered roots; its leaf steps equal steps exactly
+
+(struct derivation-node (path before after children step)
+  #:transparent)
+;; derivation-node describes one applied elementary step or composite move.
+;;  - path  (nonempty-listof symbol?)  unique derivation-relative address; order matters
+;;  - before  math?  the exact input state of the first descendant elementary step
+;;  - after  math?  the exact output state of the final descendant elementary step
+;;  - children  (listof derivation-node?)  ordered children; empty exactly for a leaf
+;;  - step  (or/c rewrite-step? #f)  original leaf rewrite; false exactly for a move
 (struct case-branch (name guard derivation)
   #:transparent)
 
@@ -65,35 +79,118 @@
 ;;   Turns a state into an empty derivation or retains the existing prefix.
 (define (derivation-prefix value)
   (cond
-    [(math? value) (derivation value '() value)]
+    [(math? value) (derivation value '() value '())]
     [(derivation? value) value]
     [else (raise-argument-error 'derivation-prefix "math? or derivation?" value)]))
 
 ;;;
 ;;; Named Derivations
 ;;;
+; apply-named-node : math? symbol? (or/c math-operation? step-sequence?) list?
+;                    -> derivation-node?
+;;   Applies one recipe recursively, preserving elementary operation names and lineage.
+(define (apply-named-node state name operation parent-path)
+  (define path (append parent-path (list name)))
+  (cond
+    [(step-sequence? operation)
+     (define-values (end children)
+       (for/fold ([current state] [nodes '()])
+                 ([entry (in-list (step-sequence-entries operation))])
+         (define node (apply-named-node current (car entry) (cdr entry) path))
+         (values (derivation-node-after node) (cons node nodes))))
+     (derivation-node path state end (reverse children) #f)]
+    [else
+     (define step
+       (with-handlers
+         ([exn:fail:math?
+           (lambda (error)
+             (raise (exn:fail:math
+                     (format "~a\n  at mathematical step ~s" (exn-message error) path)
+                     (exn-continuation-marks error)
+                     (exn:fail:math-code error)
+                     (cons (list 'step-path path) (exn:fail:math-details error)))))])
+         (apply-math-operation state operation #:name name)))
+     (derivation-node path state (rewrite-step-after step) '() step)]))
+
+; node-leaf-nodes : derivation-node? -> (listof derivation-node?)
+;;   Lists elementary descendants in the same order as mathematical execution.
+(define (node-leaf-nodes node)
+  (if (derivation-node-step node)
+      (list node)
+      (append-map node-leaf-nodes (derivation-node-children node))))
+
+; derivation-leaf-nodes : derivation? -> (listof derivation-node?)
+;;   Flattens only the inspection hierarchy, without constructing new mathematical steps.
+(define (derivation-leaf-nodes d)
+  (append-map node-leaf-nodes (derivation-tree d)))
+
 ; derive/proc : (or/c math? derivation?) list? -> derivation?
-;;   Appends named operations in order while rejecting duplicate step names.
+;;   Applies named operations or recipes and retains both their tree and elementary trace.
 (define (derive/proc initial named-operations)
   (define start (derivation-prefix initial))
-  (for/fold ([d start]) ([entry (in-list named-operations)])
-    (define name (car entry))
-    (define op (cdr entry))
-    (when (findf (lambda (s) (eq? name (rewrite-step-name s))) (derivation-steps d))
+  (define entries (validate-named-operations 'derive named-operations))
+  (define existing (map (lambda (node) (car (derivation-node-path node)))
+                        (derivation-tree start)))
+  (for ([entry (in-list entries)])
+    (when (memq (car entry) existing)
       (math-error 'derive 'duplicate-step
-        "Step names must be unique within a branch scope."
-        name))
-    (define step (apply-math-operation (derivation-final d) op #:name name))
-    (derivation
-      (derivation-initial d)
-      (append (derivation-steps d) (list step))
-      (rewrite-step-after step))))
+                  "Step names must be unique among top-level siblings." (car entry))))
+  (define-values (end nodes)
+    (for/fold ([state (derivation-final start)] [nodes '()])
+              ([entry (in-list entries)])
+      (define node (apply-named-node state (car entry) (cdr entry) '()))
+      (values (derivation-node-after node) (cons node nodes))))
+  (define added (reverse nodes))
+  (derivation (derivation-initial start)
+              (append (derivation-steps start)
+                      (map derivation-node-step (append-map node-leaf-nodes added)))
+              end
+              (append (derivation-tree start) added)))
 
 ; derive : syntax -> syntax
-;;   Expands named step clauses into the procedural derivation builder.
-(define-syntax-rule (derive initial [name operation] ...)
-  (derive/proc initial (list (cons 'name operation) ...)))
+;;   Expands named elementary or composite clauses into the pure derivation builder.
+(define-syntax (derive stx)
+  (syntax-parse stx
+    [(_ initial [name:id operation] ...)
+     #'(derive/proc initial (list (cons 'name operation) ...))]))
 
+; derivation-append : derivation? derivation? -> derivation?
+;;   Concatenates a prefix and its context-specialized suffix without erasing their moves.
+(define (derivation-append prefix suffix)
+  (define tree (append (derivation-tree prefix) (derivation-tree suffix)))
+  (define names (map (lambda (node) (car (derivation-node-path node))) tree))
+  (unless (= (length names) (length (remove-duplicates names)))
+    (math-error 'present 'duplicate-step-path
+                "Use unique top-level names along each complete case path, including its shared prefix."
+                names))
+  (derivation (derivation-initial prefix)
+              (append (derivation-steps prefix) (derivation-steps suffix))
+              (derivation-final suffix) tree))
+
+; derivation-node-relation : derivation-node? -> symbol?
+;;   Summarizes descendant relationships conservatively; mixed claims never become equivalence.
+(define (derivation-node-relation node)
+  (define relations
+    (remove-duplicates
+     (map (lambda (leaf) (rewrite-step-relation (derivation-node-step leaf)))
+          (node-leaf-nodes node))))
+  (define (only? allowed) (andmap (lambda (r) (memq r allowed)) relations))
+  (cond
+    [(= (length relations) 1) (car relations)]
+    [(only? '(expression-equivalence equation-equivalence)) 'equivalence]
+    [(only? '(expression-equivalence equation-equivalence implication)) 'implication]
+    [(only? '(expression-equivalence equation-equivalence specialization)) 'specialization]
+    [else 'mixed]))
+
+; derivation-node-verification : derivation-node? -> verification?
+;;   Combines elementary evidence without claiming solution completeness or an endpoint proof.
+(define (derivation-node-verification node)
+  (merge-verifications
+   (map (lambda (leaf) (rewrite-step-verification (derivation-node-step leaf)))
+        (node-leaf-nodes node))
+   (list 'move (derivation-node-path node) (derivation-node-relation node))))
+
+;;;
 ;;;
 ;;; Parameter Cases
 ;;;
@@ -156,7 +253,7 @@
 ;;   case trees.
 (define (after d [label #f])
   (cond
-    [label (rewrite-step-after (derivation-step d label))]
+    [label (derivation-node-after (derivation-node-at d label))]
     [(math? d) d]
     [(derivation? d) (derivation-final d)]
     [(solution-check? d) (after (solution-check-derivation d))]
@@ -165,28 +262,86 @@
        "A case tree has several endpoints; select a branch."
        label)]))
 
-; derivation-step : (or/c derivation? case-derivation?) (or/c symbol? (listof symbol?))
-;   -> rewrite-step?
-;;   Looks up a named step or case path without silently selecting a branch.
-(define (derivation-step d label)
+; tree-nodes : list? -> (listof derivation-node?)
+;;   Traverses a mathematical move forest in stable preorder for address resolution.
+(define (tree-nodes roots)
+  (append-map (lambda (node) (cons node (tree-nodes (derivation-node-children node)))) roots))
+
+; node-matches : derivation? (or/c symbol? list?) -> (listof derivation-node?)
+;;   Resolves exact paths, or an unambiguous local-name shorthand, within one derivation.
+(define (node-matches d label)
+  (define nodes (tree-nodes (derivation-tree d)))
+  (if (list? label)
+      (filter (lambda (node) (equal? label (derivation-node-path node))) nodes)
+      (filter (lambda (node) (eq? label (last (derivation-node-path node)))) nodes)))
+
+; derivation-node-at : (or/c derivation? case-derivation? solution-check?)
+;                      (or/c symbol? (nonempty-listof symbol?)) -> derivation-node?
+;;   Finds a move or leaf by exact path; ambiguous shorthand is never guessed.
+(define (derivation-node-at source label)
+  (unless (or (symbol? label)
+              (and (list? label) (pair? label) (andmap symbol? label)))
+    (raise-argument-error 'derivation-node-at "symbol or nonempty list of symbols" label))
+  (define d (if (solution-check? source) (solution-check-derivation source) source))
+  (define results
+    (cond
+      [(derivation? d) (node-matches d label)]
+      [(case-derivation? d)
+       (define prefix (node-matches (case-derivation-prefix d) label))
+       (define branch
+         (and (list? label) (pair? (cdr label))
+              (findf (lambda (b) (eq? (case-branch-name b) (car label)))
+                     (case-derivation-branches d))))
+       (when (and branch (pair? prefix))
+         (math-error 'derivation-node-at 'ambiguous-step
+                     "Address names both a shared move and a case step." label))
+       (if branch
+           (list (derivation-node-at (case-branch-derivation branch)
+                                     (if (null? (cddr label)) (cadr label) (cdr label))))
+           prefix)]
+      [else (raise-argument-error 'derivation-node-at "derivation or case derivation" d)]))
   (cond
-    [(derivation? d)
-     (define result
-       (findf (lambda (s) (eq? (rewrite-step-name s) label)) (derivation-steps d)))
-     (or result (math-error 'derivation-step 'missing-step "Unknown step name." label))]
-    [(case-derivation? d)
-     (cond
-       [(symbol? label) (derivation-step (case-derivation-prefix d) label)]
-       [else
-        (define b
-          (findf
-            (lambda (b) (eq? (case-branch-name b) (car label)))
-            (case-derivation-branches d)))
-        (unless b (math-error 'derivation-step 'missing-case "Unknown branch." label))
-        (derivation-step
-          (case-branch-derivation b)
-          (if (= (length label) 2) (cadr label) (cdr label)))])]
-    [else (raise-argument-error 'derivation-step "derivation or case derivation" d)]))
+    [(null? results) (math-error 'derivation-node-at 'missing-step "Unknown step name or path." label)]
+    [(pair? (cdr results))
+     (math-error 'derivation-node-at 'ambiguous-step
+                 "Ambiguous step name; use a complete hierarchical path."
+                 label (map derivation-node-path results))]
+    [else (car results)]))
+
+; derivation-step : (or/c derivation? case-derivation?) (or/c symbol? (listof symbol?))
+;                   -> rewrite-step?
+;;   Retrieves an elementary step; use derivation-node-at for a composite move.
+(define (derivation-step d label)
+  (define node (derivation-node-at d label))
+  (or (derivation-node-step node)
+      (math-error 'derivation-step 'composite-step
+                  "This path names a composite move, not an elementary rewrite; use derivation-node-at."
+                  label)))
+
+; derivation-step-paths : derivation? -> (listof (nonempty-listof symbol?))
+;;   Lists full derivation-relative leaf addresses in chronological order.
+(define (derivation-step-paths d)
+  (map derivation-node-path (derivation-leaf-nodes d)))
+
+; path->step-key : (nonempty-listof symbol?) -> (or/c symbol? list?)
+;;   Retains flat symbolic schedule keys and uses full paths for nested steps.
+(define (path->step-key path)
+  (if (null? (cdr path)) (car path) path))
+
+; derivation-step-keys : derivation? -> list?
+;;   Lists canonical presentation keys in the same order as elementary execution.
+(define (derivation-step-keys d)
+  (map path->step-key (derivation-step-paths d)))
+
+; derivation-step-key : derivation? rewrite-step? -> (or/c symbol? list?)
+;;   Locates the canonical schedule key for the exact leaf rewrite held by a derivation.
+(define (derivation-step-key d step)
+  (define node
+    (findf (lambda (node) (eq? (derivation-node-step node) step)) (derivation-leaf-nodes d)))
+  (unless node
+    (raise-arguments-error 'derivation-step-key "an elementary step belonging to the derivation"
+                           "step" step))
+  (path->step-key (derivation-node-path node)))
 
 ; derivation-states : (or/c derivation? case-derivation?) -> (listof math?)
 ;;   Returns checkpoint states in significant derivation and branch order.

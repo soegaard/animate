@@ -23,7 +23,11 @@
   (prefix-in lc: "../examples/linear-concrete.rkt")
   (prefix-in lg: "../examples/linear-general.rkt")
   (prefix-in qc: "../examples/quadratic-concrete.rkt")
-  (prefix-in qg: "../examples/quadratic-general.rkt"))
+  (prefix-in qg: "../examples/quadratic-general.rkt")
+  (prefix-in flat-lc: "fixtures/flat-linear-concrete.rkt")
+  (prefix-in flat-lg: "fixtures/flat-linear-general.rkt")
+  (prefix-in flat-qc: "fixtures/flat-quadratic-concrete.rkt")
+  (prefix-in flat-qg: "fixtures/flat-quadratic-general.rkt"))
 
 ;; Exports
 (provide run-native-integration!)
@@ -73,21 +77,25 @@
     (+ (scheduled-phase-start entry) (* fraction (scheduled-phase-duration entry)))))
 
 ; run-native-integration! : [path-string?] [#:theme (or/c 'light 'dark)]
-;                           [#:dense? boolean?] -> void?
+;                           [#:dense? boolean?] [#:compare-flat? boolean?] -> void?
 ;;   Renders true native intermediate frames and checks seek-away/seek-back pixel equality.
 (define (run-native-integration! [output "math-output/probes"]
                                 #:theme [theme 'light]
-                                #:dense? [dense? #t])
+                                #:dense? [dense? #t]
+                                #:compare-flat? [compare-flat? #f])
   (unless (memq theme '(light dark))
     (raise-argument-error 'run-native-integration! "'light or 'dark as #:theme" theme))
   (unless (boolean? dense?)
     (raise-argument-error 'run-native-integration! "boolean? as #:dense?" dense?))
+  (unless (boolean? compare-flat?)
+    (raise-argument-error 'run-native-integration! "boolean? as #:compare-flat?" compare-flat?))
   (unless (and (find-executable-path "latex") (find-executable-path "dvisvgm"))
     (raise-user-error 'native-integration
       "latex and dvisvgm must be on PATH (on macOS also check /Library/TeX/texbin)."))
   (make-directory* output)
   (define manifest '())
   (for ([plan (in-list (list lc:plan lg:plan qc:plan qg:plan))]
+         [flat-plan (in-list (list flat-lc:plan flat-lg:plan flat-qc:plan flat-qg:plan))]
          [name
           (in-list '(linear-concrete linear-general quadratic-concrete quadratic-general))])
     (test-group
@@ -95,6 +103,10 @@
       (lambda ()
         (define prepared (prepare-math-plan! plan #:theme theme))
         (define scn (math-plan->scene! prepared #:title (symbol->string name)))
+        (define reference
+          (and compare-flat?
+               (math-plan->scene! (prepare-math-plan! flat-plan #:theme theme)
+                                  #:title (symbol->string name))))
         (define total ((a 'scene-duration) scn))
         (check-close total (plan-duration plan) 1e-7 'duration)
         (define checkpoints (plan-checkpoints plan))
@@ -117,6 +129,9 @@
           (snapshot scn (max 0 (- total t)))
           (check-equal (bitmap-bytes image) (bitmap-bytes (snapshot scn t))
                        (list 'random-access-pixels name t))
+          (when reference
+            (check-equal (bitmap-bytes image) (bitmap-bytes (snapshot reference t))
+                         (list 'flat-vs-composite-native-pixels name t)))
           (define filename (format "~a-~a.png" name i))
           (check-true (send image save-file (build-path output filename) 'png))
           (define cp (checkpoint-at plan t))
@@ -131,6 +146,7 @@
                     'time (exact->inexact t)
                     'exact-time (format "~s" t)
                     'theme (symbol->string theme)
+                    'compared-flat-reference compare-flat?
                     'step (format "~a" (if phase (scheduled-phase-step phase)
                                             (math-checkpoint-step cp)))
                     'phase (if phase (symbol->string (scheduled-phase-kind phase)) "finished")

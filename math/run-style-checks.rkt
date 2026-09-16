@@ -222,7 +222,7 @@
   (lambda ()
     (define main (build-path math-directory "main.rkt"))
     (define exports (actual-exports main))
-    (for ([forbidden '(mathematical-state derivation rewrite-step presentation-plan
+    (for ([forbidden '(mathematical-state derivation derivation-node step-sequence rewrite-step presentation-plan
                        presentation-style path-link trace-event finish-step make-edit
                        prepare-math-plan math-plan->scene cas-query verify-derivation
                        prepare-math-plan! math-plan->scene! cas-query!)])

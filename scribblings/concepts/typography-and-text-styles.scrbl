@@ -30,6 +30,47 @@ come from a @racket[typography-theme]. The built-in
  @item{@racket[quotation-text] and @racket[code-text] for quotations and code.}
 ]
 
+@section{Font sizes and output pixels}
+
+Font sizes are measured in local world units, just like positions and widths.
+At render time, Animate converts them to output pixels using the camera:
+
+@racketblock[
+pixel-font-size = font-size * camera-pixel-width / camera-world-width
+]
+
+For example, a camera that is 16 world units wide has 80 pixels per world unit
+at 1280 pixels wide. A @racket[#:font-size] of @racket[2/5] therefore requests
+a nominal 32-pixel font. The same Scene grows proportionally when it is rendered
+at a larger resolution.
+
+The following table uses a 16-world-unit-wide camera. Pixel values are rounded;
+the visible height of individual glyphs still depends on the selected font.
+
+@tabular[#:sep @hspace[2]
+ (list
+  (list @bold{World size}
+        @bold{1280 @italic{×} 720}
+        @bold{1920 @italic{×} 1080}
+        @bold{3840 @italic{×} 2160})
+  (list @racket[1/4]  @tt{20 px}        @tt{30 px} @tt{60 px})
+  (list @racket[3/10] @tt{24 px}        @tt{36 px} @tt{72 px})
+  (list @racket[1/3]  @tt{about 27 px}  @tt{40 px} @tt{80 px})
+  (list @racket[7/20] @tt{28 px}        @tt{42 px} @tt{84 px})
+  (list @racket[2/5]  @tt{32 px}        @tt{48 px} @tt{96 px})
+  (list @racket[1/2]  @tt{40 px}        @tt{60 px} @tt{120 px})
+  (list @racket[3/5]  @tt{48 px}        @tt{72 px} @tt{144 px})
+  (list @racket[3/4]  @tt{60 px}        @tt{90 px} @tt{180 px}))]
+
+The built-in theme uses @racket[1/4] for annotations, @racket[3/10] for
+captions, @racket[7/20] for labels and code, @racket[2/5] for body text and
+quotations, @racket[1/2] for subtitles, @racket[3/5] for section headings, and
+@racket[3/4] for titles.
+
+If your camera has another world width, use the formula above instead of the
+table. A Visual or group @racket[#:scale] is applied after this conversion, so
+it also changes the final text size.
+
 @section{Raw text is still available}
 
 @racket[plain-text], @racket[paragraph], and @racket[rich-text] are the

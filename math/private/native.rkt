@@ -35,6 +35,11 @@
   (define module
     (case scope
       [(animate) native-root]
+      [(project) (build-path native-private "../project.rkt")]
+      [(colors) (build-path native-private "../colors.rkt")]
+      [(project-execution) (build-path native-private "project-execution.rkt")]
+      [(preparation-manifest) (build-path native-private "render-preparation-manifest.rkt")]
+      [(render) (build-path native-private "../render.rkt")]
       [(tagged) (build-path native-private "tagged-formula.rkt")]
       [(formula) (build-path native-private "formula-visual.rkt")]
       [(parts) (build-path native-private "formula-parts-visual.rkt")]

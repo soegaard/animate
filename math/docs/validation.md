@@ -1,107 +1,111 @@
-# Validation report — 0.3.3
+# Validation — animate/math 0.5.0 gallery
 
-## 0.3.3 cancellation and case-handoff revision
+## Baseline and delivery scope
 
-This revision addresses two defects found in the 0.3.2 dark-video rerender:
-the surviving `+` disappearing while cancelling `+5-5` in the concrete
-quadratic, and overlapped duplicate formulas at the start of parameter cases.
-It also makes whole-relation replacements atomic so no bare relation glyph is
-left between old and new assertions. Mathematical derivations, checkpoints,
-case structure and default durations are unchanged.
+This revision extends the delivered `animate-math-v0.4.0-composite-moves.zip` that
+passed the user's tests. The parent Animate baseline is
+`525253b2c8d6aa47bf7a5ddad1c51f82d322ccb0`, including shared-process rendering.
+The predecessor archive's SHA-256 is recorded in `BUILD-INFO.json`.
 
-Runtime: **Racket 9.3.0.8 [CS]**, Linux, base-only installation.
-Baseline: the supplied **0.2.0 house-style archive**. All native integration
-interfaces remain those of `soegaard/animate@4fd00a9310d925669a95edb1b197c4bfe1e21998`.
-No parent repository file was modified.
+The delivery contains only a replacement `math/` folder. It includes no parent
+repository edits, precompiled `.zo` files, generated SVG/preparation caches,
+review images, movie frames, videos, or font files.
 
-## Executed checks
+The four original lesson source files are byte-identical to v0.4.0. The public
+`math/main.rkt`, `math/render.rkt`, and `math/cas.rkt` facades are unchanged, as
+are the mathematical operations, derivation/presentation models, transition planner,
+formula typesetter/preparer, and v2 portable math codec.
 
-| Check | Result |
-|---|---|
-| `racket math/run-tests.rkt` | **1,815 passed; 0 failed** |
-| `racket math/run-style-checks.rkt` | **986 passed; 0 failed** |
-| Mathematical checkpoint-tree comparison of all four solutions against 0.2.0 | **All identical**, including shared prefixes, branch guards and terminal results |
-| All four example `--steps` entry points | **Passed** |
-| General quadratic `--list-cases` | **Six terminal cases**, no artificial common-prefix case |
-| General quadratic `--case quadratic/two-real-roots --steps` | **Complete original-equation prefix restored** |
-| `racket math/tests/tex-layout-probe.rkt <directory>` | **70 byte-identical PNG pairs; 0 failed** |
-| Native probe module load and `math/run-probes.rkt --help` | **Passed**, without claiming native rendering execution |
+The only existing runtime modules refactored are `private/animate-adapter.rkt`
+(private scene-appending helper with preserved public defaults) and
+`private/native.rkt` (explicit lazy module scopes). All other new functionality
+lives in gallery examples/adapters and their tests. Old composite design and
+validation evidence remain in `docs/composite-moves.md` and
+`docs/validation-v0.4.0.md` respectively.
 
-The mandatory suite retains exact algebra, domain guards, source exclusions,
-occurrence identity, template rules, case coverage, candidate checking, CAS
-service/transport/failure contracts, and independent grids of **125 linear**
-and **175 quadratic** coefficient triples. Those tests check mathematical
-behavior, not video aesthetics or formal proof completeness.
+## Executed validation
 
-## Transition regressions
+The delivery environment used **Linux Racket CS v9.3.0.8**. It does not have the
+installed parent Animate/Pict/SVG/dvisvgm stack used on the user's Mac.
 
-The new `tests/choreography-test.rkt` uses explicit deterministic geometry and
-the native API contract model. Its fixture includes fraction bars, radicals,
-signs, and deliberately different source/destination crop metrics.
+| Executed command/check | Result |
+| --- | --- |
+| `racket math/run-tests.rkt` | **4,718 checks passed; 0 failed** |
+| `racket math/run-gallery-tests.rkt` | **2,619 checks passed; 0 failed** (included in the total above) |
+| `racket math/run-style-checks.rkt` | **1,279 checks passed; 0 failed** |
+| `racket math/run-process-contracts.rkt` | **6 contracts passed**, using 12 independent Racket producer/consumer processes |
+| Compilation of the new gallery, native-probe entry, file codec, and fixtures | Passed using `compiler/cm` / `managed-compile-zo` |
+| Real CLI inspection/preflight | 13 independent CLI invocations; no output directory, preparation event, or typeset event on inspection/rejected requests |
+| Original four lesson source comparison | All four byte-identical to v0.4.0 |
 
-It checks complete token accounting, unaffected right-hand-side preservation,
-atomic numeric evaluation, source/result visibility barriers sampled inside
-all replacement subclips, square-root copy provenance, destination-position copy appearance, whole-radical introduction,
-atomic reorder-focus replacement, invalid choreography rejection, common-prefix presentation,
-standalone case reconstruction, header filtering with genuine exclusions retained,
-and explanation checkpoint stability/cleanup.
+The mathematical, source-audit, and fresh-process checks were repeated from a
+clean extraction of the delivered archive. The detailed test outputs are in
+`docs/test-results.txt`, `docs/style-check-results.txt`, and
+`docs/process-contract-results.txt`.
 
-**These are native-interface contract tests, not the installed animate renderer.**
-They record and sample ordinary requested movements and opacity operations and
-would reject the old overlap choreography. They also reject any `move` request for branch-copy appearance, any token match inside an atomic reorder focus, retirement/recreation of a surviving additive separator, a bare root relation during two-sided replacement, and case-start copy movement. They do not establish exact native pixel placement or correctness
-of dvisvgm extraction.
+## What the tests establish
 
-## Actual TeX execution
+The registry has exactly 25 plates and 31 replays, with chapter counts 6/4/7/4/4.
+Independent endpoint expectations check held arithmetic, cancellation, focused
+rewrites, square roots, inequality reversal, and candidate checking. Every
+ordinary derivation segment retains established evidence; the deliberately bad
+candidate has a refuted candidate verdict rather than an invented equivalence.
 
-Real `latex` and `dvipng` executables rendered **140 TeX pages**: **70 complete
-formulas**, each once unmarked and once with the semantic DVI/SVG markers.
-Every PNG pair is byte-identical. The corpus includes the lesson checkpoints,
-new completing-square inset, negative constants/sign forms, signed zero, and
-fraction/radical/nested-power bases. This establishes marker-neutral typesetting
-for the tested corpus in this environment; it is not a dvisvgm test.
+Tests specifically cover the nonzero exclusion after `x/x`, the specialization
+relationship of replacing one `x`, copy lineage in distribution, the one-way
+squaring relationship, exhaustive parameter conclusions, and genuine shared-prefix
+structure. Grouping/history comparisons reuse the same derivation object.
 
-## House style and public reference
+The review schedule has 565 dense sample records and 197 checkpoint-only records.
+Every record is linked to an existing mathematical phase/checkpoint and lies within
+its replay's global interval. Independent view offsets are exact.
 
-The source audit checks declared headers, contract comments, immediate field
-documentation, pure dependency closure, explicit public exports and defining
-Scribble/index coverage. All **275 public bindings** are covered. This audit is
-not a completed Scribble build, nor 986 mathematical proofs.
+All 31 views compile individually and as one gallery through the **synthetic native
+contract model**. Each isolated view's complete clip/request representation matches
+its corresponding interval in the assembled gallery after subtracting its time
+offset. Visual and scalar IDs are cleaned between replays. Hierarchy indicators
+mark existing step paths. The combined duration is exactly `2991/10` seconds in
+that model.
 
-The new transition planner is pure. Typesetting, native view preparation and
-external queries remain confined to their existing adapters. HOUSE_STYLE
-reference: Git blob `8b5acb39ca016d523889bba38296e34dd665971b`.
+Real-file tests check content-addressed payload stability, missing/altered byte
+counts and digests, path containment, incompatible options and colors, worker
+reconstruction with the preparer and typesetter explicitly forbidden, and
+forwarding to the correct shared-project declaration/execution modules. Lazy and
+native runtime dependency closures are explicitly requested from the existing
+manifest builder.
 
-Raw logs are retained in `test-results.txt`, `style-check-results.txt`,
-`tex-test-results.txt`, and `checkpoint-comparison.txt` in this directory.
+The fresh-process suite covers the four original lessons plus the entire gallery
+in both themes. Gallery producers write real verified replay files; independent
+consumers rebind worker-local states and produce the same complete synthetic
+scene signature without preparing or typesetting. These are **not** real Animate
+frame-worker processes or pixel tests.
 
-## Not executed here
+Real CLI subprocess tests verify listing, description, hierarchical steps, bad
+selectors/counts/modes, incompatible output flags, and refusal to replace a
+directory containing unrelated files. A sentinel file survives the rejected
+replacement.
 
-**Actual animate + dvisvgm rendering and MP4 encoding.** The environment lacks
-both dvisvgm and the installed animate dependency graph. The revised native
-runner is implemented and its Racket module loads, but no real native probe
-success is claimed. macOS fonts, actual SVG crops, native concurrent rendering,
-final pixels and pacing still need the user's rerender.
+The existing v0.4 flat-versus-structured lesson tests also remain green. They check
+all original elementary rewrite data, checkpoints, schedules, selected cases, and
+synthetic native animation requests.
 
-**Live racket-cas and Calcura.** Existing injected transport and service tests
-passed; no live backend query was executed or required by these four lessons.
+## What has not been executed here
 
-**Scribble build, Rhombus example and repository-wide raco make.** Their source
-and public reference coverage were audited. The base-only runtime lacks the
-corresponding tools/packages, so those operations are not reported as executed.
+**No actual native gallery PNGs or MP4s were rendered in this environment.**
+Native fonts, SVG metrics, contact-sheet painting, real shared-process gallery
+rendering/cache reuse, FFmpeg gallery output, and the Scribble build require the
+user's installed parent dependencies. Passing the synthetic contracts is not
+visual approval or a claim of those native results.
 
-## Commands in the checkout
+The optional `run-gallery-probes.rkt` runner performs real native random-access
+pixel checks and writes review material. With `--process-check`, it additionally
+requires direct/subprocess SHA-256 equality, multiple children completing work,
+expected parent preparation accounting, and a zero-worker complete cache hit.
+That runner was compiled here but was **not** passed off as executed native
+validation.
 
-```bash
-RACKET="/Applications/Racket v9.3.0.2/bin/racket"
-"$RACKET" math/run-tests.rkt
-"$RACKET" math/run-style-checks.rkt
-"$RACKET" math/run-probes.rkt --dark math-output/review-v0.3/probes
-```
-
-The last command renders actual dark PNGs from all four examples at checkpoints
-and dense transition samples, tests seek-away/seek-back pixel equality, and
-writes `manifest.json`. Missing native prerequisites fail explicitly. See
-`video-review-revision.md` for the full ten-worker dark rerender command.
-
-No runtime binaries, generated renders, platform fonts, or external assets are
-bundled in the source archive.
+Recommended local acceptance commands are in `docs/gallery.md`. Existing
+`run-probes.rkt --compare-flat` remains available for the four original lessons.
+Live `racket-cas`/Calcura, Rhombus, and the parent repository's whole release check
+were not run for this gallery delivery. They are not prerequisites for the
+catalogue's mathematical examples.

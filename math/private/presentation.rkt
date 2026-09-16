@@ -190,7 +190,7 @@
 ;; plan-segment is an immutable record. Its fields have the following roles.
 ;;  - path  (listof symbol?)  case path in declared branch order
 ;;  - derivation  derivation?  this segment's complete path, shared prefix, or branch suffix
-;;  - groups  (listof (listof symbol?))  ordered partition of all step names
+;;  - groups  list?  ordered partition of canonical elementary keys (symbol or symbol path)
 ;;  - context  math-context?  context displayed with this segment
 ;;  - verdict  (or/c verification? #f)  optional candidate-check report
 ;;  - shared?  boolean?  whether this is a once-presented shared prefix, not a terminal case
@@ -206,7 +206,7 @@
   #:transparent)
 ;; scheduled-phase is an immutable record. Its fields have the following roles.
 ;;  - segment  exact-nonnegative-integer?  zero-based segment index
-;;  - step  (or/c symbol? #f)  step name or false for group/segment phases
+;;  - step  (or/c symbol? list? #f)  relative leaf key, or false for group/segment phases
 ;;  - kind  symbol?  scheduled phase category
 ;;  - start  nonnegative-real?  absolute start time in seconds
 ;;  - duration  nonnegative-real?  phase duration in seconds
@@ -220,20 +220,14 @@
     [(derivation? source)
      (define d
        (if prefix
-         (derivation
-           (derivation-initial prefix)
-           (append (derivation-steps prefix) (derivation-steps source))
-           (derivation-final source))
+         (derivation-append prefix source)
          source))
      (list (list path d (math-context-of (after source))))]
     [(case-derivation? source)
      (define p (case-derivation-prefix source))
      (define combined
        (if prefix
-         (derivation
-           (derivation-initial prefix)
-           (append (derivation-steps prefix) (derivation-steps p))
-           (after p))
+         (derivation-append prefix p)
          p))
      (append-map
        (lambda (b)
@@ -271,33 +265,40 @@
 ; project-groups : list? derivation? -> list?
 ;;   Restricts complete-path groups to the steps owned by one chronological segment.
 (define (project-groups groups d)
-  (define names (map rewrite-step-name (derivation-steps d)))
-  (filter pair? (map (lambda (g) (filter (lambda (n) (memq n names)) g)) groups)))
+  (define names (derivation-step-keys d))
+  (filter pair? (map (lambda (g) (filter (lambda (n) (member n names)) g)) groups)))
 
-; validate-groups : math-datum? (or/c list? hash? #f) -> (listof (listof symbol?))
-;;   Requires groups to partition all named steps exactly once and in order.
+; validate-groups : derivation? (or/c list? symbol? #f) -> list?
+;;   Expands move references to an exact chronological partition of elementary steps.
 (define (validate-groups d groups)
-  (define names (map rewrite-step-name (derivation-steps d)))
-  (unless (= (length names) (length (remove-duplicates names)))
-    (math-error 'present 'duplicate-step-path
-      "Use unique step names along each complete case path, including its shared prefix."
-      names))
-  (define actual (or groups (map list names)))
-  (unless (and
-            (list? actual)
-            (andmap (lambda (g) (and (pair? g) (list? g) (andmap symbol? g))) actual)
-            (equal? (append* actual) names))
+  (define names (derivation-step-keys d))
+  (define (keys-under node)
+    (map (lambda (leaf) (derivation-step-key d (derivation-node-step leaf)))
+         (node-leaf-nodes node)))
+  (define actual
+    (cond
+      [(or (not groups) (eq? groups 'top-level))
+       (map keys-under (derivation-tree d))]
+      [(eq? groups 'steps) (map list names)]
+      [(and (list? groups)
+            (andmap (lambda (group) (and (list? group) (pair? group))) groups))
+       (for/list ([group (in-list groups)])
+         (append-map (lambda (reference) (keys-under (derivation-node-at d reference))) group))]
+      [else
+       (math-error 'present 'invalid-groups
+                   "Expected 'top-level, 'steps, or ordered nonempty presentation groups."
+                   groups)]))
+  (unless (equal? (append* actual) names)
     (math-error 'present 'invalid-groups
       "Presentation groups must partition all steps exactly once, in order."
-      names
-      actual))
+      names actual))
   actual)
 
 ;;;
 ;;; Plan Construction
 ;;;
 ; present : (or/c derivation? case-derivation? solution-check?) [#:style
-;   math-presentation?] [#:groups (or/c list? hash? #f)] [#:case (or/c symbol? (listof
+;   math-presentation?] [#:groups (or/c 'top-level 'steps list? hash? #f)] [#:case (or/c symbol? (listof
 ;   symbol?) #f)] [#:case-layout (or/c 'complete-paths 'shared-prefix)]
 ;   [#:allow-unverified? boolean?] -> presentation-plan?
 ;;   Builds an explicit presentation while retaining verification status and case
@@ -329,6 +330,11 @@
       "An unverified derivation needs #:allow-unverified? #t and a visible warning."
       (verification-obligations check)))
   (define leaves (all-leaves d))
+  (when (hash? groups)
+    (for ([key (in-hash-keys groups)])
+      (unless (member key (map car leaves))
+        (math-error 'present 'missing-case
+                    "Group table contains an unknown case path." key))))
   (define wanted (and case-path (if (symbol? case-path) (list case-path) case-path)))
   (define chosen
     (if wanted (filter (lambda (leaf) (equal? (car leaf) wanted)) leaves) leaves))
@@ -341,6 +347,7 @@
       (define gs
         (cond
           [(hash? groups) (hash-ref groups path #f)]
+          [(or (not groups) (memq groups '(top-level steps))) groups]
           [(= (length chosen) 1) groups]
           [groups (math-error 'present 'branch-groups
                               "For multiple cases use a hash from case paths to group lists.")]
@@ -382,70 +389,80 @@
              #:groups (append-map plan-segment-groups related)
              #:case case-path
              #:allow-unverified? (presentation-plan-allow-unverified? plan)))
-  (define original (presentation-plan-choreography plan))
+  ;; Rebind resolved phases, including shared-prefix overrides, to the selected
+  ;; complete path. No orphaned sibling-case override is retained.
   (define choreography
-    (for*/fold ([table original]) ([segment (in-list related)]
-                                   [step (in-list (derivation-steps (plan-segment-derivation segment)))])
-      (define local-key (append (plan-segment-path segment) (list (rewrite-step-name step))))
-      (if (hash-has-key? original local-key)
-          (hash-set table (append case-path (list (rewrite-step-name step))) (hash-ref original local-key))
-          table)))
+    (for*/hash ([segment (in-list related)]
+                [step (in-list (derivation-steps (plan-segment-derivation segment)))])
+      (define path
+        (derivation-node-path
+         (derivation-node-at (plan-segment-derivation segment)
+                             (derivation-step-key (plan-segment-derivation segment) step))))
+      (values (append case-path path) (step-phases plan segment step))))
   (struct-copy presentation-plan complete [choreography choreography]))
 
 ;;;
 ;;; Choreography Overrides
 ;;;
+; choreography-targets : presentation-plan? -> list?
+;;   Lists case and derivation-relative leaf addresses in displayed execution order.
+(define (choreography-targets plan)
+  (remove-duplicates
+   (append-map
+    (lambda (segment)
+      (map (lambda (path) (list (plan-segment-path segment) path))
+           (derivation-step-paths (plan-segment-derivation segment))))
+    (presentation-plan-segments plan))))
+
+; resolve-choreography-targets : presentation-plan? (or/c symbol? list?) -> list?
+;;   Validates unambiguous shorthand, relative paths, or fully case-qualified leaf paths.
+(define (resolve-choreography-targets plan key)
+  (define targets (choreography-targets plan))
+  (define selected
+    (cond
+      [(symbol? key)
+       (define matches (filter (lambda (target) (eq? key (last (cadr target)))) targets))
+       (when (> (length (remove-duplicates (map cadr matches))) 1)
+         (math-error 'choreograph 'ambiguous-step
+                     "Ambiguous step name; use a complete hierarchical path." key matches))
+       matches]
+      [else
+       (define absolute
+         (filter (lambda (target) (equal? key (append (car target) (cadr target)))) targets))
+       (define relative (filter (lambda (target) (equal? key (cadr target))) targets))
+       (when (and (pair? absolute) (pair? relative) (not (equal? absolute relative)))
+         (math-error 'choreograph 'ambiguous-step
+                     "Address is both case-qualified and derivation-relative; rename the conflicting scope."
+                     key))
+       (if (pair? absolute) absolute relative)]))
+  (when (null? selected)
+    (math-error 'choreograph 'missing-step
+                "Unknown elementary step name or path; a composite move is not a phase target." key))
+  selected)
+
 ; plan-with-choreography : presentation-plan? list? -> presentation-plan?
-;;   Validates named phase overrides and returns a new immutable plan.
+;;   Validates leaf phase overrides; case paths override relative paths and local shorthand.
 (define (plan-with-choreography plan overrides)
   (unless (presentation-plan? plan)
     (raise-argument-error 'plan-with-choreography "presentation-plan?" plan))
-  (unless (and
-            (list? overrides)
-            (andmap
-              (lambda (entry)
-                (and
-                  (list? entry)
-                  (pair? entry)
-                  (or
-                    (symbol? (car entry))
-                    (and
-                      (pair? (car entry))
-                      (list? (car entry))
-                      (andmap symbol? (car entry))))))
-              overrides))
+  (unless (and (list? overrides)
+               (andmap (lambda (entry)
+                         (and (list? entry) (pair? entry)
+                              (or (symbol? (car entry))
+                                  (and (list? (car entry)) (pair? (car entry))
+                                       (andmap symbol? (car entry))))))
+                       overrides))
     (raise-argument-error 'plan-with-choreography "list of named phase lists" overrides))
   (define keys (map car overrides))
   (unless (= (length keys) (length (remove-duplicates keys)))
-    (math-error 'choreograph 'duplicate-step
-      "Each override may name a step only once."
-      keys))
-  (define known
-    (remove-duplicates
-      (append-map
-        (lambda (s) (map rewrite-step-name (derivation-steps (plan-segment-derivation s))))
-        (presentation-plan-segments plan))))
+    (math-error 'choreograph 'duplicate-step "Each override may name a step only once." keys))
   (define table
-    (for/fold ([h (presentation-plan-choreography plan)]) ([entry (in-list overrides)])
+    (for/fold ([table (presentation-plan-choreography plan)]) ([entry (in-list overrides)])
       (define key (car entry))
-      (define label (if (list? key) (last key) key))
-      (when (and
-              (list? key)
-              (not
-                (for/or ([segment (in-list (presentation-plan-segments plan))])
-                  (and
-                    (equal? (drop-right key 1) (plan-segment-path segment))
-                    (member label
-                      (map rewrite-step-name
-                        (derivation-steps (plan-segment-derivation segment))))))))
-        (math-error 'choreograph 'missing-case-step
-          "No step exists at the requested case path."
-          key))
-      (unless (member label known)
-        (math-error 'choreograph 'missing-step "Unknown step name." key))
+      (resolve-choreography-targets plan key)
       (unless (and (pair? (cdr entry)) (andmap presentation-phase? (cdr entry)))
         (raise-argument-error 'choreograph "nonempty phase list" (cdr entry)))
-      (hash-set h key (cdr entry))))
+      (hash-set table key (for/list ([phase (in-list (cdr entry))]) phase))))
   (struct-copy presentation-plan plan [choreography table]))
 
 ; choreograph : syntax -> syntax
@@ -473,17 +490,18 @@
            (compact #:duration (* 11/20 d)))]
     [else (list (transition #:duration d))]))
 
-; step-phases : presentation-plan? any/c rewrite-step? -> (listof presentation-phase?)
-;;   Resolves case-specific, global-step, then default choreography in that order.
+; step-phases : presentation-plan? plan-segment? rewrite-step? -> list?
+;;   Resolves case-qualified paths, relative paths, local-name shorthand, then defaults.
 (define (step-phases plan segment step)
-  (hash-ref
-    (presentation-plan-choreography plan)
-    (append (plan-segment-path segment) (list (rewrite-step-name step)))
-    (lambda ()
-      (hash-ref
-        (presentation-plan-choreography plan)
-        (rewrite-step-name step)
-        (lambda () (default-phases step (presentation-plan-style plan)))))))
+  (define d (plan-segment-derivation segment))
+  (define key (derivation-step-key d step))
+  (define path (if (symbol? key) (list key) key))
+  (define table (presentation-plan-choreography plan))
+  (define found
+    (for/or ([candidate (in-list (list (append (plan-segment-path segment) path)
+                                      path (rewrite-step-name step)))])
+      (hash-ref table candidate #f)))
+  (or found (default-phases step (presentation-plan-style plan))))
 
 ;;;
 ;;; Exact Phase Schedules
@@ -502,7 +520,7 @@
     (define d (plan-segment-derivation segment))
     (define groups
       (if (eq? (presentation-style-history style) 'keep-all-checkpoints)
-        (map (lambda (s) (list (rewrite-step-name s))) (derivation-steps d))
+        (map list (derivation-step-keys d))
         (plan-segment-groups segment)))
     (for ([group (in-list groups)] [g (in-naturals)])
       (define case-handoff-reuse?
@@ -557,7 +575,7 @@
 ;; math-checkpoint is an immutable record. Its fields have the following roles.
 ;;  - index  exact-nonnegative-integer?  stable chronological checkpoint index
 ;;  - segment  exact-nonnegative-integer?  owning segment index
-;;  - step  (or/c symbol? #f)  committed step or initial state
+;;  - step  (or/c symbol? list? #f)  committed relative leaf key, or false for initial state
 ;;  - time  nonnegative-real?  absolute commit time in seconds
 ;;  - state  math?  committed mathematical state
 ;;  - case-path  (listof symbol?)  owning case path

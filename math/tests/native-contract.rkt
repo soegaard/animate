@@ -277,7 +277,7 @@
           (findf
             (lambda (p)
               (and
-                (eq? (scheduled-phase-step p) 'cancel-five)
+                (equal? (scheduled-phase-step p) '(isolate-term cancel-five))
                 (eq? (scheduled-phase-kind p) 'retire-cancelled)))
             (plan-schedule lc:plan)))
         (define c (clip-for-time s (+ (scheduled-phase-start cancellation) .01)))
@@ -295,7 +295,7 @@
           (findf
             (lambda (p)
               (and
-                (eq? (scheduled-phase-step p) 'cancel-five)
+                (equal? (scheduled-phase-step p) '(isolate-term cancel-five))
                 (eq? (scheduled-phase-kind p) 'hold)))
             (plan-schedule lc:plan)))
         (check-equal
@@ -304,7 +304,7 @@
           'pause-is-native-wait)
         (check-raises
           (lambda ()
-            (adapter:math-plan->scene! (choreograph lc:plan [cancel-five (hold 1)])))
+            (adapter:math-plan->scene! (choreograph lc:plan [(isolate-term cancel-five) (hold 1)])))
           #rx"retire|position")
         (define plain
           (present lc:solution

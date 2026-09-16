@@ -1,0 +1,7 @@
+PASS linear-concrete: fresh-process move paths/layouts/scene contract; no typesetting
+PASS linear-general: fresh-process move paths/layouts/scene contract; no typesetting
+PASS quadratic-concrete: fresh-process move paths/layouts/scene contract; no typesetting
+PASS quadratic-general: fresh-process move paths/layouts/scene contract; no typesetting
+PASS gallery light: 25 plates / 31 views; fresh-process files and scene contract; no consumer typesetting
+PASS gallery dark: 25 plates / 31 views; fresh-process files and scene contract; no consumer typesetting
+6 fresh-process contracts passed (12 Racket processes; synthetic geometry, not native rasterization).
