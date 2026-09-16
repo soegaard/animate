@@ -348,15 +348,18 @@
 ;   -> (values scene? (listof symbol?) symbol?)
 ;;   Appends one prepared plan to an existing native timeline and returns its owned ids.
 ;;   The optional inspector runs only while compiling, adds no time, and never samples.
+;; Themeable layouts integration v1
 (define (append-prepared-math-plan! initial-scene prepared
           #:title [title "Mathematical derivation"] #:id [id 'math-lesson]
-          #:top-margin [top-margin 2] #:on-step [on-step #f])
+          #:top-margin [top-margin 2] #:on-step [on-step #f]
+          #:on-step-end [on-step-end #f])
   (unless (prepared-math-plan? prepared)
     (raise-argument-error 'append-prepared-math-plan! "prepared-math-plan?" prepared))
   (check-symbol 'append-prepared-math-plan! id)
   (unless (string? title) (raise-argument-error 'append-prepared-math-plan! "string?" title))
   (check-positive-real 'append-prepared-math-plan! top-margin)
   (when on-step (check-procedure 'append-prepared-math-plan! on-step 3))
+  (when on-step-end (check-procedure 'append-prepared-math-plan! on-step-end 3))
   (define plan (prepared-math-plan-plan prepared))
   (define style (presentation-plan-style plan))
   (define cam (prepared-math-plan-camera prepared))
@@ -529,7 +532,8 @@
         (set! active next-tokens)
         (set! view next-view)
         (set! active-state (rewrite-step-after step))
-        (set! scn (commit-checkpoint! scn)))
+        (set! scn (commit-checkpoint! scn))
+        (when on-step-end (set! scn (on-step-end scn segment-index name))))
       (set! scn (play scn '() (presentation-style-pause-between-groups style))))
     (when (plan-segment-verdict segment)
       (set! scn

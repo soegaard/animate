@@ -85,14 +85,23 @@
 ; prepare-math-plan! : presentation-plan? [#:camera any/c] [#:theme symbol?]
 ;   [#:cache-directory path-string?] -> prepared-math-plan?
 ;;   Typesets and measures all checkpoints before native scene construction or sampling.
+;; Themeable layouts integration v1
 (define (prepare-math-plan! plan
+          #:minimum-scale [minimum-scale 0]
+          #:foreground [foreground-override #f]
+          #:background [background-override #f]
           #:camera [camera #f]
           #:theme [theme 'light]
           #:cache-directory [cache-directory default-math-cache-directory])
   (unless (presentation-plan? plan)
     (raise-argument-error 'prepare-math-plan! "presentation-plan?" plan))
   ((current-math-preparation-observer) plan)
-  (define-values (foreground background) (theme-colors theme))
+  (for ([color (in-list (list foreground-override background-override))])
+    (unless (or (not color) (and (string? color) (regexp-match? #px"^#[0-9a-fA-F]{6}$" color)))
+      (raise-argument-error 'prepare-math-plan! "#f or #RRGGBB color override" color)))
+  (define-values (default-foreground default-background) (theme-colors theme))
+  (define foreground (or foreground-override default-foreground))
+  (define background (or background-override default-background))
   (define cam (or camera ((animate-binding 'make-camera) #:background background)))
   (define style (presentation-plan-style plan))
   (define schedule (plan-schedule plan))
@@ -129,6 +138,11 @@
       "world-width"
       world-width))
   (define scale (min 1 (/ (- world-width 7/5) (max 1/10 (- xmax xmin)))))
+  (unless (and (real? minimum-scale) (<= 0 minimum-scale 1))
+    (raise-argument-error 'prepare-math-plan! "real in [0,1] as #:minimum-scale" minimum-scale))
+  (when (< scale minimum-scale)
+    (raise-arguments-error 'prepare-math-plan! "formula fitting would violate the minimum readable scale"
+                           "required-scale" scale "minimum-scale" minimum-scale))
   (define dx (* (- (/ (+ xmin xmax) 2)) scale))
   (define layouts
     (for/hash ([(s layout) (in-hash layouts0)])

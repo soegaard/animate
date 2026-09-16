@@ -18,7 +18,9 @@
 ;;;
 
 ;; Imports
-(require racket/class
+;; Themeable layouts integration v1
+(require "prepared-pict-visual.rkt"
+         racket/class
          racket/list
          (only-in pict
                   blank
@@ -240,6 +242,12 @@
       (transient-visual-underlying visual)
       camera
       renderers)]
+    [(prepared-panel? visual)
+     (prepared-panel->pict
+      visual camera
+      (lambda (state #:camera nested-camera #:theme theme #:typography typography)
+        (scene-state->pict state #:camera nested-camera #:theme theme
+                          #:typography typography #:renderers renderers)))]
     [(semantic-text-visual? visual)
      ;; Do this before renderer dispatch.  Pict renderers continue to receive
      ;; the longstanding concrete text-visual protocol, while the authored
