@@ -31,6 +31,10 @@ prerequisites are the Scene and Pict introduced in the Quick Start.
 The Cookbook is for returning to a particular task. The Reference keeps complete
 contracts separate from the learning path.
 
+Beyond the first circle, @secref["guide-objects"] teaches groups, timing,
+and graphs. Use @secref["reference-find-task"] to find a task or API name,
+and @secref["concept-words-values"] to distinguish similar terms.
+
 @table-of-contents[]
 
 @include-section["concepts.scrbl"]

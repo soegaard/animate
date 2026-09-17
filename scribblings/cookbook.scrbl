@@ -10,6 +10,8 @@ A recipe is not a replacement for the @secref["part-reference"]. Use the
 reference when you need all the options or exact restrictions.
 
 @local-table-of-contents[]
+@include-section["cookbook/native-tasks.scrbl"]
+@include-section["cookbook/3d-tasks.scrbl"]
 
 @include-section["cookbook/slide-tasks.scrbl"]
 @include-section["cookbook/transitions.scrbl"]

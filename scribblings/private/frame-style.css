@@ -1,0 +1,82 @@
+/* Shared manual frames: border belongs to the page, never to the capture. */
+.AnimFrameStrip {
+  margin: 1em 0;
+  padding: 0;
+  max-width: 100%;
+  min-width: 0;
+}
+.AnimFrameStrip > p[class^="AnimFrameRow"] {
+  display: flex;
+  flex-flow: row wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 12px 8px;
+  margin: 0.6em 0;
+  padding: 0;
+  max-width: 100%;
+  min-width: 0;
+  text-indent: 0;
+  --frame-min: 112px;
+  --frame-max: 260px;
+}
+.AnimFrameRowOne   { --frame-count: 1; --frame-gaps: 0px; }
+.AnimFrameRowTwo   { --frame-count: 2; --frame-gaps: 8px; }
+.AnimFrameRowThree { --frame-count: 3; --frame-gaps: 16px; }
+.AnimFrameRowFour  { --frame-count: 4; --frame-gaps: 24px; }
+.AnimFrameRowFive  { --frame-count: 5; --frame-gaps: 32px; }
+.AnimFrameStrip > .AnimFrameRowOne { --frame-max: 360px; }
+.AnimFrameCard {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: top;
+  flex: 0 1 clamp(var(--frame-min),
+                  calc((100% - var(--frame-gaps)) / var(--frame-count)),
+                  var(--frame-max));
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+  break-inside: avoid;
+}
+.AnimFramePicture {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  line-height: 0;
+}
+/* Scribble uses <object> for SVGs, and <img> for raster captures. */
+.AnimFramePicture img,
+.AnimFramePicture object {
+  display: block;
+  box-sizing: content-box;
+  width: calc(100% - 2px);
+  max-width: calc(100% - 2px);
+  height: auto;
+  border: 1px solid #888888;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+}
+.AnimFrameCaption {
+  display: block;
+  padding-top: 5px;
+  font-size: 0.82em;
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.AnimFrameGap { display: none; }
+.AnimFrameStrip > .AnimFrameNote {
+  margin: 0.4em 0 0;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+@media print {
+  .AnimFrameStrip > p[class^="AnimFrameRow"] {
+    /* Fit the requested row to the print text width, rather than wrapping. */
+    --frame-min: 0px;
+    flex-wrap: nowrap;
+    break-inside: avoid;
+  }
+}

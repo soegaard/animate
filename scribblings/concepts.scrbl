@@ -20,3 +20,4 @@ animation, go to @secref["part-guide"].
 @include-section["concepts/formula-source-maps.scrbl"]
 @include-section["concepts/relation-phases.scrbl"]
 @include-section["concepts/spatial-coordinates.scrbl"]
+@include-section["concepts/words-and-values.scrbl"]

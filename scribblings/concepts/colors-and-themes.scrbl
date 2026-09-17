@@ -1,8 +1,11 @@
 #lang scribble/manual
 
-@(require (for-label (except-in racket/base tan)
+@(require racket/runtime-path "../private/frame-style.rkt"
+          (for-label (except-in racket/base tan)
                      animate
                      animate/colors))
+
+@(define-runtime-path color-frame-directory "../guide/figures")
 
 @title[#:tag "colors-and-themes"]{Colors and Themes}
 
@@ -46,12 +49,13 @@ reviewed hue matters, and use a literal only when changing it would be wrong.
 
 The same Scene, rendered as two frames:
 
-@centered[
- @tabular[
-  #:sep @hspace[1]
-  (list (list @image["scribblings/guide/figures/colors-and-themes-light.svg"]
-              @image["scribblings/guide/figures/colors-and-themes-dark.svg"])
-        (list "light theme" "dark theme"))]]
+@(manual-frame-strip
+  (list (manual-frame (build-path color-frame-directory "colors-and-themes-light.svg")
+                      320 180 "Light theme")
+        (manual-frame (build-path color-frame-directory "colors-and-themes-dark.svg")
+                      320 180 "Dark theme"))
+  #:label "Light and dark theme comparison"
+  #:note "Two views of the same content, not consecutive frames.")
 
 @section{Categories and scales}
 
@@ -70,12 +74,13 @@ The palette-sheet example keeps the role names and series order while the
 selected theme changes the rendered colors. Its complete source is
 @filepath{examples/colors/palette-sheet.rkt}.
 
-@centered[
- @tabular[
-  #:sep @hspace[1]
-  (list (list @image["scribblings/guide/figures/colors-palette-sheet-light.svg"]
-              @image["scribblings/guide/figures/colors-palette-sheet-dark.svg"])
-        (list "light theme" "dark theme"))]]
+@(manual-frame-strip
+  (list (manual-frame (build-path color-frame-directory "colors-palette-sheet-light.svg")
+                      320 180 "Light theme")
+        (manual-frame (build-path color-frame-directory "colors-palette-sheet-dark.svg")
+                      320 180 "Dark theme"))
+  #:label "Light and dark theme comparison"
+  #:note "Two views of the same content, not consecutive frames.")
 
 @section{Inspecting a result}
 

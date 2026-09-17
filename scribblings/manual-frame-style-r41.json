@@ -1,0 +1,18 @@
+{
+  "schema": "animate-manual-frame-style-update-v1",
+  "outputs": {
+    "scribblings/FRAME-STYLE.md": "143093f5a706d3303a7713e11469b21633914889fcb1bf78498f7fd1c34f0ce2",
+    "scribblings/build-manual.py": "581f1ad4b2c207f7b7b9b536109423c2f15480b80dc95d8a82712fd2481525e3",
+    "scribblings/check-frame-style.py": "d04e68b8cee7946c641c2b008233a8759451f705ff5f650659f45bc7d4087f51",
+    "scribblings/check-frame-style.rkt": "c62a55365e6d73cdd200b881c2c317f28ed70f98729a782d7b99a8161296b615",
+    "scribblings/concepts/colors-and-themes.scrbl": "70aad6fb5996b154df20ce3b35662fe3a90753bf1938e6891c6d0a880d010de2",
+    "scribblings/private/frame-style.css": "36a8481b4696ca149ee9b945d68ead6d0d494e9fe52110b2a0e1e6bac2773fa2",
+    "scribblings/private/frame-style.rkt": "7d521cfc7f646ca6a8ead1f22bb001a86aaea9f8fca5f24d94d4b0fbb93fd80c",
+    "scribblings/private/frame-style.tex": "f257249866ec95bc2b99ff4d63f690e1b6916c88425448e34daf230941371532",
+    "scribblings/private/illustrations.rkt": "ab81a246b8b32785eda4c20d579bc340c4ec5b8835c285677e7a8b13d5cc1550",
+    "scribblings/private/learning-illustrations.rkt": "e10f8ea442804531c153ab54952422f063ab054eb25cbdcf33e2761b0bcf2192",
+    "scribblings/private/three-d-illustrations.rkt": "fbfd8066c3f9096bc36481093c6452acbeb9d26cb35e32d54eb0456f2e7ccba1",
+    "scribblings/tests/frame-style-fixture.png": "546cfbcc09349392ddeef6983b2425e7d6b8f8500c203b151d4928bddd695bb1"
+  },
+  "note": "Presentation-only update. Existing captures, image manifests, and earlier migration receipts are unchanged."
+}

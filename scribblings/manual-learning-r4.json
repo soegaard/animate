@@ -1,0 +1,30 @@
+{
+  "schema": "animate-manual-learning-update-v1",
+  "basis_commit": "08492b00144cbe7e6dc6152939da855b0e296e02",
+  "3d_guide_present": true,
+  "outputs": {
+    "scribblings/MAINTAINING-MANUAL.md": "cce3b0658f3265312448ca005b19c8157f50275fbe63dc370156bec92dfb70e5",
+    "scribblings/animate.scrbl": "95d9f6b5d9ece21ac524e558765fbe3c2f8653ec3c1d6534d8b1fb339a9f92c5",
+    "scribblings/build-manual.py": "5ba17f2f6271bfdfda0275d8798122f3402e7ec7425dc3e74e54709e9e2b348e",
+    "scribblings/check-learning-examples.rkt": "ae6870c3c45919d24f426b27d68f4f088d45bc27cae673db097af9af38257ccf",
+    "scribblings/check-learning-manual.py": "0edcb58b4c5f7365f0505075573771fb42df9bfe78aa4adc7d59b32dfc640e48",
+    "scribblings/concepts.scrbl": "84dd7c46ef092aee065d18bddc7a26f0eede968c7e23f5ad1eabe8ec6006e75c",
+    "scribblings/concepts/words-and-values.scrbl": "1a78d6271ab00d61374becd4f7e29c4e51ab5186e490479b507c560f3cc50d10",
+    "scribblings/cookbook.scrbl": "d05b0e94aab2836f222036b14062ab56e04e1096ec3223895151730ff8605059",
+    "scribblings/cookbook/native-tasks.scrbl": "2e410b2ad3eb376a392fbdf0f315387aac6cfc488bc3ab02b815724870a4743b",
+    "scribblings/examples/first-function-graph.rkt": "bdf836ba1c45b7f037241b2a66ad16428526dd096277b40eeb4e2654cebd9c09",
+    "scribblings/examples/objects-and-groups.rkt": "c3017d461b0747c63f8b9a3bf20a96af05ef6ddb28000d7fd1fe829f44da771d",
+    "scribblings/examples/timing-and-visibility.rkt": "679a8933d95cca0db0ea2764e374a49b4774283d50d4c21878bafc17ae8022dd",
+    "scribblings/guide.scrbl": "06250fcf3c362024460a53a509a982b4efb32b55dde24586660edd95ef43beea",
+    "scribblings/guide/first-function-graph.scrbl": "5168b57d9536a6f33f41e0611053ca6a29a4a89443c8bd465785be60b9a7f49a",
+    "scribblings/guide/objects-and-groups.scrbl": "1fbd51e102f7ef021c03395166011da35bcbab9b7eea13f338cb3821288b529b",
+    "scribblings/guide/timing-and-visibility.scrbl": "a1bd23cd11d4ac544c61556ababbc5879a4ae74d0a71e76e767925940e8ad92e",
+    "scribblings/guide/troubleshooting.scrbl": "442c8f013d20cf56080ff116b5666814ca2ac9ca953bc230edc373a898b6378e",
+    "scribblings/private/learning-catalog.rkt": "bb35a4171e4e981937442cf04e9da2114bc7e902f665f523797c5a22ec36b1d0",
+    "scribblings/private/learning-illustrations.rkt": "3f879397ad469f47adc1d9d1ee1fd83abcca2ae00073993bdb18cdce4aa60dd7",
+    "scribblings/reference.scrbl": "c9c18d38b2bc3ed720a2616003ff476fa8423d8a7b31c3405d081393e87fcbe4",
+    "scribblings/reference/find-a-task.scrbl": "0b05857e97e497a247f9c5bde4966d532398e40a64ea66d094cd3051c840ef5f",
+    "scribblings/render-learning-illustrations.rkt": "839b4364a1af8550c95cb0443b50b69e95d1fce2cf0016bfe3ff3976fbec12a7"
+  },
+  "note": "Migration record. Older installers must not be reapplied over later editorial changes."
+}

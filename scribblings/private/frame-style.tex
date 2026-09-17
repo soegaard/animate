@@ -1,0 +1,40 @@
+% Print equivalent of the CSS frame strip. One CSS pixel = 0.75 big points.
+\RequirePackage{graphicx}
+\RequirePackage{xcolor}
+\definecolor{AnimFrameBorder}{HTML}{888888}
+\newlength{\AnimFrameWidth}
+\newlength{\AnimFrameSpacing}
+\setlength{\AnimFrameSpacing}{6bp}
+\newenvironment{AnimFrameStrip}{\par\begingroup}{\par\endgroup}
+\newcommand{\AnimFrameLayout}[2]{%
+  \begingroup
+  \setlength{\AnimFrameWidth}{\dimexpr\linewidth-#1\AnimFrameSpacing+\AnimFrameSpacing\relax}%
+  \divide\AnimFrameWidth by #1\relax
+  \ifnum#1=1\relax
+    \ifdim\AnimFrameWidth>270bp\setlength{\AnimFrameWidth}{270bp}\fi
+  \else
+    \ifdim\AnimFrameWidth>195bp\setlength{\AnimFrameWidth}{195bp}\fi
+  \fi
+  \noindent\makebox[\linewidth][c]{#2}\par
+  \endgroup}
+\newcommand{\AnimFrameRowOne}[1]{\AnimFrameLayout{1}{#1}}
+\newcommand{\AnimFrameRowTwo}[1]{\AnimFrameLayout{2}{#1}}
+\newcommand{\AnimFrameRowThree}[1]{\AnimFrameLayout{3}{#1}}
+\newcommand{\AnimFrameRowFour}[1]{\AnimFrameLayout{4}{#1}}
+\newcommand{\AnimFrameRowFive}[1]{\AnimFrameLayout{5}{#1}}
+\newcommand{\AnimFrameCard}[2]{%
+  \begin{minipage}[t]{\AnimFrameWidth}%
+  \vspace{0pt}\centering
+  #1\par
+  \vspace{3bp}#2\par
+  \end{minipage}}
+\newcommand{\AnimFramePicture}[1]{%
+  \begingroup
+  \setlength{\fboxsep}{0pt}%
+  \setlength{\fboxrule}{0.75bp}%
+  \fcolorbox{AnimFrameBorder}{white}{%
+    \resizebox{\dimexpr\linewidth-2\fboxrule\relax}{!}{#1}}%
+  \endgroup}
+\newcommand{\AnimFrameCaption}[1]{{\scriptsize #1}}
+\newcommand{\AnimFrameGap}[1]{\hspace{\AnimFrameSpacing}}
+\newcommand{\AnimFrameNote}[1]{\par\smallskip{\small #1}\par}
