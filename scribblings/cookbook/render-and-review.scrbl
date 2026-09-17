@@ -1,11 +1,20 @@
 #lang scribble/manual
+@(require scribble/example
+          (for-label racket/base
+                     (only-in pict pict?)
+                     animate/slides
+                     animate/slides/pict
+                     animate/slides/render))
+
+@(define review-eval (make-base-eval))
+@examples[#:eval review-eval #:hidden
+  (require animate/slides animate/slides/pict (only-in pict pict?))]
 
 @title[#:tag "cookbook-render-review"]{Render and review recipes}
 
-Run these commands from the repository root. They use @tt{racket} from your PATH.
-For a particular Racket installation, replace it with the full executable path
-or your existing @tt{"$RACKET"} variable. All output directory names below are
-examples; choose a new name for each review run.
+Run the shell commands in this chapter from the repository root. Shell commands
+are not executed while Scribble builds the manual: they create files, may invoke
+FFmpeg or TeX, and should remain explicit user actions.
 
 @section[#:tag "recipe-render-workers"]{Render a slide video with ten workers}
 
@@ -15,14 +24,12 @@ racket slides/render-example.rkt --workers 10 \
   scribblings/examples/slide-lesson.rkt
 }
 
-The source module exports a storyboard named @tt{film}. The runner configures the
-project's colors and typography from that storyboard. Replace the filename with
-@tt{scribblings/examples/geometry-slide.rkt} to use the same route for geometry,
-or @tt{scribblings/examples/math-checkpoints.rkt} for the math example.
-
-This asks for up to ten frame workers. Preparation and video encoding have
-separate work, so the complete job is not necessarily ten times faster.
-FFmpeg is needed for the MP4; the math example also needs TeX preparation.
+The source module exports a storyboard named @racket[film]. Replace the filename
+with @filepath{scribblings/examples/geometry-slide.rkt} for geometry or
+@filepath{scribblings/examples/math-checkpoints.rkt} for the math example.
+This asks for up to ten frame workers; preparation and encoding are separate
+work. FFmpeg is needed for MP4 output, and the math example also needs TeX
+preparation.
 
 @bold{Details:} @secref["reference-slide-project"].
 
@@ -37,9 +44,8 @@ Open @tt{slides-output/gallery-dark/index.html}. On macOS:
 
 @verbatim{open slides-output/gallery-dark/index.html}
 
-Omit @tt{--videos} for posters and sampled frames only. Geometry videos use the
-same worker capacity as other videos. The reported worker counts tell you what
-actually happened, not just what was requested.
+Omit @tt{--videos} for posters and sampled frames only. Reported worker counts
+describe what actually happened, not merely what was requested.
 
 @section[#:tag "recipe-gallery-select"]{Render only the examples you need}
 
@@ -47,7 +53,7 @@ First list the catalogue:
 
 @verbatim{racket slides/run-gallery.rkt --list}
 
-Then select entries by ID. For example:
+Then select entries by ID:
 
 @verbatim{
 racket slides/run-gallery.rkt \
@@ -56,16 +62,15 @@ racket slides/run-gallery.rkt \
   --videos --workers 10 --dark slides-output/semantic-review
 }
 
-Or inspect all layout variants in portrait without making movies:
+Or inspect layout variants in portrait without movies:
 
 @verbatim{
 racket slides/run-gallery.rkt --category layouts --format portrait \
   --dark slides-output/portrait-review
 }
 
-@bold{Watch for:} an unknown entry usually means the requested name is wrong or
-the update providing it was not applied. Check @tt{--list} before a long render.
-@bold{Details:} @secref["reference-gallery-cli"].
+An unknown entry usually means the requested ID is wrong. Check @tt{--list}
+before a long render. @bold{Details:} @secref["reference-gallery-cli"].
 
 @section[#:tag "recipe-review-slides"]{Compare Pict and Scene output and keep the logs}
 
@@ -75,41 +80,36 @@ racket slides/run-probes.rkt --repeat 2 --gallery --math --geometry \
 }
 
 The output contains paired PNGs, @tt{index.html}, @tt{manifest.json},
-@tt{stdout.txt}, and @tt{stderr.txt}. The sibling @tt{layout-review.zip} includes
-the transcripts written before it is created. You do not need to redirect the
-shell output to capture the runner's normal output.
-
-Do not create @tt{layout-review} first. The runner refuses an existing file or
-directory so it cannot mix new results with an older run. Setup errors before
-transcript creation and errors while creating the ZIP may still require terminal
-output; a failed ZIP cannot contain messages written after its creation failed.
-
-Start by reading the @tt{errors} array in the manifest. Then open the HTML page
-and inspect the pictures. A successful comparison is not proof that your
-wording, spacing, or timing is good.
+@tt{stdout.txt}, and @tt{stderr.txt}; the sibling ZIP contains the transcripts.
+Do not create the output directory first. Start by reading the manifest's
+@tt{errors} array, then inspect the pictures. A successful pixel comparison is
+not proof that wording, spacing, or timing is good.
 
 @bold{Details:} @secref["reference-probe-cli"].
 
-@section[#:tag "recipe-diagnose-slide"]{Find the cause of a failed slide render}
+@section[#:tag "recipe-diagnose-slide"]{Inspect a slide in storyboard context}
 
-First distinguish three failures. @bold{Compilation} errors happen before the
-program runs. @bold{Preparation} errors include missing assets, bad selectors,
-and content that does not fit. @bold{Rendering or encoding} errors happen after
-those stages.
+Unlike the shell commands above, this small diagnostic recipe is safe to run at
+document-build time. It constructs a tiny storyboard and asks for a debug Pict:
 
-For layout issues, inspect a shot in its storyboard context:
+@examples[#:eval review-eval #:no-result
+  (define review-card
+    (slide #:id 'review-card #:layout 'title+body
+      [title "Inspect the layout"]
+      [body "Show slots, the safe area, and baselines."]))
+  (define review-film
+    (storyboard #:id 'review-film #:theme lecture-light
+      (storyboard-shot 'rule (hold-slide review-card #:duration 1))))
+  (define debug-picture
+    (slide->pict (storyboard-ref review-film 'rule)
+                 #:debug '(slots safe-area baselines)))]
 
-@verbatim{
-(require animate/slides/pict)
-(slide->pict (storyboard-ref film 'rule)
-             #:at '(example end)
-             #:debug '(slots safe-area baselines))
-}
+@examples[#:eval review-eval #:label #f
+  (eval:check (pict? debug-picture) #t)]
 
-Here @tt{film} is the example from @secref["guide-slides"]. A standalone preview
-of its card can use different inherited settings, so it may not show the same
-problem. Reduce the text or choose another layout before reducing its font size.
-
+A standalone card can inherit different settings from a storyboard. When a
+layout fails, inspect the shot in the context in which it will actually render.
 For semantic matching, prepare the storyboard and inspect
-@tt{storyboard-match-report}. For worker failures, retain the execution report
-and terminal output. See @secref["reference-slide-inspection"].
+@racket[storyboard-match-report]. See @secref["reference-slide-inspection"].
+
+@close-eval[review-eval]

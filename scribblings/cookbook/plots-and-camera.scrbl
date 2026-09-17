@@ -1,101 +1,107 @@
 #lang scribble/manual
-@(require (for-label racket/base
-                     racket/class
-                     racket/contract
-                     racket/draw
-                     racket/generic
-                     racket/math
-                     (only-in pict pict?)
-                     animate
-                     animate/authoring
-                     animate/preview
-                     animate/render
-                     animate/project
-                     animate/experimental)
-          "../../version.rkt")
+@(require scribble/example
+          (for-label racket/base racket/math animate animate/render))
+
+@(define plot-eval (make-base-eval))
+@examples[#:eval plot-eval #:hidden
+  (require animate animate/render
+           (only-in pict [scale pict-scale] [frame pict-frame]))]
 
 @title[#:tag "recipe-plots-and-camera"]{Draw plots while moving the camera}
 
-This is an advanced recipe, not a first example. Read the moving-circle
-Quick Start before using it. The complete API is in Reference.
+This is an advanced recipe, not a first example. It builds a Scene in executable
+steps, checks its duration, and deliberately does not write PNG or MP4 files
+while the manual is being built.
 
 @declare-exporting[animate #:use-sources (animate/main)]
 
-The following program builds Cartesian axes, samples a coordinate-valued
-parametric procedure, plots one ordered data series, and animates the camera at
-the same time. Both curves use smooth cubic interpolation and the ordinary path
-@racket[create] animation.
+@section[#:tag "recipe-plots-visuals"]{Build the plotted Visuals}
 
-@racketmod[
-racket/base
+@examples[#:eval plot-eval #:no-result
+  (define coordinate-axes
+    (axes #:id 'coordinate-axes
+          #:x-range (axis-range -4 4 1)
+          #:y-range (axis-range -3 3 1)
+          #:x-length 8
+          #:y-length 6
+          #:stroke "navy"))
 
-(require animate)
+  (define loop-curve
+    (parametric-curve
+     coordinate-axes
+     (lambda (parameter)
+       (define x (- (* parameter parameter) 2))
+       (vec2 x (/ (* parameter x) 2)))
+     #:id 'loop-curve
+     #:parameter-range (parameter-range -2 2)
+     #:sample-count 181
+     #:interpolation 'smooth
+     #:stroke "crimson"))
 
-;; Frame and media output is deliberately a separate effectful module.
-(require animate/render)
+  (define observations
+    (data-plot
+     coordinate-axes
+     (list (vec2 -3 -3/2)
+           (vec2 -2 1/2)
+           (vec2 -1 1)
+           (vec2 0 1/4)
+           (vec2 1 -1)
+           (vec2 2 -1/2)
+           (vec2 3 3/2))
+     #:id 'observations
+     #:interpolation 'smooth
+     #:stroke "seagreen"))]
 
-(define coordinate-axes
-  (axes #:id 'coordinate-axes
-        #:x-range (axis-range -4 4 1)
-        #:y-range (axis-range -3 3 1)
-        #:x-length 8
-        #:y-length 6
-        #:stroke "navy"))
+@racket[parametric-curve] calls its procedure while constructing the Visual.
+The resulting path stores immutable geometry, not the sampling procedure.
 
-(define loop-curve
-  (parametric-curve
-   coordinate-axes
-   (lambda (parameter)
-     (define x
-       (- (* parameter parameter) 2))
-     (vec2 x (/ (* parameter x) 2)))
-   #:id 'loop-curve
-   #:parameter-range (parameter-range -2 2)
-   #:sample-count 181
-   #:interpolation 'smooth
-   #:stroke "crimson"))
+@section[#:tag "recipe-plots-camera-animation"]{Animate the plots and camera together}
 
-(define observations
-  (data-plot
-   coordinate-axes
-   (list (vec2 -3 -3/2)
-         (vec2 -2 1/2)
-         (vec2 -1 1)
-         (vec2 0 1/4)
-         (vec2 1 -1)
-         (vec2 2 -1/2)
-         (vec2 3 3/2))
-   #:id 'observations
-   #:interpolation 'smooth
-   #:stroke "seagreen"))
+@examples[#:eval plot-eval #:no-result
+  (define initial-camera
+    (make-camera #:world-width 14 #:center origin))
 
-(define initial-camera
-  (make-camera #:world-width 14
-               #:center origin))
+  (define animation
+    (scene-wait
+     (scene-play (make-scene #:camera initial-camera)
+                 (fade-in coordinate-axes)
+                 (create loop-curve)
+                 (create observations)
+                 (camera-pan-to (vec2 1 0))
+                 (camera-zoom-by 3/2)
+                 #:duration 2)
+     1/2))]
 
-(define animation
-  (scene-wait
-   (scene-play (make-scene #:camera initial-camera)
-               (fade-in coordinate-axes)
-               (create loop-curve)
-               (create observations)
-               (camera-pan-to (vec2 1 0))
-               (camera-zoom-by 3/2)
-               #:duration 2)
-   1/2))
+At two seconds the paths have been created and the camera has reached its new
+position and zoom:
 
-(render-frames! animation "frames" #:fps 30)
-]
+@examples[#:eval plot-eval #:label #f
+  (eval:alts
+   (scene->pict animation 2)
+   (pict-frame (pict-scale (scene->pict animation 2) 3/8)))]
 
-@racket[parametric-curve] calls the procedure while constructing the Visual.
-It stores only immutable path geometry and a snapshot of the axes transform.
-Rendering later frames does not call the procedure or read the original data
-list again. The camera center and visible width are sampled from the same scene
-clip as the Visual animations.
+@examples[#:eval plot-eval #:label #f
+  (eval:check (scene-duration animation) 5/2)]
 
-The call to @racket[render-frames!] creates numbered PNG files. To assemble them
-as an MP4 file, install FFmpeg and call:
+The camera center and visible width are sampled from the same Scene clip as the
+Visual animations.
 
-@racketblock[
-(encode-mp4! "frames" "animation.mp4" #:fps 30)
-]
+@section[#:tag "recipe-plots-render"]{Render explicitly}
+
+Media output is effectful, so the manual shows these calls but substitutes
+@racket[(void)] during documentation evaluation. This is the same
+show-one-form/evaluate-another technique used in the Racket manuals for
+environment-dependent examples.
+
+@examples[#:eval plot-eval #:no-result
+  (eval:alts
+   (render-frames! animation "frames" #:fps 30)
+   (void))
+  (eval:alts
+   (encode-mp4! "frames" "animation.mp4" #:fps 30)
+   (void))]
+
+Run those displayed forms yourself when you want files. The MP4 step requires
+FFmpeg.
+
+@close-eval[plot-eval]

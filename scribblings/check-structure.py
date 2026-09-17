@@ -36,11 +36,15 @@ INTRO=re.compile(r'^@;\s*(requires|introduces):\s*(.*)$',re.M)
 TOKENS={
  'circle':'visual','vec2':'coordinates','make-scene':'scene','scene-add':'scene',
  'move-to':'request','scene-play':'request','scene-sample':'sampling','scene-state->pict':'pict',
+ 'scene->pict':'pict','scene-duration':'duration','group':'group',
+ 'scene-frame-count':'frame','frame-index->time':'frame',
  'scene-wait':'hold','render-frames!':'rendering','encode-mp4!':'encoding',
  'hold-slide':'slide-clip','build-slide':'beat','beat':'beat','reveal-slot':'slot-action',
  'conceal-slot':'slot-action','bullets':'bullet','storyboard':'storyboard','storyboard-shot':'shot',
  'slide-transition':'transition','storyboard-cut':'transition','lecture-light':'theme','lecture-dark':'theme',
  'portrait':'format','widescreen':'format','storyboard-with-format':'format','narration':'narration',
+ 'storyboard-with-theme':'theme','storyboard-with-format':'format',
+ 'storyboard->timeline':'authored-timeline',
  'storyboard->timeline':'authored-timeline','make-camera':'camera','scene-content':'viewport',
  'play-content':'content-clock','prepare-storyboard!':'preparation','math-content':'math-plan',
  'geometry-content':'construction','semantic-group':'semantic-group','semantic-part':'semantic-part',
@@ -48,6 +52,39 @@ TOKENS={
  'scene-block':'source-block','open-program-preview':'preview',
 }
 BLOCK=re.compile(r'@example-part\["([^"\n]+)"\s+"([^"\n]+)"\]|@verbatim\{(.*?)\}',re.S)
+
+
+def scribble_bracket_blocks(text,name):
+    """Yield (offset, body) for balanced @name[...] forms.
+
+    This deliberately understands only enough lexical structure for source
+    checks: nested square brackets and Racket/Scribble strings. Scribble itself
+    remains the authority for parsing the document.
+    """
+    needle='@'+name+'['
+    pos=0
+    while True:
+        start=text.find(needle,pos)
+        if start<0:return
+        i=start+len(needle);body=i;depth=1;in_string=False;escape=False
+        while i<len(text):
+            ch=text[i]
+            if in_string:
+                if escape:escape=False
+                elif ch=='\\':escape=True
+                elif ch=='"':in_string=False
+            else:
+                if ch=='"':in_string=True
+                elif ch=='[':depth+=1
+                elif ch==']':
+                    depth-=1
+                    if depth==0:
+                        yield start,text[body:i]
+                        pos=i+1
+                        break
+            i+=1
+        else:
+            return
 
 def tags(text):
     for args in HEAD.findall(text):
@@ -82,6 +119,8 @@ def guide_order(manual):
         text=path.read_text()
         events=[(m.start(),'term',m) for m in INTRO.finditer(text)]
         events.extend((m.start(),'code',m) for m in BLOCK.finditer(text))
+        events.extend((start,'examples',body)
+                      for start,body in scribble_bracket_blocks(text,'examples'))
         for _,kind,m in sorted(events):
             if kind=='term':
                 action,words=m.groups();terms=words.split()
@@ -93,9 +132,12 @@ def guide_order(manual):
                         if term in known:errors.append(f'{name}: duplicate first introduction: {term}')
                         known.add(term);sequence.append((term,name))
             else:
-                source,part,inline=m.groups()
-                try:code=snippet(manual,source,part) if source else inline
-                except (OSError,ValueError) as exc:errors.append(str(exc));continue
+                if kind=='examples':
+                    code=m
+                else:
+                    source,part,inline=m.groups()
+                    try:code=snippet(manual,source,part) if source else inline
+                    except (OSError,ValueError) as exc:errors.append(str(exc));continue
                 # String content/comments are prose, not API use. Imports are
                 # setup, so merely requiring a module does not introduce it.
                 code=re.sub(r'"(?:\\.|[^"\\])*"','""',code)

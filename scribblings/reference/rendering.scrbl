@@ -1833,7 +1833,24 @@ section and partial-movie visual identity.
 
 @subsection{Project execution}
 
-@declare-exporting[animate/render #:use-sources (animate/render)]
+@declare-exporting[
+ animate/render
+ #:use-sources
+ (animate/render
+  animate/private/project-execution)]
+
+
+@defproc[(render-project!
+          [project animate-project?]
+          [#:target target project-target? (project-target-all)]
+          [#:directory directory path-string? (current-directory)])
+         project-execution-report?]{
+Prepares and executes the selected project target, writes the declared output,
+and returns an immutable execution report.  Project planning and non-rendering
+preparation are documented in @secref["reference-project-workflow"].  This
+procedure is exported by @racketmodname[animate/render] and implemented by the
+project-execution adapter.
+}
 
 @defproc[(execute-prepared-project!
           [prepared prepared-project?]

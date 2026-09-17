@@ -6,7 +6,10 @@
 
 @title[#:tag "reference-authoring"]{Source Programs and Authored Timelines}
 
-@declare-exporting[animate/authoring]
+@declare-exporting[
+ animate/authoring
+ #:use-sources
+ (animate/private/scene-program)]
 
 @racketmodname[animate/authoring] adds source-addressable authoring metadata
 to immutable @racket[scene?] values.  It remains headless: compiling a program
@@ -78,6 +81,13 @@ No renderer, GUI, or file operation is involved.
 @defproc[(scene-program? [value any/c]) boolean?]{Recognizes source programs.}
 @defproc[(scene-block-spec? [value any/c]) boolean?]{Recognizes declarative source blocks.}
 @defproc[(compiled-scene-program? [value any/c]) boolean?]{Recognizes compiled source programs.}
+
+@defproc[(compiled-scene-program-scene [compiled compiled-scene-program?]) scene?]{
+Returns the completed Scene produced by compiling the source program.  The Scene
+is immutable and can be sampled, rendered, or passed to another headless
+authoring operation without opening the preview GUI.
+}
+
 @defproc[(source-location? [value any/c]) boolean?]{Recognizes retained source-location metadata.}
 
 @bold{Limitation:} source-program builders are arbitrary procedures.  They are

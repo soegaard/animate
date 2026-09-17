@@ -38,6 +38,10 @@ and hashes, so later caller mutation cannot change the project.
 
 @defproc[(animate-project? [value any/c]) boolean?]{Recognizes an immutable project declaration.}
 
+@defproc[(animate-project-render [project animate-project?]) render-spec?]{
+Returns the immutable final-render specification stored in the project.
+}
+
 @defproc[(module-binding-source [module-path path-string?] [binding symbol?])
          module-binding-source?]{
 Declares a reloadable source suited to project workers and persistent caches.
@@ -160,6 +164,13 @@ project declaration.}
 }
 
 @defproc[(render-spec? [value any/c]) boolean?]{Recognizes a final-render configuration.}
+
+@defproc[(render-spec-workers [specification render-spec?])
+         exact-positive-integer?]{
+Returns the requested worker capacity for final frame rendering.  This is a
+capacity request, not a prediction of speedup or a guarantee that every worker
+will start.
+}
 
 @defproc[(render-spec-worker-mode [specification render-spec?])
          (or/c 'auto 'in-process 'subprocess)]{
