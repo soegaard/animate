@@ -13,6 +13,7 @@
          "../../main.rkt")
 (provide make-gallery-view gallery-view? gallery-view-id gallery-view-title
          gallery-view-caption gallery-view-api gallery-view-plan gallery-view-tree?
+         gallery-view-provenance? gallery-view-recipe-call gallery-view-layout-family
          make-gallery-plate gallery-plate? gallery-plate-id gallery-plate-chapter
          gallery-plate-title gallery-plate-summary gallery-plate-views
          gallery-entry? gallery-entry-plate gallery-entry-view gallery-entry-start
@@ -22,7 +23,8 @@
 ;;;
 ;;; Validated Immutable Records
 ;;;
-(struct gallery-view (id title caption api plan tree?) #:transparent)
+(struct gallery-view (id title caption api plan tree? provenance? recipe-call layout-family)
+  #:transparent)
 ;; gallery-view is one replay of ordinary checked mathematics.
 ;;  - id  symbol?  plate-local, filename-safe identity; independent of worker count.
 ;;  - title  immutable-string?  short variant heading, or empty for a single replay.
@@ -30,6 +32,9 @@
 ;;  - api  (listof symbol?)  relevant public constructs in intentional display order.
 ;;  - plan  presentation-plan?  original mathematical states and deterministic phases.
 ;;  - tree?  boolean?  whether a compile-time hierarchy inspector is shown alongside.
+;;  - provenance?  boolean?  whether one checked copy witness is shown as a gallery-only panel.
+;;  - recipe-call  (or/c immutable-string? #f)  actual optional recipe invocation label.
+;;  - layout-family  (or/c symbol? #f)  replays that must share one gallery body contract.
 (struct gallery-plate (id chapter title summary views) #:transparent)
 ;; gallery-plate is a named independent demonstration, never a mathematical branch.
 ;;  - id  symbol?  globally unique, filename-safe plate name.
@@ -66,16 +71,26 @@
   (string->immutable-string text))
 
 ; make-gallery-view : symbol? string? presentation-plan? #:caption string?
-;   [#:api (listof symbol?)] [#:tree? boolean?] -> gallery-view?
+;   [#:api (listof symbol?)] [#:tree? boolean?] [#:provenance? boolean?]
+;   [#:recipe-call (or/c string? #f)] [#:layout-family (or/c symbol? #f)] -> gallery-view?
 ;;   Creates one validated replay, keeping its original mathematical plan intact.
-(define (make-gallery-view id title plan #:caption caption #:api [api '()] #:tree? [tree? #f])
+(define (make-gallery-view id title plan #:caption caption #:api [api '()] #:tree? [tree? #f]
+                           #:provenance? [provenance? #f] #:recipe-call [recipe-call #f]
+                           #:layout-family [layout-family #f])
   (unless (gallery-safe-id? id) (raise-argument-error 'make-gallery-view "gallery-safe-id?" id))
   (unless (presentation-plan? plan) (raise-argument-error 'make-gallery-view "presentation-plan?" plan))
   (unless (and (list? api) (andmap symbol? api))
     (raise-argument-error 'make-gallery-view "list of API symbols" api))
   (unless (boolean? tree?) (raise-argument-error 'make-gallery-view "boolean?" tree?))
+  (unless (boolean? provenance?)
+    (raise-argument-error 'make-gallery-view "boolean? as #:provenance?" provenance?))
+  (unless (or (not recipe-call) (and (string? recipe-call) (not (regexp-match? #rx"[\r\n]" recipe-call))))
+    (raise-argument-error 'make-gallery-view "#f or a single-line recipe call" recipe-call))
+  (unless (or (not layout-family) (gallery-safe-id? layout-family))
+    (raise-argument-error 'make-gallery-view "#f or gallery-safe-id? as #:layout-family" layout-family))
   (gallery-view id (short-text 'make-gallery-view title) (short-text 'make-gallery-view caption)
-                (for/list ([name (in-list api)]) name) plan tree?))
+                (for/list ([name (in-list api)]) name) plan tree? provenance?
+                (and recipe-call (short-text 'make-gallery-view recipe-call)) layout-family))
 
 ; make-gallery-plate : symbol? symbol? string? string? (listof gallery-view?) -> gallery-plate?
 ;;   Creates one independently selectable plate with uniquely named ordered variants.

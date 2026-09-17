@@ -11,7 +11,7 @@
 ;; Imports
 (require
   (only-in racket/list append-map take-right remove-duplicates)
-  (only-in racket/match match)
+  (only-in racket/match match match-define)
   (only-in racket/string string-join)
   "native.rkt"
   "validation.rkt"
@@ -30,7 +30,8 @@
 ;; Exports
 (provide
   math-plan->scene! prepare-math-plan! math->visual! math-plan->pict!
-  (struct-out prepared-math-plan) matching-token-index append-prepared-math-plan!)
+  (struct-out prepared-math-plan) matching-token-index append-prepared-math-plan!
+  presentation-header-lines)
 
 ;;;
 ;;; Construction and Operations
@@ -102,9 +103,59 @@
     [(list 'expt a 2) (format "~a²" (pretty a))]
     [else (format "~s" x)]))
 
-; compile-explanation : scene? prepared-math-plan? presentation-phase? symbol? -> scene?
+; presentation-header-lines : presentation-plan? plan-segment? string? -> list?
+;;   Builds the exact title/context/definition text shared by gallery measurement and painting.
+(define (presentation-header-lines plan segment title)
+  (unless (presentation-plan? plan)
+    (raise-argument-error 'presentation-header-lines "presentation-plan?" plan))
+  (unless (plan-segment? segment)
+    (raise-argument-error 'presentation-header-lines "plan-segment?" segment))
+  (unless (string? title)
+    (raise-argument-error 'presentation-header-lines "string?" title))
+  (define ctx (plan-segment-context segment))
+  ;; Prove consequences using authored assumptions only, not the very restrictions
+  ;; being filtered. This must agree with the visible heading in every worker.
+  (define authored-context
+    (math-context #:real (math-context-real ctx)
+                  #:assuming (math-context-assumptions ctx)
+                  #:definitions (math-context-definitions ctx)))
+  (define assumptions
+    (append (math-context-assumptions ctx)
+            (filter (lambda (p)
+                      (not (eq? (verification-status (context-prove authored-context p))
+                                'established)))
+                    (math-context-restrictions ctx))))
+  (define label
+    (if (null? (plan-segment-path segment))
+        title
+        (format "~a — ~a" title
+                (string-append (string-join (map symbol->string (plan-segment-path segment)) " / ")
+                               (if (plan-segment-shared? segment) " — common derivation" "")))))
+  (define warning
+    (if (presentation-plan-allow-unverified? plan) "DRAFT: unverified obligations — " ""))
+  (append
+   (list (list 'title label 9/20 3/10)
+         (list 'context
+               (string-append warning
+                              (if (null? assumptions)
+                                  "Real scalar algebra"
+                                  (string-join (map pretty assumptions) "; ")))
+               23/25 1/5))
+   (if (zero? (hash-count (math-context-definitions ctx)))
+       '()
+       (list
+        (list
+         'definitions
+         (string-join
+          (for/list ([name (in-list (sort (hash-keys (math-context-definitions ctx)) symbol<?))])
+            (format "~a = ~a" name (pretty (hash-ref (math-context-definitions ctx) name))))
+          "; ")
+         32/25 1/5)))))
+
+; compile-explanation : scene? prepared-math-plan? presentation-phase? symbol?
+;   [#:placement (or/c #f (list/c real? real?))] -> scene?
 ;;   Places a separately prepared inset in the reserved lower band and removes it afterward.
-(define (compile-explanation scn prepared phase id)
+(define (compile-explanation scn prepared phase id #:placement [placement #f])
   (define annotation (presentation-phase-annotation phase))
   (define state (car annotation))
   (define caption (cadr annotation))
@@ -130,13 +181,18 @@
   (define ink
     (clone-view (map (lambda (t) (token-scaled t inset-scale)) raw) id 'explanation))
   (define-values (cx cy) (token-center ink))
-  (define tokens (translate ink (- cx) (- (+ (- (/ height 2)) 3/2) cy)))
+  (when (and placement
+             (not (and (list? placement) (= (length placement) 2) (andmap real? placement))))
+    (raise-argument-error 'compile-explanation "#f or two real placement coordinates" placement))
+  (define formula-y (if placement (car placement) (+ (- (/ height 2)) 3/2)))
+  (define caption-y (if placement (cadr placement) (+ (- (/ height 2)) 4/5)))
+  (define tokens (translate ink (- cx) (- formula-y cy)))
   (define caption-id (string->symbol (format "~a.explanation-caption" id)))
   (define scene-with-caption
     (if (string=? caption "") scn
         ((animate-binding 'scene-add) scn
           ((animate-binding 'plain-text) caption #:id caption-id
-            #:center ((animate-binding 'vec2) 0 (+ (- (/ height 2)) 4/5))
+            #:center ((animate-binding 'vec2) 0 caption-y)
             #:font-size (min 23/100
                              (/ (- ((animate-binding 'camera-world-width) camera) 6/5)
                                 (max 1 (* 14/25 (string-length caption)))))
@@ -152,10 +208,12 @@
 ;;;
 ;;; One-Step Native Compilation
 ;;;
-; compile-math-step : scene? prepared-math-plan? integer? rewrite-step? list? list? symbol? any/c ->
+; compile-math-step : scene? prepared-math-plan? integer? rewrite-step? list? list? symbol? any/c
+;   [#:annotation-placement (or/c #f (list/c real? real?))] ->
 ;   (values scene? list? exact-nonnegative-integer?)
 ;;   Lowers typed semantic units to native batches, with a visibility barrier for replacements.
-(define (compile-math-step scn prepared segment-index step destination old id view)
+(define (compile-math-step scn prepared segment-index step destination old id view
+                           #:annotation-placement [annotation-placement #f])
   (define segment
     (list-ref (presentation-plan-segments (prepared-math-plan-plan prepared)) segment-index))
   (define name (derivation-step-key (plan-segment-derivation segment) step))
@@ -194,7 +252,7 @@
     (if split?
         old
         (map (lambda (i) (list-ref old i)) (token-transition-outgoing unit-plan))))
-  (define created
+  (define created-destination
     (map (lambda (i) (list-ref next i)) (token-transition-incoming unit-plan)))
   ;; Equal mathematical subtrees move as rigid blocks except at a branch split.
   ;; Split copies are placed invisibly at their final locations and revealed there,
@@ -221,6 +279,41 @@
         (for/list ([m (in-list matches)])
           (token-with-id (list-ref old (token-match-source m))
                          (prepared-token-id (list-ref next (token-match-target m)))))))
+  (define cancellation-assembly?
+    (and (eq? kind 'cancellation) (pair? created-destination) (pair? moving)))
+  (define implicit-cancellation-reveal?
+    (and cancellation-assembly?
+         (not
+          (ormap
+           (lambda (entry)
+             (and (= (scheduled-phase-segment entry) segment-index)
+                  (equal? (scheduled-phase-step entry) name)
+                  (eq? (scheduled-phase-kind entry) 'reveal-created)))
+           (prepared-math-plan-schedule prepared)))))
+  ;; A cancellation can introduce a semantic unit (for example 1 in 1·x) while
+  ;; preserving a survivor.  When the authored schedule uses compact as its implicit
+  ;; reveal, start the new unit at the survivor's source-relative arrangement and
+  ;; move both toward the prepared target together.  This is deliberately narrow:
+  ;; explicit reveal choreography and transitions without a common survivor retain
+  ;; their established behavior.
+  (define coherent-delta
+    (and cancellation-assembly?
+         (let* ([from (car moving)]
+                [target (findf (lambda (token)
+                                 (eq? (prepared-token-id token) (prepared-token-id from)))
+                               next)])
+           (and target
+                (cons (- (prepared-token-x from) (prepared-token-x target))
+                      (- (prepared-token-y from) (prepared-token-y target)))))))
+  (define created
+    (if coherent-delta
+        (for/list ([token (in-list created-destination)])
+          (token-with-position token
+                               (+ (prepared-token-x token) (car coherent-delta))
+                               (+ (prepared-token-y token) (cdr coherent-delta))))
+        created-destination))
+  (when coherent-delta
+    (set! moving (append moving created-destination)))
   (set! scn (add-tokens scn ghosts))
   (set! scn (add-tokens scn split-copies #:opacity 0))
   (set! scn (add-tokens scn created #:opacity 0))
@@ -272,7 +365,8 @@
     (case (scheduled-phase-kind entry)
       [(explain)
        (set! scn (compile-explanation scn prepared (scheduled-phase-phase entry)
-                                      (string->symbol (format "~a.inset~a" id view))))]
+                                      (string->symbol (format "~a.inset~a" id view))
+                                      #:placement annotation-placement))]
       [(prepare-space)
        (when (and (pair? retired) (not retired?))
          (math-error 'choreograph 'unsafe-reflow
@@ -345,14 +439,22 @@
 
 ; append-prepared-math-plan! : scene? prepared-math-plan? [#:title string?]
 ;   [#:id symbol?] [#:top-margin positive-real?] [#:on-step (or/c #f procedure?)]
+;   [#:heading-placements (or/c #f immutable-hash?)]
+;   [#:annotation-placement (or/c #f (list/c real? real?))]
+;   [#:candidate-verdict-position (or/c #f (list/c real? real?))]
+;   [#:candidate-verdict-label (or/c #f procedure?)]
 ;   -> (values scene? (listof symbol?) symbol?)
 ;;   Appends one prepared plan to an existing native timeline and returns its owned ids.
-;;   The optional inspector runs only while compiling, adds no time, and never samples.
-;; Themeable layouts integration v1
+;;   Optional placement data is parent-owned gallery geometry; ordinary callers retain
+;;   their historic layout defaults. Inspectors run only while compiling and never sample.
 (define (append-prepared-math-plan! initial-scene prepared
           #:title [title "Mathematical derivation"] #:id [id 'math-lesson]
           #:top-margin [top-margin 2] #:on-step [on-step #f]
-          #:on-step-end [on-step-end #f])
+          #:on-step-end [on-step-end #f]
+          #:heading-placements [heading-placements #f]
+          #:annotation-placement [annotation-placement #f]
+          #:candidate-verdict-position [candidate-verdict-position #f]
+          #:candidate-verdict-label [candidate-verdict-label #f])
   (unless (prepared-math-plan? prepared)
     (raise-argument-error 'append-prepared-math-plan! "prepared-math-plan?" prepared))
   (check-symbol 'append-prepared-math-plan! id)
@@ -360,6 +462,22 @@
   (check-positive-real 'append-prepared-math-plan! top-margin)
   (when on-step (check-procedure 'append-prepared-math-plan! on-step 3))
   (when on-step-end (check-procedure 'append-prepared-math-plan! on-step-end 3))
+  (when (and heading-placements
+             (not (and (hash? heading-placements) (immutable? heading-placements))))
+    (raise-argument-error 'append-prepared-math-plan! "#f or immutable hash? as #:heading-placements"
+                          heading-placements))
+  (define (placement-pair? value)
+    (and (list? value) (= (length value) 2) (andmap real? value)))
+  (when (and annotation-placement (not (placement-pair? annotation-placement)))
+    (raise-argument-error 'append-prepared-math-plan!
+                          "#f or two real coordinates as #:annotation-placement"
+                          annotation-placement))
+  (when (and candidate-verdict-position (not (placement-pair? candidate-verdict-position)))
+    (raise-argument-error 'append-prepared-math-plan!
+                          "#f or two real coordinates as #:candidate-verdict-position"
+                          candidate-verdict-position))
+  (when candidate-verdict-label
+    (check-procedure 'append-prepared-math-plan! candidate-verdict-label 1))
   (define plan (prepared-math-plan-plan prepared))
   (define style (presentation-plan-style plan))
   (define cam (prepared-math-plan-camera prepared))
@@ -379,67 +497,44 @@
   (define (commit-checkpoint! current)
     (set! checkpoint-index (add1 checkpoint-index))
     ((animate-binding 'scene-set-value) current checkpoint-key checkpoint-index))
-  (define (make-heading text y size suffix)
+  (define (make-heading text y size suffix [segment-index #f] [placement #f])
     (define key (string->symbol (format "~a.~a" id suffix)))
     (set! heading-ids (cons key heading-ids))
-    ((animate-binding 'plain-text) text
+    (when (and placement
+               (not (and (list? placement) (= (length placement) 4)
+                         (string? (car placement)) (andmap real? (cdr placement))
+                         (positive? (cadddr placement)))))
+      (raise-argument-error 'append-prepared-math-plan!
+                            "a frozen (list string x y positive-size) header placement"
+                            placement))
+    (define actual-text (if placement (car placement) text))
+    (define actual-x (if placement (cadr placement) 0))
+    (define actual-y (if placement (caddr placement) y))
+    (define actual-size
+      (if placement (cadddr placement)
+          (min size
+               (/
+                (- ((animate-binding 'camera-world-width) cam) 6/5)
+                (max 1 (* 14/25 (string-length text)))))))
+    ((animate-binding 'plain-text) actual-text
       #:id key
-      #:center ((animate-binding 'vec2) 0 y)
-      #:font-size
-      (min size
-        (/
-          (- ((animate-binding 'camera-world-width) cam) 6/5)
-          (max 1 (* 14/25 (string-length text)))))
+      #:center ((animate-binding 'vec2) actual-x actual-y)
+      #:font-size actual-size
       #:color foreground))
   (for ([segment (in-list (presentation-plan-segments plan))] [segment-index (in-naturals)])
     (unless (null? all-on-scene) (set! scn (remove-tokens scn all-on-scene)))
     (unless (null? heading-ids)
       (set! scn (apply (animate-binding 'scene-remove) scn heading-ids)))
     (set! heading-ids '())
-    (define ctx (plan-segment-context segment))
-    ;; Prove consequences using authored assumptions only, not the very
-    ;; restrictions being filtered. Genuine inherited domain exclusions remain.
-    (define authored-context
-      (math-context #:real (math-context-real ctx)
-                    #:assuming (math-context-assumptions ctx)
-                    #:definitions (math-context-definitions ctx)))
-    (define assumptions
-      (append (math-context-assumptions ctx)
-              (filter (lambda (p)
-                        (not (eq? (verification-status (context-prove authored-context p))
-                                  'established)))
-                      (math-context-restrictions ctx))))
-    (define label
-      (if (null? (plan-segment-path segment))
-        title
-        (format "~a — ~a" title
-          (string-append (string-join (map symbol->string (plan-segment-path segment)) " / ")
-                         (if (plan-segment-shared? segment) " — common derivation" "")))))
-    (define warning
-      (if (presentation-plan-allow-unverified? plan) "DRAFT: unverified obligations — " ""))
     (set! scn
-      ((animate-binding 'scene-add) scn
-        (make-heading label (- (/ world-height 2) 9/20) 3/10 'title)
-        (make-heading
-          (string-append warning
-            (if (null? assumptions)
-              "Real scalar algebra"
-              (string-join (map pretty assumptions) "; ")))
-          (- (/ world-height 2) 23/25)
-          1/5
-          'context)))
-    (unless (zero? (hash-count (math-context-definitions ctx)))
-      (set! scn
-        ((animate-binding 'scene-add) scn
-          (make-heading
-            (string-join
-              (for/list ([name (in-list (sort (hash-keys (math-context-definitions ctx)) symbol<?))])
-                (format "~a = ~a" name
-                  (pretty (hash-ref (math-context-definitions ctx) name))))
-              "; ")
-            (- (/ world-height 2) 32/25)
-            1/5
-            'definitions))))
+      (apply
+       (animate-binding 'scene-add)
+       scn
+       (for/list ([line (in-list (presentation-header-lines plan segment title))])
+         (match-define (list suffix text top-offset size) line)
+         (make-heading text (- (/ world-height 2) top-offset) size suffix segment-index
+                       (and heading-placements
+                            (hash-ref heading-placements (cons segment-index suffix) #f))))))
     (define d (plan-segment-derivation segment))
     (define (layout state) (hash-ref (prepared-math-plan-layouts prepared) state))
     (define (at-row state row)
@@ -527,7 +622,8 @@
         (define step (derivation-step d name))
         (define destination (at-row (rewrite-step-after step) active-row))
         (define-values (next-scene next-tokens next-view)
-          (compile-math-step scn prepared segment-index step destination active id view))
+          (compile-math-step scn prepared segment-index step destination active id view
+                             #:annotation-placement annotation-placement))
         (set! scn next-scene)
         (set! active next-tokens)
         (set! view next-view)
@@ -536,14 +632,23 @@
         (when on-step-end (set! scn (on-step-end scn segment-index name))))
       (set! scn (play scn '() (presentation-style-pause-between-groups style))))
     (when (plan-segment-verdict segment)
+      (define verdict-text
+        (if candidate-verdict-label
+            (candidate-verdict-label (plan-segment-verdict segment))
+            (format "Candidate check: ~a"
+                    (verification-status (plan-segment-verdict segment)))))
       (set! scn
         ((animate-binding 'scene-add) scn
           (make-heading
-            (format "Candidate check: ~a"
-              (verification-status (plan-segment-verdict segment)))
+            verdict-text
             (- 1/2 (/ world-height 2))
             23/100
-            'verdict))))
+            'verdict segment-index
+            (and candidate-verdict-position
+                 (list verdict-text
+                       (car candidate-verdict-position)
+                       (cadr candidate-verdict-position)
+                       23/100))))))
     (set! scn ((animate-binding 'scene-wait) scn 1))
     (set! all-on-scene (append active (append-map cadr history))))
   (values scn (append (map prepared-token-id all-on-scene) heading-ids) checkpoint-key))

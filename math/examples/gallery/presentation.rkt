@@ -53,11 +53,11 @@
       (for/list ([mode (in-list '(replace keep-completed-groups keep-all-checkpoints))]
                  [title (in-list '("Replace the working row" "Keep completed groups" "Keep elementary checkpoints"))])
         (make-gallery-view mode title
-          (present linear-solution #:groups 'top-level
-                   #:style (math-presentation #:history mode #:max-visible-rows 3
+          (present gallery-history-solution #:groups 'top-level
+                   #:style (math-presentation #:history mode #:max-visible-rows 4
                                               #:duration 1 #:pause-between-groups 4/5))
           #:caption "Same mathematical operations and answer, with a different retained-history policy."
-          #:api '(math-presentation present))))
+          #:api '(math-presentation present) #:layout-family 'history-comparison)))
     (make-gallery-plate 'cancellation-timing 'presentation "Pause before closing the gap"
       "A choreography override changes timing at a leaf, not its verified state change."
       (list

@@ -1,5 +1,29 @@
 # Validation — animate/math 0.5.0 gallery
 
+## Local gallery-review repair update — 17 September 2026
+
+This checkout subsequently received the measured gallery-layout, coherent
+unit-cancellation, hierarchy/verdict, comparison-fixture, provenance, and review
+export repairs recorded in [gallery-review-fix-progress.md](gallery-review-fix-progress.md).
+The following commands were executed locally with
+`/Applications/Racket v9.3.0.2/bin/racket`:
+
+| Command | Result |
+| --- | --- |
+| `math/run-tests.rkt` | 16,760 checks passed; 0 failed |
+| `math/run-gallery-tests.rkt` | 14,661 checks passed; 0 failed |
+| `math/run-style-checks.rkt` | 1,335 checks passed; 0 failed |
+| `math/run-process-contracts.rkt` | 6 fresh-process contracts / 12 Racket processes passed |
+| `raco make math/main.rkt math/render.rkt math/cas.rkt math/examples/*.rkt` | passed |
+| `git diff --check` | passed |
+
+Two targeted native review selections at 640×360 also completed: an 18-still
+checkpoint selection covering factor cancellation, distribution, and implication;
+and a 30-still dense cancellation/distribution selection. These are real native
+pixels, but not a full-gallery 30-fps pacing review. The original delivery record
+below remains historical evidence and its old counts are not claimed for this local
+repair.
+
 ## Baseline and delivery scope
 
 This revision extends the delivered `animate-math-v0.4.0-composite-moves.zip` that

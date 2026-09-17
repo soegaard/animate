@@ -34,11 +34,16 @@
       (present (derive (gallery-state 'structural-selection '(= x (/ (+ 2 4) 3)))
                  [numerator (evaluate #:at (numerator (rhs)))]) #:style replace-style)
       '(rhs numerator evaluate))
-    (one-view-plate 'distribution 'selection "Distribution with a witness"
+    (make-gallery-plate 'distribution 'selection "Distribution with a witness"
       "The rule records two descendants of a; correspondence is explicit, not guessed."
-      (present (derive (gallery-state 'distribution '(* a (+ b c)))
-                 [distribute (use-rule distribute-rule)]) #:style replace-style)
-      '(define-math-rule use-rule trace-descendants))
+      (list
+       (make-gallery-view
+        'main ""
+        (present (derive (gallery-state 'distribution '(* a (+ b c)))
+                   [distribute (use-rule distribute-rule)]) #:style replace-style)
+        #:caption "The declared rule records one a occurrence and its two descendants."
+        #:api '(define-math-rule use-rule trace-descendants)
+        #:provenance? #t)))
     (one-view-plate 'checked-replacement 'selection "A checked target replacement"
       "The perfect-square identity is checked; no fine-grained motion proof is invented."
       (present (derive (gallery-state 'checked-replacement '(+ (expt x 2) (* 6 x) 9))

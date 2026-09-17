@@ -51,19 +51,21 @@
         (make-gallery-view 'five "Subtract and cancel five"
           (present (recipe-example 'recipe-five 3 5 17) #:style gallery-style)
           #:caption "The recipe returns named steps. This application subtracts and cancels five."
-          #:api '(steps both-sides cancel-addends))
+          #:api '(steps both-sides cancel-addends)
+          #:recipe-call "(subtract-and-cancel 5)")
         (make-gallery-view 'seven "The same recipe with seven"
           (present (recipe-example 'recipe-seven 2 7 19) #:style gallery-style)
           #:caption "Only the recipe argument changes. All conditions are checked in this problem's context."
-          #:api '(steps both-sides cancel-addends))))
+          #:api '(steps both-sides cancel-addends)
+          #:recipe-call "(subtract-and-cancel 7)")))
     (make-gallery-plate 'grouping 'moves "One derivation, two groupings"
       "Both replays animate all steps; only the completed rows kept as history differ."
       (list
         (make-gallery-view 'moves "Group by mathematical moves"
-          (present linear-solution #:style gallery-style #:groups 'top-level)
+          (present gallery-history-solution #:style gallery-history-style #:groups 'top-level)
           #:caption "One completed row per top-level move; no elementary step is skipped."
-          #:api '(present steps))
+          #:api '(present steps) #:layout-family 'history-comparison)
         (make-gallery-view 'leaves "Group by elementary steps"
-          (present linear-solution #:style gallery-style #:groups 'steps)
+          (present gallery-history-solution #:style gallery-history-style #:groups 'steps)
           #:caption "The same derivation and endpoints, with a separate history group for every leaf."
-          #:api '(present derivation-steps))))))
+          #:api '(present derivation-steps) #:layout-family 'history-comparison)))))

@@ -70,14 +70,17 @@
   (define artifacts '())
   (define descriptors
     (for/list ([entry (in-list entries)])
-      (define prepared (prepare-gallery-view! entry camera (hash-ref options 'theme)))
-      (define staged (stage-prepared-svg-artifacts! prepared base))
-      (define portable (prepared-math-plan->portable-payload prepared (view-options options entry) staged))
+      (define prepared
+        (prepare-gallery-view! entry camera (hash-ref options 'theme)
+                               #:show-api? (hash-ref options 'show-api?)))
+      (define staged (stage-prepared-svg-artifacts! (prepared-gallery-view-math prepared) base))
+      (define portable
+        (prepared-gallery-view->portable-payload prepared (view-options options entry) staged))
       (define descriptor (write-gallery-payload! portable base))
       (set! artifacts (append artifacts (staged-svg-artifact-descriptors staged) (list descriptor)))
       (hasheq 'view (gallery-view-key entry) 'payload descriptor)))
   ((native 'project 'source-preparation)
-   #:payload (hasheq 'schema 'animate-math-gallery-preparation-v1 'options options
+   #:payload (hasheq 'schema gallery-preparation-payload-schema 'options options
                      'views (vector->immutable-vector (list->vector descriptors)))
    #:dependencies (gallery-runtime-dependencies!)
    #:artifacts (sort (remove-duplicates artifacts equal?) string<? #:key (lambda (a) (hash-ref a 'path)))
@@ -90,7 +93,7 @@
 (define (gallery-render-builder context input-options payload)
   (define options (gallery-render-options context input-options))
   (unless (and (hash? payload) (immutable? payload)
-               (eq? (hash-ref payload 'schema #f) 'animate-math-gallery-preparation-v1)
+               (eq? (hash-ref payload 'schema #f) gallery-preparation-payload-schema)
                (equal? (hash-ref payload 'options #f) options)
                (vector? (hash-ref payload 'views #f)) (immutable? (hash-ref payload 'views)))
     (raise-user-error 'gallery-render-builder "wrong gallery preparation schema or options"))
@@ -104,12 +107,12 @@
     (for/list ([entry (in-list entries)] [descriptor (in-list descriptors)])
       (unless (and (hash? descriptor) (equal? (hash-ref descriptor 'view #f) (gallery-view-key entry)))
         (raise-user-error 'gallery-render-builder "wrong or repeated prepared view identity"))
-      (portable-payload->prepared-math-plan
+      (portable-payload->prepared-gallery-view
         (read-gallery-payload! (hash-ref descriptor 'payload) base)
         (gallery-view-plan (gallery-entry-view entry)) camera (view-options options entry))))
   (define-values (foreground background) (theme-colors (hash-ref options 'theme)))
   (for ([prepared (in-list preparations)])
-    (unless (and (equal? foreground (prepared-math-plan-foreground prepared))
-                 (equal? background (prepared-math-plan-background prepared)))
+    (unless (and (equal? foreground (prepared-math-plan-foreground (prepared-gallery-view-math prepared)))
+                 (equal? background (prepared-math-plan-background (prepared-gallery-view-math prepared))))
       (raise-user-error 'gallery-render-builder "prepared colors differ from the gallery theme")))
   (build-gallery-scene! entries preparations camera #:show-api? (hash-ref options 'show-api?)))

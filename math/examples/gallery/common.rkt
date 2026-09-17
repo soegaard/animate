@@ -10,8 +10,8 @@
 ;;; Imports and Exports
 ;;;
 (require "../../main.rkt" "model.rkt")
-(provide gallery-state gallery-style replace-style subtract-and-cancel
-         linear-recipe linear-problem linear-solution one-view-plate)
+(provide gallery-state gallery-style replace-style gallery-history-style subtract-and-cancel
+         linear-recipe linear-problem linear-solution gallery-history-solution one-view-plate)
 
 ; gallery-state : symbol? math-datum? [#:real list?] [#:assuming list?] -> math?
 ;;   Gives each independently authored demonstration an explicit root identity.
@@ -26,6 +26,11 @@
 ;;   Emphasizes a local replacement without making a second working-row copy.
 (define replace-style (math-presentation #:history 'replace #:max-visible-rows 3
                                         #:duration 1 #:pause-between-groups 4/5))
+
+; gallery-history-style : presentation-style?
+;;   Gives the five history/grouping comparisons one readable four-row policy.
+(define gallery-history-style
+  (math-presentation #:max-visible-rows 4 #:duration 1 #:pause-between-groups 4/5))
 
 ; subtract-and-cancel : math-datum? -> step-sequence?
 ;;   Returns an inspectable two-step recipe; conditions and ambiguity are checked on use.
@@ -62,6 +67,15 @@
      (steps [divide (both-sides 'divide 3)]
             [cancel (cancel-factor #:at (lhs) #:factor 3 #:keep-one? #t)]
             [remove-unit (remove-unit #:at (lhs))] [evaluate (evaluate #:at (rhs))])]))
+
+; gallery-history-solution : derivation?
+;;   Keeps the comparison fixture short while retaining two named moves and four checkpoints.
+(define gallery-history-solution
+  (derive (gallery-state 'gallery-history '(+ (+ 2 3) (* 2 4)) #:real '())
+    [evaluate-parts
+     (steps [evaluate-first (evaluate #:at (at-path '(0)))]
+            [evaluate-second (evaluate #:at (at-path '(1)))])]
+    [finish (evaluate)]))
 
 ; one-view-plate : symbol? symbol? string? string? presentation-plan? list? -> gallery-plate?
 ;;   Avoids duplicated catalogue boilerplate for a single-plan demonstration.

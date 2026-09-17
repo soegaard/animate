@@ -19,5 +19,5 @@
                             #:height [height 720] #:show-api? [show-api? #f])
   (define entries (gallery-entries plates))
   (define camera (make-gallery-camera! width height theme))
-  (build-gallery-scene! entries (prepare-gallery-views! entries camera theme) camera
+  (build-gallery-scene! entries (prepare-gallery-views! entries camera theme #:show-api? show-api?) camera
                         #:show-api? show-api?))

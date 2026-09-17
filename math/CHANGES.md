@@ -1,3 +1,15 @@
+# Unreleased — Gallery review repairs
+
+- Freeze measured gallery header/body/footer geometry in the parent-owned portable
+  replay payload (`animate-math-gallery-view-v2`); workers no longer choose text or
+  formula fit independently.
+- Keep created unit material and a witnessed factor survivor target-relative during
+  cancellation compaction. Existing endpoint assets and `remove-unit` semantics are
+  unchanged.
+- Improve hierarchy anchors, candidate-check wording/placement, history/grouping
+  comparison clarity, trace-backed distribution evidence, recipe labels, and review
+  contact sheets/probe metadata.
+
 # 0.5.1 — Mathematical concept gallery
 
 - Add 25 independently selectable plates and 31 replays in five chapters, including

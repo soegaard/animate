@@ -14,6 +14,7 @@
   racket/match
   "check.rkt"
   "../main.rkt"
+  "../../private/layout-box.rkt"
   "../private/native.rkt"
   "../private/typeset.rkt"
   (prefix-in adapter: "../private/animate-adapter.rkt")
@@ -104,11 +105,26 @@
           #:height height)
   (visual 'svg id center opacity width height source))
 
-; plain-text : any/c #:id symbol? #:center any/c #:font-size any/c #:color any/c ->
+; plain-text : any/c #:id symbol? #:center any/c #:font-size any/c #:color any/c
+;   [#:horizontal-alignment symbol?] [#:vertical-alignment symbol?]
+;   [#:font-weight symbol?] [#:opacity real?] ->
 ;   visual?
 ;;   Creates a synthetic Visual descriptor without loading a renderer.
-(define (plain-text text #:id id #:center center #:font-size size #:color color)
-  (visual 'text id center 1 (* (string-length text) size .5) size (list text color)))
+(define (plain-text text #:id id #:center center #:font-size size #:color color
+                    #:horizontal-alignment [horizontal-alignment 'center]
+                    #:vertical-alignment [vertical-alignment 'center]
+                    #:font-weight [font-weight 'normal] #:opacity [opacity 1])
+  (visual 'text id center opacity (* (string-length text) size .5) size
+          (list text color horizontal-alignment vertical-alignment font-weight)))
+
+; visual-layout-box : visual? [#:camera any/c] -> layout-box?
+;;   Supplies conservative synthetic text extents for parent-owned gallery measurement.
+(define (visual-layout-box item #:camera [ignored-camera #f])
+  (define position (visual-position item))
+  (layout-box (- (point-x position) (/ (visual-width item) 2))
+              (- (point-y position) (/ (visual-height item) 2))
+              (+ (point-x position) (/ (visual-width item) 2))
+              (+ (point-y position) (/ (visual-height item) 2))))
 
 ; scene-add : any/c any/c ... -> scene?
 ;;   Applies the tested native API contract to an immutable synthetic scene.
@@ -173,7 +189,7 @@
 ; functions : immutable-hash?
 ;;   Maps supported native names to explicit contract-model implementations.
 (define functions
-  (hash 'make-camera make-camera 'camera-width camera-width 'camera-height camera-height 'camera-world-width camera-world-width 'make-scene make-scene 'scene-add scene-add 'scene-remove scene-remove 'scene-play scene-play 'scene-wait scene-wait 'scene-set-value scene-set-value 'vec2 point 'svg-image svg-image 'plain-text plain-text 'move-to
+  (hash 'make-camera make-camera 'camera-width camera-width 'camera-height camera-height 'camera-world-width camera-world-width 'make-scene make-scene 'scene-add scene-add 'scene-remove scene-remove 'scene-play scene-play 'scene-wait scene-wait 'scene-set-value scene-set-value 'vec2 point 'svg-image svg-image 'plain-text plain-text 'visual-layout-box visual-layout-box 'move-to
     (lambda (id v) (request 'move id v))
     'fade-to
     (lambda (id v) (request 'fade id v))

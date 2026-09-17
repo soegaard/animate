@@ -14,7 +14,9 @@ nor Calcura is mandatory for the supplied lessons.
 
 The new gallery contains **25 concept plates / 31 replays** across held operations,
 selection/provenance, conditions, named moves, and presentation. Select one plate,
-one chapter, or all of them. The complete planned duration is **299.1 seconds**.
+one chapter, or all of them. The complete planned duration is **264.2 seconds**;
+the shorter total intentionally reflects the four-checkpoint history/grouping
+comparison fixture.
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"
@@ -214,6 +216,7 @@ previously assumed every scheduled step was a symbol should handle both forms.
 - [Public reference](scribblings/math.scrbl)
 - [Integration boundaries](INTEGRATION.md)
 - [Executed validation and limitations](docs/validation.md)
+- [Gallery review-repair record](docs/gallery-review-fix-progress.md)
 
 The original `docs/proposal-v0.1.md` and earlier changelog/review records are
 historical, not the specification of the new hierarchy. See `CHANGES.md` for the

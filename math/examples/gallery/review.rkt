@@ -17,6 +17,7 @@
          (only-in racket/string string-replace)
          json file/zip
          "../../main.rkt" "../../private/native.rkt"
+         "../../private/prepared-plan-model.rkt"
          "model.rkt" "render.rkt" "review-model.rkt")
 (provide write-gallery-index! write-gallery-review! gallery-frame-bitmap! gallery-bitmap-bytes)
 
@@ -76,7 +77,9 @@
 (define (probe-record probe file)
   (define checkpoint (gallery-probe-checkpoint probe))
   (define phase (gallery-probe-phase probe))
-  (hasheq 'file file 'plate (symbol->string (gallery-plate-id (gallery-entry-plate (gallery-probe-entry probe))))
+  (hasheq 'id (gallery-probe-id probe) 'regression-key (format "~s" (gallery-probe-regression-key probe))
+          'evidence "native-pixels"
+          'file file 'plate (symbol->string (gallery-plate-id (gallery-entry-plate (gallery-probe-entry probe))))
           'view (symbol->string (gallery-view-id (gallery-entry-view (gallery-probe-entry probe))))
           'kind (symbol->string (gallery-probe-kind probe))
           'time (json-time (gallery-probe-time probe)) 'time-exact (format "~s" (gallery-probe-time probe))
@@ -101,10 +104,17 @@
   (define (cell record)
     (define image ((native 'pict 'bitmap) (build-path root (hash-ref record 'file))))
     (define scaled ((native 'pict 'scale) image (/ 360 ((native 'pict 'pict-width) image))))
-    (define label (format "~a / ~a | ~a s | ~a"
-                          (hash-ref record 'plate) (hash-ref record 'view)
-                          (~r (hash-ref record 'time) #:precision '(= 2)) (hash-ref record 'kind)))
-    (define caption ((native 'pict 'text) label null 10))
+    (define phase (or (hash-ref record 'phase) "settled"))
+    (define fraction (hash-ref record 'phase-fraction))
+    (define line-one (format "~a / ~a" (hash-ref record 'plate) (hash-ref record 'view)))
+    (define line-two
+      (format "~a s · ~a~a · ~a"
+              (~r (hash-ref record 'time) #:precision '(= 2)) phase
+              (if fraction (string-append " " fraction) "") (hash-ref record 'id)))
+    (define caption
+      ((native 'pict 'vl-append) 3
+       ((native 'pict 'text) line-one null 15)
+       ((native 'pict 'text) line-two null 14)))
     ((native 'pict 'inset)
      ((native 'pict 'vl-append) 5 scaled caption) 8))
   (define cells (map cell records))
@@ -147,7 +157,7 @@
     (raise-user-error 'gallery-review "review destination must be new: ~a" root))
   (define entries (gallery-entries plates))
   (define camera (make-gallery-camera! width height theme))
-  (define preparations (prepare-gallery-views! entries camera theme))
+  (define preparations (prepare-gallery-views! entries camera theme #:show-api? show-api?))
   (define scene (build-gallery-scene! entries preparations camera #:show-api? show-api?))
   (make-directory* (build-path root "stills"))
   (define records
@@ -169,20 +179,27 @@
           (cons (contact-sheet! root (take remaining n) page)
                 (loop (drop remaining n) (add1 page)))))))
   (write-gallery-index! root plates)
-  (define manifest (hasheq 'schema "animate-math-gallery-review-v1" 'theme (symbol->string theme)
-                           'width width 'height height 'worker-count 0
-                           'native-repeat-pixel-checks (length records) 'stills records 'sheets sheets))
+  (define layout-diagnostics
+    (for/list ([entry (in-list entries)] [prepared (in-list preparations)])
+      (hasheq 'view (format "~s" (gallery-view-key entry))
+              'diagnostics (prepared-math-plan-diagnostics (prepared-gallery-view-math prepared)))))
+  (define manifest (hasheq 'schema "animate-math-gallery-review-v2" 'theme (symbol->string theme)
+                           'width width 'height height 'show-api? show-api? 'worker-count 0
+                           'evidence "native-pixels" 'preparation-schema (symbol->string gallery-preparation-payload-schema)
+                           'native-repeat-pixel-checks (length records) 'layout-diagnostics layout-diagnostics
+                           'stills records 'sheets sheets))
   (write-json-file! (build-path root "manifest.json") manifest)
   (call-with-output-file (build-path root "index.html") #:exists 'error
     (lambda (out)
-      (display "<!doctype html><meta charset='utf-8'><title>Math gallery review</title><style>body{font:16px system-ui;margin:2em;background:#eee;color:#111}img{max-width:100%}table{border-collapse:collapse}td,th{padding:.4em;border:1px solid #aaa}</style><h1>Math gallery review</h1><p>Read, during, and settled frames. Step and case metadata are in manifest.json.</p>" out)
+      (display "<!doctype html><meta charset='utf-8'><title>Math gallery review</title><style>body{font:16px system-ui;margin:2em;background:#eee;color:#111}img{max-width:100%}table{border-collapse:collapse}td,th{padding:.4em;border:1px solid #aaa}</style><h1>Math gallery review</h1><p>Native-pixel evidence. Read, transition, and settled frames are addressed by semantic keys in manifest.json.</p>" out)
       (for ([sheet (in-list sheets)]) (fprintf out "<p><a href='~a'><img src='~a'></a></p>" sheet sheet))
-      (display "<h2>Individual stills</h2><table><tr><th>Plate/view</th><th>Time</th><th>Kind</th><th>Step</th></tr>" out)
+      (display "<h2>Individual stills</h2><table><tr><th>Plate/view</th><th>Time</th><th>Kind</th><th>Case / step</th><th>Probe</th></tr>" out)
       (for ([record (in-list records)])
-        (fprintf out "<tr><td><a href='~a'>~a / ~a</a></td><td>~a</td><td>~a</td><td>~a</td></tr>"
+        (fprintf out "<tr><td><a href='~a'>~a / ~a</a></td><td>~a</td><td>~a</td><td>~a / ~a</td><td>~a</td></tr>"
                  (hash-ref record 'file) (html-escape (hash-ref record 'plate))
                  (html-escape (hash-ref record 'view)) (hash-ref record 'time)
-                 (hash-ref record 'kind) (html-escape (hash-ref record 'step))))
+                 (hash-ref record 'kind) (html-escape (hash-ref record 'case))
+                 (html-escape (hash-ref record 'step)) (html-escape (hash-ref record 'id))))
       (display "</table>" out)))
   (when zip-output (zip-review! root zip-output))
   manifest)

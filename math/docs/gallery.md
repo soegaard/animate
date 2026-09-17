@@ -1,11 +1,17 @@
-# Mathematical concept gallery — animate/math 0.5.1
+# Mathematical concept gallery — local review-repair update
 
 The gallery is a visual catalogue, not a fifth equation-solving lesson. It contains
 
-Version note: 0.5.1 refines three presentation details from the native review bundle: implicit unit-factor cancellation now reveals `1·` before the compaction completes, hierarchy inspectors are left-aligned with explicit indentation, and explanatory insets are larger and placed higher in the reserved annotation band.
+Version note: this local repair freezes measured header/body/footer geometry in the
+parent preparation payload, keeps `1·x` target-relative through unit-factor
+compaction, uses stationary left-anchored hierarchy markers, places candidate
+checks beside the checked expression, and improves review labels/probes. It is not
+a new algebraic API or renderer.
 
 **25 independently selectable plates and 31 replays**, organized into five chapters.
-The complete planned duration is **299.1 seconds (4 minutes 59.1 seconds)**.
+The complete planned duration is **264.2 seconds (4 minutes 24.2 seconds)**. It
+changed intentionally because the grouping/history demonstrations now use the
+short shared four-checkpoint comparison derivation.
 
 Every replay uses ordinary checked mathematical states, derivations, and presentations.
 The gallery supplies a title, a short caption, optional API labels, and time to read the
@@ -154,14 +160,15 @@ A bundle contains:
   case path, step address, and last completed mathematical checkpoint;
 - `gallery-index.json` with chronological selection metadata.
 
-The default complete gallery review has **565 sample records**. Intermediate
-`transition` probes sample at 25%, 45%, 50%, 55%, and 75% so the atomic-replacement
-visibility barrier is not hidden by a single midpoint. Cancellation also gets
-retirement and compaction probes. Every sample is checked for repeatable native
-pixels after seeking elsewhere and back.
+The review count follows the selected plates and current schedule; it is not a
+fixed compatibility number. Intermediate `transition` probes sample at 25%, 45%,
+50%, 55%, and 75%. `compact` and `reveal-created` also sample 5%, 15%, 25%, 50%,
+75%, 85%, and 95%, so the unit-factor assembly is not hidden by a midpoint.
+Every sample is checked for repeatable native pixels after seeking elsewhere and
+back. Contact sheets use two label lines with the replay and semantic probe id.
 
-Use `--checkpoints-only` for the smaller **197-record** full-gallery review, or
-select a single plate/chapter. Review is intentionally local; `--workers` does
+Use `--checkpoints-only` for a smaller checkpoint-only review, or select a single
+plate/chapter. Review is intentionally local; `--workers` does
 not start a frame pool for stills. Review images use the requested camera size
 without movie supersampling.
 
@@ -223,8 +230,9 @@ For the whole gallery that means 31 math-plan preparations in the parent, not
 expression on one plate cannot shrink an unrelated simple plate. Tree plates
 reserve a separate inspector column. Caption/API space is reserved before output.
 
-The existing v2 portable math codec represents each prepared replay. Large replay
-data is stored in a bounded, content-addressed `.gallery.rktd` file instead of
+The existing v2 portable math codec represents each mathematical replay inside the
+versioned `animate-math-gallery-view-v2` wrapper. Large replay data is stored in a
+bounded, content-addressed `.gallery.rktd` file instead of
 inflating every worker message. The generic preparation manifest registers these
 files alongside all referenced SVG assets; it verifies and leases them. Workers
 verify the files, reconstruct local math states/layouts, and append their clips
