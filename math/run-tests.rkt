@@ -17,6 +17,7 @@
   "tests/property-test.rkt"
   "tests/house-style-test.rkt"
   "tests/prepared-plan-codec-test.rkt"
+  "tests/fraction-bar-test.rkt"
   "tests/choreography-test.rkt"
   "tests/composite-moves-test.rkt"
   "tests/gallery-test.rkt"
@@ -31,6 +32,8 @@
 (run-house-style-tests)
 
 (run-prepared-plan-codec-tests)
+
+(run-fraction-bar-tests)
 
 (run-choreography-tests)
 

@@ -196,13 +196,23 @@
 ; compatible-ink? : prepared-token? prepared-token? math? math? -> boolean?
 ;;   Requires the same owned role and notation; crop quantization is not identity.
 (define (compatible-ink? source target before after)
-  (and (eq? (prepared-token-role source) (prepared-token-role target))
-       (if (eq? (prepared-token-role source) 'structure)
-           ;; Residual ink (a fraction bar or radical) belongs to its operator,
-           ;; not to the complete source substring containing all its children.
-           (equal? (head (datum-ref (math-datum before) (prepared-token-path source)))
-                   (head (datum-ref (math-datum after) (prepared-token-path target))))
-           (string=? (prepared-token-text source) (prepared-token-text target)))))
+  (define source-role (prepared-token-role source))
+  (define target-role (prepared-token-role target))
+  (and (eq? source-role target-role)
+       (cond
+         [(eq? source-role 'fraction-bar)
+          ;; A rewritten numerator legitimately changes the complete fraction
+          ;; source text. Its matched rewrite lineage and persistent division
+          ;; owner, rather than that text or measured SVG crop, define identity.
+          (and (eq? (head (datum-ref (math-datum before) (prepared-token-path source))) '/)
+               (eq? (head (datum-ref (math-datum after) (prepared-token-path target))) '/))]
+         [(eq? source-role 'structure)
+          ;; Other residual ink (for example a radical) remains owned by its
+          ;; outer operator instead of its complete source substring.
+          (equal? (head (datum-ref (math-datum before) (prepared-token-path source)))
+                  (head (datum-ref (math-datum after) (prepared-token-path target))))]
+         [else
+          (string=? (prepared-token-text source) (prepared-token-text target))])))
 
 ; enclosing-unit : rewrite-step? operand-path? operand-path? -> operand-path?
 ;;   Finds the largest exact subtree witness containing this source/target pair.

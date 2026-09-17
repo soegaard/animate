@@ -10,12 +10,16 @@
 ;;; Imports and Exports
 ;;;
 ;; Imports
-(require (only-in racket/list remove-duplicates) "validation.rkt" "model.rkt" "format.rkt")
+(require (only-in racket/list remove-duplicates)
+         "validation.rkt"
+         "datum.rkt"
+         "model.rkt"
+         "format.rkt")
 
 ;; Exports
 (provide
   (struct-out prepared-token) (struct-out prepared-layout) token-with-position token-with-id
-  token-scaled)
+  token-scaled fraction-bar-token? prepared-token-role-for-source-span)
 
 ;;;
 ;;; Data Representation
@@ -38,7 +42,8 @@
       (check-symbol who id))))
 ;; prepared-token is an immutable record. Its fields have the following roles.
 ;;  - path  operand-path?  mathematical owner in one checkpoint
-;;  - role  symbol?  owned mathematical or operator role
+;;  - role  symbol?  owned mathematical/operator role; 'fraction-bar denotes
+;;    residual structural ink for one persistent division expression
 ;;  - text  immutable-string?  copied complete source fragment
 ;;  - asset  immutable-string?  frozen SVG asset reference, not a live renderer
 ;;  - x  finite-real?  center coordinate in local y-up world units
@@ -65,6 +70,26 @@
 ;;    IDs
 ;;  - source  math-source?  complete source and semantic ranges
 ;;  - diagnostics  (listof immutable-string?)  ordered preparation notes
+
+; fraction-bar-token? : any/c -> boolean?
+;;   Recognizes the explicit structural role for one prepared division bar.
+(define (fraction-bar-token? value)
+  (and (prepared-token? value)
+       (eq? (prepared-token-role value) 'fraction-bar)))
+
+; prepared-token-role-for-source-span : math? math-source-span? -> symbol?
+;;   Preserves division-bar identity while retaining other residual ink as structure.
+(define (prepared-token-role-for-source-span state span)
+  (unless (math? state)
+    (raise-argument-error 'prepared-token-role-for-source-span "math?" state))
+  (unless (math-source-span? span)
+    (raise-argument-error 'prepared-token-role-for-source-span "math-source-span?" span))
+  (define source-role (math-source-span-role span))
+  (if (eq? source-role 'expression)
+      (if (eq? (head (datum-ref (math-datum state) (math-source-span-path span))) '/)
+          'fraction-bar
+          'structure)
+      source-role))
 
 ; token-with-position : prepared-token? any/c any/c -> prepared-token?
 ;;   Returns an immutable prepared-token update while preserving all unrelated fields.

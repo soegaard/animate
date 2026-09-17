@@ -16,6 +16,7 @@
   "../main.rkt"
   "../../private/layout-box.rkt"
   "../private/native.rkt"
+  "../private/datum.rkt"
   "../private/typeset.rkt"
   (prefix-in adapter: "../private/animate-adapter.rkt")
   (prefix-in lc: "../examples/linear-concrete.rkt")
@@ -105,6 +106,30 @@
           #:height height)
   (visual 'svg id center opacity width height source))
 
+; synthetic-polygon-path : (listof point?) -> list?
+;;   Records deterministic local path vertices for a renderer-free contract Visual.
+(define (synthetic-polygon-path vertices)
+  (list 'polygon vertices))
+
+; synthetic-path-size : any/c -> (values positive-real? positive-real?)
+;;   Measures the synthetic closed polygon bounds used by fraction-bar tests.
+(define (synthetic-path-size path)
+  (match path
+    [(list 'polygon vertices)
+     (define xs (map point-x vertices))
+     (define ys (map point-y vertices))
+     (values (- (apply max xs) (apply min xs))
+             (- (apply max ys) (apply min ys)))]
+    [_ (error 'synthetic-path-size "unsupported path geometry ~s" path)]))
+
+; path-visual : any/c #:id symbol? #:center point? [#:opacity real?] #:fill any/c
+;   #:stroke any/c #:stroke-width real? -> visual?
+;;   Creates one synthetic path Visual while preserving its local geometry as content.
+(define (path-visual path #:id id #:center center #:opacity [opacity 1]
+                     #:fill fill #:stroke stroke #:stroke-width stroke-width)
+  (define-values (width height) (synthetic-path-size path))
+  (visual 'path id center opacity width height (list path fill stroke stroke-width)))
+
 ; plain-text : any/c #:id symbol? #:center any/c #:font-size any/c #:color any/c
 ;   [#:horizontal-alignment symbol?] [#:vertical-alignment symbol?]
 ;   [#:font-weight symbol?] [#:opacity real?] ->
@@ -172,6 +197,15 @@
           [(fade)
            (unless (<= 0 (request-value r) 1) (error 'fade-to "opacity"))
            (struct-copy visual v [opacity (request-value r)])]
+          [(morph)
+           (define-values (width height) (synthetic-path-size (request-value r)))
+           (struct-copy visual v
+             [width width]
+             [height height]
+             [content (list (request-value r)
+                            (cadr (visual-content v))
+                            (caddr (visual-content v))
+                            (cadddr (visual-content v)))])]
           [else (error 'scene-play "unsupported request")]))))
   (scene result
     (scene-data s)
@@ -189,8 +223,10 @@
 ; functions : immutable-hash?
 ;;   Maps supported native names to explicit contract-model implementations.
 (define functions
-  (hash 'make-camera make-camera 'camera-width camera-width 'camera-height camera-height 'camera-world-width camera-world-width 'make-scene make-scene 'scene-add scene-add 'scene-remove scene-remove 'scene-play scene-play 'scene-wait scene-wait 'scene-set-value scene-set-value 'vec2 point 'svg-image svg-image 'plain-text plain-text 'visual-layout-box visual-layout-box 'move-to
+  (hash 'make-camera make-camera 'camera-width camera-width 'camera-height camera-height 'camera-world-width camera-world-width 'make-scene make-scene 'scene-add scene-add 'scene-remove scene-remove 'scene-play scene-play 'scene-wait scene-wait 'scene-set-value scene-set-value 'vec2 point 'svg-image svg-image 'polygon-path synthetic-polygon-path 'make-path-visual path-visual 'plain-text plain-text 'visual-layout-box visual-layout-box 'move-to
     (lambda (id v) (request 'move id v))
+    'morph-to
+    (lambda (id geometry) (request 'morph id geometry))
     'fade-to
     (lambda (id v) (request 'fade id v))
     'scene-sample
@@ -222,9 +258,12 @@
 (define (synthetic-typesetter state size multiplication foreground directory)
   (set! preparations (add1 preparations))
   (define src (format-math-source state #:multiplication multiplication))
+  (define datum (math-datum state))
   (define spans
     (filter
-      (lambda (s) (not (eq? (math-source-span-role s) 'expression)))
+      (lambda (s)
+        (or (not (eq? (math-source-span-role s) 'expression))
+            (memq (head (datum-ref datum (math-source-span-path s))) '(/ sqrt))))
       (math-source-spans src)))
   (define tokens
     (for/list ([span (in-list spans)] [i (in-naturals)])
@@ -235,7 +274,7 @@
           (math-source-span-end span)))
       (prepared-token
         (math-source-span-path span)
-        (math-source-span-role span)
+        (prepared-token-role-for-source-span state span)
         content
         "synthetic-test-asset.svg"
         (* .15 (math-source-span-start span))

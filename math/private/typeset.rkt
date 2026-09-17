@@ -30,7 +30,8 @@
 (provide
   (struct-out prepared-token) (struct-out prepared-layout) typeset-state! token-visual
   token-with-position token-with-id token-scaled default-math-cache-directory
-  current-math-typesetter current-math-typeset-observer bitmap-visible-bounds)
+  current-math-typesetter current-math-typeset-observer bitmap-visible-bounds
+  fraction-bar-token? prepared-token-role-for-source-span)
 
 ;;;
 ;;; Construction and Operations
@@ -130,10 +131,7 @@
                   (* (/ h height) (cadddr box)))
                 w
                 h))
-            (define role
-              (if (eq? (math-source-span-role span) 'expression)
-                'structure
-                (math-source-span-role span)))
+            (define role (prepared-token-role-for-source-span state span))
             (prepared-token
               (math-source-span-path span)
               role

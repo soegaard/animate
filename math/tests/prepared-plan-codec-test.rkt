@@ -15,6 +15,7 @@
          racket/vector
          "check.rkt"
          (submod "native-contract.rkt" support)
+         "../main.rkt"
          "../private/native.rkt"
          "../private/prepare.rkt"
          "../private/prepared-plan-codec.rkt"
@@ -53,12 +54,22 @@
   (vector-set! copy index value)
   (vector->immutable-vector copy))
 
-; fixture-prepared-plan : -> prepared-math-plan?
+; fixture-prepared-plan : [presentation-plan?] -> prepared-math-plan?
 ;;   Uses the existing renderer-free contract adapter for deterministic layouts.
-(define (fixture-prepared-plan)
+(define (fixture-prepared-plan [plan qc:plan])
   (parameterize ([current-native-loader loader]
                  [current-math-typesetter synthetic-typesetter])
-    (prepare-math-plan! qc:plan #:theme 'dark)))
+    (prepare-math-plan! plan #:theme 'dark)))
+
+; fraction-codec-plan : presentation-plan?
+;;   Retains one division owner while the numerator is evaluated.
+(define fraction-codec-plan
+  (present
+   (derive (math '(/ (- 17 5) 3) #:id 'fraction-codec)
+     [numerator (evaluate #:at (numerator))]
+     [quotient (evaluate)])
+   #:style (math-presentation #:history 'replace #:duration 1
+                              #:pause-between-groups 0)))
 
 
 ;;;
@@ -142,4 +153,55 @@
          (hash-set payload 'layouts (vector-replace layouts 0 bad-layout))
          qc:plan worker-camera codec-options))
       #rx"occurrence|semantic token span"
-      'bad-token-ownership))))
+      'bad-token-ownership)))
+  (test-group
+   "prepared mathematical plan codec: persistent fraction bars remain v2 data"
+   (lambda ()
+     (define prepared (fixture-prepared-plan fraction-codec-plan))
+     (define source-entry
+       (for*/first ([(state layout) (in-hash (prepared-math-plan-layouts prepared))]
+                    [token (in-list (prepared-layout-tokens layout))]
+                    #:when (fraction-bar-token? token))
+         (cons state token)))
+     (define source-state (car source-entry))
+     (define source-bar (cdr source-entry))
+     (check-true source-bar 'prepared-fraction-bar-present)
+     (define payload
+       (prepared-math-plan->portable-payload
+        prepared
+        codec-options
+        (hash "synthetic-test-asset.svg" "staged-synthetic-test-asset.svg")))
+     (check-equal (hash-ref payload 'schema) math-preparation-payload-schema
+                  'fraction-bars-keep-v2-schema)
+     (define worker-camera
+       ((loader 'animate 'make-camera) #:width 160 #:height 90 #:background "#121620"))
+     (parameterize
+      ([current-native-loader loader]
+       [current-math-typesetter
+        (lambda _arguments
+          (error 'prepared-plan-codec-test "fraction-bar worker rebinding must not typeset"))])
+      (define rebound
+        (portable-payload->prepared-math-plan payload fraction-codec-plan worker-camera codec-options))
+      (define rebound-bar
+        (findf fraction-bar-token?
+               (prepared-layout-tokens
+                (hash-ref (prepared-math-plan-layouts rebound) source-state))))
+      (check-true rebound-bar 'rebound-fraction-bar-present)
+      (check-equal (prepared-token-role rebound-bar) (prepared-token-role source-bar)
+                   'fraction-bar-role-round-trips)
+      (check-equal (prepared-token-path rebound-bar) (prepared-token-path source-bar)
+                   'fraction-bar-path-round-trips)
+      (check-equal (prepared-token-x rebound-bar) (prepared-token-x source-bar)
+                   'fraction-bar-x-round-trips)
+      (check-equal (prepared-token-y rebound-bar) (prepared-token-y source-bar)
+                   'fraction-bar-y-round-trips)
+      (check-equal (prepared-token-width rebound-bar) (prepared-token-width source-bar)
+                   'fraction-bar-width-round-trips)
+      (check-equal (prepared-token-height rebound-bar) (prepared-token-height source-bar)
+                   'fraction-bar-height-round-trips)
+      (check-equal (prepared-token-id rebound-bar) (prepared-token-id source-bar)
+                   'fraction-bar-id-round-trips)
+      (check-equal (prepared-token-asset rebound-bar) "staged-synthetic-test-asset.svg"
+                   'fraction-bar-staged-asset-round-trips)
+      (check-true (adapter:math-plan->scene! rebound)
+                  'rebound-fraction-plan-compiles-without-typesetter)))))

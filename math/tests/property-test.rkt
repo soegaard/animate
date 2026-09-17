@@ -125,6 +125,14 @@
       (check-false (regexp-match? #rx"id=\"bar\"" child))
       (check-equal (svg-view-box child) '(0 0 20 10))
       (check-true (regexp-match? #rx"#ABCDEF" (recolor-svg child "#ABCDEF")))
+      (define fraction-svg
+        "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 10'><defs><rect x='0' y='0' width='20' height='10'/></defs><g><rect x='1' y='4.7' width='18' height='0.6'/></g></svg>")
+      (define rule (fraction-rule-bounds fraction-svg))
+      (check-true (svg-rule-bounds? rule) 'fraction-rule-is-direct-painted-rectangle)
+      (check-equal (svg-rule-bounds-x rule) 1 'fraction-rule-x)
+      (check-equal (svg-rule-bounds-y rule) 4.7 'fraction-rule-y)
+      (check-equal (svg-rule-bounds-width rule) 18 'fraction-rule-width)
+      (check-equal (svg-rule-bounds-height rule) 0.6 'fraction-rule-height)
       (define glyphs-a
         "<svg xmlns='http://www.w3.org/2000/svg'><defs><path id='g2' d='M2 2'/><path id='g1' d='M1 1'/></defs><use href='#g1'/></svg>")
       (define glyphs-b

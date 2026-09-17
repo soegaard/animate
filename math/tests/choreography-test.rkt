@@ -50,8 +50,7 @@
   (prepared-layout state
     (for/list ([span (in-list spans)] [i (in-naturals)])
       (define path (math-source-span-path span))
-      (define role (if (eq? (math-source-span-role span) 'expression)
-                       'structure (math-source-span-role span)))
+      (define role (prepared-token-role-for-source-span state span))
       (define text (substring (math-source-text source) (math-source-span-start span) (math-source-span-end span)))
       (prepared-token path role text (format "fixture|~s|~s|~s" datum path role)
                       (* 3/20 i) 0 (+ 1/10 drift) (+ 2/5 drift)
@@ -147,6 +146,60 @@
         (define-values (plan old new) (fixture-plan (derivation-step lc:solution name)))
         (for ([i (in-list (tokens-at-path old '(1)))])
           (check-false (member i (token-transition-outgoing plan)) (list name 'rhs-never-retires))))))
+  (test-group "review: both-sides introduction preserves unchanged SVG appearance"
+    (lambda ()
+      (define solution
+        (derive lc:problem [subtract-five (both-sides 'subtract 5)]))
+      (define plan
+        (choreograph
+          (present solution
+                   #:style (math-presentation #:history 'replace #:duration 1
+                                              #:pause-between-groups 0))
+          [subtract-five (prepare-space #:duration 1/2)
+                         (reveal-created #:duration 2/5)]))
+      (define step (derivation-step solution 'subtract-five))
+      (define source-tokens (fixture-tokens (rewrite-step-before step)))
+      (define target-tokens (fixture-tokens (rewrite-step-after step)))
+      (define source-relation
+        (findf (lambda (token) (eq? (prepared-token-role token) 'relation))
+               source-tokens))
+      (define target-relation
+        (findf (lambda (token) (eq? (prepared-token-role token) 'relation))
+               target-tokens))
+      (define source-rhs
+        (findf (lambda (token)
+                 (and (equal? (prepared-token-path token) '(1))
+                      (eq? (prepared-token-role token) 'atom)
+                      (string=? (prepared-token-text token) "17")))
+               source-tokens))
+      (define target-rhs
+        (findf (lambda (token)
+                 (and (equal? (prepared-token-path token) '(1 0))
+                      (eq? (prepared-token-role token) 'atom)
+                      (string=? (prepared-token-text token) "17")))
+               target-tokens))
+      (check-true source-relation 'source-relation-is-explicit)
+      (check-true target-relation 'target-relation-is-explicit)
+      (check-true source-rhs 'source-rhs-is-explicit)
+      (check-true target-rhs 'target-rhs-is-explicit)
+      (check-false (equal? (prepared-token-asset source-rhs)
+                           (prepared-token-asset target-rhs))
+                   'fixture-requires-distinct-checkpoint-assets)
+      (parameterize ([current-native-loader loader]
+                     [current-math-typesetter fixture-typesetter])
+        (define scn (adapter:math-plan->scene! plan))
+        (define final-svg-assets
+          (for/list ([visual (in-hash-values (scene-visuals scn))]
+                     #:when (eq? (visual-kind visual) 'svg))
+            (visual-content visual)))
+        (check-true (member (prepared-token-asset source-relation) final-svg-assets)
+                    'unchanged-relation-keeps-source-appearance)
+        (check-false (member (prepared-token-asset target-relation) final-svg-assets)
+                     'unchanged-relation-is-not-swapped-at-checkpoint)
+        (check-true (member (prepared-token-asset source-rhs) final-svg-assets)
+                    'unchanged-rhs-keeps-source-appearance)
+        (check-false (member (prepared-token-asset target-rhs) final-svg-assets)
+                     'unchanged-rhs-is-not-swapped-at-checkpoint))))
   (test-group "review: cancellation preserves separators between surviving addends"
     (lambda ()
       (define step (derivation-step qc:solution 'cancel-five))

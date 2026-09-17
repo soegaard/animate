@@ -19,8 +19,10 @@
 
 ;; Exports
 (provide
-  annotate-math-source (struct-out semantic-marker) svg-marker-ids isolate-svg-marker
-  recolor-svg canonicalize-svg-definitions svg-view-box crop-svg svg->xexpr xexpr->svg)
+  annotate-math-source (struct-out semantic-marker) (struct-out svg-rule-bounds)
+  svg-marker-ids isolate-svg-marker
+  recolor-svg canonicalize-svg-definitions svg-view-box fraction-rule-bounds crop-svg
+  svg->xexpr xexpr->svg)
 
 ;;;
 ;;; Data Representation
@@ -30,6 +32,15 @@
 ;; semantic-marker is an immutable record. Its fields have the following roles.
 ;;  - name  string?  deterministic SVG marker identity
 ;;  - span  math-source-span?  owned source interval
+
+(struct svg-rule-bounds (x y width height)
+  #:transparent)
+;; svg-rule-bounds is an immutable SVG-coordinate record. Its fields identify
+;; the direct rectangular rule geometry emitted for one prepared TeX fraction.
+;;  - x  real?  left edge in the cropped SVG view-box coordinate system
+;;  - y  real?  top edge in the cropped SVG view-box coordinate system
+;;  - width  positive-real?  horizontal painted-rule extent in SVG units
+;;  - height  positive-real?  vertical painted-rule extent in SVG units
 
 ; annotate-math-source : any/c -> (values string? list?)
 ;;   Marks nested semantic ranges before one complete TeX layout pass.
@@ -211,6 +222,35 @@
             (> (list-ref values 3) 0))
     (error 'svg-view-box "invalid viewBox: ~s" text))
   values)
+
+; fraction-rule-bounds : any/c -> (or/c svg-rule-bounds? #f)
+;;   Returns the widest positive direct SVG rectangle, which is the fraction rule
+;;   in a division marker. Definitions are ignored because they are never painted.
+(define (fraction-rule-bounds source)
+  (define root (if (string? source) (svg->xexpr source) source))
+  (define (number-attribute element key [fallback #f])
+    (define value (attr element key fallback))
+    (and (string? value) (string->number value)))
+  (define (rect-bounds element)
+    (and (element? element)
+         (eq? (car element) 'rect)
+         (let ([x (number-attribute element 'x "0")]
+               [y (number-attribute element 'y "0")]
+               [width (number-attribute element 'width)]
+               [height (number-attribute element 'height)])
+           (and (real? x) (real? y) (real? width) (real? height)
+                (positive? width) (positive? height)
+                (svg-rule-bounds x y width height)))))
+  (define (painted-rectangles element)
+    (cond
+      [(not (element? element)) '()]
+      [(eq? (car element) 'defs) '()]
+      [else
+       (append (if (rect-bounds element) (list (rect-bounds element)) '())
+               (append-map painted-rectangles (cddr element)))]))
+  (define rectangles (painted-rectangles root))
+  (and (pair? rectangles)
+       (car (sort rectangles > #:key svg-rule-bounds-width))))
 
 ; crop-svg : any/c any/c any/c any/c -> string?
 ;;   Changes the SVG viewport without discarding its frozen glyph geometry.

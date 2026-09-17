@@ -253,7 +253,7 @@
 ;;   Resolves one token's exact worker-local semantic source ownership.
 (define (expected-token-span source token)
   (define source-role
-    (if (eq? (prepared-token-role token) 'structure)
+    (if (memq (prepared-token-role token) '(structure fraction-bar))
         'expression
         (prepared-token-role token)))
   (define matches

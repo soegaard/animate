@@ -10,6 +10,7 @@
 ;;;
 ;; Imports
 (require
+  (only-in racket/file file->string)
   (only-in racket/list append-map take-right remove-duplicates)
   (only-in racket/match match match-define)
   (only-in racket/string string-join)
@@ -19,6 +20,7 @@
   "prepare.rkt"
   "token-layout.rkt"
   "transition-plan.rkt"
+  "semantic-svg.rkt"
   "datum.rkt"
   "model.rkt"
   "context.rkt"
@@ -41,13 +43,92 @@
 (define (animate-binding name)
   (native 'animate name))
 
-; add-tokens : scene? (listof prepared-token?) [#:opacity (real-in 0 1)] -> scene?
+; fraction-bar-geometry is an immutable local-world record. Its center and
+;; dimensions retain the painted fraction rule rather than its padded SVG viewport.
+(struct fraction-bar-geometry (x y width height)
+  #:transparent)
+;;  - x  finite-real?  painted-rule center in local y-up world coordinates
+;;  - y  finite-real?  painted-rule center in local y-up world coordinates
+;;  - width  positive-real?  painted-rule horizontal extent in world units
+;;  - height  positive-real?  painted-rule vertical extent in world units
+
+; fallback-fraction-bar-geometry : prepared-token? -> fraction-bar-geometry?
+;;   Supplies conservative thin geometry for legacy or synthetic prepared assets.
+(define (fallback-fraction-bar-geometry token)
+  (fraction-bar-geometry
+   (prepared-token-x token)
+   (prepared-token-y token)
+   (prepared-token-width token)
+   (/ (prepared-token-height token) 4)))
+
+; fraction-bar-geometry-for-token : prepared-token? -> fraction-bar-geometry?
+;;   Maps the painted TeX rule inside its frozen cropped SVG viewport into world
+;; coordinates. Asset reads occur only while compiling a scene, never while sampling.
+(define (fraction-bar-geometry-for-token token)
+  (with-handlers ([exn:fail? (lambda (_) (fallback-fraction-bar-geometry token))])
+    (define source (file->string (prepared-token-asset token)))
+    (define view-box (svg-view-box source))
+    (define rule (fraction-rule-bounds source))
+    (if (not rule)
+        (fallback-fraction-bar-geometry token)
+        (let* ([view-x (list-ref view-box 0)]
+               [view-y (list-ref view-box 1)]
+               [view-width (list-ref view-box 2)]
+               [view-height (list-ref view-box 3)]
+               [rule-center-x (+ (svg-rule-bounds-x rule)
+                                 (/ (svg-rule-bounds-width rule) 2))]
+               [rule-center-y (+ (svg-rule-bounds-y rule)
+                                 (/ (svg-rule-bounds-height rule) 2))]
+               [view-center-x (+ view-x (/ view-width 2))]
+               [view-center-y (+ view-y (/ view-height 2))])
+          (fraction-bar-geometry
+           (+ (prepared-token-x token)
+              (* (prepared-token-width token) (/ (- rule-center-x view-center-x) view-width)))
+           (+ (prepared-token-y token)
+              (* (prepared-token-height token) (/ (- view-center-y rule-center-y) view-height)))
+           (* (prepared-token-width token) (/ (svg-rule-bounds-width rule) view-width))
+           (* (prepared-token-height token) (/ (svg-rule-bounds-height rule) view-height)))))))
+
+; fraction-bar-path : fraction-bar-geometry? -> path-geometry?
+;;   Builds the true measured local rectangle for one persistent division rule.
+(define (fraction-bar-path geometry)
+  (define half-width (/ (fraction-bar-geometry-width geometry) 2))
+  (define half-thickness (/ (fraction-bar-geometry-height geometry) 2))
+  ((animate-binding 'polygon-path)
+   (list
+    ((animate-binding 'vec2) (- half-width) (- half-thickness))
+    ((animate-binding 'vec2) half-width (- half-thickness))
+    ((animate-binding 'vec2) half-width half-thickness)
+    ((animate-binding 'vec2) (- half-width) half-thickness))))
+
+; fraction-bar-visual : prepared-token? string? (real-in 0 1) -> path-visual?
+;;   Uses frozen painted-rule geometry for a non-scaling filled/stroked bar Visual.
+(define (fraction-bar-visual token foreground opacity)
+  (define geometry (fraction-bar-geometry-for-token token))
+  ((animate-binding 'make-path-visual)
+   (fraction-bar-path geometry)
+   #:id (prepared-token-id token)
+   #:center ((animate-binding 'vec2)
+             (fraction-bar-geometry-x geometry) (fraction-bar-geometry-y geometry))
+   #:opacity opacity
+   #:fill foreground
+   #:stroke foreground
+   #:stroke-width 0))
+
+; native-token-visual : prepared-token? string? [#:opacity (real-in 0 1)] -> visual?
+;;   Chooses a semantic path only for persistent division-bar structure.
+(define (native-token-visual token foreground #:opacity [opacity 1])
+  (if (fraction-bar-token? token)
+      (fraction-bar-visual token foreground opacity)
+      (token-visual token #:opacity opacity)))
+
+; add-tokens : scene? (listof prepared-token?) string? [#:opacity (real-in 0 1)] -> scene?
 ;;   Updates native scene presence in the explicit token order.
-(define (add-tokens scn tokens #:opacity [opacity 1])
+(define (add-tokens scn tokens foreground #:opacity [opacity 1])
   (apply
     (animate-binding 'scene-add)
     scn
-    (map (lambda (t) (token-visual t #:opacity opacity)) tokens)))
+    (map (lambda (t) (native-token-visual t foreground #:opacity opacity)) tokens)))
 
 ; remove-tokens : scene? (listof prepared-token?) -> scene?
 ;;   Updates native scene presence in the explicit token order.
@@ -72,9 +153,20 @@
 ; move-request : prepared-token? -> any/c
 ;;   Constructs an ordinary native animation request for one prepared part.
 (define (move-request t)
+  (define center
+    (if (fraction-bar-token? t)
+        (fraction-bar-geometry-for-token t)
+        (fraction-bar-geometry (prepared-token-x t) (prepared-token-y t) 1 1)))
   ((animate-binding 'move-to)
     (prepared-token-id t)
-    ((animate-binding 'vec2) (prepared-token-x t) (prepared-token-y t))))
+    ((animate-binding 'vec2) (fraction-bar-geometry-x center) (fraction-bar-geometry-y center))))
+
+; fraction-bar-morph-request : symbol? fraction-bar-geometry? -> morph-to-request?
+;;   Resizes one local bar without changing its center or cosmetic thickness style.
+(define (fraction-bar-morph-request id geometry)
+  ((animate-binding 'morph-to)
+   id
+   (fraction-bar-path geometry)))
 
 ; fade-request : prepared-token? (real-in 0 1) -> any/c
 ;;   Constructs an ordinary native animation request for one prepared part.
@@ -198,7 +290,8 @@
                                 (max 1 (* 14/25 (string-length caption)))))
             #:color (prepared-math-plan-foreground prepared)))))
   (define seconds (presentation-phase-duration phase))
-  (define shown (play (add-tokens scene-with-caption tokens #:opacity 0)
+  (define shown (play (add-tokens scene-with-caption tokens
+                                  (prepared-math-plan-foreground prepared) #:opacity 0)
                       (map (lambda (t) (fade-request t 1)) tokens) (/ seconds 5)))
   (define held (play shown '() (* 3/5 seconds)))
   (define hidden (play held (map (lambda (t) (fade-request t 0)) tokens) (/ seconds 5)))
@@ -290,6 +383,75 @@
          #f)])]))
 
 ;;;
+;;; Introduction Appearance Continuity
+;;;
+
+; token-with-appearance : prepared-token? prepared-token? -> prepared-token?
+;;   Rebinds destination semantics to an already visible prepared appearance.
+;;   Paths/roles/text follow the new checkpoint while SVG geometry stays continuous.
+(define (token-with-appearance semantic appearance)
+  (struct-copy prepared-token semantic
+    [asset (prepared-token-asset appearance)]
+    [x (prepared-token-x appearance)]
+    [y (prepared-token-y appearance)]
+    [width (prepared-token-width appearance)]
+    [height (prepared-token-height appearance)]))
+
+; introduction-continuity-endpoint : symbol? list? list? -> list?
+;;   Keeps preserved ink visually identical across a pure introduction endpoint.
+;;   Created ink already uses destination assets; only matched survivors are rebound.
+(define (introduction-continuity-endpoint kind next moving)
+  (if (eq? kind 'introduction)
+      (for/list ([semantic (in-list next)])
+        (define appearance
+          (findf (lambda (token)
+                   (eq? (prepared-token-id token) (prepared-token-id semantic)))
+                 moving))
+        (if appearance (token-with-appearance semantic appearance) semantic))
+      next))
+
+; persistent-fraction-bar-matches : list? list? list? -> list?
+;;   Selects only semantic correspondence witnesses for persistent division rules.
+(define (persistent-fraction-bar-matches matches old next)
+  (filter
+   (lambda (entry)
+     (and (fraction-bar-token? (list-ref old (token-match-source entry)))
+          (fraction-bar-token? (list-ref next (token-match-target entry)))))
+   matches))
+
+; interpolate-fraction-bar-geometry : fraction-bar-geometry? fraction-bar-geometry?
+;;   real? -> fraction-bar-geometry?
+;;   Computes one deterministic local-world fraction-rule geometry between two prepared states.
+(define (interpolate-fraction-bar-geometry source destination fraction)
+  (define (between start end)
+    (+ start (* fraction (- end start))))
+  (fraction-bar-geometry
+   (between (fraction-bar-geometry-x source) (fraction-bar-geometry-x destination))
+   (between (fraction-bar-geometry-y source) (fraction-bar-geometry-y destination))
+   (between (fraction-bar-geometry-width source) (fraction-bar-geometry-width destination))
+   (between (fraction-bar-geometry-height source) (fraction-bar-geometry-height destination))))
+
+; persistent-fraction-bar-requests : list? list? list? real? -> list?
+;;   Moves and morphs each matched bar to the same interpolated geometry in one clip.
+(define (persistent-fraction-bar-requests matches old next fraction)
+  (append-map
+   (lambda (entry)
+     (define source (list-ref old (token-match-source entry)))
+     (define destination (list-ref next (token-match-target entry)))
+     (define geometry
+       (interpolate-fraction-bar-geometry
+        (fraction-bar-geometry-for-token source)
+        (fraction-bar-geometry-for-token destination)
+        fraction))
+     (define id (prepared-token-id destination))
+     (list
+      ((animate-binding 'move-to)
+       id ((animate-binding 'vec2)
+           (fraction-bar-geometry-x geometry) (fraction-bar-geometry-y geometry)))
+      (fraction-bar-morph-request id geometry)))
+   matches))
+
+;;;
 ;;; One-Step Native Compilation
 ;;;
 ; compile-math-step : scene? prepared-math-plan? integer? rewrite-step? list? list? symbol? any/c
@@ -365,6 +527,8 @@
         (for/list ([m (in-list matches)])
           (token-with-id (list-ref old (token-match-source m))
                          (prepared-token-id (list-ref next (token-match-target m)))))))
+  (define persistent-bars
+    (if split? '() (persistent-fraction-bar-matches matches old next)))
   ;; The offset was obtained from the matched source ink above. Introduce the
   ;; unit in that target-relative arrangement, then move it with its survivors.
   (define created
@@ -376,9 +540,16 @@
         created-destination))
   (when coherent-delta
     (set! moving (append moving created-destination)))
-  (set! scn (add-tokens scn ghosts))
-  (set! scn (add-tokens scn split-copies #:opacity 0))
-  (set! scn (add-tokens scn created #:opacity 0))
+  (define persistent-bar-ids
+    (map (lambda (entry)
+           (prepared-token-id (list-ref next (token-match-target entry))))
+         persistent-bars))
+  (define ordinary-moving
+    (filter (lambda (token) (not (member (prepared-token-id token) persistent-bar-ids)))
+            moving))
+  (set! scn (add-tokens scn ghosts (prepared-math-plan-foreground prepared)))
+  (set! scn (add-tokens scn split-copies (prepared-math-plan-foreground prepared) #:opacity 0))
+  (set! scn (add-tokens scn created (prepared-math-plan-foreground prepared) #:opacity 0))
   (define entries
     (filter (lambda (p)
               (and (= (scheduled-phase-segment p) segment-index)
@@ -402,14 +573,38 @@
                 "The phases never reveal branch copies at their destination positions." name))
   (define retired? (null? retired))
   (define copies-revealed? (null? split-copies))
-  (define (retire! seconds)
-    (set! scn (play scn (map (lambda (t) (fade-request t 0)) retired) seconds))
-    (set! retired? #t))
-  (define (reveal! seconds)
+  (define (retire-to! opacity seconds)
+    (set! scn (play scn (map (lambda (t) (fade-request t opacity)) retired) seconds))
+    (when (zero? opacity) (set! retired? #t)))
+  (define (retire! seconds) (retire-to! 0 seconds))
+  (define (reveal-to! opacity seconds)
     (unless retired?
       (math-error 'choreograph 'unsafe-overlap
                   "Retire the outgoing mathematical unit before revealing its replacement." name))
-    (set! scn (play scn (map (lambda (t) (fade-request t 1)) created) seconds)))
+    (set! scn (play scn (map (lambda (t) (fade-request t opacity)) created) seconds)))
+  (define (reveal! seconds) (reveal-to! 1 seconds))
+  (define (retire-with-persistent-bars! opacity seconds fraction)
+    (set! scn
+          (play scn
+                (append (map (lambda (t) (fade-request t opacity)) retired)
+                        (persistent-fraction-bar-requests persistent-bars old next fraction))
+                seconds))
+    (when (zero? opacity) (set! retired? #t)))
+  (define (reveal-with-persistent-bars! opacity seconds fraction)
+    (unless retired?
+      (math-error 'choreograph 'unsafe-overlap
+                  "Retire the outgoing mathematical unit before revealing its replacement." name))
+    (set! scn
+          (play scn
+                (append (map (lambda (t) (fade-request t opacity)) created)
+                        (persistent-fraction-bar-requests persistent-bars old next fraction))
+                seconds)))
+  (define (move-with-persistent-bars! seconds fraction)
+    (set! scn
+          (play scn
+                (append (map move-request ordinary-moving)
+                        (persistent-fraction-bar-requests persistent-bars old next fraction))
+                seconds)))
   (define (move! seconds)
     (cond
       [split?
@@ -420,8 +615,12 @@
          (set! scn (play scn (map (lambda (t) (fade-request t 1)) split-copies) seconds))
          (set! copies-revealed? #t))]
       [else
-       (set! scn (play scn (map move-request moving) seconds))
-       (set! starts moving)]))
+       (set! scn
+             (play scn
+                   (append (map move-request ordinary-moving)
+                           (persistent-fraction-bar-requests persistent-bars old next 1))
+                   seconds))
+       (set! starts ordinary-moving)]))
   (for ([entry (in-list entries)])
     (define seconds (scheduled-phase-duration entry))
     (case (scheduled-phase-kind entry)
@@ -451,14 +650,34 @@
        ;; Even a simultaneous-layout request cannot mix new numeric results
        ;; with remnants of old arithmetic. All replacement ink reaches opacity
        ;; zero before any destination ink becomes visible.
-       (retire! (* 9/20 seconds))
-       (move! (* 1/10 seconds))
-       (reveal! (* 9/20 seconds))]
+       (if (null? persistent-bars)
+           (begin
+             (retire! (* 9/20 seconds))
+             (move! (* 1/10 seconds))
+             (reveal! (* 9/20 seconds)))
+           (let ([retire-prefix (* 3/10 seconds)]
+                 [bar-edge (* 3/20 seconds)]
+                 [survivor-window (* 1/10 seconds)]
+                 [reveal-suffix (* 3/10 seconds)])
+             ;; The bar is semantic survivor ink. Start its true geometry morph
+             ;; as the old unit finishes retiring, carry it across the safe empty
+             ;; barrier, and finish as the new unit appears. Its 2/5-duration
+             ;; window is independent of ordinary survivor timing.
+             (retire-to! 1/3 retire-prefix)
+             (retire-with-persistent-bars! 0 bar-edge 3/8)
+             (move-with-persistent-bars! survivor-window 5/8)
+             (reveal-with-persistent-bars! 1/3 bar-edge 1)
+             (reveal! reveal-suffix)))]
       [else (set! scn (play scn '() seconds))]))
-  ;; Restore exact endpoint assets once, without accumulating typography errors.
+  ;; A pure introduction does not change its matched mathematical ink. Keep that
+  ;; ink's already visible SVG appearance through the zero-time checkpoint handoff;
+  ;; only rebind its semantic path to the destination checkpoint. This avoids a
+  ;; one-frame crop/quantization snap such as the unchanged 17 in 3x+5=17.
+  ;; Other transition kinds still restore their exact prepared endpoint assets.
+  (define endpoint (introduction-continuity-endpoint kind next moving))
   (set! scn (remove-tokens scn (append old ghosts split-copies created)))
-  (set! scn (add-tokens scn next))
-  (values scn next (add1 view)))
+  (set! scn (add-tokens scn endpoint (prepared-math-plan-foreground prepared)))
+  (values scn endpoint (add1 view)))
 
 ;;;
 ;;; Complete Native Scene Assembly
@@ -607,7 +826,7 @@
     (define history '())
     ; list of (list row tokens), never includes active
     (set! view (add1 view))
-    (set! scn (add-tokens scn active))
+    (set! scn (add-tokens scn active foreground))
     (set! scn (commit-checkpoint! scn))
     (when on-step (set! scn (on-step scn segment-index #f)))
     (set! scn ((animate-binding 'scene-wait) scn 4/5))
@@ -661,7 +880,7 @@
                (not (plan-segment-shared? segment))))
         (if destination-copy?
             (begin
-              (set! scn (add-tokens scn new-active #:opacity 0))
+              (set! scn (add-tokens scn new-active foreground #:opacity 0))
               (set! scn
                 (play scn
                   (append shifts
@@ -669,7 +888,7 @@
                     (map (lambda (t) (fade-request t 0)) (append-map cadr discarded)))
                   1/2)))
             (let ([copy-at-source (translate new-active 0 (* gap (- row active-row)))])
-              (set! scn (add-tokens scn copy-at-source))
+              (set! scn (add-tokens scn copy-at-source foreground))
               (set! scn
                 (play scn
                   (append shifts
@@ -734,7 +953,8 @@
       #:foreground foreground
       #:cache-directory directory))
   ((animate-binding 'group)
-    (map token-visual (clone-view (prepared-layout-tokens layout) id 0))
+    (map (lambda (token) (native-token-visual token foreground))
+         (clone-view (prepared-layout-tokens layout) id 0))
     #:id id))
 
 ; math-plan->pict! : (or/c presentation-plan? prepared-math-plan?) nonnegative-real?
