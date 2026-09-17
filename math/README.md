@@ -14,9 +14,9 @@ nor Calcura is mandatory for the supplied lessons.
 
 The new gallery contains **25 concept plates / 31 replays** across held operations,
 selection/provenance, conditions, named moves, and presentation. Select one plate,
-one chapter, or all of them. The complete planned duration is **264.2 seconds**;
-the shorter total intentionally reflects the four-checkpoint history/grouping
-comparison fixture.
+one chapter, or all of them. The complete planned duration is **245.6 seconds**;
+the shorter total reflects both the four-checkpoint history/grouping comparison
+fixture and the reduced gallery-only final settle hold after the 30-fps pacing review.
 
 ```sh
 RACKET="/Applications/Racket v9.3.0.2/bin/racket"

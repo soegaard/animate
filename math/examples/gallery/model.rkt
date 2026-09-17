@@ -51,7 +51,7 @@
 
 ; gallery-settle-time : exact-nonnegative-rational?
 ;;   Adds reading time after the native plan's own final hold.
-(define gallery-settle-time 6/5)
+(define gallery-settle-time 3/5)
 
 ; gallery-gap-time : exact-nonnegative-rational?
 ;;   Separates unrelated plates with a clean blank frame interval.

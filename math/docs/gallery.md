@@ -9,9 +9,10 @@ checks beside the checked expression, and improves review labels/probes. It is n
 a new algebraic API or renderer.
 
 **25 independently selectable plates and 31 replays**, organized into five chapters.
-The complete planned duration is **264.2 seconds (4 minutes 24.2 seconds)**. It
-changed intentionally because the grouping/history demonstrations now use the
-short shared four-checkpoint comparison derivation.
+The complete planned duration is **245.6 seconds (4 minutes 5.6 seconds)**. It
+changed intentionally because the grouping/history demonstrations use the short
+shared four-checkpoint comparison derivation and the gallery-only final settle
+hold was reduced after the full 30-fps pacing review.
 
 Every replay uses ordinary checked mathematical states, derivations, and presentations.
 The gallery supplies a title, a short caption, optional API labels, and time to read the

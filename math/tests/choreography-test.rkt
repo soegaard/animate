@@ -15,6 +15,7 @@
 (require racket/list
          racket/match
          "check.rkt"
+         "cancellation-source-test.rkt"
          (submod "native-contract.rkt" support)
          "../main.rkt"
          "../private/datum.rkt"
@@ -134,6 +135,7 @@
 ; run-choreography-tests : -> void?
 ;;   Checks semantic visibility, signed reordering, shared cases, and explanatory insets.
 (define (run-choreography-tests)
+  (run-cancellation-source-tests)
   (test-group "review: complete token partitions and metric-independent identity"
     (lambda ()
       (for* ([plan (in-list (list lc:plan lg:plan qc:plan qg:plan))]

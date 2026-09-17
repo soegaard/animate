@@ -9,6 +9,10 @@
 - Improve hierarchy anchors, candidate-check wording/placement, history/grouping
   comparison clarity, trace-backed distribution evidence, recipe labels, and review
   contact sheets/probe metadata.
+- Make the cancellation-timing plate cancel a middle pair so the authored hold leaves
+  a visible gap before compaction instead of merely extending an already compact result.
+- Reduce the gallery-only final settle hold from 1.2 s to 0.6 s per replay after the
+  full 30-fps pacing review; the unrelated-plate blank gap remains 0.4 s.
 
 # 0.5.1 — Mathematical concept gallery
 

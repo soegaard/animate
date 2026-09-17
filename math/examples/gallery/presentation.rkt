@@ -13,9 +13,10 @@
 (provide presentation-plates shared-cases cancellation-solution)
 
 ; cancellation-solution : derivation?
-;;   Provides exactly one mathematical derivation for both timing variants.
+;;   Uses separated opposite constants and preserves the surviving variables
+;;   for the hold before compaction in both timing variants.
 (define cancellation-solution
-  (derive (gallery-state 'timing '(- (+ (expt x 2) (* 6 x) 5) 5))
+  (derive (gallery-state 'timing '(- (+ x 5 y) 5) #:real '(x y))
     [cancel-five (cancel-addends)]))
 
 ; timed-cancellation : nonnegative-real? -> presentation-plan?
@@ -59,13 +60,13 @@
           #:caption "Same mathematical operations and answer, with a different retained-history policy."
           #:api '(math-presentation present) #:layout-family 'history-comparison)))
     (make-gallery-plate 'cancellation-timing 'presentation "Pause before closing the gap"
-      "A choreography override changes timing at a leaf, not its verified state change."
+      "Cancel opposite constants, hold the separated survivors, then close the gap."
       (list
         (make-gallery-view 'ordinary "A short pause" (timed-cancellation 1/5)
-          #:caption "Cancel, briefly hold the survivors, then compact."
+          #:caption "Cancel the two constants, briefly hold the separated survivors, then compact."
           #:api '(choreograph retire-cancelled compact))
         (make-gallery-view 'deliberate "Time to notice the cancellation" (timed-cancellation 6/5)
-          #:caption "The same cancellation, with a longer explicit hold before compaction."
+          #:caption "Hold the separated survivors longer before closing the gap."
           #:api '(choreograph hold compact))))
     (one-view-plate 'explanatory-inset 'presentation "Explain the choice before acting"
       "The inset motivates adding nine. It is separate from the working equation."

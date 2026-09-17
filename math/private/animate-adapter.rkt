@@ -206,6 +206,90 @@
   (if (string=? caption "") cleaned ((animate-binding 'scene-remove) cleaned caption-id)))
 
 ;;;
+;;; Cancellation Assembly Placement
+;;;
+
+; additive-cancellation-focus? : rewrite-step? -> boolean?
+;;   Recognizes additive cancellation focuses whose survivors may compact independently.
+(define (additive-cancellation-focus? step)
+  (define focus (rewrite-step-focus step))
+  (define before (datum-ref (math-datum (rewrite-step-before step)) focus))
+  (define after (datum-ref (math-datum (rewrite-step-after step)) focus))
+  (and (memq (head before) '(+ -))
+       (or (not (pair? after)) (memq (head after) '(+ -)))))
+
+; source-relative-cancellation-plan : rewrite-step? list? list? token-transition?
+;   -> (values token-transition? (or/c #f (cons/c real? real?)))
+;;   Uses actual source survivor coordinates to place created cancellation ink.
+;;   Unrelated relation/other-side tokens cannot anchor the affected assembly.
+(define (source-relative-cancellation-plan step old destination plan)
+  (define incoming (token-transition-incoming plan))
+  (cond
+    [(or (not (eq? (token-transition-kind plan) 'cancellation)) (null? incoming))
+     (values plan #f)]
+    [else
+     ;; The new unit and its operator share the target assembly's owning path.
+     ;; Find their common ancestor instead of depending on token enumeration order.
+     (define assembly-path
+       (for/fold ([prefix (prepared-token-path (list-ref destination (car incoming)))])
+                 ([i (in-list (cdr incoming))])
+         (for/list ([a (in-list prefix)]
+                    [b (in-list (prepared-token-path (list-ref destination i)))]
+                    #:break (not (= a b)))
+           a)))
+     (define survivors
+       (filter (lambda (m)
+                 (path-prefix? assembly-path
+                   (prepared-token-path (list-ref destination (token-match-target m)))))
+               (token-transition-matches plan)))
+     (define deltas
+       (for/list ([m (in-list survivors)])
+         ;; `old` is the actual source-position ink (also used to build `starts`),
+         ;; not the already destination-positioned `moving` request endpoints.
+         (define from (list-ref old (token-match-source m)))
+         (define to (list-ref destination (token-match-target m)))
+         (cons (- (prepared-token-x from) (prepared-token-x to))
+               (- (prepared-token-y from) (prepared-token-y to)))))
+     (define delta (and (pair? deltas) (car deltas)))
+     (define coherent?
+       (and delta
+            (for/and ([other (in-list (cdr deltas))])
+              ;; This is only a world-coordinate roundoff allowance for motion,
+              ;; never a pixel-based decision about mathematical correspondence.
+              (and (<= (abs (- (car delta) (car other))) 1e-8)
+                   (<= (abs (- (cdr delta) (cdr other))) 1e-8)))))
+     (cond
+       [(null? survivors) (values plan #f)]
+       [coherent? (values plan delta)]
+       [(additive-cancellation-focus? step)
+        ;; Retire only cancelled ink; matched additive survivors stay visible and
+        ;; close the gap independently during the compact phase.
+        (values plan #f)]
+       [else
+        ;; There is no single source-relative target arrangement. Replace only
+        ;; the selected mathematical focus after its old ink has retired. Keep
+        ;; the existing cancellation phases and all outside correspondence.
+        (define focus (rewrite-step-focus step))
+        (define outside-matches
+          (filter
+           (lambda (m)
+             (and (not (path-prefix? focus
+                         (prepared-token-path (list-ref old (token-match-source m)))))
+                  (not (path-prefix? focus
+                         (prepared-token-path (list-ref destination (token-match-target m)))))))
+           (token-transition-matches plan)))
+        (values
+         (struct-copy token-transition plan
+           [matches outside-matches]
+           [outgoing (sort (remove-duplicates
+                            (append (token-transition-outgoing plan) (tokens-at-path old focus))) <)]
+           [incoming (sort (remove-duplicates
+                            (append incoming (tokens-at-path destination focus))) <)]
+           [atomic-sources (list focus)]
+           [atomic-targets (list focus)])
+         #f)])]))
+
+;;;
 ;;; One-Step Native Compilation
 ;;;
 ; compile-math-step : scene? prepared-math-plan? integer? rewrite-step? list? list? symbol? any/c
@@ -217,7 +301,9 @@
   (define segment
     (list-ref (presentation-plan-segments (prepared-math-plan-plan prepared)) segment-index))
   (define name (derivation-step-key (plan-segment-derivation segment) step))
-  (define unit-plan (plan-token-transition step old destination))
+  (define-values (unit-plan coherent-delta)
+    (source-relative-cancellation-plan step old destination
+                                      (plan-token-transition step old destination)))
   (define kind (token-transition-kind unit-plan))
   (define matches (token-transition-matches unit-plan))
   (define split? (eq? kind 'split))
@@ -279,32 +365,8 @@
         (for/list ([m (in-list matches)])
           (token-with-id (list-ref old (token-match-source m))
                          (prepared-token-id (list-ref next (token-match-target m)))))))
-  (define cancellation-assembly?
-    (and (eq? kind 'cancellation) (pair? created-destination) (pair? moving)))
-  (define implicit-cancellation-reveal?
-    (and cancellation-assembly?
-         (not
-          (ormap
-           (lambda (entry)
-             (and (= (scheduled-phase-segment entry) segment-index)
-                  (equal? (scheduled-phase-step entry) name)
-                  (eq? (scheduled-phase-kind entry) 'reveal-created)))
-           (prepared-math-plan-schedule prepared)))))
-  ;; A cancellation can introduce a semantic unit (for example 1 in 1·x) while
-  ;; preserving a survivor.  When the authored schedule uses compact as its implicit
-  ;; reveal, start the new unit at the survivor's source-relative arrangement and
-  ;; move both toward the prepared target together.  This is deliberately narrow:
-  ;; explicit reveal choreography and transitions without a common survivor retain
-  ;; their established behavior.
-  (define coherent-delta
-    (and cancellation-assembly?
-         (let* ([from (car moving)]
-                [target (findf (lambda (token)
-                                 (eq? (prepared-token-id token) (prepared-token-id from)))
-                               next)])
-           (and target
-                (cons (- (prepared-token-x from) (prepared-token-x target))
-                      (- (prepared-token-y from) (prepared-token-y target)))))))
+  ;; The offset was obtained from the matched source ink above. Introduce the
+  ;; unit in that target-relative arrangement, then move it with its survivors.
   (define created
     (if coherent-delta
         (for/list ([token (in-list created-destination)])

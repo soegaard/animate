@@ -72,7 +72,9 @@
       (check-raises (lambda () (make-gallery-view 'bad/name "" (first-plan 'history) #:caption "x")) #rx"safe")
       (check-raises (lambda () (make-gallery-view 'fine "line\nbreak" (first-plan 'history) #:caption "x")) #rx"single-line")
       (check-equal (gallery-duration '()) 0)
-      (check-true (exact? (gallery-duration gallery-plates)))))
+      (check-true (exact? (gallery-duration gallery-plates)))
+      (check-equal gallery-settle-time 3/5 'movie-reviewed-settle-time)
+      (check-equal (gallery-duration gallery-plates) 1228/5 'current-gallery-duration)))
   (test-group "gallery: mathematical endpoints, guards, and provenance"
     (lambda ()
       (for ([(name expected) (in-hash main-endpoints)])
@@ -99,6 +101,15 @@
       (define timing (gallery-plate-views (car (select-gallery-plates #:plates '(cancellation-timing)))))
       (check-true (eq? (presentation-plan-source (gallery-view-plan (car timing)))
                        (presentation-plan-source (gallery-view-plan (cadr timing)))))
+      (define timing-derivation
+        (plan-segment-derivation
+         (car (presentation-plan-segments (gallery-view-plan (car timing))))))
+      (check-equal (math-datum (derivation-initial timing-derivation))
+                   '(- (+ x 5 y) 5)
+                   'cancellation-timing-visible-gap-source)
+      (check-equal (math-datum (derivation-final timing-derivation))
+                   '(+ x y)
+                   'cancellation-timing-middle-gap-result)
       (check-equal (- (plan-duration (gallery-view-plan (cadr timing)))
                      (plan-duration (gallery-view-plan (car timing)))) 1)
       (check-equal (map (lambda (s) (math-datum (derivation-final (plan-segment-derivation s))))
