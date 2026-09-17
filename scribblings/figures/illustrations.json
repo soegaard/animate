@@ -1,0 +1,1346 @@
+{
+  "schema": "animate-manual-illustrations-v1",
+  "origin": {
+    "archive": "layout-review-v040.zip",
+    "sha256": "c46a9689bede8a926bca8b8709c45307b7c23fc68b04043062223fa89bafa015",
+    "racket": "9.3.0.2",
+    "note": "PNG files are copied without pixel changes from the user-supplied review. The native SVGs are existing repository illustrations. Legacy example times are recovered from the runner boundary schedule."
+  },
+  "strips": {
+    "title-card": {
+      "kind": "still",
+      "columns": 2,
+      "recipe": {
+        "type": "example",
+        "module": "first-slide.rkt",
+        "binding": "film"
+      },
+      "frames": [
+        {
+          "file": "manual-title-card-0.png",
+          "caption": "Fully populated title card",
+          "time": 4,
+          "width": 640,
+          "height": 360,
+          "sha256": "d94f8943e2d697f12f9905f3aaa4e6eabac0c02fdf1a0431fcad86232ee11115",
+          "source_probe": "hello-0",
+          "source_png": "hello-0-pict.png",
+          "source_sha1": "ffe0d8854eff1d57833c819364845b725edc4730",
+          "source_theme": null,
+          "source_format": null
+        }
+      ]
+    },
+    "title-build": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "example",
+        "module": "first-slide.rkt",
+        "binding": "film"
+      },
+      "frames": [
+        {
+          "file": "manual-title-build-0.png",
+          "caption": "0 s \u2014 both slots hidden",
+          "time": 0,
+          "width": 640,
+          "height": 360,
+          "sha256": "ea477d5b28718c7c1479d4ceb2e7fc96b95a795ada6e2f8961420556d143129b",
+          "source_probe": "hello-6",
+          "source_png": "hello-6-pict.png",
+          "source_sha1": "5232efd2054d33a6033da69beffc9789e2a80f32",
+          "source_theme": null,
+          "source_format": null
+        },
+        {
+          "file": "manual-title-build-1.png",
+          "caption": "1 s \u2014 title visible",
+          "time": 1,
+          "width": 640,
+          "height": 360,
+          "sha256": "b380c4f82405b8c1104af451e5a2abced06c95b58ea6d3ca47c9f2224af40e57",
+          "source_probe": "hello-3",
+          "source_png": "hello-3-pict.png",
+          "source_sha1": "cbd753984a0f17dcd903281fad3a9889df982128",
+          "source_theme": null,
+          "source_format": null
+        },
+        {
+          "file": "manual-title-build-2.png",
+          "caption": "4 s \u2014 title and subtitle visible",
+          "time": 4,
+          "width": 640,
+          "height": 360,
+          "sha256": "d94f8943e2d697f12f9905f3aaa4e6eabac0c02fdf1a0431fcad86232ee11115",
+          "source_probe": "hello-0",
+          "source_png": "hello-0-pict.png",
+          "source_sha1": "ffe0d8854eff1d57833c819364845b725edc4730",
+          "source_theme": null,
+          "source_format": null
+        }
+      ]
+    },
+    "bullet-build": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "layout-title+body",
+        "theme": "lecture-light",
+        "format": "widescreen",
+        "example": "builds.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-bullet-build-0.png",
+          "caption": "0 s \u2014 empty start",
+          "time": 0.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "ea477d5b28718c7c1479d4ceb2e7fc96b95a795ada6e2f8961420556d143129b",
+          "source_probe": "gallery-lecture-light-widescreen-layout-title+body-12",
+          "source_png": "gallery-lecture-light-widescreen-layout-title+body-12-pict.png",
+          "source_sha1": "5232efd2054d33a6033da69beffc9789e2a80f32",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-bullet-build-1.png",
+          "caption": "0.7 s \u2014 heading",
+          "time": 0.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "1eb78cb6824330d27f523f57446277090d003a622fc07c0a5944ac0b29885322",
+          "source_probe": "gallery-lecture-light-widescreen-layout-title+body-9",
+          "source_png": "gallery-lecture-light-widescreen-layout-title+body-9-pict.png",
+          "source_sha1": "c887048b12265c5d802903cd2159be1fce5a3f61",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-bullet-build-2.png",
+          "caption": "1.6 s \u2014 first bullet",
+          "time": 1.6,
+          "width": 640,
+          "height": 360,
+          "sha256": "72d33c961e8c260e2cc11216bc2bb711372d9588e2aa71d60ee6a519eae0c9e1",
+          "source_probe": "gallery-lecture-light-widescreen-layout-title+body-7",
+          "source_png": "gallery-lecture-light-widescreen-layout-title+body-7-pict.png",
+          "source_sha1": "10ce974333ecadfffefcf7e4b80beec738d25f90",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-bullet-build-3.png",
+          "caption": "2.5 s \u2014 second bullet",
+          "time": 2.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "81c2ffab1f3de25e6e9d175c8106e78aa77423fd8179a7670bfb1575b80593cd",
+          "source_probe": "gallery-lecture-light-widescreen-layout-title+body-5",
+          "source_png": "gallery-lecture-light-widescreen-layout-title+body-5-pict.png",
+          "source_sha1": "464e7fbb392055fc73d44e24b65a0ec0320f489e",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-bullet-build-4.png",
+          "caption": "3.4 s \u2014 all three bullets",
+          "time": 3.4,
+          "width": 640,
+          "height": 360,
+          "sha256": "502d11f50629a77e815ec1987acae0749114e1561f9eb73f452c6cd1819a6e16",
+          "source_probe": "gallery-lecture-light-widescreen-layout-title+body-3",
+          "source_png": "gallery-lecture-light-widescreen-layout-title+body-3-pict.png",
+          "source_sha1": "ac4404e32885465f134d2550819143ba09ab8211",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "function-lesson": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "example",
+        "module": "slide-lesson.rkt",
+        "binding": "film"
+      },
+      "frames": [
+        {
+          "file": "manual-function-lesson-0.png",
+          "caption": "0 s \u2014 opening card",
+          "time": 0,
+          "width": 640,
+          "height": 360,
+          "sha256": "f56263d1cf529a907118377251a4789b6b9047917d051e2bc3975d3ff900378e",
+          "source_probe": "function-lesson-18",
+          "source_png": "function-lesson-18-pict.png",
+          "source_sha1": "c303e7ef343804f4c969aa9e45d695fa17330df0",
+          "source_theme": null,
+          "source_format": null
+        },
+        {
+          "file": "manual-function-lesson-1.png",
+          "caption": "12 s \u2014 worked input",
+          "time": 12,
+          "width": 640,
+          "height": 360,
+          "sha256": "c84bb998186ecd1e7ace3841d585077e149bfa27f554c71b24ed12a4e7f80317",
+          "source_probe": "function-lesson-9",
+          "source_png": "function-lesson-9-pict.png",
+          "source_sha1": "40f4774509db6e4a094d0e5593442038ee5d2d4e",
+          "source_theme": null,
+          "source_format": null
+        },
+        {
+          "file": "manual-function-lesson-2.png",
+          "caption": "19.6 s \u2014 recap",
+          "time": 19.6,
+          "width": 640,
+          "height": 360,
+          "sha256": "dde30740793e40ab1a467b2349a2d12ca512503d77519b2427800c0bf831989a",
+          "source_probe": "function-lesson-0",
+          "source_png": "function-lesson-0-pict.png",
+          "source_sha1": "185852a712e078788bf15eae4d83f40fcea545d0",
+          "source_theme": null,
+          "source_format": null
+        }
+      ]
+    },
+    "title-match": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "match",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "matched-title.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-title-match-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "9730acabefc1e547aa598f4c8df96a9f4b2abc47ed729058b53c271ff2a15a8d",
+          "source_probe": "gallery-lecture-dark-widescreen-match-10",
+          "source_png": "gallery-lecture-dark-widescreen-match-10-pict.png",
+          "source_sha1": "f352cd4562e9a005baa5de0e626c0586f371f4c4",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-title-match-1.png",
+          "caption": "1.45 s \u2014 one quarter",
+          "time": 1.45,
+          "width": 640,
+          "height": 360,
+          "sha256": "b857421ea213f56f8ba8fbbd1f7f1b7465a43936b3cc9ad14051d87e08e27067",
+          "source_probe": "gallery-lecture-dark-widescreen-match-8",
+          "source_png": "gallery-lecture-dark-widescreen-match-8-pict.png",
+          "source_sha1": "4397292acc9ab725eb7f17d59825dbe0b4ee2d10",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-title-match-2.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "648e8ffd753d36315291d6cb48d1d889f31dbb3c18cbc6f680cdb8ec0adcb111",
+          "source_probe": "gallery-lecture-dark-widescreen-match-7",
+          "source_png": "gallery-lecture-dark-widescreen-match-7-pict.png",
+          "source_sha1": "6c2a0f316223574511a8102625b099b085cd54f2",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-title-match-3.png",
+          "caption": "1.95 s \u2014 three quarters",
+          "time": 1.95,
+          "width": 640,
+          "height": 360,
+          "sha256": "8c4f912f6326419c1e7e7df245b37dcf703efffa5a1b3840155435d62afd2dd5",
+          "source_probe": "gallery-lecture-dark-widescreen-match-6",
+          "source_png": "gallery-lecture-dark-widescreen-match-6-pict.png",
+          "source_sha1": "8cca68c261d06a98becdfa0777af8038e8b4e3f8",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-title-match-4.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "782135cef61b9d356aa0571779b5a6bd531c33bc32afaf9eb011198ada526b0f",
+          "source_probe": "gallery-lecture-dark-widescreen-match-4",
+          "source_png": "gallery-lecture-dark-widescreen-match-4-pict.png",
+          "source_sha1": "89bfd1308c37ccaf904471bce655fefa9ef74f03",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "push-left": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "push-left",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-push-left-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "013e9a5c5b9f0c11a0a6cbba38354b35e956a56265f6283a445f518d2fe50f7e",
+          "source_probe": "gallery-lecture-dark-widescreen-push-left-10",
+          "source_png": "gallery-lecture-dark-widescreen-push-left-10-pict.png",
+          "source_sha1": "8bcade1ea499876ca642bdf5ebab34279ec03c9a",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-push-left-1.png",
+          "caption": "1.45 s \u2014 one quarter",
+          "time": 1.45,
+          "width": 640,
+          "height": 360,
+          "sha256": "e28c3e220a26e61c081640627115d9a1420aa2d992c64cb40d70ff7adba9e184",
+          "source_probe": "gallery-lecture-dark-widescreen-push-left-8",
+          "source_png": "gallery-lecture-dark-widescreen-push-left-8-pict.png",
+          "source_sha1": "4f0b9ac261183de0d401a2deb8cd57c5f84122d8",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-push-left-2.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "36364695cedcff3816ff22059d23b7cb73a879c4e1b3c6409c9054951ee1e38e",
+          "source_probe": "gallery-lecture-dark-widescreen-push-left-7",
+          "source_png": "gallery-lecture-dark-widescreen-push-left-7-pict.png",
+          "source_sha1": "a1e4b58aba602cb539e3485df65d51b7496fafd7",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-push-left-3.png",
+          "caption": "1.95 s \u2014 three quarters",
+          "time": 1.95,
+          "width": 640,
+          "height": 360,
+          "sha256": "4d1f198a33db9b454af35983bd9abd33b56b936533aa0a39dae50eac572499e4",
+          "source_probe": "gallery-lecture-dark-widescreen-push-left-6",
+          "source_png": "gallery-lecture-dark-widescreen-push-left-6-pict.png",
+          "source_sha1": "3a902c491091f35d1cb87887f82ade540be1cdcc",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-push-left-4.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "5694502070c0e535424e7ca555cea0ac5880f223e37dfdc459ff9d9589f042f6",
+          "source_probe": "gallery-lecture-dark-widescreen-push-left-4",
+          "source_png": "gallery-lecture-dark-widescreen-push-left-4-pict.png",
+          "source_sha1": "df90de9d3339540e47979ba542de0c03d5fc690e",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "wipe-left": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "wipe-left",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-wipe-left-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "01f5d265076ba9001d0c7eff80f16a5fa6ed4526c455ef37a48a9aca962b5c8e",
+          "source_probe": "gallery-lecture-dark-widescreen-wipe-left-10",
+          "source_png": "gallery-lecture-dark-widescreen-wipe-left-10-pict.png",
+          "source_sha1": "a77086ccabe43d81d0663cf50cacdede60536531",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-wipe-left-1.png",
+          "caption": "1.45 s \u2014 one quarter",
+          "time": 1.45,
+          "width": 640,
+          "height": 360,
+          "sha256": "bc0ca39153f153408b284febcbef780b8bb537cb0d182abf0775d33d4ddd2d79",
+          "source_probe": "gallery-lecture-dark-widescreen-wipe-left-8",
+          "source_png": "gallery-lecture-dark-widescreen-wipe-left-8-pict.png",
+          "source_sha1": "ad3b4bc0c01e49059d54d558c8fd936b76c4a689",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-wipe-left-2.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "0e105adade1bc4d8a198a28ad81c723c3a9c3c74910474022e3970ae92e267e0",
+          "source_probe": "gallery-lecture-dark-widescreen-wipe-left-7",
+          "source_png": "gallery-lecture-dark-widescreen-wipe-left-7-pict.png",
+          "source_sha1": "b1a11acd4ebd28127f5341c76f26d36f4f1a569a",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-wipe-left-3.png",
+          "caption": "1.95 s \u2014 three quarters",
+          "time": 1.95,
+          "width": 640,
+          "height": 360,
+          "sha256": "028c9c5ede6ea5aa04b5e250453065ceaeb12a52951978400125082c368f0c13",
+          "source_probe": "gallery-lecture-dark-widescreen-wipe-left-6",
+          "source_png": "gallery-lecture-dark-widescreen-wipe-left-6-pict.png",
+          "source_sha1": "e6a69b4fb7af65fc0aad7fc1b6152ee965983541",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-wipe-left-4.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "a69102819f9ab3ed6a0c0bcec1e0c6f351eccb9ca2b8841516502a78067ae5ef",
+          "source_probe": "gallery-lecture-dark-widescreen-wipe-left-4",
+          "source_png": "gallery-lecture-dark-widescreen-wipe-left-4-pict.png",
+          "source_sha1": "e7249dcde30dbdf243f82ef236e61f3b6aa3316e",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "crossfade": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "crossfade",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-crossfade-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "364bc685d6de91b801603501191463574795ceeccd3f43e867b0ff8cb89267c0",
+          "source_probe": "gallery-lecture-dark-widescreen-crossfade-10",
+          "source_png": "gallery-lecture-dark-widescreen-crossfade-10-pict.png",
+          "source_sha1": "898ad47f9959b2704d5d3aeb2794d8630c38b4e5",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-crossfade-1.png",
+          "caption": "1.45 s \u2014 one quarter",
+          "time": 1.45,
+          "width": 640,
+          "height": 360,
+          "sha256": "fb0c5a5cebd8ecc5b793d2a4a5ab22cfa17ad07f998c47a040cc2d1a1ab928de",
+          "source_probe": "gallery-lecture-dark-widescreen-crossfade-8",
+          "source_png": "gallery-lecture-dark-widescreen-crossfade-8-pict.png",
+          "source_sha1": "22ed92311d0030c21dda4361fd438ce51c74f872",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-crossfade-2.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "9e84c11ce8a968f2aae1fdac160e60b0948a92afa90bf8a2ef817974e99c122f",
+          "source_probe": "gallery-lecture-dark-widescreen-crossfade-7",
+          "source_png": "gallery-lecture-dark-widescreen-crossfade-7-pict.png",
+          "source_sha1": "4a29691735be22285eb20f50eae32e78b64013cb",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-crossfade-3.png",
+          "caption": "1.95 s \u2014 three quarters",
+          "time": 1.95,
+          "width": 640,
+          "height": 360,
+          "sha256": "8091e9ca973e11e0333615208c69bd969bf4c440b8ac16022fafa3ccf50d1fcd",
+          "source_probe": "gallery-lecture-dark-widescreen-crossfade-6",
+          "source_png": "gallery-lecture-dark-widescreen-crossfade-6-pict.png",
+          "source_sha1": "91ea6b655bab458f27a6055a92b49f637dc2a434",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-crossfade-4.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "136a8a7ee4487c31e0a076a66d9c8a1eafe506ebde4b0379470206669794a452",
+          "source_probe": "gallery-lecture-dark-widescreen-crossfade-4",
+          "source_png": "gallery-lecture-dark-widescreen-crossfade-4-pict.png",
+          "source_sha1": "ca6711529abd4a13976d45c6a56c707cc09d3b01",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "cover-left": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "cover-left",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-cover-left-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "34eeb007b327e108c01c5261422ea02531aa3089911a33221f83e2af8da421f3",
+          "source_probe": "gallery-lecture-dark-widescreen-cover-left-10",
+          "source_png": "gallery-lecture-dark-widescreen-cover-left-10-pict.png",
+          "source_sha1": "fc67951ae3b4bcfbaeca813397e41a9edefa41de",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-cover-left-1.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "f81daa3b6950dbbce23881310a83d7c72099eb18ee3c2a108c2e91d36f520c32",
+          "source_probe": "gallery-lecture-dark-widescreen-cover-left-7",
+          "source_png": "gallery-lecture-dark-widescreen-cover-left-7-pict.png",
+          "source_sha1": "b339a71cc1410da013fad56a4ebee34a61c1b0b8",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-cover-left-2.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "ff91c182d8796ed60b0dd2c6efd75f58df610621d972501989e81050ae086cc7",
+          "source_probe": "gallery-lecture-dark-widescreen-cover-left-4",
+          "source_png": "gallery-lecture-dark-widescreen-cover-left-4-pict.png",
+          "source_sha1": "4b6a1a1311f735d165d66cf4e1d804ab8683b8d0",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "uncover-left": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "uncover-left",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-uncover-left-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "38d23a249307634618002b0aa46431d741ce20983f43e1329b2437135c06e156",
+          "source_probe": "gallery-lecture-dark-widescreen-uncover-left-10",
+          "source_png": "gallery-lecture-dark-widescreen-uncover-left-10-pict.png",
+          "source_sha1": "1bf779e2413407c8863da94475d4d4a29c4b4f04",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-uncover-left-1.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "0149dd2c828ab246fb42a32b39db3e4bfb92d525a1f433641ae881a8b2240c78",
+          "source_probe": "gallery-lecture-dark-widescreen-uncover-left-7",
+          "source_png": "gallery-lecture-dark-widescreen-uncover-left-7-pict.png",
+          "source_sha1": "510d838aa065442d67fd01d3468f30e099835d18",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-uncover-left-2.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "556b44c1f1b9b4fbb372d03e0a6a2d5d6fedd53ff89f056ddfabaafd3ee4eaff",
+          "source_probe": "gallery-lecture-dark-widescreen-uncover-left-4",
+          "source_png": "gallery-lecture-dark-widescreen-uncover-left-4-pict.png",
+          "source_sha1": "cc7e510d96122470a66222934344be0766f8a922",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "zoom": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "zoom",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-zoom-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "9a00a0ab8ebf96f0671a7c14550ac45104b52355f47a4e60542bc7b80e94d790",
+          "source_probe": "gallery-lecture-dark-widescreen-zoom-10",
+          "source_png": "gallery-lecture-dark-widescreen-zoom-10-pict.png",
+          "source_sha1": "47a59ff7f459d6e33c4df039b03a854d677348c7",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-zoom-1.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "a3182cd9ab66f8e1fd6661e54abe9a899960598bc873b6d6d45c1f1145d19e4b",
+          "source_probe": "gallery-lecture-dark-widescreen-zoom-7",
+          "source_png": "gallery-lecture-dark-widescreen-zoom-7-pict.png",
+          "source_sha1": "b5c17c10a6088a9256c3bab28b408f49d14518c8",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-zoom-2.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "1ffde35412bb42c417dbd610aa7ab7c403e27157ba0d2bec80516f36b3fe8a6f",
+          "source_probe": "gallery-lecture-dark-widescreen-zoom-4",
+          "source_png": "gallery-lecture-dark-widescreen-zoom-4-pict.png",
+          "source_sha1": "978c6c8be4b98762236d8801878c802bd01a9b94",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "fade-through": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "fade-through",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "transition-gallery.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-fade-through-0.png",
+          "caption": "1.2 s \u2014 before",
+          "time": 1.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "1ffd775c1235e4068c30188367d086a5d410512593508dfb5b7dc3e684b33104",
+          "source_probe": "gallery-lecture-dark-widescreen-fade-through-10",
+          "source_png": "gallery-lecture-dark-widescreen-fade-through-10-pict.png",
+          "source_sha1": "6be4cd673428eeb63fceff08a94ddd2fb63638bb",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-fade-through-1.png",
+          "caption": "1.7 s \u2014 halfway",
+          "time": 1.7,
+          "width": 640,
+          "height": 360,
+          "sha256": "1d68c115af8d705581b31b8612e9a76805477d07eaac9ef3b29111105cdecb3f",
+          "source_probe": "gallery-lecture-dark-widescreen-fade-through-7",
+          "source_png": "gallery-lecture-dark-widescreen-fade-through-7-pict.png",
+          "source_sha1": "b5ffd58ca55882af8cfa94ac237083441e12e6ba",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-fade-through-2.png",
+          "caption": "2.2 s \u2014 after",
+          "time": 2.2,
+          "width": 640,
+          "height": 360,
+          "sha256": "b0bed74e1100afc2e19173e31933df10da6eb28bd5b29db25efcbbe8f1b3ee07",
+          "source_probe": "gallery-lecture-dark-widescreen-fade-through-4",
+          "source_png": "gallery-lecture-dark-widescreen-fade-through-4-pict.png",
+          "source_sha1": "9c03477fe030675083f03beeea9c776a9ad07504",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "native-viewport": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "native-scene",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "native-viewport.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-native-viewport-0.png",
+          "caption": "1 s \u2014 inner clock 0",
+          "time": 1.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "c97e5df3c3d9c90602db8f35c78c78adfddd198736dd83747b76c0f1b24abd48",
+          "source_probe": "gallery-lecture-dark-widescreen-native-scene-5",
+          "source_png": "gallery-lecture-dark-widescreen-native-scene-5-pict.png",
+          "source_sha1": "a645c8055a9c514cecd0b47e83b3ad8ca2669809",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-native-viewport-1.png",
+          "caption": "2.5 s \u2014 inner clock 1.5",
+          "time": 2.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "baa5f27876be6e803ea688bf2160263446a7838536afab398f367ad565aad794",
+          "source_probe": "gallery-lecture-dark-widescreen-native-scene-4",
+          "source_png": "gallery-lecture-dark-widescreen-native-scene-4-pict.png",
+          "source_sha1": "c518126138432ccfcc86b7805bdad55335614e98",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-native-viewport-2.png",
+          "caption": "4 s \u2014 inner clock 3",
+          "time": 4.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "3266abd0ec5c3505d7df862a491bf945d71ebd0115aff0fa8fa4a1ee96bebacc",
+          "source_probe": "gallery-lecture-dark-widescreen-native-scene-3",
+          "source_png": "gallery-lecture-dark-widescreen-native-scene-3-pict.png",
+          "source_sha1": "beb508cdb9072c9f31d01dfee55943ce46be48a0",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "semantic-parts": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "semantic-parts",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "matched-parts.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-semantic-parts-0.png",
+          "caption": "2 s \u2014 first arrangement",
+          "time": 2.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "c29075c1bd6ac580c97726bd1f5cc49623a0bc611e15b8f687a705b2987092f0",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-parts-10",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-parts-10-pict.png",
+          "source_sha1": "75cae3185ef6d68e2686847a77ca07261e5977a2",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-parts-1.png",
+          "caption": "2.625 s \u2014 children begin to move",
+          "time": 2.625,
+          "width": 640,
+          "height": 360,
+          "sha256": "7d0bcc700c4e18a242b7adcba5155d3677c1504d214cc97816647574ea6e9075",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-parts-8",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-parts-8-pict.png",
+          "source_sha1": "e6d235d12cea76666ab240f3f4bb297daf6d9e3a",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-parts-2.png",
+          "caption": "3.25 s \u2014 halfway",
+          "time": 3.25,
+          "width": 640,
+          "height": 360,
+          "sha256": "ec2e3a73309215d3e02f70af7515aba54a565b406d2efa9e63b1ac9899682640",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-parts-7",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-parts-7-pict.png",
+          "source_sha1": "94223b10c5e721cafbcf132c545ed5d44dd7e5ca",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-parts-3.png",
+          "caption": "3.875 s \u2014 new child appears",
+          "time": 3.875,
+          "width": 640,
+          "height": 360,
+          "sha256": "44406dc245b8019ed9dcdd1c91dcaf5c0e73c2bf4d682cc47b0d805f9ba4fb16",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-parts-6",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-parts-6-pict.png",
+          "source_sha1": "6d9783439a8f356047290cdc6c24afb0bdc2c7d8",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-parts-4.png",
+          "caption": "4.5 s \u2014 second arrangement",
+          "time": 4.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "9a59df08fcc8c9a2a44be5e3bc762080452d07068b03926517e97a0a5bbf079c",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-parts-4",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-parts-4-pict.png",
+          "source_sha1": "f5702b92a3a95078eed9fd246d27cde0c6651005",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "semantic-math": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "semantic-math",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "math-checkpoints.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-semantic-math-0.png",
+          "caption": "2 s \u2014 first checkpoint",
+          "time": 2.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "1fb9d91b38f241274da840dd29883fd24825472b89d3fd701b2aa42ec614034f",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-10",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-10-pict.png",
+          "source_sha1": "bbef4c854e059b571af4d13d83052a9e0e4b8909",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-1.png",
+          "caption": "3 s \u2014 subtract on both sides",
+          "time": 3.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "15e9653b450048b4559976c5104b98119e354e12d10a5a0b5463fb783abd9d82",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-8",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-8-pict.png",
+          "source_sha1": "a125a6e2f88f486ae69fc567ac63fb9e62ecbf4c",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-2.png",
+          "caption": "4 s \u2014 continue the authored step",
+          "time": 4.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "992926f46e6a35c2b0939e9d93f1ae214008926588b30ad89870c51bf3ec6058",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-7",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-7-pict.png",
+          "source_sha1": "c807173d67fdf6b554521da93732284d231b597d",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-3.png",
+          "caption": "5 s \u2014 simplify",
+          "time": 5.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "81a7a746085cb0d6179159cd942fa4d2925a99efffc39dc887a5b2bf864df7a9",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-6",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-6-pict.png",
+          "source_sha1": "3e4b511cedef9a542609cf33df1ce97ac39496a5",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-4.png",
+          "caption": "6 s \u2014 final checkpoint",
+          "time": 6.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "03e3f83185cceaa86f9bf8e74d26bf02a3e8b8a7046e5887efc2b17b6607a72d",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-4",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-4-pict.png",
+          "source_sha1": "9d61743ab5c4547fa182964827e975a83653224c",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "semantic-geometry": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "semantic-geometry",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": null
+      },
+      "frames": [
+        {
+          "file": "manual-semantic-geometry-0.png",
+          "caption": "2 s \u2014 given points visible",
+          "time": 2.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "cc1ffc3089232b39e581d279d2ac766c6d6e0dc54e71b6162e46c2814ce1ec5d",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-geometry-10",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-geometry-10-pict.png",
+          "source_sha1": "8ccbb024cdcf1ac4efe3e083f1750c8c97cfbe89",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-geometry-1.png",
+          "caption": "3.5 s \u2014 first construction steps",
+          "time": 3.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "663fcecfddeb5efd810a5e15467f50f23d17bcfb0d4929ac1ecaa20957b55a96",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-geometry-8",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-geometry-8-pict.png",
+          "source_sha1": "c61a649329fdcfecf8ec242c6e1d6e7e3d0bae14",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-geometry-2.png",
+          "caption": "5 s \u2014 construction continues",
+          "time": 5.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "10ea99e2f66c14b4f9ddfeb9d00f0c865aca024077b095dae01d0cc841de7af0",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-geometry-7",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-geometry-7-pict.png",
+          "source_sha1": "bce1f9e0029f25125d67bd0967b2a10888b34e6c",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-geometry-3.png",
+          "caption": "6.5 s \u2014 add remaining geometry",
+          "time": 6.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "4b88969fe1c57e705dbc90aa4742a2b82ea5fc2c634adc4aaffa38b1ec4f4119",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-geometry-6",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-geometry-6-pict.png",
+          "source_sha1": "0c458037576f1deaeedbaeb0b7119364bde55f66",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-geometry-4.png",
+          "caption": "8 s \u2014 completed construction",
+          "time": 8.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "72deef2c3cabf967ef10d6502368ceefaeae5c7066beb863273297e2d7ea299f",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-geometry-4",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-geometry-4-pict.png",
+          "source_sha1": "c255353b73f63a370c0957b26d3e995e00be411c",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "semantic-math-geometry": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "semantic-math-geometry",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": null
+      },
+      "frames": [
+        {
+          "file": "manual-semantic-math-geometry-0.png",
+          "caption": "2 s \u2014 two starting checkpoints",
+          "time": 2.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "e0538273b99e69e53dd0bedc1eaa573979792b778dca97c359afb40bba05de00",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-geometry-10",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-geometry-10-pict.png",
+          "source_sha1": "cb05ac2a89c99ea9e71c3d89e79dab150b181dcc",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-geometry-1.png",
+          "caption": "3.5 s \u2014 both plans advance",
+          "time": 3.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "aad7ae0c50304d2b58a204041984043f64ca903cf0ef74169b641e1c9cde2a0c",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-geometry-8",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-geometry-8-pict.png",
+          "source_sha1": "dda4893cd7f870046869f02505082379cb3acfb2",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-geometry-2.png",
+          "caption": "5 s \u2014 viewports change places",
+          "time": 5.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "4911c92cf70a1910b302a1b5ecde28e57be3e1cefb335375a4dd29c249b5dfd1",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-geometry-7",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-geometry-7-pict.png",
+          "source_sha1": "8e22876263d2cb2526b1f8d5ecc10c1e27714e9b",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-geometry-3.png",
+          "caption": "6.5 s \u2014 move toward final layout",
+          "time": 6.5,
+          "width": 640,
+          "height": 360,
+          "sha256": "858bc2434a100e8362f9164ff8561d43b983d6e2cec2e7182ac0d871c4ac3d86",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-geometry-6",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-geometry-6-pict.png",
+          "source_sha1": "40e378148aecfdcb16bd64dd6c2507ba031c7f25",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-semantic-math-geometry-4.png",
+          "caption": "8 s \u2014 two completed checkpoints",
+          "time": 8.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "37f87f6a9541cbae993ea6b167aa8fd884855656fa99215ae66027f3cd59cbb2",
+          "source_probe": "gallery-lecture-dark-widescreen-semantic-math-geometry-4",
+          "source_png": "gallery-lecture-dark-widescreen-semantic-math-geometry-4-pict.png",
+          "source_sha1": "e7f1120826842a58cf93cde924c67b878852f828",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "geometry-play": {
+      "kind": "animation",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery",
+        "entry": "geometry-construction",
+        "theme": "lecture-dark",
+        "format": "widescreen",
+        "example": "geometry-slide.rkt"
+      },
+      "frames": [
+        {
+          "file": "manual-geometry-play-0.png",
+          "caption": "0 s \u2014 before the reveal",
+          "time": 0.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "39450072860c415e8daeeef30598d690038a71e49d9f391604f6e77635057e3d",
+          "source_probe": "gallery-lecture-dark-widescreen-geometry-construction-6",
+          "source_png": "gallery-lecture-dark-widescreen-geometry-construction-6-pict.png",
+          "source_sha1": "7bfc9e0e52908ee4a963321d8d51bb34abdf4837",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-geometry-play-1.png",
+          "caption": "10.55 s \u2014 construction in progress",
+          "time": 10.549999999999999,
+          "width": 640,
+          "height": 360,
+          "sha256": "0b6605b0c59a564cdea62ecc6d1d39d43dcd422fb70cff1c19554af7f0df5329",
+          "source_probe": "gallery-lecture-dark-widescreen-geometry-construction-4",
+          "source_png": "gallery-lecture-dark-widescreen-geometry-construction-4-pict.png",
+          "source_sha1": "e604a5eebfa06c18f254b7d33779ce93c86b380d",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-geometry-play-2.png",
+          "caption": "23.1 s \u2014 completed and held",
+          "time": 23.099999999999998,
+          "width": 640,
+          "height": 360,
+          "sha256": "f21406a1e44e1695609e4be7e73084218e89488bf016b113557dd1399c60161f",
+          "source_probe": "gallery-lecture-dark-widescreen-geometry-construction-0",
+          "source_png": "gallery-lecture-dark-widescreen-geometry-construction-0-pict.png",
+          "source_sha1": "0c1845009469496e87966712e4ec3a6e691deaf7",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "lesson-themes": {
+      "kind": "comparison",
+      "columns": 2,
+      "recipe": {
+        "type": "gallery-variants",
+        "entry": "layout-title",
+        "variants": [
+          [
+            "lecture-light",
+            "widescreen"
+          ],
+          [
+            "lecture-dark",
+            "widescreen"
+          ]
+        ]
+      },
+      "frames": [
+        {
+          "file": "manual-lesson-themes-0.png",
+          "caption": "Light theme",
+          "time": 3.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "c830b96c485c47ec43b48d87d4c35c6eae9fa4264001faff7b3e4e1512611952",
+          "source_probe": "gallery-lecture-light-widescreen-layout-title-0",
+          "source_png": "gallery-lecture-light-widescreen-layout-title-0-pict.png",
+          "source_sha1": "1351db78d81b204725ebb0f12ac5ea5fc8ac77af",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-lesson-themes-1.png",
+          "caption": "Dark theme",
+          "time": 3.0,
+          "width": 640,
+          "height": 360,
+          "sha256": "f66d37f99d6ca975bcb5e6620c517a391dc727c93fc5a882533b506c18a9bcbd",
+          "source_probe": "gallery-lecture-dark-widescreen-layout-title-0",
+          "source_png": "gallery-lecture-dark-widescreen-layout-title-0-pict.png",
+          "source_sha1": "0aba9eb9defef95198aaa1c3e7e839dca1dce140",
+          "source_theme": "lecture-dark",
+          "source_format": "widescreen"
+        }
+      ]
+    },
+    "layout-formats": {
+      "kind": "comparison",
+      "columns": 3,
+      "recipe": {
+        "type": "static-layout",
+        "id": "title+two-column",
+        "variants": [
+          [
+            "lecture-light",
+            "widescreen"
+          ],
+          [
+            "lecture-light",
+            "standard"
+          ],
+          [
+            "lecture-light",
+            "portrait"
+          ]
+        ]
+      },
+      "frames": [
+        {
+          "file": "manual-layout-formats-0.png",
+          "caption": "Widescreen: 16 by 9",
+          "time": null,
+          "width": 640,
+          "height": 360,
+          "sha256": "0ca85eb793b9c9a20475e6f08bb5c699a6891a91269b09ba6b591c9cbcadbd3c",
+          "source_probe": "lecture-light-widescreen-title+two-column",
+          "source_png": "lecture-light-widescreen-title+two-column-pict.png",
+          "source_sha1": "aa17326f5f141b73ed21456249a44360613ee463",
+          "source_theme": "lecture-light",
+          "source_format": "widescreen"
+        },
+        {
+          "file": "manual-layout-formats-1.png",
+          "caption": "Standard: 12 by 9",
+          "time": null,
+          "width": 480,
+          "height": 360,
+          "sha256": "9d4331e8087cc4282b2360c4779b1703d606d1cb52e941a85b87237e2c335abc",
+          "source_probe": "lecture-light-standard-title+two-column",
+          "source_png": "lecture-light-standard-title+two-column-pict.png",
+          "source_sha1": "800dc521f68d60ad0f50c28bb2e5227c6846d1f5",
+          "source_theme": "lecture-light",
+          "source_format": "standard"
+        },
+        {
+          "file": "manual-layout-formats-2.png",
+          "caption": "Portrait: 9 by 16",
+          "time": null,
+          "width": 360,
+          "height": 640,
+          "sha256": "18ec34bb95bf9a79d792b1120415ddc2c2df41c860ce8601c6c35ec190b14995",
+          "source_probe": "lecture-light-portrait-title+two-column",
+          "source_png": "lecture-light-portrait-title+two-column-pict.png",
+          "source_sha1": "54d35994ecc6ae2e47718a6112ddb59bd62acee1",
+          "source_theme": "lecture-light",
+          "source_format": "portrait"
+        }
+      ]
+    },
+    "circle-motion": {
+      "kind": "animation",
+      "columns": 3,
+      "recipe": {
+        "type": "example",
+        "module": "moving-circle.rkt",
+        "binding": "movement",
+        "legacy_repository_assets": true
+      },
+      "frames": [
+        {
+          "file": "../guide/figures/moving-circle-0.svg",
+          "caption": "0 s",
+          "time": 0.0,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical moving-circle illustrations"
+        },
+        {
+          "file": "../guide/figures/moving-circle-1.svg",
+          "caption": "0.25 s",
+          "time": 0.25,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical moving-circle illustrations"
+        },
+        {
+          "file": "../guide/figures/moving-circle-2.svg",
+          "caption": "0.5 s",
+          "time": 0.5,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical moving-circle illustrations"
+        },
+        {
+          "file": "../guide/figures/moving-circle-3.svg",
+          "caption": "0.75 s",
+          "time": 0.75,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical moving-circle illustrations"
+        },
+        {
+          "file": "../guide/figures/moving-circle-4.svg",
+          "caption": "1 s",
+          "time": 1.0,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical moving-circle illustrations"
+        }
+      ]
+    },
+    "source-blocks": {
+      "kind": "animation",
+      "columns": 3,
+      "recipe": {
+        "type": "example",
+        "module": "source-blocks.rkt",
+        "binding": "animation",
+        "legacy_repository_assets": true
+      },
+      "frames": [
+        {
+          "file": "../guide/figures/source-block-hot-reload-0.svg",
+          "caption": "0 s \u2014 setup",
+          "time": 0,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical source-block illustrations"
+        },
+        {
+          "file": "../guide/figures/source-block-hot-reload-2.svg",
+          "caption": "2 s \u2014 movement",
+          "time": 2,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical source-block illustrations"
+        },
+        {
+          "file": "../guide/figures/source-block-hot-reload-4.svg",
+          "caption": "4 s \u2014 held result",
+          "time": 4,
+          "width": 160,
+          "height": 90,
+          "source": "repository canonical source-block illustrations"
+        }
+      ]
+    }
+  }
+}

@@ -1,155 +1,50 @@
 #lang scribble/manual
+@(require (for-label racket/base racket/math animate/3d))
 
-@(require (for-label racket/base
-                     racket/math
-                     animate/3d
-                     animate/3d/opengl))
+@title[#:tag "spatial-coordinates"]{Three-dimensional coordinates}
 
-@title[#:tag "spatial-coordinates"]{Spatial Coordinates}
+A 3D object has local coordinates, just as a 2D object does. A spatial transform
+places it in the 3D world. A 3D camera projects that world into a 2D viewport.
 
-SCENE-3D-A introduces the mathematical coordinate system used by spatial
-Visuals, SCENE-3D-B makes its wireframe part visible, SCENE-3D-C adds
-opaque triangle meshes, SCENE-3D-D adds deterministic spatial and camera
-motion, SCENE-3D-E adds semantic spatial relations plus crisp ordinary 2D
-labels anchored to projected spatial points, SCENE-3D-F adds finite points,
-tubes, sampled curves, arrows, axes, grids, and vector diagrams, SCENE-3D-G
-adds fixed-grid parametric/function surfaces with direct-time calculus helpers,
-SCENE-3D-I adds clipping, sections, and depth-aware transparency, and
-SCENE-3D-J adds direct-time linear, affine, pointwise, and homotopy maps.
-SCENE-3D-K adds immutable prepared 3D ODE trajectories plus deterministic
-static vector-field, streamline, and particle geometry. SCENE-3D-T0/T1/T2/T3/T4/T5/T6
-refines that model into immutable dense trajectory, event-hit, explicit
-termination-policy, and camera-independent streamline sample data: later
-position, tangent, arc-length, terminal-root, stopping-condition, and prepared
-curve lookup never call the author's ODE field. T2's arc-length stopping
-remains a deterministic approximation rather than a certified integral, and
-T3's unbounded-streamline fallback is an explicit finite eight-unit horizon.
-T4 adds immutable, canonically ordered seed sets and local-seed Poisson
-sampling plus prepared streamline collections. Their optional separation policy
-is ordered against earlier display samples; independent field procedures are
-not yet run concurrently by this pure layer. T5 extracts direction-filtered
-Poincare plane crossings from stored dense trajectory segments, not visual
-curve samples. T6 begins the local phase-space layer with analytic or
-scale-aware finite-difference Jacobians whose stencils and diagnostics are
-explicit immutable data, then applies bounded damped Newton iteration only to
-author-declared seed sets. Every seed retains its convergence/failure status;
-successful roots merge in seed order rather than hiding missed candidates.
-SCENE-3D-L adds
-immutable spatial inspection records, deterministic local BVH traversal, and
-exact camera-ray triangle picking for a sampled @racket[view3d].
-SCENE-3D-U8 extends an exact mesh pick with its semantic parts, nearest
-vertex/edge classification, component and boundary identity, plus immutable
-Euler/genus diagnostics. Its preview overlay is paint-only: selected face,
-component, boundary, half-edge, and normal marks never become spatial children.
-For a raw @racket[mesh3d], a render triangle remains the honest polygonal-face
-identifier; retained polygonal-complex, primal/dual, net, and correspondence
-annotations are deliberately separate future mappings.
-SCENE-3D-M adds an effectful retained-renderer protocol behind that immutable
-model. SCENE-3D-N adds explicit indexed-mesh topology diagnostics, orientation
-repair, and camera-independent compiled geometry resources; renderer caches and
-metrics remain outside the spatial tree and the deterministic software path
-remains the conformance reference. SCENE-3D-O adds renderer-independent
-mathematical strokes, screen-sized points and arrowheads, and camera-dependent
-feature/silhouette outlines. These marks prepare from immutable centrelines at
-the requested frame; they do not become camera-dependent author values.
-SCENE-3D-P adds an optional Racket/OpenGL implementation behind the same
-renderer protocol. It owns retained GPU resources and an offscreen framebuffer,
-then reads copied ARGB pixels back into the ordinary 2D composition; the
-software renderer remains the default reference.
-It still does not add a
-second scene timeline: @racket[view3d] is an ordinary two-dimensional Visual
-inside the existing immutable scene, with a separate immutable spatial tree.
+A @racket[view3d] is an ordinary 2D Visual containing that viewport. It can appear
+beside text or inside a larger Scene. You do not need a second video timeline.
 
-Spatial coordinates are right-handed:
+@section{The axes}
 
-@verbatim{
-                    +y
-                    ↑
-                    │
-          +x  →     o     ⊙ +z
-                         toward the viewer
-}
-
-The coordinate constants are @racket[origin3], @racket[x-axis3],
-@racket[y-axis3], and @racket[z-axis3]. In particular,
-@racket[(vec3-cross x-axis3 y-axis3)] is @racket[z-axis3]. A two-dimensional
-world point embeds in the future spatial coordinate system as
+The coordinate system is right-handed. The named unit vectors are
+@racket[x-axis3], @racket[y-axis3], and @racket[z-axis3]. Their orientation is
+specified by @racket[(vec3-cross x-axis3 y-axis3)], which is @racket[z-axis3].
+The origin is @racket[origin3]. A point from the 2D xy plane becomes
 @racket[(vec3 x y 0)].
 
-The algebra, spatial-tree, mesh, and camera values in
-@racketmodname[animate/3d] are immutable, finite semantic data. They can be
-calculated and tested in a headless process just like the existing immutable
-scene model. Rendering a @racket[view3d] through @racketmodname[animate] uses
-the ordinary Pict renderer; that adapter is the deliberate effectful boundary,
-not a second rendering system exposed to authors.
+What appears left, right, near, or far in the picture also depends on the camera.
+The world axes do not change when the camera moves.
 
-The author-oriented @racket[transform3] applies its components in this order:
+@section{Scale, rotate, then move}
+
+An author-facing transform applies its scale first, then its rotation, then its
+translation:
 
 @racketblock[
-(define transformed
+(define placement
   (make-transform3
    #:translation (vec3 4 0 0)
    #:rotation (axis-angle z-axis3 (/ pi 2))
    #:scale (vec3 2 2 2)))
+(transform3-apply-point placement (vec3 1 0 0))]
 
-(transform3-apply-point transformed (vec3 1 0 0))
-]
+Here the point is doubled, rotated a quarter-turn, and moved four units in x.
+Composing nonuniform scales and rotations can also produce shear. That is why
+@racket[transform3-compose] returns an @racket[affine3] map instead of discarding
+that part of the result.
 
-That example first scales the local point, then rotates it counter-clockwise
-around positive @racket[z-axis3], then translates it. A general composition of
-nonuniform decomposed transforms can create shear, so @racket[transform3-compose]
-returns an exact @racket[affine3] map rather than silently discarding it.
+@section{Geometry and drawing are separate}
 
-@bold{Current limitation:} a @racket[view3d] can draw depth-tested filled
-triangles plus mathematical screen/world strokes. Opaque triangles are clipped
-against all six camera-frustum planes, back-face culled by default,
-unlit/flat/smooth shaded, and resolved by a deterministic z-buffer. A
-render-only @racket[clip3d] adds local half-space clipping, while
-@racket[slice-mesh3d] and plane sections produce actual geometry. Transparent
-triangles are sorted far-to-near against the opaque depth target, which is
-deterministic but not order-independent transparency. There is no general mesh
-texture mapping, shadows, or arbitrary slice cap generation. SCENE-3D-V1 adds
-Lambert and Blinn--Phong response with deterministic roughness mapping and
-additive emission, but current channel clamping is display-space until the
-later colour-management stage. Stage
-L picking operates on indexed mesh triangles (including generated curve and
-surface meshes), not analytic implicit shapes, UVs, or a GPU selection pass;
-its preview overlays are diagnostic-only and never enter a rendered frame.
-The default retained backend caches reference camera-space preparation but is
-not GPU accelerated. The optional OpenGL backend requires an explicit
-@racketmodname[animate/3d/opengl] choice in a GUI-capable Racket process and
-uses one serialized context, FBO readback, and tolerance-based rather than
-bit-exact software conformance. It has no direct GL presentation, GPU picking,
-general mesh textures, shadows, or order-independent
-transparency.
-Stage F diagrams have deterministic physical-radius tubes and direct-time curve
-animation; Stage O adds screen-space widths, caps, joins, dashes, visible and
-hidden depth modes, and screen-sized marker primitives. The software coverage
-is deterministic rather than analytically antialiased, and hidden-line
-classification deliberately ignores transparent surfaces. Stage G surfaces use
-fixed rectangular topology, deterministic normal fallbacks, and direct-time
-reveal/morph. Adaptive/implicit surfaces and general solids remain later work.
-Projected labels are 2D overlays with fixed pixel offsets. For depth-tested
-ARGB image annotations, @racket[billboard3d] provides screen/world sizing and
-camera/axis-facing policy; it is not a source-mapped formula facility.
-Projected labels may opt into opaque-depth @racket['hide] or @racket['fade]
-behaviour and can overlap. `move3d-*`,
-`rotate3d-*`, `scale3d-*`,
-and `camera3d-*` requests are finite immutable clips: a frame is calculated
-from its requested time rather than the previous frame. Camera aspect comes
-from the viewport being rendered, so a camera is reusable in viewports of
-different sizes. Linear and affine map requests retain exact indexed topology
-and can apply to a whole named spatial subtree. Pointwise and homotopy maps
-currently operate on unwrapped @racket[mesh3d] values only; they sample the
-  authored vertices and do not adaptively remesh. A non-injective map can make
-  degenerate or self-intersecting triangles. The default invalid-point policy is
-  an error; @racket['drop-triangle] deliberately leaves holes and does not cap
-  or repair them. Prepared 3D ODE fields must return finite @racket[vec3]
-  values. Their vector-field grids and streamline seed sets are explicit finite
-samples, not adaptive field-line topology. Grid, plane, curve, surface,
-Fibonacci-sphere, and Poisson seed sets preserve a canonical immutable point
-order; Poisson sets use an explicit local integer seed rather than Racket's
-global random generator. Arc length is an eight-chord
-per-dense-segment estimate rather than a certified integral; event detection,
-termination policies, adaptive streamline set preparation/separation, and 3D
-ODE source inspection are still later work.
+Meshes, spatial trees, cameras, and transforms are data. The renderer draws them
+at a requested time. The software renderer is the default. The optional OpenGL
+backend has its own environment requirements and rendering limits.
+
+Do not use a chapter about coordinates as a capability checklist. The 3D API
+entries in @secref["part-reference"] describe supported geometry, lighting,
+transparency, picking, prepared trajectories, and backend restrictions. Changes
+to those features do not change the coordinate conventions above.

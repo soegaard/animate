@@ -1,163 +1,71 @@
 #lang scribble/manual
+@(require (for-label racket/base animate animate/project))
 
-@(require (for-label racket/base
-                     animate
-                     animate/project
-                     animate/preview))
+@title[#:tag "typography-and-text-styles"]{Text roles, fonts, and size}
 
-@title[#:tag "typography-and-text-styles"]{Typography and Text Styles}
+A title and a footnote have different jobs. Give text a role when the theme
+should choose its appearance. For example:
 
-@declare-exporting[animate/main]
+@racketblock[(title-text "Solving an equation" #:id 'heading #:center (vec2 0 2))]
 
-Use semantic text for presentation text. For example, a title can say what it
-is instead of repeating its font settings:
+The title role supplies a font family, size, weight, color, alignment, and any
+text treatment. The text can keep its role when the theme changes.
 
-@racketblock[
-(title-text "Solving a Linear Equation"
-            #:id 'problem-title
-            #:center (vec2 0 2))
-]
+@section{Roles and raw text}
 
-The title's font, size, weight, color, alignment, and optional background box
-come from a @racket[typography-theme]. The built-in
-@racket[animate-typography-theme] contains these roles:
+Heading helpers include @racket[title-text], @racket[subtitle-text], and
+@racket[section-heading-text]. Ordinary text helpers include @racket[body-text],
+@racket[caption-text], @racket[label-text], and @racket[annotation-text].
+@racket[quotation-text] and @racket[code-text] cover quotations and code.
 
-@itemlist[
- @item{@racket[title-text], @racket[subtitle-text], and
-       @racket[section-heading-text] for headings.}
- @item{@racket[body-text], @racket[caption-text], @racket[label-text], and
-       @racket[annotation-text] for ordinary explanatory text.}
- @item{@racket[quotation-text] and @racket[code-text] for quotations and code.}
-]
+Use @racket[plain-text], @racket[paragraph], or @racket[rich-text] when the source
+should choose exact text settings without using a typography role. Do not convert
+axis ticks or imported artwork to title/body roles just because they contain text.
 
-@section{Font sizes and output pixels}
+The slide system uses its own lecture typography built on the same native text
+styles. Its @tt{paragraph-content} is a description to measure later, not another
+name for the native @racket[paragraph].
 
-Font sizes are measured in local world units, just like positions and widths.
-At render time, Animate converts them to output pixels using the camera:
+@section{World units become output pixels}
 
-@racketblock[
-pixel-font-size = font-size * camera-pixel-width / camera-world-width
-]
+Font sizes are world lengths. The camera converts them to nominal pixel sizes:
 
-For example, a camera that is 16 world units wide has 80 pixels per world unit
-at 1280 pixels wide. A @racket[#:font-size] of @racket[2/5] therefore requests
-a nominal 32-pixel font. The same Scene grows proportionally when it is rendered
-at a larger resolution.
+@verbatim{pixel font size = world font size × pixel width / world width}
 
-The following table uses a 16-world-unit-wide camera. Pixel values are rounded;
-the visible height of individual glyphs still depends on the selected font.
+For a 16-unit-wide camera, a font size of 0.4 requests 32 pixels at an output
+width of 1280, or 48 pixels at 1920. Visible letter height still depends on the
+font. Scaling a Visual or group also scales its text.
 
-@tabular[#:sep @hspace[2]
- (list
-  (list @bold{World size}
-        @bold{1280 @italic{×} 720}
-        @bold{1920 @italic{×} 1080}
-        @bold{3840 @italic{×} 2160})
-  (list @racket[1/4]  @tt{20 px}        @tt{30 px} @tt{60 px})
-  (list @racket[3/10] @tt{24 px}        @tt{36 px} @tt{72 px})
-  (list @racket[1/3]  @tt{about 27 px}  @tt{40 px} @tt{80 px})
-  (list @racket[7/20] @tt{28 px}        @tt{42 px} @tt{84 px})
-  (list @racket[2/5]  @tt{32 px}        @tt{48 px} @tt{96 px})
-  (list @racket[1/2]  @tt{40 px}        @tt{60 px} @tt{120 px})
-  (list @racket[3/5]  @tt{48 px}        @tt{72 px} @tt{144 px})
-  (list @racket[3/4]  @tt{60 px}        @tt{90 px} @tt{180 px}))]
+Changing only output resolution makes the same composition larger. Changing a
+font or its size can change measured widths, line breaks, and baselines. For a
+prepared slide, make that change in the source and prepare again.
 
-The built-in theme uses @racket[1/4] for annotations, @racket[3/10] for
-captions, @racket[7/20] for labels and code, @racket[2/5] for body text and
-quotations, @racket[1/2] for subtitles, @racket[3/5] for section headings, and
-@racket[3/4] for titles.
+@section{Typography and color are separate choices}
 
-If your camera has another world width, use the formula above instead of the
-table. A Visual or group @racket[#:scale] is applied after this conversion, so
-it also changes the final text size.
+Typography chooses text settings. A color theme resolves roles such as
+foreground and muted. A project should use the same typography that was used
+to measure its content. Otherwise a layout may be measured with one font and
+drawn with another.
 
-@section{Raw text is still available}
+Use @racket[text-style-update] to change part of a complete style. Use
+@racket[typography-theme] to collect those styles. A local override, such as
+italic body text, can keep its semantic role. See
+@secref["recipe-slide-theme"] for a complete slide-theme example.
 
-@racket[plain-text], @racket[paragraph], and @racket[rich-text] are the
-explicit, low-level text tools. Use them when the source itself should choose
-the exact text appearance independently of a project's typography. They do
-not consult a typography theme.
+@section{Backgrounds and borders}
 
-Use semantic text when the text has a presentation role. Its Scene value keeps
-the role and any explicit overrides. The role is resolved only when Animate
-renders or measures it, so the same immutable Scene can be rendered with a
-different typography snapshot.
+A @racket[text-treatment] adds a background, border, and padding. Padding grows
+around the text anchor. During @racket[typewrite], the treatment keeps the final
+text's size rather than changing after each letter.
 
-@section{Typography and color are different choices}
+Border width is cosmetic output-pixel width, unlike the world-unit font size.
+Checker treatments currently use device-aligned tiles in the Pict renderer;
+they do not fully follow arbitrary text scaling and rotation. Exact treatment
+and text-animation restrictions belong to the reference entries.
 
-Typography chooses text properties such as a family, size, line spacing, and
-treatment. A color theme resolves color roles such as
-@racket[theme-foreground] and @racket[theme-muted]. Choose both explicitly for
-a project:
+@section{Inspect the result}
 
-@racketblock[
-(render-spec #:theme animate-dark-theme
-             #:typography lecture-typography)
-]
-
-Changing the color theme normally changes paint only. Changing typography can
-also change text width, line breaks, and baseline. For construction-time layout
-of semantic text, pass the same snapshot with @racket[#:typography]. Rendered
-relations and preview rendering use their currently selected typography
-snapshot automatically.
-
-@section{Custom styles and one-off overrides}
-
-Start a custom theme from the built-in complete style table. Each replacement
-is a complete @racket[text-style], usually made with
-@racket[text-style-update]:
-
-@racketblock[
-(define lecture-typography
-  (typography-theme
-   #:id 'lecture
-   #:extends animate-typography-theme
-   #:styles
-   (hash 'title
-         (text-style-update (typography-ref animate-typography-theme 'title)
-                            #:font-family 'roman
-                            #:font-size 1))))
-]
-
-Themes may also add a named style such as @racket['theorem-heading]. Use it
-with @racket[styled-text]. A semantic constructor may override one property
-without losing its role:
-
-@racketblock[
-(body-text "A one-off note" #:id 'note #:font-style 'italic)
-(styled-text "Theorem" #:style 'theorem-heading #:id 'theorem-title)
-]
-
-The inspector shows the authored role, inherited and explicit properties, and
-the style resolved from the selected typography snapshot.
-
-@section{Treatments and animation}
-
-A @racket[text-treatment] can add a background, border, and em-sized padding.
-The original text anchor stays fixed while padding expands around it. In a
-@racket[typewrite] effect, a semantic treatment box stays present while glyphs
-are progressively revealed; it does not resize for every character. The exact
-end of a text effect remains the original semantic text value, not a
-font-resolved proxy. Linear and radial background paints use the text anchor
-as their local origin, just like paints on shapes. The border is a cosmetic
-output-pixel width, so making text larger does not make its outline thicker.
-The Pict renderer currently draws checker backgrounds as device-aligned tiles,
-so a checker does not yet fully follow text scaling or rotation.
-
-@section{Migration cookbook}
-
-@tabular[#:sep @hspace[2]
- (list (list @bold{Before} @bold{After})
-       (list @racket[(plain-text "Chapter" #:id 'chapter
-                                #:font-family 'swiss #:font-weight 'bold)]
-             @racket[(title-text "Chapter" #:id 'chapter)])
-       (list @racket[(paragraph explanation #:id 'body #:font-size 2/5)]
-             @racket[(body-text explanation #:id 'body)])
-       (list @racket[(plain-text "small note" #:id 'note #:font-size 1/4)]
-             @racket[(annotation-text "small note" #:id 'note)])
-       (list @racket[(paragraph source #:id 'code #:font-family 'modern)]
-             @racket[(code-text source #:id 'code)]))]
-
-Do not mechanically convert every raw text value. Axis ticks, numeric displays,
-and imported SVG text have their own purposes and are intentionally left for
-separate migrations.
+The preview inspector distinguishes the authored role, explicit overrides, and
+the style resolved from the selected theme. Use it to answer why a title has a
+particular size. Looking only at a rendered pixel cannot tell you whether its
+color came from a role or a fixed literal.

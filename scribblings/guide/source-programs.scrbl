@@ -1,92 +1,37 @@
 #lang scribble/manual
+@(require (for-label racket/base animate animate/authoring)
+          "../private/examples.rkt" "../private/illustrations.rkt")
+@title[#:tag "guide-source-programs"]{Organize a source program}
+@; requires: scene request duration rendering
 
-@(require (for-label racket/base
-                     animate
-                     animate/authoring
-                     animate/preview))
+Once a short example works, put it in a reusable Racket module. Use @tt{provide}
+to export the value another module should load. Keep rendering commands in a
+runner or @tt{module+ main}, so loading the descriptions does not write a movie.
 
-@title[#:tag "guide-source-programs"]{Source Programs}
+@section{A reusable source file}
+The Quick Start already gives you a reusable module. Its export is simply:
+@verbatim{(provide animation)}
+Load the completed @filepath{scribblings/examples/moving-circle.rkt} in another
+module with @tt{require}. Keep the @tt{render-frames!} call in a separate runner.
 
-When you edit an animation, use the preview program to see the video before
-you render a final file. @racket[open-program-preview] opens a preview window.
-There, you can look at a single frame, play the video, or review a short part
-of it.
+This is enough for many examples. A source file for a slide project instead
+exports its storyboard, normally as @tt{film}.
 
-The preview program reads a @italic{source program}: an ordinary Racket source
-file that defines an animation. The call below asks the preview program to open
-the animation named @racket[hot-reload-demo] in that file.
+@section{Add blocks when you need frequent edits}
 
-@racketblock[
-(require animate/preview)
+A @bold{source program} can divide a longer animation into named @bold{blocks}.
+Each block receives the Scene made so far and returns the next Scene. This lets
+the preview rerun the changed block and later blocks instead of starting over.
+@; introduces: source-program source-block
+Start a separate module with @tt{#lang racket/base} and
+@tt{(require animate animate/authoring)}. Then define the blocks:
+@example-part["source-blocks.rkt" "blocks"]
+@frame-strip["source-blocks"]
 
-(open-program-preview "source-block-hot-reload.rkt" 'hot-reload-demo)]
+The blocks do not edit the incoming Scene. Their names appear in the preview's
+block selector. Changing @tt{move-dot} can reuse @tt{setup}; changing code outside
+the blocks rebuilds the source program.
 
-The complete tested example is @filepath{examples/source-block-hot-reload.rkt}.
-Run that file with GRacket to open its preview window.
-
-For quick updates, divide a source program into named blocks. Each block
-receives the Scene made by the previous block and returns the next Scene. A
-Scene is Animate's description of what is on screen at a point in the video.
-Give each block one small job, such as setting up a diagram, moving an object,
-or holding the last picture.
-
-The preview program watches the source program. When you save a change, it
-reloads the file. This is called @italic{hot reloading}. It keeps the unchanged
-blocks before the first changed block, then reruns the changed block and the
-blocks after it. For example, changing @racket[move-dot] below reuses
-@racket[setup], then reruns @racket[move-dot] and @racket[hold]. Changing code
-outside the blocks rebuilds the whole program.
-
-@racketblock[
-(require animate
-         animate/authoring)
-
-(define dot
-  (circle #:id 'dot #:center (vec2 -3 0) #:radius 1/2
-          #:fill "tomato" #:stroke "firebrick"))
-
-(define-scene-program hot-reload-demo
-  #:initial (make-scene)
-
-  (scene-block setup (scene)
-    (scene-wait (scene-add scene dot) 1))
-
-  (scene-block move-dot (scene)
-    (scene-play scene (move-to 'dot (vec2 3 0)) #:duration 2))
-
-  (scene-block hold (scene)
-    (scene-wait scene 1)))]
-
-The frames below show the three blocks in this program. A boundary frame is
-shown twice: it is the last frame of one block and the first frame of the next.
-
-@bold{@racket[setup] makes the dot and waits for one second.}
-
-@centered[
- @tabular[
-  #:sep @hspace[1]
-  (list (list @image["scribblings/guide/figures/source-block-hot-reload-0.svg"]
-              @image["scribblings/guide/figures/source-block-hot-reload-1.svg"])
-        (list "start" "end"))]]
-
-@bold{@racket[move-dot] moves the dot from left to right over two seconds.}
-
-@centered[
- @tabular[
-  #:sep @hspace[1]
-  (list (list @image["scribblings/guide/figures/source-block-hot-reload-1.svg"]
-              @image["scribblings/guide/figures/source-block-hot-reload-2.svg"]
-              @image["scribblings/guide/figures/source-block-hot-reload-3.svg"])
-        (list "start" "middle" "end"))]]
-
-@bold{@racket[hold] keeps the finished picture on screen for one second.}
-
-@centered[
- @tabular[
-  #:sep @hspace[1]
-  (list (list @image["scribblings/guide/figures/source-block-hot-reload-3.svg"]
-              @image["scribblings/guide/figures/source-block-hot-reload-4.svg"])
-        (list "start" "end"))]]
-
-In the preview, the block selector lists these names and tells you which block
-contains the current frame.
+The complete maintained example is @filepath{examples/source-block-hot-reload.rkt}.
+The next chapter opens that exact example in a preview. Do not replace its
+filename with an undefined placeholder such as @tt{derivative.rkt}.

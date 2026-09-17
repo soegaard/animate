@@ -1,97 +1,58 @@
 #lang scribble/manual
+@(require "../private/examples.rkt")
+@title[#:tag "guide-project-planning"]{Render a larger project}
+@; requires: storyboard theme typography preparation rendering encoding fps source-program
 
-@(require (for-label racket/base
-                     animate/project
-                     animate/render))
+For a slide video, start with the supplied runner. From the repository root:
+@verbatim{racket slides/render-example.rkt --workers 10 \
+  --output slides-output/manual-videos \
+  scribblings/examples/slide-lesson.rkt}
 
-@title[#:tag "guide-project-planning"]{Project Planning}
+The runner loads @tt{film}, chooses matching color and text settings, prepares
+content, renders frames, and assembles the movie. For many lessons, that is all
+the project configuration you need.
 
-@racketmodname[animate/project] has one immutable declaration for source
-loading, preview settings, raster rendering, output, encoding, assets, and
-caches. @racket[plan-project] is pure; @racket[prepare-project!] may load a
-declared source and inspect tools but does not create frames or media.  For an
-MP4 project, preparation also records the selected FFmpeg release banner in
-its tool identity, so a tool upgrade cannot silently reuse an incompatible
-encoded segment.
+@section{Declare a project when you need more control}
 
-@racketblock[
-(require animate/project)
+A @bold{project} combines the source, render settings, output paths, and cache
+policy. A cache keeps previously rendered work for reuse; this example turns
+persistent caching off. A @bold{worker} is another Racket process that renders assigned frames.
+Ten workers is a requested capacity, not a promise of a tenfold speedup.
+@; introduces: project worker
 
-(define plan
-  (plan-project derivative-project
-                #:target (project-target-section 'explanation)))
-(project-plan->datum plan)]
+This complete file lives next to @tt{slide-lesson.rkt}. The
+@tt{storyboard-source} form resolves that relative filename from its source module.
+@example-source["project.rkt"]
 
-The effectful operations in @racketmodname[animate/render] reduce section,
-block, range, and single-frame requests to @racket[execute-prepared-project!].
-See @filepath{examples/project-planning.rkt} and use
-@tt{raco animate plan examples/project-planning.rkt sample-project} to inspect
-the exact path plan before output is created.
+The render theme and typography must agree with the storyboard. The example
+turns persistent caching off to make its behavior easy to follow.
 
-The all-project target uses the declared output name. Narrower targets receive
-a deterministic suffix, such as @tt{derivative-explanation.mp4} for a named
-section or @tt{derivative-frame-90.mp4} for one frame. Section and block names
-are encoded as a single portable path component, so authored names never create
-accidental output subdirectories.
+@section{Inspect the plan before writing files}
 
-@tt{raco animate check PROJECT.rkt BINDING} performs the corresponding
-non-rendering environment check.  It loads and validates the declared source,
-checks required tools and assets, and verifies that the output and cache roots
-are directories that can be used (or created from a writable ancestor).  The
-command deliberately creates no directories and writes no probe files; a
-changed file system can still cause a later render to report an ordinary I/O
-error.
+@tt{plan-project} describes the planned job. @tt{prepare-project!} performs the
+needed source and resource preparation without rendering frames. The final
+render command is separate:
+@verbatim{(require "scribblings/examples/project.rkt"
+         animate/project animate/render)
+(project-plan->datum (plan-project lesson-project))
+(render-project! lesson-project)}
 
-For an MP4 target, the check also asks the selected FFmpeg whether it provides
-the declared video encoder and pixel format.  This catches a misspelled codec
-or a platform-specific encoder omission before the project invests time in
-rasterizing frames.
+Run these expressions from the repository root. For command-line environment
+checks and individual-section output, see @secref["reference-project-workflow"].
 
-A @racket['png-sequence] output writes a completed directory of numbered PNGs
-at the planned primary output path; cache frames remain internal.  Set
-@racket[output-spec]'s @racket[#:write-frame-sequence?] option for the same
-explicit PNG export beside an MP4.  Existing exports require
-@racket['replace] as the overwrite policy.  Each sequence is copied to a
-private sibling and installed only once it is complete.
+@section{Math and geometry use the same worker pool}
 
-For an all-target authored timeline, @racket[#:write-sections? #t] additionally
-renders every named section as its own normal project target. Those outputs use
-the target suffixes above, preserve section-local media semantics, and appear
-under the @racket['sections] entry of the execution report. Requesting that
-option for a plain Scene is an error: sections are authoring metadata, not an
-implicit division of arbitrary duration.
+The parent prepares the mathematical and construction data once. Workers rebuild
+a sampler from that prepared data; they do not redo geometry realization or
+label placement. Workers still need compatible Racket, source files, and fonts.
+Static previews and video encoding are separate work.
 
-Set @racket[#:open-after? #t] when the completed primary artifact should be
-presented by the platform's ordinary file launcher. This is deliberately a
-best-effort render-side action: unavailable desktop integration leaves the
-artifact intact and records a warning in the execution report. An all-target
-section export opens only the primary artifact, never a cascade of section
-windows.
+Check the reported execution mode and actual worker starts. The probe runner
+compares pictures and repeatability; it is not a test of worker speed.
 
-Cache identities are domain-specific. A frame identity includes source content,
-the requested frame grid, effective camera, dimensions, supersampling, renderer
-configuration, and declared visual/formula asset hashes. It intentionally
-excludes output naming, encoder options, and audio assets: changing an MP4 CRF,
-preset, or narration may require later work, but it does not require
-rasterizing unchanged PNG frames again. Direct Scene values remain memory-only
-because arbitrary embedded procedures cannot be fingerprinted honestly.
+@section{Finish with two kinds of review}
 
-The @racket['segments] cache domain stores visual MP4 segments separately from
-the frame domain. Its identity extends the frame identity with the codec,
-pixel format, video options, frame rate, and selected FFmpeg release banner.
-Audio cues and subtitles are intentionally excluded: final assembly remuxes
-them after obtaining the visual segment, so narration edits do not re-encode
-video. Several encoder profiles can coexist under the segment cache root. Set
-@racket[cache-spec] to @racket['refresh] to replace a matching profile, or
-remove @racket['segments] from its domains to encode without persistent segment
-reuse. Use @tt{raco animate cache list PROJECT.rkt BINDING} to inspect the
-target-specific roots. @tt{raco animate cache clear --domain segments
-PROJECT.rkt BINDING} removes only cached video segments; omitting
-@tt{--domain} clears the declared project cache root.
-
-@racket[cache-spec]'s @racket[#:max-bytes] is a persistent-cache budget. After
-a successful write, Animate removes the least-recently-used completed target
-caches until the root is within the budget. It never deletes the target that
-produced the current execution report, even if that target alone exceeds the
-budget: its frame paths remain valid for the caller. The report records this as
-a @racket['cache] cache event.
+Watch your lesson for pacing, wording, and readability. Separately, use
+@secref["recipe-review-slides"] to compare the library's Pict and Scene output.
+A completed file or a passing numeric comparison does not establish that a
+lesson communicates well.

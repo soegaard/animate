@@ -1,73 +1,39 @@
 #lang scribble/manual
 
-@(require (for-label racket/base
-                     racket/class
-                     racket/contract
-                     racket/draw
-                     racket/generic
-                     racket/math
-                     (only-in pict pict?)
-                     animate
-                     animate/authoring
-                     animate/preview
-                     animate/render
-                     animate/project
-                     animate/experimental
-                     animate/slides
-                     animate/slides/pict
-                     animate/slides/scene
-                     animate/slides/render
-                     animate/slides/math
-                     animate/slides/geometry
-                     animate/slides/project
-                     animate/slides/gallery
-                     animate/3d
-                     animate/3d/render)
-          "../version.rkt")
+@(require "../version.rkt")
 
-@(define release-label
-   (format "~a — version ~a" animate-stage animate-version))
-
-@title[#:tag "animate"]{Visual Animation — @|release-label|}
+@title[#:tag "animate"]{Animate}
 
 @defmodule[animate]
 
-Visual Animation is a small, immutable animation library for Racket. It is an early step toward a Manim-like system. The library keeps
-semantic scene data separate from Pict rendering and file output.
+Animate is a Racket library for making animations and videos. You describe the
+objects, give them names, and say how they change over time. The same animation
+can produce a still picture, a preview, or a video.
 
-The public API in this manual is version @tt{@|animate-version|}. This is a
-prototype, so the repository improves names and behavior directly: internal
-callers, examples, tests, and documentation are updated together, and obsolete
-spellings are removed rather than retained as compatibility aliases.
+This manual describes version @tt{@|animate-version|} of the checked-out source.
+Examples use ordinary Racket. You do not need a special language.
+
+@bold{Choose a starting point}
+
+@tabular[#:sep @hspace[2]
+ (list
+  (list @bold{Part} @bold{Use it to})
+  (list @secref["part-concepts"] "Understand scenes, time, layouts, and identity.")
+  (list @secref["part-cookbook"] "Find a short solution to a particular task.")
+  (list @secref["part-guide"] "Make an animation from start to finish.")
+  (list @secref["part-reference"] "Look up names, arguments, results, and limits."))]
+
+New to Animate? Start with @secref["guide-getting-started"]. It makes one moving
+circle. Continue through the Guide to save a movie, add slides, and use richer
+content. The slide route starts at @secref["guide-slides"]; its only Animate
+prerequisites are the Scene and Pict introduced in the Quick Start.
+
+The Cookbook is for returning to a particular task. The Reference keeps complete
+contracts separate from the learning path.
 
 @table-of-contents[]
 
-@include-section["guide/getting-started.scrbl"]
-@include-section["guide/source-programs.scrbl"]
-@include-section["guide/interactive-preview.scrbl"]
-@include-section["guide/rendering-a-video.scrbl"]
-@include-section["guide/project-planning.scrbl"]
-@include-section["guide/slides.scrbl"]
-@include-section["concepts/immutable-scenes.scrbl"]
-@include-section["concepts/formula-source-maps.scrbl"]
-@include-section["concepts/relation-phases.scrbl"]
-@include-section["concepts/spatial-coordinates.scrbl"]
-@include-section["concepts/colors-and-themes.scrbl"]
-@include-section["concepts/typography-and-text-styles.scrbl"]
-@include-section["reference/module-boundaries.scrbl"]
-@include-section["reference/colors.scrbl"]
-@include-section["reference/authoring.scrbl"]
-@include-section["reference/preview.scrbl"]
-@include-section["reference/project.scrbl"]
-@include-section["cookbook/canonical-examples.scrbl"]
-
-
-@include-section["guide/package-source.scrbl"]
-@include-section["reference/scene.scrbl"]
-@include-section["reference/geometry-and-plots.scrbl"]
-@include-section["reference/3d-algebra.scrbl"]
-@include-section["reference/visuals-and-relations.scrbl"]
-@include-section["reference/experimental.scrbl"]
-@include-section["reference/rendering.scrbl"]
-@include-section["cookbook/reference-recipes.scrbl"]
-@include-section["cookbook/themed-mathematics.scrbl"]
+@include-section["concepts.scrbl"]
+@include-section["cookbook.scrbl"]
+@include-section["guide.scrbl"]
+@include-section["reference.scrbl"]

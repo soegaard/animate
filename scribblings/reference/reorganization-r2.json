@@ -1,0 +1,284 @@
+{
+  "schema": "animate-manual-reference-r2",
+  "audit": {
+    "source": "scribblings/reference/scene.scrbl",
+    "source_sha256": "e570f7999d86b0146da754a5b2e4e5f5a3be055210b6a46498bf41d8ae0e610a",
+    "definition_count": 218,
+    "animation_definition_count": 185,
+    "definition_blocks_preserved": true,
+    "families": [
+      {
+        "path": "scribblings/reference/animation-motion.scrbl",
+        "definitions": [
+          "move-to",
+          "move-to-request?",
+          "move-along-path",
+          "move-along-path-request?",
+          "orient-along-path",
+          "orient-along-path-request?",
+          "rotate-to",
+          "rotate-to-request?",
+          "rotate-by",
+          "rotate-by-request?",
+          "scale-to",
+          "scale-to-request?",
+          "scale-by",
+          "scale-by-request?",
+          "apply-affine",
+          "apply-affine-request?",
+          "apply-matrix"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-appearance.scrbl",
+        "definitions": [
+          "stroke-width-to",
+          "stroke-width-to-request?",
+          "fill-color-to",
+          "fill-color-to-request?",
+          "stroke-color-to",
+          "stroke-color-to-request?",
+          "fade-to",
+          "fade-to-request?",
+          "style-to",
+          "style-to-animation-request?"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-enter-leave.scrbl",
+        "definitions": [
+          "fade-in",
+          "fade-in-request?",
+          "fade-out",
+          "fade-out-request?",
+          "enter",
+          "enter-request?",
+          "leave",
+          "leave-request?",
+          "reveal-front?",
+          "reveal-front-path",
+          "reveal-in",
+          "reveal-in-request?",
+          "reveal-out",
+          "reveal-out-request?",
+          "shrink-out",
+          "reveal-subsets"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-emphasis.scrbl",
+        "definitions": [
+          "pulse",
+          "pulse-request?",
+          "confetti",
+          "confetti-request?"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-paths.scrbl",
+        "definitions": [
+          "morph-to",
+          "morph-to-request?",
+          "morph-to-normalized",
+          "morph-to-normalized-request?",
+          "create",
+          "create-request?",
+          "uncreate",
+          "uncreate-request?"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-path-correspondence.scrbl",
+        "definitions": [
+          "morph-to-aligned",
+          "morph-to-aligned-request?",
+          "morph-to-open-aligned",
+          "morph-to-open-aligned-request?",
+          "morph-to-open-compound-aligned",
+          "morph-to-open-compound-aligned-request?",
+          "morph-to-mixed-compound-aligned",
+          "morph-to-mixed-compound-aligned-request?",
+          "morph-to-topology-changing",
+          "morph-to-topology-changing-request?",
+          "morph-to-compound-aligned",
+          "morph-to-compound-aligned-request?"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-shapes.scrbl",
+        "definitions": [
+          "transform-shape",
+          "transform-shape-request?",
+          "transform-matching-visuals",
+          "transform-matching-visuals-request?"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-text.scrbl",
+        "definitions": [
+          "typewrite",
+          "typewrite-request?",
+          "erase-text",
+          "erase-text-request?",
+          "transform-formula-parts",
+          "transform-formula-parts-request?",
+          "write-in",
+          "unwrite",
+          "write-in-request?",
+          "unwrite-request?",
+          "formula-part-targets",
+          "reveal-formula-parts"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-values.scrbl",
+        "definitions": [
+          "value-to",
+          "value-to-request?",
+          "change-number-to",
+          "change-number-to-request?",
+          "count-to",
+          "count-to-request?",
+          "count-from",
+          "count-from-request?"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-camera.scrbl",
+        "definitions": [
+          "camera-shake"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-timing.scrbl",
+        "definitions": [
+          "timed",
+          "timed-animation-request?",
+          "succession",
+          "succession-animation-request?",
+          "animation-group",
+          "animation-group-animation-request?",
+          "lagged-start",
+          "lagged-start-animation-request?",
+          "stagger-map",
+          "stagger-requests",
+          "repeat-animation",
+          "ping-pong"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-easing.scrbl",
+        "definitions": [
+          "linear-reveal-front",
+          "linear-reveal-front?",
+          "rate-function?",
+          "rate-function-name",
+          "rate-function-parameters",
+          "rate-function->datum",
+          "rate-function-apply",
+          "linear",
+          "smooth",
+          "smoothstep",
+          "rush-into",
+          "rush-from",
+          "there-and-back",
+          "there-and-back-with-pause",
+          "reverse-rate",
+          "compose-rate",
+          "squish-rate"
+        ]
+      },
+      {
+        "path": "scribblings/reference/animation-other.scrbl",
+        "definitions": [
+          "apply-pointwise",
+          "apply-pointwise-request?",
+          "apply-homotopy",
+          "apply-homotopy-request?",
+          "apply-wave",
+          "apply-wave-request?",
+          "pointwise-jacobian",
+          "pointwise-jacobian-determinant",
+          "pointwise-orientation",
+          "inverse-map-mesh",
+          "radial-reveal-front",
+          "radial-reveal-front?",
+          "wipe-in",
+          "wipe-out",
+          "iris-in",
+          "iris-out",
+          "ripple",
+          "default-confetti-palette",
+          "underline-sweep",
+          "underline-sweep-request?",
+          "strike-through",
+          "strike-through-request?",
+          "highlight-sweep",
+          "highlight-sweep-request?",
+          "slide-in",
+          "slide-out",
+          "spin-in",
+          "visual-match",
+          "cubic-bezier",
+          "spring",
+          "change-speed",
+          "delay-plan?",
+          "index-delay",
+          "constant-delay",
+          "distance-delay",
+          "radial-delay",
+          "wave-delay",
+          "eager-stagger-map",
+          "target-sequence?",
+          "concrete-targets",
+          "children-of",
+          "descendants-of",
+          "selection-targets",
+          "target-ref?",
+          "target-ref-path",
+          "target-ref-source-index",
+          "target-ref-scheduled-index",
+          "procedure-request-template",
+          "named-request-template",
+          "request-template?",
+          "request-template-serializable?",
+          "parallel-map",
+          "successive-map",
+          "crossfade-subsets",
+          "animation-order?",
+          "forward-order",
+          "forward-order?",
+          "reverse-order",
+          "reverse-order?",
+          "permutation-order",
+          "permutation-order?",
+          "shuffled-order",
+          "shuffled-order?",
+          "resolve-animation-order"
+        ]
+      }
+    ]
+  },
+  "outputs": {
+    "scribblings/cookbook/plots-and-camera.scrbl": "6da997d01571260670a0344efa96ece813257fb014bf316a301c3413879a27f9",
+    "scribblings/reference/animation-appearance.scrbl": "a89802affa2ba6c91d6d2168c130c65cac544e448b68a97b1905b30122069edb",
+    "scribblings/reference/animation-camera.scrbl": "867ea74ba632a36ebf6e4a453bf76d4e465de7babab5d18fe66d466e19fa2111",
+    "scribblings/reference/animation-easing.scrbl": "16a31d56aeaac9bd8d2003371d368ed7afc38487a05bafe73234d012c8f851ac",
+    "scribblings/reference/animation-emphasis.scrbl": "901f0e1e6628b7010179501b2486506afa09b5613c1286f65e0d4c54c75db8a5",
+    "scribblings/reference/animation-enter-leave.scrbl": "2bad60e9583e967a1c7c1bda8912030f7ac67cfc0f8a0578427ceb2c1ce40723",
+    "scribblings/reference/animation-motion.scrbl": "0cc0c4a2e8b00efd5cb60ba10e8cfe949c1f72faf0db5b1990310db717c22447",
+    "scribblings/reference/animation-other.scrbl": "b9618b7346553282fc1ff98568099eaf18313717e7f2662fbe3fb43b4a62fd90",
+    "scribblings/reference/animation-path-correspondence.scrbl": "e8ed0b1495e308e0d0f8a6001d4053456ff1a4d71cecde91d9d9e7f51df757f3",
+    "scribblings/reference/animation-paths.scrbl": "7ec47dcf4d312769a1e57f4427b007d55db7260b4e390e946e2183c33da73318",
+    "scribblings/reference/animation-requests.scrbl": "acfc58139e8bab73a365388eb2e27de047c3b1cad31172f55d31b1498c20904d",
+    "scribblings/reference/animation-shapes.scrbl": "89c3651476cb5f5ce117fed02aec01aef849c4b9ba40a78a172f22eed4a5b7ac",
+    "scribblings/reference/animation-text.scrbl": "9f12692ccef7735f13747de6226d1f8766a893d7afbba7e9ef258aaec4c7a8f6",
+    "scribblings/reference/animation-timing.scrbl": "8a5f147d2cc755b5a94f7692acc5b53f31a8285e64f51fc0e8d63040757d85f8",
+    "scribblings/reference/animation-values.scrbl": "e28eea2b8169858961eb579c0248ceaa6c7fd5c4b897c7c307370b47abb883b8",
+    "scribblings/reference/native-model.scrbl": "4c534db3c95077ff6a9dfbf30a7c1db7a0361854231c46e5d944d4fba4446cfe",
+    "scribblings/reference/preview-workbench.scrbl": "bf1e3e25e153b2d62bbc605cefe3c66021f32ca4c63e840c731668be46a56cc3",
+    "scribblings/reference/project-workflow.scrbl": "c35d148bd4ca2858092083347a1cb9b0f62b54d9ad8ed16723d19f1fee361cdc",
+    "scribblings/reference/scene-state.scrbl": "0f6d273018911acef53f03f3f970727f6c5989e7c9ef8b303f67c6810f4b9408",
+    "scribblings/reference/scene.scrbl": "d2b4ba4ff724f7891f9bfe4a921dc4a807bb908497b61e0ca54eb5771e5b407f"
+  }
+}
