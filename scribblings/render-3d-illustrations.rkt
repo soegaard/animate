@@ -48,6 +48,7 @@
       (raise-user-error 'render-3d-illustrations "choose a fresh output directory: ~a" target))
     (define prior (call-with-input-file manifest-path read-json))
     (unless (and (equal? (hash-ref prior 'schema #f) "animate-manual-3d-frames-v1")
+                 (equal? (hash-ref prior 'drawing-policy #f) "animate-shapes-smoothed-v1")
                  (equal? (hash-ref prior 'sources #f) sources)
                  (equal? (hash-ref prior 'racket #f) (version))
                  (equal? (hash-ref prior 'recipe #f) (format "~s" three-d-strip-specs)))
@@ -80,7 +81,7 @@
                (if (eq? kind 'storyboard)
                    (storyboard->pict prepared #:at time #:size (list width height))
                    (scene-picture prepared time)))
-             (define bitmap (pict->bitmap picture))
+             (define bitmap (pict->bitmap picture 'smoothed))
              (define name (format "~a-~a.png" key index))
              (define file (build-path stage name))
              (unless (send bitmap save-file file 'png)
@@ -96,6 +97,7 @@
      (call-with-output-file (build-path stage "manifest.json")
        (lambda (port)
          (write-json (hasheq 'schema "animate-manual-3d-frames-v1"
+                             'drawing-policy "animate-shapes-smoothed-v1"
                              'racket (version) 'sources sources
                              'recipe (format "~s" three-d-strip-specs)
                              'strips strips) port)))

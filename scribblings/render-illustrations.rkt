@@ -88,7 +88,7 @@
         (for/list ([frame (in-list (hash-ref spec 'frames))] [i (in-naturals)])
           (define file (format "manual-~a-~a.png" key i))
           (define path (build-path out file))
-          (define bm (pict->bitmap (render-one spec source frame i)))
+          (define bm (pict->bitmap (render-one spec source frame i) 'smoothed))
           (unless (send bm save-file path 'png) (error 'render-illustrations "could not save ~a" path))
           ;; This is a fresh render, not another copy of the old review frame.
           (hash 'file file 'caption (hash-ref frame 'caption) 'time (hash-ref frame 'time)
@@ -99,6 +99,7 @@
   (call-with-output-file (build-path out "illustrations.json") #:exists 'error
     (lambda (port)
       (write-json (hash 'schema "animate-manual-illustrations-v1"
-                        'origin (hash 'racket (version) 'note "Regenerated from manual examples; review before replacing checked-in illustrations.")
+                        'origin (hash 'racket (version)
+                                      'drawing-policy "animate-shapes-smoothed-v1" 'note "Regenerated from manual examples; review before replacing checked-in illustrations.")
                         'strips rendered) port)))
   (displayln "Fresh pictures and their catalogue are ready for review. No checked-in files were replaced."))

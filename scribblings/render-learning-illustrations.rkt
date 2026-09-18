@@ -85,8 +85,8 @@
          (define sc (dynamic-require (build-path examples source) binding))
          (define frames
            (for/list ([time (in-list (list-ref recipe 3))] [i (in-naturals)])
-             (define bm (pict->bitmap (picture sc time)))
-             (unless (bytes=? (pixels bm) (pixels (pict->bitmap (picture sc time))))
+             (define bm (pict->bitmap (picture sc time) 'smoothed))
+             (unless (bytes=? (pixels bm) (pixels (pict->bitmap (picture sc time) 'smoothed)))
                (raise-user-error 'render-learning-illustrations "nonrepeatable frame: ~a at ~a" key time))
              (define name (format "~a-~a.png" key i))
              (define path (build-path stage name))

@@ -17,6 +17,7 @@
 
 ;; Imports
 (require racket/class
+         "shape-smoothing.rkt"
          (only-in pict
                   blank
                   cc-superimpose
@@ -89,23 +90,25 @@
 
 (struct circle-pict-renderer ()
   #:transparent
-  #:property prop:pict-renderer-cache-identity '(animate-circle-pict-renderer-v1)
+  #:property prop:pict-renderer-cache-identity '(animate-circle-pict-renderer-v2-smoothed)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (circle-visual? visual))
    (define (pict-renderer-render _renderer visual camera)
-     (circle-visual->pict visual camera))])
+     (shape-pict-with-smoothed-drawing
+      (circle-visual->pict visual camera)))])
 
 ;; circle-pict-renderer renders semantic circle Visuals with the Pict backend.
 
 (struct rectangle-pict-renderer ()
   #:transparent
-  #:property prop:pict-renderer-cache-identity '(animate-rectangle-pict-renderer-v1)
+  #:property prop:pict-renderer-cache-identity '(animate-rectangle-pict-renderer-v2-smoothed)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (rectangle-visual? visual))
    (define (pict-renderer-render _renderer visual camera)
-     (rectangle-visual->pict visual camera))])
+     (shape-pict-with-smoothed-drawing
+      (rectangle-visual->pict visual camera)))])
 
 ;; rectangle-pict-renderer renders semantic rectangle Visuals with the Pict
 ;; backend.
