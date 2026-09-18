@@ -29,7 +29,7 @@
 
 (struct path-pict-renderer ()
   #:transparent
-  #:property prop:pict-renderer-cache-identity '(animate-path-pict-renderer-v1)
+  #:property prop:pict-renderer-cache-identity '(animate-path-pict-renderer-v2-smoothed)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (path-visual? visual))
@@ -52,17 +52,32 @@
                       (path-pict-half-extents pixel-geometry
                                               (path-visual-stroke-width visual))])
           (dc (lambda (drawing-context x y)
-                (parameterize ([current-render-color-context color-context])
-                  (draw-path-geometry! drawing-context
-                                       pixel-geometry
-                                       (+ x half-width)
-                                       (+ y half-height)
-                                       (path-visual-fill visual)
-                                       (path-visual-stroke visual)
-                                       (path-visual-stroke-width visual)
-                                       (path-paint-point-mapper visual camera
-                                                                (+ x half-width)
-                                                                (+ y half-height)))))
+                ;; Path geometry is continuous model data. Do not let a caller's
+                ;; aligned/unsmoothed drawing mode quantize cubic endpoints or
+                ;; controls to device pixels. The choice must happen inside this
+                ;; delayed Pict callback so SVG, Scribble, bitmap, and scaled Pict
+                ;; draws all see the same unsnapped geometry.
+                (define previous-smoothing
+                  (send drawing-context get-smoothing))
+                (dynamic-wind
+                  (lambda ()
+                    (send drawing-context set-smoothing 'smoothed))
+                  (lambda ()
+                    (parameterize ([current-render-color-context color-context])
+                      (draw-path-geometry! drawing-context
+                                           pixel-geometry
+                                           (+ x half-width)
+                                           (+ y half-height)
+                                           (path-visual-fill visual)
+                                           (path-visual-stroke visual)
+                                           (path-visual-stroke-width visual)
+                                           (path-paint-point-mapper visual camera
+                                                                    (+ x half-width)
+                                                                    (+ y half-height)))))
+                  (lambda ()
+                    (send drawing-context
+                          set-smoothing
+                          previous-smoothing))))
               (* 2 half-width)
               (* 2 half-height))))))
 

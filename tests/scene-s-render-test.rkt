@@ -55,7 +55,6 @@
      #:parameter-range (parameter-range -1 1)
      #:sample-count 2
      #:clip? #f
-     #:interpolation 'smooth
      #:stroke-width 0))
 
   ; straight-pict : pict?

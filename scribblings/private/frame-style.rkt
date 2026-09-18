@@ -1,6 +1,6 @@
 #lang racket/base
 ;; Shared presentation of stored manual frames. No Animate renderer is loaded.
-(require racket/list racket/path racket/runtime-path
+(require racket/list racket/path racket/runtime-path racket/string
          (only-in scribble/base image)
          (only-in scribble/core make-style make-element make-multiarg-element
                   make-paragraph make-nested-flow)
@@ -21,19 +21,61 @@
 (define card-style (style "AnimFrameCard"))
 (define gap (make-element (style "AnimFrameGap") '()))
 (define row-names '#("" "One" "Two" "Three" "Four" "Five"))
+(define preferred-suffixes '(".svg" ".pdf" ".png"))
 
 (define (chunks xs count)
   (if (null? xs) '()
       (let ([n (min count (length xs))])
         (cons (take xs n) (chunks (drop xs n) count)))))
 
+(define (path->text p)
+  (cond [(path? p) (path->string p)]
+        [(string? p) p]
+        [else (format "~a" p)]))
+
+(define (drop-known-extension p)
+  (define ext (path-get-extension p))
+  (if (and ext (member (string-downcase (bytes->string/utf-8 ext)) preferred-suffixes))
+      (path-replace-extension p #"")
+      p))
+
+(define (candidate-paths p)
+  (define base (drop-known-extension p))
+  (for/list ([suffix (in-list preferred-suffixes)])
+    (string->path (string-append (path->text base) suffix))))
+
+(define (available-candidate-paths p)
+  (filter file-exists? (candidate-paths p)))
+
+(define (resolve-image-base+suffixes p)
+  (define p* (if (path? p) p (string->path p)))
+  (cond
+    [(file-exists? p*)
+     (define base (drop-known-extension p*))
+     (define available (available-candidate-paths p*))
+     (values (if (equal? base p*) p* base)
+             (if (pair? available)
+                 (for/list ([candidate (in-list available)])
+                   (path->text (or (path-get-extension candidate) #"")))
+                 (list (path->text (or (path-get-extension p*) #"")))))]
+    [else
+     (define available (available-candidate-paths p*))
+     (unless (pair? available)
+       (raise-arguments-error 'manual-frame-strip "expected an existing captured image"
+                              "path" p))
+     (values (drop-known-extension p*)
+             (for/list ([candidate (in-list available)])
+               (path->text (or (path-get-extension candidate) #""))))]))
+
 (define (check-frame frame)
   (unless (manual-frame? frame)
     (raise-argument-error 'manual-frame-strip "manual-frame?" frame))
-  (unless (and (path-string? (manual-frame-path frame))
-               (file-exists? (manual-frame-path frame)))
-    (raise-arguments-error 'manual-frame-strip "expected an existing captured image"
-                           "path" (manual-frame-path frame)))
+  (define path0 (manual-frame-path frame))
+  (unless (path-string? path0)
+    (raise-argument-error 'manual-frame-strip "path-string?" path0))
+  (unless (or (file-exists? path0) (pair? (available-candidate-paths path0)))
+    (raise-arguments-error 'manual-frame-strip "expected an existing captured image or SVG/PDF/PNG sibling"
+                           "path" path0))
   (for ([size (in-list (list (manual-frame-width frame) (manual-frame-height frame)))])
     (unless (and (real? size) (< 0 size +inf.0))
       (raise-argument-error 'manual-frame-strip "positive finite image dimension" size)))
@@ -62,9 +104,12 @@
       ;; Intrinsic size is retained. CSS/TeX scale only the displayed image;
       ;; neither the capture bytes nor their checksum manifests change.
       (define caption (manual-frame-caption frame))
+      (define-values (image-base image-suffixes)
+        (resolve-image-base+suffixes (manual-frame-path frame)))
       (define picture
         (image
-         (path->complete-path (manual-frame-path frame))
+         (path->complete-path image-base)
+         #:suffixes image-suffixes
          #:style
          (make-style
           #f

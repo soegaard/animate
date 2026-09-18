@@ -47,7 +47,6 @@
      #:id 'loop-curve
      #:parameter-range (parameter-range -2 2)
      #:sample-count 181
-     #:interpolation 'smooth
      #:stroke "crimson"
      #:stroke-width 4))
 

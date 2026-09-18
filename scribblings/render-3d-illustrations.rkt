@@ -5,7 +5,8 @@
          (only-in pict pict->bitmap)
          animate animate/3d
          animate/slides/pict animate/slides/render
-         "private/three-d-catalog.rkt")
+         "private/three-d-catalog.rkt"
+         "private/image-export.rkt")
 (define-runtime-path examples "examples")
 (define-runtime-path installed "figures/3d-r3")
 (define-runtime-path root "..")
@@ -13,7 +14,9 @@
 (define height 360)
 (define (file-sha1 path) (call-with-input-file path sha1))
 (define (source-snapshot)
-  (for/hash ([name (in-list three-d-example-files)])
+  ;; `read-json` restores object keys as symbols in an immutable `hasheq`.
+  ;; Match both representations so a verified installed manifest compares equal.
+  (for/hasheq ([name (in-list three-d-example-files)])
     (values (string->symbol name) (file-sha1 (build-path examples name)))))
 (define (scene-picture sc time)
   ;; These lessons use a fixed outer camera. Its pixel dimensions may be changed
@@ -58,7 +61,12 @@
            [frame (in-list (hash-ref strip 'frames))])
       (define file (build-path target (hash-ref frame 'file)))
       (unless (and (file-exists? file) (equal? (file-sha1 file) (hash-ref frame 'sha1)))
-        (raise-user-error 'render-3d-illustrations "stored capture is missing or changed: ~a" file)))
+        (raise-user-error 'render-3d-illustrations "stored capture is missing or changed: ~a" file))
+      (for ([extension (in-list '(#".svg" #".pdf"))])
+        (define sibling (path-replace-extension file extension))
+        (unless (file-exists? sibling)
+          (raise-user-error 'render-3d-illustrations
+                            "stored vector alternative is missing: ~a" sibling))))
     (printf "3D manual frames are already installed and verified: ~a\n" target)
     (exit 0))
   (define parent (or (path-only target) root))
@@ -82,11 +90,11 @@
                    (storyboard->pict prepared #:at time #:size (list width height))
                    (scene-picture prepared time)))
              (define bitmap (pict->bitmap picture 'smoothed))
-             (define name (format "~a-~a.png" key index))
-             (define file (build-path stage name))
-             (unless (send bitmap save-file file 'png)
-               (raise-user-error 'render-3d-illustrations "could not save ~a" file))
-             (hasheq 'file name 'sha1 (file-sha1 file)
+             (define base (format "~a-~a" key index))
+             (define-values (_svg _pdf png)
+               (pict->manual-files! picture (build-path stage base)))
+             (hasheq 'file (path->string (file-name-from-path png))
+                     'sha1 (file-sha1 png)
                      'width (send bitmap get-width) 'height (send bitmap get-height)
                      'time (exact->inexact time) 'exact-time (format "~a" time)
                      'caption (format "t = ~a s" time))))

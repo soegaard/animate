@@ -56,10 +56,10 @@ describes how to add numeric labels when the picture needs them.
 @; introduces: function-graph path-geometry
 
 @racket[function-graph] evaluates a one-argument numerical function over the
-chosen x range. It stores the resulting @bold{path geometry}: the points and
-segments that will be drawn. Here 81 samples are joined with straight segments.
-A larger sample count gives a finer approximation; it is not a proof of
-accuracy.
+chosen x range. It stores the resulting @bold{path geometry}: sampled points and
+smooth cubic segments that will be drawn. Smooth interpolation is the default
+for mathematical function graphs. A larger sample count gives the interpolator
+more information; it is not a proof of accuracy.
 
 @examples[
  #:eval graph-eval
@@ -69,7 +69,6 @@ accuracy.
                    (lambda (x) (- (/ (* x x) 4) 1))
                    #:id 'curve
                    #:sample-count 81
-                   #:interpolation 'linear
                    #:stroke "crimson"
                    #:stroke-width 3))
 ]
@@ -86,14 +85,15 @@ temporary still Scene:
    (scene->pict (scene-add (make-scene) coordinates curve) 0)))
 ]
 
-Try 21 samples instead of 81. The approximation becomes coarser, but its later
-two-second reveal still takes two seconds. Increasing video frame rate does not
-add mathematical sample points to this stored curve.
+Try 21 samples instead of 81. The interpolation has less information about the
+function, but its later two-second reveal still takes two seconds. Increasing
+video frame rate does not add mathematical sample points to this stored curve.
 
 This step constructs the curve. It does not play an animation and does not call
 the function again for every movie frame. A later edit to the function requires
-constructing a new graph. @racket[#:interpolation 'smooth] is an alternative
-curve shape, not an instruction to use a different animation speed.
+constructing a new graph. Use @racket[#:interpolation 'linear] when you
+specifically want straight sample-to-sample segments; interpolation does not
+change animation speed.
 
 @section[#:tag "guide-graph-reveal"]{Draw the curve over time}
 @; introduces: path-reveal

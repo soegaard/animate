@@ -82,7 +82,7 @@
                                 #:sample-count [sample-count 201]
                                 #:clip? [clip? #t]
                                 #:max-distance [max-distance #f]
-                                #:interpolation [interpolation 'linear])
+                                #:interpolation [interpolation 'smooth])
   (check-parametric-arguments axes
                               function
                               domain
@@ -122,7 +122,7 @@
                           #:sample-count [sample-count 201]
                           #:clip? [clip? #t]
                           #:max-distance [max-distance #f]
-                          #:interpolation [interpolation 'linear]
+                          #:interpolation [interpolation 'smooth]
                           #:opacity [opacity 1]
                           #:stroke [stroke "royalblue"]
                           #:stroke-width [stroke-width 3])

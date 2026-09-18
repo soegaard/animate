@@ -38,7 +38,7 @@
   (build-path (or (path-only racket-executable) (current-directory)) "raco"))
 
 (define-values (process stdout stdin stderr)
-  (subprocess #f #f #f raco-executable "scribble" "+m" "--htmls" "--dest"
+  (subprocess #f #f #f raco-executable "scribble" "+m" "--htmls" "++convert" "svg" "--dest"
               (path->string output-directory) "scribblings/animate.scrbl"))
 (close-output-port stdin)
 (define stdout-channel (make-channel))

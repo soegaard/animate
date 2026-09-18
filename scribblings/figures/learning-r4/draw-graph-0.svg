@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="640" height="360" viewBox="0 0 640 360">
+<rect x="-64" y="-36" width="768" height="432" fill="rgb(100%, 100%, 100%)" fill-opacity="1"/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 160 180 L 480 180 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 320 282.855469 L 320 77.144531 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 160 183.429688 L 160 176.570312 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 213.332031 183.429688 L 213.332031 176.570312 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 266.667969 183.429688 L 266.667969 176.570312 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 373.332031 183.429688 L 373.332031 176.570312 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 426.667969 183.429688 L 426.667969 176.570312 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 316.570312 282.855469 L 323.429688 282.855469 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 316.570312 231.429688 L 323.429688 231.429688 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="miter" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 316.570312 128.570312 L 323.429688 128.570312 "/>
+<path fill-rule="evenodd" fill="rgb(0%, 0%, 50.196078%)" fill-opacity="1" d="M 480 180 L 466.285156 174.285156 L 466.285156 185.714844 Z M 320 77.144531 L 314.285156 90.855469 L 325.714844 90.855469 Z M 320 77.144531 "/>
+</svg>

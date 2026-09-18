@@ -391,9 +391,10 @@
    (vec2-x (cubic-bezier-path-segment-control1 clipped-middle))
    1)
 
-  ;; Existing function graphs retain linear defaults and gain smooth mode.
+  ;; Mathematical function graphs are smooth by default. Linear interpolation
+  ;; remains an explicit opt-in for literal sample-to-sample segments.
   ; default-function-path : path-geometry?
-  ;;   Gives the original piecewise-linear function-graph behavior.
+  ;;   Gives smooth cubic interpolation through the function samples.
   (define default-function-path
     (sample-function-path unit-axes
                           (lambda (x) (* x x))
@@ -401,42 +402,41 @@
                           #:x-max 1
                           #:sample-count 3))
 
-  ; smooth-function-path : path-geometry?
-  ;;   Gives smooth cubic interpolation through the same function samples.
-  (define smooth-function-path
+  ; linear-function-path : path-geometry?
+  ;;   Gives explicit piecewise-linear interpolation through the same samples.
+  (define linear-function-path
     (sample-function-path unit-axes
                           (lambda (x) (* x x))
                           #:x-min -1
                           #:x-max 1
                           #:sample-count 3
-                          #:interpolation 'smooth))
+                          #:interpolation 'linear))
 
-  (check-true
-   (andmap line-path-segment?
-           (path-subpath-segments
-            (car (path-geometry-subpaths default-function-path)))))
   (check-true
    (andmap cubic-bezier-path-segment?
            (path-subpath-segments
-            (car (path-geometry-subpaths smooth-function-path)))))
+            (car (path-geometry-subpaths default-function-path)))))
+  (check-true
+   (andmap line-path-segment?
+           (path-subpath-segments
+            (car (path-geometry-subpaths linear-function-path)))))
 
-  ; smooth-function-graph : path-visual?
-  ;;   Gives the public graph wrapper with smooth cubic geometry.
-  (define smooth-function-graph
+  ; default-function-graph : path-visual?
+  ;;   Gives the public graph wrapper with default smooth cubic geometry.
+  (define default-function-graph
     (function-graph unit-axes
                     (lambda (x) (* x x))
-                    #:id 'smooth-function-graph
+                    #:id 'default-function-graph
                     #:x-min -1
                     #:x-max 1
-                    #:sample-count 3
-                    #:interpolation 'smooth))
+                    #:sample-count 3))
 
   (check-true
    (andmap cubic-bezier-path-segment?
            (path-subpath-segments
             (car
              (path-geometry-subpaths
-              (path-visual-path smooth-function-graph))))))
+              (path-visual-path default-function-graph))))))
 
   ;; Plot constructors validate style before sampling and copy the axes transform.
   ; transformed-axes : axes-visual?
@@ -479,7 +479,6 @@
                       #:id 'sampled-curve
                       #:parameter-range forward-domain
                       #:sample-count 3
-                      #:interpolation 'smooth
                       #:stroke "crimson"
                       #:stroke-width 4))
 

@@ -41,6 +41,7 @@ def safe_file(root, relative):
 
 
 def verify_frames(directory, manifest):
+    # Verify the canonical PNG and SVG/PDF siblings for every frame.
     verified = {}
     for spec in manifest['strips'].values():
         if not isinstance(spec.get('frames'), list) or not spec['frames']:
@@ -63,6 +64,20 @@ def verify_frames(directory, manifest):
             if struct.unpack('>II', header[16:24]) != (frame['width'], frame['height']):
                 raise ValueError(f'capture dimensions differ from manifest: {path}')
             verified[path.relative_to(directory).as_posix()] = path.read_bytes()
+            svg = path.with_suffix('.svg')
+            pdf = path.with_suffix('.pdf')
+            if not svg.is_file():
+                raise ValueError(f'missing SVG alternative: {svg}')
+            if not pdf.is_file():
+                raise ValueError(f'missing PDF alternative: {pdf}')
+            svg_raw = svg.read_bytes()
+            pdf_raw = pdf.read_bytes()
+            if b'<svg' not in svg_raw[:4096]:
+                raise ValueError(f'not an SVG alternative: {svg}')
+            if not pdf_raw.startswith(b'%PDF-'):
+                raise ValueError(f'not a PDF alternative: {pdf}')
+            verified[svg.relative_to(directory).as_posix()] = svg_raw
+            verified[pdf.relative_to(directory).as_posix()] = pdf_raw
     return verified
 
 
@@ -75,6 +90,7 @@ def snapshot(root):
         'scribblings/render-illustrations.rkt',
         'scribblings/render-learning-illustrations.rkt',
         'scribblings/render-3d-illustrations.rkt',
+        'scribblings/private/image-export.rkt',
         'scribblings/private/learning-catalog.rkt',
         'scribblings/private/three-d-catalog.rkt')]
     result = {}

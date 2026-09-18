@@ -1983,7 +1983,7 @@ creating any marker child.
           [#:clip? clip? boolean? #t]
           [#:max-jump max-jump
            (or/c nonnegative-real? false/c) #f]
-          [#:interpolation interpolation curve-interpolation? 'linear])
+          [#:interpolation interpolation curve-interpolation? 'smooth])
          path-geometry?]{
 Samples @racket[function] with the same endpoint, gap, jump, clipping, and
 interpolation rules as @racket[sample-function-path]. Every accepted open graph
@@ -2014,7 +2014,7 @@ exception, clipping, jump, and interpolation errors are the same as for
           [#:clip? clip? boolean? #t]
           [#:max-jump max-jump
            (or/c nonnegative-real? false/c) #f]
-          [#:interpolation interpolation curve-interpolation? 'linear]
+          [#:interpolation interpolation curve-interpolation? 'smooth]
           [#:opacity opacity opacity? 1/2]
           [#:fill fill any/c "cornflowerblue"]
           [#:stroke stroke any/c #f]

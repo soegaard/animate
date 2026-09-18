@@ -144,7 +144,7 @@
                                    #:sample-count [sample-count 201]
                                    #:clip? [clip? #t]
                                    #:max-jump [max-jump #f]
-                                   #:interpolation [interpolation 'linear])
+                                   #:interpolation [interpolation 'smooth])
   (check-area-baseline 'sample-function-area-path baseline)
   (define graph-path
     (sample-function-path axes
@@ -185,7 +185,7 @@
                        #:sample-count [sample-count 201]
                        #:clip? [clip? #t]
                        #:max-jump [max-jump #f]
-                       #:interpolation [interpolation 'linear]
+                       #:interpolation [interpolation 'smooth]
                        #:opacity [opacity 1/2]
                        #:fill [fill "cornflowerblue"]
                        #:stroke [stroke #f]

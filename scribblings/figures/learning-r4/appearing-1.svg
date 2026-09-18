@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="640" height="360" viewBox="0 0 640 360">
+<defs>
+<filter id="filter-remove-color" x="0%" y="0%" width="100%" height="100%">
+<feColorMatrix color-interpolation-filters="sRGB" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 1 0" />
+</filter>
+<mask id="mask-0">
+<g filter="url(#filter-remove-color)">
+<rect x="-64" y="-36" width="768" height="432" fill="rgb(0%, 0%, 0%)" fill-opacity="0.5"/>
+</g>
+</mask>
+<g id="source-742">
+<path fill-rule="nonzero" fill="rgb(11.764706%, 56.470588%, 100%)" fill-opacity="1" d="M 182.855469 134.285156 L 205.714844 134.285156 C 205.714844 121.660156 195.480469 111.429688 182.855469 111.429688 C 170.234375 111.429688 160 121.660156 160 134.285156 C 160 146.910156 170.234375 157.144531 182.855469 157.144531 C 195.480469 157.144531 205.714844 146.910156 205.714844 134.285156 Z M 182.855469 134.285156 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 205.714844 134.285156 C 205.714844 121.660156 195.480469 111.429688 182.855469 111.429688 C 170.234375 111.429688 160 121.660156 160 134.285156 C 160 146.910156 170.234375 157.144531 182.855469 157.144531 C 195.480469 157.144531 205.714844 146.910156 205.714844 134.285156 "/>
+</g>
+</defs>
+<rect x="-64" y="-36" width="768" height="432" fill="rgb(100%, 100%, 100%)" fill-opacity="1"/>
+<g mask="url(#mask-0)">
+<use xlink:href="#source-742"/>
+</g>
+</svg>

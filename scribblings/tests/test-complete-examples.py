@@ -25,6 +25,10 @@ def png() -> bytes:
     return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(b'\0\0\0\0')) + chunk(b'IEND', b'')
 
 
+def svg() -> bytes:
+    return b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+
+
 class CompleteExamplesTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -53,6 +57,7 @@ class CompleteExamplesTests(unittest.TestCase):
                 for i in range(max(strip['select']) + 1):
                     name = strip['key'] + '-' + str(i) + '.png'
                     self.write_bytes(str(parent / name), png())
+                    self.write_bytes(str((parent / name).with_suffix('.svg')), svg())
                     frames.append(dict(file=name, width=1, height=1, caption=f't = {i} s',
                                        sha256=hashlib.sha256(png()).hexdigest()))
                 family_data[strip['family']]['strips'][strip['key']] = {'frames': frames}

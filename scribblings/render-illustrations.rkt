@@ -8,7 +8,8 @@
          (only-in animate scene? scene-duration scene-sample scene-camera-at scene-state->pict
                   make-camera)
          animate/slides animate/slides/pict animate/slides/render animate/slides/gallery
-         "../slides/examples/gallery.rkt")
+         "../slides/examples/gallery.rkt"
+         "private/image-export.rkt")
 (define-runtime-path examples "examples")
 (define-runtime-path source-catalogue "figures/illustrations.json")
 (define (theme name) (if (equal? name "lecture-light") lecture-light lecture-dark))
@@ -86,14 +87,17 @@
       (define source (if (storyboard? source0) (prepare-storyboard! source0) source0))
       (define frames
         (for/list ([frame (in-list (hash-ref spec 'frames))] [i (in-naturals)])
-          (define file (format "manual-~a-~a.png" key i))
-          (define path (build-path out file))
-          (define bm (pict->bitmap (render-one spec source frame i) 'smoothed))
-          (unless (send bm save-file path 'png) (error 'render-illustrations "could not save ~a" path))
-          ;; This is a fresh render, not another copy of the old review frame.
-          (hash 'file file 'caption (hash-ref frame 'caption) 'time (hash-ref frame 'time)
-                'width (send bm get-width) 'height (send bm get-height)
-                'sha1 (call-with-input-file path sha1))))
+          (define picture (render-one spec source frame i))
+          (define base (format "manual-~a-~a" key i))
+          (define-values (_svg _pdf png)
+            (pict->manual-files! picture (build-path out base)))
+          ;; The manifest keeps the PNG as its canonical raster capture for
+          ;; checksum/regression tooling. SVG/PDF siblings share the same base
+          ;; name and are preferred by the manual renderer.
+          (hash 'file (path->string (file-name-from-path png))
+                'caption (hash-ref frame 'caption) 'time (hash-ref frame 'time)
+                'width (hash-ref frame 'width) 'height (hash-ref frame 'height)
+                'sha1 (call-with-input-file png sha1))))
       (printf "~a: ~a frames\n" key (length frames))
       (values (string->symbol key) (hash-set spec 'frames frames))))
   (call-with-output-file (build-path out "illustrations.json") #:exists 'error

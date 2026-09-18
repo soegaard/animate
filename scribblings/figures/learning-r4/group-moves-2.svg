@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="640" height="360" viewBox="0 0 640 360">
+<rect x="-64" y="-36" width="768" height="432" fill="rgb(100%, 100%, 100%)" fill-opacity="1"/>
+<path fill-rule="nonzero" fill="rgb(11.764706%, 56.470588%, 100%)" fill-opacity="1" d="M 228.570312 180 L 251.429688 180 C 251.429688 167.375 241.195312 157.144531 228.570312 157.144531 C 215.949219 157.144531 205.714844 167.375 205.714844 180 C 205.714844 192.625 215.949219 202.855469 228.570312 202.855469 C 241.195312 202.855469 251.429688 192.625 251.429688 180 Z M 228.570312 180 "/>
+<path fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="rgb(0%, 0%, 50.196078%)" stroke-opacity="1" stroke-miterlimit="10" d="M 251.429688 180 C 251.429688 167.375 241.195312 157.144531 228.570312 157.144531 C 215.949219 157.144531 205.714844 167.375 205.714844 180 C 205.714844 192.625 215.949219 202.855469 228.570312 202.855469 C 241.195312 202.855469 251.429688 192.625 251.429688 180 "/>
+<path fill-rule="nonzero" fill="rgb(100%, 84.313725%, 0%)" fill-opacity="1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke="rgb(62.745098%, 32.156863%, 17.647059%)" stroke-opacity="1" stroke-miterlimit="10" d="M 297.144531 157.144531 L 342.859375 157.144531 L 342.859375 202.859375 L 297.144531 202.859375 Z M 297.144531 157.144531 "/>
+</svg>

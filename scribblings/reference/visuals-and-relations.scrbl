@@ -4352,7 +4352,8 @@ Returns @racket[#t] when @racket[value] is one of these symbols:
        accepted samples in order.}
 ]
 
-Every public coordinate-plot procedure uses @racket['linear] by default. An
+Sampled function and parametric-curve procedures use @racket['smooth] by
+default. Ordered data-series procedures use @racket['linear] by default. An
 unsupported symbol or another value returns @racket[#f].
 
 Smooth interpolation is applied separately to every accepted run. Suppose one
@@ -4722,7 +4723,7 @@ trajectory has been prepared.
                             (and/c finite-real? (>=/c 0)))
                       #f]
           [#:detect-discontinuities? detect-discontinuities? boolean? #f]
-          [#:interpolation interpolation curve-interpolation? 'linear])
+          [#:interpolation interpolation curve-interpolation? 'smooth])
          path-geometry?]{
 
 Samples @racket[function] at @racket[sample-count] uniformly spaced x values in
@@ -4810,7 +4811,7 @@ contains only immutable path geometry. Rendering it later does not call
                             (and/c finite-real? (>=/c 0)))
                       #f]
           [#:detect-discontinuities? detect-discontinuities? boolean? #f]
-          [#:interpolation interpolation curve-interpolation? 'linear]
+          [#:interpolation interpolation curve-interpolation? 'smooth]
           [#:opacity opacity opacity? 1]
           [#:stroke stroke any/c "royalblue"]
           [#:stroke-width stroke-width
@@ -4991,7 +4992,7 @@ The structure is immutable and transparent. Its public bindings include
                            (or/c false/c
                                  (and/c finite-real? (>=/c 0)))
                            #f]
-          [#:interpolation interpolation curve-interpolation? 'linear])
+          [#:interpolation interpolation curve-interpolation? 'smooth])
          path-geometry?]{
 
 Samples @racket[function] at @racket[sample-count] uniformly spaced parameter
@@ -5038,7 +5039,7 @@ segment.
                            (or/c false/c
                                  (and/c finite-real? (>=/c 0)))
                            #f]
-          [#:interpolation interpolation curve-interpolation? 'linear]
+          [#:interpolation interpolation curve-interpolation? 'smooth]
           [#:opacity opacity opacity? 1]
           [#:stroke stroke any/c "royalblue"]
           [#:stroke-width stroke-width

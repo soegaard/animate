@@ -178,6 +178,14 @@ def check(root: Path, overlay: bool = False, *, sources_only: bool = False,
                         errors.append(label + ': invalid image dimensions')
                     if not isinstance(frame.get('caption'), str):
                         errors.append(label + ': missing frame caption')
+                    # Complete Examples must not silently fall back
+                    # to raster HTML when the canonical capture is PNG.
+                    if image.suffix.lower() == '.png':
+                        svg = image.with_suffix('.svg')
+                        if not svg.is_file():
+                            errors.append(label + ': missing SVG alternative: ' + str(svg))
+                        elif b'<svg' not in svg.read_bytes()[:4096]:
+                            errors.append(label + ': invalid SVG alternative: ' + str(svg))
                     raw = image.read_bytes()
                     for algorithm in ('sha1', 'sha256'):
                         expected = frame.get(algorithm)
