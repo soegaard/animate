@@ -21,13 +21,13 @@ TAG=re.compile(r'#:tag\s+(?:"([^"\n]+)"|\x27?\(([^)]*)\))')
 LINK=re.compile(r'@secref\["([^"\n]+)"\]')
 EXAMPLE=re.compile(r'@example-(source|part)\["([^"\n]+)"(?:\s+"([^"\n]+)")?\]')
 STRIP=re.compile(r'@frame-strip\["([^"\n]+)"\]')
-PARTS=['concepts.scrbl','cookbook.scrbl','guide.scrbl','reference.scrbl']
+PARTS=['concepts.scrbl','cookbook.scrbl','guide.scrbl','complete-examples.scrbl','reference.scrbl']
 LEGACY='''guide/getting-started.scrbl guide/source-programs.scrbl guide/interactive-preview.scrbl
  guide/rendering-a-video.scrbl guide/project-planning.scrbl guide/slides.scrbl
  concepts/immutable-scenes.scrbl concepts/formula-source-maps.scrbl concepts/relation-phases.scrbl
  concepts/spatial-coordinates.scrbl concepts/colors-and-themes.scrbl concepts/typography-and-text-styles.scrbl
  reference/module-boundaries.scrbl reference/colors.scrbl reference/authoring.scrbl reference/preview.scrbl
- reference/project.scrbl cookbook/canonical-examples.scrbl guide/package-source.scrbl reference/scene.scrbl
+ reference/project.scrbl complete-examples/catalog.scrbl guide/package-source.scrbl reference/scene.scrbl
  reference/geometry-and-plots.scrbl reference/3d-algebra.scrbl reference/visuals-and-relations.scrbl
  reference/experimental.scrbl reference/rendering.scrbl cookbook/reference-recipes.scrbl cookbook/themed-mathematics.scrbl'''.split()
 INTRO=re.compile(r'^@;\s*(requires|introduces):\s*(.*)$',re.M)
@@ -163,7 +163,7 @@ def check(root,overlay=False):
         active.remove(path)
     visit(manual/'animate.scrbl')
     if INCLUDE.findall((manual/'animate.scrbl').read_text())!=PARTS:
-        errors.append('root must contain only Concepts, Cookbook, Guide, Reference, in that order')
+        errors.append('root must contain only Concepts, Cookbook, Guide, Complete Example Programs, Reference, in that order')
     if not overlay:
         for name in LEGACY:
             if (manual/name).resolve() not in texts:errors.append('lost legacy chapter: '+name)
@@ -227,6 +227,10 @@ def check(root,overlay=False):
                     line=generated_text.count('\n',0,match.start())+1
                     errors.append(f'{name}: generated section at line {line} needs an explicit #:tag')
     elif not overlay:errors.append('missing reference redistribution audit')
+    # Complete Example Programs: also validate complete sources and stored frames.
+    import runpy
+    complete_check=runpy.run_path(str(manual/'check-complete-examples.py'))['check']
+    errors.extend(complete_check(root,overlay=overlay,verbose=False))
     if not errors:
         print(f'{"Overlay" if overlay else "Manual"} source check: {len(texts)} included files; {len(targets)} explicit tags.')
         print(f'Guide: {len(sequence)} declared first introductions checked against snippet calls.')

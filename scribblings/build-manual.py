@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Check examples, generate required figures, and build the four-part manual.
+"""Check examples, generate required figures, and build the five-part manual.
 
-Run explicitly; ordinary Scribble builds never launch animation renderers.
+Run explicitly; stored frame strips do not launch animation renderers.
+Ordinary Scribble builds may evaluate small native Pict examples.
 Every subprocess has separate stdout/stderr logs. A failed stage stops the run.
 """
 from __future__ import annotations
