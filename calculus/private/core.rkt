@@ -435,7 +435,8 @@
      (make-param-spec (first args) (option 'domain) (option 'kind 'real) (option 'label #f))]
     [(real-line) calculus-real-line]
     [(empty-domain) (c-domain 'empty '())]
-    [(closed open closed-open open-closed singleton domain-union domain-intersection domain-except integers)
+    [(closed open closed-open open-closed singleton neighborhood punctured-neighborhood
+             domain-union domain-intersection domain-except integers)
      (c-domain kind args)]
     [(in-domain?) (c-expression 'in-domain? args)]
     [(+ - * / expt sqrt abs exp log sin cos tan asin acos atan = < <= > >= and or not if list
@@ -564,7 +565,7 @@
 (define (lookup-function value)
   (define raw (node-raw value))
   (cond [(or (c-function? raw) (c-piecewise? raw)) raw]
-        [(and (c-object? raw) (memq (c-object-kind raw) '(restrict-function compose-functions difference-function derivative-function antiderivative-function accumulation-function linearization approximation-error procedure-function))) raw]
+        [(and (c-object? raw) (memq (c-object-kind raw) '(restrict-function compose-functions difference-function derivative-function antiderivative-function accumulation-function linearization taylor-polynomial approximation-error procedure-function))) raw]
         [else #f]))
 
 (define (finite-number-result value method approximate?)
@@ -611,6 +612,19 @@
         (result-bind (endpoint 0) (lambda (a)
                                      (result-bind (endpoint 1) (lambda (b)
                                                                   (defined (and (exact-integer? value) (<= a value b)))))))]
+       [(neighborhood punctured-neighborhood)
+        (result-bind
+         (endpoint 0)
+         (lambda (center)
+           (result-bind
+            (endpoint 1)
+            (lambda (radius)
+              (if (not (positive? radius))
+                  (undefined "neighborhood radius must be positive")
+                  (defined
+                   (and (< (- center radius) value (+ center radius))
+                        (or (eq? (c-domain-kind raw) 'neighborhood)
+                            (not (= value center))))))))))]
        [(domain-union)
         (let loop ([items (c-domain-arguments raw)])
           (cond [(null? items) (defined #f)]
@@ -803,17 +817,54 @@
      (define function (first args))
      (define base (hash-ref (c-object-options source) 'at))
      (define derivative (hash-ref (c-object-options source) 'derivative))
-     (result-bind (eval-raw base environment model computation lexical)
-                  (lambda (a)
-                    (result-bind (evaluate-function function a environment model computation lexical)
-                                 (lambda (fa)
-                                   (result-bind (evaluate-function derivative a environment model computation lexical)
-                                                (lambda (slope) (finite-number-result (+ fa (* slope (- input a))) 'definition #f)))))))]
+     (if (not (derivative-compatible? function derivative))
+         (unresolved "linearization derivative must be declared for its function")
+         (result-bind (eval-raw base environment model computation lexical)
+                      (lambda (a)
+                        (result-bind (evaluate-function function a environment model computation lexical)
+                                     (lambda (fa)
+                                       (result-bind (evaluate-function derivative a environment model computation lexical)
+                                                    (lambda (slope) (finite-number-result (+ fa (* slope (- input a))) 'definition #f))))))))]
+    [(taylor-polynomial)
+     (define function (first args))
+     (define base (hash-ref (c-object-options source) 'at #f))
+     (define derivative-expression (hash-ref (c-object-options source) 'derivatives '()))
+     (result-bind
+      (eval-raw base environment model computation lexical)
+      (lambda (a)
+        (result-bind
+         (evaluate-function function a environment model computation lexical)
+         (lambda (fa)
+           (result-bind
+            (eval-raw derivative-expression environment model computation lexical)
+            (lambda (derivatives)
+              (cond
+                [(not (list? derivatives)) (undefined "taylor-polynomial #:derivatives must be a list")]
+                [(not (andmap (lambda (derivative) (derivative-compatible? function derivative)) derivatives))
+                 (unresolved "Taylor derivatives must be declared for the polynomial function")]
+                [else
+                 (let loop ([order 1] [remaining derivatives] [total fa])
+                   (if (null? remaining)
+                       (finite-number-result total 'definition #f)
+                       (result-bind
+                        (evaluate-function (car remaining) a environment model computation lexical)
+                        (lambda (value)
+                          (loop (add1 order)
+                                (cdr remaining)
+                                (+ total
+                                   (/ (* value (expt (- input a) order))
+                                      (natural-factorial order))))))))])))))))]
     [(approximation-error)
      (result-bind (evaluate-function (first args) input environment model computation lexical)
                   (lambda (left) (result-bind (evaluate-function (second args) input environment model computation lexical)
                                                (lambda (right) (finite-number-result (- left right) 'definition #f)))))]
     [else (unresolved (format "unsupported function operation ~a" (c-object-kind source)))]))
+
+;; natural-factorial : exact-nonnegative-integer? -> exact-positive-integer?
+;;   Supplies the exact Taylor-series denominator without native dependencies.
+(define (natural-factorial value)
+  (for/fold ([product 1]) ([factor (in-range 1 (add1 value))])
+    (* product factor)))
 
 ;; differentiate : any/c symbol? -> (or/c c-expression? finite-real? #f)
 ;;   Builds the documented conservative symbolic derivative for a held expression.
@@ -1015,11 +1066,21 @@
           [(horizontal-line) (result-bind (eval-raw (first args) environment model computation lexical) (lambda (y) (defined (list 'line 0 y (cons 0 y)))))]
           [(vertical-line) (result-bind (eval-raw (first args) environment model computation lexical) (lambda (x) (defined (list 'vertical x (cons x 0)))))]
           [(tangent)
-           (result-bind (eval-point (hash-ref options 'at) environment model computation lexical)
-                        (lambda (p) (result-bind (evaluate-function (hash-ref options 'derivative) (car p) environment model computation lexical)
-                                                 (lambda (m) (defined (list 'line m (- (cdr p) (* m (car p))) p))))))]
-          [(vertical-tangent) (result-bind (eval-point (hash-ref options 'at) environment model computation lexical)
-                                            (lambda (p) (defined (list 'vertical (car p) p))))]
+           (define graph (first args))
+           (define derivative (hash-ref options 'derivative #f))
+           (if (not (derivative-compatible? (graph-function graph) derivative))
+               (undefined "tangent derivative must be declared for the graph function")
+               (result-bind
+                (eval-point (hash-ref options 'at) environment model computation lexical)
+                (lambda (p)
+                  (result-bind
+                   (evaluate-function derivative (car p) environment model computation lexical)
+                   (lambda (m) (defined (list 'line m (- (cdr p) (* m (car p))) p)))))))]
+          [(vertical-tangent)
+           (if (not (nonempty-justification? (hash-ref options 'justification #f)))
+               (undefined "vertical-tangent requires a nonempty #:justification")
+               (result-bind (eval-point (hash-ref options 'at) environment model computation lexical)
+                            (lambda (p) (defined (list 'vertical (car p) p)))))]
           [(normal)
            (result-bind (eval-line (first args) environment model computation lexical)
                         (lambda (source)
@@ -1299,9 +1360,9 @@
       (and (c-node? left) (c-node? right)
            (eq? (c-node-id left) (c-node-id right)))))
 
-;; newton-derivative-compatible? : semantic-value? semantic-value? -> boolean?
-;;   Requires Newton's declared derivative to retain the same function source.
-(define (newton-derivative-compatible? function derivative)
+;; derivative-compatible? : semantic-value? semantic-value? -> boolean?
+;;   Requires a declared derivative to retain the same function source.
+(define (derivative-compatible? function derivative)
   (define raw (node-raw derivative))
   (and (c-object? raw)
        (eq? (c-object-kind raw) 'derivative-function)
@@ -1332,7 +1393,7 @@
                            (finite-real? initial)))
                  (undefined "iteration index must be within its declared finite step count"))
                 ((and (eq? (c-object-kind raw) 'newton-iteration)
-                      (not (newton-derivative-compatible?
+                      (not (derivative-compatible?
                             (first (c-object-arguments raw))
                             (hash-ref (c-object-options raw) 'derivative #f))))
                  (unresolved "Newton derivative must be declared for the iteration function"))
@@ -1485,11 +1546,142 @@
                         (evaluate-function (graph-function graph) x environment model computation lexical)
                         (lambda (y) (defined (cons x y))))))])]))
 
+;; extended-real-value? : any/c -> boolean?
+;;   Accepts authored finite limits and the two explicit infinite limit values.
+(define (extended-real-value? value)
+  (or (finite-real? value) (eqv? value +inf.0) (eqv? value -inf.0)))
+
+;; direct-real-parameter? : semantic-value? -> boolean?
+;;   Limits bind one directly declared, continuously varying parameter.
+(define (direct-real-parameter? value)
+  (and (c-node? value)
+       (eq? (c-node-kind value) 'parameter)
+       (eq? (c-param-spec-kind (c-node-data value)) 'real)))
+
+;; eval-limit-statement : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Validates a supplied limit claim without evaluating its source at the target.
+(define (eval-limit-statement claim environment model computation lexical)
+  (define raw (node-raw claim))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'limit-statement)))
+      (undefined "expected a limit statement")
+      (let* ([parameter (hash-ref (c-object-options raw) 'parameter #f)]
+             [target (hash-ref (c-object-options raw) 'to #f)]
+             [limit-value (hash-ref (c-object-options raw) 'value #f)]
+             [side-provided? (hash-has-key? (c-object-options raw) 'side)]
+             [side (hash-ref (c-object-options raw) 'side 'both)]
+             [justification (hash-ref (c-object-options raw) 'justification #f)])
+        (cond
+          [(not (direct-real-parameter? parameter))
+           (undefined "limit-statement requires a direct real #:parameter")]
+          [(not (nonempty-justification? justification))
+           (undefined "limit-statement requires a nonempty #:justification")]
+          [else
+           (result-bind
+            (eval-raw target environment model computation lexical)
+            (lambda (target-value)
+              (result-bind
+               (eval-raw limit-value environment model computation lexical)
+               (lambda (claimed-value)
+                 (cond
+                   [(not (and (extended-real-value? target-value)
+                              (extended-real-value? claimed-value)))
+                    (undefined "limit targets and values must be finite or explicit infinities")]
+                   [(or (eqv? target-value +inf.0) (eqv? target-value -inf.0))
+                    (if side-provided?
+                        (undefined "an infinite limit target does not accept #:side")
+                        (defined raw))]
+                   [(not (memq side '(both left right)))
+                    (undefined "limit-statement has an unsupported #:side")]
+                   [else (defined raw)])))))]))))
+
+;; eval-band : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Confirms that a drawable band retains one valid mathematical domain.
+(define (eval-band band environment model computation lexical)
+  (define raw (node-raw band))
+  (if (not (and (c-object? raw) (memq (c-object-kind raw) '(input-band output-band))))
+      (undefined "expected an input or output band")
+      (let ([domain (first (c-object-arguments raw))])
+        (result-bind (eval-domain domain environment model computation)
+                     (lambda (_) (defined raw))))))
+
+;; eval-epsilon-delta-condition : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Validates finite authored epsilon/delta data without searching for a delta.
+(define (eval-epsilon-delta-condition condition environment model computation lexical)
+  (define raw (node-raw condition))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'epsilon-delta-condition)))
+      (undefined "expected an epsilon-delta condition")
+      (let* ([function (first (c-object-arguments raw))]
+             [at (hash-ref (c-object-options raw) 'at #f)]
+             [limit-value (hash-ref (c-object-options raw) 'limit #f)]
+             [epsilon (hash-ref (c-object-options raw) 'epsilon #f)]
+             [delta (hash-ref (c-object-options raw) 'delta #f)]
+             [justification (hash-ref (c-object-options raw) 'justification #f)])
+        (cond
+          [(not (lookup-function function)) (undefined "epsilon-delta condition requires a function")]
+          [(not (nonempty-justification? justification))
+           (undefined "epsilon-delta condition requires a nonempty #:justification")]
+          [else
+           (result-bind
+            (eval-raw (list at limit-value epsilon delta) environment model computation lexical)
+            (lambda (values)
+              (match values
+                [(list a limit epsilon-value delta-value)
+                 (if (and (finite-real? a) (finite-real? limit)
+                          (finite-real? epsilon-value) (positive? epsilon-value)
+                          (finite-real? delta-value) (positive? delta-value))
+                     (defined raw)
+                     (undefined "epsilon-delta data must be finite with positive epsilon and delta"))]
+                [_ (undefined "epsilon-delta data must be scalar values")])))]))))
+
+;; eval-continuity-condition : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Reports an authored limit/value mismatch as a contradiction, never a display choice.
+(define (eval-continuity-condition condition environment model computation lexical)
+  (define raw (node-raw condition))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'continuity-condition)))
+      (undefined "expected a continuity condition")
+      (let* ([function (first (c-object-arguments raw))]
+             [at (hash-ref (c-object-options raw) 'at #f)]
+             [claim (hash-ref (c-object-options raw) 'limit-claim #f)]
+             [justification (hash-ref (c-object-options raw) 'justification #f)]
+             [claim-raw (node-raw claim)])
+        (cond
+          [(not (lookup-function function)) (undefined "continuity condition requires a function")]
+          [(not (nonempty-justification? justification))
+           (undefined "continuity condition requires a nonempty #:justification")]
+          [(not (and (c-object? claim-raw) (eq? (c-object-kind claim-raw) 'limit-statement)))
+           (undefined "continuity condition requires a limit statement")]
+          [else
+           (result-bind
+            (eval-limit-statement claim environment model computation lexical)
+            (lambda (_)
+              (result-bind
+               (eval-raw
+                (list at
+                      (hash-ref (c-object-options claim-raw) 'to #f)
+                      (hash-ref (c-object-options claim-raw) 'value #f))
+                environment model computation lexical)
+               (lambda (values)
+                 (match values
+                   [(list input target claimed-value)
+                    (cond
+                      [(not (and (finite-real? input) (finite-real? target)
+                                 (finite-real? claimed-value)))
+                       (undefined "continuity requires finite input, target, and limit value")]
+                      [(not (scalar-equivalent? input target computation))
+                       (unresolved "continuity claim has a different limiting target")]
+                      [else
+                       (result-bind
+                        (evaluate-function function input environment model computation lexical)
+                        (lambda (actual-value)
+                          (if (scalar-equivalent? actual-value claimed-value computation)
+                              (defined raw)
+                              (unresolved "continuity claim contradicts the function value"))))])]
+                   [_ (undefined "continuity requires scalar claim data")])))))]))))
+
 (define (eval-object object environment model computation lexical)
   (case (c-object-kind object)
     [(graph graph-restriction formula formula-of ref value point-label graph-label quantity-label value-readout
-            interval-marker endpoint-marker approach-marker input-band output-band limit-statement epsilon-delta-condition
-            continuity-condition asymptote-line region-under region-between integral-region riemann-rectangles trapezoidal-regions
+            interval-marker endpoint-marker approach-marker asymptote-line region-under region-between integral-region riemann-rectangles trapezoidal-regions
             partition-marks
             trace-of formula-occurrence quantity-correspondence snapshot-of in-view output-reading slope-triangle)
      (defined object)]
@@ -1524,6 +1716,10 @@
      (eval-analysis-claim object 'concavity-claim '(up down)
                           environment model computation lexical)]
     [(sign-chart) (eval-sign-chart object environment model computation lexical)]
+    [(input-band output-band) (eval-band object environment model computation lexical)]
+    [(limit-statement) (eval-limit-statement object environment model computation lexical)]
+    [(epsilon-delta-condition) (eval-epsilon-delta-condition object environment model computation lexical)]
+    [(continuity-condition) (eval-continuity-condition object environment model computation lexical)]
     [(iteration-map newton-iteration) (defined object)]
     [(iteration-value)
      (eval-raw (second (c-object-arguments object)) environment model computation lexical)]

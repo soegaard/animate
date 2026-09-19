@@ -62,6 +62,21 @@ monotonicity, concavity, and feature declarations retain supplied scopes,
 categories, and nonempty justifications. They validate that declaration data,
 but do not claim to prove an interval theorem from graph samples.
 
+Limit forms preserve a separate limiting context. @racket[neighborhood] and
+@racket[punctured-neighborhood] are open domains with positive authored
+radii. @racket[limit-statement] validates its direct real parameter, target,
+side, and supplied justification without evaluating the source at the target.
+@racket[epsilon-delta-condition] requires finite positive epsilon and delta;
+@racket[continuity-condition] reports a declared limit/value mismatch as a
+contradiction rather than treating it as a display preference.
+
+Differential constructions retain function provenance: @racket[tangent] and
+@racket[linearization] accept only a @racket[derivative-function] declared for
+the same held function. @racket[vertical-tangent] is a separate supplied claim
+and requires a nonempty justification rather than a fabricated finite slope.
+@racket[taylor-polynomial] uses its supplied ordered compatible derivatives;
+an empty derivative list produces the constant approximation at its base.
+
 @defproc[(compile-calculus-lesson [lesson calculus-lesson?]
                                   [#:profile profile calculus-profile? default-calculus-profile]
                                   [#:values values hash? (hash)]

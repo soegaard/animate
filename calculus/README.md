@@ -67,6 +67,21 @@ validate only author-supplied candidates. They do not search for roots.
 Analysis claims retain their supplied domain, category, and nonempty
 justification; they are not upgraded to machine-proved theorems.
 
+Limits use the same distinction. `neighborhood` and
+`punctured-neighborhood` retain open-domain boundaries and require positive
+radii. A `limit-statement` validates its direct real parameter, target, side,
+and justification without evaluating the source expression at the limiting
+target. Epsilon–delta conditions require finite positive epsilon and delta;
+continuity conditions report a declared limit that conflicts with the actual
+function value rather than silently displaying it as continuous.
+
+For differential constructions, `tangent` and `linearization` require a
+`derivative-function` declared for the same held function. A
+`vertical-tangent` is a separate supplied claim and therefore requires its own
+nonempty justification rather than a fabricated finite slope.
+`taylor-polynomial` evaluates the supplied ordered compatible derivatives;
+with no derivatives it is the documented constant approximation at its base.
+
 ## Test
 
 From the repository root:

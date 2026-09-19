@@ -203,6 +203,68 @@
     [bad-feature (feature-point G #:at 0 #:kind 'ordinary-point
                                 #:justification "Deliberately invalid category.")]))
 
+;; limit-contract-model : calculus-model?
+;;   Keeps limiting claims separate from source evaluation at excluded targets.
+(define-calculus-model limit-contract-model
+  (model
+    [h (parameter 0 #:domain (closed 0 1))]
+    [f (function (x) (* x x))]
+    [punctured (punctured-neighborhood 0 1)]
+    [inside-punctured (in-domain? 1/2 punctured)]
+    [center-punctured (in-domain? 0 punctured)]
+    [bad-neighborhood (neighborhood 0 0)]
+    [bad-neighborhood-member (in-domain? 0 bad-neighborhood)]
+    [input (input-band punctured)]
+    [L (limit-statement (difference-quotient f 1 h)
+                        #:parameter h #:to 0 #:value 2 #:side 'both
+                        #:justification "The quotient simplifies to 2+h away from zero.")]
+    [at-one-limit (limit-statement (value-at f h)
+                                   #:parameter h #:to 1 #:value 2 #:side 'both
+                                   #:justification "Deliberately mismatched function value.")]
+    [true-at-one-limit (limit-statement (value-at f h)
+                                        #:parameter h #:to 1 #:value 1 #:side 'both
+                                        #:justification "The supplied limit agrees with f(1).")]
+    [bad-side (limit-statement (value-at f h)
+                               #:parameter h #:to 0 #:value 0 #:side 'up
+                               #:justification "Deliberately invalid side.")]
+    [epsilon-delta (epsilon-delta-condition
+                    f #:at 1 #:limit 1 #:epsilon 1/2 #:delta 1/2
+                    #:justification "A supplied local bound.")]
+    [bad-epsilon (epsilon-delta-condition
+                  f #:at 1 #:limit 1 #:epsilon 0 #:delta 1/2
+                  #:justification "Deliberately nonpositive epsilon.")]
+    [contradictory-continuity (continuity-condition
+                               f #:at 1 #:limit-claim at-one-limit
+                               #:justification "Deliberately mismatched limit value.")]
+    [continuous-at-one (continuity-condition
+                        f #:at 1 #:limit-claim true-at-one-limit
+                        #:justification "The supplied limit and function value agree.")]))
+
+;; tangent-contract-model : calculus-model?
+;;   Requires a tangent derivative to retain its graph function's source.
+(define-calculus-model tangent-contract-model
+  (model
+    [f (function (x) (* x x))]
+    [g (function (x) (+ x 1))]
+    [G (graph f)]
+    [P (point-on G #:x 1)]
+    [df (derivative-function f #:method 'symbolic)]
+    [dg (derivative-function g #:method 'symbolic)]
+    [T (tangent G #:at P #:derivative df)]
+    [bad-T (tangent G #:at P #:derivative dg)]
+    [linear (linearization f #:at 1 #:derivative df)]
+    [linear-at-two (value-at linear 2)]
+    [bad-linear (linearization f #:at 1 #:derivative dg)]
+    [bad-linear-at-two (value-at bad-linear 2)]
+    [taylor (taylor-polynomial f #:at 1 #:derivatives (list df))]
+    [taylor-at-two (value-at taylor 2)]
+    [constant-taylor (taylor-polynomial f #:at 1 #:derivatives (list))]
+    [constant-taylor-at-two (value-at constant-taylor 2)]
+    [bad-taylor (taylor-polynomial f #:at 1 #:derivatives (list dg))]
+    [bad-taylor-at-two (value-at bad-taylor 2)]
+    [V (vertical-tangent G #:at P #:justification "A supplied vertical tangent claim.")]
+    [bad-V (vertical-tangent G #:at P #:justification "")]))
+
 
 ;;;
 ;;; Tests
@@ -357,6 +419,66 @@
                 (cons 0 0))
   (check-equal? (calculus-result-status
                  (calculus-snapshot-ref analysis-snapshot 'bad-feature))
+                'undefined)
+  (define limit-snapshot (calculus-model-at limit-contract-model))
+  (check-true (calculus-result-value
+               (calculus-snapshot-ref limit-snapshot 'inside-punctured)))
+  (check-false (calculus-result-value
+                (calculus-snapshot-ref limit-snapshot 'center-punctured)))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'bad-neighborhood-member))
+                'undefined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'input))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'L))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'bad-side))
+                'undefined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'epsilon-delta))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'bad-epsilon))
+                'undefined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'contradictory-continuity))
+                'unresolved)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'true-at-one-limit))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref limit-snapshot 'continuous-at-one))
+                'defined)
+  (define tangent-snapshot (calculus-model-at tangent-contract-model))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'T))
+                (list 'line 2 -1 (cons 1 1)))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref tangent-snapshot 'bad-T))
+                'undefined)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'linear-at-two))
+                3)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref tangent-snapshot 'bad-linear-at-two))
+                'unresolved)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'taylor-at-two))
+                3)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'constant-taylor-at-two))
+                1)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref tangent-snapshot 'bad-taylor-at-two))
+                'unresolved)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'V))
+                (list 'vertical 1 (cons 1 1)))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref tangent-snapshot 'bad-V))
                 'undefined))
 
 (module+ test
