@@ -66,6 +66,14 @@
   (views [numbers (number-line-view #:objects (n))])
   (step interpolate-count (vary n #:to 4 #:duration 1)))
 
+;; invalid-integer-assignment : calculus-lesson?
+;;   Assignments must preserve the declared discrete parameter capability.
+(define-calculus-lesson invalid-integer-assignment
+  (model
+    [n (parameter 2 #:domain real-line #:kind 'integer)])
+  (views [numbers (number-line-view #:objects (n))])
+  (step fractional-count (set-parameter n 3/2)))
+
 ;; excluded-path : calculus-lesson?
 ;;   Deliberately crosses a declared hole while both endpoints are valid.
 (define-calculus-lesson excluded-path
@@ -91,6 +99,58 @@
   (step move-right (set-parameter u 2))
   (step approach-from-wrong-side
     (approach u #:to 1 #:side 'left #:until 9/10 #:duration 1)))
+
+;; invalid-trace : calculus-lesson?
+;;   A trace sweep must begin at the trace parameter's current value.
+(define-calculus-lesson invalid-trace
+  (model
+    [u (parameter 1 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x u)]
+    [locus (trace-of P #:parameter u #:over (closed 0 2))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4)
+                           #:objects (G P locus))])
+  (step trace-locus (trace locus #:duration 1)))
+
+;; conflicting-trace : calculus-lesson?
+;;   A sweep and a simultaneous parameter write would have no single history.
+(define-calculus-lesson conflicting-trace
+  (model
+    [u (parameter 0 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x u)]
+    [locus (trace-of P #:parameter u #:over (closed 0 2))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4)
+                           #:objects (G P locus))])
+  (step ambiguous-history
+    (together
+     (trace locus #:duration 1)
+     (vary u #:to 1 #:duration 1))))
+
+;; together-start-values : calculus-lesson?
+;;   Disjoint simultaneous actions still evaluate targets from one start state.
+(define-calculus-lesson together-start-values
+  (model
+    [a (parameter 0 #:domain (closed 0 2))]
+    [b (parameter 0 #:domain (closed 0 2))])
+  (views [numbers (number-line-view #:objects (a b))])
+  (step move-together
+    (together
+     (vary a #:to 2 #:duration 1)
+     (vary b #:to a #:duration 1))))
+
+;; invalid-limit-transition : calculus-lesson?
+;;   A line handoff needs an actual finite slope-limit claim.
+(define-calculus-lesson invalid-limit-transition
+  (model
+    [source (horizontal-line 0)]
+    [target (horizontal-line 1)])
+  (views [plot (graph-view #:x (closed -1 1) #:y (closed -1 1)
+                           #:objects (source target))])
+  (initially (show source))
+  (step invalid-handoff (limit-transition source target #:claim #f)))
 
 ;; partition-model : calculus-model?
 ;;   Covers explicit endpoint/tag checks and an exact trapezoidal quantity.
@@ -274,6 +334,32 @@
     [V (vertical-tangent G #:at P #:justification "A supplied vertical tangent claim.")]
     [bad-V (vertical-tangent G #:at P #:justification "")]))
 
+;; snapshot-model : calculus-model?
+;;   Fixed objects retain their declaration-time parameter assignment.
+(define-calculus-model snapshot-model
+  (model
+    [h (parameter 1 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x h)]
+    [fixed-P (snapshot-of P #:values ([h 1/2]))]
+    [O (point 0 0)]
+    [change (increment O P)]
+    [fixed-change (snapshot-of change #:values ([h 1/2]))]))
+
+;; snapshot-override-lesson : calculus-lesson?
+;;   Unlisted snapshot parameters use the lesson's compiled initial override.
+(define-calculus-lesson snapshot-override-lesson
+  (model
+    [h (parameter 1 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x h)]
+    [fixed-P (snapshot-of P #:values ())])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4)
+                           #:objects (G P fixed-P))])
+  (step move-live-point (vary h #:to 2 #:duration 1)))
+
 ;; asymptote-contract-model : calculus-model?
 ;;   Cross-checks a supplied asymptote's geometric shape against its limit claim.
 (define-calculus-model asymptote-contract-model
@@ -325,6 +411,13 @@
   (check-equal? (calculus-result-value
                  (calculus-snapshot-ref (calculus-plan-sample integer-plan #:at 'final) 'n))
                 2)
+  (define invalid-integer-assignment-plan
+    (compile-calculus-lesson invalid-integer-assignment))
+  (check-equal? (length (calculus-plan-diagnostics invalid-integer-assignment-plan)) 1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref
+                  (calculus-plan-sample invalid-integer-assignment-plan #:at 'final) 'n))
+                2)
   (define excluded-plan (compile-calculus-lesson excluded-path))
   (check-equal? (length (calculus-plan-diagnostics excluded-plan)) 1)
   (check-equal? (calculus-result-value
@@ -338,6 +431,46 @@
   (check-equal? (calculus-result-value
                  (calculus-snapshot-ref (calculus-plan-sample wrong-side-plan #:at 'final) 'u))
                 2)
+  (define invalid-trace-plan (compile-calculus-lesson invalid-trace))
+  (check-equal? (length (calculus-plan-diagnostics invalid-trace-plan)) 1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample invalid-trace-plan #:at 'final) 'u))
+                1)
+  (define conflicting-trace-plan (compile-calculus-lesson conflicting-trace))
+  (check-equal? (length (calculus-plan-diagnostics conflicting-trace-plan)) 1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample conflicting-trace-plan #:at 'final) 'u))
+                0)
+  (define together-start-plan (compile-calculus-lesson together-start-values))
+  (check-equal? (length (calculus-plan-diagnostics together-start-plan)) 0)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample together-start-plan #:at 'final) 'a))
+                2)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample together-start-plan #:at 'final) 'b))
+                0)
+  (define invalid-transition-plan (compile-calculus-lesson invalid-limit-transition))
+  (check-equal? (length (calculus-plan-diagnostics invalid-transition-plan)) 1)
+  (define invalid-transition-final
+    (calculus-plan-sample invalid-transition-plan #:at 'final))
+  (check-true (calculus-snapshot-visible? invalid-transition-final 'source))
+  (check-false (calculus-snapshot-visible? invalid-transition-final 'target))
+  (define changed-snapshot (calculus-model-at snapshot-model #:values (hash 'h 2)))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref changed-snapshot 'P))
+                (cons 2 4))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref changed-snapshot 'fixed-P))
+                (cons 1/2 1/4))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref changed-snapshot '(fixed-change dx)))
+                1/2)
+  (define snapshot-override-plan
+    (compile-calculus-lesson snapshot-override-lesson #:values (hash 'h 3/2)))
+  (define snapshot-override-final
+    (calculus-plan-sample snapshot-override-plan #:at 'final))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref snapshot-override-final 'P))
+                (cons 2 4))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref snapshot-override-final 'fixed-P))
+                (cons 3/2 9/4))
   (define partition-snapshot (calculus-model-at partition-model))
   (check-equal? (calculus-result-value (calculus-snapshot-ref partition-snapshot 'q)) 9/4)
   (check-equal? (calculus-result-status (calculus-snapshot-ref partition-snapshot 'bad-q)) 'undefined)

@@ -199,6 +199,20 @@
 
   ;; lower-generic-expression : syntax? (listof symbol?) -> syntax?
   ;;   Builds a generic descriptor while recursively lowering operands and options.
+  ;; lower-snapshot-values : syntax? (listof symbol?) -> syntax?
+  ;;   Preserves the documented #:values ([parameter constant] ...) syntax.
+  (define (lower-snapshot-values expression bound-variables)
+    (define bindings (syntax->list expression))
+    (unless bindings
+      (raise-syntax-error 'snapshot-of "#:values expects a parenthesized binding list" expression))
+    #`(list
+       #,@(for/list ([binding (in-list bindings)])
+            (define pieces (syntax->list binding))
+            (unless (and pieces (= (length pieces) 2) (identifier? (first pieces)))
+              (raise-syntax-error 'snapshot-of "#:values expects [parameter constant]" binding))
+            #`(cons #,(lower-calculus-expression (first pieces) bound-variables)
+                    #,(lower-calculus-expression (second pieces) bound-variables)))))
+
   (define (lower-generic-expression expression bound-variables)
     (define forms (syntax->list expression))
     (define name (syntax-e (car forms)))
@@ -212,10 +226,12 @@
                  (cond
                    [(and (eq? (car option) 'objects)
                          (memq name '(graph-view formula-view number-line-view)))
-                    (define objects (syntax->list (cdr option)))
-                    (unless objects
-                      (raise-syntax-error name "#:objects expects a parenthesized list" (cdr option)))
-                    #`(list #,@(map (lambda (item) (lower-calculus-expression item bound-variables)) objects))]
+                   (define objects (syntax->list (cdr option)))
+                   (unless objects
+                     (raise-syntax-error name "#:objects expects a parenthesized list" (cdr option)))
+                   #`(list #,@(map (lambda (item) (lower-calculus-expression item bound-variables)) objects))]
+                   [(and (eq? name 'snapshot-of) (eq? (car option) 'values))
+                    (lower-snapshot-values (cdr option) bound-variables)]
                    [else (lower-calculus-expression (cdr option) bound-variables)]))
                (list #`'#,(car option) lowered-value))))
     #`(make-generic '#,name (list #,@lowered-positionals) (hash #,@option-forms)))

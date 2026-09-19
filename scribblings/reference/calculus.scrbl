@@ -86,6 +86,29 @@ screen distance.
 including signed @racket[dx] and @racket[dy], from an increment or a
 nonvertical line and an authored run.
 
+@racket[trace] accepts a @racket[trace-of] locus only when it uses one direct
+real parameter over a closed, finite, increasing interval and that parameter
+starts at the interval's left endpoint. An invalid sweep is diagnosed during
+plan compilation and leaves sampled parameter state unchanged; a preceding
+@racket[set-parameter] can establish a valid start.
+
+Children of @racket[together] share one pre-group state. The compiler rejects
+a group whose children write the same parameter, the same persistent
+presentation property of overlapping targets, or the same view window. A
+rejected group leaves no partial sampled updates behind.
+
+@racket[snapshot-of] accepts @racket[#:values] bindings written as
+@racket[([parameter constant] ...)]. It fixes the requested object at those
+values, while unlisted parameters use the model or lesson's compiled initial
+values, including compile-time overrides. It never captures a live rendered
+frame.
+
+@racket[limit-transition] requires a matching finite slope-limit claim for
+two nonvertical lines through the same anchor. A valid transition hides the
+finite source and reveals the distinct target without assigning the limit to
+the approaching parameter; an invalid transition leaves presentation state
+unchanged.
+
 @defproc[(compile-calculus-lesson [lesson calculus-lesson?]
                                   [#:profile profile calculus-profile? default-calculus-profile]
                                   [#:values values hash? (hash)]

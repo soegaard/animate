@@ -145,11 +145,13 @@
 ;;  - timing        optional calculus-timing override
 ;;  - steps         immutable ordered c-step list
 ;; c-event is a lowered leaf action with exact temporal placement.
-(struct c-event (ordinal start end action) #:transparent)
+(struct c-event (ordinal start end action group) #:transparent)
 ;;  - ordinal       stable same-time ordering index
 ;;  - start         exact or finite action start time
 ;;  - end           exact or finite action end time
 ;;  - action        source c-action descriptor
+;;  - group         #f for a sequential action, otherwise one flattened
+;;                  together-group identity used for conflict checks
 ;; calculus-moment identifies a semantic phase independent of numeric ties.
 (struct calculus-moment (kind address) #:transparent)
 ;;  - kind          'step-start, 'step-end, or 'checkpoint
@@ -254,6 +256,10 @@
 ;; calculus-e : c-expression?
 ;;   Holds Euler's number until evaluation asks for its numeric value.
 (define calculus-e (c-expression 'constant (list 'e)))
+;; snapshot-basis-key : symbol?
+;;   Privately retains a plan/model's compiled initial parameter map so a
+;;   snapshot never accidentally freezes a later sampled frame state.
+(define snapshot-basis-key (gensym 'calculus-snapshot-basis))
 
 ;; -------------------------------------------------------------------------
 ;; Policies.  They are data, not callbacks.
@@ -1215,6 +1221,13 @@
                                  (lambda (p) (result-bind (eval-point (second args) environment model computation lexical)
                                                           (lambda (q) (defined (cons (car q) (cdr p)))))))]
           [else (defined (c-part parent name))])]
+       [(snapshot-of)
+        (result-bind
+         (snapshot-frozen-environment (c-part-parent part)
+                                      environment model computation lexical)
+         (lambda (frozen)
+           (eval-part (c-part (first args) name)
+                      frozen model computation lexical)))]
        [(slope-triangle)
         (result-bind
          (eval-slope-triangle-geometry (first args) (c-object-options parent)
@@ -1814,13 +1827,58 @@
                           (unresolved "asymptote line does not match the supplied limit claim")])]
                       [_ (undefined "asymptote-line requires scalar limit data")])))))))]))))
 
+;; snapshot-frozen-environment : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Resolves one snapshot's immutable parameter assignment independently of
+;;   the later sampled state.
+(define (snapshot-frozen-environment snapshot environment model computation lexical)
+  (define raw (node-raw snapshot))
+  (cond
+    ((not (and (c-object? raw) (eq? (c-object-kind raw) 'snapshot-of)))
+     (undefined "expected a snapshot-of object"))
+    ((not (= (length (c-object-arguments raw)) 1))
+     (undefined "snapshot-of requires one mathematical object"))
+    (else
+     (define assignments (hash-ref (c-object-options raw) 'values '()))
+     (if (not (list? assignments))
+         (undefined "snapshot-of #:values must be a list of parameter assignments")
+         (let loop ((remaining assignments)
+                    (frozen (hash-ref environment snapshot-basis-key
+                                      (initial-values model (hash)))))
+           (if (null? remaining)
+               (defined frozen)
+               (let ((assignment (first remaining)))
+                 (cond
+                   ((not (and (pair? assignment)
+                              (c-node? (car assignment))
+                              (eq? (c-node-kind (car assignment)) 'parameter)))
+                    (undefined "snapshot-of #:values requires direct parameter bindings"))
+                   (else
+                    (result-bind
+                     (eval-raw (cdr assignment) frozen model computation lexical)
+                     (lambda (value)
+                       (if (valid-parameter-assignment?
+                            (car assignment) value frozen model computation)
+                           (loop (rest remaining)
+                                 (hash-set frozen (c-node-id (car assignment)) value))
+                           (undefined "snapshot-of value is outside its parameter contract")))))))))))))
+
+;; eval-snapshot : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Re-evaluates one object using its fixed parameter assignment.
+(define (eval-snapshot snapshot environment model computation lexical)
+  (define raw (node-raw snapshot))
+  (result-bind
+   (snapshot-frozen-environment snapshot environment model computation lexical)
+   (lambda (frozen)
+     (eval-raw (first (c-object-arguments raw)) frozen model computation lexical))))
+
 (define (eval-object object environment model computation lexical)
   (case (c-object-kind object)
     [(graph graph-restriction formula formula-of ref value point-label graph-label quantity-label value-readout
             interval-marker endpoint-marker approach-marker region-under region-between integral-region riemann-rectangles trapezoidal-regions
             partition-marks
-            trace-of formula-occurrence quantity-correspondence snapshot-of in-view output-reading)
+            trace-of formula-occurrence quantity-correspondence in-view output-reading)
      (defined object)]
+    [(snapshot-of) (eval-snapshot object environment model computation lexical)]
     [(point point-on axis-point projection root-point intersection-point point-on-line) (eval-point object environment model computation lexical)]
     [(feature-point) (eval-feature-point object environment model computation lexical)]
     [(error-segment) (eval-error-segment object environment model computation lexical)]
@@ -1894,7 +1952,8 @@
 (define (calculus-model-at model #:values [values (hash)] #:computation [computation default-calculus-computation])
   (check 'calculus-model-at calculus-model? "calculus-model?" model)
   (check 'calculus-model-at calculus-computation? "calculus-computation?" computation)
-  (calculus-snapshot model (initial-values model values) (hash) '() computation))
+  (define initial (initial-values model values))
+  (calculus-snapshot model (hash-set initial snapshot-basis-key initial) (hash) '() computation))
 
 ;; target-key : semantic-target? -> (or/c list? #f)
 ;;   Normalizes a public target to its stable presentation key.
@@ -1906,6 +1965,103 @@
 ;; target-root-key : list? -> list?
 ;;   Selects a target's root key for inherited visibility.
 (define (target-root-key key) (and key (list (first key))))
+
+;; trace-write-keys : c-action? -> list?
+;;   Assigns the sweep capability and revealed locus to a trace action.
+(define (trace-write-keys action)
+  (append
+   (for/list ([target (in-list (c-action-targets action))]
+              #:do [(define parameter (trace-sweep-parameter target))]
+              #:when parameter)
+     (list 'parameter (c-node-id parameter)))
+   (for/list ([target (in-list (c-action-targets action))]
+              #:do [(define key (target-key target))]
+              #:when key)
+     (list 'presentation 'visibility key))))
+
+;; presentation-write-keys : symbol? list? -> list?
+;;   Associates persistent presentation state with stable semantic addresses.
+(define (presentation-write-keys property targets)
+  (for/list ([target (in-list targets)]
+             #:do [(define key (target-key target))]
+             #:when key)
+    (list 'presentation property key)))
+
+;; action-write-keys : c-action? -> list?
+;;   Lists the semantic state slots a leaf action changes for together checks.
+(define (action-write-keys action)
+  (define kind (c-action-kind action))
+  (define targets (c-action-targets action))
+  (case kind
+    [(vary set-parameter approach)
+     (define parameter (action-parameter action))
+     (if parameter (list (list 'parameter (c-node-id parameter))) '())]
+    [(refine)
+     (define parameter (refinement-count-parameter action))
+     (if parameter (list (list 'parameter (c-node-id parameter))) '())]
+    [(trace) (trace-write-keys action)]
+    [(show hide read) (presentation-write-keys 'visibility targets)]
+    [(show-label hide-label) (presentation-write-keys 'label-visibility targets)]
+    [(deemphasize normalize) (presentation-write-keys 'emphasis targets)]
+    [(highlight highlight-quantity compare) (presentation-write-keys 'highlight targets)]
+    [(limit-transition) (presentation-write-keys 'visibility targets)]
+    [(focus restore-view)
+     (for/list ([target (in-list targets)]
+                #:when (c-view? target))
+       (list 'view (c-view-name target)))]
+    [else '()]))
+
+;; target-keys-overlap? : list? list? -> boolean?
+;;   Tests ancestor/descendant overlap without using renderer geometry.
+(define (target-keys-overlap? first second)
+  (or (and (<= (length first) (length second))
+           (equal? first (take second (length first))))
+      (and (<= (length second) (length first))
+           (equal? second (take first (length second))))))
+
+;; write-keys-conflict? : list? list? -> boolean?
+;;   Keeps parameter, presentation-property, and view-window writes distinct.
+(define (write-keys-conflict? left right)
+  (cond
+    [(and (eq? (first left) 'parameter) (eq? (first right) 'parameter))
+     (eq? (second left) (second right))]
+    [(and (eq? (first left) 'presentation) (eq? (first right) 'presentation))
+     (and (eq? (second left) (second right))
+          (target-keys-overlap? (third left) (third right)))]
+    [(and (eq? (first left) 'view) (eq? (first right) 'view))
+     (eq? (second left) (second right))]
+    [else #f]))
+
+;; group-conflicts? : list? -> boolean?
+;;   Detects any two together children that write an overlapping state slot.
+(define (group-conflicts? events)
+  (for*/or ([first-event (in-list events)]
+            [second-event (in-list events)]
+            #:when (< (c-event-ordinal first-event) (c-event-ordinal second-event)))
+    (for*/or ([first-write (in-list (action-write-keys (c-event-action first-event)))]
+              [second-write (in-list (action-write-keys (c-event-action second-event)))])
+      (write-keys-conflict? first-write second-write))))
+
+;; conflicting-event-groups : list? -> list?
+;;   Returns together groups whose children cannot share a start state.
+(define (conflicting-event-groups events)
+  (define groups
+    (remove-duplicates (filter values (map c-event-group events))))
+  (for/list ([group (in-list groups)]
+             #:when (group-conflicts? (filter (lambda (event)
+                                                 (equal? (c-event-group event) group))
+                                               events)))
+    group))
+
+;; together-diagnostics : list? -> list?
+;;   Reports one stable error per rejected simultaneous action group.
+(define (together-diagnostics events)
+  (for/list ([group (in-list (conflicting-event-groups events))])
+    (define group-events
+      (filter (lambda (event) (equal? (c-event-group event) group)) events))
+    (calculus-diagnostic 'error 'action-conflict #f #f
+                         (c-event-start (first group-events))
+                         "together children cannot write the same parameter, presentation property, or view window")))
 
 ;; refine-count-expressions : c-action? -> list?
 ;;   Extracts the held count sequence so each requested transition gets one duration.
@@ -1927,20 +2083,22 @@
     [(together) #f]
     [else (hash-ref (c-action-options action) 'duration fallback)]))
 
-;; compile-command : c-action? real? real? exact-nonnegative-integer? -> values
+;; compile-command : c-action? real? real? exact-nonnegative-integer? any/c -> values
 ;;   Lowers one command or parallel group to stable leaf events.
-(define (compile-command command start fallback ordinal)
+(define (compile-command command start fallback ordinal [group #f])
   (cond
     [(not (c-action? command)) (values '() 0 ordinal)]
     [(eq? (c-action-kind command) 'together)
+     (define group-id (or group (list 'together ordinal)))
      (define-values (events spans next)
        (for/fold ([all '()] [span 0] [next ordinal]) ([child (in-list (c-action-targets command))])
-         (define-values (child-events child-span child-next) (compile-command child start fallback next))
+         (define-values (child-events child-span child-next)
+           (compile-command child start fallback next group-id))
          (values (append all child-events) (max span child-span) child-next)))
      (values events spans next)]
     [else
      (define span (duration-of command fallback))
-     (values (list (c-event ordinal start (+ start span) command)) span (add1 ordinal))]))
+     (values (list (c-event ordinal start (+ start span) command group)) span (add1 ordinal))]))
 
 ;; action-parameter : c-action? -> (or/c c-node? #f)
 ;;   Returns the writable semantic target when an action begins with one.
@@ -2003,6 +2161,17 @@
                     (c-param-spec-domain (c-node-data parameter)) start target
                     environment model computation))))))
 
+;; valid-parameter-assignment? : c-node? any/c hash? calculus-model? calculus-computation? -> boolean?
+;;   Checks a discrete assignment with the same kind/domain policy as planning.
+(define (valid-parameter-assignment? parameter target environment model computation)
+  (and (finite-real? target)
+       (or (eq? (c-param-spec-kind (c-node-data parameter)) 'real)
+           (exact-integer? target))
+       (let ([inside? (domain-contains? (c-param-spec-domain (c-node-data parameter))
+                                        target environment model computation)])
+         (and (eq? (calculus-result-status inside?) 'defined)
+              (calculus-result-value inside?)))))
+
 ;; valid-approach-side? : c-action? finite-real? finite-real? hash? calculus-model? calculus-computation? -> boolean?
 ;;   Ensures that an approach begins and stops on its explicitly authored side
 ;;   of a finite limiting target without ever evaluating at that target.
@@ -2024,13 +2193,13 @@
 ;;   Reconstructs the start state for endpoint and side validation, including
 ;;   preceding zero-time assignments but never depending on rendered frames.
 (define (parameter-values-before event events values model computation)
-  (car
-   (for/fold ([state (cons values (hash))]) ([prior (in-list events)]
-                                             #:break (>= (c-event-ordinal prior)
-                                                        (c-event-ordinal event)))
-     (if (<= (c-event-end prior) (c-event-start event))
-         (apply-event state prior (c-event-end prior) model computation)
-         state))))
+  (define preceding-events
+    (for/list ([prior (in-list events)]
+               #:break (>= (c-event-ordinal prior) (c-event-ordinal event))
+               #:when (<= (c-event-end prior) (c-event-start event)))
+      prior))
+  (car (apply-events-at (cons values (hash)) preceding-events
+                        (c-event-start event) +inf.0 model computation)))
 
 ;; refinement-count-parameter : c-action? -> (or/c c-node? #f)
 ;;   Finds the direct integer capability owned by a uniform partition target.
@@ -2129,6 +2298,10 @@
                 [(not valid-result?)
                  (list (diagnostic 'parameter-domain
                                    "parameter action endpoint is outside its declared domain"))]
+                [(and (eq? (c-param-spec-kind (c-node-data parameter)) 'integer)
+                      (not (exact-integer? target)))
+                 (list (diagnostic 'parameter-kind
+                                   "integer parameter assignments require an exact integer endpoint"))]
                 [else
                  (define inside?
                    (domain-contains? (c-param-spec-domain (c-node-data parameter))
@@ -2153,6 +2326,99 @@
                                       "approach must start and stop on its authored side of #:to"))]
                    [else '()])])]))))
 
+;; trace-sweep-parameter : semantic-value? -> (or/c c-node? #f)
+;;   Extracts the direct parameter capability owned by a trace locus.
+(define (trace-sweep-parameter target)
+  (define raw (node-raw target))
+  (define parameter
+    (and (c-object? raw) (hash-ref (c-object-options raw) 'parameter #f)))
+  (and (direct-real-parameter? parameter) parameter))
+
+;; valid-trace-target? : semantic-value? hash? calculus-model? calculus-computation? -> boolean?
+;;   A trace owns one direct real parameter over a nondegenerate closed sweep.
+(define (valid-trace-target? target values model computation)
+  (define raw (node-raw target))
+  (define parameter (trace-sweep-parameter target))
+  (define over
+    (and (c-object? raw) (hash-ref (c-object-options raw) 'over #f)))
+  (and (c-object? raw) (eq? (c-object-kind raw) 'trace-of)
+       parameter
+       (c-domain? over) (eq? (c-domain-kind over) 'closed)
+       (= (length (c-domain-arguments over)) 2)
+       (let ([left (eval-raw (first (c-domain-arguments over)) values model computation)]
+             [right (eval-raw (second (c-domain-arguments over)) values model computation)])
+         (and (eq? (calculus-result-status left) 'defined)
+              (eq? (calculus-result-status right) 'defined)
+              (finite-real? (calculus-result-value left))
+              (finite-real? (calculus-result-value right))
+              (< (calculus-result-value left) (calculus-result-value right))
+              (= (hash-ref values (c-node-id parameter))
+                 (calculus-result-value left))))))
+
+;; trace-diagnostics : calculus-model? hash? calculus-computation? list? -> list?
+;;   Rejects ambiguous trace sweeps before parameter sampling can use them.
+(define (trace-diagnostics model values computation events)
+  (apply append
+         (for/list ([event (in-list events)]
+                    #:when (eq? (c-action-kind (c-event-action event)) 'trace))
+           (define environment
+             (parameter-values-before event events values model computation))
+           (for/list ([target (in-list (c-action-targets (c-event-action event)))]
+                      #:unless (valid-trace-target? target environment model computation))
+             (calculus-diagnostic 'error 'trace #f #f (c-event-end event)
+                                  "trace requires a direct real parameter starting at a closed increasing sweep interval")))))
+
+;; valid-limit-transition? : c-action? hash? calculus-model? calculus-computation? -> boolean?
+;;   Verifies the local line/claim relationship without turning a carrier into
+;;   a mathematical limit value.
+(define (valid-limit-transition? action environment model computation)
+  (define targets (c-action-targets action))
+  (define claim (hash-ref (c-action-options action) 'claim #f))
+  (define (value-of result)
+    (and (eq? (calculus-result-status result) 'defined)
+         (calculus-result-value result)))
+  (and (= (length targets) 2)
+       (let* ([source (first targets)]
+              [target (second targets)]
+              [claim-raw (node-raw claim)]
+              [claim-expression
+               (and (c-object? claim-raw)
+                    (eq? (c-object-kind claim-raw) 'limit-statement)
+                    (first (c-object-arguments claim-raw)))]
+              [source-expression (and claim-expression (node-raw claim-expression))]
+              [source-line (value-of (eval-line source environment model computation (hash)))]
+              [target-line (value-of (eval-line target environment model computation (hash)))]
+              [claim-valid? (value-of (eval-limit-statement claim environment model computation (hash)))]
+              [claim-value
+               (and (c-object? claim-raw)
+                    (value-of (eval-raw (hash-ref (c-object-options claim-raw) 'value #f)
+                                        environment model computation)))])
+         (and claim-valid?
+              (finite-real? claim-value)
+              (list? source-line) (list? target-line)
+              (eq? (car source-line) 'line) (eq? (car target-line) 'line)
+              (finite-real? (second source-line))
+              (finite-real? (second target-line))
+              (equal? (fourth source-line) (fourth target-line))
+              (scalar-equivalent? (second target-line) claim-value computation)
+              (or (and (c-expression? source-expression)
+                       (eq? (c-expression-op source-expression) 'slope)
+                       (equal? (first (c-expression-arguments source-expression)) source))
+                  (and (c-expression? source-expression)
+                       (eq? (c-expression-op source-expression) 'difference-quotient)))))))
+
+;; limit-transition-diagnostics : calculus-model? hash? calculus-computation? list? -> list?
+;;   Rejects a line handoff that lacks a finite, structurally matching claim.
+(define (limit-transition-diagnostics model values computation events)
+  (for/list ([event (in-list events)]
+             #:when (and (eq? (c-action-kind (c-event-action event)) 'limit-transition)
+                         (not (valid-limit-transition?
+                               (c-event-action event)
+                               (parameter-values-before event events values model computation)
+                               model computation))))
+    (calculus-diagnostic 'error 'limit-transition #f #f (c-event-end event)
+                         "limit-transition requires anchored nonvertical lines and a matching finite slope limit claim")))
+
 ;; compile-calculus-lesson : calculus-lesson? keyword-options -> calculus-plan?
 ;;   Lowers a headless lesson into immutable events, moments, and diagnostics.
 (define (compile-calculus-lesson lesson #:profile [profile default-calculus-profile] #:values [values (hash)]
@@ -2161,7 +2427,8 @@
   (check 'compile-calculus-lesson calculus-profile? "calculus-profile?" profile)
   (check 'compile-calculus-lesson calculus-computation? "calculus-computation?" computation)
   (define model (calculus-lesson-model lesson))
-  (define initial (initial-values model values))
+  (define base-initial (initial-values model values))
+  (define initial (hash-set base-initial snapshot-basis-key base-initial))
   (define timing (or (calculus-lesson-timing lesson) (calculus-profile-data-timing profile)))
   (define time (calculus-timing-data-opening-pause timing))
   (define ordinal 0)
@@ -2181,7 +2448,10 @@
   (define diagnostics
     (filter (lambda (diagnostic) diagnostic)
             (append (action-domain-diagnostics model initial computation events)
-                    (refinement-diagnostics model initial computation events))))
+                    (refinement-diagnostics model initial computation events)
+                    (trace-diagnostics model initial computation events)
+                    (limit-transition-diagnostics model initial computation events)
+                    (together-diagnostics events))))
   (calculus-plan lesson profile initial computation (immutable-list-copy events) time diagnostics
                  (make-immutable-hash (for/list ([(key value) (in-hash moments)]) (cons key value)))))
 
@@ -2234,7 +2504,11 @@
           [(set-parameter)
            (define parameter (first (c-action-targets action)))
            (define value-result (eval-raw (second (c-action-targets action)) values model computation))
-           (if (and (c-node? parameter) (eq? (calculus-result-status value-result) 'defined))
+           (if (and (c-node? parameter)
+                    (eq? (c-node-kind parameter) 'parameter)
+                    (eq? (calculus-result-status value-result) 'defined)
+                    (valid-parameter-assignment?
+                     parameter (calculus-result-value value-result) values model computation))
                (cons (hash-set values (c-node-id parameter) (calculus-result-value value-result)) visible) state)]
           [(refine)
            (define parameter (refinement-count-parameter action))
@@ -2257,11 +2531,23 @@
                                      (list-ref counts (sub1 completed))))
                        visible))
                state)]
+          [(limit-transition)
+           (define targets (c-action-targets action))
+           (if (valid-limit-transition? action values model computation)
+               (let ([source-key (target-key (first targets))]
+                     [target-key* (target-key (second targets))])
+                 (cons values
+                       (cond [(and source-key target-key*)
+                              (hash-set (hash-set visible source-key #f) target-key* #t)]
+                             [source-key (hash-set visible source-key #f)]
+                             [target-key* (hash-set visible target-key* #t)]
+                             [else visible])))
+               state)]
           [(trace)
            (define progressed-values
              (for/fold ([current values]) ([target (in-list (c-action-targets action))])
                (define trace-object (node-raw target))
-               (if (and (c-object? trace-object) (eq? (c-object-kind trace-object) 'trace-of))
+               (if (valid-trace-target? target current model computation)
                    (let* ([parameter (hash-ref (c-object-options trace-object) 'parameter #f)]
                           [over (hash-ref (c-object-options trace-object) 'over #f)]
                           [id (and (c-node? parameter) (c-node-id parameter))])
@@ -2282,6 +2568,60 @@
            (cons progressed-values (set-visible (c-action-targets action) #t))]
           [(explain) (cons values (set-visible (c-action-targets action) #t))]
           [else state]))))
+
+;; merge-group-state : pair? pair? pair? -> pair?
+;;   Applies one child's disjoint writes, calculated from the common group
+;;   start state, to the aggregate state without re-evaluating its inputs.
+(define (merge-group-state base aggregate result)
+  (define (merge-hash original merged changed)
+    (for/fold ([updated merged]) ([(key value) (in-hash changed)])
+      (if (equal? value (hash-ref original key #f))
+          updated
+          (hash-set updated key value))))
+  (cons (merge-hash (car base) (car aggregate) (car result))
+        (merge-hash (cdr base) (cdr aggregate) (cdr result))))
+
+;; apply-events-at : pair? list? real? real? calculus-model? calculus-computation? -> pair?
+;;   Samples sequential events in source order and together children from one
+;;   pre-group state, skipping groups rejected during compilation.
+(define (apply-events-at initial events time cutoff model computation)
+  (define conflicts (conflicting-event-groups events))
+  (let loop ([remaining events] [state initial])
+    (cond
+      [(null? remaining) state]
+      [else
+       (define event (first remaining))
+       (define eligible?
+         (and (<= (c-event-start event) time)
+              (<= (c-event-ordinal event) cutoff)))
+       (cond
+         [(not eligible?) (loop (rest remaining) state)]
+         [(and (c-event-group event)
+               (member (c-event-group event) conflicts))
+          (loop (filter (lambda (candidate)
+                          (not (equal? (c-event-group candidate)
+                                       (c-event-group event))))
+                        (rest remaining))
+                state)]
+         [(c-event-group event)
+          (define group-events
+            (filter (lambda (candidate)
+                      (and (equal? (c-event-group candidate) (c-event-group event))
+                           (<= (c-event-start candidate) time)
+                           (<= (c-event-ordinal candidate) cutoff)))
+                    remaining))
+          (define group-state
+            (for/fold ([merged state]) ([child (in-list group-events)])
+              (merge-group-state state merged
+                                 (apply-event state child time model computation))))
+          (loop (filter (lambda (candidate)
+                          (not (equal? (c-event-group candidate)
+                                       (c-event-group event))))
+                        (rest remaining))
+                group-state)]
+         [else
+          (loop (rest remaining)
+                (apply-event state event time model computation))])])))
 
 ;; initial-visibility : calculus-lesson? -> immutable-hash?
 ;;   Applies only persistent initial show commands to a fresh presentation map.
@@ -2311,10 +2651,10 @@
           [else (raise-arguments-error 'calculus-plan-sample "a valid time, 'initial, 'final, or calculus moment" "at" at)]))
   (define lesson (calculus-plan-lesson plan))
   (define model (calculus-lesson-model lesson))
-  (define state (cons (calculus-plan-values plan) (initial-visibility lesson)))
-  (for ([event (in-list (calculus-plan-events plan))]
-        #:when (and (<= (c-event-start event) time) (<= (c-event-ordinal event) cutoff)))
-    (set! state (apply-event state event time model (calculus-plan-computation plan))))
+  (define state
+    (apply-events-at (cons (calculus-plan-values plan) (initial-visibility lesson))
+                     (calculus-plan-events plan) time cutoff model
+                     (calculus-plan-computation plan)))
   (define diagnostics
     (for/list ([constraint (in-list (calculus-model-constraints model))]
                #:when #t

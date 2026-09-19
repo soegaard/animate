@@ -46,6 +46,8 @@
     [S (secant G P Q)]
     [change (increment P Q)]
     [m (difference-quotient f a h)]
+    [L (limit-statement m #:parameter h #:to 0 #:value 2 #:side 'right
+                        #:justification "The finite secant quotient approaches the supplied tangent slope.")]
     [T (tangent G #:at P #:derivative df)]
     [tangent-slope (slope T)])
   (views
@@ -57,7 +59,7 @@
   (step extend (hide C) (show S))
   (step approach-point
     (approach h #:to 0 #:side 'right #:until 1/20 #:duration 1))
-  (step introduce-tangent (show T)))
+  (step introduce-tangent (limit-transition S T #:claim L)))
 
 ;; guide-limit-not-value : calculus-lesson?
 ;;   Preserves the value-at-one versus nearby-limit distinction from the Guide.
@@ -137,6 +139,8 @@
   (check-equal? (calculus-result-value (calculus-snapshot-ref secant-final '(change dy))) 41/400)
   (check-equal? (calculus-result-value (calculus-snapshot-ref secant-final 'm)) 41/20)
   (check-equal? (calculus-result-value (calculus-snapshot-ref secant-final 'tangent-slope)) 2)
+  (check-false (calculus-snapshot-visible? secant-final 'S))
+  (check-true (calculus-snapshot-visible? secant-final 'T))
   (define limit-initial
     (calculus-plan-sample (compile-calculus-lesson guide-limit-not-value) #:at 'initial))
   (check-equal? (calculus-result-value (calculus-snapshot-ref limit-initial '(at-one output))) 4)
@@ -164,8 +168,10 @@
     (calculus-plan-sample (compile-calculus-lesson guide-limit-not-value) #:at 'final))
   (check-equal? (calculus-result-value (calculus-snapshot-ref limit-final 'u)) 11/10)
   (check-equal? (calculus-result-value (calculus-snapshot-ref limit-final '(nearby output))) 21/10)
+  (define accumulation-plan (compile-calculus-lesson guide-sums-and-accumulation))
+  (check-equal? (length (calculus-plan-diagnostics accumulation-plan)) 0)
   (define accumulation-final
-    (calculus-plan-sample (compile-calculus-lesson guide-sums-and-accumulation) #:at 'final))
+    (calculus-plan-sample accumulation-plan #:at 'final))
   (check-equal? (calculus-result-value (calculus-snapshot-ref accumulation-final 'q)) 21/8)
   (check-equal? (calculus-result-value (calculus-snapshot-ref accumulation-final 'I)) 8/3)
   (check-equal? (calculus-result-value (calculus-snapshot-ref accumulation-final 'x)) 2)

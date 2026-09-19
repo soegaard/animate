@@ -88,6 +88,28 @@ graph values at its authored input rather than measuring a screen distance.
 `slope-triangle` derives directed horizontal and vertical legs, including
 signed `dx` and `dy`, from an increment or a nonvertical line and authored run.
 
+A `trace` command accepts a `trace-of` locus only when it uses one direct real
+parameter over a closed, finite, increasing interval and the parameter starts
+at that interval's left endpoint. Invalid sweeps are diagnosed during plan
+compilation and do not change the sampled parameter state; a preceding
+`set-parameter` can establish a valid trace start.
+
+`together` children share one pre-group state. The compiler rejects a group
+when children write the same parameter, an overlapping target's same
+persistent presentation property, or the same view window; rejected groups
+leave no partial sampled updates behind.
+
+`snapshot-of` accepts the documented `#:values ([parameter constant] ...)`
+bindings. It fixes the requested object at those values; unlisted parameters
+use the model or lesson's compiled initial values (including `#:values`
+overrides), never whichever frame is currently being sampled.
+
+`limit-transition` verifies a matching finite slope-limit claim for two
+nonvertical lines through the same anchor. A valid transition hides the finite
+source line and reveals the separate target line without assigning the limit
+to its approaching parameter; an invalid transition leaves presentation state
+unchanged.
+
 ## Test
 
 From the repository root:
