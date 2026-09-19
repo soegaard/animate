@@ -59,6 +59,37 @@
   (initially (show G))
   (step retain-special-value (show G)))
 
+;; render-trace-square : calculus-lesson?
+;;   Draws an authored locus prefix directly from its sweep coordinate.
+(define-calculus-lesson render-trace-square
+  (model
+    [u (parameter 0 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x u)]
+    [locus (trace-of P #:parameter u #:over (closed 0 2))])
+  (views
+    [plot (graph-view #:x (closed 0 2)
+                      #:y (closed 0 4)
+                      #:objects (locus))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step trace-locus (trace locus #:duration 2)))
+
+;; render-focus-square : calculus-lesson?
+;;   Keeps mathematical coordinates fixed while a graph view changes window.
+(define-calculus-lesson render-focus-square
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x 3/2)])
+  (views
+    [plot (graph-view #:x (closed -2 2)
+                      #:y (closed -2 2)
+                      #:objects (G P))])
+  (initially (show G P))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step focus-plot (focus plot #:x (closed 0 2) #:y (closed 0 4) #:duration 2)))
+
 ;; bitmap-rgb : bitmap% exact-nonnegative-integer? exact-nonnegative-integer? -> bytes?
 ;;   Reads one rendered pixel without depending on an image-file encoder.
 (define (bitmap-rgb bitmap x y)
@@ -109,7 +140,27 @@
   ;; endpoint (0,1).  The centers verify the semantic markers, not a sampled
   ;; approximation just to one side of x=0.
   (check-not-equal? (bitmap-rgb topology-bitmap 240 73) #"\xFA\xFA\xFA")
-  (check-equal? (bitmap-rgb topology-bitmap 240 197) #"\xFA\xFA\xFA"))
+  (check-equal? (bitmap-rgb topology-bitmap 240 197) #"\xFA\xFA\xFA")
+  (define trace-prepared
+    (prepare-calculus-lesson render-trace-square #:width 480 #:height 270))
+  (define trace-midpoint-bitmap
+    (pict->opaque-bitmap (prepared-lesson->pict trace-prepared #:at 1) 480 270))
+  (define trace-final-bitmap
+    (pict->opaque-bitmap (prepared-lesson->pict trace-prepared #:at 'final) 480 270))
+  ;; The point (3/2,9/4) lies beyond the mid-trace prefix but on the completed
+  ;; locus. Its pixel proves native output respects semantic prefix state.
+  (check-equal? (bitmap-rgb trace-midpoint-bitmap 344 122) #"\xFA\xFA\xFA")
+  (check-not-equal? (bitmap-rgb trace-final-bitmap 344 122) #"\xFA\xFA\xFA")
+  (define focus-prepared
+    (prepare-calculus-lesson render-focus-square #:width 480 #:height 270))
+  (define focus-initial-bitmap
+    (pict->opaque-bitmap (prepared-lesson->pict focus-prepared #:at 'initial) 480 270))
+  (define focus-final-bitmap
+    (pict->opaque-bitmap (prepared-lesson->pict focus-prepared #:at 'final) 480 270))
+  ;; P remains the mathematical point (3/2,9/4), while the focused window
+  ;; changes its rendered position without mutating the model.
+  (check-equal? (bitmap-rgb focus-initial-bitmap 344 122) #"\xFA\xFA\xFA")
+  (check-not-equal? (bitmap-rgb focus-final-bitmap 344 122) #"\xFA\xFA\xFA"))
 
 (module+ test
   (run-calculus-render-smoke-tests))

@@ -90,7 +90,10 @@ nonvertical line and an authored run.
 real parameter over a closed, finite, increasing interval and that parameter
 starts at the interval's left endpoint. An invalid sweep is diagnosed during
 plan compilation and leaves sampled parameter state unchanged; a preceding
-@racket[set-parameter] can establish a valid start.
+@racket[set-parameter] can establish a valid start. The locus is evaluated
+from its sweep definition at every sampled state: @racket[trace] exposes only
+the prefix through the current sweep coordinate, while @racket[show] reveals
+the same locus in full. Undefined points remain mathematical gaps.
 
 Children of @racket[together] share one pre-group state. The compiler rejects
 a group whose children write the same parameter, the same persistent
@@ -104,10 +107,16 @@ values, including compile-time overrides. It never captures a live rendered
 frame.
 
 @racket[limit-transition] requires a matching finite slope-limit claim for
-two nonvertical lines through the same anchor. A valid transition hides the
-finite source and reveals the distinct target without assigning the limit to
-the approaching parameter; an invalid transition leaves presentation state
-unchanged.
+two nonvertical lines through the same anchor in a shared graph view. The
+source must be visible and the distinct target hidden at action start. A valid
+transition hides the finite source and reveals the target without assigning
+the limit to the approaching parameter; an invalid transition leaves
+presentation state unchanged.
+
+@racket[focus] and @racket[restore-view] act only on a declared graph view.
+Focus evaluates and freezes its finite x/y window at action start, then changes
+only the view's camera window; it does not mutate graph domains, points, or
+parameters. @racket[restore-view] returns to the declared initial window.
 
 @defproc[(compile-calculus-lesson [lesson calculus-lesson?]
                                   [#:profile profile calculus-profile? default-calculus-profile]

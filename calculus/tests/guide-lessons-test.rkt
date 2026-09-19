@@ -133,8 +133,10 @@
 ;; run-calculus-guide-lesson-tests : -> void?
 ;;   Checks exact derived quantities and source-ordered piecewise branches.
 (define (run-calculus-guide-lesson-tests)
+  (define secant-plan (compile-calculus-lesson guide-secant-to-tangent))
+  (check-equal? (length (calculus-plan-diagnostics secant-plan)) 0)
   (define secant-final
-    (calculus-plan-sample (compile-calculus-lesson guide-secant-to-tangent) #:at 'final))
+    (calculus-plan-sample secant-plan #:at 'final))
   (check-equal? (calculus-result-value (calculus-snapshot-ref secant-final '(change dx))) 1/20)
   (check-equal? (calculus-result-value (calculus-snapshot-ref secant-final '(change dy))) 41/400)
   (check-equal? (calculus-result-value (calculus-snapshot-ref secant-final 'm)) 41/20)

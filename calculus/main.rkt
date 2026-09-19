@@ -161,9 +161,9 @@
               vary set-parameter approach trace refine limit-transition focus restore-view together compare pause
               checkpoint explain)))
 
-  ;; lower-calculus-expression : syntax? (listof symbol?) -> syntax?
+  ;; lower-calculus-expression : syntax? (listof symbol?) (listof symbol?) -> syntax?
   ;;   Recursively lowers contextual source syntax before ordinary Racket expansion.
-  (define (lower-calculus-expression expression [bound-variables '()])
+  (define (lower-calculus-expression expression [bound-variables '()] [view-names '()])
     (cond
       [(identifier? expression)
        (define name (syntax-e expression))
@@ -191,11 +191,11 @@
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'iteration-map))
           (lower-iteration-map-expression expression bound-variables)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'step))
-          (lower-step-expression expression bound-variables)]
+          (lower-step-expression expression bound-variables view-names)]
          [(and (identifier? (car forms)) (calculus-contextual-name? (syntax-e (car forms))))
-          (lower-generic-expression expression bound-variables)]
-         [else #`(#,(lower-calculus-expression (car forms) bound-variables)
-                 #,@(map (lambda (form) (lower-calculus-expression form bound-variables)) (cdr forms)))])]))
+          (lower-generic-expression expression bound-variables view-names)]
+         [else #`(#,(lower-calculus-expression (car forms) bound-variables view-names)
+                 #,@(map (lambda (form) (lower-calculus-expression form bound-variables view-names)) (cdr forms)))])]))
 
   ;; lower-generic-expression : syntax? (listof symbol?) -> syntax?
   ;;   Builds a generic descriptor while recursively lowering operands and options.
@@ -213,12 +213,18 @@
             #`(cons #,(lower-calculus-expression (first pieces) bound-variables)
                     #,(lower-calculus-expression (second pieces) bound-variables)))))
 
-  (define (lower-generic-expression expression bound-variables)
+  (define (lower-generic-expression expression bound-variables [view-names '()])
     (define forms (syntax->list expression))
     (define name (syntax-e (car forms)))
     (define-values (positionals options) (split-calculus-arguments (cdr forms) name))
     (define lowered-positionals
-      (map (lambda (form) (lower-calculus-expression form bound-variables)) positionals))
+      (map (lambda (form)
+             (if (and (memq name '(focus restore-view))
+                      (identifier? form)
+                      (member (syntax-e form) view-names))
+                 #`(make-view-reference '#,(syntax-e form))
+                 (lower-calculus-expression form bound-variables view-names)))
+           positionals))
     (define option-forms
       (apply append
              (for/list ([option (in-list options)])
@@ -229,10 +235,10 @@
                    (define objects (syntax->list (cdr option)))
                    (unless objects
                      (raise-syntax-error name "#:objects expects a parenthesized list" (cdr option)))
-                   #`(list #,@(map (lambda (item) (lower-calculus-expression item bound-variables)) objects))]
+                   #`(list #,@(map (lambda (item) (lower-calculus-expression item bound-variables view-names)) objects))]
                    [(and (eq? name 'snapshot-of) (eq? (car option) 'values))
                     (lower-snapshot-values (cdr option) bound-variables)]
-                   [else (lower-calculus-expression (cdr option) bound-variables)]))
+                   [else (lower-calculus-expression (cdr option) bound-variables view-names)]))
                (list #`'#,(car option) lowered-value))))
     #`(make-generic '#,name (list #,@lowered-positionals) (hash #,@option-forms)))
 
@@ -325,7 +331,7 @@
 
   ;; lower-step-expression : syntax? (listof symbol?) -> syntax?
   ;;   Turns a source step identifier into data and recursively lowers action commands.
-  (define (lower-step-expression expression bound-variables)
+  (define (lower-step-expression expression bound-variables [view-names '()])
     (define forms (syntax->list expression))
     (unless (and (>= (length forms) 2) (identifier? (second forms)))
       (raise-syntax-error 'step "expected a step identifier" expression))
@@ -334,7 +340,7 @@
     (define (option name) (lower-calculus-expression (option-value options name #'#f) bound-variables))
     #`(make-step '#,id #:say #,(option 'say) #:read-delay #,(option 'read-delay)
                  #:duration #,(option 'duration) #:pause #,(option 'pause)
-                 #,@(map (lambda (command) (lower-calculus-expression command bound-variables)) commands)))
+                 #,@(map (lambda (command) (lower-calculus-expression command bound-variables view-names)) commands)))
 
   ;; lower-views-clause : syntax? (listof symbol?) -> syntax?
   ;;   Assigns declared view names to their independently lowered view descriptors.
@@ -658,7 +664,11 @@
   (define initially (lower-command-clause initially-clause '()))
   (define timing (lower-timing-clause timing-clause '()))
   (define lowered-views (lower-views-clause views-clause '()))
-  (define lowered-steps (map (lambda (form) (lower-step-expression form '())) steps))
+  (define view-names
+    (for/list ([binding (in-list (cdr (syntax->list views-clause)))])
+      (syntax-e (first (syntax->list binding)))))
+  (define lowered-steps
+    (map (lambda (form) (lower-step-expression form '() view-names)) steps))
   #`(define #,id
       (let* (#,@bound-bindings)
         (define lesson-model (make-model (list #,@pairs) (list #,@constraints)))

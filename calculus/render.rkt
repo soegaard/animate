@@ -323,6 +323,25 @@
     (send context set-brush (new draw:brush% [color (hex-color "#B3261E")] [style 'solid]))
     (send context draw-ellipse (- x 4) (- y 4) 8 8)))
 
+;; draw-trace : drawing-context% calculus-snapshot? c-node? ... -> void?
+;;   Draws a locus from its semantic sweep definition.  The private core bridge
+;;   supplies a complete static locus or an active trace prefix without relying
+;;   on any previously rendered frame; #f samples deliberately split gaps.
+(define (draw-trace context snapshot node xmin xmax ymin ymax left top width height)
+  (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
+  (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
+  (define previous #f)
+  (for ([point (in-list (calculus-snapshot-trace-points snapshot node))])
+    (define next
+      (and point
+           (<= xmin (car point) xmax)
+           (<= ymin (cdr point) ymax)
+           (cons (pixel-x (car point)) (pixel-y (cdr point)))))
+    (when (and previous next)
+      (draw-line-segment context (car previous) (cdr previous)
+                         (car next) (cdr next) "#0B6E4F" 2))
+    (set! previous next)))
+
 ;; draw-reading : drawing-context% calculus-snapshot? symbol? ... -> void?
 ;;   Renders an input-reading's semantic point and its two coordinate guides.
 (define (draw-reading context snapshot name xmin xmax ymin ymax left top width height)
@@ -340,8 +359,15 @@
 ;; inspection operations.  Keep the small model-aware walker separate so the
 ;; actual drawing loop is easy to audit.
 (define (draw-graph-panel/model context snapshot model view left top width height)
-  (define-values (xmin xmax) (interval-bounds (hash-ref (c-view-options view) 'x #f) -5 5))
-  (define-values (ymin ymax) (interval-bounds (hash-ref (c-view-options view) 'y #f) -5 5))
+  (define active-window (calculus-snapshot-view-window snapshot view))
+  (define-values (xmin xmax)
+    (if active-window
+        (values (first active-window) (second active-window))
+        (interval-bounds (hash-ref (c-view-options view) 'x #f) -5 5)))
+  (define-values (ymin ymax)
+    (if active-window
+        (values (third active-window) (fourth active-window))
+        (interval-bounds (hash-ref (c-view-options view) 'y #f) -5 5)))
   (send context set-pen (new draw:pen% [color (hex-color "#D0D0D0")] [width 1] [style 'solid]))
   (send context set-brush (new draw:brush% [color (hex-color "#FAFAFA")] [style 'solid]))
   (send context draw-rectangle left top width height)
@@ -359,6 +385,8 @@
          (draw-graph context snapshot node xmin xmax ymin ymax left top width height)]
         [(and node (memq (c-node-kind node) '(point point-on axis-point projection root-point intersection-point)))
          (draw-point context snapshot address xmin xmax ymin ymax left top width height)]
+        [(and node (eq? (c-node-kind node) 'trace-of))
+         (draw-trace context snapshot node xmin xmax ymin ymax left top width height)]
         [(and node (eq? (c-node-kind node) 'input-reading))
          (draw-reading context snapshot root xmin xmax ymin ymax left top width height)]
         [(and (list? address) (= (length address) 2) (eq? (second address) 'point))

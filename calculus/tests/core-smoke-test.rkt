@@ -14,7 +14,13 @@
 
 ;; Imports
 (require rackunit
-         "../main.rkt")
+         "../main.rkt"
+         (only-in "../private/core.rkt"
+                  calculus-lesson-views
+                  calculus-model-nodes
+                  calculus-plan-lesson
+                  calculus-snapshot-trace-points
+                  calculus-snapshot-view-window))
 
 ;; Exports
 (provide run-calculus-core-smoke-tests)
@@ -113,6 +119,47 @@
                            #:objects (G P locus))])
   (step trace-locus (trace locus #:duration 1)))
 
+;; trace-prefix : calculus-lesson?
+;;   Provides an exact random-access locus whose animated prefix is determined
+;;   by the authored sweep coordinate, never by earlier rendered frames.
+(define-calculus-lesson trace-prefix
+  (model
+    [u (parameter 0 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x u)]
+    [locus (trace-of P #:parameter u #:over (closed 0 2))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4)
+                           #:objects (G P locus))])
+  (initially (show G))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step trace-locus (trace locus #:duration 2)))
+
+;; focus-window : calculus-lesson?
+;;   Freezes dynamic focus endpoints at action start and restores the declared
+;;   prepared window without changing the parameter or graph coordinates.
+(define-calculus-lesson focus-window
+  (model
+    [u (parameter 0 #:domain (closed 0 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -2 2)
+                           #:objects (G))])
+  (initially (show G))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step focus-plot
+    (focus plot #:x (closed u (+ u 1)) #:y (closed -1 1) #:duration 2))
+  (step move-parameter (set-parameter u 1))
+  (step restore-plot (restore-view plot #:duration 2)))
+
+;; invalid-focus-window : calculus-lesson?
+;;   Focus is restricted to a declared graph view, not a number-line view.
+(define-calculus-lesson invalid-focus-window
+  (model [u (parameter 0 #:domain (closed 0 1))])
+  (views [numbers (number-line-view #:objects (u))])
+  (step invalid-camera
+    (focus numbers #:x (closed 0 1) #:y (closed -1 1))))
+
 ;; conflicting-trace : calculus-lesson?
 ;;   A sweep and a simultaneous parameter write would have no single history.
 (define-calculus-lesson conflicting-trace
@@ -151,6 +198,29 @@
                            #:objects (source target))])
   (initially (show source))
   (step invalid-handoff (limit-transition source target #:claim #f)))
+
+;; visible-target-transition : calculus-lesson?
+;;   A valid finite slope claim still cannot hand off to an already visible
+;;   target; source and target must have a meaningful presentation transition.
+(define-calculus-lesson visible-target-transition
+  (model
+    [f (function (x) (* x x))]
+    [df (derivative-function f #:method 'supplied #:using (function (x) (* 2 x))
+                            #:justification "The derivative of x² is 2x.")]
+    [a 1]
+    [h (parameter 1 #:domain (open-closed 0 1))]
+    [G (graph f)]
+    [P (point-on G #:x a)]
+    [Q (point-on G #:x (+ a h))]
+    [S (secant G P Q)]
+    [m (difference-quotient f a h)]
+    [L (limit-statement m #:parameter h #:to 0 #:value 2 #:side 'right
+                        #:justification "The finite quotient approaches the tangent slope.")]
+    [T (tangent G #:at P #:derivative df)])
+  (views [plot (graph-view #:x (closed -1/2 5/2) #:y (closed -1/2 5)
+                           #:objects (G P Q S T))])
+  (initially (show S T))
+  (step invalid-handoff (limit-transition S T #:claim L)))
 
 ;; partition-model : calculus-model?
 ;;   Covers explicit endpoint/tag checks and an exact trapezoidal quantity.
@@ -433,8 +503,46 @@
                 2)
   (define invalid-trace-plan (compile-calculus-lesson invalid-trace))
   (check-equal? (length (calculus-plan-diagnostics invalid-trace-plan)) 1)
-  (check-equal? (calculus-result-value
-                 (calculus-snapshot-ref (calculus-plan-sample invalid-trace-plan #:at 'final) 'u))
+  (define invalid-trace-final (calculus-plan-sample invalid-trace-plan #:at 'final))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref invalid-trace-final 'u))
+                1)
+  (check-false (calculus-snapshot-visible? invalid-trace-final 'locus))
+  (define trace-prefix-plan (compile-calculus-lesson trace-prefix))
+  (check-equal? (length (calculus-plan-diagnostics trace-prefix-plan)) 0)
+  (define trace-prefix-locus
+    (hash-ref (calculus-model-nodes
+               (calculus-lesson-model (calculus-plan-lesson trace-prefix-plan)))
+              'locus))
+  (define trace-prefix-final (calculus-plan-sample trace-prefix-plan #:at 'final))
+  (define trace-prefix-midpoint (calculus-plan-sample trace-prefix-plan #:at 1))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref trace-prefix-midpoint 'u)) 1)
+  (check-equal? (calculus-snapshot-trace-points trace-prefix-midpoint trace-prefix-locus #:samples 4)
+                (list (cons 0 0) (cons 1/2 1/4) (cons 1 1) #f #f))
+  (check-equal? (calculus-snapshot-trace-points trace-prefix-final trace-prefix-locus #:samples 4)
+                (list (cons 0 0) (cons 1/2 1/4) (cons 1 1) (cons 3/2 9/4) (cons 2 4)))
+  (check-equal? (calculus-snapshot-trace-points
+                 (calculus-model-at
+                  (calculus-lesson-model (calculus-plan-lesson trace-prefix-plan)))
+                 trace-prefix-locus #:samples 4)
+                (calculus-snapshot-trace-points trace-prefix-final trace-prefix-locus #:samples 4))
+  (define focus-plan (compile-calculus-lesson focus-window))
+  (check-equal? (length (calculus-plan-diagnostics focus-plan)) 0)
+  (define focus-view
+    (hash-ref (calculus-lesson-views (calculus-plan-lesson focus-plan)) 'plot))
+  (define focus-midpoint (calculus-plan-sample focus-plan #:at 1))
+  (check-equal? (calculus-snapshot-view-window focus-midpoint focus-view)
+                (list -1 3/2 -3/2 3/2))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref focus-midpoint 'u)) 0)
+  (define restore-midpoint (calculus-plan-sample focus-plan #:at 3))
+  ;; The focus target was frozen at u=0; restoring after u becomes 1 still
+  ;; returns to the original declared camera window rather than a moving one.
+  (check-equal? (calculus-result-value (calculus-snapshot-ref restore-midpoint 'u)) 1)
+  (check-equal? (calculus-snapshot-view-window restore-midpoint focus-view)
+                (list -1 3/2 -3/2 3/2))
+  (check-false (calculus-snapshot-view-window
+                (calculus-plan-sample focus-plan #:at 'final) focus-view))
+  (check-equal? (length (calculus-plan-diagnostics
+                         (compile-calculus-lesson invalid-focus-window)))
                 1)
   (define conflicting-trace-plan (compile-calculus-lesson conflicting-trace))
   (check-equal? (length (calculus-plan-diagnostics conflicting-trace-plan)) 1)
@@ -455,6 +563,12 @@
     (calculus-plan-sample invalid-transition-plan #:at 'final))
   (check-true (calculus-snapshot-visible? invalid-transition-final 'source))
   (check-false (calculus-snapshot-visible? invalid-transition-final 'target))
+  (define visible-target-plan (compile-calculus-lesson visible-target-transition))
+  (check-equal? (length (calculus-plan-diagnostics visible-target-plan)) 1)
+  (define visible-target-final
+    (calculus-plan-sample visible-target-plan #:at 'final))
+  (check-true (calculus-snapshot-visible? visible-target-final 'S))
+  (check-true (calculus-snapshot-visible? visible-target-final 'T))
   (define changed-snapshot (calculus-model-at snapshot-model #:values (hash 'h 2)))
   (check-equal? (calculus-result-value (calculus-snapshot-ref changed-snapshot 'P))
                 (cons 2 4))

@@ -92,7 +92,10 @@ A `trace` command accepts a `trace-of` locus only when it uses one direct real
 parameter over a closed, finite, increasing interval and the parameter starts
 at that interval's left endpoint. Invalid sweeps are diagnosed during plan
 compilation and do not change the sampled parameter state; a preceding
-`set-parameter` can establish a valid trace start.
+`set-parameter` can establish a valid trace start. The locus is evaluated from
+its sweep definition at every sampled state: a `trace` exposes only the prefix
+through the current sweep coordinate, while `show` reveals the same locus in
+full. Undefined points stay as mathematical gaps.
 
 `together` children share one pre-group state. The compiler rejects a group
 when children write the same parameter, an overlapping target's same
@@ -105,10 +108,16 @@ use the model or lesson's compiled initial values (including `#:values`
 overrides), never whichever frame is currently being sampled.
 
 `limit-transition` verifies a matching finite slope-limit claim for two
-nonvertical lines through the same anchor. A valid transition hides the finite
-source line and reveals the separate target line without assigning the limit
-to its approaching parameter; an invalid transition leaves presentation state
-unchanged.
+nonvertical lines through the same anchor in a shared graph view. Its source
+must be visible and its distinct target hidden at action start. A valid
+transition hides the finite source line and reveals the target without
+assigning the limit to its approaching parameter; an invalid transition leaves
+presentation state unchanged.
+
+`focus` and `restore-view` act only on a declared graph view. Focus evaluates
+and freezes its finite x/y window at action start, then changes only the view's
+camera window; it does not mutate graph domains, points, or parameters.
+`restore-view` returns to the declared initial window.
 
 ## Test
 

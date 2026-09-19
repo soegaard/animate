@@ -27,7 +27,7 @@
  light-calculus-theme dark-calculus-theme default-calculus-computation
  ;; The declaration macros use these private implementation bindings.
  make-model bind-model-value make-lesson make-component make-held-function
- make-piecewise-function make-generic calculus-real-line
+ make-piecewise-function make-generic make-view-reference calculus-real-line
  c-expression c-expression? c-expression-op c-expression-arguments
  calculus-pi calculus-e with-view-name
  c-node? c-node-id c-node-kind c-node-data c-node-parts
@@ -41,6 +41,7 @@
  c-step? make-step c-view? c-view-name c-view-kind c-view-arguments c-view-options
  c-param-spec? make-param-spec
  calculus-snapshot-function-value calculus-snapshot-function-branch calculus-snapshot-function-branch-value
+ calculus-snapshot-trace-points calculus-snapshot-view-window
  calculus-plan-lesson calculus-plan-events c-event-start c-event-end
  action-kinds view-kinds)
 
@@ -488,6 +489,13 @@
   (unless (c-view? view) (raise-argument-error 'views "view descriptor" view))
   (unless (symbol? name) (raise-argument-error 'views "symbol?" name))
   (struct-copy c-view view [name name]))
+
+;; make-view-reference : symbol? -> c-view?
+;;   Retains an authored view name inside later timeline commands without
+;;   rebuilding or aliasing the view declaration itself.
+(define (make-view-reference name)
+  (unless (symbol? name) (raise-argument-error 'view "symbol?" name))
+  (c-view name 'view-reference '() (hash)))
 
 ;; make-held-function : symbol? any/c ... -> c-function?
 ;;   Builds a lexical single-variable function whose body remains held.
@@ -1965,6 +1973,78 @@
 ;; target-root-key : list? -> list?
 ;;   Selects a target's root key for inherited visibility.
 (define (target-root-key key) (and key (list (first key))))
+;; trace-prefix-key : semantic-target? -> (or/c list? #f)
+;;   Reserves a private presentation slot for a trace's authored sweep prefix.
+;;   Its nested shape cannot overlap an ordinary flat public target key.
+(define (trace-prefix-key target)
+  (define key (target-key target))
+  (and key (list 'trace-prefix key)))
+;; view-window-key : c-view? -> (or/c list? #f)
+;;   Names one view's private camera-window presentation state.
+(define (view-window-key view)
+  (and (c-view? view) (c-view-name view) (list 'view-window (c-view-name view))))
+
+;; resolve-view-reference : calculus-lesson? any/c -> (or/c c-view? #f)
+;;   Resolves an authored focus/restore name to its one declared view.
+(define (resolve-view-reference lesson target)
+  (and (c-view? target)
+       (c-view-name target)
+       (hash-ref (calculus-lesson-views lesson) (c-view-name target) #f)))
+
+;; finite-interval-bounds : any/c hash? calculus-model? calculus-computation?
+;;                          -> (or/c (list/c finite-real? finite-real?) #f)
+;;   Evaluates an authored finite, increasing interval without treating an open
+;;   endpoint as a different camera coordinate.
+(define (finite-interval-bounds domain values model computation)
+  (and (c-domain? domain)
+       (memq (c-domain-kind domain) '(closed open closed-open open-closed))
+       (= (length (c-domain-arguments domain)) 2)
+       (let ([left (eval-raw (first (c-domain-arguments domain)) values model computation)]
+             [right (eval-raw (second (c-domain-arguments domain)) values model computation)])
+         (and (eq? (calculus-result-status left) 'defined)
+              (eq? (calculus-result-status right) 'defined)
+              (finite-real? (calculus-result-value left))
+              (finite-real? (calculus-result-value right))
+              (< (calculus-result-value left) (calculus-result-value right))
+              (list (calculus-result-value left) (calculus-result-value right))))))
+
+;; view-window-values : c-view? hash? calculus-model? calculus-computation? -> (or/c list? #f)
+;;   Resolves a graph view's declared x/y windows to four finite coordinates.
+(define (view-window-values view values model computation)
+  (and (c-view? view)
+       (eq? (c-view-kind view) 'graph-view)
+       (let ([x-bounds (finite-interval-bounds (hash-ref (c-view-options view) 'x #f)
+                                               values model computation)]
+             [y-bounds (finite-interval-bounds (hash-ref (c-view-options view) 'y #f)
+                                               values model computation)])
+         (and x-bounds y-bounds (append x-bounds y-bounds)))))
+
+;; focus-target-window : c-action? hash? calculus-model? calculus-computation? calculus-lesson?
+;;                       -> (or/c (cons/c c-view? list?) #f)
+;;   Validates the one graph-view target and freezes the requested coordinates
+;;   from the action's start environment.
+(define (focus-target-window action values model computation lesson)
+  (define targets (c-action-targets action))
+  (define view (and (= (length targets) 1)
+                    (resolve-view-reference lesson (first targets))))
+  (define x-bounds
+    (finite-interval-bounds (hash-ref (c-action-options action) 'x #f)
+                            values model computation))
+  (define y-bounds
+    (finite-interval-bounds (hash-ref (c-action-options action) 'y #f)
+                            values model computation))
+  (and view
+       (eq? (c-view-kind view) 'graph-view)
+       x-bounds y-bounds
+       (cons view (append x-bounds y-bounds))))
+
+;; valid-restore-view? : c-action? calculus-lesson? -> boolean?
+;;   A restore is meaningful only for one declared graph view.
+(define (valid-restore-view? action lesson)
+  (define targets (c-action-targets action))
+  (define view (and (= (length targets) 1)
+                    (resolve-view-reference lesson (first targets))))
+  (and view (eq? (c-view-kind view) 'graph-view)))
 
 ;; trace-write-keys : c-action? -> list?
 ;;   Assigns the sweep capability and revealed locus to a trace action.
@@ -2189,17 +2269,24 @@
            [(right) (and (> start target) (> stop target))]
            [else #f]))))
 
-;; parameter-values-before : c-event? list? hash? calculus-model? calculus-computation? -> immutable-hash?
-;;   Reconstructs the start state for endpoint and side validation, including
-;;   preceding zero-time assignments but never depending on rendered frames.
-(define (parameter-values-before event events values model computation)
+;; event-state-before : c-event? list? pair? calculus-model? calculus-computation? [calculus-lesson?] -> pair?
+;;   Reconstructs an action's start state from preceding source events without
+;;   consulting rendered frames. A lesson supplies persistent presentation
+;;   state when validation also depends on visibility or view membership.
+(define (event-state-before event events initial model computation [lesson #f])
   (define preceding-events
     (for/list ([prior (in-list events)]
                #:break (>= (c-event-ordinal prior) (c-event-ordinal event))
                #:when (<= (c-event-end prior) (c-event-start event)))
       prior))
-  (car (apply-events-at (cons values (hash)) preceding-events
-                        (c-event-start event) +inf.0 model computation)))
+  (apply-events-at initial preceding-events
+                   (c-event-start event) +inf.0 model computation lesson))
+
+;; parameter-values-before : c-event? list? hash? calculus-model? calculus-computation? -> immutable-hash?
+;;   Reconstructs the start parameter state for domain validation, including
+;;   preceding zero-time assignments but never depending on rendered frames.
+(define (parameter-values-before event events values model computation)
+  (car (event-state-before event events (cons values (hash)) model computation)))
 
 ;; refinement-count-parameter : c-action? -> (or/c c-node? #f)
 ;;   Finds the direct integer capability owned by a uniform partition target.
@@ -2368,10 +2455,41 @@
              (calculus-diagnostic 'error 'trace #f #f (c-event-end event)
                                   "trace requires a direct real parameter starting at a closed increasing sweep interval")))))
 
-;; valid-limit-transition? : c-action? hash? calculus-model? calculus-computation? -> boolean?
-;;   Verifies the local line/claim relationship without turning a carrier into
-;;   a mathematical limit value.
-(define (valid-limit-transition? action environment model computation)
+;; focus-diagnostics : calculus-lesson? calculus-model? hash? calculus-computation? list? -> list?
+;;   Ensures camera actions name one declared graph view and finite increasing
+;;   coordinate windows. Focus endpoints use exactly the action-start state.
+(define (focus-diagnostics lesson model values computation events)
+  (for/list ([event (in-list events)]
+             #:when (memq (c-action-kind (c-event-action event)) '(focus restore-view))
+             #:do [(define action (c-event-action event))]
+             #:do [(define state
+                     (event-state-before event events
+                                         (cons values (initial-visibility lesson))
+                                         model computation lesson))]
+             #:when (or (and (eq? (c-action-kind action) 'focus)
+                              (not (focus-target-window action (car state) model computation lesson)))
+                         (and (eq? (c-action-kind action) 'restore-view)
+                              (not (valid-restore-view? action lesson)))))
+    (calculus-diagnostic 'error 'focus #f #f (c-event-end event)
+                         "focus and restore-view require one declared graph view and finite increasing focus windows")))
+
+;; shared-graph-view? : calculus-lesson? semantic-value? semantic-value? -> boolean?
+;;   Finds the required common graph-view membership for a native line handoff.
+(define (shared-graph-view? lesson source target)
+  (for/or ([view (in-hash-values (calculus-lesson-views lesson))])
+    (define objects (hash-ref (c-view-options view) 'objects '()))
+    (and (eq? (c-view-kind view) 'graph-view)
+         (member source objects)
+         (member target objects))))
+
+;; valid-limit-transition? : c-action? hash? calculus-model? calculus-computation?
+;;                            #:lesson (or/c calculus-lesson? #f)
+;;                            #:visible (or/c immutable-hash? #f) -> boolean?
+;;   Verifies a local line/claim relationship and, when presentation context is
+;;   supplied, its shared-view and source-visible/target-hidden handoff state.
+;;   It never turns a carrier into a mathematical limit value.
+(define (valid-limit-transition? action environment model computation
+                                 #:lesson [lesson #f] #:visible [visible #f])
   (define targets (c-action-targets action))
   (define claim (hash-ref (c-action-options action) 'claim #f))
   (define (value-of result)
@@ -2394,6 +2512,15 @@
                     (value-of (eval-raw (hash-ref (c-object-options claim-raw) 'value #f)
                                         environment model computation)))])
          (and claim-valid?
+              (or (not lesson) (shared-graph-view? lesson source target))
+              (or (not visible)
+                  (let ([source-key (target-key source)]
+                        [target-key* (target-key target)])
+                    (and source-key
+                         target-key*
+                         (not (equal? source-key target-key*))
+                         (hash-ref visible source-key #f)
+                         (not (hash-ref visible target-key* #f)))))
               (finite-real? claim-value)
               (list? source-line) (list? target-line)
               (eq? (car source-line) 'line) (eq? (car target-line) 'line)
@@ -2407,17 +2534,22 @@
                   (and (c-expression? source-expression)
                        (eq? (c-expression-op source-expression) 'difference-quotient)))))))
 
-;; limit-transition-diagnostics : calculus-model? hash? calculus-computation? list? -> list?
-;;   Rejects a line handoff that lacks a finite, structurally matching claim.
-(define (limit-transition-diagnostics model values computation events)
+;; limit-transition-diagnostics : calculus-lesson? calculus-model? hash? calculus-computation? list? -> list?
+;;   Rejects a line handoff without a finite matching claim, shared graph view,
+;;   or its required source-visible/target-hidden presentation state.
+(define (limit-transition-diagnostics lesson model values computation events)
   (for/list ([event (in-list events)]
              #:when (and (eq? (c-action-kind (c-event-action event)) 'limit-transition)
-                         (not (valid-limit-transition?
-                               (c-event-action event)
-                               (parameter-values-before event events values model computation)
-                               model computation))))
+                         (let ([state
+                                (event-state-before
+                                 event events
+                                 (cons values (initial-visibility lesson))
+                                 model computation lesson)])
+                           (not (valid-limit-transition?
+                                 (c-event-action event) (car state) model computation
+                                 #:lesson lesson #:visible (cdr state))))))
     (calculus-diagnostic 'error 'limit-transition #f #f (c-event-end event)
-                         "limit-transition requires anchored nonvertical lines and a matching finite slope limit claim")))
+                         "limit-transition requires a matching finite slope claim, shared graph view, visible source, and hidden target")))
 
 ;; compile-calculus-lesson : calculus-lesson? keyword-options -> calculus-plan?
 ;;   Lowers a headless lesson into immutable events, moments, and diagnostics.
@@ -2450,7 +2582,8 @@
             (append (action-domain-diagnostics model initial computation events)
                     (refinement-diagnostics model initial computation events)
                     (trace-diagnostics model initial computation events)
-                    (limit-transition-diagnostics model initial computation events)
+                    (focus-diagnostics lesson model initial computation events)
+                    (limit-transition-diagnostics lesson model initial computation events)
                     (together-diagnostics events))))
   (calculus-plan lesson profile initial computation (immutable-list-copy events) time diagnostics
                  (make-immutable-hash (for/list ([(key value) (in-hash moments)]) (cons key value)))))
@@ -2465,20 +2598,33 @@
   (unless root (raise-arguments-error 'calculus-snapshot-ref "known public mathematical address" "address" address))
   (for/fold ([value root]) ([part (in-list (rest pieces))]) (c-part value part)))
 
+;; interpolate-window : list? list? real? -> list?
+;;   Produces one purely presentational camera window without changing any
+;;   mathematical coordinate or graph domain.
+(define (interpolate-window start target progress)
+  (for/list ([from (in-list start)] [to (in-list target)])
+    (+ from (* progress (- to from)))))
+
 ;; apply-event : pair? c-event? real? calculus-model? calculus-computation? -> pair?
 ;;   Computes one event's state at a requested time with no frame history.
-(define (apply-event state event time model computation)
+(define (apply-event state event time model computation [lesson #f])
   (define action (c-event-action event))
   (define kind (c-action-kind action))
   (define start (c-event-start event)) (define end (c-event-end event))
   (if (< time start) state
       (let ([values (car state)] [visible (cdr state)])
-        (define (set-visible targets on?)
+        (define (set-visible targets on? #:clear-trace-prefix? [clear-trace-prefix? #f])
           (for/fold ([current visible]) ([target (in-list targets)])
             (define key (target-key target))
-            (if key (hash-set current key on?) current)))
+            (if key
+                (let ([updated (hash-set current key on?)])
+                  (if clear-trace-prefix?
+                      (hash-remove updated (trace-prefix-key target))
+                      updated))
+                current)))
         (case kind
-          [(show show-label) (cons values (set-visible (c-action-targets action) #t))]
+          [(show) (cons values (set-visible (c-action-targets action) #t #:clear-trace-prefix? #t))]
+          [(show-label) (cons values (set-visible (c-action-targets action) #t))]
           [(hide hide-label) (cons values (set-visible (c-action-targets action) #f))]
           [(read) (cons values (set-visible (c-action-targets action) #t))]
           [(vary approach)
@@ -2533,7 +2679,8 @@
                state)]
           [(limit-transition)
            (define targets (c-action-targets action))
-           (if (valid-limit-transition? action values model computation)
+           (if (valid-limit-transition? action values model computation
+                                        #:lesson lesson #:visible visible)
                (let ([source-key (target-key (first targets))]
                      [target-key* (target-key (second targets))])
                  (cons values
@@ -2543,29 +2690,81 @@
                              [target-key* (hash-set visible target-key* #t)]
                              [else visible])))
                state)]
+          [(focus)
+           (define target-window
+             (and lesson (focus-target-window action values model computation lesson)))
+           (if target-window
+               (let* ([view (car target-window)]
+                      [target (cdr target-window)]
+                      [key (view-window-key view)]
+                      [basis (hash-ref values snapshot-basis-key values)]
+                      [start-window
+                       (or (and key (hash-ref visible key #f))
+                           (view-window-values view basis model computation))]
+                      [progress (if (= start end) 1
+                                    (min 1 (max 0 (/ (- time start) (- end start)))))] )
+                 (if (and key start-window)
+                     (cons values (hash-set visible key
+                                            (interpolate-window start-window target progress)))
+                     state))
+               state)]
+          [(restore-view)
+           (define view
+             (and lesson (= (length (c-action-targets action)) 1)
+                  (resolve-view-reference lesson (first (c-action-targets action)))))
+           (define key (and view (view-window-key view)))
+           (define basis (hash-ref values snapshot-basis-key values))
+           (define baseline (and view (view-window-values view basis model computation)))
+           (define start-window (or (and key (hash-ref visible key #f)) baseline))
+           (if (and view key baseline start-window
+                    (valid-restore-view? action lesson))
+               (let ([progress (if (= start end) 1
+                                   (min 1 (max 0 (/ (- time start) (- end start)))))])
+                 (cons values
+                       (if (= progress 1)
+                           (hash-remove visible key)
+                           (hash-set visible key
+                                     (interpolate-window start-window baseline progress)))))
+               state)]
           [(trace)
-           (define progressed-values
-             (for/fold ([current values]) ([target (in-list (c-action-targets action))])
-               (define trace-object (node-raw target))
-               (if (valid-trace-target? target current model computation)
-                   (let* ([parameter (hash-ref (c-object-options trace-object) 'parameter #f)]
-                          [over (hash-ref (c-object-options trace-object) 'over #f)]
-                          [id (and (c-node? parameter) (c-node-id parameter))])
-                     (if (and id (c-domain? over)
-                              (memq (c-domain-kind over) '(closed open closed-open open-closed))
-                              (= (length (c-domain-arguments over)) 2))
-                         (let ([left-result (eval-raw (first (c-domain-arguments over)) current model computation)]
-                               [right-result (eval-raw (second (c-domain-arguments over)) current model computation)])
-                           (if (and (eq? (calculus-result-status left-result) 'defined)
-                                    (eq? (calculus-result-status right-result) 'defined))
-                               (let ([progress (if (= start end) 1 (min 1 (max 0 (/ (- time start) (- end start)))))])
-                                 (hash-set current id (+ (calculus-result-value left-result)
-                                                         (* progress (- (calculus-result-value right-result)
-                                                                        (calculus-result-value left-result))))))
-                               current))
-                         current))
-                   current)))
-           (cons progressed-values (set-visible (c-action-targets action) #t))]
+           (let loop ([remaining (c-action-targets action)]
+                      [current-values values]
+                      [current-visible visible])
+             (cond
+               [(null? remaining) (cons current-values current-visible)]
+               [else
+                (define target (first remaining))
+                (define trace-object (node-raw target))
+                (cond
+                  [(not (valid-trace-target? target current-values model computation))
+                   (loop (rest remaining) current-values current-visible)]
+                  [else
+                   (define parameter (hash-ref (c-object-options trace-object) 'parameter #f))
+                   (define over (hash-ref (c-object-options trace-object) 'over #f))
+                   (define id (and (c-node? parameter) (c-node-id parameter)))
+                   (define left-result
+                     (and (c-domain? over) (= (length (c-domain-arguments over)) 2)
+                          (eval-raw (first (c-domain-arguments over)) current-values model computation)))
+                   (define right-result
+                     (and (c-domain? over) (= (length (c-domain-arguments over)) 2)
+                          (eval-raw (second (c-domain-arguments over)) current-values model computation)))
+                   (if (and id
+                            (eq? (calculus-result-status left-result) 'defined)
+                            (eq? (calculus-result-status right-result) 'defined))
+                       (let* ([progress (if (= start end) 1
+                                            (min 1 (max 0 (/ (- time start) (- end start)))))]
+                              [next-value (+ (calculus-result-value left-result)
+                                             (* progress (- (calculus-result-value right-result)
+                                                            (calculus-result-value left-result))))]
+                              [next-values (hash-set current-values id next-value)]
+                              [key (target-key target)]
+                              [next-visible
+                               (if key
+                                   (hash-set (hash-set current-visible key #t)
+                                             (trace-prefix-key target) next-value)
+                                   current-visible)])
+                         (loop (rest remaining) next-values next-visible))
+                       (loop (rest remaining) current-values current-visible))])]))]
           [(explain) (cons values (set-visible (c-action-targets action) #t))]
           [else state]))))
 
@@ -2581,10 +2780,10 @@
   (cons (merge-hash (car base) (car aggregate) (car result))
         (merge-hash (cdr base) (cdr aggregate) (cdr result))))
 
-;; apply-events-at : pair? list? real? real? calculus-model? calculus-computation? -> pair?
+;; apply-events-at : pair? list? real? real? calculus-model? calculus-computation? [calculus-lesson?] -> pair?
 ;;   Samples sequential events in source order and together children from one
 ;;   pre-group state, skipping groups rejected during compilation.
-(define (apply-events-at initial events time cutoff model computation)
+(define (apply-events-at initial events time cutoff model computation [lesson #f])
   (define conflicts (conflicting-event-groups events))
   (let loop ([remaining events] [state initial])
     (cond
@@ -2613,7 +2812,7 @@
           (define group-state
             (for/fold ([merged state]) ([child (in-list group-events)])
               (merge-group-state state merged
-                                 (apply-event state child time model computation))))
+                                 (apply-event state child time model computation lesson))))
           (loop (filter (lambda (candidate)
                           (not (equal? (c-event-group candidate)
                                        (c-event-group event))))
@@ -2621,7 +2820,7 @@
                 group-state)]
          [else
           (loop (rest remaining)
-                (apply-event state event time model computation))])])))
+                (apply-event state event time model computation lesson))])])))
 
 ;; initial-visibility : calculus-lesson? -> immutable-hash?
 ;;   Applies only persistent initial show commands to a fresh presentation map.
@@ -2654,7 +2853,7 @@
   (define state
     (apply-events-at (cons (calculus-plan-values plan) (initial-visibility lesson))
                      (calculus-plan-events plan) time cutoff model
-                     (calculus-plan-computation plan)))
+                     (calculus-plan-computation plan) lesson))
   (define diagnostics
     (for/list ([constraint (in-list (calculus-model-constraints model))]
                #:when #t
@@ -2691,6 +2890,85 @@
                      (calculus-snapshot-values snapshot)
                      (calculus-snapshot-model snapshot)
                      (calculus-snapshot-computation snapshot)))
+
+;; calculus-snapshot-trace-points : calculus-snapshot? c-node? [#:samples exact-positive-integer?]
+;;                                  -> (listof (or/c point? #f))
+;;   Evaluates a locus at deterministic authored sweep coordinates for the
+;;   native adapter.  The sweep parameter shadows only its sampled coordinate;
+;;   every other parameter comes from the immutable snapshot.  #f records a
+;;   mathematical gap, never a pixel-derived discontinuity.  An active trace
+;;   uses its stored sweep prefix; a statically shown locus uses its full span.
+(define (calculus-snapshot-trace-points snapshot locus #:samples [samples 160])
+  (check 'calculus-snapshot-trace-points calculus-snapshot? "calculus-snapshot?" snapshot)
+  (check 'calculus-snapshot-trace-points c-node? "trace-of locus node" locus)
+  (check 'calculus-snapshot-trace-points exact-positive-integer? "exact positive sample count" samples)
+  (define raw (c-node-data locus))
+  (define model (calculus-snapshot-model snapshot))
+  (define values (calculus-snapshot-values snapshot))
+  (define computation (calculus-snapshot-computation snapshot))
+  (cond
+    [(not (and (c-object? raw) (eq? (c-object-kind raw) 'trace-of))) '()]
+    [else
+     (define parameter (hash-ref (c-object-options raw) 'parameter #f))
+     (define over (hash-ref (c-object-options raw) 'over #f))
+     (define source (and (pair? (c-object-arguments raw)) (first (c-object-arguments raw))))
+     (define parameter-id (and (c-node? parameter) (c-node-id parameter)))
+     (define bounds
+       (and parameter-id
+            (c-domain? over)
+            (= (length (c-domain-arguments over)) 2)
+            (let ([left (eval-raw (first (c-domain-arguments over)) values model computation)]
+                  [right (eval-raw (second (c-domain-arguments over)) values model computation)])
+              (and (eq? (calculus-result-status left) 'defined)
+                   (eq? (calculus-result-status right) 'defined)
+                   (finite-real? (calculus-result-value left))
+                   (finite-real? (calculus-result-value right))
+                   (< (calculus-result-value left) (calculus-result-value right))
+                   (cons (calculus-result-value left) (calculus-result-value right))))))
+     (cond
+       [(not bounds) '()]
+       [else
+        (define left (car bounds))
+        (define right (cdr bounds))
+        (define stored-prefix
+          (hash-ref (calculus-snapshot-visible snapshot) (trace-prefix-key locus) #f))
+        (define prefix
+          (if (finite-real? stored-prefix)
+              (min right (max left stored-prefix))
+              right))
+        (for/list ([index (in-range (add1 samples))])
+          (define sweep-value (+ left (* (/ index samples) (- right left))))
+          (cond
+            [(> sweep-value prefix) #f]
+            [else
+             (define environment (hash-set values parameter-id sweep-value))
+             (define inside? (domain-contains? over sweep-value environment model computation))
+             (define result
+               (and (eq? (calculus-result-status inside?) 'defined)
+                    (calculus-result-value inside?)
+                    (eval-raw source environment model computation)))
+             (and result
+                  (eq? (calculus-result-status result) 'defined)
+                  (let ([point (calculus-result-value result)])
+                    (and (pair? point)
+                         (finite-real? (car point))
+                         (finite-real? (cdr point))
+                         point)))]))])]))
+
+;; calculus-snapshot-view-window : calculus-snapshot? c-view? -> (or/c (list/c finite-real? finite-real? finite-real? finite-real?) #f)
+;;   Returns the active graph-view camera window for the native adapter. #f
+;;   means the prepared declared window is active; camera state never changes
+;;   a model value, graph domain, or point coordinate.
+(define (calculus-snapshot-view-window snapshot view)
+  (check 'calculus-snapshot-view-window calculus-snapshot? "calculus-snapshot?" snapshot)
+  (check 'calculus-snapshot-view-window c-view? "graph view" view)
+  (define window (hash-ref (calculus-snapshot-visible snapshot) (view-window-key view) #f))
+  (and (list? window)
+       (= (length window) 4)
+       (andmap finite-real? window)
+       (< (first window) (second window))
+       (< (third window) (fourth window))
+       window))
 
 ;; calculus-snapshot-function-branch : calculus-snapshot? any/c finite-real? -> calculus-result?
 ;;   Identifies a selected piecewise source branch without inferring topology
