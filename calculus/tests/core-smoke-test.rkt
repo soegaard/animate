@@ -115,6 +115,24 @@
     [f (function (x) (* x x))]
     [I (definite-integral f #:from 0 #:to 2)]))
 
+;; nested-refinement : calculus-lesson?
+;;   Changes one direct integer partition count at two atomic boundaries.
+(define-calculus-lesson nested-refinement
+  (model
+    [n (parameter 4 #:domain (integers 1 32) #:kind 'integer)]
+    [P (uniform-partition 0 2 #:count n)])
+  (views [number-line (number-line-view #:objects (P))])
+  (step refine-cells (refine P #:counts (list 8 16) #:duration 1)))
+
+;; nonnested-refinement : calculus-lesson?
+;;   Deliberately asks for a count which cannot preserve uniform cell ancestry.
+(define-calculus-lesson nonnested-refinement
+  (model
+    [n (parameter 4 #:domain (integers 1 32) #:kind 'integer)]
+    [P (uniform-partition 0 2 #:count n)])
+  (views [number-line (number-line-view #:objects (P))])
+  (step refine-cells (refine P #:counts (list 6) #:duration 1)))
+
 
 ;;;
 ;;; Tests
@@ -169,7 +187,22 @@
                   (calculus-model-at numeric-integral-model
                                      #:computation (calculus-computation #:integration-budget 2))
                   'I))
-                'unresolved))
+                'unresolved)
+  (define refinement-plan (compile-calculus-lesson nested-refinement))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample refinement-plan #:at 5/2) 'n))
+                4)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample refinement-plan #:at 13/5) 'n))
+                8)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample refinement-plan #:at 'final) 'n))
+                16)
+  (define nonnested-plan (compile-calculus-lesson nonnested-refinement))
+  (check-equal? (length (calculus-plan-diagnostics nonnested-plan)) 1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample nonnested-plan #:at 'final) 'n))
+                4))
 
 (module+ test
   (run-calculus-core-smoke-tests))

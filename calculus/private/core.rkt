@@ -1298,13 +1298,23 @@
 ;;   Selects a target's root key for inherited visibility.
 (define (target-root-key key) (and key (list (first key))))
 
+;; refine-count-expressions : c-action? -> list?
+;;   Extracts the held count sequence so each requested transition gets one duration.
+(define (refine-count-expressions action)
+  (define counts (hash-ref (c-action-options action) 'counts '()))
+  (cond
+    [(and (c-expression? counts) (eq? (c-expression-op counts) 'list))
+     (c-expression-arguments counts)]
+    [(list? counts) counts]
+    [else '()]))
+
 ;; duration-of : c-action? nonnegative-real? -> nonnegative-real?
 ;;   Resolves one action's semantic duration without native timing callbacks.
 (define (duration-of action fallback)
   (case (c-action-kind action)
     [(set-parameter checkpoint) 0]
     [(pause) (first (c-action-targets action))]
-    [(refine) (* fallback (length (hash-ref (c-action-options action) 'counts '())))]
+    [(refine) (* fallback (length (refine-count-expressions action)))]
     [(together) #f]
     [else (hash-ref (c-action-options action) 'duration fallback)]))
 
@@ -1413,6 +1423,67 @@
          (apply-event state prior (c-event-end prior) model computation)
          state))))
 
+;; refinement-count-parameter : c-action? -> (or/c c-node? #f)
+;;   Finds the direct integer capability owned by a uniform partition target.
+(define (refinement-count-parameter action)
+  (define partition
+    (and (pair? (c-action-targets action)) (first (c-action-targets action))))
+  (define raw (and (c-node? partition) (node-raw partition)))
+  (define count
+    (and (c-object? raw)
+         (eq? (c-object-kind raw) 'uniform-partition)
+         (hash-ref (c-object-options raw) 'count #f)))
+  (and (c-node? count)
+       (eq? (c-node-kind count) 'parameter)
+       (eq? (c-param-spec-kind (c-node-data count)) 'integer)
+       count))
+
+;; valid-refinement-counts? : c-action? hash? calculus-model? calculus-computation? -> boolean?
+;;   Checks one nested sequence of direct integer partition counts.
+(define (valid-refinement-counts? action environment model computation)
+  (define parameter (refinement-count-parameter action))
+  (define count-expression (hash-ref (c-action-options action) 'counts #f))
+  (define result
+    (and count-expression (eval-raw count-expression environment model computation)))
+  (and parameter
+       result
+       (eq? (calculus-result-status result) 'defined)
+       (let ([counts (calculus-result-value result)])
+         (and (list? counts)
+              (pair? counts)
+              (let loop ([previous (hash-ref environment (c-node-id parameter))]
+                         [remaining counts])
+                (cond
+                  [(null? remaining) #t]
+                  [else
+                   (define next (car remaining))
+                   (define inside?
+                     (and (exact-integer? next)
+                          (positive? next)
+                          (domain-contains? (c-param-spec-domain (c-node-data parameter))
+                                            next environment model computation)))
+                   (and (exact-integer? next)
+                        (exact-integer? previous)
+                        (positive? previous)
+                        (> next previous)
+                        (zero? (remainder next previous))
+                        inside?
+                        (eq? (calculus-result-status inside?) 'defined)
+                        (calculus-result-value inside?)
+                        (loop next (cdr remaining)))]))))))
+
+;; refinement-diagnostics : calculus-model? hash? calculus-computation? list? -> list?
+;;   Rejects nonnested or noninteger refinement descriptions before sampling.
+(define (refinement-diagnostics model values computation events)
+  (for/list ([event (in-list events)]
+             #:when (and (eq? (c-action-kind (c-event-action event)) 'refine)
+                         (not (valid-refinement-counts?
+                               (c-event-action event)
+                               (parameter-values-before event events values model computation)
+                               model computation))))
+    (calculus-diagnostic 'error 'refinement #f #f (c-event-end event)
+                         "refine requires a direct integer parameter and strictly nested count multiples")))
+
 ;; action-domain-diagnostics : calculus-model? hash? calculus-computation? list? -> list?
 ;;   Checks parameter kind, authored stops, endpoints, and continuous paths
 ;;   before native output, while keeping invalid actions out of sampled states.
@@ -1500,7 +1571,8 @@
     (set! time (+ time (or (c-step-pause step) (calculus-timing-data-step-pause timing)))))
   (define diagnostics
     (filter (lambda (diagnostic) diagnostic)
-            (action-domain-diagnostics model initial computation events)))
+            (append (action-domain-diagnostics model initial computation events)
+                    (refinement-diagnostics model initial computation events))))
   (calculus-plan lesson profile initial computation (immutable-list-copy events) time diagnostics
                  (make-immutable-hash (for/list ([(key value) (in-hash moments)]) (cons key value)))))
 
@@ -1555,6 +1627,27 @@
            (define value-result (eval-raw (second (c-action-targets action)) values model computation))
            (if (and (c-node? parameter) (eq? (calculus-result-status value-result) 'defined))
                (cons (hash-set values (c-node-id parameter) (calculus-result-value value-result)) visible) state)]
+          [(refine)
+           (define parameter (refinement-count-parameter action))
+           (define count-expression (hash-ref (c-action-options action) 'counts #f))
+           (define count-result
+             (and count-expression (eval-raw count-expression values model computation)))
+           (if (and parameter
+                    count-result
+                    (eq? (calculus-result-status count-result) 'defined)
+                    (valid-refinement-counts? action values model computation))
+               (let* ([counts (calculus-result-value count-result)]
+                      [segment-duration (/ (- end start) (length counts))]
+                      [completed
+                       (min (length counts)
+                            (max 0 (inexact->exact
+                                    (floor (/ (- time start) segment-duration)))))] )
+                 (cons (if (zero? completed)
+                           values
+                           (hash-set values (c-node-id parameter)
+                                     (list-ref counts (sub1 completed))))
+                       visible))
+               state)]
           [(trace)
            (define progressed-values
              (for/fold ([current values]) ([target (in-list (c-action-targets action))])
