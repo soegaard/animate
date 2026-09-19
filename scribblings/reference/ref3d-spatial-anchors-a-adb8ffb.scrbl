@@ -16,8 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-S begins the annotation layer with immutable @racket[anchor3d?]
-descriptors. @racket[vertex-anchor3d], @racket[edge-anchor3d],
+Spatial annotations use immutable @racket[anchor3d?] descriptors. @racket[vertex-anchor3d], @racket[edge-anchor3d],
 @racket[face-anchor3d], @racket[curve-anchor3d], @racket[surface-anchor3d],
 and bounds/origin anchors resolve after every spatial transformation into a
 @racket[resolved-anchor3d] world point, normal/tangent when available, source
@@ -74,6 +73,6 @@ formula labels or camera-facing screen sizing. Leaders are fixed one-pixel grey
 not claim 3D occlusion or textured styling. The executable anchor probe is
 @filepath{examples/3d/anchor-aware-labels.rkt}.
 
-The canonical acceptance scene is
+An example is
 @filepath{examples/3d/sphere-plane-section.rkt}.
 

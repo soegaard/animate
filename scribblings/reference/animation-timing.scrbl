@@ -85,9 +85,8 @@ easing. Easing changes interpolation, not schedule allocation.
 
 Before the concrete local start, the wrapped content has no effect. During its
 active interval it is sampled using local normalized progress; after its active
-endpoint, its exact semantic endpoint is held. SCENE-CV permits timed wrappers
-inside Visual/scalar and camera compositions and permits a composition itself to
-be wrapped. Another @racket[timed] wrapper is not a valid @racket[request]
+endpoint, its exact semantic endpoint is held. Timed wrappers are permitted inside Visual/scalar and camera compositions,
+and a composition itself may be wrapped. Another @racket[timed] wrapper is not a valid @racket[request]
 value. A timed @racket[camera-follow] samples its target only while its own
 interval is active, then holds the resulting endpoint view.
 }
@@ -146,20 +145,18 @@ when nested, it occupies the interval assigned by its parent.
 An unwrapped direct child contributes one intrinsic timing unit. A direct
 @racket[timed] child contributes @racket[(+ start duration)] units. The direct
 child spans are placed consecutively in argument order and their total is scaled
-to the succession's concrete assigned duration. Thus unwrapped children still
-receive equal shares exactly as in SCENE-AO, while explicit timed durations act
+to the succession's concrete assigned duration. Thus unwrapped children receive equal shares, while explicit timed durations act
 as proportional sequence weights. A timed child's start portion is a scaled hold
 delay before its active content.
 
-A bare nested composition still counts as one direct child, preserving AO--AQ
-parent allocation. Wrap that nested composition with @racket[timed] when it
+A bare nested composition counts as one direct child in its parent's allocation. Wrap that nested composition with @racket[timed] when it
 should reserve a non-unit or delayed parent-level span. Once assigned an interval,
 the nested composition recursively applies its own timing rule.
 
 Every leaf is compiled against the exact semantic state at its own start
-boundary. Relative requests therefore chain from prior endpoints, and SCENE-AN's
+boundary. Relative requests therefore chain from prior endpoints. The scheduler supports
 structural introduction, removal, same-ID reintroduction, overlap checks, and
-direct arbitrary-time sampling are reused. Easing is inherited independently by
+direct arbitrary-time sampling. Easing is inherited independently by
 each leaf; a nested timed child may override it.
 
 At least one child is required. A single list of valid children is accepted in
@@ -224,8 +221,8 @@ Every unwrapped direct child has one intrinsic timing unit. A direct
 @racket[timed] child has span @racket[(+ start duration)]. All children share the
 group start; their spans are scaled against the longest direct span so the
 longest child reaches the group endpoint. Shorter children finish earlier and
-hold their exact endpoints. If no direct child is timed, every span is one and
-SCENE-AP's original full-interval timing is unchanged.
+hold their exact endpoints. If no direct child is timed, every span is one and each child occupies the
+full interval.
 
 A timed child's scaled start portion is a delay. A bare nested succession, group,
 or lagged start still contributes one parent-level unit and recursively expands
@@ -235,7 +232,7 @@ inside the concrete interval it receives; wrap that nested composition with
 Existing component rules still apply after complete expansion: compatible
 components such as translation and rotation may share one target, while two
 positive-overlap updates to the same target/component are rejected. The final
-leaves use the SCENE-AN scheduler, preserving exact-boundary compilation,
+leaves use the scheduled-leaf engine, preserving exact-boundary compilation,
 structural semantics, easing inheritance, camera-follow behavior, and direct
 arbitrary-time sampling.
 
@@ -301,7 +298,7 @@ previous raw start plus @italic{r} times the previous child's span, where
 @italic{r} is @racket[lag-ratio]. The complete raw schedule envelope is then
 scaled to the concrete interval assigned to the lagged composition.
 
-When every direct span is one, this reduces exactly to the SCENE-AQ formula
+When every direct span is one, this gives the formula
 @racket[(/ D (+ 1 (* (sub1 n) r)))]. More generally,
 @racket[#:lag-ratio 0] has duration-scaled @racket[animation-group] timing and
 @racket[#:lag-ratio 1] has duration-scaled @racket[succession] timing even when
@@ -311,10 +308,9 @@ child's span; ratios greater than one may leave hold gaps.
 A timed child's start portion becomes scaled delay before its active content. A
 bare nested composition contributes one parent-level unit and recursively applies
 its own rule in the interval it receives; wrap it with @racket[timed] for an
-explicit parent-level duration or delay. All expanded leaves use the SCENE-AN
-scheduled-leaf engine, so exact boundary compilation, conflict validation,
-structural ordering, easing inheritance, and arbitrary-time sampling remain
-unchanged.
+explicit parent-level duration or delay. All expanded leaves use the scheduled-leaf engine, with exact boundary
+compilation, conflict validation, structural ordering, easing inheritance, and
+arbitrary-time sampling.
 
 At least one child is required. A single list of valid children is accepted in
 place of separate arguments. Unified style transitions, camera requests, timed

@@ -1417,8 +1417,7 @@ The default @racket['auto] key fingerprints the serializable scene value,
 section identity/bounds, FPS, camera/renderers, Racket version, and bytes of
 the declared @racket[asset-files]. It reuses a matching
 @filepath{.animate-section-cache.rktd} manifest only if every expected PNG is
-still present. SCENE-DL built-in @racket[rate-function?] values remain
-serializable; if an arbitrary procedure is present in the scene representation,
+still present. Built-in @racket[rate-function?] values are serializable; if an arbitrary procedure is present in the scene representation,
 automatic caching is disabled conservatively. An explicit symbol/string remains
 available for an author-managed key; @racket[#f] disables caching and removes
 any existing section cache manifest. External dependencies are not discovered:
@@ -1591,7 +1590,7 @@ it requires exactly one fewer edge than vertices, one root without an incoming
 edge (or a matching @racket[#:tree-root]), one incoming edge for every other
 vertex, and reachability from that root. Sibling order is declared edge order.
 
-SCENE-DP adds deterministic construction-time layouts. @racket['spring] is a
+The graph constructors provide deterministic construction-time layouts. @racket['spring] is a
 fixed Jacobi force iteration with the supplied positive iteration, attraction,
 and repulsion values. @racket['layered] is available only on @racket[digraph]
 and requires an acyclic edge relation. @racket['partite] puts the declared

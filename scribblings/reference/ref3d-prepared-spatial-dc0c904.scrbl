@@ -69,13 +69,13 @@ Returns accumulated arc length from the prepared range start.}
 immutable solver, field-evaluation, step, dense-segment, termination, and
 arc-length diagnostics for both fixed and adaptive trajectories.}
 
-@bold{Current T5 limits.} Arc length uses deterministic adaptive Simpson
+@bold{Current limits.} Arc length uses deterministic adaptive Simpson
 integration of each stored Hermite segment's tangent magnitude. Each segment
 retains an immutable cumulative table whose intervals are measured by the same
 integrator; arc-length endpoints remain numerical rather than symbolic. The
 low-speed policy isolates ordinary interior extrema of the stored Hermite
 tangent magnitude and bisects the first threshold crossing; it does not yet
-require a configurable run of consecutive slow observations. T2 detects
+require a configurable run of consecutive slow observations. @racket[ode-event3d] detects
 sign-changing roots and exact/tolerance-zero endpoints, but does not search for
 an isolated tangency whose sampled event values retain the same sign. AABB
 exits are split at all dense-coordinate extrema and then bisected; numerical

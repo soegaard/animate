@@ -27,8 +27,8 @@ its kind must match @racket[destination]. Interior samples use
 @racket[interpolate-value], while exact interval boundaries preserve the original
 source and requested destination representations. Named values use the
 same scheduler, easing, timing compositions, and conflict detection as Visual
-requests. They are not painted directly; SCENE-AW derived Visual resolvers may
-consume them and thereby change concrete rendered geometry.
+requests. They are not painted directly; derived Visual resolvers may consume them
+to determine concrete rendered geometry.
 
 An immutable @racket[scene-parameter?] may be used in place of @racket[id].
 }

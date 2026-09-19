@@ -437,7 +437,7 @@ so its open subpaths correspond to the open subpaths of @racket[source]. The two
 paths must contain the same nonzero number of subpaths, and every subpath must be
 open with positive finite arc length.
 
-For every source/destination subpath pair, the procedure uses the SCENE-AE
+For every source/destination subpath pair, the procedure uses the
 endpoint-direction score from @racket[path-geometry-align-open-for-morph]: both
 paths are sampled at @racket[sample-count] inclusive total-arc-length fractions,
 and destination reversal is selected only when its score is strictly lower.
@@ -445,7 +445,7 @@ One source subpath's samples are cached while every destination candidate for
 that assignment row is evaluated.
 
 After all pair costs are known, the same deterministic minimum-total-cost
-assignment policy as SCENE-AD chooses one distinct destination subpath for every
+assignment policy used for closed compound paths chooses one distinct destination subpath for every
 source subpath. Pairing is global rather than greedy. Exact assignment ties use
 the deterministic destination-index policy of
 @racket[path-geometry-align-compound-for-morph], while exact per-pair direction
@@ -480,9 +480,9 @@ have positive finite arc length; source/destination open-subpath counts must
 match; and source/destination closed-subpath counts must match.
 
 The procedure partitions both paths by @racket[path-subpath-closed?]. Open
-candidates are evaluated with the SCENE-AE endpoint-direction rule used by
+candidates are evaluated with the endpoint-direction rule used by
 @racket[path-geometry-align-open-for-morph]. Closed candidates are evaluated
-with the SCENE-AC phase/direction rule used by
+with the phase/direction rule used by
 @racket[path-geometry-align-for-morph]. The deterministic global assignment
 policy is then solved independently inside the open and closed classes. An open
 subpath is therefore never paired with a closed loop merely because it is
@@ -491,12 +491,12 @@ spatially nearby.
 After both assignments, selected destination subpaths are placed in the exact
 subpath order of @racket[source]. Each open pair may reverse only for a strictly
 lower score; each closed pair may choose cyclic phase and optional reversal under
-SCENE-AC's deterministic tie rules. Unchanged destination subpath objects are
+the closed-loop alignment procedure's deterministic tie rules. Unchanged destination subpath objects are
 reused, and when the entire correspondence is already a no-op the exact
 @racket[destination] object is returned.
 
 When one topology class is absent, this operation reduces to the corresponding
-SCENE-AF all-open or SCENE-AD all-closed behavior. Use
+all-open or all-closed compound alignment behavior. Use
 @racket[path-geometry-prepare-topology-changing-morph] when either topology-class
 count differs.
 
@@ -535,14 +535,13 @@ empty geometry and pure death to empty geometry. Open and closed topology
 classes are handled independently and are never paired directly with one
 another.
 
-Within each topology class, real open pairs use the SCENE-AE
-forward/reverse endpoint score and real closed pairs use the SCENE-AC
+Within each topology class, real open pairs use the
+forward/reverse endpoint score and real closed pairs use the
 phase/direction score. With the default @racket['forced] value for both penalty
 keywords, the rectangular assignment pads only the forced class-count difference
-with zero-cost dummy slots; matching topology counts therefore reduce exactly to
-SCENE-AG as before.
+with zero-cost dummy slots; matching topology counts therefore use mixed-compound alignment.
 
-SCENE-AJ adds an optional numeric policy. When both @racket[birth-penalty] and
+An optional numeric penalty policy allows additional births and deaths. When both @racket[birth-penalty] and
 @racket[death-penalty] are finite nonnegative reals, the procedure solves an
 augmented global assignment. A real source/destination edge costs its geometric
 correspondence score, a source-to-dummy edge costs @racket[death-penalty], a
@@ -551,21 +550,21 @@ cost zero. A poor real pair may therefore be replaced by death plus birth even
 when topology counts match. Exact primary-cost ties minimize the number of
 birth/death edges as a secondary objective, so equal-cost replacement does not
 occur. The two penalty keywords must either both be @racket['forced] or both be
-finite nonnegative real numbers. SCENE-AL additionally accepts sparse
+finite nonnegative real numbers. Numeric mode also accepts sparse
 @racket[birth-penalty-map] and @racket[death-penalty-map] hashes in numeric mode.
 Birth-map keys are exact nonnegative original destination subpath indexes;
 death-map keys are exact nonnegative original source subpath indexes. Map values
 are finite nonnegative real costs and missing keys fall back to the corresponding
 shared numeric penalty. Nonempty penalty maps are rejected in @racket['forced]
-mode. The sparse costs replace dummy-edge costs only. SCENE-AM additionally
+mode. The sparse costs replace dummy-edge costs only. The procedure also
 accepts @racket[match-penalty-map] in both forced and numeric modes. Each key is
 @racket[(cons source-index destination-index)] using original caller subpath
 indexes, and each finite nonnegative value is added to that real edge's existing
 geometric correspondence score. Missing pairs add zero. Pair penalties do not
 change topology classes or direction/phase alignment; they bias the global
 assignment after those per-edge geometric choices are scored. In numeric mode a
-penalized real edge also competes against death plus birth, while AJ's exact-tie
-preference for fewer topology changes remains unchanged. Direct preparation
+penalized real edge also competes against death plus birth, with exact ties still
+preferring fewer topology changes. Direct preparation
 rejects out-of-range pair indexes and keys that name impossible open/closed
 correspondence edges. @racket[allow-reverse?] and @racket[sample-count] retain
 their existing correspondence meanings.
@@ -578,10 +577,10 @@ seed at its own bounds center. Each seed preserves the real subpath's
 @racket[path-subpath-closed?] value. The controlled seeds have zero arc length;
 pre-existing zero-length real subpaths are rejected before assignment.
 
-SCENE-AI extends this placement with @racket[birth-anchor] and
-@racket[death-anchor]. Each accepts exactly @racket['bounds-center] or a finite
+The @racket[birth-anchor] and @racket[death-anchor] arguments control this
+placement. Each accepts exactly @racket['bounds-center] or a finite
 @racket[vec2]. An explicit point is local path geometry and is shared by every
-unmatched subpath on that side. SCENE-AK additionally accepts sparse
+unmatched subpath on that side. The procedure also accepts sparse
 @racket[birth-anchor-map] and @racket[death-anchor-map] hashes. Birth-map keys are
 exact nonnegative original destination subpath indexes; death-map keys are exact
 nonnegative original source subpath indexes. Map values use the same anchor
@@ -589,7 +588,7 @@ syntax. A missing key falls back to the corresponding shared anchor, while an
 explicit @racket['bounds-center] map value may override a shared @racket[vec2].
 Direct preparation rejects out-of-range keys. Anchor selection affects seed
 placement only; real-pair scores, direction/phase correspondence, penalties, and
-slot ordering are unchanged. In numeric SCENE-AJ penalty mode the selected
+slot ordering are unchanged. In numeric penalty mode the selected
 assignment may contain additional voluntary unmatched slots, and those slots use
 the same original-index map lookup.
 
@@ -603,9 +602,9 @@ additional interior slots even when endpoint counts match.
 
 Use the two results with @racket[path-geometry-normalize-for-morph] for explicit
 preparation, or use @racket[morph-to-topology-changing] for timeline
-compilation. This stage does not infer semantic holes, pair an open subpath
+compilation. This operation does not infer semantic holes, pair an open subpath
 directly with a closed loop, use appearance-aware scores, or accept arbitrary
-per-pair scoring callbacks beyond SCENE-AM sparse numeric additions.
+per-pair scoring callbacks beyond the sparse numeric additions.
 }
 
 @defproc[(path-geometry-align-compound-for-morph
@@ -622,7 +621,7 @@ closed subpaths correspond to the subpaths of @racket[source]. The two paths
 must contain the same nonzero number of subpaths, and every subpath must be
 closed with positive finite arc length.
 
-The procedure computes every source/destination pair cost with the SCENE-AC
+The procedure computes every source/destination pair cost with the
 closed-loop algorithm used by @racket[path-geometry-align-for-morph]. Thus each
 candidate pair may choose a cyclic phase and, when @racket[allow-reverse?] is
 true, reverse traversal. One source loop's score samples are cached while all
@@ -632,7 +631,7 @@ After all pair costs are known, a deterministic minimum-total-cost assignment
 selects one distinct destination subpath for every source subpath. Pairing is
 global rather than greedy. Exact assignment ties preserve earlier source-row
 matches when an equally good free destination exists and then prefer the lower
-destination index. Per-pair direction and phase ties retain the SCENE-AC rules.
+destination index. Per-pair direction and phase ties retain the closed-loop alignment rules.
 
 The returned value is ordinary immutable @racket[path-geometry] whose subpath
 order matches source correspondence. When pairing and per-loop alignment change
@@ -641,7 +640,7 @@ destination subpath objects are reused whenever possible.
 
 Use the result with @racket[path-geometry-normalize-for-morph] for explicit
 preparation, or use @racket[morph-to-compound-aligned] for timeline compilation.
-This stage does not add/remove subpaths, pair open subpaths, infer semantic hole
+This operation does not add/remove subpaths, pair open subpaths, infer semantic hole
 nesting, or support topology changes.
 }
 
@@ -944,7 +943,7 @@ Open subpath endpoints are shifted by their endpoint edge normals. Closed
 subpaths are joined cyclically, including the stored start vertex. Every edge
 participating in a nonzero offset must be a positive-length
 @racket[line-path-segment]. A zero-length edge, an exact 180-degree reversal, or
-a cubic source segment raises an exception in this stage. Cubic segments may
+a cubic source segment raises an exception. Cubic segments may
 still appear in the @emph{result} as round-join pieces.
 
 The construction is geometric rather than renderer-dependent: camera scale,
@@ -1089,8 +1088,8 @@ Example:
 
 @subsection{General Boolean Path Geometry and Clipping}
 
-SCENE-DY extends the immutable Boolean path operations to simple concave and
-compound closed paths. Each cubic contour is uniformly sampled into
+Immutable Boolean path operations support simple concave and compound closed
+paths. Each cubic contour is uniformly sampled into
 @racket[#:curve-samples] line pieces before clipping, so curve results are
 deterministic polygonal approximations rather than exact Bézier intersections.
 Each input contour must still be simple and closed.
@@ -1325,9 +1324,8 @@ Applies scale, rotation, and translation to a point, in that order.
 
 @subsection{General Affine Maps}
 
-SCENE-CY-A keeps @racket[affine-transform] as the established decomposed
-placement protocol and adds @racket[linear2] and @racket[affine2] for general
-mathematical maps. A @racket[linear2] value represents the matrix
+Use @racket[affine-transform] for decomposed placement, and @racket[linear2]
+or @racket[affine2] for general mathematical maps. A @racket[linear2] value represents the matrix
 
 @centered{@tt{| a  b |   | c  d |}}
 
@@ -1673,7 +1671,7 @@ current top-level scene Visual when @racket[scene-play] compiles the request.
 Nested group children are not searched.
 
 Frame-space Visuals are not valid follow targets; camera following is defined
-only for world-space top-level Visuals. A SCENE-AW derived target is resolved
+only for world-space top-level Visuals. A derived target is resolved
 against the same sampled scalar state before its world-space position is read.
 
 At each scene sample, following reads the target's actual sampled
@@ -1816,8 +1814,8 @@ every resolved target must be a world-space Visual. A top-level target is
 resolved by stable identity against @racket[(scene-current-state scene)], so a
 stale constructor value still selects the current scene value. A nested path is
 resolved with every enclosing group/formula transform and opacity composed into
-an independently measurable world-space Visual. SCENE-AW derived definitions
-are additionally evaluated against the current endpoint scalar values before
+an independently measurable world-space Visual. Derived definitions
+are evaluated against the current endpoint scalar values before
 measurement.
 
 A scene with no world-space Visuals, an empty target list, a missing target, or
@@ -2152,7 +2150,7 @@ Visual-path targets are resolved against each sampled scene state when a
 complete scene is converted to a Pict. A nested result has every enclosing
 group/formula transform and opacity composed before its world position is read.
 This makes the connector follow ordinary movement of a target or its parent
-without adding observer state to the timeline. SCENE-AW derived targets are
+without adding observer state to the timeline. Derived targets are
 resolved from the same sampled scalar state. The resolved Visual must belong to
 world space. A missing target or a frame-space target raises an exception at
 scene rendering.
@@ -2282,8 +2280,8 @@ color-managed or perceptual color-space conversion.
 
 @subsection{Semantic fill paints}
 
-SCENE-EC extends a fill from a solid @racket[color-spec?] to an immutable
-semantic @racket[paint?]. These values contain neither a drawing-context brush
+A fill may be an immutable semantic @racket[paint?] rather than only a solid
+@racket[color-spec?]. These values contain neither a drawing-context brush
 nor a bitmap. The Pict/racket-draw adapter creates a native vector gradient
 brush only when it renders a supported Visual, so a paint remains ordinary scene
 data through sampling, affine transforms, and clipping.

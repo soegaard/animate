@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-B keeps spatial content in a protocol distinct from ordinary
+Spatial content uses a protocol distinct from ordinary
 two-dimensional @racket[visual?] values. This prevents an ordinary scene path
 or two-dimensional animation request from silently treating a mesh as a Pict.
 Only its enclosing @racket[view3d] is an ordinary two-dimensional Visual.

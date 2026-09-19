@@ -1,6 +1,6 @@
 # Writing the Animate manual
 
-The entry point is `scribblings/animate.scrbl`. The published manual has four
+The entry point is `scribblings/animate.scrbl`. The published manual has five
 parts, in this order:
 
 | Part | Reader's question | What belongs here |
@@ -8,6 +8,7 @@ parts, in this order:
 | Concepts | What does this mean? | Explanations, distinctions, small diagrams. |
 | Cookbook | How do I do this one task? | Short recipes with imports, code, result, and one warning. |
 | Guide | How do I finish a whole job? | A step-by-step example that grows into a useful program. |
+| Complete Example Programs | How does a whole program fit together? | Real source files, selected frames, run commands, and a short walkthrough. |
 | Reference | What does this name accept and return? | Signatures, defaults, restrictions, errors, and module ownership. |
 
 Do not put a release history before a beginner's explanation. Do not make a
@@ -33,12 +34,18 @@ Preparing a slide is not encoding a video. A passing test is not a visual review
 
 ## Examples
 
-Standalone manual programs are in `scribblings/examples/`. Display them with
-`example-source` from `scribblings/private/examples.rkt`; do not maintain a second
-copy in the prose. This helper reads the file as text and does not execute it.
-Declare exports and keep file output out of module-level code. Each program must
-show its imports and must not use an undefined placeholder as a complete example.
-Clearly label small fragments that require a preceding example.
+Short Guide and Cookbook examples use `scribble/example` and run during the
+documentation build. Use `eval:check` for stable results. Complete programs
+live in `scribblings/examples/`. In the Complete Example Programs part, show
+them with `complete-source` from `scribblings/private/complete-examples.rkt`.
+It reads and syntax-colors the full source without evaluating it. Do not keep
+a second copy in the prose. The older `example-source` and `example-part`
+helpers remain for existing file-backed excerpts elsewhere.
+
+Declare exports and keep file output out of module-level code. Each complete
+program must show its imports and must not depend on an undefined placeholder.
+Register its sources, commands, and stored frames as described in
+`scribblings/COMPLETE-EXAMPLES.md`.
 
 Test those source files from the repository root:
 
@@ -52,14 +59,15 @@ Neither command makes MP4 files. Tests do not open a preview GUI.
 
 ## Navigation and compatibility
 
-The four part files use Scribble's `toc`/`grouper` styles, so they remain clear
+The five part files use Scribble's `toc`/`grouper` styles, so they remain clear
 parts in the multi-page manual. Chapters keep their existing explicit tags when
 rewritten. Links should target explicit tags, not generated HTML filenames.
 
-`cookbook/reference-recipes.scrbl` is included by `reference.scrbl`: despite its
-historical filename, it contains number-line and decoration API definitions.
-The path is retained to avoid breaking source references. New recipes live in
-the Cookbook; new API definitions live in the Reference.
+Coordinate decorations, marker/scatter/area APIs, and statistical diagrams
+have focused chapters under `reference/`. Worked examples for appearance,
+cameras, timing, path motion, correspondence, and plot styling live under
+`cookbook/`. Stable explicit tags follow the content when it moves. See
+`RECIPE-REFERENCE-LAYOUT.md` for the source ownership map.
 
 ## Validate and build
 

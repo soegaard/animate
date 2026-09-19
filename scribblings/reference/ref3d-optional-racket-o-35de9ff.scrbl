@@ -16,7 +16,7 @@
 
 @defmodule[animate/3d/opengl]
 
-SCENE-3D-P adds an explicit GPU implementation of the same
+This module provides an explicit GPU implementation of the
 @racket[renderer3d] protocol. Requiring this module is the opt-in boundary for
 @racketmodname[opengl] and @racketmodname[racket/gui/base]; neither
 @racketmodname[animate], @racketmodname[animate/3d], nor
@@ -76,12 +76,12 @@ renderer for the lifetime of its window. Camera motion changes uniforms and a
 viewport-size change only reallocates the FBO; neither reuploads immutable
 geometry.
 
-@bold{OpenGL limitations:} The first backend has one serialized context and
+@bold{OpenGL limitations:} The backend has one serialized context and
 therefore requires @racket[#:workers 1]; it does not create threaded GPU
 workers. It uses FBO readback rather than direct OpenGL preview-canvas
 composition. It supports Lambert/Blinn--Phong materials and a packed finite
 light stream with fixed limits of four directional, eight point, and four spot
-lights. The OpenGL backend supports V9 directional/spot maps through a
+lights. The OpenGL backend supports directional/spot shadow maps through a
 context-owned bounded depth-texture cache. There is no GPU picking, general
 mesh textures, point-light cube shadows, persistent
 mapped buffers, PBO pipelining, compute/geometry shaders, or order-independent
@@ -96,14 +96,11 @@ endpoints and in nonmonotonic camera-frame order. The canonical probe is
 @tt{(retained-renderer-summary)} there demonstrates a cache hit without
 changing the visible scene.
 
-The repository tool @filepath{tools/run-3d-probes.rkt} renders the canonical
-visual probes for any visible stage from @tt{3D-B} through @tt{3D-P}. For
-example, @tt{gracket tools/run-3d-probes.rkt --stage 3D-P --renderer opengl
---output rendered-examples/3d-p-opengl} writes frame PNGs plus @tt{manifest.rktd} and a
+The repository tool @filepath{tools/run-3d-probes.rkt} renders spatial visual
+probes. It writes frame PNGs plus @tt{manifest.rktd} and a
 @tt{diagnostics.rktd} file per probe. The manifest records Animate and Racket
 versions, renderer ID, output dimensions, sample times, sampled 3D cameras,
-renderer-fingerprint digests, compiled geometry keys/counts, frame hashes, and
-for O, compiled stroke/marker/outline counts and requested screen/world width
+renderer-fingerprint digests, compiled geometry keys/counts, frame hashes, and compiled stroke/marker/outline counts and requested screen/world width
 modes. @tt{--compare-renderers software,opengl} writes side-by-side software
 and OpenGL trees, per-frame absolute-difference PNGs, and channel-difference
 metrics in @tt{comparison.rktd}.

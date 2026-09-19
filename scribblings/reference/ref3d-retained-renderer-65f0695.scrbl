@@ -14,9 +14,9 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-N keeps @racket[animate/3d] pure and places effectful implementation
-choice in @racketmodname[animate/3d/render]. SCENE-3D-O extends that compiled
-view with ordered, renderer-neutral centreline strokes and screen markers. A
+The @racket[animate/3d] API is pure; effectful backend selection belongs to
+@racketmodname[animate/3d/render]. A compiled view includes ordered,
+renderer-neutral centreline strokes and screen markers. A
 backend receives an immutable @racket[render3d-request] containing a
 camera-independent compiled view, a frame specification, and a canonical
 attachment demand.  It returns one immutable @racket[renderer3d-frame-artifact]
@@ -71,8 +71,8 @@ an already returned render result.}
 The immutable declaration returned by @racket[renderer3d-capabilities-of].
 @racket[features] is an immutable set of symbols; @racket[limits] maps a
 symbol to an exact number (or a transparent future resource value), and
-@racket[diagnostics] records immutable backend details. It replaces the former
-nine positional booleans, which could not safely grow with renderer features.
+@racket[diagnostics] records immutable backend details. Feature membership and named limits describe the backend without relying on
+positional Boolean fields.
 }
 
 @defthing[renderer3d-known-features set?]{The vocabulary currently includes
@@ -126,6 +126,6 @@ explicitly support at most four directional lights, eight point lights, four
 spot lights, and eight clip planes; an over-limit request raises an error
 rather than silently dropping lights. Its maximum sample count is the live GL
 limit, although a one-sample framebuffer remains available. The software
-backend supports directional and spot maps in V8; the OpenGL backend supports
-the same descriptor kinds in V9 through a maximum of eight cached depth maps.
+backend supports directional and spot shadow maps. The OpenGL backend supports
+the same descriptor kinds with at most eight cached depth maps.
 

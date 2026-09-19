@@ -1,0 +1,1782 @@
+{
+  "schema": "animate-reference-prose-audit-v1",
+  "reference_files_checked": 106,
+  "prose_files_changed": 52,
+  "replacement_count": 234,
+  "visuals_inventory": {
+    "status": "verified original inventory and byte-identical signatures",
+    "description_forms_updated": 8
+  },
+  "changes": [
+    {
+      "file": "scribblings/reference/scene.scrbl",
+      "before_sha256": "d2b4ba4ff724f7891f9bfe4a921dc4a807bb908497b61e0ca54eb5771e5b407f",
+      "after_sha256": "2047a2cc480aca54aaf66c0f8f65deb7e414dfb0603c4fc9991783f3916633f1",
+      "edits": [
+        {
+          "edit": "prose-117",
+          "line_before_this_edit": 366,
+          "before": "including SCENE-AR local timing and",
+          "after": "including local timing and"
+        },
+        {
+          "edit": "prose-116",
+          "line_before_this_edit": 276,
+          "before": "Transform component endpoints follow the easing result, as in\nearlier versions.",
+          "after": "Transform component endpoints follow the easing result."
+        },
+        {
+          "edit": "prose-115",
+          "line_before_this_edit": 242,
+          "before": "In the historical full-clip case,",
+          "after": "In the full-clip case,"
+        },
+        {
+          "edit": "prose-114",
+          "line_before_this_edit": 219,
+          "before": "SCENE-CV gives camera requests those same local intervals.",
+          "after": "Camera requests use the same local intervals."
+        },
+        {
+          "edit": "prose-113",
+          "line_before_this_edit": 210,
+          "before": "geometry changes can still compose with an introduction exactly as in the\nhistorical simultaneous model.",
+          "after": "geometry changes can compose with an introduction."
+        },
+        {
+          "edit": "prose-112",
+          "line_before_this_edit": 180,
+          "before": "ordinary requests retain the historical\none-second default.",
+          "after": "ordinary requests default to one second."
+        },
+        {
+          "edit": "prose-111",
+          "line_before_this_edit": 177,
+          "before": "camera @racket[request] values retain the historical behavior: they run\nsimultaneously and share @racket[duration] and @racket[easing]. The exact\npre-SCENE-AN compilation path is used unchanged.",
+          "after": "camera @racket[request] values run simultaneously and share\n@racket[duration] and @racket[easing]."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/scene-state.scrbl",
+      "before_sha256": "7e5059994fc79fb92db7bc0b4a12f4c8708a511029c2bcff038f55ee04ce6e2a",
+      "after_sha256": "fed8dd86f1069315a2f9803c43d579ae909eb42e9756fb32b6151944b6ff57d3",
+      "edits": [
+        {
+          "edit": "prose-139",
+          "line_before_this_edit": 81,
+          "before": "SCENE-AX\nallows that resolver to recursively request other top-level Visuals.",
+          "after": "The resolver may recursively request other top-level Visuals."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-motion.scrbl",
+      "before_sha256": "2ce639c980db0d9b50fc9e9bec44251600518067251112dfaef856220446e348",
+      "after_sha256": "e4934c4c1271a7a618ede13a2dd0c59b36cfb30123c3088a708e791a5662829f",
+      "edits": [
+        {
+          "edit": "prose-065",
+          "line_before_this_edit": 250,
+          "before": "SCENE-DQ extends SCENE-CY-C's nonlinear companion to the affine-map layer.\nIt acts on world-space points and samples a path before mapping it,",
+          "after": "Pointwise mapping is the nonlinear counterpart of affine mapping. It acts on\nworld-space points and samples a path before mapping it,"
+        },
+        {
+          "edit": "prose-064",
+          "line_before_this_edit": 217,
+          "before": "Creates a SCENE-DK general affine-map request.",
+          "after": "Creates a general affine-map request."
+        },
+        {
+          "edit": "prose-063",
+          "line_before_this_edit": 56,
+          "before": "the\nSCENE-Y route point exactly",
+          "after": "the\nroute point exactly"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-appearance.scrbl",
+      "before_sha256": "a6a2a4314bb7b616d0d9c9eda53540f218a6c8dbbff39cdb39bf6724ad727f0d",
+      "after_sha256": "22d3461b1e137000990394957be17fdb3d401e8649ffbc01c6a016e8811fb345",
+      "edits": [
+        {
+          "edit": "prose-067",
+          "line_before_this_edit": 166,
+          "before": "The SCENE-AT rule that a current @racket[#f] fill or stroke cannot be\ncolor-interpolated therefore remains unchanged.",
+          "after": "A current @racket[#f] fill or stroke therefore cannot be color-interpolated."
+        },
+        {
+          "edit": "prose-066",
+          "line_before_this_edit": 41,
+          "before": "after\nAN--AR schedule expansion",
+          "after": "after\nschedule expansion"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-enter-leave.scrbl",
+      "before_sha256": "3f2dd7850d4c160dd84a41ea1cf2728fa125ff97b054b291c958da76426ec64e",
+      "after_sha256": "c13c2e172721949abe84f5e42cb715766a204fd84d3ac07948dee390a59a5908",
+      "edits": [
+        {
+          "edit": "prose-141",
+          "line_before_this_edit": 109,
+          "before": "In this first affine implementation, the named choices both\nmean the Visual's stable local reference origin;",
+          "after": "The named choices both mean the Visual's stable local reference origin;"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-path-correspondence.scrbl",
+      "before_sha256": "2d70814fc093cbe8fbcee8e37c7f6bfe19164bd2d76ed506547f11058140b222",
+      "after_sha256": "47ae764021f8430961bf6e989d4980b289b2975a78e9a48d6ebde65eefbdaa23",
+      "edits": [
+        {
+          "edit": "prose-073",
+          "line_before_this_edit": 224,
+          "before": "SCENE-AM's @racket[match-penalty-map]",
+          "after": "@racket[match-penalty-map]"
+        },
+        {
+          "edit": "prose-072",
+          "line_before_this_edit": 220,
+          "before": "SCENE-AL's @racket[birth-penalty-map]",
+          "after": "@racket[birth-penalty-map]"
+        },
+        {
+          "edit": "prose-071",
+          "line_before_this_edit": 218,
+          "before": "enables SCENE-AJ voluntary death+birth replacement",
+          "after": "enables voluntary death+birth replacement"
+        },
+        {
+          "edit": "prose-070",
+          "line_before_this_edit": 217,
+          "before": "@racket['forced], preserving SCENE-AH/AI matching.",
+          "after": "@racket['forced], which permits births and deaths only when topology counts differ."
+        },
+        {
+          "edit": "prose-069",
+          "line_before_this_edit": 210,
+          "before": "SCENE-AK's @racket[birth-anchor-map]",
+          "after": "@racket[birth-anchor-map]"
+        },
+        {
+          "edit": "prose-068",
+          "line_before_this_edit": 205,
+          "before": "the same correspondence rules as SCENE-AG.",
+          "after": "the same correspondence rules as mixed-compound path alignment."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-shapes.scrbl",
+      "before_sha256": "2f9b491c3d5b237e5719caf73bd9228aa0d724eea4e4fa98bfe194de94cb9479",
+      "after_sha256": "91b1d2b1bd686278c228cba55f9d224e7f864de48f411810d5b57fdf389b74b1",
+      "edits": [
+        {
+          "edit": "prose-149",
+          "line_before_this_edit": 107,
+          "before": "This first general matcher is intentionally conservative.",
+          "after": "General Visual matching is intentionally conservative."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-text.scrbl",
+      "before_sha256": "952f659dadf19010e6524eeaadb647979f546c8bc5a5f73acf805abb8a883e7e",
+      "after_sha256": "0535a9ed090e6cc080d24ffc2c7f676a2d66df4671efc68f7ecd09efdbdfd3d9",
+      "edits": [
+        {
+          "edit": "prose-150",
+          "line_before_this_edit": 241,
+          "before": "SCENE-DL represents built-in easings as transparent callable values. A\n@racket[rate-function?] can therefore be supplied anywhere the historical API\naccepts a one-argument procedure",
+          "after": "Built-in easings are represented as transparent callable values. A\n@racket[rate-function?] can therefore be supplied anywhere a one-argument\neasing procedure is accepted"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-values.scrbl",
+      "before_sha256": "ed89a00a56130349c9be9d257befbdb335142ea9321c760b68414e9ac156f51e",
+      "after_sha256": "1ac5a50a84a07187437e9a8fa1e4e231104eb3ba369e610582897ddf0f7c929c",
+      "edits": [
+        {
+          "edit": "prose-140",
+          "line_before_this_edit": 30,
+          "before": "They are not painted directly; SCENE-AW derived Visual resolvers may\nconsume them and thereby change concrete rendered geometry.",
+          "after": "They are not painted directly; derived Visual resolvers may consume them\nto determine concrete rendered geometry."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-timing.scrbl",
+      "before_sha256": "508cb9bdfee26d54c74fc8325885988690b5962d8a1b1b41ee50b2f5b59a5191",
+      "after_sha256": "7d03315e56a9e2d9012dd73754df8af895cadb8bdd1e4f327862b2ea914b7955",
+      "edits": [
+        {
+          "edit": "prose-081",
+          "line_before_this_edit": 311,
+          "before": "All expanded leaves use the SCENE-AN\nscheduled-leaf engine, so exact boundary compilation, conflict validation,\nstructural ordering, easing inheritance, and arbitrary-time sampling remain\nunchanged.",
+          "after": "All expanded leaves use the scheduled-leaf engine, with exact boundary\ncompilation, conflict validation, structural ordering, easing inheritance, and\narbitrary-time sampling."
+        },
+        {
+          "edit": "prose-080",
+          "line_before_this_edit": 301,
+          "before": "this reduces exactly to the SCENE-AQ formula",
+          "after": "this gives the formula"
+        },
+        {
+          "edit": "prose-079",
+          "line_before_this_edit": 234,
+          "before": "The final\nleaves use the SCENE-AN scheduler, preserving",
+          "after": "The final\nleaves use the scheduled-leaf engine, preserving"
+        },
+        {
+          "edit": "prose-078",
+          "line_before_this_edit": 224,
+          "before": "If no direct child is timed, every span is one and\nSCENE-AP's original full-interval timing is unchanged.",
+          "after": "If no direct child is timed, every span is one and each child occupies the\nfull interval."
+        },
+        {
+          "edit": "prose-077",
+          "line_before_this_edit": 157,
+          "before": "Relative requests therefore chain from prior endpoints, and SCENE-AN's\nstructural introduction, removal, same-ID reintroduction, overlap checks, and\ndirect arbitrary-time sampling are reused.",
+          "after": "Relative requests therefore chain from prior endpoints. The scheduler supports\nstructural introduction, removal, same-ID reintroduction, overlap checks, and\ndirect arbitrary-time sampling."
+        },
+        {
+          "edit": "prose-076",
+          "line_before_this_edit": 152,
+          "before": "A bare nested composition still counts as one direct child, preserving AO--AQ\nparent allocation.",
+          "after": "A bare nested composition counts as one direct child in its parent's allocation."
+        },
+        {
+          "edit": "prose-075",
+          "line_before_this_edit": 148,
+          "before": "Thus unwrapped children still\nreceive equal shares exactly as in SCENE-AO, while explicit timed durations act",
+          "after": "Thus unwrapped children receive equal shares, while explicit timed durations act"
+        },
+        {
+          "edit": "prose-074",
+          "line_before_this_edit": 88,
+          "before": "SCENE-CV permits timed wrappers\ninside Visual/scalar and camera compositions and permits a composition itself to\nbe wrapped.",
+          "after": "Timed wrappers are permitted inside Visual/scalar and camera compositions,\nand a composition itself may be wrapped."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/animation-other.scrbl",
+      "before_sha256": "48369f1d7ae3bb96c267bd40a1ad648d4b3f970329d80aefc411a4799388e150",
+      "after_sha256": "e2fc170875aaecc86eccddc3aa37f86dbc60327cff396b1b473dcc57d37b4022",
+      "edits": [
+        {
+          "edit": "prose-110",
+          "line_before_this_edit": 267,
+          "before": "This first underline slice accepts unrotated, unscaled text",
+          "after": "The request accepts unrotated, unscaled text"
+        },
+        {
+          "edit": "prose-109",
+          "line_before_this_edit": 109,
+          "before": "The first implementation uses the established adaptive pointwise path mapper.",
+          "after": "The request uses the adaptive pointwise path mapper."
+        },
+        {
+          "edit": "prose-108",
+          "line_before_this_edit": 72,
+          "before": "Creates a SCENE-DW time-dependent world-space deformation request.",
+          "after": "Creates a time-dependent world-space deformation request."
+        },
+        {
+          "edit": "prose-107",
+          "line_before_this_edit": 33,
+          "before": "Creates a SCENE-DQ world-space point-map request.",
+          "after": "Creates a world-space point-map request."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/native-model.scrbl",
+      "before_sha256": "15e63804a3d1f659fae385f62a40ddedfbd2cd5998f0dc4b0e4a3ab5ac0efcba",
+      "after_sha256": "255b57e64e98695276817ba8e44da709d64a594c545b506feb0a6a2d8d3a37a8",
+      "edits": [
+        {
+          "edit": "prose-006",
+          "line_before_this_edit": 271,
+          "before": "which the legacy transform model cannot",
+          "after": "which the decomposed transform model cannot"
+        },
+        {
+          "edit": "prose-005",
+          "line_before_this_edit": 268,
+          "before": "its own legacy scale must be",
+          "after": "its own scale must be"
+        },
+        {
+          "edit": "prose-004",
+          "line_before_this_edit": 260,
+          "before": "Scale is stored as positive x and y factors. SCENE-CY-A adds separate\n@racket[linear2] and @racket[affine2] values for a full matrix and translation.\n@racket[apply-affine] and @racket[apply-matrix] map a world Visual through\nthose values. SCENE-DK extends the map layer to ordinary nested paths: a named\nchild can be mapped inside an already-mapped group without flattening the\ngroup. The existing decomposed affine-Visual protocol remains available for\nVisual implementations; the general-map wrapper supplies the bridge through a\nnested group tree.",
+          "after": "Scale is stored as positive x and y factors. Separate @racket[linear2] and\n@racket[affine2] values represent a full matrix and translation.\n@racket[apply-affine] and @racket[apply-matrix] map a world Visual through\nthose values. These operations also accept ordinary nested paths: a named\nchild can be mapped inside an already-mapped group without flattening the\ngroup. Visual implementations use the decomposed affine-Visual protocol; the\ngeneral-map wrapper carries full maps through a nested group tree."
+        },
+        {
+          "edit": "prose-003",
+          "line_before_this_edit": 255,
+          "before": "The established @racket[affine-transform] value stores translation, rotation,\nand scale.",
+          "after": "An @racket[affine-transform] value stores translation, rotation, and scale."
+        },
+        {
+          "edit": "prose-002",
+          "line_before_this_edit": 134,
+          "before": "counts differ. SCENE-AI keeps bounds-center seeds as the default and also permits\nexplicit shared local birth/death anchor points. SCENE-AJ optionally assigns\nfinite birth/death costs so a poor real correspondence may be replaced by local\ncollapse and regrowth even when topology counts match. SCENE-AK adds sparse\nper-subpath birth/death anchor overrides keyed by original endpoint subpath\nindexes. SCENE-AL adds sparse per-subpath numeric birth/death cost overrides\nusing those same original endpoint indexes. SCENE-AM adds sparse additive\nreal-match penalties keyed by original source/destination index pairs.",
+          "after": "counts differ. Birth and death seeds default to bounds centers; explicit\nshared local anchor points are also supported. Optional finite birth and death\ncosts allow a poor real correspondence to be replaced by local collapse and\nregrowth even when topology counts match. Sparse per-subpath overrides select\nbirth and death anchors and numeric costs using the original endpoint subpath\nindexes. Sparse additive real-match penalties use original source/destination\nindex pairs."
+        },
+        {
+          "edit": "prose-001",
+          "line_before_this_edit": 36,
+          "before": "SCENE-X also has @deftech{frame space}. A frame-space Visual uses an\norigin-centered mathematical coordinate system attached to the output frame.\nPositive x still points right and positive y still points up. Its visible width\nis captured when the frame-space wrapper is constructed, so later world-camera\npan and zoom do not move or resize the overlay. The current output pixel width\nand height are still used when rendering, allowing the same semantic frame\ncoordinates to scale with output resolution.",
+          "after": "A frame-space Visual uses @deftech{frame space}, an origin-centered\nmathematical coordinate system attached to the output frame. Positive x points\nright and positive y points up. The frame-space wrapper captures its visible\nwidth when it is constructed, so later world-camera pan and zoom do not move or\nresize the overlay. Rendering uses the current output pixel width and height,\nso the same frame-space coordinates scale with the output resolution."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-protocols.scrbl",
+      "before_sha256": "21a8f8b90c2c96077950ec48256c9523d9e674449c1d2253d1b3ea1e81d2acc4",
+      "after_sha256": "978a7a747de3d97ef403f8ed8ce57c828b9b025785e779edfc2bafbfe7940f71",
+      "edits": [
+        {
+          "edit": "prose-008",
+          "line_before_this_edit": 411,
+          "before": "is not a SCENE-AT color\ninterpolation source",
+          "after": "is not a color\ninterpolation source"
+        },
+        {
+          "edit": "prose-007",
+          "line_before_this_edit": 379,
+          "before": "no fill, but SCENE-EC fill-paint interpolation requires",
+          "after": "no fill, but fill-paint interpolation requires"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-shapes.scrbl",
+      "before_sha256": "ecdfa21d9c804288719d261a94bb3af1a980dde47d300502d1cdd89b8a6ed0c3",
+      "after_sha256": "22c58a66a4c66eca07ec53ca40f503ae77caa906f5d4148f9fa49f4fb4ed79e6",
+      "edits": [
+        {
+          "edit": "prose-019",
+          "line_before_this_edit": 324,
+          "before": "SCENE-DJ adds a compact family of path-backed shapes.",
+          "after": "The shape catalogue provides a compact family of path-backed shapes."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-text.scrbl",
+      "before_sha256": "8b1258a37a7bf1d53a5bbd11eed77fdd91b6e8400461ed41d10c6c00feb66810",
+      "after_sha256": "cd08713c1caa7d9d594f92dc870f22c4eeb375626760e999f3377e1f2e31bfaf",
+      "edits": [
+        {
+          "edit": "prose-013",
+          "line_before_this_edit": 112,
+          "before": "inline span in this stage.",
+          "after": "inline span."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-numeric.scrbl",
+      "before_sha256": "bdfb1d312271e0bfe576f5ca5d7d4ee68e8dbefe70a05aaf05f32876b0c73692",
+      "after_sha256": "ddd7c7697e037eca4438119b0f86fb9c8b0060924f812bb80044c48c204158b0",
+      "edits": [
+        {
+          "edit": "prose-011",
+          "line_before_this_edit": 348,
+          "before": "so this first release does not\nattempt kerning across that join",
+          "after": "so kerning is not attempted across that join"
+        },
+        {
+          "edit": "prose-010",
+          "line_before_this_edit": 301,
+          "before": "select every SCENE-EF formatter",
+          "after": "select the corresponding formatter"
+        },
+        {
+          "edit": "prose-009",
+          "line_before_this_edit": 39,
+          "before": "SCENE-EF provides number-shaped text and numerical transitions without",
+          "after": "Numeric displays provide number-shaped text and numerical transitions without"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-matrices.scrbl",
+      "before_sha256": "1eb1f249afee2ef3c0b4d5b1a3b07ebcd91a8274a9ab05874b0db79a658a7c1a",
+      "after_sha256": "c8ffdeb982715e60c123acf7e16293ac09be82c8c83a031f0199f598b747eef5",
+      "edits": [
+        {
+          "edit": "prose-021",
+          "line_before_this_edit": 289,
+          "before": "rebuild\nthe label through @racket[derived-visual] until SCENE-DE supplies general live\nlayout relationships.",
+          "after": "rebuild\nthe label through @racket[derived-visual] when it needs to follow the arrow."
+        },
+        {
+          "edit": "prose-020",
+          "line_before_this_edit": 204,
+          "before": "SCENE-CZ adds small, conventional linear-algebra diagrams without adding a\nmutable diagram class.",
+          "after": "Linear-algebra diagram constructors create small, conventional diagrams\nwithout a mutable diagram class."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-annotations.scrbl",
+      "before_sha256": "e247a6406c5cda150dc8a1087b4f9d216209f1bfe0683bd4a2481df20913fc68",
+      "after_sha256": "15e7c9bf8a49b78865e65d9e17dc38ce1ce79f0c4ce4d456e47a0fee2573adab",
+      "edits": [
+        {
+          "edit": "prose-018",
+          "line_before_this_edit": 141,
+          "before": "The layout\nphase remains top-level in this release,",
+          "after": "The layout\nphase is restricted to top-level relations,"
+        },
+        {
+          "edit": "prose-017",
+          "line_before_this_edit": 138,
+          "before": "same immediate\n@racket[path-visual?] or @racket[group-visual?] values as before.",
+          "after": "immediate\n@racket[path-visual?] or @racket[group-visual?] values."
+        },
+        {
+          "edit": "prose-016",
+          "line_before_this_edit": 134,
+          "before": "SCENE-CO supplies small semantic, path-backed marks for explanatory diagrams.\nSCENE-ED additionally gives selected marks the same live endpoint protocol as",
+          "after": "Mathematical annotations are small semantic, path-backed marks for explanatory\ndiagrams. Selected marks support the same live endpoint protocol as"
+        },
+        {
+          "edit": "prose-015",
+          "line_before_this_edit": 58,
+          "before": "endpoint argument to\nthe SCENE-CN constructors",
+          "after": "endpoint argument to\nthe live endpoint constructors"
+        },
+        {
+          "edit": "prose-014",
+          "line_before_this_edit": 40,
+          "before": "SCENE-CN provides deterministic geometry relationships without mutable\nupdaters.",
+          "after": "Live endpoint constructors provide deterministic geometry relationships\nwithout mutable updaters."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-complex-polar.scrbl",
+      "before_sha256": "5a3288170b5b1788113291312ac006acb3a0bace0c8461834ef3687d6679d8f8",
+      "after_sha256": "2f83b2540439635238f4448d8622c38929417c48fb453b224fcd09f4610162c2",
+      "edits": [
+        {
+          "edit": "prose-022",
+          "line_before_this_edit": 39,
+          "before": "SCENE-DA uses ordinary Racket complex numbers and converts only at the drawing\nboundary. SCENE-DB follows the same approach for polar coordinate values and\npaths.",
+          "after": "Complex-coordinate operations use ordinary Racket complex numbers and convert\nonly at the drawing boundary. Polar-coordinate operations follow the same\napproach for polar values and paths."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-calculus.scrbl",
+      "before_sha256": "4aa64ab20dd6af64657b6236a41e3f916238bcb65a1c68efd36be284d5c3e9f9",
+      "after_sha256": "e24dcaee2246f04c90e4bb345a34b9f08323ee56b8a2682c3976400b83b0a785",
+      "edits": [
+        {
+          "edit": "prose-023",
+          "line_before_this_edit": 39,
+          "before": "SCENE-CP provides static, axes-aware construction helpers for common teaching\ndiagrams.",
+          "after": "Coordinate and calculus helpers construct static, axes-aware teaching\ndiagrams."
+        },
+        {
+          "edit": "prose-012",
+          "line_before_this_edit": 260,
+          "before": "attempted in this stage.",
+          "after": "attempted."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-ode.scrbl",
+      "before_sha256": "60b44794c83da49b162b0b276a2153fabb70b16311293d796aebbd29c84c3f8e",
+      "after_sha256": "38a060646900f34026b2633ced2c2fbd2f3d0fd7f5fca5b7e5228e4668a494c8",
+      "edits": [
+        {
+          "edit": "prose-027",
+          "line_before_this_edit": 56,
+          "before": "SCENE-3D-K factors the numerical operations behind both trajectory families\ninto an immutable @racket[ode-state-space].",
+          "after": "Both trajectory families express their numerical operations through an\nimmutable @racket[ode-state-space]."
+        },
+        {
+          "edit": "prose-026",
+          "line_before_this_edit": 50,
+          "before": "SCENE-DN adds an optional deterministic adaptive Dormand--Prince 5(4) backend.",
+          "after": "An optional deterministic adaptive Dormand--Prince 5(4) backend is also available."
+        },
+        {
+          "edit": "prose-025",
+          "line_before_this_edit": 42,
+          "before": "Fixed-step fourth-order Runge--Kutta (RK4) remains the default,",
+          "after": "Fixed-step fourth-order Runge--Kutta (RK4) is the default,"
+        },
+        {
+          "edit": "prose-024",
+          "line_before_this_edit": 40,
+          "before": "SCENE-DC turns a two-dimensional vector field into reproducible integral-curve\ngeometry.",
+          "after": "The ODE operations turn a two-dimensional vector field into reproducible\nintegral-curve geometry."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/visuals-relations.scrbl",
+      "before_sha256": "4e0ef2683d651cce0f63802e5bbf2bcbb23f9f092f33d39b8a2c940606866326",
+      "after_sha256": "ee23e30b0a3cdb4f56703d02f6b8d0e4850c2d41a91fb75ee4251e4efa411913",
+      "edits": [
+        {
+          "edit": "prose-029",
+          "line_before_this_edit": 42,
+          "before": "It replaces the former split\nbetween pure endpoint geometry and renderer-aware endpoint wrappers.",
+          "after": ""
+        },
+        {
+          "edit": "prose-028",
+          "line_before_this_edit": 224,
+          "before": "SCENE-DE gives the renderer-aware attachment model concise relationship names.",
+          "after": "The live-layout procedures give renderer-aware attachments concise\nrelationship names."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/geometry-and-plots.scrbl",
+      "before_sha256": "40593a03646c6249bf46ec59890685269a2bd2acca03aaf1588787db086bf1ea",
+      "after_sha256": "7b95ef7222b06766589eef2db65c1e0ba125118cb165758f2f9187164236a395",
+      "edits": [
+        {
+          "edit": "prose-153",
+          "line_before_this_edit": 2283,
+          "before": "SCENE-EC extends a fill from a solid @racket[color-spec?] to an immutable\nsemantic @racket[paint?].",
+          "after": "A fill may be an immutable semantic @racket[paint?] rather than only a solid\n@racket[color-spec?]."
+        },
+        {
+          "edit": "prose-152",
+          "line_before_this_edit": 2153,
+          "before": "SCENE-AW derived targets",
+          "after": "Derived targets"
+        },
+        {
+          "edit": "prose-151",
+          "line_before_this_edit": 1674,
+          "before": "A SCENE-AW derived target",
+          "after": "A derived target"
+        },
+        {
+          "edit": "prose-106",
+          "line_before_this_edit": 1817,
+          "before": "SCENE-AW derived definitions\nare additionally evaluated",
+          "after": "Derived definitions\nare evaluated"
+        },
+        {
+          "edit": "prose-105",
+          "line_before_this_edit": 1327,
+          "before": "SCENE-CY-A keeps @racket[affine-transform] as the established decomposed\nplacement protocol and adds @racket[linear2] and @racket[affine2] for general\nmathematical maps.",
+          "after": "Use @racket[affine-transform] for decomposed placement, and @racket[linear2]\nor @racket[affine2] for general mathematical maps."
+        },
+        {
+          "edit": "prose-104",
+          "line_before_this_edit": 1091,
+          "before": "SCENE-DY extends the immutable Boolean path operations to simple concave and\ncompound closed paths.",
+          "after": "Immutable Boolean path operations support simple concave and compound closed\npaths."
+        },
+        {
+          "edit": "prose-103",
+          "line_before_this_edit": 946,
+          "before": "a cubic source segment raises an exception in this stage.",
+          "after": "a cubic source segment raises an exception."
+        },
+        {
+          "edit": "prose-102",
+          "line_before_this_edit": 643,
+          "before": "This stage does not add/remove subpaths",
+          "after": "This operation does not add/remove subpaths"
+        },
+        {
+          "edit": "prose-101",
+          "line_before_this_edit": 634,
+          "before": "retain the SCENE-AC rules.",
+          "after": "retain the closed-loop alignment rules."
+        },
+        {
+          "edit": "prose-100",
+          "line_before_this_edit": 624,
+          "before": "with the SCENE-AC\nclosed-loop algorithm",
+          "after": "with the\nclosed-loop algorithm"
+        },
+        {
+          "edit": "prose-099",
+          "line_before_this_edit": 607,
+          "before": "beyond SCENE-AM sparse numeric additions.",
+          "after": "beyond the sparse numeric additions."
+        },
+        {
+          "edit": "prose-098",
+          "line_before_this_edit": 605,
+          "before": "This stage does not infer semantic holes",
+          "after": "This operation does not infer semantic holes"
+        },
+        {
+          "edit": "prose-097",
+          "line_before_this_edit": 591,
+          "before": "In numeric SCENE-AJ penalty mode",
+          "after": "In numeric penalty mode"
+        },
+        {
+          "edit": "prose-096",
+          "line_before_this_edit": 583,
+          "before": "SCENE-AK additionally accepts sparse",
+          "after": "The procedure also accepts sparse"
+        },
+        {
+          "edit": "prose-095",
+          "line_before_this_edit": 580,
+          "before": "SCENE-AI extends this placement with @racket[birth-anchor] and\n@racket[death-anchor].",
+          "after": "The @racket[birth-anchor] and @racket[death-anchor] arguments control this\nplacement."
+        },
+        {
+          "edit": "prose-094",
+          "line_before_this_edit": 566,
+          "before": "while AJ's exact-tie\npreference for fewer topology changes remains unchanged.",
+          "after": "with exact ties still\npreferring fewer topology changes."
+        },
+        {
+          "edit": "prose-093",
+          "line_before_this_edit": 559,
+          "before": "SCENE-AM additionally\naccepts @racket[match-penalty-map]",
+          "after": "The procedure also\naccepts @racket[match-penalty-map]"
+        },
+        {
+          "edit": "prose-092",
+          "line_before_this_edit": 553,
+          "before": "SCENE-AL additionally accepts sparse",
+          "after": "Numeric mode also accepts sparse"
+        },
+        {
+          "edit": "prose-091",
+          "line_before_this_edit": 544,
+          "before": "SCENE-AJ adds an optional numeric policy.",
+          "after": "An optional numeric penalty policy allows additional births and deaths."
+        },
+        {
+          "edit": "prose-090",
+          "line_before_this_edit": 542,
+          "before": "matching topology counts therefore reduce exactly to\nSCENE-AG as before.",
+          "after": "matching topology counts therefore use mixed-compound alignment."
+        },
+        {
+          "edit": "prose-089",
+          "line_before_this_edit": 539,
+          "before": "use the SCENE-AC\nphase/direction score",
+          "after": "use the\nphase/direction score"
+        },
+        {
+          "edit": "prose-088",
+          "line_before_this_edit": 538,
+          "before": "use the SCENE-AE\nforward/reverse endpoint score",
+          "after": "use the\nforward/reverse endpoint score"
+        },
+        {
+          "edit": "prose-087",
+          "line_before_this_edit": 498,
+          "before": "the corresponding\nSCENE-AF all-open or SCENE-AD all-closed behavior.",
+          "after": "the corresponding\nall-open or all-closed compound alignment behavior."
+        },
+        {
+          "edit": "prose-086",
+          "line_before_this_edit": 493,
+          "before": "under\nSCENE-AC's deterministic tie rules.",
+          "after": "under\nthe closed-loop alignment procedure's deterministic tie rules."
+        },
+        {
+          "edit": "prose-085",
+          "line_before_this_edit": 485,
+          "before": "with the SCENE-AC phase/direction rule",
+          "after": "with the phase/direction rule"
+        },
+        {
+          "edit": "prose-084",
+          "line_before_this_edit": 483,
+          "before": "with the SCENE-AE endpoint-direction rule",
+          "after": "with the endpoint-direction rule"
+        },
+        {
+          "edit": "prose-083",
+          "line_before_this_edit": 448,
+          "before": "assignment policy as SCENE-AD chooses",
+          "after": "assignment policy used for closed compound paths chooses"
+        },
+        {
+          "edit": "prose-082",
+          "line_before_this_edit": 440,
+          "before": "uses the SCENE-AE\nendpoint-direction score",
+          "after": "uses the\nendpoint-direction score"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/cookbook/reference-recipes.scrbl",
+      "before_sha256": "6130dabe5acfb96e9d68abe23cbd1f13021681e7feb3f6cd9d9ddc26c63c667a",
+      "after_sha256": "88aaf9e05ec9b1f9a7ddddc012886e29100cb34a2eb8242d907ee722956c0ee0",
+      "edits": [
+        {
+          "edit": "prose-231",
+          "line_before_this_edit": 2106,
+          "before": "SCENE-DT provides small, immutable, addressable diagram groups for common\nprobability and statistics explanations.",
+          "after": "Small, immutable, addressable diagram groups support common probability and\nstatistics explanations."
+        },
+        {
+          "edit": "prose-230",
+          "line_before_this_edit": 2091,
+          "before": "Render the canonical stage example with:",
+          "after": "Render the canonical marker-and-area example with:"
+        },
+        {
+          "edit": "prose-229",
+          "line_before_this_edit": 1839,
+          "before": "Render the canonical SCENE-X example with:",
+          "after": "Render the canonical fixed-overlay example with:"
+        },
+        {
+          "edit": "prose-228",
+          "line_before_this_edit": 1835,
+          "before": "edges that define the displayed quadratic graph. SCENE-Y now expresses that\ntraversal as one @racket[move-along-path] clip",
+          "after": "edges that define the displayed quadratic graph. The traversal uses one\n@racket[move-along-path] clip"
+        },
+        {
+          "edit": "prose-227",
+          "line_before_this_edit": 1781,
+          "before": "SCENE-X introduces an origin-centered frame coordinate domain for presentation\ncontent that must remain stable while the world camera moves.",
+          "after": "Frame space is an origin-centered coordinate domain for presentation content\nthat must remain stable while the world camera moves."
+        },
+        {
+          "edit": "prose-226",
+          "line_before_this_edit": 1768,
+          "before": "Render the canonical SCENE-Y example with:",
+          "after": "Render the canonical path-following example with:"
+        },
+        {
+          "edit": "prose-225",
+          "line_before_this_edit": 1709,
+          "before": "SCENE-Y promotes semantic path traversal to a first-class translation request.",
+          "after": "@racket[move-along-path] makes semantic path traversal a first-class translation request."
+        },
+        {
+          "edit": "prose-224",
+          "line_before_this_edit": 1697,
+          "before": "Render the canonical SCENE-Z example with:",
+          "after": "Render the canonical path-orientation example with:"
+        },
+        {
+          "edit": "prose-223",
+          "line_before_this_edit": 1691,
+          "before": "As in\nSCENE-Y, route geometry is a clip-start snapshot rather than a live deforming\nconstraint.",
+          "after": "As with other path Visual routes, route geometry is a clip-start snapshot\nrather than a live deforming constraint."
+        },
+        {
+          "edit": "prose-222",
+          "line_before_this_edit": 1621,
+          "before": "SCENE-Z extends arc-length traversal with semantic direction information.",
+          "after": "Arc-length traversal also provides semantic tangent and normal information."
+        },
+        {
+          "edit": "prose-221",
+          "line_before_this_edit": 1607,
+          "before": "Render the canonical SCENE-AA example with:",
+          "after": "Render the canonical joined-offset-path example with:"
+        },
+        {
+          "edit": "prose-220",
+          "line_before_this_edit": 1603,
+          "before": "SCENE-Z's @racket[#:normal-offset] remains segment-local.",
+          "after": "The @racket[#:normal-offset] option of @racket[move-along-path] remains segment-local."
+        },
+        {
+          "edit": "prose-219",
+          "line_before_this_edit": 1598,
+          "before": "Nonzero SCENE-AA offsets deliberately accept straight source segments only.",
+          "after": "Nonzero path-geometry offsets deliberately accept straight source segments only."
+        },
+        {
+          "edit": "prose-218",
+          "line_before_this_edit": 1550,
+          "before": "SCENE-AA turns the segment-local normal idea from SCENE-Z into reusable semantic\ngeometry for straight paths.",
+          "after": "@racket[path-geometry-offset] turns segment-local normal offsets into reusable\nsemantic geometry for straight paths."
+        },
+        {
+          "edit": "prose-217",
+          "line_before_this_edit": 1537,
+          "before": "Render the canonical SCENE-AB example with:",
+          "after": "Render the canonical reversal-and-cyclic-start example with:"
+        },
+        {
+          "edit": "prose-216",
+          "line_before_this_edit": 1526,
+          "before": "correspondence. SCENE-AC adds @racket[path-geometry-align-for-morph] and\n@racket[morph-to-aligned] when the phase or direction should be selected\nautomatically. SCENE-AD adds @racket[path-geometry-align-compound-for-morph]\nand @racket[morph-to-compound-aligned] when multiple equal-count closed subpaths\nmust also be paired automatically. SCENE-AE adds\n@racket[path-geometry-align-open-for-morph] and @racket[morph-to-open-aligned]\nwhen one open path should choose its endpoint direction automatically. SCENE-AF\nadds @racket[path-geometry-align-open-compound-for-morph] and\n@racket[morph-to-open-compound-aligned] when multiple equal-count open subpaths\nmust also be globally paired.",
+          "after": "correspondence. Use @racket[path-geometry-align-for-morph] or\n@racket[morph-to-aligned] when a closed loop's phase or direction should be\nselected automatically. Use @racket[path-geometry-align-compound-for-morph] or\n@racket[morph-to-compound-aligned] when multiple equal-count closed subpaths\nmust also be paired. For open paths, use\n@racket[path-geometry-align-open-for-morph] or @racket[morph-to-open-aligned]\nto choose endpoint direction, and use\n@racket[path-geometry-align-open-compound-for-morph] or\n@racket[morph-to-open-compound-aligned] to pair multiple equal-count open\nsubpaths globally."
+        },
+        {
+          "edit": "prose-215",
+          "line_before_this_edit": 1517,
+          "before": "with a stored vertex. SCENE-AB splits a line or cubic when necessary,",
+          "after": "with a stored vertex. The operation splits a line or cubic when necessary,"
+        },
+        {
+          "edit": "prose-214",
+          "line_before_this_edit": 1487,
+          "before": "SCENE-AB adds traversal-order operations to semantic path geometry.",
+          "after": "Path geometry provides traversal-order operations for reversal and cyclic starts."
+        },
+        {
+          "edit": "prose-213",
+          "line_before_this_edit": 1470,
+          "before": "SCENE-AC deliberately stops at one positive finite closed subpath per side.\nSCENE-AD adds equal-count compound pairing, while SCENE-AH adds controlled\nsubpath birth/death when topology-class counts differ.",
+          "after": "This operation handles one positive finite closed subpath per side. Equal-count\ncompound pairing is available separately, while topology-changing morphs add\ncontrolled subpath birth/death when topology-class counts differ."
+        },
+        {
+          "edit": "prose-212",
+          "line_before_this_edit": 1441,
+          "before": "SCENE-AC composes SCENE-AB reversal and cyclic starts with the existing\nnormalized morph engine.",
+          "after": "Closed-loop alignment combines path reversal and cyclic-start selection with\nthe normalized morph engine."
+        },
+        {
+          "edit": "prose-211",
+          "line_before_this_edit": 1408,
+          "before": "Every source/destination loop pair is scored with SCENE-AC phase/direction\ncorrespondence. SCENE-AD then chooses one global minimum-total-cost assignment,",
+          "after": "Every source/destination loop pair is scored with closed-loop phase/direction\ncorrespondence. The procedure then chooses one global minimum-total-cost\nassignment,"
+        },
+        {
+          "edit": "prose-210",
+          "line_before_this_edit": 1397,
+          "before": "SCENE-AD extends closed-loop alignment to compound paths whose subpath storage\norder differs.",
+          "after": "Compound closed-loop alignment handles paths whose subpath storage order\ndiffers."
+        },
+        {
+          "edit": "prose-209",
+          "line_before_this_edit": 1354,
+          "before": "SCENE-AE handles the endpoint-direction ambiguity of one open path.",
+          "after": "Open-path alignment handles the endpoint-direction ambiguity of one open path."
+        },
+        {
+          "edit": "prose-208",
+          "line_before_this_edit": 1318,
+          "before": "Every source/destination open-subpath pair is scored with SCENE-AE's inclusive\ntotal-arc-length forward/reverse correspondence. SCENE-AF then chooses a global\nminimum-total-cost assignment using the deterministic assignment policy already\nused by SCENE-AD.",
+          "after": "Every source/destination open-subpath pair is scored with inclusive\ntotal-arc-length forward/reverse correspondence. A global minimum-total-cost\nassignment then uses the same deterministic assignment policy as closed\ncompound alignment."
+        },
+        {
+          "edit": "prose-207",
+          "line_before_this_edit": 1307,
+          "before": "SCENE-AF extends SCENE-AE endpoint-direction correspondence to equal-count\ncompound figures whose subpaths are all open.",
+          "after": "Open-compound alignment applies endpoint-direction correspondence to equal-count\ncompound figures whose subpaths are all open."
+        },
+        {
+          "edit": "prose-206",
+          "line_before_this_edit": 1270,
+          "before": "Open\ncandidate pairs use SCENE-AE forward/reverse endpoint correspondence and closed\ncandidate pairs use SCENE-AC cyclic phase/direction correspondence.",
+          "after": "Open candidate pairs use forward/reverse endpoint correspondence and closed\ncandidate pairs use cyclic phase/direction correspondence."
+        },
+        {
+          "edit": "prose-205",
+          "line_before_this_edit": 1257,
+          "before": "SCENE-AG composes the existing open and closed correspondence rules for one\ncompound path that may contain both topology classes.",
+          "after": "Mixed-compound alignment combines the open and closed correspondence rules for\none compound path that may contain both topology classes."
+        },
+        {
+          "edit": "prose-204",
+          "line_before_this_edit": 1223,
+          "before": "center. SCENE-AI additionally allows explicit local anchor points without\nchanging this default, and SCENE-AJ optionally permits additional voluntary\nunmatched slots through numeric penalties.",
+          "after": "center. Explicit local anchor points can override that placement without\nchanging the default, and numeric penalties can permit additional voluntary\nunmatched slots."
+        },
+        {
+          "edit": "prose-203",
+          "line_before_this_edit": 1219,
+          "before": "rules from SCENE-AE/AF and SCENE-AC/AD.",
+          "after": "open-path and closed-loop correspondence rules."
+        },
+        {
+          "edit": "prose-202",
+          "line_before_this_edit": 1206,
+          "before": "SCENE-AH extends topology-aware correspondence to compounds whose open or\nclosed subpath counts differ.",
+          "after": "Topology-changing morph preparation supports compounds whose open or closed\nsubpath counts differ."
+        },
+        {
+          "edit": "prose-201",
+          "line_before_this_edit": 1184,
+          "before": "SCENE-AI uses one shared point per side. SCENE-AJ may create additional\nvoluntary unmatched slots through numeric penalties. SCENE-AK adds sparse\nper-subpath overrides for those same seed positions. SCENE-AL independently adds\nsparse numeric cost overrides for deciding which subpaths become unmatched.",
+          "after": "Each side has one shared anchor point. Numeric penalties may create additional\nvoluntary unmatched slots. Sparse per-subpath anchor overrides select individual\nseed positions, while sparse numeric cost overrides independently influence\nwhich subpaths become unmatched."
+        },
+        {
+          "edit": "prose-200",
+          "line_before_this_edit": 1181,
+          "before": "SCENE-AC/AE scoring and the existing topology-class assignments.",
+          "after": "the open/closed geometric scoring and the existing topology-class assignments."
+        },
+        {
+          "edit": "prose-199",
+          "line_before_this_edit": 1163,
+          "before": "SCENE-AI makes SCENE-AH seed placement configurable while leaving correspondence\npolicy unchanged.",
+          "after": "The @racket[#:birth-anchor] and @racket[#:death-anchor] options make seed\nplacement configurable while leaving correspondence policy unchanged."
+        },
+        {
+          "edit": "prose-198",
+          "line_before_this_edit": 1143,
+          "before": "uses the SCENE-AI birth/death anchor\npolicy.",
+          "after": "uses the configured birth/death anchor policy."
+        },
+        {
+          "edit": "prose-197",
+          "line_before_this_edit": 1134,
+          "before": "SCENE-AJ minimizes two objectives lexicographically.",
+          "after": "The assignment minimizes two objectives lexicographically."
+        },
+        {
+          "edit": "prose-196",
+          "line_before_this_edit": 1127,
+          "before": "A real edge keeps the existing SCENE-AC/AE geometric correspondence score.",
+          "after": "A real edge keeps the existing geometric correspondence score."
+        },
+        {
+          "edit": "prose-195",
+          "line_before_this_edit": 1105,
+          "before": "SCENE-AJ makes forced real correspondence optional when the caller supplies an\nexplicit cost for both sides of a replacement.",
+          "after": "The birth and death penalty options make forced real correspondence optional\nwhen the caller supplies an explicit cost for both sides of a replacement."
+        },
+        {
+          "edit": "prose-194",
+          "line_before_this_edit": 1082,
+          "before": "The same lookup applies to voluntary unmatched slots selected by SCENE-AJ\nnumeric penalties.",
+          "after": "The same lookup applies to voluntary unmatched slots selected by numeric penalties."
+        },
+        {
+          "edit": "prose-193",
+          "line_before_this_edit": 1053,
+          "before": "SCENE-AK keeps SCENE-AI's shared anchors as fallbacks and adds sparse overrides\nfor individual endpoint subpaths:",
+          "after": "The per-subpath anchor maps keep the shared anchors as fallbacks and add sparse\noverrides for individual endpoint subpaths:"
+        },
+        {
+          "edit": "prose-192",
+          "line_before_this_edit": 1029,
+          "before": "SCENE-AI/AK still decides where any unmatched subpath selected by the cost policy\ncollapses or grows.",
+          "after": "The shared and per-subpath anchor settings determine where any unmatched\nsubpath selected by the cost policy collapses or grows."
+        },
+        {
+          "edit": "prose-191",
+          "line_before_this_edit": 1024,
+          "before": "costs in SCENE-AJ's augmented assignment.",
+          "after": "costs in the augmented assignment."
+        },
+        {
+          "edit": "prose-190",
+          "line_before_this_edit": 1001,
+          "before": "SCENE-AL keeps SCENE-AJ's shared numeric costs as fallbacks and adds sparse\noriginal-index overrides:",
+          "after": "@racket[#:birth-penalty-map] and @racket[#:death-penalty-map] keep the shared\nnumeric costs as fallbacks and add sparse original-index overrides:"
+        },
+        {
+          "edit": "prose-189",
+          "line_before_this_edit": 982,
+          "before": "AK anchor maps and AL endpoint\npenalty maps remain independent.",
+          "after": "Anchor maps and endpoint penalty maps remain independent."
+        },
+        {
+          "edit": "prose-188",
+          "line_before_this_edit": 976,
+          "before": "In\nnumeric SCENE-AJ mode the increased real-edge score also competes with the\nresolved SCENE-AL death and birth costs. Exact primary-cost ties retain AJ's\nsecondary preference for fewer topology changes.",
+          "after": "In numeric penalty mode the increased real-edge score also competes with the\nresolved death and birth costs. Exact primary-cost ties retain the secondary\npreference for fewer topology changes."
+        },
+        {
+          "edit": "prose-187",
+          "line_before_this_edit": 956,
+          "before": "SCENE-AM adds sparse, deterministic semantic costs to individual real assignment\nedges while retaining the existing geometric correspondence score:",
+          "after": "@racket[#:match-penalty-map] adds sparse, deterministic semantic costs to\nindividual real assignment edges while retaining the geometric correspondence\nscore:"
+        },
+        {
+          "edit": "prose-186",
+          "line_before_this_edit": 951,
+          "before": "moves. SCENE-AR extends the same scheduler with timed Visual/composition children\nand composite duration scaling; timed camera requests remain a later stage.",
+          "after": "moves. The same scheduler also handles timed Visual/composition children and\ncomposite duration scaling; timed camera requests are not supported."
+        },
+        {
+          "edit": "prose-185",
+          "line_before_this_edit": 904,
+          "before": "SCENE-AN begins the animation-composition track without changing the immutable\nscene model.",
+          "after": "@racket[timed] adds local animation intervals without changing the immutable\nscene model."
+        },
+        {
+          "edit": "prose-184",
+          "line_before_this_edit": 897,
+          "before": "SCENE-AO intentionally gave unwrapped direct children equal shares. SCENE-AP\nadded @racket[animation-group], SCENE-AQ added @racket[lagged-start], and SCENE-AR\nadds timed Visual/composition children while preserving one-unit shares for every\nunwrapped direct child. Camera requests remain invalid composition children.",
+          "after": "Unwrapped direct children receive equal shares. Parallel groups, lagged starts,\nand timed Visual/composition children use their own allocation rules while\npreserving one-unit shares for unwrapped direct children. Camera requests remain\ninvalid composition children."
+        },
+        {
+          "edit": "prose-183",
+          "line_before_this_edit": 891,
+          "before": "SCENE-AN structural semantics also apply unchanged.",
+          "after": "The same structural semantics apply."
+        },
+        {
+          "edit": "prose-182",
+          "line_before_this_edit": 832,
+          "before": "SCENE-AO adds first-class sequential composition through @racket[succession].",
+          "after": "@racket[succession] provides first-class sequential composition."
+        },
+        {
+          "edit": "prose-181",
+          "line_before_this_edit": 819,
+          "before": "Render the canonical SCENE-AP example with:",
+          "after": "Render the canonical parallel-composition example with:"
+        },
+        {
+          "edit": "prose-180",
+          "line_before_this_edit": 816,
+          "before": "SCENE-AP/AQ\noriginally kept @racket[timed] outside nested compositions; SCENE-AR now permits\ntimed Visual/composition children while cameras remain top-level.",
+          "after": "Timed Visual/composition children are permitted inside nested compositions,\nwhile cameras remain top-level."
+        },
+        {
+          "edit": "prose-179",
+          "line_before_this_edit": 812,
+          "before": "SCENE-AN structural event\nordering, AO sequence boundaries, overlap validation, easing, and direct\narbitrary-time sampling",
+          "after": "Structural event ordering, succession boundaries, overlap validation, easing,\nand direct arbitrary-time sampling"
+        },
+        {
+          "edit": "prose-178",
+          "line_before_this_edit": 810,
+          "before": "Composition trees expand to the SCENE-AN scheduled Visual-leaf representation.",
+          "after": "Composition trees expand to the scheduled Visual-leaf representation."
+        },
+        {
+          "edit": "prose-177",
+          "line_before_this_edit": 752,
+          "before": "SCENE-AP adds first-class parallel composition through @racket[animation-group].",
+          "after": "@racket[animation-group] provides first-class parallel composition."
+        },
+        {
+          "edit": "prose-176",
+          "line_before_this_edit": 739,
+          "before": "Render the canonical SCENE-AQ example with:",
+          "after": "Render the canonical lagged-start example with:"
+        },
+        {
+          "edit": "prose-175",
+          "line_before_this_edit": 736,
+          "before": "SCENE-AQ originally kept timed wrappers and camera requests outside nested\ncompositions. SCENE-AR now permits timed Visual/composition children while camera\nrequests remain top-level/full-clip.",
+          "after": "Timed Visual/composition children are permitted inside nested compositions,\nwhile camera requests remain top-level/full-clip."
+        },
+        {
+          "edit": "prose-174",
+          "line_before_this_edit": 726,
+          "before": "The final leaves are the same scheduled requests used by SCENE-AN through\nSCENE-AP.",
+          "after": "The final leaves use the same scheduled-leaf representation as the other\ncomposition forms."
+        },
+        {
+          "edit": "prose-173",
+          "line_before_this_edit": 695,
+          "before": "SCENE-AQ adds staggered composition through @racket[lagged-start].",
+          "after": "@racket[lagged-start] provides staggered composition."
+        },
+        {
+          "edit": "prose-172",
+          "line_before_this_edit": 682,
+          "before": "Render the canonical SCENE-AR example with:",
+          "after": "Render the canonical duration-scaled-composition example with:"
+        },
+        {
+          "edit": "prose-171",
+          "line_before_this_edit": 679,
+          "before": "Camera requests remain top-level/full-clip in SCENE-AR, and @racket[timed] does\nnot wrap another timed wrapper.",
+          "after": "Camera requests remain top-level/full-clip, and @racket[timed] does not wrap\nanother timed wrapper."
+        },
+        {
+          "edit": "prose-170",
+          "line_before_this_edit": 672,
+          "before": "AR does not add a new clip or sampling engine. All timing trees still expand to\nSCENE-AN scheduled Visual leaves",
+          "after": "This composition model does not add a new clip or sampling engine. All timing\ntrees still expand to scheduled Visual leaves"
+        },
+        {
+          "edit": "prose-169",
+          "line_before_this_edit": 624,
+          "before": "all spans equal to one this is exactly the SCENE-AQ schedule.",
+          "after": "all spans equal to one this is the ordinary lagged-start schedule."
+        },
+        {
+          "edit": "prose-168",
+          "line_before_this_edit": 593,
+          "before": "This keeps every AO--AQ tree unchanged when\nno nested timing is present.",
+          "after": "Composition trees without nested timing keep their ordinary allocation."
+        },
+        {
+          "edit": "prose-167",
+          "line_before_this_edit": 586,
+          "before": "SCENE-AR makes @racket[timed] compositional. A timed wrapper may now appear as a\ndirect child",
+          "after": "@racket[timed] is compositional. A timed wrapper may appear as a direct child"
+        },
+        {
+          "edit": "prose-166",
+          "line_before_this_edit": 573,
+          "before": "Render the canonical SCENE-AS example with:",
+          "after": "Render the canonical stroke-width example with:"
+        },
+        {
+          "edit": "prose-165",
+          "line_before_this_edit": 530,
+          "before": "opacity, path morphing, and AN--AR composition.",
+          "after": "opacity, path morphing, and animation composition."
+        },
+        {
+          "edit": "prose-164",
+          "line_before_this_edit": 527,
+          "before": "SCENE-AS begins the style-animation track with one renderer-independent semantic\ncomponent.",
+          "after": "Stroke width is a renderer-independent semantic animation component."
+        },
+        {
+          "edit": "prose-163",
+          "line_before_this_edit": 514,
+          "before": "Render the canonical SCENE-AT example with:",
+          "after": "Render the canonical color-animation example with:"
+        },
+        {
+          "edit": "prose-162",
+          "line_before_this_edit": 506,
+          "before": "SCENE-AT deliberately does not turn paint presence into an interpolated style\ncomponent.",
+          "after": "The color-animation API deliberately does not turn paint presence into an\ninterpolated style component."
+        },
+        {
+          "edit": "prose-161",
+          "line_before_this_edit": 497,
+          "before": "after AN--AR composition expansion",
+          "after": "after composition expansion"
+        },
+        {
+          "edit": "prose-160",
+          "line_before_this_edit": 479,
+          "before": "SCENE-AT extends semantic style animation with independent fill and stroke color\ncomponents.",
+          "after": "Fill and stroke color are independent semantic style-animation components."
+        },
+        {
+          "edit": "prose-159",
+          "line_before_this_edit": 465,
+          "before": "Render the canonical SCENE-AU example with:",
+          "after": "Render the canonical unified-style example with:"
+        },
+        {
+          "edit": "prose-158",
+          "line_before_this_edit": 435,
+          "before": "SCENE-AU adds @racket[style-to] as compact composition syntax for the style\ncomponents established by SCENE-AS and SCENE-AT.",
+          "after": "@racket[style-to] is compact composition syntax for the fill color, stroke\ncolor, stroke width, and opacity animation components."
+        },
+        {
+          "edit": "prose-148",
+          "line_before_this_edit": 242,
+          "before": "SCENE-CV also gives camera leaves the normal composition vocabulary:",
+          "after": "Camera requests use the same composition vocabulary as Visual requests:"
+        },
+        {
+          "edit": "prose-133",
+          "line_before_this_edit": 1865,
+          "before": "SCENE-V adds small semantic marker Visuals, ordered scatter-plot groups, and\nclosed areas derived from sampled function graphs or ordered data series.",
+          "after": "Point markers, ordered scatter-plot groups, and closed areas represent data\nand regions derived from sampled function graphs or ordered data series."
+        },
+        {
+          "edit": "prose-132",
+          "line_before_this_edit": 308,
+          "before": "SCENE-W adds renderer-aware fit requests and clip-local following. Both are\nordinary camera requests accepted by @racket[scene-play].",
+          "after": "Camera fitting uses renderer-aware measurements, while camera following tracks\na target for one clip. Both use ordinary requests accepted by\n@racket[scene-play]."
+        },
+        {
+          "edit": "prose-131",
+          "line_before_this_edit": 20,
+          "before": "SCENE-T adds a semantic number-line Visual and constructors that derive grid\nlines and upright numeric labels from an existing coordinate object.",
+          "after": "Number-line Visuals and coordinate-decoration constructors provide grid lines\nand upright numeric labels derived from an existing coordinate object."
+        },
+        {
+          "edit": "prose-047",
+          "line_before_this_edit": 293,
+          "before": "Render the SCENE-U pan-and-zoom example with:",
+          "after": "Render the pan-and-zoom example with:"
+        },
+        {
+          "edit": "prose-046",
+          "line_before_this_edit": 419,
+          "before": "Render the canonical SCENE-W example with:",
+          "after": "Render the camera-fitting example with:"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/rendering.scrbl",
+      "before_sha256": "9b65342d7e5ada8c20d4d520d056f729b6999320fd869f6b9a30b7ec90baa834",
+      "after_sha256": "55fcee4edc1c75433e149b059e0c6a0f04bf84245e713982e2bc738468e44f0f",
+      "edits": [
+        {
+          "edit": "prose-154",
+          "line_before_this_edit": 1593,
+          "before": "SCENE-DP adds deterministic construction-time layouts.",
+          "after": "The graph constructors provide deterministic construction-time layouts."
+        },
+        {
+          "edit": "prose-147",
+          "line_before_this_edit": 1420,
+          "before": "SCENE-DL built-in @racket[rate-function?] values remain\nserializable",
+          "after": "Built-in @racket[rate-function?] values are serializable"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-spatial-visuals-and-paths.scrbl",
+      "before_sha256": "e68313cba42400bda46c15c35b49e8f3475fcae7f66a7a1fb22df6129418e1ef",
+      "after_sha256": "3dd819b913a4f48a9b3255c7d1da2b64947c8f8975d27cc0c7d0ce2f46a5b7c2",
+      "edits": [
+        {
+          "edit": "prose-030",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-B keeps spatial content in a protocol distinct from ordinary",
+          "after": "Spatial content uses a protocol distinct from ordinary"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-spatial-animation-453b89a.scrbl",
+      "before_sha256": "87c3223bfc079eb9238ba59e468442996dd8b184eb37c7d5fcf871c06b0152ae",
+      "after_sha256": "636a3148edaf1fed37b4e59bc0a0372867c57884e0d0d7f43fa2b901ff86fe0d",
+      "edits": [
+        {
+          "edit": "prose-037",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-D keeps three-dimensional motion in the ordinary immutable\n@racket[scene] timeline.",
+          "after": "Three-dimensional motion uses the ordinary immutable @racket[scene]\ntimeline."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-cuts-caps-and-sec-ba40cdc.scrbl",
+      "before_sha256": "68ececa5d6f68f59e31b7fff63364bd93c2892c54b7806023bed8377b39ad2fb",
+      "after_sha256": "7a542a1fac26ab9b2a6fd59a3eade9505832b1e6100db975d59c2f81ab71e7d1",
+      "edits": [
+        {
+          "edit": "prose-053",
+          "line_before_this_edit": 77,
+          "before": "backend has not yet received its corresponding multi-plane uniform path.",
+          "after": "backend does not provide the corresponding multi-plane uniform path."
+        },
+        {
+          "edit": "prose-052",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-R extends a plane section with an explicit local numerical policy,\nplane basis, and component records.",
+          "after": "A plane section includes an explicit local numerical policy, plane basis, and\ncomponent records."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-supplementary-q-t-api.scrbl",
+      "before_sha256": "d3f9f9b350f3c1c784e035e293eed2176bcc0bfb4f5e90809311bf81ad16dc6e",
+      "after_sha256": "67b0e917c2149ee8f83e0b068d48e070e621202d17adf6cc8778f41c4cbded4c",
+      "edits": [
+        {
+          "edit": "prose-135",
+          "line_before_this_edit": 19,
+          "before": "The following bindings complete the public surface/section/annotation APIs\nintroduced by the Q--T stages.  Their detailed data conventions are described\nin the preceding sections; the bindings are listed here so that a client can\nlink to the exact exported names.",
+          "after": "The following bindings provide additional surface, section, and annotation\noperations. The preceding sections describe their data conventions; these\nentries document the exact exported names."
+        },
+        {
+          "edit": "prose-134",
+          "line_before_this_edit": 12,
+          "before": "3D: Supplementary Q--T API",
+          "after": "3D: Supplementary surface, section, and annotation bindings"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-spatial-maps-and-891ec29.scrbl",
+      "before_sha256": "d78646a0c3fc901bef2d63c468348c0b39320638e509cbe77f30e9035fe8e178",
+      "after_sha256": "c91b760171e2866c2b2ec66a4a2780ec2e49b940b408095f2566685c8f27ebbb",
+      "edits": [
+        {
+          "edit": "prose-045",
+          "line_before_this_edit": 76,
+          "before": "The canonical acceptance scene is",
+          "after": "An example is"
+        },
+        {
+          "edit": "prose-038",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-J adds map requests to the ordinary immutable @racket[scene]\ntimeline.",
+          "after": "Spatial map requests use the ordinary immutable @racket[scene] timeline."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-materials-and-lights.scrbl",
+      "before_sha256": "7dbe566034b41784ca829929049f45500ce46edc3c34fd1d227a914ec1cbbb69",
+      "after_sha256": "04b2cbc29be2bbed7d109c3d55a5a2be8a7f1062308400a565448065daece473",
+      "edits": [
+        {
+          "edit": "prose-122",
+          "line_before_this_edit": 100,
+          "before": "with its future shadow policy replaced.",
+          "after": "with its shadow policy replaced."
+        },
+        {
+          "edit": "prose-121",
+          "line_before_this_edit": 84,
+          "before": "applies V8's software shadow factor.",
+          "after": "applies the software shadow factor."
+        },
+        {
+          "edit": "prose-120",
+          "line_before_this_edit": 83,
+          "before": "enter a V8 software depth map.",
+          "after": "enter a software depth map."
+        },
+        {
+          "edit": "prose-119",
+          "line_before_this_edit": 64,
+          "before": "do not cast or receive a map lookup in this stage.",
+          "after": "do not cast shadows or receive a shadow-map lookup."
+        },
+        {
+          "edit": "prose-118",
+          "line_before_this_edit": 61,
+          "before": "The V8 software and V9\nOpenGL renderers",
+          "after": "The software and OpenGL renderers"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-materials-and-lig-33bbf37.scrbl",
+      "before_sha256": "9e17d7f29f727c6a0d626e335f5213f206dbbc1f3bc88ebfe4893350a4bfec11",
+      "after_sha256": "fc07dda6e455a992b707ea820431188e71009817aaadec6b5476d62dca9b5193",
+      "edits": [
+        {
+          "edit": "prose-124",
+          "line_before_this_edit": 123,
+          "before": "Point-light cube shadows remain\ndeferred,",
+          "after": "Point-light cube shadows are not supported,"
+        },
+        {
+          "edit": "prose-123",
+          "line_before_this_edit": 87,
+          "before": "Shadow descriptors are reserved for a later stage; the only\naccepted current value is @racket[#f].",
+          "after": "Shadow descriptors are not supported for ambient lights; the only accepted\nvalue is @racket[#f]."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-materials-and-lig-6d02ef2.scrbl",
+      "before_sha256": "5bbb333bf1fb487ea24fd9dcc877d9984eb9d0b8adf71872e3edca7181fd4577",
+      "after_sha256": "ef247236ef4c6c34b0c70c6c222bd0fab7a45c01871a6e7213848ac7b391f80b",
+      "edits": [
+        {
+          "edit": "prose-128",
+          "line_before_this_edit": 170,
+          "before": "V9 adds directional/spot maps,\nbut point-light cube shadows remain deferred.",
+          "after": "Directional and spot shadow maps are supported, but point-light cube shadows\nare not supported."
+        },
+        {
+          "edit": "prose-127",
+          "line_before_this_edit": 126,
+          "before": "V9 caches context-owned GPU maps",
+          "after": "The OpenGL backend caches context-owned GPU maps"
+        },
+        {
+          "edit": "prose-126",
+          "line_before_this_edit": 124,
+          "before": "billboards, and point-light cube shadows are outside this stage.",
+          "after": "billboards, and point-light cube shadows are not supported."
+        },
+        {
+          "edit": "prose-118",
+          "line_before_this_edit": 120,
+          "before": "The V8 software and V9 OpenGL renderers",
+          "after": "The software and OpenGL renderers"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-materials-and-lig-bcce52f.scrbl",
+      "before_sha256": "6fbe623539ee7c1e5146fb47a5f82e05cb84321c9479896e8e93ccf2e17da07a",
+      "after_sha256": "81fcc5e96e94ab60cc67d7883621fb0ec284389d9c910856aa1a32507cbca47c",
+      "edits": [
+        {
+          "edit": "prose-036",
+          "line_before_this_edit": 62,
+          "before": "V4 defines and samples the exposed light values.\nBoth V5's software renderer and V6's OpenGL renderer make finite illumination\nvisible, but attenuation, range, and the reserved shadow descriptor are not\nanimatable in this stage.",
+          "after": "Light-animation requests define and sample the exposed light values.\nBoth the software and OpenGL renderers display finite illumination, but\nattenuation, range, and the reserved shadow descriptor are not animatable."
+        },
+        {
+          "edit": "prose-035",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-V4 keeps authored lights in the same immutable, random-access\ntimeline as spatial objects and cameras.",
+          "after": "Authored lights use the same immutable, random-access timeline as spatial\nobjects and cameras."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-materials-and-lig-78e41df.scrbl",
+      "before_sha256": "58c0abe30f9e1281a8702449d33a04463a1c948b96cfca82dbf73a10fb54005f",
+      "after_sha256": "f53c1b2bc0bf9b55ea2d0c4e1c2c75d77faed676c2373f77002afd6a1ba416f4",
+      "edits": [
+        {
+          "edit": "prose-034",
+          "line_before_this_edit": 36,
+          "before": "during a V4 animation\nclip",
+          "after": "during a light-animation\nclip"
+        },
+        {
+          "edit": "prose-033",
+          "line_before_this_edit": 33,
+          "before": "matching finite-light records and V9\ndirectional/spot shadow maps",
+          "after": "matching finite-light records and\ndirectional/spot shadow maps"
+        },
+        {
+          "edit": "prose-032",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-V5 evaluates point and spot lights per software-rasterized fragment.",
+          "after": "The software renderer evaluates point and spot lights per rasterized fragment."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-semantic-spatial-15dcc60.scrbl",
+      "before_sha256": "fc684b41e8c317584f72e194b5602cfcb0ca82a8f3348b87b096df26994924a6",
+      "after_sha256": "bed6a6d43653127696ff14def9b98e506c218dbec3c8b82f6a2e3e81b79956f1",
+      "edits": [
+        {
+          "edit": "prose-061",
+          "line_before_this_edit": 89,
+          "before": "The initial relation vocabulary is intentionally small:",
+          "after": "The following constructors describe common spatial relationships:"
+        },
+        {
+          "edit": "prose-060",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-E adds derived spatial geometry without a mutable per-frame updater.",
+          "after": "Spatial relations provide derived geometry without a mutable per-frame updater."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-spatial-curves-an-44fde38.scrbl",
+      "before_sha256": "5360d40bf10e1f26de255f24352964e55d870d92886e31a4b5fe6729e6ae38d0",
+      "after_sha256": "bcc5c21c849bb5b648c040aed882d893f913d4c4c19ce8b7ce0e3efd6854117d",
+      "edits": [
+        {
+          "edit": "prose-051",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-F added finite spatial diagram geometry; SCENE-3D-O separates a\nsampled curve's centreline from its rendering style.",
+          "after": "Spatial diagram geometry is finite. A sampled curve's centreline is separate\nfrom its rendering style."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-spatial-anchors-a-adb8ffb.scrbl",
+      "before_sha256": "69095998604fdd327e76c6bdb6aed0681e31119c4f1f714dedaafc7e9e6b4835",
+      "after_sha256": "75109130a44f7253fdf1b18715569cfcdf9cc17baff227404492eb824575e6b8",
+      "edits": [
+        {
+          "edit": "prose-049",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-S begins the annotation layer with immutable @racket[anchor3d?]\ndescriptors.",
+          "after": "Spatial annotations use immutable @racket[anchor3d?] descriptors."
+        },
+        {
+          "edit": "prose-045",
+          "line_before_this_edit": 77,
+          "before": "The canonical acceptance scene is",
+          "after": "An example is"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-parametric-surfac-075e668.scrbl",
+      "before_sha256": "4d664ee11b0429fabba6c4ba8dbed7834c8fdd8cf378ac6d9a28fbde29e5778e",
+      "after_sha256": "c636c00dca42ff5057a19b8bb1b0bb41d8453720a934173f383167cfdaa8abeb",
+      "edits": [
+        {
+          "edit": "prose-050",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-G adds fixed-topology rectangular parametric surfaces.",
+          "after": "Parametric surfaces use a fixed rectangular sampling topology."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-adaptive-trimmed-7c83022.scrbl",
+      "before_sha256": "a70118206d7a8f37ca2e7e80256d32db095f34f951080cf0a3259bb4f00d9f7f",
+      "after_sha256": "0f63160d90c01b9f057752206b7f7a0aeb51ccd44fc0ef315a8f6421c664e6bb",
+      "edits": [
+        {
+          "edit": "prose-056",
+          "line_before_this_edit": 88,
+          "before": "The initial extractor is a fixed-resolution algorithm; it does not\nyet adapt its 3D cells.",
+          "after": "The extractor uses a fixed resolution; it does not adapt its 3D cells."
+        },
+        {
+          "edit": "prose-055",
+          "line_before_this_edit": 54,
+          "before": "Adaptive octree implicit extraction is not\nyet part of this release and is intentionally not claimed by this API.",
+          "after": "This API does not provide adaptive octree implicit extraction."
+        },
+        {
+          "edit": "prose-054",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-Q adds three producers which all lower to the same immutable indexed\nsurface record",
+          "after": "Adaptive, trimmed, and implicit surface constructors all lower to the same\nimmutable indexed surface record"
+        },
+        {
+          "edit": "prose-045",
+          "line_before_this_edit": 114,
+          "before": "The canonical acceptance scene is",
+          "after": "An example is"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-constructive-solids.scrbl",
+      "before_sha256": "322521236e16cd44075852ad9093eb2f7cc13bc59599bb5ae2eaae3cecafa98c",
+      "after_sha256": "e4b99018369c5b3e72abbff3dfee1dbcb972a0d5dddde68dc92b5427ac1413fa",
+      "edits": [
+        {
+          "edit": "prose-045",
+          "line_before_this_edit": 51,
+          "before": "The canonical acceptance scene is",
+          "after": "An example is"
+        },
+        {
+          "edit": "prose-031",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-H adds deterministic indexed solid meshes.",
+          "after": "Solid constructors create deterministic indexed meshes."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-meshes-polygonal-da981bf.scrbl",
+      "before_sha256": "d596bedab47a8f4fd5a57b9b624a2126745f7408ebd8a89e551e627e5912caf1",
+      "after_sha256": "6914b23e6eece058d5790e8ea8a98e418f4e6ffc539ce3db0e46451bf14fca7c",
+      "edits": [
+        {
+          "edit": "prose-144",
+          "line_before_this_edit": 88,
+          "before": "Hole triangulation, duals, Schlegel diagrams, nets, and\nface-transform animation are later U stages.",
+          "after": "This constructor does not triangulate holes, construct duals, Schlegel\ndiagrams or nets, or create face-transform animations."
+        },
+        {
+          "edit": "prose-143",
+          "line_before_this_edit": 85,
+          "before": "U-2 groups only existing triangles; it neither repairs",
+          "after": "Polygonal-face construction groups only existing triangles; it neither repairs"
+        },
+        {
+          "edit": "prose-142",
+          "line_before_this_edit": 72,
+          "before": "the U-1 triangle topology used to build the complex.",
+          "after": "the triangle topology used to build the complex."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-meshes-determinis-b37f679.scrbl",
+      "before_sha256": "700b29a7487174c69e42bde75eaf733225f3d50b402fc6cc10d608d7bb755760",
+      "after_sha256": "a7151ee5e269d7d58f9df305e5b76d451f4ba2d998b7343f5bff8061df0259ab",
+      "edits": [
+        {
+          "edit": "prose-138",
+          "line_before_this_edit": 66,
+          "before": "polygon-with-hole operations are outside this stage.",
+          "after": "polygon-with-hole operations are not supported."
+        },
+        {
+          "edit": "prose-137",
+          "line_before_this_edit": 60,
+          "before": "This U-3 implementation is deterministic but not a general\ncomputational-geometry repair system:",
+          "after": "The convex-hull implementation is deterministic but is not a general\ncomputational-geometry repair system:"
+        },
+        {
+          "edit": "prose-136",
+          "line_before_this_edit": 54,
+          "before": "@racket['merge] returns U-2 polygonal\nsupporting-face records;",
+          "after": "@racket['merge] returns polygonal supporting-face records;"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-meshes-polyhedral-duals.scrbl",
+      "before_sha256": "1d7fb6ea009cb0bf98cd3a581834e98533cc80d3e3f605c732055d433ef54c44",
+      "after_sha256": "0c5d6584e0d6492f0574bb70622f8397c8b2ac9bb6092955cc45656e56f5be03",
+      "edits": [
+        {
+          "edit": "prose-145",
+          "line_before_this_edit": 50,
+          "before": "simple planar U-2 faces",
+          "after": "simple planar polygonal faces"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-meshes-schlegel-d-6fdb2d3.scrbl",
+      "before_sha256": "9526b9256e9e13b2e7f5fca25d2a6e8d44e949c22dea585f27a13d1ec2e4f025",
+      "after_sha256": "18b2c309ca7e72205cd5929713341f374c42ff963fc285cf1a2932a6df0615bf",
+      "edits": [
+        {
+          "edit": "prose-146",
+          "line_before_this_edit": 105,
+          "before": "simple polygonal U-2 faces",
+          "after": "simple polygonal faces"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-clipping-sections-ae6e276.scrbl",
+      "before_sha256": "7e9e2be1def6b4ba8c9c5d141781e6c2017dff030f4ff41532d94afc14eabcec",
+      "after_sha256": "a2c736d3d5dcbce67962fed6e2c6b5a5378b1565a9213c077ad372d7708bf055",
+      "edits": [
+        {
+          "edit": "prose-048",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-I distinguishes a render instruction from a geometric operation.",
+          "after": "Render clipping and geometric slicing are distinct operations."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-prepared-spatial-85dc26c.scrbl",
+      "before_sha256": "1a3ff0e881cb9dd04a1cbd2b0e08d590d18dee2a453064fe70a84c9f05ec1721",
+      "after_sha256": "bd5d44f5c12932a421317b7d5a10168edf61862cb982604c2255937c38a66e97",
+      "edits": [
+        {
+          "edit": "prose-044",
+          "line_before_this_edit": 57,
+          "before": "remains diagnostic preparation metadata for\nnow; it no longer changes lookup cost.",
+          "after": "is diagnostic preparation metadata; it does not change lookup cost."
+        },
+        {
+          "edit": "prose-043",
+          "line_before_this_edit": 124,
+          "before": "The earlier @racket[adaptive-rk45] setting remains accepted while examples are\nmigrated.",
+          "after": "An @racket[adaptive-rk45] setting is also accepted."
+        },
+        {
+          "edit": "prose-042",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-T0/T1/T2/T3/T4 turns the earlier direct-time flow support into an\nimmutable trajectory-data model with event-aware preparation, explicit\nstopping policies, display-ready adaptive streamlines, and deterministic seed\nsets.",
+          "after": "Prepared spatial trajectories are immutable data with event-aware\npreparation, explicit stopping policies, display-ready adaptive streamlines,\nand deterministic seed sets."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-prepared-spatial-dc0c904.scrbl",
+      "before_sha256": "4a6a635938090c9f72ee94cc7cdcbfb1440bceb2ce390dea1ee8540e5d18cf3b",
+      "after_sha256": "b22baaef9548d06128fd5a11c3db5b6df289a5ca97186e0e32695020d68b4301",
+      "edits": [
+        {
+          "edit": "prose-156",
+          "line_before_this_edit": 78,
+          "before": "T2 detects\nsign-changing roots and exact/tolerance-zero endpoints",
+          "after": "@racket[ode-event3d] detects\nsign-changing roots and exact/tolerance-zero endpoints"
+        },
+        {
+          "edit": "prose-155",
+          "line_before_this_edit": 72,
+          "before": "@bold{Current T5 limits.}",
+          "after": "@bold{Current limits.}"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-prepared-spatial-250ce4a.scrbl",
+      "before_sha256": "74d18010a8a45c462d40b7506b39cb4d45cb766d67299042c56ee2c3e9953c33",
+      "after_sha256": "252cdc244ad112dd93cfb0ae6c7171103c079ae53d2991ab4bf050f11b45fba7",
+      "edits": [
+        {
+          "edit": "prose-157",
+          "line_before_this_edit": 58,
+          "before": "@filepath{examples/3d/adaptive-streamlines.rkt} shows T3's world-space\nresampling and @filepath{examples/3d/deterministic-seed-sets.rkt} shows T4\nPoisson seed provenance. @filepath{examples/3d/poincare-section.rkt} shows T5\ndense plane crossings.",
+          "after": "@filepath{examples/3d/adaptive-streamlines.rkt} demonstrates world-space\nresampling, @filepath{examples/3d/deterministic-seed-sets.rkt} demonstrates\nPoisson seed provenance, and @filepath{examples/3d/poincare-section.rkt}\ndemonstrates dense plane crossings."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-spatial-inspectio-46dec95.scrbl",
+      "before_sha256": "5e25cf65504221c9189bd486d2fb48349b0875473d574bc0ec6b5375e42ca213",
+      "after_sha256": "5c75869c579d4ed4ad1398febf9033ccb01205ef083722a061e191a29d06c2f3",
+      "edits": [
+        {
+          "edit": "prose-062",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-L exposes the spatial hierarchy that an already sampled",
+          "after": "Spatial inspection exposes the hierarchy that an already sampled"
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-retained-renderer-65f0695.scrbl",
+      "before_sha256": "7f9d2c299116733044e32cd2a7876d116c698c4da4c06ca5f96a552078751566",
+      "after_sha256": "3727752a040505afcccabb9a996539a76e53e56d185c5918799c829d41c7acd1",
+      "edits": [
+        {
+          "edit": "prose-041",
+          "line_before_this_edit": 74,
+          "before": "It replaces the former\nnine positional booleans, which could not safely grow with renderer features.",
+          "after": "Feature membership and named limits describe the backend without relying on\npositional Boolean fields."
+        },
+        {
+          "edit": "prose-040",
+          "line_before_this_edit": 129,
+          "before": "backend supports directional and spot maps in V8; the OpenGL backend supports\nthe same descriptor kinds in V9 through a maximum of eight cached depth maps.",
+          "after": "backend supports directional and spot shadow maps. The OpenGL backend supports\nthe same descriptor kinds with at most eight cached depth maps."
+        },
+        {
+          "edit": "prose-039",
+          "line_before_this_edit": 17,
+          "before": "SCENE-3D-N keeps @racket[animate/3d] pure and places effectful implementation\nchoice in @racketmodname[animate/3d/render]. SCENE-3D-O extends that compiled\nview with ordered, renderer-neutral centreline strokes and screen markers.",
+          "after": "The @racket[animate/3d] API is pure; effectful backend selection belongs to\n@racketmodname[animate/3d/render]. A compiled view includes ordered,\nrenderer-neutral centreline strokes and screen markers."
+        }
+      ]
+    },
+    {
+      "file": "scribblings/reference/ref3d-optional-racket-o-35de9ff.scrbl",
+      "before_sha256": "ceb0801fc225d2566b9c415c605103dbff326749ba3b36befbc23c29ec21ae65",
+      "after_sha256": "7780d38e089aa3c86f214be81996242cc3770e0d139046e8c65b9af3276c14ce",
+      "edits": [
+        {
+          "edit": "prose-130",
+          "line_before_this_edit": 103,
+          "before": "and\nfor O, compiled stroke/marker/outline counts and requested screen/world width\nmodes.",
+          "after": "and compiled stroke/marker/outline counts and requested screen/world width\nmodes."
+        },
+        {
+          "edit": "prose-129",
+          "line_before_this_edit": 99,
+          "before": "The repository tool @filepath{tools/run-3d-probes.rkt} renders the canonical\nvisual probes for any visible stage from @tt{3D-B} through @tt{3D-P}. For\nexample, @tt{gracket tools/run-3d-probes.rkt --stage 3D-P --renderer opengl\n--output rendered-examples/3d-p-opengl} writes frame PNGs plus @tt{manifest.rktd} and a\n@tt{diagnostics.rktd} file per probe.",
+          "after": "The repository tool @filepath{tools/run-3d-probes.rkt} renders spatial visual\nprobes. It writes frame PNGs plus @tt{manifest.rktd} and a\n@tt{diagnostics.rktd} file per probe."
+        },
+        {
+          "edit": "prose-059",
+          "line_before_this_edit": 84,
+          "before": "The OpenGL backend supports V9 directional/spot maps",
+          "after": "The OpenGL backend supports directional/spot shadow maps"
+        },
+        {
+          "edit": "prose-058",
+          "line_before_this_edit": 79,
+          "before": "The first backend has one serialized context",
+          "after": "The backend has one serialized context"
+        },
+        {
+          "edit": "prose-057",
+          "line_before_this_edit": 19,
+          "before": "SCENE-3D-P adds an explicit GPU implementation of the same\n@racket[renderer3d] protocol.",
+          "after": "This module provides an explicit GPU implementation of the\n@racket[renderer3d] protocol."
+        }
+      ]
+    }
+  ],
+  "protected": "Racket examples, declaration argument lists, imports, paths, and link/tag arguments",
+  "remaining_stage_labels": 0
+}

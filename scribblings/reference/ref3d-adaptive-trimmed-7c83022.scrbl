@@ -16,8 +16,8 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-Q adds three producers which all lower to the same immutable indexed
-surface record returned by @racket[surface3d-local-mesh].  The record preserves
+Adaptive, trimmed, and implicit surface constructors all lower to the same
+immutable indexed surface record returned by @racket[surface3d-local-mesh].  The record preserves
 vertex and triangle provenance as well as a topology key, while renderer
 caches remain outside authored values.
 
@@ -51,8 +51,7 @@ marching tetrahedra. It canonicalizes exact iso vertices, uses an author
 gradient when supplied (otherwise bounded one-sided finite differences), and
 reports extraction-boundary crossings. Its @racket[#:on-invalid] policy may
 raise, skip invalid cells, or use bounded local subdivision before recording
-unresolved cells in diagnostics. Adaptive octree implicit extraction is not
-yet part of this release and is intentionally not claimed by this API.
+unresolved cells in diagnostics. This API does not provide adaptive octree implicit extraction.
 
 @defproc[(trim-expression3d? [value any/c]) boolean?]{Recognizes an immutable
 signed trim field or Boolean trim expression.}
@@ -86,8 +85,7 @@ yet exposed as a separate surface value.
 axis-aligned box and extracts one level set with deterministic marching
 tetrahedra.  It shares lattice-edge intersections, estimates normals from
 central field differences, and records whether the surface touches the box
-boundary.  The initial extractor is a fixed-resolution algorithm; it does not
-yet adapt its 3D cells. @racket[view3d-surface-pick] uses the ordinary CPU BVH
+boundary.  The extractor uses a fixed resolution; it does not adapt its 3D cells. @racket[view3d-surface-pick] uses the ordinary CPU BVH
 hit and attaches the retained triangle provenance: barycentrically interpolated
 @racket[(vector u v)] parameters for parametric surfaces and the source cube/
 tetrahedron record for implicit ones. It does not claim a separate analytic
@@ -111,5 +109,5 @@ minimum-v reveal.}
          any/c]{Interpolates matching topology and material structure directly
 from immutable source/destination grids.}
 
-The canonical acceptance scene is @filepath{examples/3d/tangent-plane.rkt}.
+An example is @filepath{examples/3d/tangent-plane.rkt}.
 

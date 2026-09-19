@@ -58,11 +58,10 @@ viewport's final tone-map policy only when storing output pixels.
 
 @racket[emission] is added after ambient, diffuse, and specular terms and is
 therefore not reduced by shadows. @racket[casts-shadow?] and
-@racket[receives-shadow?] are durable material policy. The V8 software and V9
-OpenGL renderers include only opaque mesh instances with
+@racket[receives-shadow?] are durable material policy. The software and OpenGL renderers include only opaque mesh instances with
 @racket[casts-shadow?] in a depth map and apply receiver policy to diffuse and
 specular illumination. Transparent surfaces, strokes, markers, and billboards
-do not cast or receive a map lookup in this stage.
+do not cast shadows or receive a shadow-map lookup.
 OpenGL shadow reuse is keyed by the prepared eligible-caster set, so a themed
 vertex-alpha change that adds or removes a caster refreshes the depth map while
 an RGB-only change may reuse it.
@@ -81,8 +80,8 @@ the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial ins
 @defproc[(material3d-emission [material material3d?]) color-spec?]{Returns the retained additive emission colour specification.}
 @defproc[(material3d-emission-strength [material material3d?]) nonnegative-real?]{Returns emission strength.}
 @defproc[(material3d-double-sided? [material material3d?]) boolean?]{Reports whether back-face culling is disabled for this mesh.}
-@defproc[(material3d-casts-shadow? [material material3d?]) boolean?]{Returns shadow-caster policy. Only opaque mesh instances with true policy enter a V8 software depth map.}
-@defproc[(material3d-receives-shadow? [material material3d?]) boolean?]{Returns whether an opaque mesh receiver applies V8's software shadow factor.}
+@defproc[(material3d-casts-shadow? [material material3d?]) boolean?]{Returns shadow-caster policy. Only opaque mesh instances with true policy enter a software depth map.}
+@defproc[(material3d-receives-shadow? [material material3d?]) boolean?]{Returns whether an opaque mesh receiver applies the software shadow factor.}
 @defproc[(material3d-wireframe? [material material3d?]) boolean?]{Returns retained wireframe intent.}
 @defproc[(material3d-with-color [material material3d?] [color color-spec?]) material3d?]{Returns
 @racket[material] with only its base colour replaced.}
@@ -98,5 +97,5 @@ the derived @math{max(1,2/r^2-2)} Blinn--Phong exponent shown by the spatial ins
                                          (material3d-casts-shadow? material)]
                                         [#:receives-shadow? receives-shadow? boolean?
                                          (material3d-receives-shadow? material)])
-         material3d?]{Returns @racket[material] with its future shadow policy replaced.}
+         material3d?]{Returns @racket[material] with its shadow policy replaced.}
 

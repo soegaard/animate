@@ -16,10 +16,9 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-T0/T1/T2/T3/T4 turns the earlier direct-time flow support into an
-immutable trajectory-data model with event-aware preparation, explicit
-stopping policies, display-ready adaptive streamlines, and deterministic seed
-sets.
+Prepared spatial trajectories are immutable data with event-aware
+preparation, explicit stopping policies, display-ready adaptive streamlines,
+and deterministic seed sets.
 @racket[prepare-ode-trajectory3d] records dense RK4 or Dormand--Prince
 segments once; subsequent position, tangent, arc-length, and event-hit lookup
 accepts any supported time in any order and never calls the author field. A
@@ -55,8 +54,7 @@ located inside a segment.
 preview worker resolves it, Animate samples its requested phase values into an
 immutable table. Thus worker rendering reads positions and tangents only; it
 does not evaluate the field procedure. The fixed solver's
-@racket[#:checkpoint-every] value remains diagnostic preparation metadata for
-now; it no longer changes lookup cost.
+@racket[#:checkpoint-every] value is diagnostic preparation metadata; it does not change lookup cost.
 
 @racket[prepare-streamline3d] uses the same dense prepared trajectory but adds
 an explicit choice of parameterization. @racket['time] means
@@ -122,8 +120,7 @@ worker threads. It defaults to @racket[#f].}
                                  [#:maximum-step maximum-step positive? 1]
                                  [#:maximum-steps maximum-steps exact-positive-integer? 100000])
          any/c]{Constructs immutable adaptive RK45 settings.
-The earlier @racket[adaptive-rk45] setting remains accepted while examples are
-migrated.}
+An @racket[adaptive-rk45] setting is also accepted.}
 @defproc[(ode-event3d [#:id id symbol?]
                        [#:function function procedure?]
                        [#:direction direction (or/c 'any 'increasing 'decreasing) 'any]

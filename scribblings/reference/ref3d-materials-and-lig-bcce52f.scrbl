@@ -16,8 +16,8 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-V4 keeps authored lights in the same immutable, random-access
-timeline as spatial objects and cameras. A light request names the owning
+Authored lights use the same immutable, random-access timeline as spatial
+objects and cameras. A light request names the owning
 view and the stable light ID separately; it captures the exact field value at
 the start of its local clip. It therefore works as a leaf of @racket[timed],
 @racket[succession], @racket[animation-group], @racket[lagged-start], and a
@@ -59,8 +59,7 @@ deterministic quaternion interpolation avoids the zero-vector singularity.}
 Interpolates a spot's inner and outer cone angles while retaining the required
 @math{0 <= inner <= outer <= pi} invariant.}
 
-@bold{Current limitation.} V4 defines and samples the exposed light values.
-Both V5's software renderer and V6's OpenGL renderer make finite illumination
-visible, but attenuation, range, and the reserved shadow descriptor are not
-animatable in this stage.
+@bold{Current limitation.} Light-animation requests define and sample the exposed light values.
+Both the software and OpenGL renderers display finite illumination, but
+attenuation, range, and the reserved shadow descriptor are not animatable.
 

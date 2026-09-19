@@ -1,8 +1,9 @@
 # Maintain the manual as a teaching tool
 
-The manual has four parts with different jobs. Concepts explains ideas. Cookbook
-solves individual tasks. Guide teaches a workflow in small steps. Reference owns
-the API contracts. A topic may appear in more than one part, but do not copy a long
+The manual has five parts with different jobs. Concepts explains ideas. Cookbook
+solves individual tasks. Guide teaches a workflow in small steps. Complete Example
+Programs shows whole source files with their results. Reference owns the API
+contracts. A topic may appear in more than one part, but do not copy a long
 reference entry into the Guide.
 
 ## Add a lesson
@@ -17,9 +18,12 @@ alternative. Define the Racket variables it needs, name its module imports, and
 state whether loading the file opens anything or writes files. Say what the reader
 should see. Include one small change the reader can try and its expected effect.
 
-Use the real example files in `examples/`, shown through `example-part` or
-`example-source`. Keep the snippet markers unique and paired. Do not maintain a
-second copy of the code in the prose. Run its tests after editing it.
+Execute short examples directly with `scribble/example`. Use a separate evaluator
+for each chapter and check stable results. When a whole source file matters, read
+the real program instead of copying it into the prose. Complete Example Programs
+uses `complete-source`; existing excerpts elsewhere may use `example-part` or
+`example-source`. Keep any snippet markers unique and paired. Run the actual
+source checks after editing a complete program.
 
 ## Add an illustration
 
@@ -37,8 +41,11 @@ figures after a relevant renderer/library change too. Move the old figure direct
 to a backup first; the runner will not silently overwrite stale or edited files.
 
 Commit reviewed PNGs and their manifest under `figures/learning-r4/`. Never commit
-font binaries or machine-local caches. An ordinary Scribble build must read stored
-assets, not run an animation renderer, TeX, or a video encoder.
+font binaries or machine-local caches. Frame strips read stored assets; the
+Complete Example Programs part does not rerender them during a Scribble build.
+Short executable Guide and Cookbook examples may produce bounded native Pict
+results. Do not launch a GUI, TeX, a full movie render, or a video encoder as
+an incidental part of building the manual.
 
 ## Keep the Reference navigable
 

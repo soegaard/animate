@@ -16,8 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-J adds map requests to the ordinary immutable @racket[scene]
-timeline. Every target is a rooted spatial path, and every map procedure is
+Spatial map requests use the ordinary immutable @racket[scene] timeline. Every target is a rooted spatial path, and every map procedure is
 authored in world coordinates. This makes a map applied to a nested child mean
 the same thing as applying it to an equivalent top-level child. A surrounding
 parent map must therefore be invertible when the result is rebased into that
@@ -74,6 +73,6 @@ explicit @racket['drop-triangle] policy removes every incident triangle.}
 each nonzero requested phase. Unlike endpoint interpolation, the supplied
 homotopy controls the complete intermediate geometry.}
 
-The canonical acceptance scene is
+An example is
 @filepath{examples/3d/spatial-maps-and-homotopies.rkt}.
 

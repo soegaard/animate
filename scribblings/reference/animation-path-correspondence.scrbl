@@ -202,26 +202,26 @@ path and @racket[destination], then applies
 @racket[path-geometry-normalize-for-morph] to the two prepared equal-count
 paths.
 
-Matched real open/closed subpaths use the same correspondence rules as SCENE-AG.
+Matched real open/closed subpaths use the same correspondence rules as mixed-compound path alignment.
 Unmatched destination subpaths grow from deterministic degenerate bounds-center
 seeds by default, while unmatched source subpaths collapse to their own
 bounds-center seeds. @racket[birth-anchor] and @racket[death-anchor] may instead
 be explicit finite local @racket[vec2] values shared by all unmatched subpaths on
-the corresponding side. SCENE-AK's @racket[birth-anchor-map] and
+the corresponding side. @racket[birth-anchor-map] and
 @racket[death-anchor-map] may sparsely override those shared values by original
 destination/source subpath index. Missing keys inherit the shared anchor and an
 explicit @racket['bounds-center] entry opts that subpath back into its own center.
 The request snapshots both hashes immutably; index range is checked against the
 actual clip-start source and caller destination when the request is compiled. By
 default @racket[birth-penalty] and @racket[death-penalty] are both
-@racket['forced], preserving SCENE-AH/AI matching. Supplying both as finite
-nonnegative real costs enables SCENE-AJ voluntary death+birth replacement when
+@racket['forced], which permits births and deaths only when topology counts differ. Supplying both as finite
+nonnegative real costs enables voluntary death+birth replacement when
 that lowers the global correspondence cost; exact cost ties prefer fewer topology
-changes. SCENE-AL's @racket[birth-penalty-map] and
+changes. @racket[birth-penalty-map] and
 @racket[death-penalty-map] may sparsely override those shared numeric costs by
 original destination/source subpath index. Missing keys inherit the shared cost.
 The request snapshots both endpoint penalty maps immutably, and nonempty endpoint
-maps require numeric shared penalty mode. SCENE-AM's @racket[match-penalty-map]
+maps require numeric shared penalty mode. @racket[match-penalty-map]
 may be used in either forced or numeric mode. Its keys are
 @racket[(cons source-index destination-index)] pairs in original caller storage
 order and its finite nonnegative values add to real-edge geometric scores only.

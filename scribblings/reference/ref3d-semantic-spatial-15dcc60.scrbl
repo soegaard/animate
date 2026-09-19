@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-E adds derived spatial geometry without a mutable per-frame updater.
+Spatial relations provide derived geometry without a mutable per-frame updater.
 A @racket[spatial-relation] is a spatial Visual declaration with a concrete
 template, an explicit list of inputs, and a resolver. During a regular
 @racket[scene] sample, Animate first samples ordinary spatial and camera
@@ -86,7 +86,7 @@ An undeclared access is an authoring error. Relations resolve lazily with one
 cache for the sampled viewport; a cycle reports complete paths rooted at the
 owning view, such as @racket['(world links ab)].
 
-The initial relation vocabulary is intentionally small:
+The following constructors describe common spatial relationships:
 
 @defproc[(segment-between3d [from spatial-path?] [to spatial-path?]
                              [#:id id symbol?]

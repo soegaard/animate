@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-L exposes the spatial hierarchy that an already sampled
+Spatial inspection exposes the hierarchy that an already sampled
 @racket[view3d] submits to its renderer. Inspection is immutable query data;
 it never adds a wireframe, selection flag, acceleration structure, or other
 hidden state to an authored Scene. The preview uses the same query data after a

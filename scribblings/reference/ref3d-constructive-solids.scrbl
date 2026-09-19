@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-H adds deterministic indexed solid meshes. The standard constructors
+Solid constructors create deterministic indexed meshes. The standard constructors
 and regular-polyhedron constructors return ordinary @racket[mesh3d] values. Their tessellation parameters are
 part of the authored immutable value, not a renderer decision.
 
@@ -48,5 +48,5 @@ been split into new representation corners.}
 @defproc[(mesh3d-boundary-edges [mesh mesh3d?]) vector?]{Reports its
 deterministically ordered manifold boundary edges.}
 
-The canonical acceptance scene is @filepath{examples/3d/solid-of-revolution.rkt}.
+An example is @filepath{examples/3d/solid-of-revolution.rkt}.
 

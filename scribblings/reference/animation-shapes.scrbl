@@ -104,7 +104,7 @@ leaves by nearest position to give them the same moving cross-fade. Pass
 @racket['morph] to require every matched pair to have geometric correspondence,
 or @racket['cross-fade] to disable all geometric morphs.
 
-This first general matcher is intentionally conservative. It does not infer
+General Visual matching is intentionally conservative. It does not infer
 semantic matches for arbitrary SVG/text/custom leaves after renaming, preserve
 one leaf through a split or merge, resolve occlusion/collisions, or replace the
 formula APIs' TeX/glyph correspondence. At exact start the source is unchanged;

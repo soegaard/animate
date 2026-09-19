@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-I distinguishes a render instruction from a geometric operation.
+Render clipping and geometric slicing are distinct operations.
 @racket[clip3d] keeps its source subtree intact and clips only the triangles
 submitted to a @racket[view3d] renderer. @racket[slice-mesh3d] instead returns
 new half-space mesh geometry; it deliberately does not invent a cap. Use

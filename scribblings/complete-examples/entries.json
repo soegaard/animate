@@ -1,0 +1,495 @@
+{
+  "schema": "animate-complete-examples-v1",
+  "families": {
+    "main": {
+      "manifest": "scribblings/figures/illustrations.json",
+      "schema": "animate-manual-illustrations-v1"
+    },
+    "learning": {
+      "manifest": "scribblings/figures/learning-r4/manifest.json",
+      "schema": "animate-manual-learning-frames-v1"
+    },
+    "3d": {
+      "manifest": "scribblings/figures/3d-r3/manifest.json",
+      "schema": "animate-manual-3d-frames-v1"
+    }
+  },
+  "entries": [
+    {
+      "id": "moving-circle",
+      "title": "A moving circle",
+      "chapter": "moving-circle.scrbl",
+      "sources": [
+        "scribblings/examples/moving-circle.rkt"
+      ],
+      "requirements": [
+        "Animate; FFmpeg for MP4 output"
+      ],
+      "optional": [],
+      "checks": [
+        {
+          "source": "scribblings/examples/moving-circle.rkt",
+          "binding": "animation",
+          "kind": "scene",
+          "duration": 1.5
+        }
+      ],
+      "strips": [
+        {
+          "id": "motion",
+          "family": "main",
+          "key": "circle-motion",
+          "select": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "note": "The one-second movement. The exported animation adds a half-second hold after it."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket \\\n  -e '(require animate/render \"scribblings/examples/moving-circle.rkt\")' \\\n  -e '(render-frames! animation \"slides-output/complete-examples/moving-circle/frames\" #:fps 30)' \\\n  -e '(encode-mp4! \"slides-output/complete-examples/moving-circle/frames\" \"slides-output/complete-examples/moving-circle/moving-circle.mp4\" #:fps 30)'",
+          "inputs": [
+            "scribblings/examples/moving-circle.rkt"
+          ],
+          "output": "slides-output/complete-examples/moving-circle/moving-circle.mp4",
+          "note": "Writes numbered PNGs, then encodes them as an MP4. This simple two-step route renders in one process."
+        }
+      ]
+    },
+    {
+      "id": "function-graph",
+      "title": "Draw and move a function graph",
+      "chapter": "function-graph.scrbl",
+      "sources": [
+        "scribblings/examples/first-function-graph.rkt"
+      ],
+      "requirements": [
+        "Animate; no formula typesetter; FFmpeg for MP4 output"
+      ],
+      "optional": [],
+      "checks": [
+        {
+          "source": "scribblings/examples/first-function-graph.rkt",
+          "binding": "film",
+          "kind": "scene",
+          "duration": 3
+        },
+        {
+          "source": "scribblings/examples/first-function-graph.rkt",
+          "binding": "moving-diagram",
+          "kind": "scene",
+          "duration": 2
+        }
+      ],
+      "strips": [
+        {
+          "id": "draw",
+          "family": "learning",
+          "key": "draw-graph",
+          "select": [
+            0,
+            2,
+            4
+          ],
+          "note": "Reveal the curve, then hold the finished graph."
+        },
+        {
+          "id": "move",
+          "family": "learning",
+          "key": "move-graph",
+          "select": [
+            0,
+            1,
+            2
+          ],
+          "note": "A separate animation: the completed graph and its axes move together."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket \\\n  -e '(require animate/render \"scribblings/examples/first-function-graph.rkt\")' \\\n  -e '(render-frames! film \"slides-output/complete-examples/function-graph/frames\" #:fps 30)' \\\n  -e '(encode-mp4! \"slides-output/complete-examples/function-graph/frames\" \"slides-output/complete-examples/function-graph/function-graph.mp4\" #:fps 30)'",
+          "inputs": [
+            "scribblings/examples/first-function-graph.rkt"
+          ],
+          "output": "slides-output/complete-examples/function-graph/function-graph.mp4",
+          "note": "Writes numbered PNGs, then encodes them as an MP4. This simple two-step route renders in one process."
+        },
+        {
+          "id": "move-movie",
+          "command": "racket \\\n  -e '(require animate/render \"scribblings/examples/first-function-graph.rkt\")' \\\n  -e '(render-frames! moving-diagram \"slides-output/complete-examples/moving-graph/frames\" #:fps 30)' \\\n  -e '(encode-mp4! \"slides-output/complete-examples/moving-graph/frames\" \"slides-output/complete-examples/moving-graph/moving-graph.mp4\" #:fps 30)'",
+          "inputs": [
+            "scribblings/examples/first-function-graph.rkt"
+          ],
+          "output": "slides-output/complete-examples/moving-graph/moving-graph.mp4",
+          "note": "Writes numbered PNGs, then encodes them as an MP4. This simple two-step route renders in one process."
+        }
+      ]
+    },
+    {
+      "id": "slide-lesson",
+      "title": "A complete slide lesson",
+      "chapter": "slide-lesson.scrbl",
+      "sources": [
+        "scribblings/examples/slide-lesson.rkt",
+        "scribblings/examples/project.rkt"
+      ],
+      "requirements": [
+        "Animate Slides; FFmpeg for MP4 output"
+      ],
+      "optional": [],
+      "checks": [
+        {
+          "source": "scribblings/examples/slide-lesson.rkt",
+          "binding": "film",
+          "kind": "storyboard",
+          "duration": 19.6
+        },
+        {
+          "source": "scribblings/examples/project.rkt",
+          "binding": "lesson-project",
+          "kind": "project",
+          "duration": null
+        }
+      ],
+      "strips": [
+        {
+          "id": "lesson",
+          "family": "main",
+          "key": "function-lesson",
+          "select": [
+            0,
+            1,
+            2
+          ],
+          "note": "Opening, worked input, and recap. These times belong to the complete storyboard."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket slides/render-example.rkt --workers 10 \\\n  --output slides-output/complete-examples/slide-lesson \\\n  scribblings/examples/slide-lesson.rkt",
+          "inputs": [
+            "slides/render-example.rkt",
+            "scribblings/examples/slide-lesson.rkt"
+          ],
+          "output": "slides-output/complete-examples/slide-lesson/slide-lesson.mp4",
+          "note": "Uses the existing shared-worker slide runner. Add --frames to write PNGs without encoding an MP4."
+        },
+        {
+          "id": "project",
+          "command": "raco animate render scribblings/examples/project.rkt lesson-project",
+          "inputs": [
+            "scribblings/examples/project.rkt",
+            "scribblings/examples/slide-lesson.rkt"
+          ],
+          "output": "slides-output/manual-videos/function-lesson.mp4",
+          "note": "An alternative to the command above. The project file keeps the render settings beside the lesson source."
+        }
+      ]
+    },
+    {
+      "id": "algebra-checkpoints",
+      "title": "Algebra across layouts",
+      "chapter": "algebra-checkpoints.scrbl",
+      "sources": [
+        "scribblings/examples/math-checkpoints.rkt"
+      ],
+      "requirements": [
+        "Animate Math and Slides; the formula toolchain for pictures; FFmpeg for MP4 output"
+      ],
+      "optional": [
+        "math"
+      ],
+      "checks": [
+        {
+          "source": "scribblings/examples/math-checkpoints.rkt",
+          "binding": "film",
+          "kind": "storyboard",
+          "duration": 9
+        }
+      ],
+      "strips": [
+        {
+          "id": "algebra",
+          "family": "main",
+          "key": "semantic-math",
+          "select": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "note": "Reviewed semantic-math gallery captures of this checkpoint interval and layout; source and shot IDs differ from the standalone program."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket slides/render-example.rkt --workers 10 \\\n  --output slides-output/complete-examples/algebra-checkpoints \\\n  scribblings/examples/math-checkpoints.rkt",
+          "inputs": [
+            "slides/render-example.rkt",
+            "scribblings/examples/math-checkpoints.rkt"
+          ],
+          "output": "slides-output/complete-examples/algebra-checkpoints/math-checkpoints.mp4",
+          "note": "Uses the existing shared-worker slide runner. Add --frames to write PNGs without encoding an MP4."
+        }
+      ]
+    },
+    {
+      "id": "geometry-construction",
+      "title": "A geometry construction lesson",
+      "chapter": "geometry-construction.scrbl",
+      "sources": [
+        "scribblings/examples/geometry-slide.rkt"
+      ],
+      "requirements": [
+        "Animate Geometry and Slides; FFmpeg for MP4 output"
+      ],
+      "optional": [
+        "geometry"
+      ],
+      "checks": [
+        {
+          "source": "scribblings/examples/geometry-slide.rkt",
+          "binding": "film",
+          "kind": "storyboard",
+          "duration": null
+        }
+      ],
+      "strips": [
+        {
+          "id": "construction",
+          "family": "main",
+          "key": "geometry-play",
+          "select": [
+            0,
+            1,
+            2
+          ],
+          "note": "Reviewed geometry-construction gallery captures of the construction used by this program."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket slides/render-example.rkt --workers 10 \\\n  --output slides-output/complete-examples/geometry-construction \\\n  scribblings/examples/geometry-slide.rkt",
+          "inputs": [
+            "slides/render-example.rkt",
+            "scribblings/examples/geometry-slide.rkt"
+          ],
+          "output": "slides-output/complete-examples/geometry-construction/geometry-slide.mp4",
+          "note": "Uses the existing shared-worker slide runner. Add --frames to write PNGs without encoding an MP4."
+        }
+      ]
+    },
+    {
+      "id": "semantic-parts",
+      "title": "Semantic matching of named parts",
+      "chapter": "semantic-parts.scrbl",
+      "sources": [
+        "scribblings/examples/matched-parts.rkt"
+      ],
+      "requirements": [
+        "Animate Slides; ordinary text only; FFmpeg for MP4 output"
+      ],
+      "optional": [],
+      "checks": [
+        {
+          "source": "scribblings/examples/matched-parts.rkt",
+          "binding": "film",
+          "kind": "storyboard",
+          "duration": 7.5
+        }
+      ],
+      "strips": [
+        {
+          "id": "parts",
+          "family": "main",
+          "key": "semantic-parts",
+          "select": [
+            0,
+            2,
+            4
+          ],
+          "note": "Reviewed semantic-parts gallery captures. Named children retain their identities as the panel changes layout."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket slides/render-example.rkt --workers 10 \\\n  --output slides-output/complete-examples/semantic-parts \\\n  scribblings/examples/matched-parts.rkt",
+          "inputs": [
+            "slides/render-example.rkt",
+            "scribblings/examples/matched-parts.rkt"
+          ],
+          "output": "slides-output/complete-examples/semantic-parts/matched-parts.mp4",
+          "note": "Uses the existing shared-worker slide runner. Add --frames to write PNGs without encoding an MP4."
+        }
+      ]
+    },
+    {
+      "id": "spatial-lesson",
+      "title": "A 3D lesson in three files",
+      "chapter": "spatial-lesson.scrbl",
+      "sources": [
+        "scribblings/examples/first-spatial-picture.rkt",
+        "scribblings/examples/spatial-motion.rkt",
+        "scribblings/examples/spatial-slides.rkt"
+      ],
+      "requirements": [
+        "Animate 3D and Slides; software rendering; FFmpeg for MP4 output"
+      ],
+      "optional": [
+        "3d"
+      ],
+      "checks": [
+        {
+          "source": "scribblings/examples/first-spatial-picture.rkt",
+          "binding": "still",
+          "kind": "scene",
+          "duration": 0
+        },
+        {
+          "source": "scribblings/examples/spatial-motion.rkt",
+          "binding": "lesson",
+          "kind": "scene",
+          "duration": 6
+        },
+        {
+          "source": "scribblings/examples/spatial-slides.rkt",
+          "binding": "captioned-lesson",
+          "kind": "scene",
+          "duration": 8
+        },
+        {
+          "source": "scribblings/examples/spatial-slides.rkt",
+          "binding": "film",
+          "kind": "storyboard",
+          "duration": 9
+        }
+      ],
+      "strips": [
+        {
+          "id": "lesson",
+          "family": "3d",
+          "key": "lesson",
+          "select": [
+            0,
+            2,
+            4
+          ],
+          "note": "The six-second native Scene: turn the object, then orbit its camera."
+        },
+        {
+          "id": "labels",
+          "family": "3d",
+          "key": "captioned-lesson",
+          "select": [
+            0,
+            2,
+            4
+          ],
+          "note": "The captioned variant adds a two-second move before the same six-second sequence."
+        },
+        {
+          "id": "slide",
+          "family": "3d",
+          "key": "slide-lesson",
+          "select": [
+            0,
+            2,
+            4
+          ],
+          "note": "The slide variant holds for one second, plays for six, then holds for two."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket slides/render-example.rkt --workers 10 \\\n  --output slides-output/complete-examples/spatial-lesson \\\n  scribblings/examples/spatial-slides.rkt",
+          "inputs": [
+            "slides/render-example.rkt",
+            "scribblings/examples/spatial-slides.rkt"
+          ],
+          "output": "slides-output/complete-examples/spatial-lesson/spatial-slides.mp4",
+          "note": "Uses the existing shared-worker slide runner. Add --frames to write PNGs without encoding an MP4."
+        },
+        {
+          "id": "native-movie",
+          "command": "racket \\\n  -e '(require animate/render \"scribblings/examples/spatial-motion.rkt\")' \\\n  -e '(render-frames! lesson \"slides-output/complete-examples/native-spatial-lesson/frames\" #:fps 30)' \\\n  -e '(encode-mp4! \"slides-output/complete-examples/native-spatial-lesson/frames\" \"slides-output/complete-examples/native-spatial-lesson/native-spatial-lesson.mp4\" #:fps 30)'",
+          "inputs": [
+            "scribblings/examples/spatial-motion.rkt"
+          ],
+          "output": "slides-output/complete-examples/native-spatial-lesson/native-spatial-lesson.mp4",
+          "note": "Writes numbered PNGs, then encodes them as an MP4. This simple two-step route renders in one process."
+        }
+      ]
+    },
+    {
+      "id": "source-blocks",
+      "title": "A source-block program",
+      "chapter": "source-blocks.scrbl",
+      "sources": [
+        "scribblings/examples/source-blocks.rkt"
+      ],
+      "requirements": [
+        "Animate Authoring; FFmpeg for MP4 output; GUI only for the optional preview"
+      ],
+      "optional": [],
+      "checks": [
+        {
+          "source": "scribblings/examples/source-blocks.rkt",
+          "binding": "animation",
+          "kind": "scene",
+          "duration": 4
+        },
+        {
+          "source": "scribblings/examples/source-blocks.rkt",
+          "binding": "hot-reload-demo",
+          "kind": "program",
+          "duration": null
+        }
+      ],
+      "strips": [
+        {
+          "id": "blocks",
+          "family": "main",
+          "key": "source-blocks",
+          "select": [
+            0,
+            1,
+            2
+          ],
+          "note": "Setup, movement, and the held result of the four-second compiled program."
+        }
+      ],
+      "runs": [
+        {
+          "id": "movie",
+          "command": "racket \\\n  -e '(require animate/render \"scribblings/examples/source-blocks.rkt\")' \\\n  -e '(render-frames! animation \"slides-output/complete-examples/source-blocks/frames\" #:fps 30)' \\\n  -e '(encode-mp4! \"slides-output/complete-examples/source-blocks/frames\" \"slides-output/complete-examples/source-blocks/source-blocks.mp4\" #:fps 30)'",
+          "inputs": [
+            "scribblings/examples/source-blocks.rkt"
+          ],
+          "output": "slides-output/complete-examples/source-blocks/source-blocks.mp4",
+          "note": "Writes numbered PNGs, then encodes them as an MP4. This simple two-step route renders in one process."
+        },
+        {
+          "id": "preview",
+          "command": "racket examples/source-block-hot-reload.rkt",
+          "inputs": [
+            "examples/source-block-hot-reload.rkt"
+          ],
+          "output": null,
+          "note": "Opens the maintained interactive variant. This is a GUI action, not a movie render."
+        }
+      ]
+    }
+  ]
+}

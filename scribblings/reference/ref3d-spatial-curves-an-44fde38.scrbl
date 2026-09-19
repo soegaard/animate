@@ -16,8 +16,8 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-F added finite spatial diagram geometry; SCENE-3D-O separates a
-sampled curve's centreline from its rendering style. A mathematical
+Spatial diagram geometry is finite. A sampled curve's centreline is separate
+from its rendering style. A mathematical
 @racket[stroke3d] is resolved after projection and can retain a constant pixel
 width. A @racket[tube-style3d] creates explicit physical tube geometry whose
 apparent width changes with the camera. Partial curves, reveals, and

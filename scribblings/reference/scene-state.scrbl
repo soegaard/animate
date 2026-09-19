@@ -78,8 +78,7 @@ values.
 
 Returns the concrete addressed Visual for @racket[target] in @racket[state].
 Ordinary Visuals are returned unchanged. A @racket[derived-visual?] is evaluated
-against a read-only context built from this exact immutable state. SCENE-AX
-allows that resolver to recursively request other top-level Visuals. Dependency
+against a read-only context built from this exact immutable state. The resolver may recursively request other top-level Visuals. Dependency
 cycles are rejected, and each result is validated for concrete-Visual type and
 identity preservation.
 }

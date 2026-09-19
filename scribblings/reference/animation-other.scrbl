@@ -30,7 +30,7 @@ Additional request constructors and their predicates.
           [#:discontinuities discontinuities (or/c 'split 'error) 'split])
          apply-pointwise-request?]{
 
-Creates a SCENE-DQ world-space point-map request. At each positive clip
+Creates a world-space point-map request. At each positive clip
 progress, every supported geometric sample @racket[p] moves to
 @racket[(map-point p)] by ordinary linear interpolation. @racket[map-point]
 must return a finite @racket[vec2?] for every retained sample.
@@ -69,7 +69,7 @@ Returns @racket[#t] for a request created by @racket[apply-pointwise].
           [#:discontinuities discontinuities (or/c 'split 'error) 'split])
          apply-homotopy-request?]{
 
-Creates a SCENE-DW time-dependent world-space deformation request. At each
+Creates a time-dependent world-space deformation request. At each
 positive eased clip phase @racket[alpha], every supported geometric source
 sample @racket[p] is placed directly at @racket[(homotopy p alpha)]. This is
 not an endpoint map blended toward its final value: sampling a frame at any
@@ -106,7 +106,7 @@ multiplied by a zero-at-both-ends sine-squared envelope, so each interior frame
 is sampled directly from the captured source geometry and the exact source
 Visual is restored at completion.
 
-The first implementation uses the established adaptive pointwise path mapper.
+The request uses the adaptive pointwise path mapper.
 It supports ordinary affine, world-space Visuals with exposed geometry and
 rejects derived and frame-space Visuals. Because it temporarily replaces the
 sampled target tree, it conflicts with simultaneous target movement, style,
@@ -264,7 +264,7 @@ deterministic helper identity is derived from the target and immutable scheduler
 expansion origin. Thus simultaneous default underlines of one target remain
 distinct; an explicit @racket[#:id] is authoritative and must be unique.
 
-This first underline slice accepts unrotated, unscaled text and snapshots the
+The request accepts unrotated, unscaled text and snapshots the
 text box at local clip start. Consequently it is intentionally a frozen-layout
 decoration: simultaneous motion of the target does not move the line. Its
 default colour is the text Visual's outer colour.

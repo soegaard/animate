@@ -33,13 +33,12 @@ Lengths in ordinary Visual values are normally measured in world units. Camera
 width and height are measured in pixels. Rotation is measured in
 counter-clockwise radians.
 
-SCENE-X also has @deftech{frame space}. A frame-space Visual uses an
-origin-centered mathematical coordinate system attached to the output frame.
-Positive x still points right and positive y still points up. Its visible width
-is captured when the frame-space wrapper is constructed, so later world-camera
-pan and zoom do not move or resize the overlay. The current output pixel width
-and height are still used when rendering, allowing the same semantic frame
-coordinates to scale with output resolution.
+A frame-space Visual uses @deftech{frame space}, an origin-centered
+mathematical coordinate system attached to the output frame. Positive x points
+right and positive y points up. The frame-space wrapper captures its visible
+width when it is constructed, so later world-camera pan and zoom do not move or
+resize the overlay. Rendering uses the current output pixel width and height,
+so the same frame-space coordinates scale with the output resolution.
 
 @section[#:tag "ref-native-model-s02"]{Visuals and Identity}
 
@@ -132,14 +131,13 @@ and selects endpoint direction independently within each pair.
 open/closed topology, globally pairs within each class, and then restores source
 subpath order before normalization. @racket[morph-to-topology-changing] extends
 that correspondence with deterministic births/deaths when topology-class subpath
-counts differ. SCENE-AI keeps bounds-center seeds as the default and also permits
-explicit shared local birth/death anchor points. SCENE-AJ optionally assigns
-finite birth/death costs so a poor real correspondence may be replaced by local
-collapse and regrowth even when topology counts match. SCENE-AK adds sparse
-per-subpath birth/death anchor overrides keyed by original endpoint subpath
-indexes. SCENE-AL adds sparse per-subpath numeric birth/death cost overrides
-using those same original endpoint indexes. SCENE-AM adds sparse additive
-real-match penalties keyed by original source/destination index pairs.
+counts differ. Birth and death seeds default to bounds centers; explicit
+shared local anchor points are also supported. Optional finite birth and death
+costs allow a poor real correspondence to be replaced by local collapse and
+regrowth even when topology counts match. Sparse per-subpath overrides select
+birth and death anchors and numeric costs using the original endpoint subpath
+indexes. Sparse additive real-match penalties use original source/destination
+index pairs.
 @racket[morph-to-compound-aligned] first globally pairs
 equal-count closed subpaths and applies the same loop alignment within every
 pair. @racket[create] and @racket[uncreate] animate semantic partial paths. None of
@@ -254,25 +252,23 @@ any earlier frame.
 
 @section[#:tag "ref-native-model-s10"]{Transforms}
 
-The established @racket[affine-transform] value stores translation, rotation,
-and scale. Components are
+An @racket[affine-transform] value stores translation, rotation, and scale. Components are
 applied in this fixed order:
 
 @centered{@bold{scale, then rotate, then translate}}
 
-Scale is stored as positive x and y factors. SCENE-CY-A adds separate
-@racket[linear2] and @racket[affine2] values for a full matrix and translation.
+Scale is stored as positive x and y factors. Separate @racket[linear2] and
+@racket[affine2] values represent a full matrix and translation.
 @racket[apply-affine] and @racket[apply-matrix] map a world Visual through
-those values. SCENE-DK extends the map layer to ordinary nested paths: a named
+those values. These operations also accept ordinary nested paths: a named
 child can be mapped inside an already-mapped group without flattening the
-group. The existing decomposed affine-Visual protocol remains available for
-Visual implementations; the general-map wrapper supplies the bridge through a
-nested group tree.
+group. Visual implementations use the decomposed affine-Visual protocol; the
+general-map wrapper carries full maps through a nested group tree.
 
-A group may be translated and rotated normally, but its own legacy scale must be
+A group may be translated and rotated normally, but its own scale must be
 uniform. A uniform parent scale and rotation compose exactly with each child's
 existing decomposed transform. Allowing a non-uniform parent scale followed by
-a rotated child can create shear, which the legacy transform model cannot
+a rotated child can create shear, which the decomposed transform model cannot
 represent. Use @racket[apply-affine] on the complete top-level group when that
 is the intended mathematical operation.
 

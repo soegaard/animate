@@ -102,7 +102,7 @@ transforms.}
 The canonical runnable demonstration is
 @filepath{examples/3d/fold-unfold-polyhedron.rkt}.
 
-@bold{Limitations.} Net faces must be simple polygonal U-2 faces. The overlap
+@bold{Limitations.} Net faces must be simple polygonal faces. The overlap
 kernel handles simple concave polygons by deterministic ear triangulation, but
 does not repair self-intersection or hole boundaries. Fold/unfold presently
 requires the independent, identity-local-transform face meshes made by

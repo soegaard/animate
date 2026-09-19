@@ -54,7 +54,7 @@ time intervals cover equal total arc length.
 @racket[normal-offset] adds a signed displacement perpendicular to the selected
 route point. A positive value lies to the left of the @emph{actual traversal
 direction}; reverse traversal therefore reverses the normal. Zero preserves the
-SCENE-Y route point exactly and does not require tangent sampling. On a sharp
+route point exactly and does not require tangent sampling. On a sharp
 polyline corner the offset is segment-local, so the offset trajectory can jump
 between the adjacent offset edge lines. Smooth cubic routes give smooth normal
 motion wherever their tangent is continuous.
@@ -214,7 +214,7 @@ Returns @racket[#t] when @racket[value] is a request created by
                        [map affine2?])
          apply-affine-request?]{
 
-Creates a SCENE-DK general affine-map request. At each sampled interior time,
+Creates a general affine-map request. At each sampled interior time,
 the identity-to-@racket[map] entry-wise interpolation is applied after
 @racket[target]'s current outer affine map. The map therefore acts in world
 coordinates; it can express shears, reflections, arbitrary linear maps, and
@@ -247,8 +247,8 @@ about the world origin.
 
 @section[#:tag "pointwise-maps"]{Robust Pointwise Maps}
 
-SCENE-DQ extends SCENE-CY-C's nonlinear companion to the affine-map layer.
-It acts on world-space points and samples a path before mapping it, so a line
+Pointwise mapping is the nonlinear counterpart of affine mapping. It acts on
+world-space points and samples a path before mapping it, so a line
 under a nonlinear map becomes a visible curve rather than a chord joining two
 transformed endpoints. The exact caller Visual is retained at clip time zero.
 Adaptive refinement checks the deviation of a mapped midpoint from its mapped

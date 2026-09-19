@@ -1,0 +1,10 @@
+/* Do not compress a whole program to make a long line fit the page. */
+.AnimCompleteSource {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.AnimCompleteSource .filebox { margin-left: 0; margin-right: 0; }
+@media print {
+  .AnimCompleteSource { overflow: visible; }
+}

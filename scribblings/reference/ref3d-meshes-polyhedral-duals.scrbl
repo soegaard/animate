@@ -47,7 +47,7 @@ primal face plane @math{n \cdot (x-c)=d}, its dual vertex is
 nonplanar, nonconvex, or centre-touching input rather than returning a false
 polar dual.}
 
-@bold{Limitations.} Duals currently require simple planar U-2 faces and a
+@bold{Limitations.} Duals currently require simple planar polygonal faces and a
 closed orientable manifold. The combinatorial centroid embedding may overlap or
 self-intersect for a nonconvex polyhedron; its exact polygonal cycle is still
 returned, but unsafe projected cycles are omitted from the render mesh and

@@ -106,8 +106,7 @@ appearance is invisible but the endpoint retains the Visual's authored opacity
 rather than assuming opacity one.
 
 @racket[#:about] is @racket['center], @racket['reference], or an explicit local
-@racket[vec2]. In this first affine implementation, the named choices both
-mean the Visual's stable local reference origin; the explicit point supplies a
+@racket[vec2]. The named choices both mean the Visual's stable local reference origin; the explicit point supplies a
 distinct pivot without renderer-measured layout. A zero scale factor denotes a
 semantic collapse. Since ordinary affine Visuals require positive authored
 scales, only interior samples use a small private positive scale; the

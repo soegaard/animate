@@ -69,7 +69,7 @@ the analysis mesh. New code should use @racket[polyhedral-complex3d-source-mesh]
 or @racket[polyhedral-complex3d-analysis-mesh] to state which coordinate space
 it needs.}
 @defproc[(polyhedral-complex3d-topology [complex polyhedral-complex3d?]) mesh-topology3d?]{Returns
-the U-1 triangle topology used to build the complex.}
+the triangle topology used to build the complex.}
 @defproc[(polyhedral-complex3d-faces [complex polyhedral-complex3d?]) vector?]{Returns
 faces in deterministic least-source-triangle order.}
 @defproc[(polyhedral-complex3d-edge-to-faces [complex polyhedral-complex3d?]) vector?]{Returns
@@ -82,9 +82,9 @@ the construction mode, tolerances, inherited triangle-topology diagnostics, and
 per-face boundary reports. @racket['invalid-face-indices] identifies regions
 that are not simple polygons.}
 
-@bold{Limitations.} U-2 groups only existing triangles; it neither repairs
+@bold{Limitations.} Polygonal-face construction groups only existing triangles; it neither repairs
 nonmanifold/self-intersecting input nor creates a polygonal approximation. A
 region with holes is retained and diagnosed, but does not yet expose a usable
-multi-loop polygon. Hole triangulation, duals, Schlegel diagrams, nets, and
-face-transform animation are later U stages.
+multi-loop polygon. This constructor does not triangulate holes, construct duals, Schlegel
+diagrams or nets, or create face-transform animations.
 

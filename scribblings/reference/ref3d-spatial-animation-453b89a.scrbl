@@ -16,8 +16,8 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-D keeps three-dimensional motion in the ordinary immutable
-@racket[scene] timeline. A spatial target is a path beginning with its owning
+Three-dimensional motion uses the ordinary immutable @racket[scene]
+timeline. A spatial target is a path beginning with its owning
 @racket[view3d] identifier, for example @racket['(world cube)]. A camera target
 is the owning view identifier alone, for example @racket['world]. Every request
 captures its endpoint from the clip-start state. Sampling at a time does not

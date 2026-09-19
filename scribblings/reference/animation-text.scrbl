@@ -238,9 +238,9 @@ Returns @racket[#t] when @racket[value] is a request created by
 
 @section[#:tag "ref-animation-text-s01"]{Serializable Rate Functions}
 
-SCENE-DL represents built-in easings as transparent callable values. A
-@racket[rate-function?] can therefore be supplied anywhere the historical API
-accepts a one-argument procedure, while its kind and parameters remain part of
+Built-in easings are represented as transparent callable values. A
+@racket[rate-function?] can therefore be supplied anywhere a one-argument
+easing procedure is accepted, while its kind and parameters remain part of
 the scene's serializable representation. Arbitrary one-argument procedures
 remain supported; they are intentionally opaque to automatic authoring caches.
 

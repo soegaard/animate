@@ -84,8 +84,8 @@ owned.
                            [#:shadow shadow #f #f])
          ambient-light3d?]{Creates uniform ambient illumination with a stable
 authored identifier. The colour specification must resolve to opaque under the
-frame's theme. Shadow descriptors are reserved for a later stage; the only
-accepted current value is @racket[#f].}
+frame's theme. Shadow descriptors are not supported for ambient lights; the only accepted
+value is @racket[#f].}
 @defproc[(directional-light3d [direction vec3?]
                                [#:id id symbol? 'key]
                                [#:intensity intensity nonnegative-real? 1]
@@ -120,8 +120,7 @@ sample one depth map.}
 direction points outward; inside @racket[inner-angle] illumination is full,
 outside @racket[outer-angle] it is zero, and the interval between uses the
 fixed smoothstep falloff. Angles are radians. A @racket[spot-shadow3d] is
-sampled by both built-in opaque renderers. Point-light cube shadows remain
-deferred, so a point light accepts only @racket[#f].}
+sampled by both built-in opaque renderers. Point-light cube shadows are not supported, so a point light accepts only @racket[#f].}
 @defproc[(ambient-light3d? [value any/c]) boolean?]{Recognizes ambient light.}
 @defproc[(ambient-light3d-id [light ambient-light3d?]) symbol?]{Returns its stable ID.}
 @defproc[(ambient-light3d-intensity [light ambient-light3d?]) nonnegative-real?]{Returns ambient intensity.}

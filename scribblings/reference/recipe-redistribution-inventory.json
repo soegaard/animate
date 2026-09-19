@@ -1,0 +1,1215 @@
+{
+  "schema": "animate-recipe-redistribution-inventory-v1",
+  "source": "scribblings/cookbook/reference-recipes.scrbl",
+  "source_sha256": "88aaf9e05ec9b1f9a7ddddc012886e29100cb34a2eb8242d907ee722956c0ee0",
+  "source_bytes": 89660,
+  "source_lines": 2265,
+  "source_characters": 89658,
+  "prelude_characters": 523,
+  "prelude_sha256": "88049fded41b3ebdd6ad2f729507632ac112ce1b5a5e08276c98135c3e8327ca",
+  "range_coverage": "complete, disjoint, exact-once after the shared prelude",
+  "declarations": [
+    {
+      "kind": "defproc",
+      "name": "axes-grid-lines",
+      "sha256": "62f22feefb4c6d282a6a7a54ea7c02dc9326e7b47a8dd18dcf98a31ba54b46d2",
+      "signature_sha256": "ef054cc1607fd689193f77c229807618657bef6c185028910c202a1919d5b7c8"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-number-labels",
+      "sha256": "c21e034c9190b98934e1d5089219adbc7eaf3f289ec69f7a3bdd8e7e7bdd0650",
+      "signature_sha256": "1ca8c5dd03046db7ef6d993cad71533e029b48b3d17959749fb914fabae06ef7"
+    },
+    {
+      "kind": "defproc",
+      "name": "bar-chart",
+      "sha256": "423a9c8dc551603832cac3ffce6fff60069f54a843f6de33f1196c280fe2812c",
+      "signature_sha256": "ecddcad762e4ebcb0d59e2c469cd944dd40dd89aae3a46cca3f42cc41b0f6b7c"
+    },
+    {
+      "kind": "defproc",
+      "name": "bar-chart-bar-path",
+      "sha256": "0435a6d82a2f694c2b70e38eddd8be58936ea72eda335ba5205b422fe43464c7",
+      "signature_sha256": "b224f2ff0f08d2420677dbf6610292e02042b120e32f95962a8654072f3d2187"
+    },
+    {
+      "kind": "defproc",
+      "name": "box-plot",
+      "sha256": "f5fe12f8119a26a70fc1dc5a9da573934ec3a3510990a81bef57cbc0a4ccbce3",
+      "signature_sha256": "62b56db88f9d8fbfb4e8210d30628d9e2c843d0f42be20b0ab6294b91844ce72"
+    },
+    {
+      "kind": "defproc",
+      "name": "data-area",
+      "sha256": "523acde706ba7b8447b6420d02256c2c437c1e16da1b923f9fae50529e4ffa32",
+      "signature_sha256": "caec9932e2aa1f4d2edb1e0b998a5fbaa548fd067dc4866db341b91508d6f731"
+    },
+    {
+      "kind": "defproc",
+      "name": "data-series-area-path",
+      "sha256": "ddfdc79bdfa72b2c109143728a904073ccadb540d1ef9dc1f70910ff6e298ecd",
+      "signature_sha256": "d00aa2b828feee91a414d66eba5a3d4304f8da821bed65871ac31e25a7713898"
+    },
+    {
+      "kind": "defproc",
+      "name": "error-bar-path",
+      "sha256": "f2844084ce9cbad5d518fd330989c9968b4e35ad8a57db3e61cde10d67c179ec",
+      "signature_sha256": "8d3d7624f59c0dc107e09e08ba9290885cb964481f198236c6875a35d66b1679"
+    },
+    {
+      "kind": "defproc",
+      "name": "error-bars",
+      "sha256": "680015e67946f1f2377ac0b4b02dc033db466e64b74c3ab7fe52b955005b5f83",
+      "signature_sha256": "e02ebe851a8f7045e92cc8b14cd8007d13fcfaf5f518916cfa61f9ed7419d998"
+    },
+    {
+      "kind": "defproc",
+      "name": "function-area",
+      "sha256": "e8888ef94eec509bec7866a768c96f2417d01ece33aae6d519bfbe27b67a7cbd",
+      "signature_sha256": "2cae6a1aa1025d1beecf876cc40f86b9a2f6a51905a5eb7de7f212c48d742717"
+    },
+    {
+      "kind": "defproc",
+      "name": "histogram",
+      "sha256": "d96f3d6b9627bee2da3a24d231699d5d8b8e578a8f46e2c2e7eb38f493dffaca",
+      "signature_sha256": "18931d9856fad87c0ff6e009dcc9257a76d93669d086419750e87975cf29337c"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line",
+      "sha256": "64fc6fc980a3d53edf9da59dba6f99267e8a5b940c019f2f4849a270628022de",
+      "signature_sha256": "3047f0fc224489a660fcb4d192b899bdf74be46e89f6fc3ba67ede1b10e96060"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-number->point",
+      "sha256": "c5d76265f81c0ff2d25b45131500172eaf64f1878f1f7c5e6a246d76e547d9af",
+      "signature_sha256": "bb48dd8b4e52bd7be2021abd81a21d5f327d5a3055c0d8d8d930c4cba903ca59"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-number-labels",
+      "sha256": "99948f40b0dac11f19d983a0a8a1de6aca257b3598a2722aeb87f21d388ab737",
+      "signature_sha256": "1f61be9e1e5355a802b97258aa0750fcb938f2d3c64648eacdb1acd3a27c7ed0"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-point->number",
+      "sha256": "eec011ddd289b47deabe917d59dc39105d227511b82a49ce10e7c509c664c53c",
+      "signature_sha256": "d6479ee5b25c4679a75becaabb0924e07c4e0de7441a34ef51cbbcf712d0b98f"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-tick-values",
+      "sha256": "0451c4ceb7660adb45617c24cdc84d284150aa6ce27d786c4057a92176ecaf71",
+      "signature_sha256": "e17578dd2094bd0e9c9131ae2531cca1ceb443c432a1d703a454e3e8fbf75035"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-unit-length",
+      "sha256": "8e3f9385e83c2f96f6e191a29738da61c75183c3ce20b470742e5f8ff7217834",
+      "signature_sha256": "087f94470fc22802c85d640ead3cd5cf1cb86feae83163a6d0537f28e0217645"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-end",
+      "sha256": "9a7071a9c5675f6e8de6d67260ef78b741913c80e759aa3e0e80cd1e205a2386",
+      "signature_sha256": "c26660fdc45d2223fa1bb764ee713a430fe305f7fe57791cc68119884acfeb6d"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-end-tip?",
+      "sha256": "d432b1cf014d3b2dc0f511c17774e95fddb5bcd8ba65ee20dc2b386b71ba4d6f",
+      "signature_sha256": "c993894f850fa0c902267e81d87b87f1c0cfefeaa97d0f42da23580674f87459"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-length",
+      "sha256": "b0e91181d509727302af5edab8d25e8d54ee5a9c0c6aedab465e6379a891809a",
+      "signature_sha256": "0a3f59b60c05430df7c8678461422debc93673e184f8c2c9c1d085ffef11739b"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-range",
+      "sha256": "feec8dbcc30a6075debba1048e241cf08165cac0938359f24dfc4871370840dc",
+      "signature_sha256": "caf6caaf72800e895fe4a8fd545ade8db405380608de6fd79e6301a1cf8b204f"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-start",
+      "sha256": "22de6bbb54b2dbbf054c9de4d31e8f43320d0a261d2e7486349ea14078ba1829",
+      "signature_sha256": "cdd628c4d2bd0bc0dad1afbca41cc8c852881ceefd710adf94290e7b084cffad"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-start-tip?",
+      "sha256": "e2ac7d0ab92ab773b88d426d9380dee12255877e6d466339cbca714356151d48",
+      "signature_sha256": "bbac196cd76e3549cbf21be72298d6700e9eb5b122c8c2d318b6e68998f17b59"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-stroke",
+      "sha256": "b7e815ef324662bba450b2bbd8a21967f2c48847e8b0219b166e198972d54631",
+      "signature_sha256": "b94c14949b295449738b5c2a0109e1a1bce7916638a0e81ae6a267dbb6ded492"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-stroke-width",
+      "sha256": "ef2d1dca3ed8a55693006ec9bb5d2e9f31778cdf395a6b0059e917d4c7628a0c",
+      "signature_sha256": "7dd2ac099c9961833145dfee7a46b8b480ad4cde883529f84b003babbf4dccfc"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-tick-size",
+      "sha256": "ffa6ea39ddedb2fe9b3aeae1deb79f3504c18a7ec9237c8d0caa8970a0ba7df6",
+      "signature_sha256": "31b119a6b6ea74ede3a81dc136142d2a34e7153e9ec8776fd0b2734db17c72d0"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-tip-length",
+      "sha256": "ebac1dd3c67f6e6a8975252bf9ac60ff623f2c7fca01c7d3a73931c37f30bc14",
+      "signature_sha256": "43c1a26e78675543f6b1ddd1515702d41b2f813b4ba9a91b719715bc3977eafa"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual-tip-width",
+      "sha256": "5ac13da686071669a985dcb31e9f9233dcff7822b87b8947451372a2135cf87c",
+      "signature_sha256": "e22d539cff02065616d3e040ef45154cfd95974a0b16c27483298b742d7b96b5"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-line-visual?",
+      "sha256": "89b7a471a5894b79ab68cffdd9169bf595a8d28cb5a407a4f1e7c201fd97afb5",
+      "signature_sha256": "ac43e5e3943daef924fb35419acae83487ba384d13542004c640aa99e3135960"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker",
+      "sha256": "e13c374e1ac47865540e3074103d6461c527919f80216b029c8317b64916877b",
+      "signature_sha256": "c15bce62ad7aef72352c64d319d4c6331d319b0b15c5a469e5f621eaed6c8452"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-shape?",
+      "sha256": "2cc754653e80decd16cc1af3ab9f34b07d5a5b18febad03713b60c38f6a851cd",
+      "signature_sha256": "9f87d2aff6a309bfd9100f6e3ae8f71510ea0de88d98affacba783ea3307be63"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-visual-fill",
+      "sha256": "b9667c16b67013c441bcbd4b4c8b8bb179596e7322a1f30ec993f8bce900675a",
+      "signature_sha256": "b569aafbc770bde4c8c2e5982b83ff7a15d061db8d2ac039438cdf9ae3b96105"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-visual-shape",
+      "sha256": "e74e2420ed75e679efbb745054fc5662ead01c01c5dcf9e22c190f40ab43c92b",
+      "signature_sha256": "bf2d2bdc58b0711bd027483be368f513d7a4c023c54125c9fe502cbb57b5ef44"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-visual-size",
+      "sha256": "afe6a4d2f45581e1fea81fb19f028fc9e96ddf05672abc36f5648616060cbe29",
+      "signature_sha256": "717457c0dcab8567d2a79f7bbfb0f69d331340c939518d42d59386626396a411"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-visual-stroke",
+      "sha256": "ea11d34f4b866a43396e5af142723d00d77b523e978b91ee0b10e9733d5186d1",
+      "signature_sha256": "b8912a98a648655b4403c8ccebc1d0181ad765049c84c50dbd24d790ab8d18dd"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-visual-stroke-width",
+      "sha256": "77cd2fc4ef24e49b36d8712c5f1b809fea7bc51548657f2b82e19d99784f7aad",
+      "signature_sha256": "12c9c1af7b7052ff71170fd9201d6cd50a4081a2312610cba65d4eccdbe788b0"
+    },
+    {
+      "kind": "defproc",
+      "name": "point-marker-visual?",
+      "sha256": "672a572e5107178a0fa502e66a2730872c83b410fe22051d9e584a94831bce95",
+      "signature_sha256": "93452443d303f6bb133e5baf88df354e7a3cadfd06804f215b472d64656cd1fd"
+    },
+    {
+      "kind": "defproc",
+      "name": "probability-tree",
+      "sha256": "9804802b57d71e3e01d3748289547bea9eb03bcfed9b15c8073f7be319e07214",
+      "signature_sha256": "5a887116c65f413d4e4bd6e0258a2f079c13f4ee4b14c61eda46ae6574c5c5c0"
+    },
+    {
+      "kind": "defproc",
+      "name": "probability-tree-node-path",
+      "sha256": "0f850fd8a31bc5b57701e439604183c5fb35ec5d8c55466599cdf1d961f0202d",
+      "signature_sha256": "1272161778a452e830a960dbf8978fac31001b76ee8d74779234d577de2badff"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-function-area-path",
+      "sha256": "e6f3bd9ea234afe3f1da28d07f382f824cd60fb6fdf8fa9e732ce816cf0bf7f9",
+      "signature_sha256": "a5f82f665bbd16fa65a7b9b1fe8fc61e449deff37f1647e8e4389158e5e88dc7"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-space",
+      "sha256": "cdc4a1c2600b2a08bdd127f5fc02cf3183a0351de67e836dee4863dee280f35d",
+      "signature_sha256": "050fb90114ef242ea84fbfd5eeed0c0bd80679a539bfb4a1c5be1c487103087c"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-space-cell-path",
+      "sha256": "34de75c3de12a284cf1ac68a3b66be9e1d2393f5396f6ae03b24010ec94e8db3",
+      "signature_sha256": "8384e0217ed9c48852ff84e32b0a2681e47d712308661992c78c36b125660d46"
+    },
+    {
+      "kind": "defproc",
+      "name": "scatter-plot",
+      "sha256": "9b6563db10929ddb9e068194e318dc49efda86bd0edd32a74cd47eb8b1df015e",
+      "signature_sha256": "f7268ed272e0372d2cbddbe70c7aab2d7a7ed7c1e69b4590ea3798755c8ccadc"
+    },
+    {
+      "kind": "defproc",
+      "name": "stacked-bar-chart",
+      "sha256": "dd4c47a4f1f931729ac7ca6b1c6f17180638d9ef66a3b2e8e29ec197cdff3282",
+      "signature_sha256": "bc2e1e78fab851975bd176a99a1125fce821a30d647c4418fb7f2cda4cac0c57"
+    },
+    {
+      "kind": "defproc",
+      "name": "stacked-bar-path",
+      "sha256": "f6298f765d889623295d5df1a1b93d089b90f3aaa8ffbf5f7a1f88fcacef436d",
+      "signature_sha256": "73721e85bf5ea70f7f37b5984c3024443e1d46f6802a3e9f20479c42f031d55d"
+    },
+    {
+      "kind": "defproc",
+      "name": "stacked-bar-segment-path",
+      "sha256": "a5303e7ce41aaa7838861e30637f075154839fb225a7a3488089e9527243b12f",
+      "signature_sha256": "7c1e79d6f62c3ccd466a60d74cd232743405c51ad945c85414885c6d181ca1fd"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "box-plot-summary",
+      "sha256": "68b2ff9039e729bea1f242118f390dd8688e2ffd92af1c41a38f1266763c9d11",
+      "signature_sha256": "465e85506d4d6f8ad195afbb200e88cdf49210095059d51f894a1a5c860ce864"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "error-bar-point",
+      "sha256": "100caa033a225cf4a6c5afdaa859ff7b8fc7b897bcc267ea0460afa67e00a1b4",
+      "signature_sha256": "03cc4de313e636029593490bdc98bd51b41c936caf6e5c619e002c147a5c299d"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "probability-branch",
+      "sha256": "a560f5828bf9f51b9baafcd9218964e08fcb55d044bbc260070f04e683b01562",
+      "signature_sha256": "ca6cf907955013609e0d924fe009c6b7840fb0a438b908f8ec2cefa615258fb6"
+    }
+  ],
+  "original_explicit_tags": [
+    "animated-camera",
+    "automatic-morph-correspondence",
+    "camera-framing-following",
+    "color-animation",
+    "compound-morph-correspondence",
+    "duration-scaled-animation-composition",
+    "effects-cookbook",
+    "explicit-topology-morph-anchors",
+    "fixed-overlays-callouts",
+    "joined-offset-paths",
+    "lagged-animation-composition",
+    "local-animation-timing",
+    "mixed-compound-morph-correspondence",
+    "number-lines-and-coordinate-decorations",
+    "open-compound-morph-correspondence",
+    "open-morph-correspondence",
+    "parallel-animation-composition",
+    "path-following",
+    "path-orientation-offsets",
+    "penalized-topology-morph-correspondence",
+    "per-pair-topology-match-penalties",
+    "per-subpath-topology-morph-anchors",
+    "per-subpath-topology-morph-penalties",
+    "point-markers-scatter-areas",
+    "probability-and-statistical-diagrams",
+    "reversed-cyclic-paths",
+    "stroke-width-animation",
+    "successive-animation-composition",
+    "topology-changing-morphs",
+    "unified-style-animation"
+  ],
+  "examples": [
+    {
+      "kind": "racketblock",
+      "sha256": "016b039e07265c87c5d2eb2a0d2bc272a4dc27da53401304aab0a7dfaf28709a",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "05092abfd973a910ba3d3d459320e6b40c9004c41b1cf0f5ad5dc54ac95989e0",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "053fbee76f3010fc3438289d1af07a4cd7e70d67fbbd5c01f9cbc540e0360dca",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "0632add981efdd13824d51e7f64678440914c6a08bdf4b0244fd8197fb80ba17",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "08825c58dcc711802e2b323bcb23fbaab082a208c771d4b84c808b342bd33e48",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "09ca008f1e83cc8a7f80fe86483ccdf9b462f88e5f1c34d278e15805ca5e7886",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "0dc1fb57caaa089d49ac34ecb94a5d59cca359341c991978f2a48574ae67ce4e",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "129665c435ba4d33cb4fdeae18a7a88b8195cfeede481e38370a0b5fb65c1a69",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "1a935e86058d1d708d74d9d5504f8bddcbb48cec2d7671eec98cf232e77dc070",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "1b31bc40c7c03b7938edd0d9332baa8d285fb196807bc5091aff259e4b85cf00",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "1e42b1f7e9bf3a31902786b05e0d92906a5d1792f8479e0db09268971a3022df",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "1f2a9961821bd01db7ae7845f40691fbdfc414af0ce6cb7cd7cf2044c4dd890f",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "2313739432eb19c65bf22bd639fc29ba3f40c33ab173984560df7c36b5b1e7d3",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "27ee10993c5a7c972e704f0eb18f36034718f162bbd32d1853aa57f47deb5f90",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "347dd363bc2b2ba502f9939fd6c36bce3eca2706e2c51cbddc89036749b73f6d",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "350da7b38d228456b4cff1e4c4babee5a4a2de29c8f686a36a1d2c695bffc231",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "358ad274f4d0e0d32fed580bd5364a1c62a745c6aca06ff321cb37b238a8b4e1",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "35ce1700fb5731e5beda1c43fb0ebd816ed3f509c29872015d6061399ec5924f",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "3d3129a52d094c9308604ddd050acb0c00a595f1afd644200b0573fbeb51bc49",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "41f5b57dee6e567bdb22095fce651fa719d75cd04eadb8c61903f54e599ec93a",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "43563445dfcff42e7b77be6e6f8e1fb1c6cbbee56ab9087f3bddb34dd22cc878",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "4d2985117f192eebd691c4c7be59bd3cfcef0a27ecd2afbdf3a85b045d01042b",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "5438b467d142fe57e1912ec2901aa9f350da26c1f284ce5079859d2df48376a6",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "55eda455cbdfaccc4125604737ee42e4f09248addbd4cf52c58296f2af8182d6",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "5d5c2057e808909cf2bf95dc28bc6f69d28657948a1c19e322d2e01289c63cc9",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "5e80bac198cc0703962a0f36e0c9e688e95902ee5f7b84a9c11637a2288c5dcb",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "6063d32a3af3f3faaf93514aa3eca7d1bc1530a7a4f566e61b91eb1264e58b02",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "6346ccfebfd1d3062c8f840ed48704ef59ae28eb23d36af64235778a5d96d3d9",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "6702d723ca329f88b25e47bca17cf5664bcb38677d862737b7e68e6511c1a6a5",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "7a082850010ac9951389627bb2763971c902bef96f54f0c5d901a9c5a62b6adb",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "7c7ac66eb7da6aeb6e7b923a61dfc99abfc03e49cef86ba763b0188282a9aca1",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "8305668857ddf6b9fb0726309c8b05ec7d78852c5e6a6775485a3cfe49f1de41",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "887c775776587aac041f0abdc4fcaa178bf9693812f19f1eadac3cec02e1e4aa",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "8c2d2dcd58f8f984acaf1bc6a9ac60aa01e2740f07099f9cea6966f3193d879e",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "8f8baf888569969d7758d100849bf412ece33f2cabdc6bcce8b25b8fc04deda5",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "9b137a7a6ad09517a40207015c71421d2b648e9f8d3b4af3773b74fb1a11ae93",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "9efa42c2c73b5bb34a8e3986191d7cd965752945dbd5c4be5dfa4c96a5ce8ab8",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "a2f1cabb22df28dce775092da8d29fd2a7aad88a4f1c908b0e5d6dde054ded35",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "b0656a76a6b44ee2f36443af8c5d7fc07254b91089ad6d8d6c75d308e78c4903",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "b1a8dc0db95ed4a9e8d5b1e73f8a33f5110767d831ea597e14e048c192e5feb3",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "bc31c13fb59998247a230ca22c251459d8d026e1362b36b87bed3d6dd588ad51",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "c8dc053e7a40b77ccba84b63e7c6877ee9e4450bd5ac4f18c47f7ca5402600c5",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "c912266059cea4ee554c71368f6fa6a8096a209c837480ec610f865f663c9cc9",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "c9929243fb2aeb14fdad705f2b6f475499be8ba68ff077682677d64d9b8a9862",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "cbbead829e0301ee08c5cc8720cb605d034c31e9c9d623cc1734f7f4a201ff56",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "ce9c6cf84655806b28a9f667f811542b80870514bb78ca47dc6657f83dcb96b9",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "d016460bd27496f3ff52436c7ca29c1525a97ab5f8d70aba1fe5b035bee22778",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "d11669a7d15630d800360edf417abac123d7082f7e12e9b11b4f963d5a598bf3",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "d964023128a0c527b63a9c9430bedaa96ff22ef764d53a41589635fd73bed198",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "dcffccc7afc4511a4949cf2ca4f90dfc1ea13538c57e9c872f2b75dc9225e70b",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "e00759e1d7c2eafc53db3de27cb81e56bba5f6b5504fecc9f7e1677de4dfcf56",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "e0294044a44ac8479f622ea98592994681fc2f01092caaf0b22dcb04137ab6eb",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "e044545b7baab05e72a7a6a9b9ceaa7e84ad906ba24076ca0afa57beedd896dd",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "e728a74840d874406fc76f47bb85d426c76a8ba67f3fb6f19309d65f5e8ebbad",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "e91dfbf0ce4301e0582b78d89cdf0f340ec97ec2b8564a136238ae57169e16b6",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "efd2dc8953bbf901143c5248574c8c7e8cea4581e4700adb2b6309f30e89af58",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "f49061c6d5e82c98e7e8905df30000ac5272b359a5ef8613fba98ea61eff714e",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "fa89bcfbcbe1a5033164214f6d3d42d8a8129baccb209c3503fa59db9f199c8a",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "fe87cc3ee731c05bdcc873f3d6f72412d8f402ef249ac1f2f9ca09fe285af54f",
+      "count": 1
+    },
+    {
+      "kind": "racketblock",
+      "sha256": "ff6a286bc43a04d98f66334b0d827f79f455150b733eaf391a2330144daabd1c",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "024ff14e40b2f03a917ef024d978d197b948c62eefec2e2559045916d67175ed",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "079016c455514a4101cce2ba1d85c15928a15187e034db493c6af8760fc8ff05",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "0abb487ac05b4effa347fa7e40825a55e0ea495ce7223fa998e8422f395e3620",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "0b781681fea3cfd83dc8bea73dfe210f81862ef65e9b57a464626862263611a7",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "0c3dfb9a756b9b42bc581cd3b4f463fb2d4d708d2f01459a7a919ae5c898d512",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "1047f036d2ebd5cecd0b8145c8521be0dec859d74fdafc6cb9854e7c4cfd0f51",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "2092280d0eedf895f4a230aed9fb3d8b074ee22520674651648857705f30ce28",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "25a639c7c6e00c955705fbe48dcc7682a49b285665495ec744fe5848fc25b5a2",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "4af4551cd305fbc926591d9f0eb2e4ca506ff2d81b4deff9c328be19add27770",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "4bbac2391e8d6385b64d85238f3b45aec6df717b959c31fde9760edb2faf6a16",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "50c3ea0211743e689e439f5d2f05697c25d9cb6d7ae2383760aa04cd1bfc37e7",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "561d7c5ae9921cc3f5173347590adf5dcc146a6ccb65538c111167126a29792b",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "56d1f356cee23233dc57048707d60110683bca703ca538f39ca01cf08030a1f0",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "58bb1a64139781d9af30888e0416b09b422b5007357b9005dcb7f49f5e488348",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "732862e397b69d579f96e877f3ca265fe97d3178ca5da5c12a5d8b53462fede4",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "763f69b22de0e1d79d58e0dd1189990289bf50c796130ad2882f036b86d528fc",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "7e9c233bce322267ecad5b1276c1bb96e98b42443681a888ccffefd7c2753dff",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "8b2601ed5a2a2aad61eb5892cca93470d2ea40ab0291066830e36bdf8a79cc5f",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "994ae09d46cbf742d491336e107a5c7a63e85ff9998703d934c23aad861496c9",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "9a18da5fdae0c8af170b7e61db1ddee1da8837a094fcb443035e7c4d18f18fc3",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "a5151be74194332dcd94241c5d51c85255f3734cdb007c50a8486a566f394dc0",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "b17d6e072cd0948811b2a578a4e6e3e2ae67e781a4779f1a5bcc5cd9cc18b362",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "c41f9104d0b64f9f9669d0b99a0aa46df117f3e39c2f31865e275913ea8af98b",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "df877e7aca9f64451cb73d76b7eb67a5cfb35b3ab2e9988bf1a3272fc585e8e2",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "e93e3a3bdf4ae504759c8207a5cac40b27f53e1b0830a8afdad2f2ef98b8fc79",
+      "count": 1
+    },
+    {
+      "kind": "verbatim",
+      "sha256": "ff63af019b7c30e3c2fd562e6407de4fd212aeeabd6762254ad8cd06ff7fcb1c",
+      "count": 1
+    }
+  ],
+  "pages": [
+    {
+      "path": "scribblings/reference/coordinate-decorations.scrbl",
+      "part": "reference",
+      "title": "Number Lines and Coordinate Decorations",
+      "pieces": [
+        "coordinate-introduction",
+        "coordinate-api"
+      ],
+      "lines": 196,
+      "words": 788,
+      "declarations": 20
+    },
+    {
+      "path": "scribblings/reference/markers-scatter-and-areas.scrbl",
+      "part": "reference",
+      "title": "Point Markers, Scatter Plots, and Filled Areas",
+      "pieces": [
+        "marker-introduction",
+        "marker-api"
+      ],
+      "lines": 243,
+      "words": 1134,
+      "declarations": 13
+    },
+    {
+      "path": "scribblings/reference/statistical-diagrams.scrbl",
+      "part": "reference",
+      "title": "Probability and Statistical Diagrams",
+      "pieces": [
+        "statistical-introduction",
+        "statistical-api"
+      ],
+      "lines": 191,
+      "words": 707,
+      "declarations": 16
+    },
+    {
+      "path": "scribblings/cookbook/appearance-and-text-effects.scrbl",
+      "part": "cookbook",
+      "title": "Combining Appearance and Text Effects",
+      "pieces": [
+        "effects-cookbook",
+        "stroke-width-animation",
+        "color-animation",
+        "unified-style-animation"
+      ],
+      "lines": 221,
+      "words": 1007,
+      "declarations": 0
+    },
+    {
+      "path": "scribblings/cookbook/camera-views-and-overlays.scrbl",
+      "part": "cookbook",
+      "title": "Camera Views and Fixed Overlays",
+      "pieces": [
+        "animated-camera",
+        "camera-framing-following",
+        "fixed-overlays-callouts"
+      ],
+      "lines": 327,
+      "words": 1503,
+      "declarations": 0
+    },
+    {
+      "path": "scribblings/cookbook/animation-timing-recipes.scrbl",
+      "part": "cookbook",
+      "title": "Combining and Timing Animations",
+      "pieces": [
+        "local-animation-timing",
+        "successive-animation-composition",
+        "parallel-animation-composition",
+        "lagged-animation-composition",
+        "duration-scaled-animation-composition"
+      ],
+      "lines": 414,
+      "words": 1947,
+      "declarations": 0
+    },
+    {
+      "path": "scribblings/cookbook/path-motion-recipes.scrbl",
+      "part": "cookbook",
+      "title": "Following Paths, Tangents, and Offsets",
+      "pieces": [
+        "path-following",
+        "path-orientation-offsets",
+        "joined-offset-paths",
+        "reversed-cyclic-paths"
+      ],
+      "lines": 333,
+      "words": 1325,
+      "declarations": 0
+    },
+    {
+      "path": "scribblings/cookbook/path-correspondence-recipes.scrbl",
+      "part": "cookbook",
+      "title": "Matching Path Outlines",
+      "pieces": [
+        "automatic-morph-correspondence",
+        "open-morph-correspondence",
+        "compound-morph-correspondence",
+        "open-compound-morph-correspondence",
+        "mixed-compound-morph-correspondence"
+      ],
+      "lines": 274,
+      "words": 909,
+      "declarations": 0
+    },
+    {
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "part": "cookbook",
+      "title": "Growing and Removing Subpaths",
+      "pieces": [
+        "topology-changing-morphs",
+        "explicit-topology-morph-anchors",
+        "per-subpath-topology-morph-anchors",
+        "penalized-topology-morph-correspondence",
+        "per-subpath-topology-morph-penalties",
+        "per-pair-topology-match-penalties"
+      ],
+      "lines": 349,
+      "words": 1520,
+      "declarations": 0
+    },
+    {
+      "path": "scribblings/cookbook/plot-styling-recipes.scrbl",
+      "part": "cookbook",
+      "title": "Combining Plot Areas and Observations",
+      "pieces": [
+        "marker-recipe"
+      ],
+      "lines": 65,
+      "words": 126,
+      "declarations": 0
+    }
+  ],
+  "pieces": [
+    {
+      "key": "coordinate-introduction",
+      "source_start": 523,
+      "source_end": 927,
+      "path": "scribblings/reference/coordinate-decorations.scrbl",
+      "source_sha256": "3396c583d62a3e9fd2ab765a8ee1d62a6ac7977a908d9c8009d0c117f0f6220c",
+      "installed_sha256": "3396c583d62a3e9fd2ab765a8ee1d62a6ac7977a908d9c8009d0c117f0f6220c",
+      "promoted": false
+    },
+    {
+      "key": "effects-cookbook",
+      "source_start": 927,
+      "source_end": 2314,
+      "path": "scribblings/cookbook/appearance-and-text-effects.scrbl",
+      "source_sha256": "60be4edc032b5297030dbf225730f1c0e19585cb85897eb0edecb93a554306aa",
+      "installed_sha256": "60be4edc032b5297030dbf225730f1c0e19585cb85897eb0edecb93a554306aa",
+      "promoted": false
+    },
+    {
+      "key": "coordinate-api",
+      "source_start": 2314,
+      "source_end": 9333,
+      "path": "scribblings/reference/coordinate-decorations.scrbl",
+      "source_sha256": "092b92b7cf6dad24bacf33a44bf4af3d666af9a5a8ded6343d05e81470074679",
+      "installed_sha256": "092b92b7cf6dad24bacf33a44bf4af3d666af9a5a8ded6343d05e81470074679",
+      "promoted": false
+    },
+    {
+      "key": "animated-camera",
+      "source_start": 9333,
+      "source_end": 12681,
+      "path": "scribblings/cookbook/camera-views-and-overlays.scrbl",
+      "source_sha256": "f0baca989d46445111b1f0b10690c983441a8bdc513bd9d6df59c0f764f2dc08",
+      "installed_sha256": "f0baca989d46445111b1f0b10690c983441a8bdc513bd9d6df59c0f764f2dc08",
+      "promoted": false
+    },
+    {
+      "key": "camera-framing-following",
+      "source_start": 12681,
+      "source_end": 17956,
+      "path": "scribblings/cookbook/camera-views-and-overlays.scrbl",
+      "source_sha256": "a9668e28889e7dbc61b8f648c746420755a65817583a5c0346b182901ac0e9b4",
+      "installed_sha256": "a9668e28889e7dbc61b8f648c746420755a65817583a5c0346b182901ac0e9b4",
+      "promoted": false
+    },
+    {
+      "key": "unified-style-animation",
+      "source_start": 17956,
+      "source_end": 19492,
+      "path": "scribblings/cookbook/appearance-and-text-effects.scrbl",
+      "source_sha256": "23e4cf13cfee5496e7cca3132798f9be9cdb80fec4a19cf5962624705b424ddd",
+      "installed_sha256": "23e4cf13cfee5496e7cca3132798f9be9cdb80fec4a19cf5962624705b424ddd",
+      "promoted": false
+    },
+    {
+      "key": "color-animation",
+      "source_start": 19492,
+      "source_end": 21513,
+      "path": "scribblings/cookbook/appearance-and-text-effects.scrbl",
+      "source_sha256": "aba5f4abb01d7b2a7b8e4be6733c0eb9d0a3729c0b6f53e3e415e85a491f27d1",
+      "installed_sha256": "aba5f4abb01d7b2a7b8e4be6733c0eb9d0a3729c0b6f53e3e415e85a491f27d1",
+      "promoted": false
+    },
+    {
+      "key": "stroke-width-animation",
+      "source_start": 21513,
+      "source_end": 24287,
+      "path": "scribblings/cookbook/appearance-and-text-effects.scrbl",
+      "source_sha256": "060ce61694c2a1b660dcc48881a84266503427854e30f44552c7d4d1683a1f64",
+      "installed_sha256": "060ce61694c2a1b660dcc48881a84266503427854e30f44552c7d4d1683a1f64",
+      "promoted": false
+    },
+    {
+      "key": "duration-scaled-animation-composition",
+      "source_start": 24287,
+      "source_end": 28561,
+      "path": "scribblings/cookbook/animation-timing-recipes.scrbl",
+      "source_sha256": "9329770dee905376c6ca647f3a10d8b0e94fc4e32e0e5897b16762e92a847846",
+      "installed_sha256": "9329770dee905376c6ca647f3a10d8b0e94fc4e32e0e5897b16762e92a847846",
+      "promoted": false
+    },
+    {
+      "key": "lagged-animation-composition",
+      "source_start": 28561,
+      "source_end": 30946,
+      "path": "scribblings/cookbook/animation-timing-recipes.scrbl",
+      "source_sha256": "9118e96c0a19be321afeffa56e8cd18d2171c52824e29856dc6e0eeb310a0e29",
+      "installed_sha256": "9118e96c0a19be321afeffa56e8cd18d2171c52824e29856dc6e0eeb310a0e29",
+      "promoted": false
+    },
+    {
+      "key": "parallel-animation-composition",
+      "source_start": 30946,
+      "source_end": 33665,
+      "path": "scribblings/cookbook/animation-timing-recipes.scrbl",
+      "source_sha256": "a5a7a0cfb177e350ef52a9a548674c2fafdad7eb1276bbfd06f6abe6ef9469f1",
+      "installed_sha256": "a5a7a0cfb177e350ef52a9a548674c2fafdad7eb1276bbfd06f6abe6ef9469f1",
+      "promoted": false
+    },
+    {
+      "key": "successive-animation-composition",
+      "source_start": 33665,
+      "source_end": 36334,
+      "path": "scribblings/cookbook/animation-timing-recipes.scrbl",
+      "source_sha256": "81de438d6532812e92c76e29ab7950fd5c707f349e7cfdc768b114c405e9d59e",
+      "installed_sha256": "81de438d6532812e92c76e29ab7950fd5c707f349e7cfdc768b114c405e9d59e",
+      "promoted": false
+    },
+    {
+      "key": "local-animation-timing",
+      "source_start": 36334,
+      "source_end": 38451,
+      "path": "scribblings/cookbook/animation-timing-recipes.scrbl",
+      "source_sha256": "86b98988f2877097165edf929a177645bfbce3655192eb68a2cea3273ce8008d",
+      "installed_sha256": "86b98988f2877097165edf929a177645bfbce3655192eb68a2cea3273ce8008d",
+      "promoted": false
+    },
+    {
+      "key": "per-pair-topology-match-penalties",
+      "source_start": 38451,
+      "source_end": 40297,
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "source_sha256": "c3a5b92381ccfcfbebde17e678cc6eec4298075c59c3be633a760c99cea94d66",
+      "installed_sha256": "c3a5b92381ccfcfbebde17e678cc6eec4298075c59c3be633a760c99cea94d66",
+      "promoted": false
+    },
+    {
+      "key": "per-subpath-topology-morph-penalties",
+      "source_start": 40297,
+      "source_end": 42566,
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "source_sha256": "6f32dffd294eaa0a064d496c415fdcf696de512c2744aef6260a319cbcfc5b1f",
+      "installed_sha256": "6f32dffd294eaa0a064d496c415fdcf696de512c2744aef6260a319cbcfc5b1f",
+      "promoted": false
+    },
+    {
+      "key": "per-subpath-topology-morph-anchors",
+      "source_start": 42566,
+      "source_end": 44701,
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "source_sha256": "5f665010b871b1ddf30cb726479b358e587c198aa1fb8b72c6e7b81bfabe93ca",
+      "installed_sha256": "5f665010b871b1ddf30cb726479b358e587c198aa1fb8b72c6e7b81bfabe93ca",
+      "promoted": false
+    },
+    {
+      "key": "penalized-topology-morph-correspondence",
+      "source_start": 44701,
+      "source_end": 47153,
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "source_sha256": "486218083931b7fcde075a414d950cb1079dc03b50be74feff486b15217d8e83",
+      "installed_sha256": "486218083931b7fcde075a414d950cb1079dc03b50be74feff486b15217d8e83",
+      "promoted": false
+    },
+    {
+      "key": "explicit-topology-morph-anchors",
+      "source_start": 47153,
+      "source_end": 48771,
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "source_sha256": "dd1556f34f7c260196e649abb45601b4f13a64ff2dfc25d1a12aa9a61ea2555b",
+      "installed_sha256": "dd1556f34f7c260196e649abb45601b4f13a64ff2dfc25d1a12aa9a61ea2555b",
+      "promoted": false
+    },
+    {
+      "key": "topology-changing-morphs",
+      "source_start": 48771,
+      "source_end": 50685,
+      "path": "scribblings/cookbook/topology-morph-recipes.scrbl",
+      "source_sha256": "eb57b377aabcf4d820013f7f61665c66bbf70ef2b6491d7f0ea7ab6536e65fe1",
+      "installed_sha256": "eb57b377aabcf4d820013f7f61665c66bbf70ef2b6491d7f0ea7ab6536e65fe1",
+      "promoted": false
+    },
+    {
+      "key": "mixed-compound-morph-correspondence",
+      "source_start": 50685,
+      "source_end": 52642,
+      "path": "scribblings/cookbook/path-correspondence-recipes.scrbl",
+      "source_sha256": "004215120a55451a61160a6085798f5c7ba663820372b9643260bdd7db9412f6",
+      "installed_sha256": "004215120a55451a61160a6085798f5c7ba663820372b9643260bdd7db9412f6",
+      "promoted": false
+    },
+    {
+      "key": "open-compound-morph-correspondence",
+      "source_start": 52642,
+      "source_end": 54299,
+      "path": "scribblings/cookbook/path-correspondence-recipes.scrbl",
+      "source_sha256": "20a68123804381fabec804d718083a5879791db2ad70b6a092d3a8d38be1ee71",
+      "installed_sha256": "20a68123804381fabec804d718083a5879791db2ad70b6a092d3a8d38be1ee71",
+      "promoted": false
+    },
+    {
+      "key": "open-morph-correspondence",
+      "source_start": 54299,
+      "source_end": 55739,
+      "path": "scribblings/cookbook/path-correspondence-recipes.scrbl",
+      "source_sha256": "88d73642bb63c056210a6951d7986c7ff25d41091d2b2177668991b9d4aff414",
+      "installed_sha256": "88d73642bb63c056210a6951d7986c7ff25d41091d2b2177668991b9d4aff414",
+      "promoted": false
+    },
+    {
+      "key": "compound-morph-correspondence",
+      "source_start": 55739,
+      "source_end": 57190,
+      "path": "scribblings/cookbook/path-correspondence-recipes.scrbl",
+      "source_sha256": "f0add8dab34d1cb8936cfbe3d6f4248d1581c5c4c1be803ffe159d78f33e58d8",
+      "installed_sha256": "f0add8dab34d1cb8936cfbe3d6f4248d1581c5c4c1be803ffe159d78f33e58d8",
+      "promoted": false
+    },
+    {
+      "key": "automatic-morph-correspondence",
+      "source_start": 57190,
+      "source_end": 58831,
+      "path": "scribblings/cookbook/path-correspondence-recipes.scrbl",
+      "source_sha256": "f1d42adb6bf8147aa34cc647dfbfead64ffbe79e1dd66f529e508a9bde466eea",
+      "installed_sha256": "f1d42adb6bf8147aa34cc647dfbfead64ffbe79e1dd66f529e508a9bde466eea",
+      "promoted": false
+    },
+    {
+      "key": "reversed-cyclic-paths",
+      "source_start": 58831,
+      "source_end": 61228,
+      "path": "scribblings/cookbook/path-motion-recipes.scrbl",
+      "source_sha256": "876dd0186b2717d9dd00aece9b36a944b60d27cd23b86329de704355763222b5",
+      "installed_sha256": "876dd0186b2717d9dd00aece9b36a944b60d27cd23b86329de704355763222b5",
+      "promoted": false
+    },
+    {
+      "key": "joined-offset-paths",
+      "source_start": 61228,
+      "source_end": 63781,
+      "path": "scribblings/cookbook/path-motion-recipes.scrbl",
+      "source_sha256": "a4a75cd77b678499bc123cb72c7b2e4b760911ec313699012082214ff0b22ceb",
+      "installed_sha256": "a4a75cd77b678499bc123cb72c7b2e4b760911ec313699012082214ff0b22ceb",
+      "promoted": false
+    },
+    {
+      "key": "path-orientation-offsets",
+      "source_start": 63781,
+      "source_end": 66773,
+      "path": "scribblings/cookbook/path-motion-recipes.scrbl",
+      "source_sha256": "d46956da91b270b1e4aab1aff3dca58054ebd713a5c9f42eed71b5312a0d46da",
+      "installed_sha256": "d46956da91b270b1e4aab1aff3dca58054ebd713a5c9f42eed71b5312a0d46da",
+      "promoted": false
+    },
+    {
+      "key": "path-following",
+      "source_start": 66773,
+      "source_end": 69071,
+      "path": "scribblings/cookbook/path-motion-recipes.scrbl",
+      "source_sha256": "0e291748633a619c04c5b9ba996ef452f5063c0b7e591cc17e80f70681b08640",
+      "installed_sha256": "0e291748633a619c04c5b9ba996ef452f5063c0b7e591cc17e80f70681b08640",
+      "promoted": false
+    },
+    {
+      "key": "fixed-overlays-callouts",
+      "source_start": 69071,
+      "source_end": 71544,
+      "path": "scribblings/cookbook/camera-views-and-overlays.scrbl",
+      "source_sha256": "c08ffb1b471ad27809bb54283798426e05e2c64e442434a0f1e0eee71ed5e3d1",
+      "installed_sha256": "c08ffb1b471ad27809bb54283798426e05e2c64e442434a0f1e0eee71ed5e3d1",
+      "promoted": false
+    },
+    {
+      "key": "marker-introduction",
+      "source_start": 71544,
+      "source_end": 71934,
+      "path": "scribblings/reference/markers-scatter-and-areas.scrbl",
+      "source_sha256": "1dcb98cda67e632c45c633b543968e3525e3b47341e9f04664da99307157d5fa",
+      "installed_sha256": "f96c02e605911a84c1cfe21b1bb8e3eafb0f0bb955988e54be0004945367ff8e",
+      "promoted": true
+    },
+    {
+      "key": "marker-api",
+      "source_start": 71934,
+      "source_end": 81317,
+      "path": "scribblings/reference/markers-scatter-and-areas.scrbl",
+      "source_sha256": "9f73b62d557d2e37db66583002387a6907daa646681d5c38f9db0d2f0ecfea1c",
+      "installed_sha256": "9f73b62d557d2e37db66583002387a6907daa646681d5c38f9db0d2f0ecfea1c",
+      "promoted": false
+    },
+    {
+      "key": "marker-recipe",
+      "source_start": 81317,
+      "source_end": 82221,
+      "path": "scribblings/cookbook/plot-styling-recipes.scrbl",
+      "source_sha256": "87a07bbb7773dbf294b00b7135ad560b910ad2ec3e3bf4483331c89c12ac6d8b",
+      "installed_sha256": "87a07bbb7773dbf294b00b7135ad560b910ad2ec3e3bf4483331c89c12ac6d8b",
+      "promoted": false
+    },
+    {
+      "key": "statistical-introduction",
+      "source_start": 82221,
+      "source_end": 82667,
+      "path": "scribblings/reference/statistical-diagrams.scrbl",
+      "source_sha256": "d6fbabf72265b2a9451871f168e0e77b0d20d5558f166d489a7878c19bffbe7a",
+      "installed_sha256": "7e25cc8233e4fd2dc835b41d560513c66480d05885e3fdce0cbb3fdb745b71ea",
+      "promoted": true
+    },
+    {
+      "key": "statistical-api",
+      "source_start": 82667,
+      "source_end": 89658,
+      "path": "scribblings/reference/statistical-diagrams.scrbl",
+      "source_sha256": "fd8915fdd89de0250e087dc81761bd15ad2c904984a62193fadebd37c953ad26",
+      "installed_sha256": "fd8915fdd89de0250e087dc81761bd15ad2c904984a62193fadebd37c953ad26",
+      "promoted": false
+    }
+  ]
+}

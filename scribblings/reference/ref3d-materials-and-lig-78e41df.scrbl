@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-V5 evaluates point and spot lights per software-rasterized fragment.
+The software renderer evaluates point and spot lights per rasterized fragment.
 The rasterizer perspective-correctly interpolates camera-space positions and
 normals, transforms authored finite lights into that camera space once per
 prepared frame, and accumulates the authored light list in its declared order.
@@ -30,9 +30,9 @@ and flip that normal toward the viewing side for a back face. This is a fixed
 illustration policy, rather than an inferred rendering accident.
 
 @bold{Current limitation.} The software path is the deterministic conformance
-reference. The OpenGL path evaluates matching finite-light records and V9
+reference. The OpenGL path evaluates matching finite-light records and
 directional/spot shadow maps, but it has fixed four-directional/eight-point/
 four-spot light limits and no separate persistent finite-light buffer cache.
-Point/spot attenuation, range, and cone values are fixed during a V4 animation
+Point/spot attenuation, range, and cone values are fixed during a light-animation
 clip; only the exposed light fields are animated.
 

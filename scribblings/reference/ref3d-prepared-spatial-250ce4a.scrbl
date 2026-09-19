@@ -55,8 +55,8 @@ The canonical acceptance scenes are
 nonterminal rise/fall roots through the same Lorenz surface. Explicit policies are shown
 in @filepath{examples/3d/event-aware-trajectory.rkt} and
 @filepath{examples/3d/trajectory-termination.rkt}, while
-@filepath{examples/3d/adaptive-streamlines.rkt} shows T3's world-space
-resampling and @filepath{examples/3d/deterministic-seed-sets.rkt} shows T4
-Poisson seed provenance. @filepath{examples/3d/poincare-section.rkt} shows T5
-dense plane crossings.
+@filepath{examples/3d/adaptive-streamlines.rkt} demonstrates world-space
+resampling, @filepath{examples/3d/deterministic-seed-sets.rkt} demonstrates
+Poisson seed provenance, and @filepath{examples/3d/poincare-section.rkt}
+demonstrates dense plane crossings.
 

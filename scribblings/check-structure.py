@@ -29,7 +29,7 @@ LEGACY='''guide/getting-started.scrbl guide/source-programs.scrbl guide/interact
  reference/module-boundaries.scrbl reference/colors.scrbl reference/authoring.scrbl reference/preview.scrbl
  reference/project.scrbl complete-examples/catalog.scrbl guide/package-source.scrbl reference/scene.scrbl
  reference/geometry-and-plots.scrbl reference/3d-algebra.scrbl reference/visuals-and-relations.scrbl
- reference/experimental.scrbl reference/rendering.scrbl cookbook/reference-recipes.scrbl cookbook/themed-mathematics.scrbl'''.split()
+ reference/experimental.scrbl reference/rendering.scrbl reference/coordinate-decorations.scrbl reference/markers-scatter-and-areas.scrbl reference/statistical-diagrams.scrbl cookbook/appearance-and-text-effects.scrbl cookbook/camera-views-and-overlays.scrbl cookbook/animation-timing-recipes.scrbl cookbook/path-motion-recipes.scrbl cookbook/path-correspondence-recipes.scrbl cookbook/topology-morph-recipes.scrbl cookbook/plot-styling-recipes.scrbl cookbook/themed-mathematics.scrbl'''.split()
 INTRO=re.compile(r'^@;\s*(requires|introduces):\s*(.*)$',re.M)
 # Declared terms used by code snippets. This list checks the teaching spine;
 # it is not an automatic proof that every sentence introduces a concept well.
@@ -231,6 +231,10 @@ def check(root,overlay=False):
     import runpy
     complete_check=runpy.run_path(str(manual/'check-complete-examples.py'))['check']
     errors.extend(complete_check(root,overlay=overlay,verbose=False))
+    # Reference/Cookbook content ownership and source-preservation checks.
+    import runpy
+    recipe_check = runpy.run_path(str(manual / "check-reference-recipes.py"))["check"]
+    errors.extend(recipe_check(root, overlay=overlay, verbose=False))
     if not errors:
         print(f'{"Overlay" if overlay else "Manual"} source check: {len(texts)} included files; {len(targets)} explicit tags.')
         print(f'Guide: {len(sequence)} declared first introductions checked against snippet calls.')

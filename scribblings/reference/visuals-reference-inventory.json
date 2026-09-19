@@ -1,0 +1,2438 @@
+{
+  "schema": "animate-visuals-reference-inventory-v1",
+  "source_sha256": "25d40a8f005d962277ef1c450bacc62d0e4885c68f021ce0b253c20d6b409dd5",
+  "source_lines": 5406,
+  "inspected_github_commit": "8f9e5cf89e0d4ecda4f6ff519602712d9834fc4c",
+  "declarations": [
+    {
+      "kind": "defproc",
+      "name": "adaptive-function-graph",
+      "sha256": "d94565d2e753d8ba3544cb382f15d846a32fe72abbc6a9e9bf22ee3938460c47"
+    },
+    {
+      "kind": "defproc",
+      "name": "adaptive-rk45",
+      "sha256": "f31e193bb7a4a546c7eafca708f668ddc66644da8070567328751970aa51d73e"
+    },
+    {
+      "kind": "defproc",
+      "name": "adaptive-rk45?",
+      "sha256": "87f979a2c1cbfc11afb52eac6430f0b3377ba82f8cb0e142c6e02eb30c0dbcdd"
+    },
+    {
+      "kind": "defproc",
+      "name": "affine-map",
+      "sha256": "c0f6751fc818ce9074794c284554d33e73814a507d625e76a8d9e7711ed8f9e2"
+    },
+    {
+      "kind": "defproc",
+      "name": "affine-map-visual-content",
+      "sha256": "a916a6ece2c05c92fddda9cce6cfcd557ae64ff2540c8ddf417c3a209792a768"
+    },
+    {
+      "kind": "defproc",
+      "name": "affine-map-visual-map",
+      "sha256": "be043257e18289228d11cff488699876bb55edd012c3323950908899e89706b7"
+    },
+    {
+      "kind": "defproc",
+      "name": "affine-map-visual?",
+      "sha256": "12026e98c991dde04cea86c9e775186dadec37820e5a1ac5a12487db29b8db32"
+    },
+    {
+      "kind": "defproc",
+      "name": "affine-visual?",
+      "sha256": "90ce3fe95e79e01c48e285cd6b49fc0888d60d5af7a81c5c5c4c142d2e470f42"
+    },
+    {
+      "kind": "defproc",
+      "name": "anchor-dependency",
+      "sha256": "33be95cafb5d5b257eb2d73f1a2ae93c854e8a5c7cd1da4d92e1b9259a856978"
+    },
+    {
+      "kind": "defproc",
+      "name": "anchor-of",
+      "sha256": "92fbc5453e30f3f952cfd30939401a08900e51a646d914979f4ecda72d08c41a"
+    },
+    {
+      "kind": "defproc",
+      "name": "angle-between",
+      "sha256": "0c58a18287cdb9b3cf346cfa8c9864ae6787eeb5a4cd0c76ba210b186be42689"
+    },
+    {
+      "kind": "defproc",
+      "name": "angle-marker",
+      "sha256": "6e9569c211c0578d77bf0e47cc0271b0ffedc09ff0eb3549d42ed15e81517ec3"
+    },
+    {
+      "kind": "defproc",
+      "name": "annulus",
+      "sha256": "2eef2f0fcea0799503dd7ff7d6ee665a726c5128d976831f548851558a735b0c"
+    },
+    {
+      "kind": "defproc",
+      "name": "apply-complex-function",
+      "sha256": "7e220fc237ea2ae0217962ce95ced8919fb14c3da268e83460ed06af3d18ef32"
+    },
+    {
+      "kind": "defproc",
+      "name": "apply-complex-homotopy",
+      "sha256": "3284127042605f5ee3011ccd229daabf5db98ea1b91aa987763710a867193233"
+    },
+    {
+      "kind": "defproc",
+      "name": "arc",
+      "sha256": "7011b2e7559c07370d250b5264f4a91ce1022a5e1bd4da808508cffeb898f73f"
+    },
+    {
+      "kind": "defproc",
+      "name": "arc-between-points",
+      "sha256": "14491db15c82c46a1b67592f292f53ccfffd2b6f0fef6f9e7fb1e8edeb94e8bf"
+    },
+    {
+      "kind": "defproc",
+      "name": "area-between-curves",
+      "sha256": "39e2b46c36f0be13ee428beb427cb92f3c64619b606fb770d6b5129a997f5afa"
+    },
+    {
+      "kind": "defproc",
+      "name": "area-under-graph",
+      "sha256": "d7493e6e7b9d99f1be185192256735c8007640e8940a36d3449b8382485bb24c"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow",
+      "sha256": "bdb663d6e945a7655f68728ece530cfde226751b25b72ff6c05cd1131be46618"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-between",
+      "sha256": "9b2124c124eabfeaba6358ff31d540342ac7d27245c3f277e2318d14e99f4672"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-end",
+      "sha256": "02c9e0fb156d9509cceb69c7c7b6dc171e99ebd5d51705cba346a80e8a392a71"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-end-tip?",
+      "sha256": "227e3edd75813e6130c07b243827767c632ca659bbe979efdba12b819b9d9269"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-length",
+      "sha256": "59d6c614422b762f38e430dcd98968415c219ccf24021d10caf7ef84d7d73723"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-point-at",
+      "sha256": "0d1220891298d0d9d7843909083afd58acdbf39725ebc10e44864abfe2f9b30f"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-start",
+      "sha256": "78e1327e892a4bbe7b0c101fc9cb64c57a33739b8630fccf3c5c866b995289b2"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-start-tip?",
+      "sha256": "57d3f222f714a3b3645b1ecd9de6089cfc09c28676c35aca0a04ea96905e8a5a"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-stroke",
+      "sha256": "c4efc1b66d5b26b617ff9e6f5cefc6adb5b934d96faeda87c0accf16169fd698"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-stroke-width",
+      "sha256": "6e312b3d94c4919021197f90d75010e43210cd87c0839c5a850ea0ef3120e1b2"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-tip-length",
+      "sha256": "fd24af106b70fab504155002c101dd6a3751166ccc00ccc665a8bcbaeeb7bf55"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual-tip-width",
+      "sha256": "4a7cbf458d7c336850742fe2d4d0b408d72dae3bf8c0505620001c1b6c1fd17c"
+    },
+    {
+      "kind": "defproc",
+      "name": "arrow-visual?",
+      "sha256": "199c33b4c25f65b7a43ee3008e5764c1d4ee5632e7348c5b4bbcef0d449e029f"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes",
+      "sha256": "69155eeda723930a7c6e1e35c6b8333bf2dd878eaddece56c956cb32b3251506"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-coordinates->point",
+      "sha256": "2ec000bec9bfcc12d39b97d5cdd51894eed9704a5820ca847918ac4a2fc2fd5d"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-point->coordinates",
+      "sha256": "2d683e2cd8afeced3292cfc592f87e83d162dc4db6a774249bfb02e325e2299c"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-stroke",
+      "sha256": "ad7540e9a5e56120b2cde6398e8555685e71c9de7931a9930addd195e625593c"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-stroke-width",
+      "sha256": "d4b56c23b350ee6c231a7500343fa97a9d4ffa7d2c9c54f3a604b3bc931720e1"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-tick-size",
+      "sha256": "1cbee87c77e97e884bdd087de176360960acf304031a836de5dbc668731bebe6"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-tip-length",
+      "sha256": "1675c0751fb2751dd6efce6817ff1bc7b2d2353ae62a96d40945a525864eb615"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-tip-width",
+      "sha256": "e1925212773fae7f71721cc615715e7a7ccc8ef1344cedde559ce1a75cceaa77"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-x-length",
+      "sha256": "e25a1f3aad2827db8722e43a2b6f84987f84ce055293b6efa17ac35024832a0f"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-x-log-base",
+      "sha256": "dfcad17ef157eb44622918099ea7377faafaa3a84405d8b5c388ffb27bd2b319"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-x-range",
+      "sha256": "0b0907e911810c8daa57b5ed5623835da101534d895816a076dd642a8e2b2f75"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-x-scale",
+      "sha256": "5d49d2e1c4cb3dd6840105c02e8dabfd891107dde03e462686013ce4daa8cb63"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-x-tip?",
+      "sha256": "f5b510f77ec029ef4b9c05ccc3a4f8d34b196aed5cf000966cf5afdd2ddf07f6"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-y-length",
+      "sha256": "33032ea5d420392c6dff031dec65c13b344e6ce4299eb458e878fe4a9403798c"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-y-log-base",
+      "sha256": "b5fd030472918dbdcc1e24c343f634daee65b0887928f44bb84353eb6f266a2c"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-y-range",
+      "sha256": "44581e98c374edeaca9fa3ee3ac3be6037344c4c124bf32f954995e024e81e65"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-y-scale",
+      "sha256": "b712e841d1757d9658213dd7bf8197d38e66c276cd8d6dea1875f4d4f9014572"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual-y-tip?",
+      "sha256": "0faef08452055ce741e7e0896570623203993f3b8574a2e5dcb8512017e1a56c"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-visual?",
+      "sha256": "86e183131a171b0e85d428e3c6e1b3a40ea1ab09cef0adbf65c9cfa0d7e2ba02"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-x-unit-length",
+      "sha256": "05ff984ed4eea96b5e4c7f3452c9892f1766a4e82e3a7ecc72c31bc1002e36e9"
+    },
+    {
+      "kind": "defproc",
+      "name": "axes-y-unit-length",
+      "sha256": "a391b1403c0e8a599ffb7ac3b4af6642217323d229ee35955b3c43b487086134"
+    },
+    {
+      "kind": "defproc",
+      "name": "axis-range-contains?",
+      "sha256": "6e370adc8f258123b4e42ff2170580022d4d8bfc502c12b0ad2462b19514bf26"
+    },
+    {
+      "kind": "defproc",
+      "name": "axis-range-tick-values",
+      "sha256": "72de83c6768f88f32e3269dce52880e44a125935d9c4a0521f00da4fef3c814a"
+    },
+    {
+      "kind": "defproc",
+      "name": "axis-scale?",
+      "sha256": "ef974232ee08a7229978946ae8bd4cd1df24f35fecefe37f7af60e80ba82cf5c"
+    },
+    {
+      "kind": "defproc",
+      "name": "basis-vectors",
+      "sha256": "41db1e39ae7c323fa62bc0217a182eb62b7188e63f01e06f930ef69e256195c8"
+    },
+    {
+      "kind": "defproc",
+      "name": "brace",
+      "sha256": "8e0b81ebe53a6bdeafcba1ab90ff80309e5095f1cb4208f7847cdcf3e6859d38"
+    },
+    {
+      "kind": "defproc",
+      "name": "brace-between",
+      "sha256": "686c91c59646c4e2a40c0d1aa3859921d51dc25350c01e00cb8e2902df6dba8e"
+    },
+    {
+      "kind": "defproc",
+      "name": "brace-label",
+      "sha256": "93d2cb8c0f26916b613873202be578173cd6ead9c5dcfd3584909f863903d74e"
+    },
+    {
+      "kind": "defproc",
+      "name": "circle",
+      "sha256": "68ae45d33ba8a60a828e6beafd416f3e3b38d0408589c20b6eb09b23abb98e68"
+    },
+    {
+      "kind": "defproc",
+      "name": "circle-visual-fill",
+      "sha256": "233900ba718961aa3f4990392efb3f1d90d91983ded4436f8dce6637274b4672"
+    },
+    {
+      "kind": "defproc",
+      "name": "circle-visual-radius",
+      "sha256": "b3003488a4135684577fd711fc71c878616dc5aea8976ed017dbf40f52a4a014"
+    },
+    {
+      "kind": "defproc",
+      "name": "circle-visual-stroke",
+      "sha256": "f1a52ddbbf07bef2288d80a6222568285393ae8d111d739cebcc890b783b9f25"
+    },
+    {
+      "kind": "defproc",
+      "name": "circle-visual-stroke-width",
+      "sha256": "b114660776da00bf158c72d8982a36c819a23501e2882b1989f04f6cef057f2f"
+    },
+    {
+      "kind": "defproc",
+      "name": "circle-visual?",
+      "sha256": "3a35a5f9581c682b43298c85472c36017e89e358dfdd7a1a10810007d330d997"
+    },
+    {
+      "kind": "defproc",
+      "name": "complex->point",
+      "sha256": "d7a178a97ff66423b3fcb5efb1b76b12df9d68977879403ccb54f771ca53b639"
+    },
+    {
+      "kind": "defproc",
+      "name": "complex-domain-color",
+      "sha256": "e3cd40fdccefa40f7a6e43616c301e1ca32ebc27e1369b2c811136956687c8e7"
+    },
+    {
+      "kind": "defproc",
+      "name": "complex-domain-coloring",
+      "sha256": "c3cd8307fc4c6c1f3565c8f176003c57a807b069fcc56b1777f41d1f00ee2704"
+    },
+    {
+      "kind": "defproc",
+      "name": "complex-number",
+      "sha256": "5e5a1c83ce920558cb6992357d449923dea6ae2d56ab06421eba488b9a551432"
+    },
+    {
+      "kind": "defproc",
+      "name": "complex-plane",
+      "sha256": "7b68baadb76294ce506c05709c2cdb650078add081e2e47436a6eaa63a7103b6"
+    },
+    {
+      "kind": "defproc",
+      "name": "curve-interpolation?",
+      "sha256": "8f989ea438263b20182a320235e656334d0d40dd5f5f97391596d75ce6b2688b"
+    },
+    {
+      "kind": "defproc",
+      "name": "curved-arrow",
+      "sha256": "ea787e5613768fda7393a3f97ee01dc691dbf614443a6907c9216a8646873456"
+    },
+    {
+      "kind": "defproc",
+      "name": "curved-arrow-between",
+      "sha256": "9b32a0ef7cd112b9c69d4ca5815b4590a63ff5a66931fa7b8db15d29f84de7bd"
+    },
+    {
+      "kind": "defproc",
+      "name": "dashed-line",
+      "sha256": "e053298282c357e175c67c84996ad559817ede65385931213564075ffc8b0060"
+    },
+    {
+      "kind": "defproc",
+      "name": "dashed-path",
+      "sha256": "9f7c0f45eb95409daff36412b8e7bf5e102370cf59142a3f42e7f0340a0034f8"
+    },
+    {
+      "kind": "defproc",
+      "name": "data-plot",
+      "sha256": "7502c42a8b0b2b14b73e07c4313215f777939ad19e01ca4b24d569c8d71a18d7"
+    },
+    {
+      "kind": "defproc",
+      "name": "data-series-path",
+      "sha256": "a320825d64bdf498fe01d18d5f2ee9faea26b2dbdd763b453aaba3bfc4e09430"
+    },
+    {
+      "kind": "defproc",
+      "name": "datum->text-style",
+      "sha256": "91407e0efc46459602317a7110ae73bd13701e6ede36851bbcfc47bc761227ba"
+    },
+    {
+      "kind": "defproc",
+      "name": "decimal-number",
+      "sha256": "3e31c2c85c646902e7f458b13dff4889564b696c7bf0648c8e416fc12bfcba6f"
+    },
+    {
+      "kind": "defproc",
+      "name": "derived-function-graph",
+      "sha256": "b585ae52bda64cb837c4ae350cae57a5627719497748e0bc58bbce33013a4050"
+    },
+    {
+      "kind": "defproc",
+      "name": "double-arrow",
+      "sha256": "38b30e65509b1c9c12238daf4f943f6baeec02562d4e01a270b5d1b1ac0d3b1f"
+    },
+    {
+      "kind": "defproc",
+      "name": "ellipse",
+      "sha256": "87cf4492bdc328a5630f30499bb910709b539eec6f0f9a47bb0af2eb51807205"
+    },
+    {
+      "kind": "defproc",
+      "name": "fill-color-visual?",
+      "sha256": "9368189d8e8bed109c5b51bf51849fd35a37ac73e49f07488a6d133eeeaf25d0"
+    },
+    {
+      "kind": "defproc",
+      "name": "flow-particle",
+      "sha256": "e33a4c89c5e8f709164471a91671f53a841bbac383c1f7bb0ac1210dcfba794d"
+    },
+    {
+      "kind": "defproc",
+      "name": "follow-above",
+      "sha256": "2afb4256bb4eb4649aee494890e83d0317f2c5a648555fddebd6b858efb6f008"
+    },
+    {
+      "kind": "defproc",
+      "name": "follow-anchor",
+      "sha256": "2ce3315d9ad5727a8a7e2316a4c473eeb8b85d43d59fb47b44a4a9837cbb3bba"
+    },
+    {
+      "kind": "defproc",
+      "name": "follow-below",
+      "sha256": "86053660c8405701c41789273e6937c930226dc6f88c96a3b841b4e76490be45"
+    },
+    {
+      "kind": "defproc",
+      "name": "follow-left-of",
+      "sha256": "4811d1ca7a4be4e87f57b09589d65a264e74dee8af5050056cb4f83999b194ae"
+    },
+    {
+      "kind": "defproc",
+      "name": "follow-right-of",
+      "sha256": "b7df4a3690a13d12e9b74b0e004e4e0918fa3f5494a910edb21300756862cf5a"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-complex",
+      "sha256": "ebc7a304c9cfc16b42a1c0ecfa930f716832d2e463a21317620ec5699d571782"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-decimal",
+      "sha256": "7c024180b4735fdfca8abb8ffba41430517fac1a1548fe595d2165ca511f607f"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-integer",
+      "sha256": "0f17a748903495525d4e747f36b945d809d72b90f5f510fe942ed1365208ac09"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-rational",
+      "sha256": "d62ae417597fd09bf280ac7a91e90e5b0dd488c571ed8a284780ac9b5f737d56"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-scientific",
+      "sha256": "e905f8d55205566ba9a31827c8fcfd421663a6367e67ac435336bea478c3dcdd"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-significant",
+      "sha256": "2080df8d24a420420614e207bc18f54faf6d4d73e17e8098bbef5f1dbbbef41c"
+    },
+    {
+      "kind": "defproc",
+      "name": "format-unit",
+      "sha256": "946e900f4cc7c7d51e42e1912700f57fc9e2509d4b59def32e5ee48f160368c2"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-arc",
+      "sha256": "4449b05d6673b6b24382d5af267ccc54bd689e7f54650591bbfd295094b06b0e"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly",
+      "sha256": "b005cf7f48c63068be31f9354d99224a723056574283b6e0707c216524f7e465"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly-visual-has-part?",
+      "sha256": "17aa7f8dc1ee0c352c299f7295c2259ec0fab0b5f1d21d509e387f2388ddbd31"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly-visual-part-names",
+      "sha256": "bd15c270a8ab524abb5e56d69ad37ff91fda23a284714cd36cd38b421d7aa385"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly-visual-parts",
+      "sha256": "736c526f1f9e45be5d8d6d972a9265cfc62243a300320e6478d709dd0e426861"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly-visual-ref",
+      "sha256": "3a7a59b4d2e34d1542fc8ec32acf88e27b8abb3c213311eac1437fe804906475"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly-visual-with-parts",
+      "sha256": "7959e67629e06e891df192ba9091d2827daf53e4ae5ea6b3b24d39c655a4b08d"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-assembly-visual?",
+      "sha256": "36300d730688730d54eef38f9df9ce939a3d5089678b0d418bdc047d3dfd56a5"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-color",
+      "sha256": "f70c14f790788292c03c801f6074907ecc13282a65f9cc6def93fab4a8091bf6"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-color-map",
+      "sha256": "6affb54326e7d01010f0d7fed8375c4cdc79bc3e0399a8872ff2015c6707221e"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-correspondence-auto",
+      "sha256": "8d8e7c07a1d7a8f73d347576e5397b6a2168fb31decb421a83d87b068e9bdcbf"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-correspondence-unmatched-destination-names",
+      "sha256": "335b97055c66c499df144a61a0f69793283ee6f12d8e800b56b7155eabcc4e84"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-correspondence-unmatched-source-names",
+      "sha256": "d00769e1bf9eb277330990eae196cc432af5ae8d2d277820ed16282f9c51e017"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-derivation",
+      "sha256": "75f2354afeeabbb8fee2c9f63feb457db8bffb6e632e7a8d8ad3eccf34852b19"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-derivation-step?",
+      "sha256": "dfb972619bd1d08ac864d1ed271ba4f30740277e40f089453a0c14f8c4911893"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-find",
+      "sha256": "83a9c147edbf8f75d8262c3897daeb15ddd190f3614aa4722b57681f1536f959"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-mode?",
+      "sha256": "9573fd64c1dea60e6848385124e24a70af822ec3bb4df561927b6e2b2e9d0745"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-part-copy",
+      "sha256": "d7b8daf8d23b25d47cecef0a95c0086832343b5f3719d3c157ce8567e3beef0b"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-part-copy?",
+      "sha256": "acad133f02534624795ef279520943395595d2c2e7bf2ae582bb6c523f4c43d9"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-part-path",
+      "sha256": "d9a20da64f9153a16f00e430c0cd8e7c65767f3ab88298e2fb67029093d87b7d"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-part-path?",
+      "sha256": "9eb826ecc802cfefadf53a0f887d30a96f8e249839d6a3216a71396064e2f6f5"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-relative-path",
+      "sha256": "e790e4f7051161dfe0d5b9cc1d6e8f0d5f55cf5ad943a8f9757ebc5b86eff2dd"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-route?",
+      "sha256": "7d0c9f932a27c6d66ec92a9a0d68e09bfbfdb62ae55b69ac081fd88f8f0f7ebd"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-select",
+      "sha256": "c6e62aea186a0223b6ec405f660fd0239ce834a59dee5332ce81e537e6bad062"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-source",
+      "sha256": "85d22e2b9a533f411ccca2451f225e915c23a87d6942fe6cee0689fa220b259b"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-source-match?",
+      "sha256": "182fc0ebf511092cd1a98cf84ae7544fbc33ada6311f422524c15a1aef255707"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-source-select",
+      "sha256": "51705cea3c6dc615737b1963aaf95f40a9567ecd73c85a41fffcf6ea87c3253f"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-source-select-one",
+      "sha256": "42b00bad624caf15971dac836782fea7b55a848ff227f2960f23c93b43aa9140"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-step",
+      "sha256": "6c116c55e4308bb765f7d4e30bf59b7e7d9f1f30b2a594d31c449fd795fd0972"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-string-copy",
+      "sha256": "f1cf4b81b1d7b8eb629d3cff2b1e21d965c0020df5064ed733314f7e80f164dc"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-string-copy?",
+      "sha256": "bde61df0a2ce1c35bb4890c97b5068702f9d932501d1c2554a0f25ab19fdd63c"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-style",
+      "sha256": "2c30f05504df09889c9985cef39fe669c391aafa36b2c8355b8d7529c2d8e798"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-document-class-options",
+      "sha256": "86722044ae40ffd36f7df936e26875a8063456f8f0bfdfb714299e736e3bf51a"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-font-size",
+      "sha256": "bc50f6d4e302e5182add0a9f4eb9ea20a914b8eb3a8316cdb6aa90b5b63f5ab9"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-horizontal-alignment",
+      "sha256": "b4d536fdc09406317ce9dde6f94d36f027473e524605dde8312de60f4e152b1a"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-mode",
+      "sha256": "42f5b8d7b01b689ac88978915adbca6665cf55b75cb632dbcb334e52382e3516"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-preamble",
+      "sha256": "a5f2694da32d2d5b91f5e7b5581517840f49bf6cb430e45db51f9288612a4886"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-preview-options",
+      "sha256": "ec36302ef5cb9c344581e88146c45dd1fa4085d8b8af220994e34156cfa81410"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-source",
+      "sha256": "cd4899dd7bce0369657a53badc723cc414710f35de74b874112e9429d6e57e43"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-vertical-alignment",
+      "sha256": "a1168ac962e9239b89eb4d418ee96a775e38006cfe5ab9e9dc754dbf7ab4ef68"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual-with-source",
+      "sha256": "025ec9b5206e8b7916512e6ba59e363d8b46a1325d26003b36086240f85df326"
+    },
+    {
+      "kind": "defproc",
+      "name": "formula-visual?",
+      "sha256": "4c3d818d9cfcfb9267c697acf85dda8e0d945678129376b885dca12c0af0f824"
+    },
+    {
+      "kind": "defproc",
+      "name": "function-graph",
+      "sha256": "dd9352a1ff83b923b51955a4690a0e2ec1a566ed4a9b5c59907c580b9dedc656"
+    },
+    {
+      "kind": "defproc",
+      "name": "glyph-tex",
+      "sha256": "4d641fecbe7eb57561c759014970ded307fad2d3d6e91fbd604732c5e36cfdf7"
+    },
+    {
+      "kind": "defproc",
+      "name": "graph-label",
+      "sha256": "2bb6750ebd6e087d73333d0fa4fa632e6b0583734898b9cacbdf143afee27608"
+    },
+    {
+      "kind": "defproc",
+      "name": "graph-point",
+      "sha256": "b991f09661870cf0e5e39a8486419ba43930340b3f6d6186a46fd506b3875b88"
+    },
+    {
+      "kind": "defproc",
+      "name": "group",
+      "sha256": "bb9f5b5810e1099611c44834bfe2d7e88992f764b27edfb6b22164be9b8a2884"
+    },
+    {
+      "kind": "defproc",
+      "name": "group-visual-children",
+      "sha256": "fb097d8ccaeb5e887e2c78b8435498c4b99a79db7d8a5710371d7b09a7af3a37"
+    },
+    {
+      "kind": "defproc",
+      "name": "group-visual-with-children",
+      "sha256": "a18aa1c00705c23284c4bdef5f2b4dadd2f4db672054457a17d9997785923fc2"
+    },
+    {
+      "kind": "defproc",
+      "name": "group-visual?",
+      "sha256": "c4d127a50d5983c0b1fa1c78494f207753b0bfd2d9d78815b9e7f8f1170eacf1"
+    },
+    {
+      "kind": "defproc",
+      "name": "horizontal-line-to-graph",
+      "sha256": "863139192381d4f4fa995c338d139165008b3143cf679d5aa042500d6a6f084c"
+    },
+    {
+      "kind": "defproc",
+      "name": "image",
+      "sha256": "08ce2ac0dcb0c85596175a7bdd85a6c7abc753c1cba1e4d1a218eacbff117dc2"
+    },
+    {
+      "kind": "defproc",
+      "name": "image-visual-height",
+      "sha256": "5c0e37d778415060135917459c3b6495f1395cd9f890b9a18fa62a0b6dfdc40c"
+    },
+    {
+      "kind": "defproc",
+      "name": "image-visual-source",
+      "sha256": "a1199835ac53be7ba7dcc9884efe23cfa19bdc9e811df232ac558123c8b4d091"
+    },
+    {
+      "kind": "defproc",
+      "name": "image-visual-width",
+      "sha256": "f7e47fdf867ab91c4bf33577cc02019aa2ca16e5d012a47992a85689c7953201"
+    },
+    {
+      "kind": "defproc",
+      "name": "image-visual?",
+      "sha256": "be830e5e033919ffca97927d3d2288fdb356a2e1dbe44a4246437f1934466a27"
+    },
+    {
+      "kind": "defproc",
+      "name": "implicit-curve",
+      "sha256": "fe96bc3362101de9183997504655260680463b99d2bc75e0f2fe667ee4d1bfd4"
+    },
+    {
+      "kind": "defproc",
+      "name": "integer",
+      "sha256": "42afc8ad9f0f0e26a3afed2f7978532e60b200f8f741597c9396dd2d4fb20aa0"
+    },
+    {
+      "kind": "defproc",
+      "name": "labeled-point",
+      "sha256": "acdc671e8afecf2bb93d257897f0297bca6e4fe9b9d0d176ada46816f53f5f17"
+    },
+    {
+      "kind": "defproc",
+      "name": "latex-formula",
+      "sha256": "6d06fc022d11a3ae37a40166e63376127172071e809553c6038993aaa1a37d11"
+    },
+    {
+      "kind": "defproc",
+      "name": "latex-formula-part",
+      "sha256": "36abd1f11f79e2c419916aaafd2c682e934d744c0f85095e87048c54e0f6d0d8"
+    },
+    {
+      "kind": "defproc",
+      "name": "latex-option?",
+      "sha256": "f3873bab1b36d44e7cfee3decac2a72c81148b22c1c24d194ff059377699d692"
+    },
+    {
+      "kind": "defproc",
+      "name": "line",
+      "sha256": "d897bc8a7e8649cdc6f97824fbdbfa84cfc779bef19467fa8378843270b3ec2a"
+    },
+    {
+      "kind": "defproc",
+      "name": "line-between",
+      "sha256": "7a7a5c6cf041e92a69d975acaa738caa0211cd135b589f903bf7be3f6cff6d17"
+    },
+    {
+      "kind": "defproc",
+      "name": "linear-transformation-diagram",
+      "sha256": "a3efcc9d54cf8f444e2d87da1f94f56dd084995457affd9d63447f2f5d989d57"
+    },
+    {
+      "kind": "defproc",
+      "name": "make-path-visual",
+      "sha256": "cad0fb7a06aca628921c99031e1616c5916c74ad71393a91531e15fe13521a95"
+    },
+    {
+      "kind": "defproc",
+      "name": "math-tex",
+      "sha256": "6b0b348f9a853a196fd3fb867b571e9a527df89cc8a23173108be398986c8990"
+    },
+    {
+      "kind": "defproc",
+      "name": "matrix",
+      "sha256": "1250b26c951ee49c5176e129c7c6488555bbe2bf859b84ddd6a909e7f198dc62"
+    },
+    {
+      "kind": "defproc",
+      "name": "matrix-bracket-path",
+      "sha256": "acac3c8f0950697d5b2169b7b667f91f18c7723fd4618fae24a66110da0cbe57"
+    },
+    {
+      "kind": "defproc",
+      "name": "matrix-column-id",
+      "sha256": "e477598ebc9dd313e519e24ead528d05cf2654b0e182684fcf1ffedf5b1e55bd"
+    },
+    {
+      "kind": "defproc",
+      "name": "matrix-entry-path",
+      "sha256": "4b29d4d1ae9cc66bb1e33be02ea4928779856ce6fac171fb3a1656d6af07ad29"
+    },
+    {
+      "kind": "defproc",
+      "name": "matrix-row-id",
+      "sha256": "eac50c576eb832c46b9c0bc8db10a2bf4f172e7a015d25c48cfb4fed59ec3fc2"
+    },
+    {
+      "kind": "defproc",
+      "name": "matrix-row-path",
+      "sha256": "ad82f6fd866cb5c02c457deb8ee2572b773f46ac5be0f6da5ddc07a91f126ca0"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-plane",
+      "sha256": "8945b24794593c7721bb69ae728bfa4e88b72655b868a8137d9dc381c7ec9534"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-plane-axes-path",
+      "sha256": "7339c6d5bc3e7cb34315e702fedf189239b8228a1520b8f1415352da0f78978f"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-plane-grid-path",
+      "sha256": "d6fa11f955eff55061e8b01b3ba3b520b44730d23d2460d64eea22eb7c3555b2"
+    },
+    {
+      "kind": "defproc",
+      "name": "number-plane-labels-path",
+      "sha256": "eeab922d7d3957a2547d1e60b55402d3eebbf92f538d66b45793407446756fe9"
+    },
+    {
+      "kind": "defproc",
+      "name": "numeric-display-anchor?",
+      "sha256": "efd5426124fc0bca7c43532a0e0e9428d7dcbf11a93cf465a0dcc0ae94758565"
+    },
+    {
+      "kind": "defproc",
+      "name": "numeric-label",
+      "sha256": "af4bcc0b90d79e38c27c94470ffc2a4a63f60994cebdfcf3ae00d08a6fe51e87"
+    },
+    {
+      "kind": "defproc",
+      "name": "numeric-unit?",
+      "sha256": "0233b941e608a10f08f3a150e5267316e6fad99ed29fb8c4d7296526a2940fdf"
+    },
+    {
+      "kind": "defproc",
+      "name": "numeric-vector-ode-state-space",
+      "sha256": "47a6ec5eb42ce815ae3b8aeed101ff6130a1efe2a578eeeceb3b63f5f980cd49"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-event",
+      "sha256": "995fa8f0be8b142b43951e7b7d12b4de4954b19dbf87caf4bbc3267fb80676f8"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-event?",
+      "sha256": "aba505a766e43767948114c3ef79960b5262d1ea61934c4027694ec6016db3f4"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-flow-position",
+      "sha256": "33cb6e0aa9c75bf01099bc5255562c486a361836a9e18cb296e8d27cf28a9e3e"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-checkpoint-every",
+      "sha256": "ee35068ca47b265b9899e5a78323846d5fa204fecd40dfab93262e0a73ad3a19"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-diagnostics",
+      "sha256": "366bcd9f57b81ef1eaa497fc39edc5303b3efeb84547183f17bcfa28bfe5e8e0"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-diagnostics?",
+      "sha256": "884b02f2cec351e6aeffd2d88364120ef71e197bc9ea9369e52df7c36b409d55"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-position",
+      "sha256": "4ad0896efc523b126174f56749c3445df521de3ee923becce69ab63303b8ca45"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-solver",
+      "sha256": "b5c13c2d26a5c1904ee3975f484d205a8884965112653c12ec5f07bf4925f9ce"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-step-size",
+      "sha256": "d9bb6bf2677537f277444fb8a3f8f325d623eece4ba6c30fbb7db41bb4a64095"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory-time-range",
+      "sha256": "d3a54dd025e7fc724e6d570ba871654a50d7f10a68c6700aed8905220adf55df"
+    },
+    {
+      "kind": "defproc",
+      "name": "ode-trajectory?",
+      "sha256": "965377bf9839a0ef1cbaf8486e7d755fa3058e881008c1da4139e7cf064fa927"
+    },
+    {
+      "kind": "defproc",
+      "name": "opacity-visual?",
+      "sha256": "ee372b6026438b8289b985c923777478ac11962a1e8522d72856c12169834c20"
+    },
+    {
+      "kind": "defproc",
+      "name": "opacity?",
+      "sha256": "ebf6eb97c83a0ca4d5be07802c3c9baef4587f5f7b9ba197c5f86a56f4ebb3df"
+    },
+    {
+      "kind": "defproc",
+      "name": "paragraph",
+      "sha256": "100598782116bf8f3b65404d14f1d1f05016cbcf9a63385a3035ec1323c5bfc2"
+    },
+    {
+      "kind": "defproc",
+      "name": "parameter-display",
+      "sha256": "3832512c55cc5bc6bcefc4fb359527bef07d565ca4128bdaf3bb004ce5e9ed09"
+    },
+    {
+      "kind": "defproc",
+      "name": "parametric-curve",
+      "sha256": "a99a36db4b19464cfafaacad4034f25409fa563392cde60adeb0b26ae4bb82cb"
+    },
+    {
+      "kind": "defproc",
+      "name": "path-visual-fill",
+      "sha256": "adc51a753955926926d0ec2a0262adb45e30f76663edccb6f4330db156a07ead"
+    },
+    {
+      "kind": "defproc",
+      "name": "path-visual-path",
+      "sha256": "c7234911fe58add25541587b932991eb1a9390d111bf83aadeb1e0ff48f197f6"
+    },
+    {
+      "kind": "defproc",
+      "name": "path-visual-stroke",
+      "sha256": "ccbc86b6d955ac496baa238f339e014f4dd3ba3cc87ca1dca1b89b78dc81fef6"
+    },
+    {
+      "kind": "defproc",
+      "name": "path-visual-stroke-width",
+      "sha256": "edfa3fd20efd6bb51ffd65a0156dccf59d064749513f955dd8d41d44b187f236"
+    },
+    {
+      "kind": "defproc",
+      "name": "path-visual-with-path",
+      "sha256": "436845c3cb083c669b695e2334f44d0c9fb2fa8634453cd3f62d5e75b7686438"
+    },
+    {
+      "kind": "defproc",
+      "name": "path-visual?",
+      "sha256": "8fc654f87c1d03d790d665171ce85f8486caddd99c3864d6c3f1390096892afa"
+    },
+    {
+      "kind": "defproc",
+      "name": "plain-text",
+      "sha256": "1b38250e16b6dd2c877614587d650507625d5e072b3bcf40ca9eb226d1cbb329"
+    },
+    {
+      "kind": "defproc",
+      "name": "plan-matching-strings",
+      "sha256": "c00be7152286b5b5e24a2838b19d3a6b6ee68bd20cabbd7585d51092c00fef63"
+    },
+    {
+      "kind": "defproc",
+      "name": "point->complex",
+      "sha256": "27df1a4f0d0549491ba06e44f697280d1073e8c2d5106e718934fa53778f7cd8"
+    },
+    {
+      "kind": "defproc",
+      "name": "point->polar",
+      "sha256": "554adf0ef26131448a1e978086b11d3f30b72bee356f37666100fa8509eba05b"
+    },
+    {
+      "kind": "defproc",
+      "name": "polar->point",
+      "sha256": "90a62b01ab6cfb809685a350587a8c8f113a04b2a840bc9244e46ebce6450ba9"
+    },
+    {
+      "kind": "defproc",
+      "name": "polar-coordinate-angle",
+      "sha256": "5ba9db135ea72f0c132e179191f84ed5f46fb8a27a08982339c9ed6757e720b6"
+    },
+    {
+      "kind": "defproc",
+      "name": "polar-coordinate-radius",
+      "sha256": "e4e5930644e906bdd1f7a7b9156c720363b4a62aab2c4e68c286f6b609d6fac4"
+    },
+    {
+      "kind": "defproc",
+      "name": "polar-coordinate?",
+      "sha256": "40024dd6c70f9045d68f841f7de47dcbc89e31bea93b067826f35c8d688068b9"
+    },
+    {
+      "kind": "defproc",
+      "name": "polar-graph",
+      "sha256": "6a8f9d070faffe4f1cd4cf343f9b07ceeba6884f4f5df8cac27469794d70b890"
+    },
+    {
+      "kind": "defproc",
+      "name": "polar-plane",
+      "sha256": "771f73d39b0b4d9775937aa094161dfd21db660756d501b217191562567ca935"
+    },
+    {
+      "kind": "defproc",
+      "name": "polygon",
+      "sha256": "816fe2d2485f1b49ae383e4e1c4ed18b179e993a5109b0a1cf1c29d892bf4707"
+    },
+    {
+      "kind": "defproc",
+      "name": "prepare-ode-trajectory",
+      "sha256": "dc4f6cff4390a5608666239ec28547bb2c23d5cce784d071aec2f46a2de3ce20"
+    },
+    {
+      "kind": "defproc",
+      "name": "rational-number",
+      "sha256": "4bbfa3a9958bd6570896c22a36f78ef78ec6dc75f971c969e30a62eeab3a9ba1"
+    },
+    {
+      "kind": "defproc",
+      "name": "ray-from",
+      "sha256": "77a94bfe10531a3596f2ad46450c1faf70912c8803038d1e919d19dc4986252d"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle",
+      "sha256": "9da3c03baf8bb492d325e3c057f8e8d3a6da8de04837379b31b306c121be9ab0"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle-visual-fill",
+      "sha256": "91af82a7195c45116ff52643e33e1293d53fec9ce842fa879a1fa415e1abe114"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle-visual-height",
+      "sha256": "5a8b497e19cbac80681be3a2300a1ccd1ad728e850d94a0308b699a65ca64268"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle-visual-stroke",
+      "sha256": "d26597884796822c449a20945904f704971a230e0e58517201bf08aa5075e1f2"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle-visual-stroke-width",
+      "sha256": "48ad1437ebf646ad8b7202a397b1cd47c2d8ac00946b5348e134a6013659e8b0"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle-visual-width",
+      "sha256": "e98d1a4e73eb667882b8df98877ce7af7005017a8569c96ddce172a7575060e2"
+    },
+    {
+      "kind": "defproc",
+      "name": "rectangle-visual?",
+      "sha256": "34f6c7248d973f781b906d16878c6b2175c8d7d272ab62d28949a951b80c4a86"
+    },
+    {
+      "kind": "defproc",
+      "name": "regular-polygon",
+      "sha256": "092c4609ef74b4a8b02e1e6d6fb4cdbc5dce3164832f85807d7ccbd3d970d62e"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-context-anchor-ref",
+      "sha256": "d1b836771dab3a42e53f9854b7a9cbccfa8f1516dca197cdaec788c7722d2db8"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-context-layout-box",
+      "sha256": "37f26a6938c681bec72167f59693d325e61131e2f3051f3f6b23c9fa0d01fbcf"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-context?",
+      "sha256": "9446ae3c4121f42229f3c5bb3ae069218c6d07a0a1cb68c48920f8dcf1ab2105"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-dependency?",
+      "sha256": "9b90da679c0d1ec20d629f6f72ac4897d9e88a615d787b63a87a465445ca79bb"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-visual",
+      "sha256": "dffdf5d983e6d9493dcf5b2ab3df3d51de040f35ef36bf4cfaf72734a0799bbf"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-visual-cacheability",
+      "sha256": "737b9c8493c07967cd10fdb58f8171d85f820f7f440604911fb581f2d471909d"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-visual-dependencies",
+      "sha256": "a6634e92352b0829ec814965bf5a4ecd38a7f4047ee89fb287b429d637bbf613"
+    },
+    {
+      "kind": "defproc",
+      "name": "relation-visual?",
+      "sha256": "30eaa83de21c7dac83fc8e9a5bdd404a3bcdd82edec896141e2df6ef74cbd8c1"
+    },
+    {
+      "kind": "defproc",
+      "name": "resolve-semantic-text-style",
+      "sha256": "8fa6c5fbde5dfae3596ca9ba7a93ea3c4ec31c395bf5d56b54737ea5fe23333f"
+    },
+    {
+      "kind": "defproc",
+      "name": "rewrite-formula",
+      "sha256": "453796de621d65e0d0384385cf7238e4a659accf67666e91f50250fc988dddc1"
+    },
+    {
+      "kind": "defproc",
+      "name": "rich-text",
+      "sha256": "5e57b6dd406b63a7a817e7775a09c6e0f680d5461ce3b093721ece16a1b6f3e0"
+    },
+    {
+      "kind": "defproc",
+      "name": "riemann-rectangles",
+      "sha256": "79eaef0c0c457ac13f5a6161f61f9c8f9dc2056c1afe11804ee99d3fb51661a8"
+    },
+    {
+      "kind": "defproc",
+      "name": "right-angle",
+      "sha256": "c925548a553ff7ab1589b45151e0474a15e4ca0cb1525a5753d31525c4836b1d"
+    },
+    {
+      "kind": "defproc",
+      "name": "right-angle-between",
+      "sha256": "22711173b6f0992b5507964b13500a504efbd741ab42dec3dfd8d4bf1063c4b5"
+    },
+    {
+      "kind": "defproc",
+      "name": "rolling-number-display",
+      "sha256": "a853fd580a2f8c68b4a0685e7588d0d67003d42e7d4c41767304046b4cf91176"
+    },
+    {
+      "kind": "defproc",
+      "name": "rounded-rectangle",
+      "sha256": "6abd5eb3c8616c6e7527fd30943be6fad50a8fe9d84fa43f77746187fdce9675"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-adaptive-function-path",
+      "sha256": "59a6ae77fd9d8764abd49049ec41f4b02ef813165477b4c2f84aef7c78649086"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-function-path",
+      "sha256": "c4c7e72b1f2fcd4261e1792f8bd38fe468fbe679987119f6fb1db1d8133f6b63"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-implicit-path",
+      "sha256": "a509d8f0154a52483745aa0db743e5dd149f0719136ac4f868e869a2fe1036d6"
+    },
+    {
+      "kind": "defproc",
+      "name": "sample-parametric-path",
+      "sha256": "1e9d4eeed464ca15311c69d6316c7a92203c4962da467db2fd218a2bc7e1f9e2"
+    },
+    {
+      "kind": "defproc",
+      "name": "scene-relation-report",
+      "sha256": "20b3325efeeae26c7e1def446a430a6a83fba95e8743af0f3b30dc03497b0548"
+    },
+    {
+      "kind": "defproc",
+      "name": "scene-relation-sample-report",
+      "sha256": "3e03c919127bcf8a619a46bf228e765285858d442f4638777069d7e67c48a045"
+    },
+    {
+      "kind": "defproc",
+      "name": "scene-validate-relations",
+      "sha256": "51d50748205d547ce1f51727d652962ef5e62eeea681c18c08beb04c32684218"
+    },
+    {
+      "kind": "defproc",
+      "name": "scientific-number",
+      "sha256": "963b1957cef04188448070d8848100af3ab686e1f22670fc0f4a1e03f523e3f8"
+    },
+    {
+      "kind": "defproc",
+      "name": "secant-line",
+      "sha256": "f8c833f6d5a981d3f5a02328759b3ecf29daa06bb67c575eb4f96cbd6f205fca"
+    },
+    {
+      "kind": "defproc",
+      "name": "secant-slope-group",
+      "sha256": "6ec47883e58dae6725635aba706197db31ee98fe567453cd5f5f3b52acfa404d"
+    },
+    {
+      "kind": "defproc",
+      "name": "sector",
+      "sha256": "1ed2e3ebcdd4105b77fe27dd859be077e695c26416781cfbda70984ffaf4b504"
+    },
+    {
+      "kind": "defproc",
+      "name": "segment-between",
+      "sha256": "1ba399c912a608c6a25c3d28ffbe638544c67dfa0943ddffde186860bd2b2bf6"
+    },
+    {
+      "kind": "defproc",
+      "name": "selection-dependency",
+      "sha256": "afd183f7bb75d9c7342b0c9bee5d49b73ac678135d759afc91251d85db850b29"
+    },
+    {
+      "kind": "defproc",
+      "name": "semantic-text-override-inherited?",
+      "sha256": "8570ae988af39d43c54e65f96b890457a754c81631ed529b02935f7796fc8ad4"
+    },
+    {
+      "kind": "defproc",
+      "name": "semantic-text-overrides?",
+      "sha256": "bfb62694ca57b5779c86fbf3b8ec520482edb8cc294c81b501608daf6b49744c"
+    },
+    {
+      "kind": "defproc",
+      "name": "semantic-text-style-key",
+      "sha256": "5ea7c468f093bb3b71c6fb03db398dba821ac1c216807138cdc93485d9c3e201"
+    },
+    {
+      "kind": "defproc",
+      "name": "semantic-text-visual?",
+      "sha256": "e569e505d58ea4a09f820e8796042abf2696f7364dca563b124c3070449167f6"
+    },
+    {
+      "kind": "defproc",
+      "name": "significant-number",
+      "sha256": "4bc3752b7514598c3a17423cca880111e3759166896ef375d6410292f80e47ac"
+    },
+    {
+      "kind": "defproc",
+      "name": "source-selector?",
+      "sha256": "4ba093dddd0b577f33dbed6a964d995b68ac01953a47a6023719d392bd05832f"
+    },
+    {
+      "kind": "defproc",
+      "name": "star",
+      "sha256": "8944adcb852d18808ff652f32746ba232201db78adb0f4530496b408c4c68ca5"
+    },
+    {
+      "kind": "defproc",
+      "name": "streamline",
+      "sha256": "6d2349452cf9656827a7303d9467e02c2c5e2d2f4f35bf1cecc452f37186f87a"
+    },
+    {
+      "kind": "defproc",
+      "name": "streamline-points",
+      "sha256": "d079e66437cfc001093f748a558e1705407ac28f9b41a1d8711b1964e9809d10"
+    },
+    {
+      "kind": "defproc",
+      "name": "streamlines",
+      "sha256": "b3c046693baa20d38ad6b694ecb31c4f482079d707d5e280b64ccb578cb6374e"
+    },
+    {
+      "kind": "defproc",
+      "name": "string-match",
+      "sha256": "b28462b7af562bbfd49786806a4e7f9dcb58e21b29dc1bb8e5266254747cfc0f"
+    },
+    {
+      "kind": "defproc",
+      "name": "string-match-plan->datum",
+      "sha256": "60535a04cd134e8a54e88d060b8ccd99c02e5a297c169ac9c9a948f1ab78d66d"
+    },
+    {
+      "kind": "defproc",
+      "name": "string-match-plan?",
+      "sha256": "d43ba09c97995ec6f7745c1a024ff7b189291322aeb593addc24f77202a571f0"
+    },
+    {
+      "kind": "defproc",
+      "name": "string-match?",
+      "sha256": "361109016fd68d34493b8a19b6e50bd5c0d97f6bda28ca0f43a771938485fdb2"
+    },
+    {
+      "kind": "defproc",
+      "name": "stroke-color-visual?",
+      "sha256": "d350d626b3f4a30fede40cda14fafd86636cc5f6d86656428ab5837260ce7de6"
+    },
+    {
+      "kind": "defproc",
+      "name": "stroke-width-visual?",
+      "sha256": "465dbe11b21730daf3c8307d436c4878214ab3942b1fb4d8404560cd09ccfe41"
+    },
+    {
+      "kind": "defproc",
+      "name": "stroke-width?",
+      "sha256": "091b6ce0f2ce44082e3b6e0b08ed519bfc26a6d07393b7e76986d709a2e380ec"
+    },
+    {
+      "kind": "defproc",
+      "name": "styled-rich-text",
+      "sha256": "5c27ea642adc3140411878fbbfb8995e50cc27dd28f737ea32202955a333aa46"
+    },
+    {
+      "kind": "defproc",
+      "name": "styled-text",
+      "sha256": "da29a8ffb492c80eb1cc7ab7398441fc9f0cf14f3c054246f11114c37ce06849"
+    },
+    {
+      "kind": "defproc",
+      "name": "surrounding-rectangle",
+      "sha256": "c4c35554cf857c44a38abde2d09e9e945d56066c36d5a934509ceebf427cdd1b"
+    },
+    {
+      "kind": "defproc",
+      "name": "svg->visual",
+      "sha256": "3871de733194396a82318b2b8db48c6e8b70b11bee952c901c3dd4d946480c14"
+    },
+    {
+      "kind": "defproc",
+      "name": "svg-image",
+      "sha256": "1521cad71233949782e516bba002f1db24793185e648881270b54fd235c1d2dc"
+    },
+    {
+      "kind": "defproc",
+      "name": "svg-image-visual-height",
+      "sha256": "08c91e646efbd35b3821deb93fbf205c111320e2ff9a9ea3afc982ef9e6d76eb"
+    },
+    {
+      "kind": "defproc",
+      "name": "svg-image-visual-source",
+      "sha256": "797836a2572f851f20a887f9f981f78c112d60c6ee86d0d8bc176ca5affa3bd4"
+    },
+    {
+      "kind": "defproc",
+      "name": "svg-image-visual-width",
+      "sha256": "3c83cde81454ee8e998dcfeda18f9b761e526e116d21ebb21897a13625d3cfd3"
+    },
+    {
+      "kind": "defproc",
+      "name": "svg-image-visual?",
+      "sha256": "23c2af8a957f45133ef4f1182da4dd1454fb582bffb681b3b1295a1f62f7d981"
+    },
+    {
+      "kind": "defproc",
+      "name": "table",
+      "sha256": "8c7154a4a0fbee055571d9183521b9cb79d26a568c2feea64fe78aea31aec42d"
+    },
+    {
+      "kind": "defproc",
+      "name": "table-cell-path",
+      "sha256": "82dab0d7f8e7ab1d73bd9ac90d566e4f7d34cb465e1c997d735664cad0742abf"
+    },
+    {
+      "kind": "defproc",
+      "name": "table-column-id",
+      "sha256": "6dea5e2cc97da4aaefad43e9cc0190b1d46b24424874d652a0b22936d9d0aa27"
+    },
+    {
+      "kind": "defproc",
+      "name": "table-row-id",
+      "sha256": "694c3fb09f461e1cff06064ffdf8ea7c834b4d6c96821d24e1adfbb35577e195"
+    },
+    {
+      "kind": "defproc",
+      "name": "table-row-path",
+      "sha256": "789c1454725cebde838d749e25cb803b1bbd57d3ca8d9b6a0eb5498ace8374b3"
+    },
+    {
+      "kind": "defproc",
+      "name": "tagged-formula",
+      "sha256": "dcbde104ccb250887fd6c560006fadb1eefd648f8f5b74f477c975f4ca39f5f8"
+    },
+    {
+      "kind": "defproc",
+      "name": "tagged-formula-fragment-visual-svg-source",
+      "sha256": "7809e487e08c66eb189b2649acedaedefdac8cf690e2248c0f3df825e4df26a6"
+    },
+    {
+      "kind": "defproc",
+      "name": "tagged-formula-fragment-visual?",
+      "sha256": "77320cd1a128f1e817e4636ad86e22fe156d6295a5848896adaa48ea3a14ee83"
+    },
+    {
+      "kind": "defproc",
+      "name": "tangent-line",
+      "sha256": "a834acb04c4192fc6c78c6b6f6868cd34981b7016e53ec6971b61c3d40f20946"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-font-family?",
+      "sha256": "57c54a17b95801be7f9898ca9632bc27651bb0603785aa207dd6d122d857ada4"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-font-style?",
+      "sha256": "bdc2b4b337a872a4888351702c55f72139e700352e403e7440fa655876572b45"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-font-weight?",
+      "sha256": "c195a01c108862fb8d1281a3d410a1acc261173fb155e273956fc31f4eb9ca9a"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-horizontal-alignment?",
+      "sha256": "0990d8ca8850fda01d0fa9f13885daf5b7da0039ec30cf30861525f4ca51cdb3"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span",
+      "sha256": "88d3ae743e91d42831a68a1731205edda0035c8a4e624ba152ad00d176491aca"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-color",
+      "sha256": "ef5d7caead95fba6320769fc7dbeedbb7a49a260efe607371537aeb57dc03686"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-content",
+      "sha256": "723235265ca7baa5f97cd70755a93752021ea1f524cac1ad81117b1dddcd23f3"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-font-face",
+      "sha256": "321a304aae97693f3d20b2a2740f2fc51ce205df4f497a11a1586671529ce1d7"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-font-family",
+      "sha256": "9c174ffd664acd236d39370df5433f69ff30ee1700e12df407cc6c332504c25d"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-font-size",
+      "sha256": "9db0671632ea5b24c8dc949b72acdcf3cdb527250ca0f12a59534248d254af61"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-font-style",
+      "sha256": "f70b834660edf4f81948407c5f1335c8fa396a7db941909067307a26f8628d54"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span-font-weight",
+      "sha256": "febff0639b71da19f24e33d4ce31caab40399ffa4f4b76b7d79e06796d672270"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-span?",
+      "sha256": "38c1e9f1dce1713d89d02eb207fa13f76dfc81c570c9aff57d7edb67a61dccdf"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-style",
+      "sha256": "5f80be5ee4ed7bafdbfd726445c9bb407052b0a88088eefb6fe1e7db5cf11079"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-style->datum",
+      "sha256": "9f55d8120324a5130fcc6559a07ce2c7a772a8ce9f1986b98a8cd96473b8f509"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-style-update",
+      "sha256": "badba0827d1fa23f57a73a08177f5778bfe449688673ca90ac70d3a182da305b"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-style?",
+      "sha256": "dcba3f3298e5c9981a3a5501f059912f1c1cac4bb73cbdd22d81333d85717a6e"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-treatment",
+      "sha256": "61d37b5f2761dec7fae4b26f5043daf1c85d06b00052a70282e21f6e54517fcd"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-treatment-update",
+      "sha256": "c89f0188a7abdc9bf087de305dfb43296dcb4967c5d6b417fdfce72abfc9274b"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-treatment?",
+      "sha256": "b975d4cb247485484e62f85021c65ea4f65e36688b145bbe9e66d3038b24332b"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-vertical-alignment?",
+      "sha256": "84aebcc7cd1178a5dfaac047296dbc27243fc9b436a155ee4616ae3ca32128e8"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-color",
+      "sha256": "e497c5b9f37ac48dab01499a5fab242411333d453c338ffa00ce672cbad9f083"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-content",
+      "sha256": "84b01127befe344fd06272f12b4ccd8568cc55a5c3e20f8219b7b28c6a7e38b8"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-font-face",
+      "sha256": "961d5b3834299527f1af2b4a6377869d61c10177b55461051a9d4473bb35a4b5"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-font-family",
+      "sha256": "f98237d4ddd7b856d4b783c8ed011f850096f1d09c0c47439dc92d800b55e97e"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-font-size",
+      "sha256": "7f3c967b7d814185111f3591ecbf0b6dd81d1e97a25f48cf2d0d0c769ce6f3e6"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-font-style",
+      "sha256": "401fd6002ac0c55380110e2f2533d811e5f262da52b54bdc6099bafbb9fbf076"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-font-weight",
+      "sha256": "102c93d43600e3977590a8eba8dfd54c284676496a3b4d4e523524d1e64098e9"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-horizontal-alignment",
+      "sha256": "f9ad73356cc2a95bb363d7363b67fec5058ea157bf95d1e67ab1fe2fce778cad"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-line-alignment",
+      "sha256": "4ce330ffb0ca393a2fa838b05980556fe94d4ef043df6eed452ea9e4c70846a6"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-line-spacing",
+      "sha256": "7c6172c3a7afe694f4c69d2b48e1208213a89d04498028b94339d87009ef5bd5"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-spans",
+      "sha256": "0cbf55ff421eff3d29016a046732bda2557685724024c5e6c3e5e8db3441c678"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-vertical-alignment",
+      "sha256": "7e4e4af838c2e1b872bdf1d94abd19a9f605be215409a7887fdcc2e1df2dfb28"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-width",
+      "sha256": "fb39bc40df5e8c11206c12cffaaf8d55273f666927921327688070c88eb9f448"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-with-content",
+      "sha256": "444c9498758f5938032b38b5b70c94d21b07191b45b089ed3101ca7fe3641e04"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual-with-spans",
+      "sha256": "9fa99bd3da8cd3a360efb0c055a74661a39dfdfdbfac9b7e3731fdd43981d948"
+    },
+    {
+      "kind": "defproc",
+      "name": "text-visual?",
+      "sha256": "14415e7ea47a064255b5969dc49ba9358caa3967a103bb42807741d208159319"
+    },
+    {
+      "kind": "defproc",
+      "name": "traced-path",
+      "sha256": "358b57398f98f691f4017df24c056c8cdaeb4af48719e8afc9fa16dfe2ff5e86"
+    },
+    {
+      "kind": "defproc",
+      "name": "transform-matching-glyphs",
+      "sha256": "5595d910faee4df0d816bb9f4eded163c27057ea82c92351da720c3269d10df5"
+    },
+    {
+      "kind": "defproc",
+      "name": "transform-matching-parts",
+      "sha256": "2af58a01b6ab42ebf4400503f2fea1a27b31ebbe578ffb9282ffff3a5a4b3ddc"
+    },
+    {
+      "kind": "defproc",
+      "name": "transform-matching-strings",
+      "sha256": "54ac67516d5f5a97f3552e9f6ac9c2fe7521c4c5e25ef1502a3473ee602c58d5"
+    },
+    {
+      "kind": "defproc",
+      "name": "typography-theme",
+      "sha256": "e425aeae856d29a1c83b60bdd7b40915864ab1fbd7a34713de328778ddba012d"
+    },
+    {
+      "kind": "defproc",
+      "name": "typography-theme?",
+      "sha256": "88da495d3121c6744473b9927e8fb96d348553575b75fef927c41ed9d06ae0fb"
+    },
+    {
+      "kind": "defproc",
+      "name": "unit",
+      "sha256": "7e8363daf41a089e6bfab8a5024944458532521d1a3f4888ae1ff956ac5b03c8"
+    },
+    {
+      "kind": "defproc",
+      "name": "unit-product",
+      "sha256": "4a13587363b8b14204ff3a99f4f333e786e3a7e3b81f535644dd099f9d333419"
+    },
+    {
+      "kind": "defproc",
+      "name": "value-dependency",
+      "sha256": "fdfdd4240c5a71f757b7344ae2d5c81b634b4b94c5d8c95628aa0f3eda761868"
+    },
+    {
+      "kind": "defproc",
+      "name": "vector-arrow",
+      "sha256": "0ad4c537e38027492e7d929ea1e1330371b5600b93132438d0ede12a1cedc3ee"
+    },
+    {
+      "kind": "defproc",
+      "name": "vector-coordinates",
+      "sha256": "5be59159389b2fd89f182756e55f5a079fb2de413706ac20cad8cdfefe0ba66a"
+    },
+    {
+      "kind": "defproc",
+      "name": "vector-field",
+      "sha256": "189bcc9e289789e6f84522fb3e0d10226c00ed09cf1cde041eb511ab78c9e59e"
+    },
+    {
+      "kind": "defproc",
+      "name": "vector-label",
+      "sha256": "7145c263e8ca7ca436b11f2ec15492b090f312d44747b5877d5567f9963051e2"
+    },
+    {
+      "kind": "defproc",
+      "name": "vertical-line-to-graph",
+      "sha256": "57426c309186313cd3bce59f899ddebd19fbaedc1a5d1d53043dc39fb95729ba"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-dependency",
+      "sha256": "54974577e68272ef3603fe395d5a13f73152623459ddf4896dbcd23717ec27e5"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-fill-color",
+      "sha256": "4816bc6ad4805af6e568ac36f6ec00f9fad278ea902931e3ed11b71cc7d563af"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-id",
+      "sha256": "0138930908677f91bd146788e1015dd1440c8b40c014e305bea8e7a6941332aa"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-opacity",
+      "sha256": "985ba652e3f8b1ef8ba1cd0d55693f2861677124d6741112a7a2ee5d79f39661"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-path?",
+      "sha256": "460fdf871c0daa367a5c8585e46ed577c776ab86f8e79a9e196273440ae02c7d"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-position",
+      "sha256": "c28d3a4d0699353050f37f0b94ac6ab885292791286038bdb2004d4f00101aea"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-rotation",
+      "sha256": "43f8e1f7420b41380ebb72cf93039894313a17d92c745d30b618f467b3db1d41"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-scale",
+      "sha256": "704147b2ff1525e360cad80aa06477330be2b473cc747caa82573e242fd4ab9c"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-stroke-color",
+      "sha256": "ebeffc04880793825e3130f3f34d5f010caf6ad2e2a013b85f97ca7f3c0b0504"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-stroke-width",
+      "sha256": "a54bf6001f0594c9c86b3f0616dc2c6c717090d4e05b99f96b45c7b1a2d271e4"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-target-path",
+      "sha256": "36d455750a7c87d213cc3db555e932250e683366262919f0d51d3324c55c8c8d"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-transform",
+      "sha256": "5d0e993aa9218044660ca524138f49135b7e798f545ea243d096cb0b46f63d57"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-fill-color",
+      "sha256": "004a879fab32c459e8c8ec32fccab2bad641a30be6a5f9088d6b7535128722c9"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-opacity",
+      "sha256": "9936292e25282dfb9dd25102ca0087cd0a74492e522d85130780d0549f319031"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-position",
+      "sha256": "36f4b49e5d7f2e6b050e79fa89f56dd27213176be7edcd99cae6c2c06651449b"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-rotation",
+      "sha256": "c7c7b619c273f94cde4029b2f29230ee831ba651fb89b66368278335d049c28b"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-scale",
+      "sha256": "128d41b04ab49bc2262419c521dabe8c8752bc111b3ff4bfe82c0a4dade7c7ad"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-stroke-color",
+      "sha256": "b56a8ac38a21be62141b90c55626a25aa1b9d245305a223386da0ae0469d54ed"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-stroke-width",
+      "sha256": "7383c9b57de9ce652673e5907422c63bab9a8d67986929dea5fa3b8deb2c2d6d"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual-with-transform",
+      "sha256": "feb1aed6120a0bab9e17c6a4a2476dca60ed71c34ea9e9f59db9da3456fa8e68"
+    },
+    {
+      "kind": "defproc",
+      "name": "visual?",
+      "sha256": "ba5b5bdbcca3c620953fd4cfd961e927f8596b33e8342ea728f4e8a66b72d8fa"
+    },
+    {
+      "kind": "defproc*",
+      "name": "semantic-text-content",
+      "sha256": "16d0c2b0ccb4c4177c979fa8f2aef9a0268ec49ce19b492324d90db7e40c7c73"
+    },
+    {
+      "kind": "defproc*",
+      "name": "text-style-font-face",
+      "sha256": "97a4dbf383be65a3e56140cd87747a9e7be6485dbfff0158f0dd208c5f3e4887"
+    },
+    {
+      "kind": "defproc*",
+      "name": "text-treatment-background",
+      "sha256": "862faa390d3a3f5c45391bac64627a01eb5cf11b36c5255fd070becc4aec8dd8"
+    },
+    {
+      "kind": "defproc*",
+      "name": "title-text",
+      "sha256": "53603c97c33f8bac82cfabd9f511d805349541e8efb04de72c1a775a175263c6"
+    },
+    {
+      "kind": "defproc*",
+      "name": "typography-theme-id",
+      "sha256": "80292e55d81cfe57717864c0a00c3ba993a2cd248d29e64b1633bec2c71a8122"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "axis-range",
+      "sha256": "774518f294e6dca00347cff9cb2670dd6c615fdc92fefefab077a9ef683adb52"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "formula-correspondence",
+      "sha256": "5eaa19b5e098a6e2d2fa5b7887b327b323dc701e9b1b27bfbeb2ddf0472d6ef3"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "formula-fragment",
+      "sha256": "8a97fd86b3f51138486f0343b434d6362c7bcbba563efeda962c0bbc8c32b01f"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "formula-part",
+      "sha256": "975216114af5b5da4528bd88e9cf4dcf4d0f8f957b6cbd25d4551ddfc0b3134a"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "formula-part-match",
+      "sha256": "5a958a1c84ccc13be0cfe970951410b22130b5e9520d0799efd25636d75d18a1"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "ode-state-space",
+      "sha256": "b8288a6283934c9b369a2172f9d0a2fa0626238126110cff954f7610b00ef437"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "parameter-range",
+      "sha256": "9dd98382c942f7f5636571d3eb5161850fc9ec06c2cf7a0e39adf72a88cf5e34"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "source-occurrence",
+      "sha256": "8ca9742f700d2edde45f52b8a1d6b4b3d19b0ed8c254574ccf4f832cb87d28ed"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "source-part",
+      "sha256": "90110f411fea0508c633dc065df01f24f766045304e43d07c2f54719813f579c"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "source-span",
+      "sha256": "198b651de6235dd30d2aa40368dc96fd52e1828332b2867110fc910bc89cfe92"
+    },
+    {
+      "kind": "defstruct*",
+      "name": "visual-selection",
+      "sha256": "e65ddfceb982c5ca162e70f63055424582de00034378de10ac44282ff461e842"
+    },
+    {
+      "kind": "defthing",
+      "name": "animate-typography-theme",
+      "sha256": "142776ceaecb69292fa8b2483fbc39ceaffe505a8e0558e29bff171e8d97513c"
+    },
+    {
+      "kind": "defthing",
+      "name": "gen:affine-visual",
+      "sha256": "98f53ce1ec06172c2d883a0801165abaf867f96b3ae4258bb2413e693dbab9ef"
+    },
+    {
+      "kind": "defthing",
+      "name": "gen:fill-color-visual",
+      "sha256": "8a320f0909424c50c929cef423beb2787d298af80c2b0d1b13d595e359299a8d"
+    },
+    {
+      "kind": "defthing",
+      "name": "gen:opacity-visual",
+      "sha256": "408b6c0511406dac767935080035b16d6b1dfc7f2e41b395b6299b6bcd5ab6be"
+    },
+    {
+      "kind": "defthing",
+      "name": "gen:stroke-color-visual",
+      "sha256": "e5b3127e62b7ce04c26efb7b39ba1aaa209f3281b7736c9045a7c65731d95b9e"
+    },
+    {
+      "kind": "defthing",
+      "name": "gen:stroke-width-visual",
+      "sha256": "b9eb01ce2b0a4dd92526c4a746c3cd817c0181b9eefe733c76d3f4a367610583"
+    },
+    {
+      "kind": "defthing",
+      "name": "gen:visual",
+      "sha256": "5dda3a3eb1ab6bb1fbd2db633f46958a1d30ce4f4a48405796b4c6993566e102"
+    },
+    {
+      "kind": "defthing",
+      "name": "real-ode-state-space",
+      "sha256": "d66e163470992fbb0dec72f586e8d10eb075f89d72a97f406132ade050d576f7"
+    },
+    {
+      "kind": "defthing",
+      "name": "typography-standard-style-keys",
+      "sha256": "4e48094b221e7f4407b7a9873e77449d72923e0222c28a9e1f2cc2aa798fd850"
+    },
+    {
+      "kind": "defthing",
+      "name": "typography-theme-schema-version",
+      "sha256": "ce4d908ac3e29b2384bd5ea1f698e5caa5d8384aa223288e9a06d615c4e5b7f1"
+    },
+    {
+      "kind": "defthing",
+      "name": "vec2-ode-state-space",
+      "sha256": "3c5cef3f451326553d0e3031a8b00e2f999fd9dc19f90bcf3d2c8cf083e37ec7"
+    },
+    {
+      "kind": "defthing",
+      "name": "vec3-ode-state-space",
+      "sha256": "f43245841ce624ca2b7935a5f5fcd781be8f670991245a64caa4906cde43a5f2"
+    }
+  ],
+  "original_explicit_tags": [
+    "arrows-and-axes",
+    "complex-and-polar",
+    "coordinate-calculus-helpers",
+    "coordinate-curves",
+    "formula-parts",
+    "formula-visuals",
+    "linear-algebra-diagrams",
+    "live-layout",
+    "numeric-displays",
+    "ode-flow",
+    "plain-text-visuals",
+    "relation-visuals",
+    "sampled-function-graphs",
+    "semantic-text-visuals",
+    "source-addressable-formulas",
+    "tagged-formulas",
+    "visuals"
+  ],
+  "source_span_coverage": "complete; nonoverlapping; original section bodies retained",
+  "mapping": [
+    {
+      "source_section": "The Basic Visual Protocol",
+      "start_line": 21,
+      "end_line": 93,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "3975aa4e42c4d7882f333b58a672c7242d590a98d42a475d877853edcf861811"
+    },
+    {
+      "source_section": "Whole-Visual Affine Maps",
+      "start_line": 94,
+      "end_line": 125,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "02567e80010a99b926d133e698014baeb038b911eeaee2eedfbbe34e11ad7aab"
+    },
+    {
+      "source_section": "The Affine-Visual Protocol",
+      "start_line": 126,
+      "end_line": 189,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "d5d43ea800071f5b9812baf075c69325561f08dd425cd39b44ac3b9fa61cf5aa"
+    },
+    {
+      "source_section": "The Opacity-Visual Protocol",
+      "start_line": 190,
+      "end_line": 256,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "38d5faf55a2b0f67ecd562a8df2ad10ca83ca3b69176d094f1f4c4b4fa5c79e9"
+    },
+    {
+      "source_section": "The Stroke-Width-Visual Protocol",
+      "start_line": 257,
+      "end_line": 335,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "d41dde4bb7279678c5a6ba75fcffa96f0f56490a4cf12b614f0bd7c08f9818e2"
+    },
+    {
+      "source_section": "Fill-Color and Stroke-Color Visual Protocols",
+      "start_line": 336,
+      "end_line": 409,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "66d7e8713a2968090d6ba5cd52ae86f9c7a0f1e9aa5264877b5a74b24086a1b6"
+    },
+    {
+      "source_section": "Group Visuals",
+      "start_line": 5118,
+      "end_line": 5195,
+      "destination": "visuals-protocols.scrbl",
+      "source_sha256": "3dd8c7b2f1812f7aee9bbbc86ebab00fe9a26d4385f1a9eaf9a4c50d1fdfdd9b"
+    },
+    {
+      "source_section": "Circle Visuals",
+      "start_line": 410,
+      "end_line": 469,
+      "destination": "visuals-shapes.scrbl",
+      "source_sha256": "52bc917ac2aeb7147c97df026fac696f1f15d648747de5b6bc364d56295009e7"
+    },
+    {
+      "source_section": "Rectangle Visuals",
+      "start_line": 470,
+      "end_line": 531,
+      "destination": "visuals-shapes.scrbl",
+      "source_sha256": "4e845b8f12b29bb48b1ca1e80d35c89ee057bf35126a47371c8f82b202f0ec65"
+    },
+    {
+      "source_section": "Path Visuals",
+      "start_line": 2696,
+      "end_line": 2840,
+      "destination": "visuals-shapes.scrbl",
+      "source_sha256": "9d81751ad2708e225aef61e03e541f7fddfeaf8641028a63797bebf5d5f96fd0"
+    },
+    {
+      "source_section": "Mathematical Shape Catalogue",
+      "start_line": 3368,
+      "end_line": 3546,
+      "destination": "visuals-shapes.scrbl",
+      "source_sha256": "3d6aa022674420f7d70b49df6c80caa9c0c4b3c227766ccb89f21b4b5ccd4655"
+    },
+    {
+      "source_section": "Bitmap Images",
+      "start_line": 2841,
+      "end_line": 2888,
+      "destination": "visuals-images.scrbl",
+      "source_sha256": "de15b504eb60182298e7fd83f3aa09ab037ed79c744239d1dc8978e8feab6362"
+    },
+    {
+      "source_section": "Full-Fidelity SVG Images",
+      "start_line": 2889,
+      "end_line": 2937,
+      "destination": "visuals-images.scrbl",
+      "source_sha256": "5d7c64ec57303b40f3a1d1200dda08c1ffb2c1c8e5b5c6401943a2b9d70ae404"
+    },
+    {
+      "source_section": "Semantic SVG Import",
+      "start_line": 2938,
+      "end_line": 2970,
+      "destination": "visuals-images.scrbl",
+      "source_sha256": "7da20cde57f4a41f802b50d8ce707b09dc80627257f71f3b4bc34862bddd3025"
+    },
+    {
+      "source_section": "Plain, Multiline, and Rich Text Visuals",
+      "start_line": 532,
+      "end_line": 876,
+      "destination": "visuals-text.scrbl",
+      "source_sha256": "7428801ce2375a6204ec618cf46bb5e55a41baf52fee1758c99a0eec630053b5"
+    },
+    {
+      "source_section": "Semantic Text and Typography",
+      "start_line": 877,
+      "end_line": 1178,
+      "destination": "visuals-typography.scrbl",
+      "source_sha256": "b880a0d0c193fede44f95f3210d45a55b8eef7f4b9c6036b331b06cf8655506d"
+    },
+    {
+      "source_section": "Numeric Displays",
+      "start_line": 1179,
+      "end_line": 1495,
+      "destination": "visuals-numeric.scrbl",
+      "source_sha256": "0d03ebe2294fdd2c1252c4ab57a277d2ec3886409c9db275c4aecff8487c0cee"
+    },
+    {
+      "source_section": "Matrices and Tables",
+      "start_line": 1496,
+      "end_line": 1651,
+      "destination": "visuals-matrices.scrbl",
+      "source_sha256": "7d14b4c0bdbfcf5657e72a7dad041bfebb5b8524b038677352aa4a56af5eadcc"
+    },
+    {
+      "source_section": "Linear-Algebra Diagrams",
+      "start_line": 3830,
+      "end_line": 3967,
+      "destination": "visuals-matrices.scrbl",
+      "source_sha256": "aa50ce71e628368a5767f2695d83aff457cee9b87d53177789da0d1c6eb5fd74"
+    },
+    {
+      "source_section": "LaTeX construction",
+      "start_line": 1685,
+      "end_line": 1818,
+      "destination": "visuals-formulas.scrbl",
+      "source_sha256": "e40ed866ae5474f8e8cd7721b77c88d5357257429cc2ccbcb354e006df7ceb15"
+    },
+    {
+      "source_section": "LaTeX accessors",
+      "start_line": 1854,
+      "end_line": 1919,
+      "destination": "visuals-formulas.scrbl",
+      "source_sha256": "93a60f47e290257506e6e9289dd122faae4f18d8a9f671ee0c6159f400995480"
+    },
+    {
+      "source_section": "Tagged Formula Layouts",
+      "start_line": 1920,
+      "end_line": 2046,
+      "destination": "visuals-formulas.scrbl",
+      "source_sha256": "13e675ba649de4252788fbd63e0898fbc48e21a7b7fc015a6e8ebc4c30d11895"
+    },
+    {
+      "source_section": "LaTeX toolchain notes",
+      "start_line": 1819,
+      "end_line": 1853,
+      "destination": "visuals-formulas.scrbl",
+      "source_sha256": "ad987b3609450699966ad959ef988025cf9d86fa45547f6fd363dd81305d6342"
+    },
+    {
+      "source_section": "Named Formula Parts and Correspondence",
+      "start_line": 2415,
+      "end_line": 2695,
+      "destination": "visuals-formula-parts.scrbl",
+      "source_sha256": "a72768c61a65ecf53562d8ab4ab15e9bfe553c602cfdd8a522b2b0737bfcd516"
+    },
+    {
+      "source_section": "Source-Addressable Formulas",
+      "start_line": 2047,
+      "end_line": 2414,
+      "destination": "visuals-formula-matching.scrbl",
+      "source_sha256": "d991c958eff6b31fd3d7a7778183ff3054680d2ebf3982c029daa3f57f083e96"
+    },
+    {
+      "source_section": "Arrow/axes common introduction",
+      "start_line": 2971,
+      "end_line": 2977,
+      "destination": "visuals-axes.scrbl",
+      "source_sha256": "b5e0aeb8ff6a5114eda28781a8de6423051a24b32dd428636783e6b104364b43"
+    },
+    {
+      "source_section": "Arrows",
+      "start_line": 2978,
+      "end_line": 3091,
+      "destination": "visuals-axes.scrbl",
+      "source_sha256": "45b7530e44113244e65df00badfeeea9bd4c689f8a1633b0a86a8e1d0815da68"
+    },
+    {
+      "source_section": "Axis Ranges",
+      "start_line": 3547,
+      "end_line": 3612,
+      "destination": "visuals-axes.scrbl",
+      "source_sha256": "ba9866ac2b5cc7609bcb2649d3749426b233371c297e15ee807f70b8beb2b7cc"
+    },
+    {
+      "source_section": "Cartesian Axes",
+      "start_line": 3613,
+      "end_line": 3829,
+      "destination": "visuals-axes.scrbl",
+      "source_sha256": "49d7c552233e5965a1178cdae12c7b6b2b4e90b386a649e94a6d258b850501a9"
+    },
+    {
+      "source_section": "Dynamic Endpoint Geometry",
+      "start_line": 3092,
+      "end_line": 3175,
+      "destination": "visuals-annotations.scrbl",
+      "source_sha256": "4f28883e2a8e077912aec434d14ab4e914783b7f908a07333496a06087a0a191"
+    },
+    {
+      "source_section": "Mathematical Annotations",
+      "start_line": 3176,
+      "end_line": 3367,
+      "destination": "visuals-annotations.scrbl",
+      "source_sha256": "8e0311a095db4e7a3b80b17e803d20e7f9511d67bbaef087c1a4b67aa5d720b5"
+    },
+    {
+      "source_section": "Complex and Polar Coordinates",
+      "start_line": 3968,
+      "end_line": 4152,
+      "destination": "visuals-complex-polar.scrbl",
+      "source_sha256": "68fd6e318c93cabd1cd15597ab4186de20996f5393bbb93e17ca8af49c2a2d04"
+    },
+    {
+      "source_section": "Coordinate Curves and Plots",
+      "start_line": 4336,
+      "end_line": 4432,
+      "destination": "visuals-plots.scrbl",
+      "source_sha256": "15beb12aa531853c0b94c80bd8a34344b6a04d08eac5dcaa583d8788178c6a7c"
+    },
+    {
+      "source_section": "Function sampling and graphs",
+      "start_line": 4712,
+      "end_line": 4959,
+      "destination": "visuals-plots.scrbl",
+      "source_sha256": "3da89e8b24dad7585aa7ca582d077d324daed009701a4e6389ce1c2f2c958f4f"
+    },
+    {
+      "source_section": "Parametric curves",
+      "start_line": 4960,
+      "end_line": 5060,
+      "destination": "visuals-plots.scrbl",
+      "source_sha256": "7003f360246b8d3890a6949caaf51d2eac2c852209ef955b793f66cd29d48114"
+    },
+    {
+      "source_section": "Ordered data plots",
+      "start_line": 5061,
+      "end_line": 5117,
+      "destination": "visuals-plots.scrbl",
+      "source_sha256": "3f0a109de011453814311440fdce3ff69b6705df860c09c7372c3e93a995a095"
+    },
+    {
+      "source_section": "Coordinate and Calculus Helpers",
+      "start_line": 4153,
+      "end_line": 4335,
+      "destination": "visuals-calculus.scrbl",
+      "source_sha256": "97e75f5d3080fb1ad093f2a4f67c9cdee3fb0238da6f143b3f4fcf53b982fad7"
+    },
+    {
+      "source_section": "Deterministic Traced Paths",
+      "start_line": 1652,
+      "end_line": 1684,
+      "destination": "visuals-calculus.scrbl",
+      "source_sha256": "3725ff60dc69ada296e86519b1c45db3f3366746994bfdd7591022d3952bf052"
+    },
+    {
+      "source_section": "ODE solvers, trajectories, and particles",
+      "start_line": 4433,
+      "end_line": 4711,
+      "destination": "visuals-ode.scrbl",
+      "source_sha256": "d24126dbb7305ab254716c1f820dd1f0f3a2df1d3ef0c32ca91104605211b279"
+    },
+    {
+      "source_section": "First-Class Relation Visuals",
+      "start_line": 5196,
+      "end_line": 5406,
+      "destination": "visuals-relations.scrbl",
+      "source_sha256": "939a9f17ac0a3b72dd55d77be32c42ab0eb8c9a47eb4c16fd937b4a61c4f0c99"
+    }
+  ],
+  "pages": [
+    {
+      "file": "visuals-protocols.scrbl",
+      "tag": "ref-visuals-protocols",
+      "title": "Visual Protocols and Groups",
+      "lines": 534,
+      "declaration_count": 41,
+      "examples": 3
+    },
+    {
+      "file": "visuals-shapes.scrbl",
+      "tag": "ref-visuals-shapes",
+      "title": "Shapes and Path Visuals",
+      "lines": 501,
+      "declaration_count": 32,
+      "examples": 2
+    },
+    {
+      "file": "visuals-images.scrbl",
+      "tag": "ref-visuals-images",
+      "title": "Bitmap and SVG Visuals",
+      "lines": 176,
+      "declaration_count": 11,
+      "examples": 1
+    },
+    {
+      "file": "visuals-text.scrbl",
+      "tag": "ref-visuals-text",
+      "title": "Text Content and Layout",
+      "lines": 409,
+      "declaration_count": 33,
+      "examples": 2
+    },
+    {
+      "file": "visuals-typography.scrbl",
+      "tag": "ref-visuals-typography",
+      "title": "Semantic Text and Typography Styles",
+      "lines": 369,
+      "declaration_count": 25,
+      "examples": 2
+    },
+    {
+      "file": "visuals-numeric.scrbl",
+      "tag": "ref-visuals-numeric",
+      "title": "Numbers and Units",
+      "lines": 379,
+      "declaration_count": 20,
+      "examples": 2
+    },
+    {
+      "file": "visuals-matrices.scrbl",
+      "tag": "ref-visuals-matrices",
+      "title": "Matrices, Tables, and Vector Diagrams",
+      "lines": 340,
+      "declaration_count": 20,
+      "examples": 1
+    },
+    {
+      "file": "visuals-formulas.scrbl",
+      "tag": "ref-visuals-formulas",
+      "title": "Formula Construction and Layout",
+      "lines": 414,
+      "declaration_count": 17,
+      "examples": 1
+    },
+    {
+      "file": "visuals-formula-parts.scrbl",
+      "tag": "ref-visuals-formula-parts",
+      "title": "Formula Assemblies and Named Parts",
+      "lines": 331,
+      "declaration_count": 18,
+      "examples": 1
+    },
+    {
+      "file": "visuals-formula-matching.scrbl",
+      "tag": "ref-visuals-formula-matching",
+      "title": "Formula Source Selection and Matching",
+      "lines": 429,
+      "declaration_count": 33,
+      "examples": 1
+    },
+    {
+      "file": "visuals-axes.scrbl",
+      "tag": "ref-visuals-axes",
+      "title": "Arrows and Coordinate Axes",
+      "lines": 461,
+      "declaration_count": 37,
+      "examples": 2
+    },
+    {
+      "file": "visuals-annotations.scrbl",
+      "tag": "ref-visuals-annotations",
+      "title": "Live Endpoints and Mathematical Annotations",
+      "lines": 324,
+      "declaration_count": 17,
+      "examples": 1
+    },
+    {
+      "file": "visuals-complex-polar.scrbl",
+      "tag": "ref-visuals-complex-polar",
+      "title": "Complex and Polar Visuals",
+      "lines": 230,
+      "declaration_count": 14,
+      "examples": 1
+    },
+    {
+      "file": "visuals-plots.scrbl",
+      "tag": "ref-visuals-plots",
+      "title": "Function, Parametric, and Data Plots",
+      "lines": 572,
+      "declaration_count": 14,
+      "examples": 2
+    },
+    {
+      "file": "visuals-calculus.scrbl",
+      "tag": "ref-visuals-calculus",
+      "title": "Graph Helpers and Traced Paths",
+      "lines": 263,
+      "declaration_count": 11,
+      "examples": 1
+    },
+    {
+      "file": "visuals-ode.scrbl",
+      "tag": "ref-visuals-ode",
+      "title": "ODE Trajectories and Streamlines",
+      "lines": 339,
+      "declaration_count": 23,
+      "examples": 1
+    },
+    {
+      "file": "visuals-relations.scrbl",
+      "tag": "ref-visuals-relations",
+      "title": "Relations and Live Layout",
+      "lines": 260,
+      "declaration_count": 20,
+      "examples": 1
+    }
+  ],
+  "hub_lines": 90,
+  "inline_example_blocks": 25,
+  "external_toolchain_examples_executed": false,
+  "legacy_title_assertion": "accept #:style after #:tag",
+  "reviewed_prose_revisions": [
+    {
+      "revision": "reference-prose-r2",
+      "previous_inventory_sha256": "4bf87cb2a7cd564fcac969f9f71857c176e0f556ba78072948c3462e6896f7b2",
+      "declarations": [
+        {
+          "kind": "defproc",
+          "name": "anchor-of",
+          "before_sha256": "9709cb29fca7e83bd07b3a91cb02a3450828a49a299facb749e91a33c850c52c",
+          "after_sha256": "92fbc5453e30f3f952cfd30939401a08900e51a646d914979f4ecda72d08c41a"
+        },
+        {
+          "kind": "defproc",
+          "name": "numeric-label",
+          "before_sha256": "ce21d7657e4302a32253ddb643e275aa95e083d47dd26d94cbc5bb16502b778b",
+          "after_sha256": "af4bcc0b90d79e38c27c94470ffc2a4a63f60994cebdfcf3ae00d08a6fe51e87"
+        },
+        {
+          "kind": "defproc",
+          "name": "parameter-display",
+          "before_sha256": "ca1d553a933e236d445ddb7f8f0cf1535e5a96b6f13a8212177055a447139c2d",
+          "after_sha256": "3832512c55cc5bc6bcefc4fb359527bef07d565ca4128bdaf3bb004ce5e9ed09"
+        },
+        {
+          "kind": "defproc",
+          "name": "text-span",
+          "before_sha256": "0bc7a42929ac9674fa592e242e11c5ba87e68e10128098f1d9fb3b1de92b6270",
+          "after_sha256": "88d3ae743e91d42831a68a1731205edda0035c8a4e624ba152ad00d176491aca"
+        },
+        {
+          "kind": "defproc",
+          "name": "traced-path",
+          "before_sha256": "bdd677e857abad80ce98a7f829074a89f0c804f753fe341349cdd8865b92ac98",
+          "after_sha256": "358b57398f98f691f4017df24c056c8cdaeb4af48719e8afc9fa16dfe2ff5e86"
+        },
+        {
+          "kind": "defproc",
+          "name": "vector-label",
+          "before_sha256": "642ed796491f59c64ef0de50d9b3ec6b5047e0de28617869ce765b864565e6ef",
+          "after_sha256": "7145c263e8ca7ca436b11f2ec15492b090f312d44747b5877d5567f9963051e2"
+        },
+        {
+          "kind": "defthing",
+          "name": "gen:fill-color-visual",
+          "before_sha256": "a769bba4460dfd95523b3cb79ed9550469fe2c5e353a39794e52d7291a15c327",
+          "after_sha256": "8a320f0909424c50c929cef423beb2787d298af80c2b0d1b13d595e359299a8d"
+        },
+        {
+          "kind": "defthing",
+          "name": "gen:stroke-color-visual",
+          "before_sha256": "60e3a2268a74d585df9cca9283309437af06d5f87d52c92536a8722bd6731cc4",
+          "after_sha256": "e5b3127e62b7ce04c26efb7b39ba1aaa209f3281b7736c9045a7c65731d95b9e"
+        }
+      ]
+    }
+  ]
+}

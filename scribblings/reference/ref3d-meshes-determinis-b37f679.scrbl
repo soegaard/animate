@@ -51,18 +51,17 @@ scale-aware threshold for inexact classification. Exact coordinates use exact
 determinant signs.
 
 The next outside point is chosen by greatest positive face distance, then
-stable coordinate/source order. @racket['merge] returns U-2 polygonal
-supporting-face records; @racket['triangulate] leaves that vector empty. If a
+stable coordinate/source order. @racket['merge] returns polygonal supporting-face records; @racket['triangulate] leaves that vector empty. If a
 point set is lower-dimensional, @racket['report] returns its actual dimension
 and @racket['error] raises instead. Diagnostics state the effective tolerances,
 the exact/inexact orientation policy, duplicate count, and near-zero decision
 count.}
 
-@bold{Limitations.} This U-3 implementation is deterministic but not a general
+@bold{Limitations.} The convex-hull implementation is deterministic but is not a general
 computational-geometry repair system: it does not resolve self-intersecting
 input, and inexact near-degenerate cases use the recorded scale-aware policy
 instead of a bigfloat/exact-predicate fallback. Near-duplicate clustering with
 an explicit tolerance is deterministic and transitive: a chain of close points
 forms one cluster even when its endpoints are not directly close. Concave hulls, Delaunay triangulation, and arbitrary
-polygon-with-hole operations are outside this stage.
+polygon-with-hole operations are not supported.
 

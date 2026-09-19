@@ -117,13 +117,13 @@ map. Directional maps use a square orthographic fit and named prepared bounds
 snap their centre to map texels; spots use the source, outward cone, and
 near/far/range policy.}
 
-@bold{Current limitation.} The V8 software and V9 OpenGL renderers create one
+@bold{Current limitation.} The software and OpenGL renderers create one
 directional or spot depth map per descriptor and multiply only diffuse and
 specular terms by its PCF result. Ambient and emission remain unchanged. Only
 opaque mesh instances cast or receive; transparent surfaces, strokes, markers,
-billboards, and point-light cube shadows are outside this stage. Direct-frame
+billboards, and point-light cube shadows are not supported. Direct-frame
 fitting can shimmer, and a too-small explicit region yields unshadowed outside
-samples. V9 caches context-owned GPU maps by eligible casters, light
+samples. The OpenGL backend caches context-owned GPU maps by eligible casters, light
 pose/settings, and bounds, deliberately excluding viewing-camera motion.
 Semantic @racket[shadow-bias3d] values avoid backend-specific depth tuning by
 moving the receiver in world space before each renderer projects it. The
@@ -167,6 +167,6 @@ rather than approximating finite sources as directional lights.
 
 @bold{Current limitation.} The OpenGL implementation has explicit fixed
 limits of four directional, eight point, and four spot lights per lit view.
-It rejects an over-limit frame before drawing. V9 adds directional/spot maps,
-but point-light cube shadows remain deferred.
+It rejects an over-limit frame before drawing. Directional and spot shadow maps are supported, but point-light cube shadows
+are not supported.
 

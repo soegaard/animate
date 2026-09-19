@@ -39,7 +39,7 @@ identity, and checks that the endpoint was installed exactly.
 Stroke width is its own animation component. It may run simultaneously with
 translation, rotation, scale, opacity, or path-geometry changes for the same
 identity. Two overlapping same-target stroke-width requests conflict after
-AN--AR schedule expansion; touching requests may chain through a succession or
+schedule expansion; touching requests may chain through a succession or
 other nonoverlapping schedule.
 
 The numeric interpolation follows the leaf easing like movement and ordinary
@@ -163,8 +163,7 @@ When @racket[target] is a direct Visual, each supplied property's primitive
 constructor validates the required optional Visual protocol immediately. A
 symbolic target defers those same checks until @racket[scene-play] resolves the
 target. A @racket[#f] keyword value means omitted; it is not a request to remove
-paint. The SCENE-AT rule that a current @racket[#f] fill or stroke cannot be
-color-interpolated therefore remains unchanged.
+paint. A current @racket[#f] fill or stroke therefore cannot be color-interpolated.
 
 @racket[style-to] counts as one direct child for parent composition timing and
 then expands its primitive leaves in parallel inside the interval it receives.

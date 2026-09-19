@@ -16,7 +16,7 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-G adds fixed-topology rectangular parametric surfaces. A surface is
+Parametric surfaces use a fixed rectangular sampling topology. A surface is
 sampled once at inclusive parameter-grid sites and therefore has stable vertex
 and triangle identities. Its normals use declared analytic derivatives when
 both are supplied; otherwise they use deterministic centred/one-sided finite

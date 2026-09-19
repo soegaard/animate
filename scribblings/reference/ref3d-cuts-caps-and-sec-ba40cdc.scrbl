@@ -16,8 +16,8 @@
 @seclink["3d-algebra"]{3D reference map} · @seclink["guide-3d-picture"]{First 3D picture}
 
 
-SCENE-3D-R extends a plane section with an explicit local numerical policy,
-plane basis, and component records. @racket[cut-mesh3d] returns both clipped
+A plane section includes an explicit local numerical policy, plane basis, and
+component records. @racket[cut-mesh3d] returns both clipped
 halves plus their shared @racket[section3d], optional separate cap meshes, and
 when capped, exact-coordinate welded solid halves through
 @tt{mesh-cut3d-result-positive-solid} and
@@ -74,7 +74,7 @@ uncapped; it does not claim to be a closed box-cut solid.}
 into one indexed mesh. It rejects mismatched transforms, opacity, or a missing
 colour at a newly introduced vertex; it never performs tolerance-based welding.}
 Multi-plane render clipping is semantic and ordered, but the optional OpenGL
-backend has not yet received its corresponding multi-plane uniform path.
+backend does not provide the corresponding multi-plane uniform path.
 See @filepath{examples/3d/capped-cube-cutaway.rkt}.
 
 @defproc[(riemann-volume3d [function procedure?]

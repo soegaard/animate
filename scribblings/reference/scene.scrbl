@@ -174,12 +174,10 @@ included in frame sampling. Follow it with @racket[scene-wait] or
 
 Appends one play clip. When no @racket[timed], @racket[succession],
 @racket[animation-group], or @racket[lagged-start] value is present, Visual/scalar and
-camera @racket[request] values retain the historical behavior: they run
-simultaneously and share @racket[duration] and @racket[easing]. The exact
-pre-SCENE-AN compilation path is used unchanged.
+camera @racket[request] values run simultaneously and share
+@racket[duration] and @racket[easing].
 
-When @racket[#:duration] is omitted, ordinary requests retain the historical
-one-second default. A direct @racket[write-in] uses Manim's default instead:
+When @racket[#:duration] is omitted, ordinary requests default to one second. A direct @racket[write-in] uses Manim's default instead:
 one second for fewer than fifteen writable leaves and two seconds for fifteen
 or more. An explicit positive duration always takes precedence.
 
@@ -209,8 +207,7 @@ Structural introduction requests are installed only at their local start. A
 the complete Visual at opacity zero, and @racket[enter] adds an affine/opacity
 appearance proxy. Requests beginning at that same local time
 share the prepared state, so movement, rotation, scaling, opacity, and compatible
-geometry changes can still compose with an introduction exactly as in the
-historical simultaneous model. A @racket[fade-out], @racket[uncreate], or
+geometry changes can compose with an introduction. A @racket[fade-out], @racket[uncreate], or
 @racket[leave] removal
 may not end while another animation of that target remains active; reintroduction
 at the exact removal boundary is allowed.
@@ -219,7 +216,7 @@ Positive-measure overlap on the same Visual component is rejected. Touching
 intervals are not overlap and are legal. Requests for disjoint components may
 overlap freely.
 
-SCENE-CV gives camera requests those same local intervals. A later pan, zoom,
+Camera requests use the same local intervals. A later pan, zoom,
 fit, or follow compiles from the exact camera view at its local start.
 @racket[camera-pan-by] therefore adds to that local center, and
 @racket[camera-zoom-by] divides that local visible width by its magnification
@@ -242,7 +239,7 @@ arguments:
 ]
 
 At least one request is required. Each composition value itself also requires
-at least one child. In the historical full-clip case, two
+at least one child. In the full-clip case, two
 simultaneous requests may target the same Visual when every component they
 change is disjoint. With local timing, the same rule applies only where the
 request intervals overlap. The components in
@@ -276,8 +273,7 @@ components do not conflict with Visual components.
 Before easing is called, progress is clamped to the closed unit interval. The
 easing result must be a finite real and is also clamped to that interval. A
 normal easing procedure should map @racket[0] to @racket[0] and @racket[1] to
-@racket[1]. Transform component endpoints follow the easing result, as in
-earlier versions.
+@racket[1]. Transform component endpoints follow the easing result.
 
 Introduction, removal, and formula-part transformation requests have
 structural endpoint rules. For an untimed request the structural endpoint is the
@@ -367,7 +363,7 @@ same closed interval accepted by @racket[scene-sample]. Clip intervals are
 half-open. Sampling the exact total duration returns
 @racket[scene-current-camera]. This procedure samples only the camera. For a
 follow request, the timeline internally samples the followed target's semantic
-Visual state at the same absolute time, including SCENE-AR local timing and
+Visual state at the same absolute time, including local timing and
 sequential/parallel/lagged composition. It
 never depends on earlier rendered frames.
 }
