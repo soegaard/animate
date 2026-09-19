@@ -186,6 +186,10 @@
           (lower-function-expression expression bound-variables)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'piecewise-function))
           (lower-piecewise-expression expression bound-variables)]
+         [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'sequence))
+          (lower-sequence-expression expression bound-variables)]
+         [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'iteration-map))
+          (lower-iteration-map-expression expression bound-variables)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'step))
           (lower-step-expression expression bound-variables)]
          [(and (identifier? (car forms)) (calculus-contextual-name? (syntax-e (car forms))))
@@ -257,6 +261,51 @@
     (define domain (lower-calculus-expression (option-value options 'domain #'calculus-real-line) bound-variables))
     (define label (lower-calculus-expression (option-value options 'label #'#f) bound-variables))
     #`(make-piecewise-function '#,variable (list #,@branches) #,else-expression #:domain #,domain #:label #,label))
+
+  ;; lower-sequence-expression : syntax? (listof symbol?) -> syntax?
+  ;;   Holds the integer index as a lexical mathematical variable.
+  (define (lower-sequence-expression expression bound-variables)
+    (define forms (syntax->list expression))
+    (unless (>= (length forms) 3)
+      (raise-syntax-error 'sequence "expected an index binder and expression" expression))
+    (define binder (syntax->list (second forms)))
+    (unless (and binder (= (length binder) 1) (identifier? (first binder)))
+      (raise-syntax-error 'sequence "expected one bound integer index" (second forms)))
+    (define variable (syntax-e (first binder)))
+    (define-values (positionals options) (split-calculus-arguments (drop forms 3) 'sequence))
+    (unless (null? positionals)
+      (raise-syntax-error 'sequence "unexpected positional argument" (first positionals)))
+    #`(make-generic 'sequence
+                    (list '#,variable
+                          #,(lower-calculus-expression (third forms)
+                                                       (cons variable bound-variables)))
+                    (hash 'from
+                          #,(lower-calculus-expression (option-value options 'from #'0)
+                                                       bound-variables))))
+
+  ;; lower-iteration-map-expression : syntax? (listof symbol?) -> syntax?
+  ;;   Holds an iteration variable while retaining the finite update policy.
+  (define (lower-iteration-map-expression expression bound-variables)
+    (define forms (syntax->list expression))
+    (unless (>= (length forms) 3)
+      (raise-syntax-error 'iteration-map "expected a state binder and expression" expression))
+    (define binder (syntax->list (second forms)))
+    (unless (and binder (= (length binder) 1) (identifier? (first binder)))
+      (raise-syntax-error 'iteration-map "expected one bound state variable" (second forms)))
+    (define variable (syntax-e (first binder)))
+    (define-values (positionals options) (split-calculus-arguments (drop forms 3) 'iteration-map))
+    (unless (null? positionals)
+      (raise-syntax-error 'iteration-map "unexpected positional argument" (first positionals)))
+    #`(make-generic 'iteration-map
+                    (list '#,variable
+                          #,(lower-calculus-expression (third forms)
+                                                       (cons variable bound-variables)))
+                    (hash 'start
+                          #,(lower-calculus-expression (option-value options 'start #'#f)
+                                                       bound-variables)
+                          'steps
+                          #,(lower-calculus-expression (option-value options 'steps #'#f)
+                                                       bound-variables))))
 
   ;; lower-step-expression : syntax? (listof symbol?) -> syntax?
   ;;   Turns a source step identifier into data and recursively lowers action commands.

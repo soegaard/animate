@@ -133,6 +133,76 @@
   (views [number-line (number-line-view #:objects (P))])
   (step refine-cells (refine P #:counts (list 6) #:duration 1)))
 
+;; candidate-model : calculus-model?
+;;   Validates supplied level-set, root, and intersection candidates only.
+(define-calculus-model candidate-model
+  (model
+    [f (function (x) (- (* x x) 1))]
+    [h (function (x) (+ x 1))]
+    [G (graph f)]
+    [H (graph h)]
+    [solutions (level-set f 0
+                          #:within (closed -2 2)
+                          #:inputs (list -1 1))]
+    [solution-values (solution-inputs solutions)]
+    [bad-solutions (level-set f 0
+                              #:within (closed -2 2)
+                              #:inputs (list 0))]
+    [unjustified-empty (level-set f 0
+                                  #:within (closed -2 2)
+                                  #:inputs (list)
+                                  #:completeness 'all)]
+    [root (root-point G #:x 1)]
+    [not-root (root-point G #:x 0)]
+    [crossing (intersection-point G H #:x -1)]))
+
+;; sequence-iteration-model : calculus-model?
+;;   Keeps finite indexed processes declarative and evaluates requested prefixes
+;;   from their declared seeds.
+(define-calculus-model sequence-iteration-model
+  (model
+    [s (sequence (n) (* n n) #:from 1)]
+    [s3 (sequence-value s 3)]
+    [before-s (sequence-value s 0)]
+    [sum (partial-sum s #:from 1 #:to 3)]
+    [empty-sum (partial-sum s #:from 3 #:to 2)]
+    [points (sequence-points s #:through 3)]
+    [iter (iteration-map (x) (+ x 1) #:start 0 #:steps 3)]
+    [iter3 (iterate-value iter 3)]
+    [iter4 (iterate-value iter 4)]
+    [f (function (x) (- (* x x) 2))]
+    [df (derivative-function f #:method 'symbolic)]
+    [newton (newton-iteration f #:derivative df #:start 1 #:steps 3)]
+    [newton3 (iterate-value newton 3)]
+    [newton-prefix (newton-diagram newton #:through 3)]
+    [g (function (x) (* x x))]
+    [dg (derivative-function g #:method 'symbolic)]
+    [stopped-newton (newton-iteration g #:derivative dg #:start 0 #:steps 1)]
+    [stopped0 (iterate-value stopped-newton 0)]
+    [stopped1 (iterate-value stopped-newton 1)]
+    [wrong-newton (newton-iteration f #:derivative dg #:start 1 #:steps 1)]
+    [wrong-newton1 (iterate-value wrong-newton 1)]))
+
+;; analysis-claim-model : calculus-model?
+;;   Checks declared claim vocabulary and evidence without inferring the claim.
+(define-calculus-model analysis-claim-model
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [positive (sign-claim f #:on (open 0 2) #:sign 'positive
+                          #:justification "x squared is positive away from zero.")]
+    [bad-sign (sign-claim f #:on (open 0 2) #:sign 'upward
+                          #:justification "Deliberately invalid category.")]
+    [increasing (monotonicity-claim f #:on (closed 0 2) #:direction 'nondecreasing
+                                      #:justification "The supplied derivative argument is nonnegative.")]
+    [concave (concavity-claim f #:on (closed 0 2) #:direction 'up
+                                #:justification "The supplied second-derivative argument is positive.")]
+    [chart (sign-chart positive)]
+    [minimum (feature-point G #:at 0 #:kind 'local-minimum
+                            #:justification "The supplied feature label is a local minimum.")]
+    [bad-feature (feature-point G #:at 0 #:kind 'ordinary-point
+                                #:justification "Deliberately invalid category.")]))
+
 
 ;;;
 ;;; Tests
@@ -202,7 +272,92 @@
   (check-equal? (length (calculus-plan-diagnostics nonnested-plan)) 1)
   (check-equal? (calculus-result-value
                  (calculus-snapshot-ref (calculus-plan-sample nonnested-plan #:at 'final) 'n))
-                4))
+                4)
+  (define candidate-snapshot (calculus-model-at candidate-model))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref candidate-snapshot 'solution-values))
+                '(-1 1))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref candidate-snapshot 'bad-solutions))
+                'undefined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref candidate-snapshot 'unjustified-empty))
+                'unresolved)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref candidate-snapshot 'root))
+                (cons 1 0))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref candidate-snapshot 'not-root))
+                'unresolved)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref candidate-snapshot 'crossing))
+                (cons -1 0))
+  (define sequence-iteration-snapshot (calculus-model-at sequence-iteration-model))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 's3))
+                9)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'before-s))
+                'undefined)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'sum))
+                14)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'empty-sum))
+                0)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'points))
+                (list (cons 1 1) (cons 2 4) (cons 3 9)))
+  (check-equal? (hash-ref
+                 (calculus-result->datum
+                  (calculus-snapshot-ref sequence-iteration-snapshot 'points))
+                 'value)
+                (list (hash 'kind 'point 'x 1 'y 1)
+                      (hash 'kind 'point 'x 2 'y 4)
+                      (hash 'kind 'point 'x 3 'y 9)))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'iter3))
+                3)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'iter4))
+                'undefined)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'newton3))
+                577/408)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'newton-prefix))
+                (list (cons 0 1) (cons 1 3/2) (cons 2 17/12) (cons 3 577/408)))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'stopped0))
+                0)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'stopped1))
+                'undefined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref sequence-iteration-snapshot 'wrong-newton1))
+                'unresolved)
+  (define analysis-snapshot (calculus-model-at analysis-claim-model))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref analysis-snapshot 'positive))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref analysis-snapshot 'bad-sign))
+                'undefined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref analysis-snapshot 'increasing))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref analysis-snapshot 'concave))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref analysis-snapshot 'chart))
+                'defined)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref analysis-snapshot 'minimum))
+                (cons 0 0))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref analysis-snapshot 'bad-feature))
+                'undefined))
 
 (module+ test
   (run-calculus-core-smoke-tests))

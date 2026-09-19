@@ -440,8 +440,10 @@
     [(in-domain?) (c-expression 'in-domain? args)]
     [(+ - * / expt sqrt abs exp log sin cos tan asin acos atan = < <= > >= and or not if list
          value-at x-coordinate y-coordinate slope difference-quotient sum-value area-of
-               sequence-value partial-sum iterate-value)
+               sequence-value iterate-value)
      (c-expression kind args)]
+    [(partial-sum)
+     (c-object kind args opts)]
     [(part) (apply make-part args)]
     [(reading-branch)
      (unless (= (length args) 2) (raise-arguments-error 'reading-branch "requires a reading and source index" "arguments" args))
@@ -878,6 +880,69 @@
   (and (c-object? source) (memq (c-object-kind source) '(graph graph-restriction))
        (first (c-object-arguments source))))
 
+;; scalar-equivalent? : finite-real? finite-real? calculus-computation? -> boolean?
+;;   Preserves exact equality while making an explicitly inexact candidate's
+;;   residual subject to the mathematical—not graphical—tolerance policy.
+(define (scalar-equivalent? left right computation)
+  (or (= left right)
+      (and (or (inexact? left) (inexact? right))
+           (<= (abs (- left right))
+               (+ (calculus-computation-data-absolute-tolerance computation)
+                  (* (calculus-computation-data-relative-tolerance computation)
+                     (max (abs left) (abs right))))))))
+
+;; eval-level-set : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Validates explicitly supplied candidates and deliberately performs no root search.
+(define (eval-level-set solutions environment model computation lexical)
+  (define raw (node-raw solutions))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'level-set)))
+      (undefined "expected a level set")
+      (let ([function (first (c-object-arguments raw))]
+            [target (second (c-object-arguments raw))]
+            [within (hash-ref (c-object-options raw) 'within #f)]
+            [inputs (hash-ref (c-object-options raw) 'inputs #f)]
+            [completeness (hash-ref (c-object-options raw) 'completeness 'selected)]
+            [justification (hash-ref (c-object-options raw) 'justification #f)])
+        (cond
+          [(not (and within inputs)) (undefined "level set requires #:within and #:inputs")]
+          [else
+           (result-bind
+            (eval-raw target environment model computation lexical)
+            (lambda (output)
+              (result-bind
+               (eval-raw inputs environment model computation lexical)
+               (lambda (candidates)
+                 (if (not (and (finite-real? output) (list? candidates)
+                               (andmap finite-real? candidates)))
+                     (undefined "level-set targets and inputs must be finite real values")
+                     (let loop ([remaining candidates] [validated '()])
+                       (cond
+                         [(null? remaining)
+                          (if (and (null? candidates) (eq? completeness 'all) (not justification))
+                              (unresolved "an empty complete level set needs a justification")
+                              (defined (immutable-list-copy (reverse validated))))]
+                         [else
+                          (define candidate (car remaining))
+                          (result-bind
+                           (domain-contains? within candidate environment model computation)
+                           (lambda (inside?)
+                             (if (not inside?)
+                                 (undefined "level-set candidate is outside #:within")
+                                 (result-bind
+                                  (evaluate-function function candidate environment model computation lexical)
+                                  (lambda (value)
+                                    (if (scalar-equivalent? value output computation)
+                                        (loop (cdr remaining) (cons candidate validated))
+                                        (undefined "level-set candidate does not satisfy the supplied output")))))))])))))))]))))
+
+;; eval-solution-inputs : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Projects the already validated, source-ordered candidate input list.
+(define (eval-solution-inputs descriptor environment model computation lexical)
+  (define raw (node-raw descriptor))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'solution-inputs)))
+      (undefined "expected solution inputs")
+      (eval-raw (first (c-object-arguments raw)) environment model computation lexical)))
+
 (define (eval-point point environment model computation lexical)
   (define raw (node-raw point))
   (cond
@@ -908,7 +973,9 @@
         (define x (hash-ref options 'x))
         (result-bind (eval-raw x environment model computation lexical)
                      (lambda (v) (result-bind (evaluate-function (graph-function graph) v environment model computation lexical)
-                                               (lambda (y) (if (= y 0) (defined (cons v y)) (unresolved "candidate is not a root"))))))]
+                                               (lambda (y) (if (scalar-equivalent? y 0 computation)
+                                                               (defined (cons v y))
+                                                               (unresolved "candidate is not a root"))))))]
        [(intersection-point)
         (define x (hash-ref options 'x))
         (result-bind (eval-raw x environment model computation lexical)
@@ -917,7 +984,7 @@
                                     (lambda (left)
                                       (result-bind (evaluate-function (graph-function (second args)) v environment model computation lexical)
                                                    (lambda (right)
-                                                     (if (= left right)
+                                                     (if (scalar-equivalent? left right computation)
                                                          (defined (cons v left))
                                                          (unresolved "candidate is not an intersection"))))))))]
        [(point-on-line)
@@ -1187,20 +1254,60 @@
 
 (define (eval-sequence-value sequence index environment model computation lexical)
   (define raw (node-raw sequence))
-  (if (and (c-object? raw) (eq? (c-object-kind raw) 'sequence))
-      (result-bind (eval-raw index environment model computation lexical)
-                   (lambda (n)
-                     (eval-raw (second (c-object-arguments raw)) environment model computation
-                               (hash-set lexical (first (c-object-arguments raw)) (defined n)))))
-      (undefined "expected a sequence")))
+  (cond
+    [(not (and (c-object? raw) (eq? (c-object-kind raw) 'sequence)))
+     (undefined "expected a sequence")]
+    [else
+     (define variable (first (c-object-arguments raw)))
+     (define body (second (c-object-arguments raw)))
+     (define first-index (hash-ref (c-object-options raw) 'from 0))
+     (result-bind
+      (eval-raw index environment model computation lexical)
+      (lambda (n)
+        (result-bind
+         (eval-raw first-index environment model computation lexical)
+         (lambda (start)
+           (if (and (exact-integer? n) (exact-integer? start) (>= n start))
+               (eval-raw body environment model computation
+                         (hash-set lexical variable (defined n)))
+               (undefined "sequence index must be an integer at or above #:from"))))))]))
+
+;; eval-partial-sum : semantic-value? semantic-value? semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Computes an inclusive finite sum over valid integer sequence indices.
 (define (eval-partial-sum sequence from to environment model computation lexical)
   (result-bind (eval-raw from environment model computation lexical)
-               (lambda (a) (result-bind (eval-raw to environment model computation lexical)
-                                        (lambda (b) (if (< b a) (defined 0)
-                                                        (let loop ([n a] [total 0])
-                                                          (if (> n b) (defined total)
-                                                              (result-bind (eval-sequence-value sequence n environment model computation lexical)
-                                                                           (lambda (v) (loop (add1 n) (+ total v))))))))))))
+               (lambda (a)
+                 (result-bind
+                  (eval-raw to environment model computation lexical)
+                  (lambda (b)
+                    (cond
+                      [(not (and (exact-integer? a) (exact-integer? b)))
+                       (undefined "partial-sum bounds must be exact integers")]
+                      [(< b a) (defined 0)]
+                      [else
+                       (let loop ([n a] [total 0])
+                         (if (> n b)
+                             (defined total)
+                             (result-bind
+                              (eval-sequence-value sequence n environment model computation lexical)
+                              (lambda (value) (loop (add1 n) (+ total value))))))]))))))
+
+;; eval-iterate-value : semantic-value? semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Evaluates a finite iteration directly from its seed, never from prior frames.
+(define (same-semantic-source? left right)
+  (or (eq? left right)
+      (and (c-node? left) (c-node? right)
+           (eq? (c-node-id left) (c-node-id right)))))
+
+;; newton-derivative-compatible? : semantic-value? semantic-value? -> boolean?
+;;   Requires Newton's declared derivative to retain the same function source.
+(define (newton-derivative-compatible? function derivative)
+  (define raw (node-raw derivative))
+  (and (c-object? raw)
+       (eq? (c-object-kind raw) 'derivative-function)
+       (= (length (c-object-arguments raw)) 1)
+       (same-semantic-source? function (first (c-object-arguments raw)))))
+
 (define (eval-iterate-value iteration index environment model computation lexical)
   (define raw (node-raw iteration))
   (cond
@@ -1210,37 +1317,184 @@
      (result-bind
       (eval-raw index environment model computation lexical)
       (lambda (limit)
-        (define seed (hash-ref (c-object-options raw) 'start))
-        (let loop ([position 0] [current seed])
-          (cond
-            ((>= position limit) (eval-raw current environment model computation lexical))
-            ((eq? (c-object-kind raw) 'iteration-map)
-             (loop (add1 position) (c-object 'iteration-value (list raw current) (hash))))
-            (else
-             (define function (first (c-object-arguments raw)))
-             (define derivative (hash-ref (c-object-options raw) 'derivative))
-             (result-bind
-              (eval-raw current environment model computation lexical)
-              (lambda (x)
-                (result-bind
-                 (evaluate-function function x environment model computation lexical)
-                 (lambda (fx)
-                   (result-bind
-                    (evaluate-function derivative x environment model computation lexical)
-                    (lambda (dx)
-                      (if (= dx 0)
-                          (undefined "Newton derivative is zero")
-                          (loop (add1 position) (- x (/ fx dx))))))))))))))))))
+        (define steps (hash-ref (c-object-options raw) 'steps #f))
+        (define seed (hash-ref (c-object-options raw) 'start #f))
+        (result-bind
+         (eval-raw steps environment model computation lexical)
+         (lambda (count)
+           (result-bind
+            (eval-raw seed environment model computation lexical)
+            (lambda (initial)
+             (cond
+                ((not (and (exact-nonnegative-integer? limit)
+                           (exact-nonnegative-integer? count)
+                           (<= limit count)
+                           (finite-real? initial)))
+                 (undefined "iteration index must be within its declared finite step count"))
+                ((and (eq? (c-object-kind raw) 'newton-iteration)
+                      (not (newton-derivative-compatible?
+                            (first (c-object-arguments raw))
+                            (hash-ref (c-object-options raw) 'derivative #f))))
+                 (unresolved "Newton derivative must be declared for the iteration function"))
+                ((eq? (c-object-kind raw) 'iteration-map)
+                 (define variable (first (c-object-arguments raw)))
+                 (define body (second (c-object-arguments raw)))
+                 (let loop ([position 0] [current initial])
+                   (if (= position limit)
+                       (defined current)
+                       (result-bind
+                        (eval-raw body environment model computation
+                                  (hash-set lexical variable (defined current)))
+                        (lambda (next) (loop (add1 position) next))))))
+                (else
+                 (define function (first (c-object-arguments raw)))
+                 (define derivative (hash-ref (c-object-options raw) 'derivative #f))
+                 (let loop ([position 0] [current initial])
+                   (if (= position limit)
+                       (defined current)
+                       (result-bind
+                        (evaluate-function function current environment model computation lexical)
+                        (lambda (fx)
+                          (result-bind
+                           (evaluate-function derivative current environment model computation lexical)
+                           (lambda (dx)
+                             (if (= dx 0)
+                                 (undefined "Newton derivative is zero")
+                                 (loop (add1 position) (- current (/ fx dx)))))))))))))))))))))
+
+;; eval-sequence-points : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Returns only authored integer-indexed samples, never an interpolated curve.
+(define (eval-sequence-points marker environment model computation lexical)
+  (define raw (node-raw marker))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'sequence-points)))
+      (undefined "expected sequence-points")
+      (let* ([sequence (first (c-object-arguments raw))]
+             [through (hash-ref (c-object-options raw) 'through #f)]
+             [sequence-raw (node-raw sequence)])
+        (cond
+          [(not (and (c-object? sequence-raw) (eq? (c-object-kind sequence-raw) 'sequence)))
+           (undefined "sequence-points requires a sequence")]
+          [(not through) (undefined "sequence-points requires #:through")]
+          [else
+           (result-bind
+            (eval-raw through environment model computation lexical)
+            (lambda (last-index)
+              (result-bind
+               (eval-raw (hash-ref (c-object-options sequence-raw) 'from 0)
+                         environment model computation lexical)
+               (lambda (first-index)
+                 (if (not (and (exact-integer? first-index) (exact-integer? last-index)))
+                     (undefined "sequence-points indices must be exact integers")
+                     (let loop ([index first-index] [points '()])
+                       (if (> index last-index)
+                           (defined (reverse points))
+                           (result-bind
+                            (eval-sequence-value sequence index environment model computation lexical)
+                            (lambda (value)
+                              (loop (add1 index) (cons (cons index value) points)))))))))))]))))
+
+;; eval-newton-diagram : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Retains the available Newton iterate prefix as indexed mathematical data.
+(define (eval-newton-diagram marker environment model computation lexical)
+  (define raw (node-raw marker))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'newton-diagram)))
+      (undefined "expected newton-diagram")
+      (let* ([iteration (first (c-object-arguments raw))]
+             [through (hash-ref (c-object-options raw) 'through #f)]
+             [iteration-raw (node-raw iteration)])
+        (cond
+          [(not (and (c-object? iteration-raw)
+                     (eq? (c-object-kind iteration-raw) 'newton-iteration)))
+           (undefined "newton-diagram requires a Newton iteration")]
+          [(not through) (undefined "newton-diagram requires #:through")]
+          [else
+           (result-bind
+            (eval-raw through environment model computation lexical)
+            (lambda (last-index)
+              (if (not (exact-nonnegative-integer? last-index))
+                  (undefined "newton-diagram index must be a nonnegative exact integer")
+                  (let loop ([index 0] [points '()])
+                    (if (> index last-index)
+                        (defined (reverse points))
+                        (result-bind
+                         (eval-iterate-value iteration index environment model computation lexical)
+                         (lambda (value)
+                           (loop (add1 index) (cons (cons index value) points)))))))))]))))
+
+;; nonempty-justification? : any/c -> boolean?
+;;   Claims retain author-supplied evidence rather than attempting a new solver.
+(define (nonempty-justification? value)
+  (and (string? value) (not (string=? value ""))))
+
+;; eval-analysis-claim : semantic-value? symbol? (listof symbol?) hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Validates the declared scope, category, and supplied evidence of one claim.
+(define (eval-analysis-claim claim kind allowed-values environment model computation lexical)
+  (define raw (node-raw claim))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) kind)))
+      (undefined (format "expected ~a" kind))
+      (let* ([function (first (c-object-arguments raw))]
+             [scope (hash-ref (c-object-options raw) 'on #f)]
+             [value-key (if (eq? kind 'sign-claim) 'sign 'direction)]
+             [value (hash-ref (c-object-options raw) value-key #f)]
+             [justification (hash-ref (c-object-options raw) 'justification #f)])
+        (cond
+          [(not (lookup-function function)) (undefined "analysis claim requires a function")]
+          [(not (memq value allowed-values)) (undefined "analysis claim has an unsupported category")]
+          [(not (nonempty-justification? justification))
+           (undefined "analysis claim requires a nonempty #:justification")]
+          [else
+           (result-bind (eval-domain scope environment model computation)
+                        (lambda (_) (defined raw)))]))))
+
+;; eval-sign-chart : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Depends on validated supplied claims without inferring their interval truth.
+(define (eval-sign-chart chart environment model computation lexical)
+  (define raw (node-raw chart))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'sign-chart)))
+      (undefined "expected a sign chart")
+      (let loop ([claims (c-object-arguments raw)])
+        (cond
+          [(null? claims) (undefined "sign-chart requires at least one claim")]
+          [else
+           (result-bind
+            (eval-raw (car claims) environment model computation lexical)
+            (lambda (_) (if (null? (cdr claims)) (defined raw) (loop (cdr claims)))))]))))
+
+;; eval-feature-point : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Places one supplied graph point while preserving its distinct named property.
+(define (eval-feature-point feature environment model computation lexical)
+  (define raw (node-raw feature))
+  (cond
+    [(not (and (c-object? raw) (eq? (c-object-kind raw) 'feature-point)))
+     (undefined "expected a feature point")]
+    [else
+     (define graph (first (c-object-arguments raw)))
+     (define at (hash-ref (c-object-options raw) 'at #f))
+     (define kind (hash-ref (c-object-options raw) 'kind #f))
+     (define justification (hash-ref (c-object-options raw) 'justification #f))
+     (cond
+       [(not (graph-function graph)) (undefined "feature-point requires a graph")]
+       [(not (memq kind '(stationary critical local-minimum local-maximum global-minimum global-maximum inflection)))
+        (undefined "feature-point has an unsupported #:kind")]
+       [(not (nonempty-justification? justification))
+        (undefined "feature-point requires a nonempty #:justification")]
+       [else
+        (result-bind (eval-raw at environment model computation lexical)
+                     (lambda (x)
+                       (result-bind
+                        (evaluate-function (graph-function graph) x environment model computation lexical)
+                        (lambda (y) (defined (cons x y))))))])]))
 
 (define (eval-object object environment model computation lexical)
   (case (c-object-kind object)
     [(graph graph-restriction formula formula-of ref value point-label graph-label quantity-label value-readout
             interval-marker endpoint-marker approach-marker input-band output-band limit-statement epsilon-delta-condition
             continuity-condition asymptote-line region-under region-between integral-region riemann-rectangles trapezoidal-regions
-            partition-marks sign-claim monotonicity-claim concavity-claim sign-chart feature-point sequence-points newton-diagram
+            partition-marks
             trace-of formula-occurrence quantity-correspondence snapshot-of in-view output-reading slope-triangle)
      (defined object)]
     [(point point-on axis-point projection root-point intersection-point point-on-line) (eval-point object environment model computation lexical)]
+    [(feature-point) (eval-feature-point object environment model computation lexical)]
     [(segment line-through ray-through horizontal-line vertical-line chord secant tangent vertical-tangent normal) (eval-line object environment model computation lexical)]
     [(increment) (defined object)]
     [(definite-integral)
@@ -1249,7 +1503,27 @@
     [(trapezoidal-sum) (eval-trapezoidal-sum object environment model computation lexical)]
     [(riemann-sum) (defined object)]
     [(uniform-partition partition tag-partition) (defined object)]
-    [(level-set solution-inputs) (defined object)]
+    [(level-set) (eval-level-set object environment model computation lexical)]
+    [(solution-inputs) (eval-solution-inputs object environment model computation lexical)]
+    [(partial-sum)
+     (eval-partial-sum (first (c-object-arguments object))
+                       (hash-ref (c-object-options object) 'from #f)
+                       (hash-ref (c-object-options object) 'to #f)
+                       environment model computation lexical)]
+    [(sequence-points) (eval-sequence-points object environment model computation lexical)]
+    [(newton-diagram) (eval-newton-diagram object environment model computation lexical)]
+    [(sign-claim)
+     (eval-analysis-claim object 'sign-claim
+                          '(positive negative zero nonnegative nonpositive)
+                          environment model computation lexical)]
+    [(monotonicity-claim)
+     (eval-analysis-claim object 'monotonicity-claim
+                          '(increasing decreasing nondecreasing nonincreasing)
+                          environment model computation lexical)]
+    [(concavity-claim)
+     (eval-analysis-claim object 'concavity-claim '(up down)
+                          environment model computation lexical)]
+    [(sign-chart) (eval-sign-chart object environment model computation lexical)]
     [(iteration-map newton-iteration) (defined object)]
     [(iteration-value)
      (eval-raw (second (c-object-arguments object)) environment model computation lexical)]
@@ -1817,7 +2091,9 @@
 ;; semantic-datum : any/c -> immutable-datum?
 ;;   Converts supported semantic values to compact inspection data.
 (define (semantic-datum value)
-  (cond [(pair? value) (hash 'kind 'point 'x (car value) 'y (cdr value))]
+  (cond [(and (pair? value) (finite-real? (car value)) (finite-real? (cdr value)))
+         (hash 'kind 'point 'x (car value) 'y (cdr value))]
+        [(list? value) (map semantic-datum value)]
         [(c-node? value) (hash 'kind (c-node-kind value) 'id (c-node-id value))]
         [(c-object? value) (hash 'kind (c-object-kind value))]
         [(c-part? value) (hash 'kind 'part 'name (c-part-name value))]

@@ -46,6 +46,22 @@ Inside a model and its lesson clauses, the contextual vocabulary includes
 @racket[approach], @racket[together], and @racket[checkpoint]. These spellings
 are not exports that change ordinary Racket code outside a declaration.
 
+Finite analysis forms preserve source-declared mathematics independently of
+frame order. @racket[(sequence (n) expression #:from first-index)] binds an
+integer index, @racket[(partial-sum sequence #:from m #:to n)] is inclusive
+and returns zero when @racket[n] is smaller than @racket[m], and
+@racket[(sequence-points sequence #:through n)] represents only discrete
+indexed samples. @racket[iteration-map] and @racket[newton-iteration] compute
+an inspected prefix from their declared seed; a Newton derivative must be a
+@racket[derivative-function] of that iteration's function. An unavailable
+update remains a partial result rather than selecting a new seed.
+
+@racket[level-set], @racket[root-point], and @racket[intersection-point]
+validate supplied candidates only; none starts a hidden root search. Sign,
+monotonicity, concavity, and feature declarations retain supplied scopes,
+categories, and nonempty justifications. They validate that declaration data,
+but do not claim to prove an interval theorem from graph samples.
+
 @defproc[(compile-calculus-lesson [lesson calculus-lesson?]
                                   [#:profile profile calculus-profile? default-calculus-profile]
                                   [#:values values hash? (hash)]

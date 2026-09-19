@@ -53,6 +53,20 @@ component descriptor. Contextual mathematical forms such as `function`,
 `graph`, `show`, and `read` are valid only within calculus declarations; they
 do not replace ordinary Racket bindings elsewhere in the module.
 
+Finite analysis remains semantic data rather than render-frame state:
+`sequence` binds an integer index at or above `#:from`, `partial-sum` is
+inclusive (and yields zero for an empty range), and `iteration-map` and
+`newton-iteration` evaluate every inspected prefix from their declared seed.
+`sequence-points` returns only discrete indexed samples. Newton iteration
+requires a derivative declared for the same function and reports a partial
+result when a derivative or an update is unavailable; it never restarts from
+another seed.
+
+Candidate constructors (`level-set`, `root-point`, and `intersection-point`)
+validate only author-supplied candidates. They do not search for roots.
+Analysis claims retain their supplied domain, category, and nonempty
+justification; they are not upgraded to machine-proved theorems.
+
 ## Test
 
 From the repository root:
@@ -60,9 +74,12 @@ From the repository root:
 ```sh
 raco test calculus/tests/core-smoke-test.rkt \
           calculus/tests/guide-lessons-test.rkt \
-          calculus/tests/render-smoke-test.rkt
+          calculus/tests/render-smoke-test.rkt \
+          calculus/tests/component-declaration-test.rkt \
+          calculus/tests/external-function-test.rkt
 ```
 
-The tests exercise Guide-style graph reading, supplied derivatives, piecewise
-function values, domains, deterministic action sampling, and native output
-dimensions.
+The tests exercise Guide-style graph reading, candidate validation, finite
+sequences and Newton prefixes, supplied derivatives, piecewise function
+values, domains, deterministic action sampling, component declarations,
+external functions, and native output dimensions.
