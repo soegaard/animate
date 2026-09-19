@@ -19,6 +19,7 @@ The API definitions and their links are retained. Detailed model rules are in
 @include-section["reference/coordinate-decorations.scrbl"]
 @include-section["reference/markers-scatter-and-areas.scrbl"]
 @include-section["reference/statistical-diagrams.scrbl"]
+@include-section["reference/calculus.scrbl"]
 @include-section["reference/colors.scrbl"]
 @include-section["reference/slides.scrbl"]
 @include-section["reference/slide-tools.scrbl"]
