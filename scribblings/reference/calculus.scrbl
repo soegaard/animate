@@ -69,6 +69,9 @@ side, and supplied justification without evaluating the source at the target.
 @racket[epsilon-delta-condition] requires finite positive epsilon and delta;
 @racket[continuity-condition] reports a declared limit/value mismatch as a
 contradiction rather than treating it as a display preference.
+@racket[asymptote-line] likewise requires its supplied line to match the
+finite/infinite shape and value of its limit claim; no asymptote is inferred
+from a view boundary.
 
 Differential constructions retain function provenance: @racket[tangent] and
 @racket[linearization] accept only a @racket[derivative-function] declared for

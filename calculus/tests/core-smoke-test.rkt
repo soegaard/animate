@@ -265,6 +265,26 @@
     [V (vertical-tangent G #:at P #:justification "A supplied vertical tangent claim.")]
     [bad-V (vertical-tangent G #:at P #:justification "")]))
 
+;; asymptote-contract-model : calculus-model?
+;;   Cross-checks a supplied asymptote's geometric shape against its limit claim.
+(define-calculus-model asymptote-contract-model
+  (model
+    [x (parameter 1 #:domain (open 0 2))]
+    [f (function (t) (/ 1 t))]
+    [G (graph f)]
+    [vertical-claim (limit-statement (value-at f x)
+                                     #:parameter x #:to 0 #:value +inf.0
+                                     #:justification "The reciprocal grows without bound near zero.")]
+    [horizontal-claim (limit-statement (value-at f x)
+                                       #:parameter x #:to +inf.0 #:value 0
+                                       #:justification "The reciprocal approaches zero at infinity.")]
+    [V (vertical-line 0)]
+    [H (horizontal-line 0)]
+    [bad-H (horizontal-line 1)]
+    [vertical-asymptote (asymptote-line G #:line V #:limit-claim vertical-claim)]
+    [horizontal-asymptote (asymptote-line G #:line H #:limit-claim horizontal-claim)]
+    [mismatched-asymptote (asymptote-line G #:line bad-H #:limit-claim horizontal-claim)]))
+
 
 ;;;
 ;;; Tests
@@ -479,7 +499,17 @@
                 (list 'vertical 1 (cons 1 1)))
   (check-equal? (calculus-result-status
                  (calculus-snapshot-ref tangent-snapshot 'bad-V))
-                'undefined))
+                'undefined)
+  (define asymptote-snapshot (calculus-model-at asymptote-contract-model))
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref asymptote-snapshot 'vertical-asymptote))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref asymptote-snapshot 'horizontal-asymptote))
+                'defined)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref asymptote-snapshot 'mismatched-asymptote))
+                'unresolved))
 
 (module+ test
   (run-calculus-core-smoke-tests))

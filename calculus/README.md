@@ -74,6 +74,8 @@ and justification without evaluating the source expression at the limiting
 target. Epsilon–delta conditions require finite positive epsilon and delta;
 continuity conditions report a declared limit that conflicts with the actual
 function value rather than silently displaying it as continuous.
+An `asymptote-line` must similarly match the finite/infinite shape and value
+of its supplied limit claim; it is not inferred from the edge of a view.
 
 For differential constructions, `tangent` and `linearization` require a
 `derivative-function` declared for the same held function. A

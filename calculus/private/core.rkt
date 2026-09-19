@@ -1678,10 +1678,55 @@
                               (unresolved "continuity claim contradicts the function value"))))])]
                    [_ (undefined "continuity requires scalar claim data")])))))]))))
 
+;; eval-asymptote-line : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Certifies only a supplied line whose finite/infinite shape matches its claim.
+(define (eval-asymptote-line asymptote environment model computation lexical)
+  (define raw (node-raw asymptote))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'asymptote-line)))
+      (undefined "expected an asymptote line")
+      (let* ([graph (first (c-object-arguments raw))]
+             [line (hash-ref (c-object-options raw) 'line #f)]
+             [claim (hash-ref (c-object-options raw) 'limit-claim #f)]
+             [claim-raw (node-raw claim)])
+        (cond
+          [(not (graph-function graph)) (undefined "asymptote-line requires a graph")]
+          [(not (and (c-object? claim-raw) (eq? (c-object-kind claim-raw) 'limit-statement)))
+           (undefined "asymptote-line requires a limit statement")]
+          [else
+           (result-bind
+            (eval-limit-statement claim environment model computation lexical)
+            (lambda (_)
+              (result-bind
+               (eval-line line environment model computation lexical)
+               (lambda (line-value)
+                 (result-bind
+                  (eval-raw
+                   (list (hash-ref (c-object-options claim-raw) 'to #f)
+                         (hash-ref (c-object-options claim-raw) 'value #f))
+                   environment model computation lexical)
+                  (lambda (values)
+                    (match values
+                      [(list target claimed-value)
+                       (cond
+                         [(and (eq? (car line-value) 'vertical)
+                               (finite-real? target)
+                               (or (eqv? claimed-value +inf.0) (eqv? claimed-value -inf.0))
+                               (scalar-equivalent? (second line-value) target computation))
+                          (defined raw)]
+                         [(and (eq? (car line-value) 'line)
+                               (= (second line-value) 0)
+                               (or (eqv? target +inf.0) (eqv? target -inf.0))
+                               (finite-real? claimed-value)
+                               (scalar-equivalent? (third line-value) claimed-value computation))
+                          (defined raw)]
+                         [else
+                          (unresolved "asymptote line does not match the supplied limit claim")])]
+                      [_ (undefined "asymptote-line requires scalar limit data")])))))))]))))
+
 (define (eval-object object environment model computation lexical)
   (case (c-object-kind object)
     [(graph graph-restriction formula formula-of ref value point-label graph-label quantity-label value-readout
-            interval-marker endpoint-marker approach-marker asymptote-line region-under region-between integral-region riemann-rectangles trapezoidal-regions
+            interval-marker endpoint-marker approach-marker region-under region-between integral-region riemann-rectangles trapezoidal-regions
             partition-marks
             trace-of formula-occurrence quantity-correspondence snapshot-of in-view output-reading slope-triangle)
      (defined object)]
@@ -1720,6 +1765,7 @@
     [(limit-statement) (eval-limit-statement object environment model computation lexical)]
     [(epsilon-delta-condition) (eval-epsilon-delta-condition object environment model computation lexical)]
     [(continuity-condition) (eval-continuity-condition object environment model computation lexical)]
+    [(asymptote-line) (eval-asymptote-line object environment model computation lexical)]
     [(iteration-map newton-iteration) (defined object)]
     [(iteration-value)
      (eval-raw (second (c-object-arguments object)) environment model computation lexical)]
