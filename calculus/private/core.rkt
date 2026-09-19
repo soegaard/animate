@@ -40,7 +40,7 @@
  c-action? c-action-kind c-action-targets c-action-options
  c-step? make-step c-view? c-view-name c-view-kind c-view-arguments c-view-options
  c-param-spec? make-param-spec
- calculus-snapshot-function-value
+ calculus-snapshot-function-value calculus-snapshot-function-branch calculus-snapshot-function-branch-value
  calculus-plan-lesson calculus-plan-events c-event-start c-event-end
  action-kinds view-kinds)
 
@@ -929,7 +929,9 @@
 
 (define (line-through-points p q kind)
   (if (equal? p q)
-      (undefined (if (eq? kind 'segment) "zero length segment" "coincident points do not determine a line"))
+      (if (eq? kind 'segment)
+          (defined (list 'segment p q))
+          (undefined "coincident points do not determine a line"))
       (let ([dx (- (car q) (car p))] [dy (- (cdr q) (cdr p))])
         (if (= dx 0) (defined (list 'vertical (car p) p))
             (defined (list 'line (/ dy dx) (- (cdr p) (* (/ dy dx) (car p))) p))))))
@@ -1025,7 +1027,16 @@
   (cond
     [(not (c-object? raw)) (undefined "expected a partition")]
     [(eq? (c-object-kind raw) 'partition)
-     (eval-raw (first (c-object-arguments raw)) environment model computation lexical)]
+     (result-bind
+      (eval-raw (first (c-object-arguments raw)) environment model computation lexical)
+      (lambda (points)
+        (if (and (list? points)
+                 (>= (length points) 2)
+                 (andmap finite-real? points)
+                 (for/and ([left (in-list points)] [right (in-list (rest points))])
+                   (< left right)))
+            (defined (immutable-list-copy points))
+            (undefined "partition needs at least two finite strictly increasing endpoints"))))]
     [(eq? (c-object-kind raw) 'uniform-partition)
      (define a (first (c-object-arguments raw))) (define b (second (c-object-arguments raw)))
      (define n (hash-ref (c-object-options raw) 'count))
@@ -1045,9 +1056,30 @@
       (result-bind (eval-partition (first (c-object-arguments raw)) environment model computation lexical)
                    (lambda (points)
                      (define rule (hash-ref (c-object-options raw) 'sample #f))
-                     (cond [rule (defined (for/list ([a (in-list points)] [b (in-list (rest points))])
-                                             (case rule [(left) a] [(right) b] [else (/ (+ a b) 2)])))]
-                           [else (eval-raw (hash-ref (c-object-options raw) 'tags) environment model computation lexical)])))))
+                     (cond
+                       [rule
+                        (case rule
+                          [(left right midpoint)
+                           (defined
+                            (for/list ([a (in-list points)] [b (in-list (rest points))])
+                              (case rule [(left) a] [(right) b] [else (/ (+ a b) 2)])))]
+                          [else (undefined "tag sample rule must be 'left, 'right, or 'midpoint")])]
+                       [else
+                        (define tags-expression (hash-ref (c-object-options raw) 'tags #f))
+                        (if (not tags-expression)
+                            (undefined "tag partition needs #:sample or #:tags")
+                            (result-bind
+                             (eval-raw tags-expression environment model computation lexical)
+                             (lambda (tags)
+                               (if (and (list? tags)
+                                        (= (length tags) (sub1 (length points)))
+                                        (andmap finite-real? tags)
+                                        (for/and ([tag (in-list tags)]
+                                                  [a (in-list points)]
+                                                  [b (in-list (rest points))])
+                                          (<= a tag b)))
+                                   (defined (immutable-list-copy tags))
+                                   (undefined "explicit tags require one finite tag in each closed subinterval")))))])))))
 
 (define (eval-sum-value sum environment model computation lexical)
   (define raw (node-raw sum))
@@ -1074,9 +1106,39 @@
                           (cdr endpoints)
                           (+ total (* height (- (second endpoints) (first endpoints)))))))))))))]))
 
+;; eval-trapezoidal-sum : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Computes the exact signed finite trapezoidal sum from increasing cells.
+(define (eval-trapezoidal-sum sum environment model computation lexical)
+  (define raw (node-raw sum))
+  (cond
+    [(not (and (c-object? raw) (eq? (c-object-kind raw) 'trapezoidal-sum)))
+     (undefined "expected a trapezoidal sum")]
+    [else
+     (define function (first (c-object-arguments raw)))
+     (define partition (second (c-object-arguments raw)))
+     (result-bind
+      (eval-partition partition environment model computation lexical)
+      (lambda (points)
+        (let loop ([lefts points] [rights (rest points)] [total 0])
+          (cond
+            [(null? rights) (defined total)]
+            [else
+             (result-bind
+              (evaluate-function function (car lefts) environment model computation lexical)
+              (lambda (left-height)
+                (result-bind
+                 (evaluate-function function (car rights) environment model computation lexical)
+                 (lambda (right-height)
+                   (loop (cdr lefts) (cdr rights)
+                         (+ total
+                            (* (- (car rights) (car lefts))
+                               (/ (+ left-height right-height) 2))))))))]))))]))
+
 (define (simpson function a b environment model computation lexical)
   (define budget (calculus-computation-data-integration-budget computation))
-  (define n (max 2 (min 2048 (if (even? budget) budget (sub1 budget)))))
+  ;; Simpson's rule needs an even positive interval count and one more
+  ;; integrand evaluation than intervals, all within the declared budget.
+  (define n (min 2048 (* 2 (quotient (sub1 budget) 2))))
   (cond
     [(< n 2) (unresolved "numeric integration budget is too small" 'numeric)]
     [else
@@ -1184,7 +1246,7 @@
     [(definite-integral)
      (eval-integral (first (c-object-arguments object)) (hash-ref (c-object-options object) 'from) (hash-ref (c-object-options object) 'to)
                     (hash-ref (c-object-options object) 'antiderivative #f) environment model computation lexical)]
-    [(trapezoidal-sum) (unresolved "trapezoidal sums are not yet implemented")]
+    [(trapezoidal-sum) (eval-trapezoidal-sum object environment model computation lexical)]
     [(riemann-sum) (defined object)]
     [(uniform-partition partition tag-partition) (defined object)]
     [(level-set solution-inputs) (defined object)]
@@ -1261,36 +1323,155 @@
      (define span (duration-of command fallback))
      (values (list (c-event ordinal start (+ start span) command)) span (add1 ordinal))]))
 
+;; action-parameter : c-action? -> (or/c c-node? #f)
+;;   Returns the writable semantic target when an action begins with one.
+(define (action-parameter action)
+  (and (pair? (c-action-targets action))
+       (c-node? (first (c-action-targets action)))
+       (eq? (c-node-kind (first (c-action-targets action))) 'parameter)
+       (first (c-action-targets action))))
+
+;; action-endpoint : c-action? -> any/c
+;;   Selects the authored endpoint used to validate one parameter action.
+(define (action-endpoint action)
+  (case (c-action-kind action)
+    [(vary) (hash-ref (c-action-options action) 'to #f)]
+    [(approach) (hash-ref (c-action-options action) 'until #f)]
+    [(set-parameter) (and (pair? (rest (c-action-targets action)))
+                          (second (c-action-targets action)))]
+    [else #f]))
+
+;; domain-excluded-values : semantic-value? hash? calculus-model? calculus-computation? -> list?
+;;   Collects statically evaluable exclusions so a continuous action can check
+;;   its entire authored path rather than only its final value.
+(define (domain-excluded-values domain environment model computation)
+  (define raw (node-raw domain))
+  (cond
+    [(not (c-domain? raw)) '()]
+    [(eq? (c-domain-kind raw) 'domain-except)
+     (append
+      (for/list ([hole (in-list (rest (c-domain-arguments raw)))]
+                 #:do [(define result (eval-domain-number hole environment model computation))]
+                 #:when (eq? (calculus-result-status result) 'defined))
+        (calculus-result-value result))
+      (domain-excluded-values (first (c-domain-arguments raw)) environment model computation))]
+    [(memq (c-domain-kind raw) '(domain-union domain-intersection))
+     (apply append
+            (for/list ([child (in-list (c-domain-arguments raw))])
+              (domain-excluded-values child environment model computation)))]
+    [else '()]))
+
+;; domain-path-crosses-exclusion? : c-domain? finite-real? finite-real? hash? calculus-model? calculus-computation? -> boolean?
+;;   Detects an excluded interior value in a continuous action's direct path.
+(define (domain-path-crosses-exclusion? domain start target environment model computation)
+  (for/or ([hole (in-list (remove-duplicates
+                           (domain-excluded-values domain environment model computation)))])
+    (and (< (min start target) hole (max start target))
+         (let ([included? (domain-contains? domain hole environment model computation)])
+           (and (eq? (calculus-result-status included?) 'defined)
+                (not (calculus-result-value included?)))))))
+
+;; valid-continuous-parameter-target? : c-node? finite-real? finite-real? hash? calculus-model? calculus-computation? -> boolean?
+;;   Enforces real-valued interpolation and valid paths during pure sampling.
+(define (valid-continuous-parameter-target? parameter start target environment model computation)
+  (and (eq? (c-param-spec-kind (c-node-data parameter)) 'real)
+       (finite-real? target)
+       (let ([inside? (domain-contains? (c-param-spec-domain (c-node-data parameter))
+                                        target environment model computation)])
+         (and (eq? (calculus-result-status inside?) 'defined)
+              (calculus-result-value inside?)
+              (not (domain-path-crosses-exclusion?
+                    (c-param-spec-domain (c-node-data parameter)) start target
+                    environment model computation))))))
+
+;; valid-approach-side? : c-action? finite-real? finite-real? hash? calculus-model? calculus-computation? -> boolean?
+;;   Ensures that an approach begins and stops on its explicitly authored side
+;;   of a finite limiting target without ever evaluating at that target.
+(define (valid-approach-side? action start stop environment model computation)
+  (define target-expression (hash-ref (c-action-options action) 'to #f))
+  (define target-result
+    (and target-expression (eval-raw target-expression environment model computation)))
+  (define side (hash-ref (c-action-options action) 'side #f))
+  (and target-result
+       (eq? (calculus-result-status target-result) 'defined)
+       (finite-real? (calculus-result-value target-result))
+       (let ([target (calculus-result-value target-result)])
+         (case side
+           [(left) (and (< start target) (< stop target))]
+           [(right) (and (> start target) (> stop target))]
+           [else #f]))))
+
+;; parameter-values-before : c-event? list? hash? calculus-model? calculus-computation? -> immutable-hash?
+;;   Reconstructs the start state for endpoint and side validation, including
+;;   preceding zero-time assignments but never depending on rendered frames.
+(define (parameter-values-before event events values model computation)
+  (car
+   (for/fold ([state (cons values (hash))]) ([prior (in-list events)]
+                                             #:break (>= (c-event-ordinal prior)
+                                                        (c-event-ordinal event)))
+     (if (<= (c-event-end prior) (c-event-start event))
+         (apply-event state prior (c-event-end prior) model computation)
+         state))))
+
 ;; action-domain-diagnostics : calculus-model? hash? calculus-computation? list? -> list?
-;;   Checks statically evaluable parameter-action endpoints before native output.
+;;   Checks parameter kind, authored stops, endpoints, and continuous paths
+;;   before native output, while keeping invalid actions out of sampled states.
 (define (action-domain-diagnostics model values computation events)
-  (for/list ([event (in-list events)]
-             #:when (let* ([action (c-event-action event)]
-                           [kind (c-action-kind action)])
-                      (and (memq kind '(vary approach set-parameter))
-                           (pair? (c-action-targets action))
-                           (c-node? (first (c-action-targets action)))
-                           (eq? (c-node-kind (first (c-action-targets action))) 'parameter))))
-    (define action (c-event-action event))
-    (define kind (c-action-kind action))
-    (define parameter (first (c-action-targets action)))
-    (define endpoint
-      (case kind
-        [(vary) (hash-ref (c-action-options action) 'to #f)]
-        [(approach) (hash-ref (c-action-options action) 'until #f)]
-        [else (and (pair? (rest (c-action-targets action)))
-                   (second (c-action-targets action)))]))
-    (define result (and endpoint (eval-raw endpoint values model computation)))
-    (define inside?
-      (and result
-           (eq? (calculus-result-status result) 'defined)
-           (domain-contains? (c-param-spec-domain (c-node-data parameter))
-                             (calculus-result-value result) values model computation)))
-    (and (not (and inside? (eq? (calculus-result-status inside?) 'defined)
-                   (calculus-result-value inside?)))
-         (calculus-diagnostic 'error 'parameter-domain (c-node-id parameter) #f
-                              (c-event-end event)
-                              "parameter action endpoint is outside its declared domain"))))
+  (apply append
+         (for/list ([event (in-list events)])
+           (define action (c-event-action event))
+           (define kind (c-action-kind action))
+           (define parameter (action-parameter action))
+           (cond
+             [(not (and parameter (memq kind '(vary approach set-parameter)))) '()]
+             [else
+             (define endpoint (action-endpoint action))
+              (define event-values
+                (parameter-values-before event events values model computation))
+              (define result (and endpoint (eval-raw endpoint event-values model computation)))
+              (define valid-result?
+                (and result
+                     (eq? (calculus-result-status result) 'defined)
+                     (finite-real? (calculus-result-value result))))
+              (define target (and valid-result? (calculus-result-value result)))
+              (define diagnostic
+                (lambda (code message)
+                  (calculus-diagnostic 'error code (c-node-id parameter) #f
+                                       (c-event-end event) message)))
+              (cond
+                [(and (memq kind '(vary approach))
+                      (eq? (c-param-spec-kind (c-node-data parameter)) 'integer))
+                 (list (diagnostic 'parameter-kind
+                                   "continuous parameter actions require a real parameter"))]
+                [(and (eq? kind 'approach) (not valid-result?))
+                 (list (diagnostic 'approach-stop
+                                   "approach requires an authored finite #:until value"))]
+                [(not valid-result?)
+                 (list (diagnostic 'parameter-domain
+                                   "parameter action endpoint is outside its declared domain"))]
+                [else
+                 (define inside?
+                   (domain-contains? (c-param-spec-domain (c-node-data parameter))
+                                     target event-values model computation))
+                 (cond
+                   [(not (and (eq? (calculus-result-status inside?) 'defined)
+                              (calculus-result-value inside?)))
+                    (list (diagnostic 'parameter-domain
+                                      "parameter action endpoint is outside its declared domain"))]
+                   [(and (memq kind '(vary approach))
+                         (domain-path-crosses-exclusion?
+                          (c-param-spec-domain (c-node-data parameter))
+                          (hash-ref event-values (c-node-id parameter)) target
+                          event-values model computation))
+                    (list (diagnostic 'parameter-path
+                                      "continuous parameter action crosses an excluded domain value"))]
+                   [(and (eq? kind 'approach)
+                         (not (valid-approach-side?
+                               action (hash-ref event-values (c-node-id parameter)) target
+                               event-values model computation)))
+                    (list (diagnostic 'approach-side
+                                      "approach must start and stop on its authored side of #:to"))]
+                   [else '()])])]))))
 
 ;; compile-calculus-lesson : calculus-lesson? keyword-options -> calculus-plan?
 ;;   Lowers a headless lesson into immutable events, moments, and diagnostics.
@@ -1357,7 +1538,15 @@
                       [target-expression (if (eq? kind 'approach) (hash-ref (c-action-options action) 'until)
                                              (hash-ref (c-action-options action) 'to))]
                       [target-result (eval-raw target-expression values model computation)])
-                 (if (not (eq? (calculus-result-status target-result) 'defined)) state
+                 (if (or (not (eq? (calculus-result-status target-result) 'defined))
+                         (not (valid-continuous-parameter-target?
+                               parameter initial (calculus-result-value target-result)
+                               values model computation))
+                         (and (eq? kind 'approach)
+                              (not (valid-approach-side?
+                                    action initial (calculus-result-value target-result)
+                                    values model computation))))
+                     state
                      (let ([target (calculus-result-value target-result)]
                            [progress (if (= start end) 1 (min 1 (max 0 (/ (- time start) (- end start)))))] )
                        (cons (hash-set values id (+ initial (* progress (- target initial)))) visible)))))]
@@ -1460,6 +1649,69 @@
                      (calculus-snapshot-values snapshot)
                      (calculus-snapshot-model snapshot)
                      (calculus-snapshot-computation snapshot)))
+
+;; calculus-snapshot-function-branch : calculus-snapshot? any/c finite-real? -> calculus-result?
+;;   Identifies a selected piecewise source branch without inferring topology
+;;   from pixels. Non-piecewise functions use the stable branch symbol 'sole.
+(define (calculus-snapshot-function-branch snapshot function input)
+  (check 'calculus-snapshot-function-branch calculus-snapshot? "calculus-snapshot?" snapshot)
+  (check 'calculus-snapshot-function-branch finite-real? "finite real input" input)
+  (define model (calculus-snapshot-model snapshot))
+  (define values (calculus-snapshot-values snapshot))
+  (define computation (calculus-snapshot-computation snapshot))
+  (define source (lookup-function function))
+  (cond
+    [(not source) (undefined "expected a calculus function")]
+    [(not (c-piecewise? source)) (defined 'sole)]
+    [else
+     (result-bind
+      (domain-contains? (c-piecewise-domain source) input values model computation)
+      (lambda (inside?)
+        (if (not inside?)
+            (outside "input is outside the declared function domain")
+            (let loop ([branches (c-piecewise-branches source)] [index 0])
+              (cond
+                [(null? branches)
+                 (if (c-piecewise-else source) (defined 'else)
+                     (undefined "no piecewise branch applies"))]
+                [else
+                 (result-bind
+                  (eval-raw (caar branches) values model computation
+                            (hash (c-piecewise-variable source) (defined input)))
+                  (lambda (matches?)
+                    (if matches? (defined index) (loop (cdr branches) (add1 index)))))])))))]))
+
+;; calculus-snapshot-function-branch-value : calculus-snapshot? any/c (or/c exact-nonnegative-integer? 'else 'sole) finite-real? -> calculus-result?
+;;   Evaluates one named piecewise source branch at an authored boundary without
+;;   allowing native sampling to infer a missing endpoint from nearby pixels.
+(define (calculus-snapshot-function-branch-value snapshot function branch input)
+  (check 'calculus-snapshot-function-branch-value calculus-snapshot? "calculus-snapshot?" snapshot)
+  (check 'calculus-snapshot-function-branch-value finite-real? "finite real input" input)
+  (define model (calculus-snapshot-model snapshot))
+  (define values (calculus-snapshot-values snapshot))
+  (define computation (calculus-snapshot-computation snapshot))
+  (define source (lookup-function function))
+  (cond
+    [(not source) (undefined "expected a calculus function")]
+    [(not (c-piecewise? source))
+     (if (eq? branch 'sole)
+         (evaluate-function function input values model computation)
+         (undefined "function has no named piecewise branch"))]
+    [else
+     (result-bind
+      (domain-contains? (c-piecewise-domain source) input values model computation)
+      (lambda (inside?)
+        (if (not inside?)
+            (outside "input is outside the declared function domain")
+            (let ([lexical (hash (c-piecewise-variable source) (defined input))])
+              (cond
+                [(and (exact-nonnegative-integer? branch)
+                      (< branch (length (c-piecewise-branches source))) )
+                 (eval-raw (cdr (list-ref (c-piecewise-branches source) branch))
+                           values model computation lexical)]
+                [(and (eq? branch 'else) (c-piecewise-else source))
+                 (eval-raw (c-piecewise-else source) values model computation lexical)]
+                [else (undefined "unknown piecewise branch")])))))]))
 
 ;; calculus-snapshot-visible? : calculus-snapshot? address? keyword-options -> boolean?
 ;;   Reports effective persistent visibility independently of mathematical value.

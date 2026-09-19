@@ -15,7 +15,10 @@
 
 ;; Imports
 (require rackunit
-         "../main.rkt")
+         "../main.rkt"
+         (only-in "../private/core.rkt"
+                  calculus-snapshot-function-branch
+                  calculus-snapshot-function-branch-value))
 
 ;; Exports
 (provide run-calculus-guide-lesson-tests)
@@ -138,6 +141,25 @@
     (calculus-plan-sample (compile-calculus-lesson guide-limit-not-value) #:at 'initial))
   (check-equal? (calculus-result-value (calculus-snapshot-ref limit-initial '(at-one output))) 4)
   (check-equal? (calculus-result-value (calculus-snapshot-ref limit-initial 'delta)) 1/2)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-function-branch
+                  limit-initial
+                  (calculus-result-value (calculus-snapshot-ref limit-initial 'g))
+                  1))
+                0)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-function-branch
+                  limit-initial
+                  (calculus-result-value (calculus-snapshot-ref limit-initial 'g))
+                  9/10))
+                'else)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-function-branch-value
+                  limit-initial
+                  (calculus-result-value (calculus-snapshot-ref limit-initial 'g))
+                  'else
+                  1))
+                2)
   (define limit-final
     (calculus-plan-sample (compile-calculus-lesson guide-limit-not-value) #:at 'final))
   (check-equal? (calculus-result-value (calculus-snapshot-ref limit-final 'u)) 11/10)

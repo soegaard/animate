@@ -16,6 +16,8 @@
 (require rackunit
          (prefix-in pict: pict)
          (prefix-in native: "../../main.rkt")
+         racket/class
+         racket/draw
          "../render.rkt")
 
 ;; Exports
@@ -42,6 +44,40 @@
   (step show-reading (show R))
   (step scan (vary a #:to -2 #:duration 1)))
 
+;; render-special-value : calculus-lesson?
+;;   Supplies an isolated graph value and the excluded nearby branch endpoint.
+(define-calculus-lesson render-special-value
+  (model
+    [g (piecewise-function (x)
+         [(= x 0) 4]
+         [else (+ x 1)])]
+    [G (graph g)])
+  (views
+    [plot (graph-view #:x (closed -2 2)
+                      #:y (closed 0 5)
+                      #:objects (G))])
+  (initially (show G))
+  (step retain-special-value (show G)))
+
+;; bitmap-rgb : bitmap% exact-nonnegative-integer? exact-nonnegative-integer? -> bytes?
+;;   Reads one rendered pixel without depending on an image-file encoder.
+(define (bitmap-rgb bitmap x y)
+  (define bytes (make-bytes 4))
+  (send bitmap get-argb-pixels x y 1 1 bytes)
+  (subbytes bytes 1 4))
+
+;; pict->opaque-bitmap : pict? exact-positive-integer? exact-positive-integer? -> bitmap%
+;;   Composites a native pict onto an opaque test surface before reading pixels.
+(define (pict->opaque-bitmap picture width height)
+  (define bitmap (make-bitmap width height))
+  (define context (new bitmap-dc% [bitmap bitmap]))
+  (send context set-pen (new pen% [color "white"] [style 'transparent]))
+  (send context set-brush (new brush% [color "white"] [style 'solid]))
+  (send context draw-rectangle 0 0 width height)
+  (pict:draw-pict picture context 0 0)
+  (send context set-bitmap #f)
+  bitmap)
+
 
 ;;;
 ;;; Tests
@@ -63,7 +99,17 @@
                 (calculus-plan-duration (prepared-lesson-plan prepared)))
   (define scene-picture (native:scene->pict scene (native:scene-duration scene)))
   (check-equal? (pict:pict-width scene-picture) 480)
-  (check-equal? (pict:pict-height scene-picture) 270))
+  (check-equal? (pict:pict-height scene-picture) 270)
+  (define topology-picture
+    (prepared-lesson->pict
+     (prepare-calculus-lesson render-special-value #:width 480 #:height 270)
+     #:at 'final))
+  (define topology-bitmap (pict->opaque-bitmap topology-picture 480 270))
+  ;; The special branch owns (0,4); the else branch contributes the open
+  ;; endpoint (0,1).  The centers verify the semantic markers, not a sampled
+  ;; approximation just to one side of x=0.
+  (check-not-equal? (bitmap-rgb topology-bitmap 240 73) #"\xFA\xFA\xFA")
+  (check-equal? (bitmap-rgb topology-bitmap 240 197) #"\xFA\xFA\xFA"))
 
 (module+ test
   (run-calculus-render-smoke-tests))

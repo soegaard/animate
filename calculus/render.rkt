@@ -167,11 +167,99 @@
   (and (eq? (calculus-result-status result) 'defined)
        (calculus-result-value result)))
 
+;; hex-color : string? -> color%
+;;   Converts the documented CSS-style palette literal into the color objects
+;;   required by racket/draw; passing the string directly paints black.
+(define (hex-color text)
+  (unless (and (string? text) (regexp-match? #px"^#[0-9A-Fa-f]{6}$" text))
+    (raise-argument-error 'hex-color "six-digit hexadecimal color string" text))
+  (define (byte start)
+    (string->number (substring text start (+ start 2)) 16))
+  (draw:make-color (byte 1) (byte 3) (byte 5)))
+
 ;; draw-line-segment : drawing-context% real? real? real? real? string? real? -> void?
 ;;   Draws one native segment with an explicit, temporary pen configuration.
 (define (draw-line-segment context x1 y1 x2 y2 color width)
-  (send context set-pen (new draw:pen% [color color] [width width] [style 'solid]))
+  (send context set-pen (new draw:pen% [color (hex-color color)] [width width] [style 'solid]))
   (send context draw-line x1 y1 x2 y2))
+
+;; function-source : any/c -> any/c
+;;   Removes a public node wrapper before inspecting held function topology.
+(define (function-source function)
+  (if (c-node? function) (c-node-data function) function))
+
+;; equality-branch-boundary : any/c symbol? -> (or/c real? #f)
+;;   Extracts a declared equality boundary involving a held function variable.
+(define (equality-branch-boundary condition variable)
+  (and (c-expression? condition)
+       (eq? (c-expression-op condition) '=)
+       (= (length (c-expression-arguments condition)) 2)
+       (let ([left (first (c-expression-arguments condition))]
+             [right (second (c-expression-arguments condition))])
+         (cond [(and (c-expression? left) (eq? (c-expression-op left) 'var)
+                     (equal? (c-expression-arguments left) (list variable)) (real? right)) right]
+               [(and (c-expression? right) (eq? (c-expression-op right) 'var)
+                     (equal? (c-expression-arguments right) (list variable)) (real? left)) left]
+               [else #f]))))
+
+;; division-boundaries : any/c symbol? -> list?
+;;   Finds simple held-variable divisors, which are guaranteed graph gaps.
+(define (division-boundaries expression variable)
+  (cond
+    [(not (c-expression? expression)) '()]
+    [else
+     (append
+      (if (eq? (c-expression-op expression) '/)
+          (for/list ([denominator (in-list (rest (c-expression-arguments expression)))]
+                     #:when (and (c-expression? denominator)
+                                 (eq? (c-expression-op denominator) 'var)
+                                 (equal? (c-expression-arguments denominator) (list variable))))
+            0)
+          '())
+      (append-map (lambda (argument) (division-boundaries argument variable))
+                  (c-expression-arguments expression)))]))
+
+;; graph-boundaries : any/c -> list?
+;;   Supplies mandatory known graph samples independently of adaptive pixel sampling.
+(define (graph-boundaries function)
+  (define source (function-source function))
+  (cond
+    [(c-piecewise? source)
+     (filter real?
+             (map (lambda (branch)
+                    (equality-branch-boundary (car branch) (c-piecewise-variable source)))
+                  (c-piecewise-branches source)))]
+    [(c-function? source)
+     (division-boundaries (c-function-body source) (c-function-variable source))]
+    [else '()]))
+
+;; piecewise-equality-boundaries : any/c -> list?
+;;   Retains source branch IDs for equality boundaries with a possible isolated value.
+(define (piecewise-equality-boundaries function)
+  (define source (function-source function))
+  (if (c-piecewise? source)
+      (for/list ([branch (in-list (c-piecewise-branches source))]
+                 [index (in-naturals)]
+                 #:do [(define boundary
+                          (equality-branch-boundary (car branch)
+                                                    (c-piecewise-variable source)))]
+                 #:when (real? boundary))
+        (cons boundary index))
+      '()))
+
+;; draw-closed-point : drawing-context% real? real? -> void?
+;;   Paints an included graph endpoint or isolated value from semantic topology.
+(define (draw-closed-point context x y)
+  (send context set-pen (new draw:pen% [color (hex-color "#2166C2")] [width 1] [style 'solid]))
+  (send context set-brush (new draw:brush% [color (hex-color "#2166C2")] [style 'solid]))
+  (send context draw-ellipse (- x 3) (- y 3) 6 6))
+
+;; draw-open-point : drawing-context% real? real? -> void?
+;;   Paints an excluded graph endpoint without adding a mathematical value.
+(define (draw-open-point context x y)
+  (send context set-pen (new draw:pen% [color (hex-color "#2166C2")] [width 2] [style 'solid]))
+  (send context set-brush (new draw:brush% [color (hex-color "#FAFAFA")] [style 'solid]))
+  (send context draw-ellipse (- x 4) (- y 4) 8 8))
 
 ;; draw-graph : drawing-context% calculus-snapshot? c-node? ... -> void?
 ;;   Samples a visible held graph from its semantic function, never from pixels.
@@ -183,17 +271,45 @@
     (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
     (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
     (define previous #f)
-    (for ([index (in-range (add1 samples))])
-      (define x (+ xmin (* (- xmax xmin) (/ index samples))))
+    (define equality-boundaries (piecewise-equality-boundaries function))
+    (define sample-inputs
+      (sort (remove-duplicates
+             (append (for/list ([index (in-range (add1 samples))])
+                       (+ xmin (* (- xmax xmin) (/ index samples))))
+                     (filter (lambda (boundary) (<= xmin boundary xmax))
+                             (graph-boundaries function))))
+            <))
+    (for ([x (in-list sample-inputs)])
       (define result (calculus-snapshot-function-value snapshot function x))
+      (define branch-result (calculus-snapshot-function-branch snapshot function x))
       (define next
         (and (eq? (calculus-result-status result) 'defined)
+             (eq? (calculus-result-status branch-result) 'defined)
              (real? (calculus-result-value result))
              (let ([y (calculus-result-value result)])
-               (and (<= ymin y ymax) (cons (pixel-x x) (pixel-y y))))))
-      (when (and previous next)
-        (draw-line-segment context (car previous) (cdr previous) (car next) (cdr next) "#2166C2" 2))
-      (set! previous next))))
+               (and (<= ymin y ymax)
+                    (list (pixel-x x) (pixel-y y) (calculus-result-value branch-result))))))
+      (when (and previous next (equal? (third previous) (third next)))
+        (draw-line-segment context (first previous) (second previous)
+                           (first next) (second next) "#2166C2" 2))
+      (define equality-boundary (assoc x equality-boundaries))
+      (when (and next equality-boundary
+                 (equal? (third next) (cdr equality-boundary)))
+        (draw-closed-point context (first next) (second next)))
+      (set! previous next))
+    (for ([boundary+branch (in-list equality-boundaries)])
+      (define boundary (car boundary+branch))
+      (define selected
+        (calculus-snapshot-function-branch snapshot function boundary))
+      (define excluded
+        (calculus-snapshot-function-branch-value snapshot function 'else boundary))
+      (when (and (eq? (calculus-result-status selected) 'defined)
+                 (equal? (calculus-result-value selected) (cdr boundary+branch))
+                 (eq? (calculus-result-status excluded) 'defined)
+                 (real? (calculus-result-value excluded))
+                 (<= ymin (calculus-result-value excluded) ymax))
+        (draw-open-point context (pixel-x boundary)
+                         (pixel-y (calculus-result-value excluded)))))))
 
 ;; draw-point : drawing-context% calculus-snapshot? address ... -> void?
 ;;   Draws one defined point and intentionally omits partial point values.
@@ -203,8 +319,8 @@
              (<= xmin (car point) xmax) (<= ymin (cdr point) ymax))
     (define x (+ left (* width (/ (- (car point) xmin) (- xmax xmin)))))
     (define y (+ top height (* -1 height (/ (- (cdr point) ymin) (- ymax ymin)))))
-    (send context set-pen (new draw:pen% [color "#B3261E"] [width 1] [style 'solid]))
-    (send context set-brush (new draw:brush% [color "#B3261E"] [style 'solid]))
+    (send context set-pen (new draw:pen% [color (hex-color "#B3261E")] [width 1] [style 'solid]))
+    (send context set-brush (new draw:brush% [color (hex-color "#B3261E")] [style 'solid]))
     (send context draw-ellipse (- x 4) (- y 4) 8 8)))
 
 ;; draw-reading : drawing-context% calculus-snapshot? symbol? ... -> void?
@@ -215,7 +331,7 @@
              (<= xmin (car point) xmax) (<= ymin (cdr point) ymax))
     (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
     (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
-    (send context set-pen (new draw:pen% [color "#6A6A6A"] [width 1] [style 'dot]))
+    (send context set-pen (new draw:pen% [color (hex-color "#6A6A6A")] [width 1] [style 'dot]))
     (send context draw-line (pixel-x (car point)) (pixel-y 0) (pixel-x (car point)) (pixel-y (cdr point)))
     (send context draw-line (pixel-x 0) (pixel-y (cdr point)) (pixel-x (car point)) (pixel-y (cdr point)))
     (draw-point context snapshot (list name 'point) xmin xmax ymin ymax left top width height)))
@@ -226,8 +342,8 @@
 (define (draw-graph-panel/model context snapshot model view left top width height)
   (define-values (xmin xmax) (interval-bounds (hash-ref (c-view-options view) 'x #f) -5 5))
   (define-values (ymin ymax) (interval-bounds (hash-ref (c-view-options view) 'y #f) -5 5))
-  (send context set-pen (new draw:pen% [color "#D0D0D0"] [width 1] [style 'solid]))
-  (send context set-brush (new draw:brush% [color "#FAFAFA"] [style 'solid]))
+  (send context set-pen (new draw:pen% [color (hex-color "#D0D0D0")] [width 1] [style 'solid]))
+  (send context set-brush (new draw:brush% [color (hex-color "#FAFAFA")] [style 'solid]))
   (send context draw-rectangle left top width height)
   (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
   (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
@@ -260,10 +376,10 @@
 ;; draw-formula-panel : drawing-context% calculus-snapshot? c-view? ... -> void?
 ;;   Draws a native textual formula/readout panel from semantic object values.
 (define (draw-formula-panel context snapshot view left top width height)
-  (send context set-pen (new draw:pen% [color "#D0D0D0"] [width 1] [style 'solid]))
-  (send context set-brush (new draw:brush% [color "#FFFFFF"] [style 'solid]))
+  (send context set-pen (new draw:pen% [color (hex-color "#D0D0D0")] [width 1] [style 'solid]))
+  (send context set-brush (new draw:brush% [color (hex-color "#FFFFFF")] [style 'solid]))
   (send context draw-rectangle left top width height)
-  (send context set-text-foreground "#202124")
+  (send context set-text-foreground (hex-color "#202124"))
   (send context set-font (new draw:font% [size 15] [family 'modern]))
   (for ([target (in-list (view-objects view))] [index (in-naturals)])
     (define address (target-address target))
@@ -297,8 +413,8 @@
      (dynamic-wind
       void
       (lambda ()
-        (send context set-pen (new draw:pen% [color "#FFFFFF"] [width 1] [style 'solid]))
-        (send context set-brush (new draw:brush% [color "#FFFFFF"] [style 'solid]))
+        (send context set-pen (new draw:pen% [color (hex-color "#FFFFFF")] [width 1] [style 'solid]))
+        (send context set-brush (new draw:brush% [color (hex-color "#FFFFFF")] [style 'solid]))
         (send context draw-rectangle x y width height)
         (define margin 32)
         (define count (max 1 (length views)))
@@ -337,7 +453,7 @@
   (native:make-camera #:width (prepared-calculus-lesson-data-width prepared)
                       #:height (prepared-calculus-lesson-data-height prepared)
                       #:world-width (prepared-calculus-lesson-data-width prepared)
-                      #:background "#FFFFFF"))
+                      #:background "white"))
 
 ;; prepared-lesson->visual : prepared-calculus-lesson? [#:at location] -> Visual
 ;;   Wraps the prepared pict in Animate's standard Visual protocol.
