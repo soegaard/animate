@@ -83,6 +83,10 @@ For differential constructions, `tangent` and `linearization` require a
 nonempty justification rather than a fabricated finite slope.
 `taylor-polynomial` evaluates the supplied ordered compatible derivatives;
 with no derivatives it is the documented constant approximation at its base.
+`approximation-error` remains signed, and `error-segment` joins the two exact
+graph values at its authored input rather than measuring a screen distance.
+`slope-triangle` derives directed horizontal and vertical legs, including
+signed `dx` and `dy`, from an increment or a nonvertical line and authored run.
 
 ## Test
 

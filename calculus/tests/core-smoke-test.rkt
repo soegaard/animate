@@ -248,12 +248,21 @@
     [g (function (x) (+ x 1))]
     [G (graph f)]
     [P (point-on G #:x 1)]
+    [Q (point-on G #:x 2)]
+    [change (increment P Q)]
     [df (derivative-function f #:method 'symbolic)]
     [dg (derivative-function g #:method 'symbolic)]
     [T (tangent G #:at P #:derivative df)]
     [bad-T (tangent G #:at P #:derivative dg)]
+    [change-triangle (slope-triangle change)]
+    [line-triangle (slope-triangle T #:at P #:run -1)]
+    [bad-triangle (slope-triangle T #:at P #:run 0)]
     [linear (linearization f #:at 1 #:derivative df)]
     [linear-at-two (value-at linear 2)]
+    [L (graph linear)]
+    [error (approximation-error f linear)]
+    [error-at-two (value-at error 2)]
+    [error-segment-at-two (error-segment G L #:at 2)]
     [bad-linear (linearization f #:at 1 #:derivative dg)]
     [bad-linear-at-two (value-at bad-linear 2)]
     [taylor (taylor-polynomial f #:at 1 #:derivatives (list df))]
@@ -477,11 +486,35 @@
                  (calculus-snapshot-ref tangent-snapshot 'T))
                 (list 'line 2 -1 (cons 1 1)))
   (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref tangent-snapshot 'change-triangle))
+                'defined)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot '(change-triangle dx)))
+                1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot '(change-triangle dy)))
+                3)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot '(line-triangle dx)))
+                -1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot '(line-triangle dy)))
+                -2)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref tangent-snapshot 'bad-triangle))
+                'undefined)
+  (check-equal? (calculus-result-status
                  (calculus-snapshot-ref tangent-snapshot 'bad-T))
                 'undefined)
   (check-equal? (calculus-result-value
                  (calculus-snapshot-ref tangent-snapshot 'linear-at-two))
                 3)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'error-at-two))
+                1)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref tangent-snapshot 'error-segment-at-two))
+                (list 'segment (cons 2 4) (cons 2 3)))
   (check-equal? (calculus-result-status
                  (calculus-snapshot-ref tangent-snapshot 'bad-linear-at-two))
                 'unresolved)

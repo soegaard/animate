@@ -1100,6 +1100,80 @@
                (lambda (value) (if (eq? (car value) 'vertical) (undefined "vertical line has no finite slope")
                                    (defined (second value))))))
 
+;; eval-error-segment : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Joins two graph values at one exact mathematical input, preserving error sign.
+(define (eval-error-segment segment environment model computation lexical)
+  (define raw (node-raw segment))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'error-segment)))
+      (undefined "expected an error segment")
+      (let ([left (first (c-object-arguments raw))]
+            [right (second (c-object-arguments raw))]
+            [input (hash-ref (c-object-options raw) 'at #f)])
+        (cond
+          [(not (and (graph-function left) (graph-function right)))
+           (undefined "error-segment requires two graphs")]
+          [else
+           (result-bind
+            (eval-raw input environment model computation lexical)
+            (lambda (x)
+              (result-bind
+               (evaluate-function (graph-function left) x environment model computation lexical)
+               (lambda (left-value)
+                 (result-bind
+                  (evaluate-function (graph-function right) x environment model computation lexical)
+                  (lambda (right-value)
+                    (defined (list 'segment (cons x left-value) (cons x right-value)))))))))]))))
+
+;; eval-slope-triangle-geometry : semantic-value? hash? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Builds directed mathematical legs for an increment or a selected finite line run.
+(define (eval-slope-triangle-geometry source options environment model computation lexical)
+  (define raw (node-raw source))
+  (if (and (c-object? raw) (eq? (c-object-kind raw) 'increment))
+      (result-bind
+       (eval-raw (c-object-arguments raw) environment model computation lexical)
+       (lambda (points)
+         (match points
+           [(list from to)
+            (defined (list from to (cons (car to) (cdr from))
+                           (- (car to) (car from)) (- (cdr to) (cdr from))))]
+           [_ (undefined "increment slope-triangle requires two points")])))
+      (result-bind
+       (eval-line source environment model computation lexical)
+       (lambda (line)
+         (if (eq? (car line) 'vertical)
+             (undefined "a slope triangle requires a nonvertical line")
+             (result-bind
+              (eval-raw (list (hash-ref options 'at #f) (hash-ref options 'run #f))
+                        environment model computation lexical)
+              (lambda (values)
+                (match values
+                  [(list from run)
+                   (if (not (and (finite-real? run) (not (= run 0))
+                                 (scalar-equivalent? (cdr from)
+                                                     (+ (* (second line) (car from)) (third line))
+                                                     computation)))
+                       (undefined "slope-triangle needs a nonzero run at a point on its line")
+                       (let ([to (cons (+ (car from) run)
+                                       (+ (cdr from) (* (second line) run)))])
+                         (defined (list from to (cons (car to) (cdr from))
+                                        run (* (second line) run)))))]
+                  [_ (undefined "line slope-triangle requires a point and run")]))))))))
+
+;; eval-slope-triangle : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
+;;   Validates labels and mathematical geometry before presentation reads its parts.
+(define (eval-slope-triangle triangle environment model computation lexical)
+  (define raw (node-raw triangle))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'slope-triangle)))
+      (undefined "expected a slope triangle")
+      (let ([labels (hash-ref (c-object-options raw) 'labels 'symbolic)])
+        (if (not (memq labels '(symbolic numeric both #f)))
+            (undefined "slope-triangle has an unsupported #:labels value")
+            (result-bind
+             (eval-slope-triangle-geometry (first (c-object-arguments raw))
+                                           (c-object-options raw)
+                                           environment model computation lexical)
+             (lambda (_) (defined raw)))))))
+
 (define (eval-part part environment model computation lexical)
   (define parent (node-raw (c-part-parent part)))
   (define name (c-part-name part))
@@ -1141,6 +1215,23 @@
                                  (lambda (p) (result-bind (eval-point (second args) environment model computation lexical)
                                                           (lambda (q) (defined (cons (car q) (cdr p)))))))]
           [else (defined (c-part parent name))])]
+       [(slope-triangle)
+        (result-bind
+         (eval-slope-triangle-geometry (first args) (c-object-options parent)
+                                       environment model computation lexical)
+         (lambda (geometry)
+           (define from (first geometry))
+           (define to (second geometry))
+           (define corner (third geometry))
+           (define dx (fourth geometry))
+           (define dy (fifth geometry))
+           (case name
+             [(horizontal) (defined (list 'segment from corner))]
+             [(vertical) (defined (list 'segment corner to))]
+             [(corner) (defined corner)]
+             [(dx run-label) (defined dx)]
+             [(dy rise-label) (defined dy)]
+             [else (defined (c-part parent name))])))]
        [(epsilon-delta-condition)
         (case name
           [(epsilon) (eval-raw (hash-ref (c-object-options parent) 'epsilon) environment model computation lexical)]
@@ -1728,10 +1819,12 @@
     [(graph graph-restriction formula formula-of ref value point-label graph-label quantity-label value-readout
             interval-marker endpoint-marker approach-marker region-under region-between integral-region riemann-rectangles trapezoidal-regions
             partition-marks
-            trace-of formula-occurrence quantity-correspondence snapshot-of in-view output-reading slope-triangle)
+            trace-of formula-occurrence quantity-correspondence snapshot-of in-view output-reading)
      (defined object)]
     [(point point-on axis-point projection root-point intersection-point point-on-line) (eval-point object environment model computation lexical)]
     [(feature-point) (eval-feature-point object environment model computation lexical)]
+    [(error-segment) (eval-error-segment object environment model computation lexical)]
+    [(slope-triangle) (eval-slope-triangle object environment model computation lexical)]
     [(segment line-through ray-through horizontal-line vertical-line chord secant tangent vertical-tangent normal) (eval-line object environment model computation lexical)]
     [(increment) (defined object)]
     [(definite-integral)

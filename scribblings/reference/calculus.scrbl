@@ -79,6 +79,12 @@ the same held function. @racket[vertical-tangent] is a separate supplied claim
 and requires a nonempty justification rather than a fabricated finite slope.
 @racket[taylor-polynomial] uses its supplied ordered compatible derivatives;
 an empty derivative list produces the constant approximation at its base.
+@racket[approximation-error] remains signed, while @racket[error-segment]
+joins the two exact graph values at its authored input rather than measuring a
+screen distance.
+@racket[slope-triangle] derives its directed horizontal and vertical legs,
+including signed @racket[dx] and @racket[dy], from an increment or a
+nonvertical line and an authored run.
 
 @defproc[(compile-calculus-lesson [lesson calculus-lesson?]
                                   [#:profile profile calculus-profile? default-calculus-profile]
