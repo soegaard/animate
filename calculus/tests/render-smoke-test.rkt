@@ -18,6 +18,7 @@
          (prefix-in native: "../../main.rkt")
          racket/class
          racket/draw
+         (only-in "../../private/pict-renderer.rkt" gen:pict-renderer)
          (only-in "../private/core.rkt"
                   calculus-plan-caption
                   calculus-snapshot-label-anchor
@@ -35,6 +36,19 @@
 
 ;; Exports
 (provide run-calculus-render-smoke-tests)
+
+;; dynamic-formula-backend-calls : exact-nonnegative-integer?
+;; Counts any whole-formula backend use. Live Formula field rows must keep it
+;; at zero after preparation; static Formula tests continue to exercise the
+;; real configured backend elsewhere in this suite.
+(define dynamic-formula-backend-calls 0)
+
+(struct counting-formula-renderer ()
+  #:methods gen:pict-renderer
+  [(define (pict-renderer-supports? _renderer _visual) #t)
+   (define (pict-renderer-render _renderer _visual _camera)
+     (set! dynamic-formula-backend-calls (add1 dynamic-formula-backend-calls))
+     (pict:blank 1 1))])
 
 
 ;;;
@@ -56,6 +70,44 @@
   (initially (show G))
   (step show-reading (show R))
   (step scan (vary a #:to -2 #:duration 1)))
+
+;; render-scene-continuity : calculus-lesson?
+;; A zero-pause one-second coordinate motion gives an independent off-grid
+;; oracle for the scene adapter: at t=1/60 P must be at x=1/60, not held at 0.
+(define-calculus-lesson render-scene-continuity
+  (model
+    [a (parameter 0 #:domain (closed 0 1))]
+    [P (point a 0)])
+  (views
+    [plot (graph-view #:x (closed 0 1) #:y (closed -1 1) #:objects (P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show P))
+  (step move (vary a #:to 1 #:easing 'linear #:duration 1)))
+
+;; render-demanded-invalid-point : calculus-lesson?
+;; The graph's ordinary hole is legal, but an explicitly visible named point
+;; at that hole is a strict native-output error rather than a skipped painter.
+(define-calculus-lesson render-demanded-invalid-point
+  (model
+    [f (function (x) (/ 1 x) #:domain (domain-except real-line 0))]
+    [G (graph f)]
+    [P (point-on G #:x 0)])
+  (views
+    [plot (graph-view #:x (closed -1 1) #:y (closed -2 2) #:objects (G P))])
+  (initially (show G P))
+  (step retain (pause 1)))
+
+;; render-hidden-invalid-point : calculus-lesson?
+;; The same declared partial construction stays legal when it is not demanded.
+(define-calculus-lesson render-hidden-invalid-point
+  (model
+    [f (function (x) (/ 1 x) #:domain (domain-except real-line 0))]
+    [G (graph f)]
+    [P (point-on G #:x 0)])
+  (views
+    [plot (graph-view #:x (closed -1 1) #:y (closed -2 2) #:objects (G P))])
+  (initially (show G))
+  (step retain (pause 1)))
 
 ;; static-graph-provider-calls : exact-nonnegative-integer?
 ;;   Counts an opaque but version-keyed provider so the native test can prove
@@ -241,6 +293,25 @@
   (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
   (step retain-rectangles (pause 1)))
 
+;; render-refinement-carrier : calculus-lesson?
+;; Keeps two committed rectangles while a four-cell subdivision carrier is
+;; sampled halfway through the action.
+(define-calculus-lesson render-refinement-carrier
+  (model
+    [n (parameter 2 #:domain (integers 1 8) #:kind 'integer)]
+    [f (function (x) x)]
+    [partition (uniform-partition 0 2 #:count n)]
+    [tags (tag-partition partition #:sample 'midpoint)]
+    [sum (riemann-sum f tags)]
+    [boxes (riemann-rectangles sum)])
+  (views
+    [plot (graph-view #:x (closed 0 2)
+                      #:y (closed 0 2)
+                      #:objects (boxes))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show boxes))
+  (step refine-boxes (refine partition #:counts (list 4) #:duration 1)))
+
 ;; render-trapezoidal-regions : calculus-lesson?
 ;;   A single affine cell crossing zero must retain two signed visual pieces.
 (define-calculus-lesson render-trapezoidal-regions
@@ -251,6 +322,23 @@
   (views
     [plot (graph-view #:x (closed -1 1)
                       #:y (closed -1 1)
+                      #:objects (regions))])
+  (initially (show regions))
+  (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step retain-regions (pause 1)))
+
+;; render-cropped-trapezoid : calculus-lesson?
+;; Its source cell occupies 0≤x≤2 under y=x, while the camera shows 0≤x≤1.
+;; Exact polygon clipping must retain the diagonal boundary to (1,1), not move
+;; it to the independently clamped point (1,2).
+(define-calculus-lesson render-cropped-trapezoid
+  (model
+    [f (function (x) x)]
+    [partition (uniform-partition 0 2 #:count 1)]
+    [regions (trapezoidal-regions f partition)])
+  (views
+    [plot (graph-view #:x (closed 0 1)
+                      #:y (closed 0 2)
                       #:objects (regions))])
   (initially (show regions))
   (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
@@ -699,7 +787,10 @@
   (views [plot (graph-view #:x (closed -2 2)
                            #:y (closed -1 4)
                            #:objects (R P Q))])
-  (initially (show R P Q))
+  ;; Q is intentionally outside R's declared restriction. It remains a
+  ;; headless partial object for inspection, but native strict output may only
+  ;; draw the legal graph topology and the valid named point P.
+  (initially (show R P))
   (step retain-restriction (pause 1)))
 
 ;; composite-marker-domains : calculus-model?
@@ -966,6 +1057,21 @@
      (prepared-lesson->pict live-formula-prepared #:at 'final) 480 270))
   (check-true (bitmap-regions-differ? live-formula-initial live-formula-final
                                       32 448 32 100))
+  ;; A changing `(value ...)` field is painted from the prepared native field
+  ;; layout. No whole-formula pict renderer is consulted at preparation or at
+  ;; either subsequent snapshot, so this also guards against a cache-masked
+  ;; late TeX invocation.
+  (set! dynamic-formula-backend-calls 0)
+  (define dynamic-field-prepared
+    (prepare-calculus-lesson render-live-formula-value
+                             #:formula-backend (counting-formula-renderer)
+                             #:width 480 #:height 270))
+  (check-equal? dynamic-formula-backend-calls 0)
+  (void (pict->opaque-bitmap
+         (prepared-lesson->pict dynamic-field-prepared #:at 'initial) 480 270))
+  (void (pict->opaque-bitmap
+         (prepared-lesson->pict dynamic-field-prepared #:at 'final) 480 270))
+  (check-equal? dynamic-formula-backend-calls 0)
   ;; The six complete Guide modules are not merely headless declarations.
   ;; Exercise their final native preparations as standard 1280×720 in-memory
   ;; rasters, keeping this test free of persisted image or video artifacts.
@@ -1379,6 +1485,40 @@
   (check-equal?
    (bitmap-argb-bytes (pict->opaque-bitmap picture 480 270) 480 270)
    (bitmap-argb-bytes (pict->opaque-bitmap scene-picture 480 270) 480 270))
+  ;; Arbitrary-time scene sampling must use the same semantic moment as a
+  ;; prepared still. In particular, this off-grid 60-fps sample is neither a
+  ;; cached t=0 picture nor a 30-fps held interpolation.
+  (define continuity-prepared
+    (prepare-calculus-lesson render-scene-continuity #:width 480 #:height 270))
+  (define continuity-scene (prepared-lesson->scene continuity-prepared))
+  (define off-grid-time 1/60)
+  (define continuity-still
+    (pict->opaque-bitmap
+     (prepared-lesson->pict continuity-prepared #:at off-grid-time) 480 270))
+  (define continuity-scene-bitmap
+    (pict->opaque-bitmap
+     (native:scene->pict continuity-scene off-grid-time) 480 270))
+  (define continuity-initial
+    (pict->opaque-bitmap
+     (prepared-lesson->pict continuity-prepared #:at 'initial) 480 270))
+  (check-equal?
+   (bitmap-argb-bytes continuity-still 480 270)
+   (bitmap-argb-bytes continuity-scene-bitmap 480 270))
+  (check-not-equal?
+   (bitmap-argb-bytes continuity-initial 480 270)
+   (bitmap-argb-bytes continuity-scene-bitmap 480 270))
+  ;; A named visible construction at a graph hole is demanded output. It must
+  ;; fail conversion with its address instead of disappearing, while the same
+  ;; hidden declaration leaves the legal graph topology renderable.
+  (define demanded-invalid-prepared
+    (prepare-calculus-lesson render-demanded-invalid-point #:width 480 #:height 270))
+  (check-exn exn:fail:contract?
+             (lambda () (prepared-lesson->pict demanded-invalid-prepared #:at 'initial)))
+  (check-true
+   (pict:pict?
+    (prepared-lesson->pict
+     (prepare-calculus-lesson render-hidden-invalid-point #:width 480 #:height 270)
+     #:at 'initial)))
   ;; One-call outputs are shallow conveniences over the exact same prepared
   ;; path; they accept preparation keywords but no separate movie policy.
   (define one-call-picture (lesson->pict render-reading-square #:width 480 #:height 270))
@@ -1435,12 +1575,30 @@
     (pict->opaque-bitmap (prepared-lesson->pict line-prepared #:at 'initial) 480 270))
   (define tangent-bitmap
     (pict->opaque-bitmap (prepared-lesson->pict line-prepared #:at 'final) 480 270))
+  (define crossfade-midpoint-bitmap
+    (pict->opaque-bitmap (prepared-lesson->pict line-prepared #:at 3/2) 480 270))
+  (define rotating-midpoint-bitmap
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson
+       render-secant-tangent
+       #:profile
+       (calculus-profile
+        #:motion (calculus-motion #:limit-transition 'rotate-carrier))
+       #:width 480 #:height 270)
+      #:at 3/2)
+     480 270))
   ;; The finite secant is clipped to the graph window in purple.  At the
   ;; transition endpoint it is replaced—not overpainted—by the red tangent.
   ;; This small interior region avoids the curve, axes, and line intersection.
   (check-true (bitmap-region-has-rgb? secant-bitmap 201 209 208 216 #"\x6A\x1B\x9A"))
   (check-false (bitmap-region-has-rgb? secant-bitmap 201 209 208 216 #"\xB3\x26\x1E"))
   (check-true (bitmap-region-has-rgb? tangent-bitmap 201 209 197 205 #"\xB3\x26\x1E"))
+  ;; Crossfade retains both endpoint lines at intermediate opacity, whereas
+  ;; rotate-carrier draws one exact anchored intermediate slope. Their sampled
+  ;; rasters must therefore differ before the common settled tangent endpoint.
+  (check-true (bitmap-regions-differ? crossfade-midpoint-bitmap rotating-midpoint-bitmap
+                                      150 330 100 220))
   (define triangle-bitmap
     (pict->opaque-bitmap
      (prepared-lesson->pict
@@ -1488,6 +1646,16 @@
   ;; The fill changes after exact signed cells are prepared; it does not alter
   ;; their partition, tag, height, or sign classification.
   (check-true (bitmap-region-has-rgb? styled-rectangles-bitmap 80 88 231 236 #"\x0B\x6E\x4F"))
+  (define refinement-carrier-bitmap
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson render-refinement-carrier #:width 480 #:height 270)
+      #:at 1/2)
+     480 270))
+  ;; At the midpoint the semantic count remains 2, while the orange line at
+  ;; x=1/2 is the prepared four-cell subdivision carrier. It is not a third
+  ;; noninteger mathematical partition or a screen-derived redraw.
+  (check-true (bitmap-region-has-rgb? refinement-carrier-bitmap 130 142 198 222 #"\xA6\x5E\x00"))
   (define trapezoids-bitmap
     (pict->opaque-bitmap
      (prepared-lesson->pict
@@ -1498,6 +1666,17 @@
   ;; exact affine cell at zero, leaving its negative and positive pieces distinct.
   (check-true (bitmap-region-has-rgb? trapezoids-bitmap 132 140 156 164 #"\xFF\xE3\xE3"))
   (check-true (bitmap-region-has-rgb? trapezoids-bitmap 340 348 105 113 #"\xD9\xE8\xFF"))
+  (define cropped-trapezoid-bitmap
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson render-cropped-trapezoid #:width 480 #:height 270)
+      #:at 'initial)
+     480 270))
+  ;; At x=1/2, y=1/4 remains inside the clipped affine cell while y=3/4 is
+  ;; outside. This detects true edge/window intersections rather than merely
+  ;; checking that an offscreen source vertex was clamped into the panel.
+  (check-true (bitmap-region-has-rgb? cropped-trapezoid-bitmap 234 246 204 216 #"\xD9\xE8\xFF"))
+  (check-false (bitmap-region-has-rgb? cropped-trapezoid-bitmap 234 246 152 164 #"\xD9\xE8\xFF"))
   (define marks-bitmap
     (pict->opaque-bitmap
      (prepared-lesson->pict
@@ -1594,9 +1773,12 @@
      (prepared-lesson->pict private-component-prepared #:at 'final)
      480 270))
   ;; C is deliberately absent from the caller's view declaration. During the
-  ;; component's chord step its exact finite segment is still present in green;
-  ;; default auxiliary cleanup after the final secant step removes it.
-  (check-true (bitmap-region-has-rgb? private-component-midpoint 304 312 122 130 #"\x0B\x6E\x4F"))
+  ;; component's chord step its exact finite segment extends from its clipped
+  ;; source endpoint, so a first-half region is green while its far endpoint
+  ;; is not yet painted. Default auxiliary cleanup removes it after the final
+  ;; secant step.
+  (check-true (bitmap-region-has-rgb? private-component-midpoint 270 290 140 160 #"\x0B\x6E\x4F"))
+  (check-false (bitmap-region-has-rgb? private-component-midpoint 340 356 82 104 #"\x0B\x6E\x4F"))
   (check-false (bitmap-region-has-rgb? private-component-final 304 312 122 130 #"\x0B\x6E\x4F"))
   (define deemphasized-private-bitmap
     (pict->opaque-bitmap

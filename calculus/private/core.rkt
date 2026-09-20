@@ -19,6 +19,8 @@
  calculus-snapshot-ref calculus-snapshot-visible? calculus-snapshot-diagnostics
  calculus-result-status calculus-result-method calculus-result-approximate?
  calculus-result-value calculus-result-message calculus-result->datum
+ calculus-diagnostic-severity calculus-diagnostic-code calculus-diagnostic-address
+ calculus-diagnostic-message
  ;; Profiles and numerical policy.
  calculus-profile calculus-profile? calculus-theme calculus-theme? calculus-style calculus-style?
  calculus-layout calculus-layout? calculus-motion calculus-motion? calculus-timing calculus-timing?
@@ -45,7 +47,7 @@
  calculus-component-private-presentation-parts
  calculus-component-private-presentation-view-names
  calculus-snapshot-component-private-ref calculus-snapshot-component-private-visible?
- calculus-snapshot-presentation-state
+ calculus-snapshot-presentation-state calculus-snapshot-motion-state calculus-snapshot-label-visible?
  calculus-graph-source-function calculus-graph-parameter-dependencies
  calculus-snapshot-function-value calculus-snapshot-graph-value
  calculus-snapshot-function-branch calculus-snapshot-function-branch-value
@@ -55,7 +57,8 @@
  calculus-snapshot-region-samples calculus-snapshot-sign-chart-intervals
  calculus-snapshot-newton-segments
  calculus-snapshot-asymptote-geometry
- calculus-snapshot-formula-text calculus-snapshot-label-text calculus-snapshot-label-anchor
+ calculus-snapshot-formula-text calculus-snapshot-formula-tex calculus-snapshot-formula-fragments
+ calculus-snapshot-label-text calculus-snapshot-label-anchor
  calculus-snapshot-marker-geometry
  calculus-plan-caption calculus-plan-has-captions?
  calculus-plan-lesson calculus-plan-profile calculus-plan-events c-event-start c-event-end
@@ -268,11 +271,47 @@
 ;;   Retrieves a usable result explanation.
 (define (result-error result)
   (or (calculus-result-message result) "mathematical value is not defined"))
+;; result-method-join : symbol? symbol? -> symbol?
+;;   Retains a single provenance when it survives a calculation and records a
+;;   genuine combination without pretending that the enclosing arithmetic is a
+;;   new proof of either input.
+(define (result-method-join earlier later)
+  (cond [(eq? earlier later) earlier]
+        [(eq? earlier 'definition) later]
+        [(eq? later 'definition) earlier]
+        [else 'mixed]))
+;; result-compose-provenance : calculus-result? calculus-result? -> calculus-result?
+;;   Carries the independent method and approximation facts of one defined
+;;   dependency into a result constructed from it.  Nondefined results are
+;;   never rewritten: their status and diagnostic remain the primary fact.
+(define (result-compose-provenance dependency result)
+  (if (and (eq? (calculus-result-status dependency) 'defined)
+           (eq? (calculus-result-status result) 'defined))
+      (calculus-result
+       'defined
+       (result-method-join (calculus-result-method dependency)
+                           (calculus-result-method result))
+       (or (calculus-result-approximate? dependency)
+           (calculus-result-approximate? result))
+       (calculus-result-value result)
+       #f)
+      result))
+;; result-with-method : calculus-result? symbol? -> calculus-result?
+;;   Reclassifies a successful result for one explicitly selected mathematical
+;;   method while preserving its approximation evidence.
+(define (result-with-method result method)
+  (if (eq? (calculus-result-status result) 'defined)
+      (calculus-result 'defined method (calculus-result-approximate? result)
+                       (calculus-result-value result) #f)
+      result))
 ;; result-bind : calculus-result? procedure? -> calculus-result?
-;;   Sequences only defined mathematical outcomes.
+;;   Sequences only defined mathematical outcomes and composes their
+;;   provenance.  A continuation still receives the raw mathematical value so
+;;   ordinary evaluator code stays direct and cannot accidentally inspect a
+;;   renderer-oriented result record.
 (define (result-bind result proc)
   (if (eq? (calculus-result-status result) 'defined)
-      (proc (calculus-result-value result))
+      (result-compose-provenance result (proc (calculus-result-value result)))
       result))
 
 ;; action-kinds : list?
@@ -940,13 +979,34 @@
         [else (unresolved "unsupported mathematical value")]))
 
 (define (function-domain function)
-  (cond [(c-function? function) (c-function-domain function)]
-        [(c-piecewise? function) (c-piecewise-domain function)]
-        [(and (c-object? function) (eq? (c-object-kind function) 'restrict-function))
+  (define raw (node-raw function))
+  (cond [(c-function? raw) (c-function-domain raw)]
+        [(c-piecewise? raw) (c-piecewise-domain raw)]
+        [(and (c-object? raw) (eq? (c-object-kind raw) 'restrict-function))
          (c-domain 'domain-intersection
-                   (list (function-domain (first (c-object-arguments function)))
-                         (second (c-object-arguments function))))]
-        [(and (c-object? function) (hash-has-key? (c-object-options function) 'domain)) (hash-ref (c-object-options function) 'domain)]
+                   (list (function-domain (first (c-object-arguments raw)))
+                         (second (c-object-arguments raw))))]
+        [(and (c-object? raw) (eq? (c-object-kind raw) 'derivative-function))
+         ;; A derivative is never licensed outside the source function's
+         ;; declared domain.  `#:on` may narrow that scope, but cannot restore
+         ;; an excluded source input.
+         (define source-domain
+           (function-domain (first (c-object-arguments raw))))
+         (define requested (hash-ref (c-object-options raw) 'on #f))
+         (if requested
+             (c-domain 'domain-intersection (list source-domain requested))
+             source-domain)]
+        [(and (c-object? raw) (eq? (c-object-kind raw) 'antiderivative-function))
+         ;; Endpoint subtraction may only use the registered evaluator where
+         ;; that evaluator itself is defined.  An optional declaration can
+         ;; further restrict, never widen, this scope.
+         (define using (hash-ref (c-object-options raw) 'using #f))
+         (define using-domain (if using (function-domain using) calculus-real-line))
+         (define requested (hash-ref (c-object-options raw) 'on #f))
+         (if requested
+             (c-domain 'domain-intersection (list using-domain requested))
+             using-domain)]
+        [(and (c-object? raw) (hash-has-key? (c-object-options raw) 'domain)) (hash-ref (c-object-options raw) 'domain)]
         [else calculus-real-line]))
 
 (define (evaluate-function function input environment model computation [lexical (hash)])
@@ -1071,6 +1131,7 @@
      (define arguments (c-expression-arguments expression))
      (define (expression* name . items) (c-expression name items))
      (case op
+       [(var) 0]
        [(+) (apply expression* '+ (map (lambda (item) (differentiate item variable)) arguments))]
        [(-) (apply expression* '- (map (lambda (item) (differentiate item variable)) arguments))]
        [(*)
@@ -1082,11 +1143,28 @@
                             (for/list ([item (in-list arguments)] [position (in-naturals)])
                               (if (= index position) (differentiate item variable) item))))))]
        [(expt)
-        (if (and (= (length arguments) 2) (exact-nonnegative-integer? (second arguments)))
-            (expression* '* (second arguments)
-                         (expression* 'expt (first arguments) (sub1 (second arguments)))
-                         (differentiate (first arguments) variable))
-            #f)]
+        (cond
+          [(not (and (= (length arguments) 2) (exact-integer? (second arguments)))) #f]
+          [(zero? (second arguments)) 0]
+          [else
+           (expression* '* (second arguments)
+                        (expression* 'expt (first arguments) (sub1 (second arguments)))
+                        (differentiate (first arguments) variable))])]
+       [(/)
+        (cond
+          [(= (length arguments) 1)
+           (expression* '/
+                        (expression* '* -1 (differentiate (first arguments) variable))
+                        (expression* 'expt (first arguments) 2))]
+          [(= (length arguments) 2)
+           (define numerator (first arguments))
+           (define denominator (second arguments))
+           (expression* '/
+                        (expression* '-
+                                     (expression* '* (differentiate numerator variable) denominator)
+                                     (expression* '* numerator (differentiate denominator variable)))
+                        (expression* 'expt denominator 2))]
+          [else #f])]
        [(sin) (expression* '* (expression* 'cos (first arguments)) (differentiate (first arguments) variable))]
        [(cos) (expression* '* -1 (expression* 'sin (first arguments)) (differentiate (first arguments) variable))]
        [(exp) (expression* '* (expression* 'exp (first arguments)) (differentiate (first arguments) variable))]
@@ -1096,26 +1174,75 @@
        [else #f])]
     [else 0]))
 
+;; differentiate-order : any/c symbol? exact-positive-integer? -> (or/c c-expression? finite-real? #f)
+;;   Applies the structural derivative rule the requested number of times,
+;;   retaining `#f` when any intermediate expression is unsupported.
+(define (differentiate-order expression variable order)
+  (let loop ([remaining order] [current expression])
+    (cond [(zero? remaining) current]
+          [else
+           (define next (differentiate current variable))
+           (and next (loop (sub1 remaining) next))])))
+
 (define (eval-derivative descriptor input environment model computation lexical)
   (define source (first (c-object-arguments descriptor)))
   (define options (c-object-options descriptor))
   (define method (hash-ref options 'method 'symbolic))
-  (case method
-    [(supplied) (evaluate-function (hash-ref options 'using) input environment model computation lexical)]
-    [(numeric)
-     (define h (hash-ref options 'step (calculus-computation-data-derivative-step computation)))
-     (result-bind (evaluate-function source (+ input h) environment model computation lexical)
-                  (lambda (right)
-                    (result-bind (evaluate-function source (- input h) environment model computation lexical)
-                                 (lambda (left) (finite-number-result (/ (- right left) (* 2 h)) 'numeric #t)))))]
+  (define order (hash-ref options 'order 1))
+  (cond
+    [(not (exact-positive-integer? order))
+     (undefined "derivative #:order must be a positive exact integer")]
     [else
-     (define source-function (lookup-function source))
-     (if (and (c-function? source-function) (c-expression? (c-function-body source-function)))
-         (let ([derived (differentiate (c-function-body source-function) (c-function-variable source-function))])
-           (if derived
-               (eval-raw derived environment model computation (hash-set lexical (c-function-variable source-function) (defined input)))
-               (unresolved "symbolic differentiation is unsupported for this expression" 'symbolic)))
-         (unresolved "symbolic differentiation requires a held function" 'symbolic))]))
+     (case method
+       [(supplied)
+        (result-with-method
+         (evaluate-function (hash-ref options 'using) input environment model computation lexical)
+         'supplied)]
+       [(numeric)
+        (if (not (= order 1))
+            (unresolved "numeric differentiation supports only first derivatives" 'numeric)
+            (let ([initial-step (hash-ref options 'step
+                                           (calculus-computation-data-derivative-step computation))]
+                  [absolute (calculus-computation-data-absolute-tolerance computation)]
+                  [relative (calculus-computation-data-relative-tolerance computation)])
+              ;; A single finite difference is evidence, not certification.
+              ;; Compare it with a half-step estimate and keep refining until
+              ;; the declared numerical policy establishes agreement.
+              (let loop ([h initial-step] [remaining 24])
+                (define (centered step)
+                  (result-bind
+                   (evaluate-function source (+ input step) environment model computation lexical)
+                   (lambda (right)
+                     (result-bind
+                      (evaluate-function source (- input step) environment model computation lexical)
+                      (lambda (left)
+                        (finite-number-result (/ (- right left) (* 2 step)) 'numeric #t))))))
+                (result-bind
+                 (centered h)
+                 (lambda (coarse)
+                   (result-bind
+                    (centered (/ h 2))
+                    (lambda (fine)
+                      (define tolerance
+                        (+ absolute (* relative (max (abs coarse) (abs fine)))))
+                      (cond
+                        [(<= (abs (- fine coarse)) tolerance)
+                         (finite-number-result fine 'numeric #t)]
+                        [(zero? remaining)
+                         (unresolved "numeric derivative did not stabilize within the evaluation budget" 'numeric)]
+                        [else (loop (/ h 2) (sub1 remaining))]))))))))]
+       [else
+        (define source-function (lookup-function source))
+        (if (c-function? source-function)
+            (let ([derived (differentiate-order (c-function-body source-function)
+                                                (c-function-variable source-function) order)])
+              (if derived
+                  (result-with-method
+                   (eval-raw derived environment model computation
+                             (hash-set lexical (c-function-variable source-function) (defined input)))
+                   'symbolic)
+                  (unresolved "symbolic differentiation is unsupported for this expression" 'symbolic)))
+            (unresolved "symbolic differentiation requires a held function" 'symbolic))])]))
 
 ;; graph-function : semantic-value? -> (or/c semantic-value? #f)
 ;;   Resolves a graph restriction through its source graph rather than treating
@@ -1258,8 +1385,14 @@
       (eval-raw (first (c-object-arguments raw)) environment model computation lexical)))
 
 (define (eval-point point environment model computation lexical)
-  (define raw (node-raw point))
   (cond
+    ;; Public parts retain their source identity, but point consumers require
+    ;; the point value owned by that source.  Resolve the part once rather
+    ;; than rejecting its wrapper or manufacturing a detached replacement.
+    [(c-part? point) (eval-part point environment model computation lexical)]
+    [else
+     (define raw (node-raw point))
+     (cond
     [(and (pair? raw) (finite-real? (car raw)) (finite-real? (cdr raw))) (defined raw)]
     [(not (c-object? raw)) (undefined "expected a point")]
     [else
@@ -1311,7 +1444,7 @@
                          [else
                           (result-bind (eval-raw (hash-ref options 'x) environment model computation lexical)
                                        (lambda (x) (defined (cons x (+ (third line) (* (second line) x))))))])))]
-       [else (undefined (format "unsupported point kind ~a" (c-object-kind raw)))] )]))
+       [else (undefined (format "unsupported point kind ~a" (c-object-kind raw)))] )])]))
 
 (define (line-through-points p q kind)
   (if (equal? p q)
@@ -1327,8 +1460,11 @@
                (defined (list 'line (/ dy dx) (- (cdr p) (* (/ dy dx) (car p))) p)))]))))
 
 (define (eval-line line environment model computation lexical)
-  (define raw (node-raw line))
-  (if (not (c-object? raw)) (undefined "expected a line")
+  (cond
+    [(c-part? line) (eval-part line environment model computation lexical)]
+    [else
+     (define raw (node-raw line))
+     (if (not (c-object? raw)) (undefined "expected a line")
       (let ([args (c-object-arguments raw)] [options (c-object-options raw)])
         (case (c-object-kind raw)
           [(line-through ray-through secant chord segment)
@@ -1360,12 +1496,19 @@
                               (defined (list 'line 0 (cdr (third source)) (third source)))
                               (if (= (second source) 0)
                                   (defined (list 'vertical (car (third source)) (third source)))
-                                  (defined (list 'line
-                                                 (/ -1 (second source))
-                                                 (+ (cdr (third source))
-                                                    (* (/ 1 (second source)) (car (third source))))
-                                                 (third source)))))))]
-          [else (undefined "expected a line")]))))
+                                  ;; Finite lines store `(line slope intercept
+                                  ;; anchor)`: their third field is not a
+                                  ;; point.  All normal cases retain the
+                                  ;; original anchor so the perpendicular
+                                  ;; construction passes through it.
+                                  (let ([anchor (fourth source)])
+                                    (defined (list 'line
+                                                   (/ -1 (second source))
+                                                   (- (cdr anchor)
+                                                      (* (/ -1 (second source))
+                                                         (car anchor)))
+                                                   anchor)))))))]
+          [else (undefined "expected a line")])))]))
 
 (define (eval-slope line environment model computation lexical)
   (result-bind (eval-line line environment model computation lexical)
@@ -1562,7 +1705,6 @@
        (for/and ([declaration (in-list (calculus-component-inputs component))]
                  [value (in-list supplied)])
          (and (pair? declaration)
-              (symbol? (cdr declaration))
               (component-input-kind-valid? (cdr declaration) value))))
      (cond
        [(not input-valid?)
@@ -2038,26 +2180,120 @@
                                (cons (list (car lefts) (car rights) left-height right-height)
                                      cells))))))))))))))))
 
+;; domain-boundary-expressions : c-domain? -> list?
+;;   Collects all declared finite boundary candidates without treating a
+;;   renderer sample as a mathematical domain test.  The resulting values let
+;;   interval integration test every declared hole and every interval between
+;;   domain boundaries.
+(define (domain-boundary-expressions domain)
+  (define raw (node-raw domain))
+  (cond
+    [(not (c-domain? raw)) '()]
+    [(memq (c-domain-kind raw)
+            '(closed open closed-open open-closed singleton integers
+                     neighborhood punctured-neighborhood))
+     (c-domain-arguments raw)]
+    [(eq? (c-domain-kind raw) 'domain-except)
+     (append (append-map domain-boundary-expressions
+                         (take (c-domain-arguments raw) 1))
+             (rest (c-domain-arguments raw)))]
+    [(memq (c-domain-kind raw) '(domain-union domain-intersection))
+     (append-map domain-boundary-expressions (c-domain-arguments raw))]
+    [else '()]))
+
+;; domain-path-covered? : c-domain? finite-real? finite-real? hash? calculus-model?
+;;                         calculus-computation? hash? -> calculus-result?
+;;   Confirms that one closed integration path stays within an explicitly
+;;   declared domain.  Every endpoint, hole, and interval between consecutive
+;;   declared boundaries is checked, which preserves ordinary finite unions
+;;   and catches a declared singularity even when quadrature would not sample
+;;   it by chance.
+(define (domain-path-covered? domain a b environment model computation lexical)
+  (let/ec abort
+    (define boundaries
+      (for/list ([expression (in-list (domain-boundary-expressions domain))])
+        (define result (eval-domain-number expression environment model computation))
+        (unless (eq? (calculus-result-status result) 'defined) (abort result))
+        (calculus-result-value result)))
+    (define ordered
+      (sort (remove-duplicates (append (list a b)
+                                       (filter (lambda (value)
+                                                 (and (finite-real? value)
+                                                      (<= (min a b) value (max a b))))
+                                               boundaries)))
+            <))
+    (define probes
+      (append ordered
+              (for/list ([left (in-list ordered)] [right (in-list (rest ordered))]
+                         #:when (< left right))
+                (/ (+ left right) 2))))
+    (for ([probe (in-list probes)])
+      (define membership
+        (domain-contains? domain probe environment model computation))
+      (unless (eq? (calculus-result-status membership) 'defined) (abort membership))
+      (unless (calculus-result-value membership)
+        (abort (outside "integration path leaves the declared function domain"))))
+    (defined #t)))
+
+;; simpson/evaluate : procedure? finite-real? finite-real? calculus-computation? -> calculus-result?
+;;   Applies a bounded adaptive Simpson rule.  Function values are memoized by
+;;   exact mathematical input, local errors are compared against a subdivided
+;;   tolerance, and any exhausted evaluation budget remains unresolved.
 (define (simpson/evaluate evaluate a b computation)
   (define budget (calculus-computation-data-integration-budget computation))
-  ;; Simpson's rule needs an even positive interval count and one more
-  ;; integrand evaluation than intervals, all within the declared budget.
-  (define n (min 2048 (* 2 (quotient (sub1 budget) 2))))
-  (cond
-    [(< n 2) (unresolved "numeric integration budget is too small" 'numeric)]
-    [else
-     (define h (/ (- b a) n))
-     (let loop ([index 0] [total 0])
-       (cond
-         [(> index n) (finite-number-result (* (/ h 3) total) 'numeric #t)]
-         [else
-          (define weight (cond [(or (= index 0) (= index n)) 1]
-                               [(odd? index) 4]
-                               [else 2]))
-          (result-bind
-           (evaluate (+ a (* index h)))
-           (lambda (sample)
-             (loop (add1 index) (+ total (* weight sample)))))]))]))
+  (define absolute (calculus-computation-data-absolute-tolerance computation))
+  (define relative (calculus-computation-data-relative-tolerance computation))
+  (let/ec abort
+    (define cache (make-hash))
+    (define evaluations 0)
+    (define (sample input)
+      (cond
+        [(hash-has-key? cache input) (hash-ref cache input)]
+        [(>= evaluations budget)
+         (abort (unresolved "numeric integration budget exhausted before the requested tolerance was established"
+                            'numeric))]
+        [else
+         (set! evaluations (add1 evaluations))
+         (define result (evaluate input))
+         (unless (eq? (calculus-result-status result) 'defined) (abort result))
+         (define value (calculus-result-value result))
+         (unless (finite-real? value)
+           (abort (undefined "integrand did not produce a finite real value")))
+         (hash-set! cache input value)
+         value]))
+    (define (estimate left middle right f-left f-middle f-right)
+      (* (/ (- right left) 6) (+ f-left (* 4 f-middle) f-right)))
+    (define (refine left middle right f-left f-middle f-right coarse tolerance)
+      (define left-middle (/ (+ left middle) 2))
+      (define right-middle (/ (+ middle right) 2))
+      (define f-left-middle (sample left-middle))
+      (define f-right-middle (sample right-middle))
+      (define left-estimate
+        (estimate left left-middle middle f-left f-left-middle f-middle))
+      (define right-estimate
+        (estimate middle right-middle right f-middle f-right-middle f-right))
+      (define refined (+ left-estimate right-estimate))
+      ;; Simpson's subdivision estimate differs by approximately 15 times the
+      ;; remaining error.  Correct the accepted result rather than discarding
+      ;; the evidence used to establish it.
+      (define error-estimate (/ (abs (- refined coarse)) 15))
+      (if (<= error-estimate tolerance)
+          (+ refined (/ (- refined coarse) 15))
+          (+ (refine left left-middle middle f-left f-left-middle f-middle
+                     left-estimate (/ tolerance 2))
+             (refine middle right-middle right f-middle f-right-middle f-right
+                     right-estimate (/ tolerance 2)))))
+    (cond
+      [(= a b) (defined 0 'numeric #t)]
+      [(< budget 5)
+       (unresolved "numeric integration budget is too small to estimate Simpson error" 'numeric)]
+      [else
+       (define middle (/ (+ a b) 2))
+       (define coarse (estimate a middle b (sample a) (sample middle) (sample b)))
+       (define tolerance (+ absolute (* relative (abs coarse))))
+       (finite-number-result
+        (refine a middle b (sample a) (sample middle) (sample b) coarse tolerance)
+        'numeric #t)])))
 
 ;; simpson : semantic-value? finite-real? finite-real? hash? calculus-model?
 ;;           calculus-computation? hash? -> calculus-result?
@@ -2070,6 +2306,17 @@
      (evaluate-function function input environment model computation lexical))
    a b computation))
 
+;; antiderivative-for? : semantic-value? semantic-value? -> boolean?
+;;   Confirms that endpoint subtraction uses the descriptor registered for the
+;;   requested integrand, rather than merely any function with plausible
+;;   endpoint values.
+(define (antiderivative-for? function antiderivative)
+  (define raw (node-raw antiderivative))
+  (and (c-object? raw)
+       (eq? (c-object-kind raw) 'antiderivative-function)
+       (= (length (c-object-arguments raw)) 1)
+       (same-semantic-source? function (first (c-object-arguments raw)))))
+
 (define (eval-integral function from to antiderivative environment model computation lexical)
   (result-bind
    (eval-raw from environment model computation lexical)
@@ -2077,16 +2324,29 @@
      (result-bind
       (eval-raw to environment model computation lexical)
       (lambda (b)
-        (cond
-          [(= a b) (defined 0)]
-          [antiderivative
-           (result-bind
-            (evaluate-function antiderivative b environment model computation lexical)
-            (lambda (fb)
-              (result-bind
-               (evaluate-function antiderivative a environment model computation lexical)
-               (lambda (fa) (finite-number-result (- fb fa) 'supplied #f)))))]
-          [else (simpson function a b environment model computation lexical)]))))))
+        (result-bind
+         (domain-path-covered? (function-domain function) a b environment model computation lexical)
+         (lambda (_)
+           (cond
+             [(= a b) (defined 0)]
+             [antiderivative
+              (cond
+                [(not (antiderivative-for? function antiderivative))
+                 (undefined "integral #:antiderivative is not registered for its integrand")]
+                [else
+                 (result-bind
+                  (domain-path-covered? (function-domain antiderivative) a b environment model computation lexical)
+                  (lambda (_)
+                    (result-bind
+                     (evaluate-function antiderivative b environment model computation lexical)
+                     (lambda (fb)
+                       (result-bind
+                        (evaluate-function antiderivative a environment model computation lexical)
+                        (lambda (fa)
+                          (result-with-method
+                           (finite-number-result (- fb fa) 'supplied #f)
+                           'supplied)))))))])]
+             [else (simpson function a b environment model computation lexical)]))))))))
 
 (define (eval-area region environment model computation lexical)
   (define raw (node-raw region))
@@ -2236,12 +2496,15 @@
            (eq? (c-node-id left) (c-node-id right)))))
 
 ;; derivative-compatible? : semantic-value? semantic-value? -> boolean?
-;;   Requires a declared derivative to retain the same function source.
+;;   Requires a declared first derivative to retain the same function source.
+;;   Tangent and Newton constructions have first-order meaning; accepting a
+;;   second derivative merely because it names the same source is invalid.
 (define (derivative-compatible? function derivative)
   (define raw (node-raw derivative))
   (and (c-object? raw)
        (eq? (c-object-kind raw) 'derivative-function)
        (= (length (c-object-arguments raw)) 1)
+       (= (hash-ref (c-object-options raw) 'order 1) 1)
        (same-semantic-source? function (first (c-object-arguments raw)))))
 
 (define (eval-iterate-value iteration index environment model computation lexical)
@@ -2848,6 +3111,14 @@
 (define (presentation-state-key property target)
   (define key (presentation-target-key target))
   (and key (list 'calculus-presentation-state property key)))
+;; label-preference-key : semantic-target? [symbol?] -> (or/c list? #f)
+;;   Stores a label-only preference separately from mathematical object
+;;   visibility.  A view-qualified command owns only that presentation scope.
+(define (label-preference-key target [view #f])
+  (define key (target-key target))
+  (and key
+       (list 'calculus-presentation-state 'label-visible
+             (if view (view-target-key view key) (presentation-target-key target)))))
 ;; set-presentation-state : hash? symbol? list? boolean? -> hash?
 ;;   Applies one persistent or sampled presentation property to direct target
 ;;   identities without changing visibility inheritance.
@@ -2859,6 +3130,35 @@
             (hash-set current key value)
             (hash-remove current key))
         current)))
+
+;; motion-state-at : hash? semantic-target? (or/c symbol? #f) -> any/c
+;; Reads one transient native-motion record with the same view-local fallback
+;; rule used for emphasis.  Motion is presentation state only: it never enters
+;; the mathematical value environment or changes a plan's endpoint semantics.
+(define (motion-state-at presentation target property [view #f])
+  (define key (target-key target))
+  (define local-key (and view (view-target-key view key)))
+  (define local
+    (if local-key
+        (hash-ref presentation
+                  (list 'calculus-presentation-state property local-key)
+                  missing-presentation-value)
+        missing-presentation-value))
+  (if (eq? local missing-presentation-value)
+      (hash-ref presentation (presentation-state-key property target) #f)
+      local))
+;; label-preferred? : hash? semantic-target? -> boolean?
+;;   Reads the persistent label preference, defaulting to visible without
+;;   granting any visibility to the associated mathematical owner.
+(define (label-preferred? presentation target)
+  (define key (label-preference-key target))
+  (if key (hash-ref presentation key #t) #t))
+;; set-label-preference : hash? list? boolean? -> hash?
+;;   Commits a label-only command without changing the parent object's state.
+(define (set-label-preference presentation targets on?)
+  (for/fold ([current presentation]) ([target (in-list targets)])
+    (define key (label-preference-key target))
+    (if key (hash-set current key on?) current)))
 
 ;; same-semantic-target? : semantic-value? semantic-value? -> boolean?
 ;;   Compares the stable semantic identities which can occur in an authored
@@ -3021,11 +3321,17 @@
   (define targets (c-action-targets action))
   (define changed
     (case kind
-      [(show show-label)
+      [(show)
        (filter (lambda (target) (not (presentation-visible? presentation target)))
                targets)]
-      [(hide hide-label)
+      [(hide)
        (filter (lambda (target) (presentation-visible? presentation target))
+               targets)]
+      [(show-label)
+       (filter (lambda (target) (not (label-preferred? presentation target)))
+               targets)]
+      [(hide-label)
+       (filter (lambda (target) (label-preferred? presentation target))
                targets)]
       [(deemphasize)
        (filter (lambda (target)
@@ -3046,10 +3352,14 @@
 ;; in source order for their disjoint presentation slots.
 (define (presentation-state-after-action presentation action)
   (case (c-action-kind action)
-    [(show show-label read)
+    [(show read)
      (set-presentation-visibility presentation (c-action-targets action) #t)]
-    [(hide hide-label)
+    [(hide)
      (set-presentation-visibility presentation (c-action-targets action) #f)]
+    [(show-label)
+     (set-label-preference presentation (c-action-targets action) #t)]
+    [(hide-label)
+     (set-label-preference presentation (c-action-targets action) #f)]
     [(deemphasize)
      (set-presentation-state presentation 'deemphasized (c-action-targets action) #t)]
     [(normalize)
@@ -3780,6 +4090,26 @@
        (eq? (c-param-spec-kind (c-node-data count)) 'integer)
        count))
 
+;; refinement-dependent-targets : calculus-model? c-node? -> (listof c-node?)
+;; Finds public constructions that transitively depend on the partition count.
+;; The result is used only for transient carrier presentation; the committed
+;; parameter and all mathematical object values remain the current snapshot.
+(define (refinement-dependent-targets model parameter)
+  (define parameter-id (c-node-id parameter))
+  (define (depends-on? node seen)
+    (cond [(not (c-node? node)) #f]
+          [(member (c-node-id node) seen) #f]
+          [(eq? (c-node-id node) parameter-id) #t]
+          [else
+           (for/or ([identifier (in-list (semantic-node-identifiers (node-raw node)))])
+             (or (eq? identifier parameter-id)
+                 (let ([dependency (hash-ref (calculus-model-nodes model) identifier #f)])
+                   (and dependency
+                        (depends-on? dependency (cons (c-node-id node) seen))))))]))
+  (for/list ([node (in-hash-values (calculus-model-nodes model))]
+             #:when (and (not (eq? node parameter)) (depends-on? node '())))
+    node))
+
 ;; valid-refinement-counts? : c-action? hash? calculus-model? calculus-computation? -> boolean?
 ;;   Checks one nested sequence of direct integer partition counts.
 (define (valid-refinement-counts? action environment model computation)
@@ -4238,17 +4568,58 @@
   (for/list ([from (in-list start)] [to (in-list target)])
     (+ from (* progress (- to from)))))
 
-;; continuous-action-progress : real? real? real? calculus-profile? -> real?
-;;   Applies the selected pure parameter easing to a clamped timeline fraction.
-;;   It changes an intermediate demonstration state only: 0 and 1 remain the
-;;   authored mathematical endpoints for every profile.
-(define (continuous-action-progress start end time profile)
+;; continuous-action-progress : real? real? real? calculus-profile? [c-action?] -> real?
+;;   Applies the action-local easing when one is authored, otherwise the
+;;   profile default, to a clamped timeline fraction.  It changes an
+;;   intermediate demonstration state only: 0 and 1 remain the authored
+;;   mathematical endpoints for every profile.
+(define (continuous-action-progress start end time profile [action #f])
   (define linear-progress
     (if (= start end) 1 (min 1 (max 0 (/ (- time start) (- end start))))))
-  (case (calculus-motion-data-parameter-easing
-         (calculus-profile-data-motion profile))
+  (define easing
+    (if (and action (c-action? action)
+             (hash-has-key? (c-action-options action) 'easing))
+        (hash-ref (c-action-options action) 'easing)
+        (calculus-motion-data-parameter-easing
+         (calculus-profile-data-motion profile))))
+  (case easing
     [(smoothstep) (* linear-progress linear-progress (- 3 (* 2 linear-progress)))]
     [else linear-progress]))
+
+;; valid-continuous-parameter-path? : c-node? list? hash? calculus-model?
+;;                                     calculus-computation? -> boolean?
+;;   Validates every authored segment, including intermediate `#:via` knots,
+;;   against the parameter contract before any partial value is sampled.
+(define (valid-continuous-parameter-path? parameter knots environment model computation)
+  (and (pair? knots)
+       (andmap finite-real? knots)
+       (for/and ([from (in-list knots)] [to (in-list (rest knots))])
+         (valid-continuous-parameter-target? parameter from to
+                                             environment model computation))))
+
+;; interpolate-parameter-path : listof finite-real? real? -> finite-real?
+;;   Moves by cumulative path length, not by the direct endpoint chord.  This
+;;   keeps authored intermediate knots observable at their distance-proportional
+;;   time even when a path reverses direction.
+(define (interpolate-parameter-path knots progress)
+  (define lengths
+    (for/list ([from (in-list knots)] [to (in-list (rest knots))])
+      (abs (- to from))))
+  (define total (apply + 0 lengths))
+  (cond
+    [(zero? total) (last knots)]
+    [else
+     (define travelled (* (min 1 (max 0 progress)) total))
+     (let loop ([from (first knots)] [rest-knots (rest knots)]
+                [remaining lengths] [covered 0])
+       (define to (first rest-knots))
+       (define length (first remaining))
+       (cond
+         [(or (null? (rest remaining)) (<= travelled (+ covered length)))
+          (if (zero? length)
+              to
+              (+ from (* (/ (- travelled covered) length) (- to from))))]
+         [else (loop to (rest rest-knots) (rest remaining) (+ covered length))]))]))
 
 ;; apply-event : pair? c-event? real? calculus-model? calculus-computation?
 ;;                [calculus-lesson?] [calculus-profile?] -> pair?
@@ -4260,6 +4631,7 @@
   (define start (c-event-start event)) (define end (c-event-end event))
   (if (< time start) state
       (let ([values (car state)] [visible (cdr state)])
+        (define motion (calculus-profile-data-motion profile))
         (define (set-visible targets on? #:clear-trace-prefix? [clear-trace-prefix? #f])
           (for/fold ([current visible]) ([target (in-list targets)])
             (define key (presentation-visibility-key target))
@@ -4269,11 +4641,66 @@
                       (hash-remove updated (trace-prefix-key target))
                       updated))
                 current)))
+        (define (set-motion-records presentation records)
+          ;; Each target may use a different reveal family, so these records
+          ;; are installed one at a time rather than as a shared boolean flag.
+          (for/fold ([current presentation]) ([entry (in-list records)])
+            (define target (car entry))
+            (define record (cdr entry))
+            (define key (presentation-state-key 'motion target))
+            (cond [(not key) current]
+                  [record (hash-set current key record)]
+                  [else (hash-remove current key)])))
+        (define (motion-progress)
+          (continuous-action-progress start end time profile action))
+        (define (reveal-record target progress)
+          ;; Component presentation parts retain the kind of their lexical
+          ;; exported/private node.  Resolve that kind here so an exported
+          ;; secant receives the same extend policy as a direct secant.
+          (define node
+            (or (and (c-node? target) target)
+                (and (c-part? target)
+                     (or (calculus-component-part-node target)
+                         (calculus-component-private-part-node target)))))
+          (cond [(and node (memq (c-node-kind node) '(graph graph-restriction)))
+                 (list 'graph (calculus-motion-data-graph-reveal motion) progress)]
+                [(and node
+                      (memq (c-node-kind node)
+                            '(segment line-through ray-through horizontal-line
+                                      vertical-line chord secant tangent vertical-tangent
+                                      normal error-segment asymptote-line)))
+                 (list 'line (calculus-motion-data-line-reveal motion) progress)]
+                [else (list 'fade 'fade progress)]))
+        (define (active-reveals presentation targets)
+          (if (< time end)
+              (set-motion-records
+               presentation
+               (for/list ([target (in-list targets)])
+                 (cons target (reveal-record target (motion-progress)))))
+              (set-motion-records presentation
+                                  (for/list ([target (in-list targets)])
+                                    (cons target #f)))))
         (case kind
-          [(show) (cons values (set-visible (c-action-targets action) #t #:clear-trace-prefix? #t))]
-          [(show-label) (cons values (set-visible (c-action-targets action) #t))]
-          [(hide hide-label) (cons values (set-visible (c-action-targets action) #f))]
-          [(read) (cons values (set-visible (c-action-targets action) #t))]
+          [(show)
+           (define revealed
+             (set-visible (c-action-targets action) #t #:clear-trace-prefix? #t))
+           (cons values (active-reveals revealed (c-action-targets action)))]
+          [(show-label) (cons values (set-label-preference visible (c-action-targets action) #t))]
+          [(hide) (cons values (set-visible (c-action-targets action) #f))]
+          [(hide-label) (cons values (set-label-preference visible (c-action-targets action) #f))]
+          [(read)
+           (define revealed (set-visible (c-action-targets action) #t))
+           (define reading-policy (calculus-motion-data-reading motion))
+           (cons values
+                 (if (< time end)
+                     (set-motion-records
+                      revealed
+                      (for/list ([target (in-list (c-action-targets action))])
+                        (cons target (list 'reading reading-policy (motion-progress)))))
+                     (set-motion-records
+                      revealed
+                      (for/list ([target (in-list (c-action-targets action))])
+                        (cons target #f)))))]
           [(deemphasize)
            (cons values
                  (set-presentation-state visible 'deemphasized
@@ -4288,9 +4715,17 @@
            ;; duration has elapsed.  This keeps random-access snapshots and
            ;; reverse frame requests independent of previous drawing history.
            (if (< time end)
-               (cons values
-                     (set-presentation-state visible 'highlighted
-                                             (c-action-targets action) #t))
+               (let ([highlighted
+                      (set-presentation-state visible 'highlighted
+                                              (c-action-targets action) #t)])
+                 (cons values
+                       (if (and (eq? (calculus-motion-data-highlight motion) 'pulse)
+                                (not (calculus-motion-data-reduced-motion? motion)))
+                           (set-motion-records
+                            highlighted
+                            (for/list ([target (in-list (c-action-targets action))])
+                              (cons target (list 'highlight 'pulse (motion-progress)))))
+                           highlighted)))
                state)]
           [(highlight-quantity)
            ;; Resolve correspondences at the sampled action state. The action
@@ -4312,19 +4747,30 @@
                (let* ([initial (hash-ref values id)]
                       [target-expression (if (eq? kind 'approach) (hash-ref (c-action-options action) 'until)
                                              (hash-ref (c-action-options action) 'to))]
-                      [target-result (eval-raw target-expression values model computation)])
+                      [target-result (eval-raw target-expression values model computation)]
+                      [via-result
+                       (if (eq? kind 'vary)
+                           (eval-raw (hash-ref (c-action-options action) 'via '())
+                                     values model computation)
+                           (defined '()))])
                  (if (or (not (eq? (calculus-result-status target-result) 'defined))
-                         (not (valid-continuous-parameter-target?
-                               parameter initial (calculus-result-value target-result)
+                         (not (eq? (calculus-result-status via-result) 'defined))
+                         (not (list? (calculus-result-value via-result)))
+                         (not (valid-continuous-parameter-path?
+                               parameter
+                               (append (list initial) (calculus-result-value via-result)
+                                       (list (calculus-result-value target-result)))
                                values model computation))
                          (and (eq? kind 'approach)
                               (not (valid-approach-side?
                                     action initial (calculus-result-value target-result)
                                     values model computation))))
                      state
-                     (let ([target (calculus-result-value target-result)]
-                           [progress (continuous-action-progress start end time profile)] )
-                       (cons (hash-set values id (+ initial (* progress (- target initial)))) visible)))))]
+                     (let* ([target (calculus-result-value target-result)]
+                            [knots (append (list initial) (calculus-result-value via-result)
+                                           (list target))]
+                            [progress (continuous-action-progress start end time profile action)])
+                       (cons (hash-set values id (interpolate-parameter-path knots progress)) visible)))))]
           [(set-parameter)
            (define parameter (first (c-action-targets action)))
            (define value-result (eval-raw (second (c-action-targets action)) values model computation))
@@ -4349,24 +4795,89 @@
                        (min (length counts)
                             (max 0 (inexact->exact
                                     (floor (/ (- time start) segment-duration)))))] )
-                 (cons (if (zero? completed)
-                           values
-                           (hash-set values (c-node-id parameter)
-                                     (list-ref counts (sub1 completed))))
-                       visible))
+                 (define next-values
+                   (if (zero? completed)
+                       values
+                       (hash-set values (c-node-id parameter)
+                                 (list-ref counts (sub1 completed)))))
+                 (define carrier-count
+                   (and (< completed (length counts))
+                        (list-ref counts completed)))
+                 (define carrier-targets
+                   (refinement-dependent-targets model parameter))
+                 ;; The count remains a committed mathematical integer until a
+                 ;; segment endpoint. The transient record lets native output
+                 ;; draw a subdivision carrier without inventing an
+                 ;; intermediate noninteger partition count.
+                 (cons next-values
+                       (if (< time end)
+                           (let ([refining
+                                  (set-presentation-state
+                                   visible 'refining carrier-targets #t)])
+                             (set-motion-records
+                              refining
+                              (for/list ([target (in-list (cons parameter carrier-targets))])
+                                (cons target
+                                      (list 'refinement
+                                            (calculus-motion-data-refinement motion)
+                                            (motion-progress)
+                                            carrier-count)))))
+                           (let ([settled
+                                  (set-presentation-state
+                                   visible 'refining carrier-targets #f)])
+                             (set-motion-records
+                              settled
+                              (for/list ([target (in-list (cons parameter carrier-targets))])
+                                (cons target #f)))))))
                state)]
           [(limit-transition)
            (define targets (c-action-targets action))
            (if (valid-limit-transition? action values model computation
                                         #:lesson lesson #:visible visible)
                (let ([source-key (target-key (first targets))]
-                     [target-key* (target-key (second targets))])
-                 (cons values
-                       (cond [(and source-key target-key*)
-                              (hash-set (hash-set visible source-key #f) target-key* #t)]
-                             [source-key (hash-set visible source-key #f)]
-                             [target-key* (hash-set visible target-key* #t)]
-                             [else visible])))
+                     [target-key* (target-key (second targets))]
+                     [policy (calculus-motion-data-limit-transition motion)]
+                     [progress (motion-progress)])
+                 (cond
+                   [(< time end)
+                    ;; Both mathematically valid constructions coexist only
+                    ;; during the visual handoff. Their transient records
+                    ;; distinguish crossfade from the carrier policy.
+                   (define transitional
+                      (cond [(and source-key target-key*)
+                             (hash-set (hash-set visible source-key #t) target-key* #t)]
+                            [source-key (hash-set visible source-key #t)]
+                            [target-key* (hash-set visible target-key* #t)]
+                            [else visible]))
+                    (define source-line-result
+                      (eval-line (first targets) values model computation (hash)))
+                    (define target-line-result
+                      (eval-line (second targets) values model computation (hash)))
+                    (define source-line
+                      (and (eq? (calculus-result-status source-line-result) 'defined)
+                           (calculus-result-value source-line-result)))
+                    (define target-line
+                      (and (eq? (calculus-result-status target-line-result) 'defined)
+                           (calculus-result-value target-line-result)))
+                    (cons values
+                          (set-motion-records
+                           transitional
+                           (list (cons (first targets)
+                                       (list 'limit policy 'source progress source-line target-line))
+                                 (cons (second targets)
+                                       (list 'limit policy 'target progress source-line target-line)))))]
+                   [else
+                    (define settled
+                      (cond [(and source-key target-key*)
+                             (hash-set (hash-set visible source-key #f) target-key* #t)]
+                            [source-key (hash-set visible source-key #f)]
+                            [target-key* (hash-set visible target-key* #t)]
+                            [else visible]))
+                    (cons values
+                          (set-motion-records
+                           settled
+                           (list (cons (first targets) #f)
+                                 (cons (second targets) #f))))]))
                state)]
           [(focus)
            (define target-window
@@ -4380,8 +4891,11 @@
                       [start-window
                        (or stored-window
                            (view-window-values view basis model computation))]
-                      [progress (if (= start end) 1
-                                    (min 1 (max 0 (/ (- time start) (- end start)))))] )
+                      [progress (if (or (calculus-motion-data-reduced-motion? motion)
+                                        (eq? (calculus-motion-data-focus motion) 'cut))
+                                    1
+                                    (if (= start end) 1
+                                        (min 1 (max 0 (/ (- time start) (- end start))))))] )
                  (cond
                    [(and key (finite-view-window? start-window))
                     (cons values (hash-set visible key
@@ -4404,8 +4918,11 @@
            (define baseline (and view (view-window-values view basis model computation)))
            (define stored-window (and key (hash-ref visible key #f)))
            (define start-window (or stored-window baseline))
-           (define progress (if (= start end) 1
-                                (min 1 (max 0 (/ (- time start) (- end start))))))
+           (define progress (if (or (calculus-motion-data-reduced-motion? motion)
+                                    (eq? (calculus-motion-data-focus motion) 'cut))
+                                1
+                                (if (= start end) 1
+                                    (min 1 (max 0 (/ (- time start) (- end start)))))))
            (cond
              [(and view key baseline (finite-view-window? start-window)
                    (valid-restore-view? action lesson))
@@ -4475,10 +4992,18 @@
 ;;   start state, to the aggregate state without re-evaluating its inputs.
 (define (merge-group-state base aggregate result)
   (define (merge-hash original merged changed)
-    (for/fold ([updated merged]) ([(key value) (in-hash changed)])
-      (if (equal? value (hash-ref original key #f))
-          updated
-          (hash-set updated key value))))
+    ;; Compare the union, not merely keys still present in `changed`: a
+    ;; completed normalize/restore action expresses its essential update by
+    ;; removing a key.  The dedicated absence sentinel keeps stored `#f`
+    ;; values distinct from a deletion.
+    (for/fold ([updated merged])
+              ([key (in-list (remove-duplicates
+                              (append (hash-keys original) (hash-keys changed))))])
+      (define before (hash-ref original key missing-presentation-value))
+      (define after (hash-ref changed key missing-presentation-value))
+      (cond [(equal? before after) updated]
+            [(eq? after missing-presentation-value) (hash-remove updated key)]
+            [else (hash-set updated key after)])))
   (cons (merge-hash (car base) (car aggregate) (car result))
         (merge-hash (cdr base) (cdr aggregate) (cdr result))))
 
@@ -4541,14 +5066,18 @@
   (for/fold ([visible memberships]) ([command (in-list (calculus-lesson-initial lesson))])
     (cond
       [(not (c-action? command)) visible]
-      [(memq (c-action-kind command) '(show show-label))
+      [(eq? (c-action-kind command) 'show)
        (for/fold ([current visible]) ([target (in-list (c-action-targets command))])
          (define key (presentation-visibility-key target))
          (if key (hash-set current key #t) current))]
-      [(memq (c-action-kind command) '(hide hide-label))
+      [(eq? (c-action-kind command) 'hide)
        (for/fold ([current visible]) ([target (in-list (c-action-targets command))])
          (define key (presentation-visibility-key target))
          (if key (hash-set current key #f) current))]
+      [(eq? (c-action-kind command) 'show-label)
+       (set-label-preference visible (c-action-targets command) #t)]
+      [(eq? (c-action-kind command) 'hide-label)
+       (set-label-preference visible (c-action-targets command) #f)]
       [(eq? (c-action-kind command) 'deemphasize)
        (set-presentation-state visible 'deemphasized
                                (c-action-targets command) #t)]
@@ -4698,9 +5227,13 @@
   (check 'calculus-snapshot-presentation-state calculus-snapshot? "calculus-snapshot?" snapshot)
   (when view (check 'calculus-snapshot-presentation-state symbol? "view symbol" view))
   (define visible (calculus-snapshot-visible snapshot))
+  (define semantic-target
+    (if (or (symbol? target) (and (list? target) (pair? target)))
+        (address->object (calculus-snapshot-model snapshot) target)
+        target))
   (define (state-at property)
     (define local-key
-      (and view (view-target-key view (target-key target))))
+      (and view (view-target-key view (target-key semantic-target))))
     (define local-value
       (if local-key
           (hash-ref visible
@@ -4708,11 +5241,41 @@
                     missing-presentation-value)
           missing-presentation-value))
     (if (eq? local-value missing-presentation-value)
-        (hash-ref visible (presentation-state-key property target) #f)
+        (hash-ref visible (presentation-state-key property semantic-target) #f)
         local-value))
   (cond [(state-at 'highlighted) 'highlighted]
         [(state-at 'deemphasized) 'deemphasized]
+        [(state-at 'refining) 'refining]
         [else 'normal]))
+
+;; calculus-snapshot-motion-state : calculus-snapshot? semantic-target? -> any/c
+;;                                     [#:view symbol?]
+;; Provides a short-lived native choreography record such as
+;; `(reading guided 1/2)` or `(line extend 3/4)`.  It is intentionally an
+;; opaque presentation value: consumers use it to choose a visual extent or
+;; opacity while headless mathematics stays the same at every progress value.
+(define (calculus-snapshot-motion-state snapshot target #:view [view #f])
+  (check 'calculus-snapshot-motion-state calculus-snapshot? "calculus-snapshot?" snapshot)
+  (when view (check 'calculus-snapshot-motion-state symbol? "view symbol" view))
+  (define semantic-target
+    (if (or (symbol? target) (and (list? target) (pair? target)))
+        (address->object (calculus-snapshot-model snapshot) target)
+        target))
+  (motion-state-at (calculus-snapshot-visible snapshot) semantic-target 'motion view))
+
+;; calculus-snapshot-label-visible? : calculus-snapshot? semantic-target?
+;;                                     [#:view symbol?] -> boolean?
+;;   Resolves only the independent label preference.  Callers combine this
+;;   with ordinary object visibility so `show-label` can never resurrect a
+;;   hidden parent point, graph, or reading.
+(define (calculus-snapshot-label-visible? snapshot target #:view [view #f])
+  (check 'calculus-snapshot-label-visible? calculus-snapshot? "calculus-snapshot?" snapshot)
+  (when view (check 'calculus-snapshot-label-visible? symbol? "view symbol" view))
+  (define presentation (calculus-snapshot-visible snapshot))
+  (define global-key (label-preference-key target))
+  (define global-value (if global-key (hash-ref presentation global-key #t) #t))
+  (define local-key (and view (label-preference-key target view)))
+  (if local-key (hash-ref presentation local-key global-value) global-value))
 
 ;; formula-symbol : semantic-value? -> string?
 ;;   Retains a quantity's semantic identity in prepared text instead of trying
@@ -4765,30 +5328,46 @@
               (string-append (if (calculus-result-approximate? result) "≈" "")
                              (formula-number-text (calculus-result-value result) 'exact #f))
               "undefined"))))
-  (define (render item)
+  ;; `outer-precedence` preserves the held tree's mathematical grouping in
+  ;; plain inspection text. The native adapter receives a separately prepared
+  ;; TeX form; it never has to infer precedence from this display string.
+  (define (render item [outer-precedence 0])
+    (define (parenthesize text precedence)
+      (if (< precedence outer-precedence) (format "(~a)" text) text))
     (cond
       [(c-expression? item)
        (define op (c-expression-op item))
        (define args (c-expression-arguments item))
-       (define rendered (map render args))
        (case op
-         [(+) (string-join rendered " + ")]
-         [(-) (if (= (length rendered) 1)
-                  (string-append "−" (first rendered))
-                  (string-join rendered " − "))]
-         [(*) (string-join rendered " · ")]
-         [(/) (if (= (length rendered) 2)
-                  (format "(~a)/(~a)" (first rendered) (second rendered))
-                  (string-join rendered " / "))]
-         [(expt) (if (= (length rendered) 2)
-                     (format "~a^~a" (first rendered) (second rendered))
-                     (string-join rendered " ^ "))]
-         [(= < <= > >=) (string-join rendered (format " ~a " op))]
-         [(sqrt) (format "√(~a)" (first rendered))]
-         [(abs) (format "|~a|" (first rendered))]
-         [(sin cos tan asin acos atan exp log) (format "~a(~a)" op (string-join rendered ", "))]
-         [(list) (format "(~a)" (string-join rendered ", "))]
-         [else (format "~a(~a)" op (string-join rendered ", "))])]
+         [(+)
+          (parenthesize (string-join (map (lambda (value) (render value 10)) args) " + ") 10)]
+         [(-)
+          (parenthesize
+           (if (= (length args) 1)
+               (string-append "−" (render (first args) 30))
+               (string-join (map (lambda (value) (render value 11)) args) " − "))
+           10)]
+         [(*)
+          (parenthesize (string-join (map (lambda (value) (render value 20)) args) " · ") 20)]
+         [(/)
+          (parenthesize
+           (if (= (length args) 2)
+               (format "(~a)/(~a)" (render (first args)) (render (second args)))
+               (string-join (map render args) " / "))
+           20)]
+         [(expt)
+          (parenthesize
+           (if (= (length args) 2)
+               (format "~a^~a" (render (first args) 30) (render (second args) 31))
+               (string-join (map render args) " ^ "))
+           30)]
+         [(= < <= > >=) (parenthesize (string-join (map render args) (format " ~a " op)) 5)]
+         [(sqrt) (format "√(~a)" (render (first args)))]
+         [(abs) (format "|~a|" (render (first args)))]
+         [(sin cos tan asin acos atan exp log)
+          (format "~a(~a)" op (string-join (map render args) ", "))]
+         [(list) (format "(~a)" (string-join (map render args) ", "))]
+         [else (format "~a(~a)" op (string-join (map render args) ", "))])]
       [(and (c-object? item) (eq? (c-object-kind item) 'ref))
        (formula-symbol (first (c-object-arguments item)))]
       [(and (c-object? item) (eq? (c-object-kind item) 'value))
@@ -4796,6 +5375,79 @@
       [(or (c-node? item) (c-part? item)) (formula-symbol item)]
       [(string? item) item]
       [(symbol? item) (symbol->string item)]
+      [(number? item) (number->string item)]
+      [else "?"]))
+  (render expression))
+
+;; formula-tex-atom : string? -> string?
+;;   Translates only atomic notation vocabulary. Compound mathematical
+;; structure is emitted by `formula-held-tex` below, never reconstructed with
+;; regular expressions from a flattened formula string.
+(define (formula-tex-atom text)
+  (define replacements
+    (list (cons "Δx" "\\Delta x")
+          (cons "Δy" "\\Delta y")
+          (cons "Δ" "\\Delta ")
+          (cons "≈" "\\approx ")
+          (cons "≤" "\\le ")
+          (cons "≥" "\\ge ")
+          (cons "≠" "\\ne ")
+          (cons "−" "-")
+          (cons "′" "^{\\prime}")
+          (cons "∞" "\\infty ")))
+  (let loop ([remaining replacements] [result text])
+    (if (null? remaining)
+        result
+        (loop (rest remaining)
+              (string-replace result (caar remaining) (cdar remaining))))))
+
+;; formula-held-tex : any/c calculus-snapshot? hash? calculus-model? -> string?
+;;   Lowers the held Formula tree directly to grouped TeX. Every fraction,
+;;   power, radical, and occurrence is traversed from the original semantic
+;;   tree, so display syntax cannot change the taught expression's meaning.
+(define (formula-held-tex expression snapshot environment model)
+  (define computation (and snapshot (calculus-snapshot-computation snapshot)))
+  (define (render-value target)
+    (if (not snapshot)
+        (formula-tex-atom (formula-symbol target))
+        (let ([result (eval-raw target environment model computation)])
+          (if (eq? (calculus-result-status result) 'defined)
+              (string-append (if (calculus-result-approximate? result) "\\approx " "")
+                             (formula-tex-atom
+                              (formula-number-text (calculus-result-value result) 'exact #f)))
+              "\\mathrm{undefined}"))))
+  (define (render item)
+    (cond
+      [(c-expression? item)
+       (define op (c-expression-op item))
+       (define args (c-expression-arguments item))
+       (case op
+         [(+) (string-join (map render args) " + ")]
+         [(-) (if (= (length args) 1)
+                  (format "-\\left(~a\\right)" (render (first args)))
+                  (string-join (map render args) " - "))]
+         [(*) (string-join (map (lambda (value) (format "{~a}" (render value))) args) "\\cdot ")]
+         [(/) (if (= (length args) 2)
+                  (format "\\frac{~a}{~a}" (render (first args)) (render (second args)))
+                  (string-join (map render args) " / "))]
+         [(expt) (if (= (length args) 2)
+                     (format "{~a}^{~a}" (render (first args)) (render (second args)))
+                     (string-join (map render args) " ^ "))]
+         [(= < <= > >=) (string-join (map render args) (format " ~a " op))]
+         [(sqrt) (format "\\sqrt{~a}" (render (first args)))]
+         [(abs) (format "\\left|~a\\right|" (render (first args)))]
+         [(sin cos tan asin acos atan exp log)
+          (format "\\~a\\left(~a\\right)" op (string-join (map render args) ", "))]
+         [(list) (format "\\left(~a\\right)" (string-join (map render args) ", "))]
+         [else (format "\\operatorname{~a}\\left(~a\\right)"
+                       op (string-join (map render args) ", "))])]
+      [(and (c-object? item) (eq? (c-object-kind item) 'ref))
+       (formula-tex-atom (formula-symbol (first (c-object-arguments item))))]
+      [(and (c-object? item) (eq? (c-object-kind item) 'value))
+       (render-value (first (c-object-arguments item)))]
+      [(or (c-node? item) (c-part? item)) (formula-tex-atom (formula-symbol item))]
+      [(string? item) (formula-tex-atom item)]
+      [(symbol? item) (formula-tex-atom (symbol->string item))]
       [(number? item) (number->string item)]
       [else "?"]))
   (render expression))
@@ -4811,12 +5463,75 @@
     [(and (c-object? raw) (eq? (c-object-kind raw) 'derivative-function))
      (format "~a′(x)" (formula-symbol (first (c-object-arguments raw))))]
     [(and (c-object? raw) (eq? (c-object-kind raw) 'definite-integral))
-     "∫ f(x) dx"]
+     (define function (first (c-object-arguments raw)))
+     (define lower (hash-ref (c-object-options raw) 'from "?"))
+     (define upper (hash-ref (c-object-options raw) 'to "?"))
+     (format "∫_(~a)^(~a) ~a(x) dx"
+             (formula-held-text lower snapshot
+                                (and snapshot (calculus-snapshot-values snapshot))
+                                (and snapshot (calculus-snapshot-model snapshot)))
+             (formula-held-text upper snapshot
+                                (and snapshot (calculus-snapshot-values snapshot))
+                                (and snapshot (calculus-snapshot-model snapshot)))
+             (formula-symbol function))]
     [(and (c-object? raw) (eq? (c-object-kind raw) 'limit-statement))
-     "lim (supplied claim)"]
+     (define function (first (c-object-arguments raw)))
+     (define target (hash-ref (c-object-options raw) 'to "?"))
+     (format "lim_(x→~a) ~a(x)"
+             (formula-held-text target snapshot
+                                (and snapshot (calculus-snapshot-values snapshot))
+                                (and snapshot (calculus-snapshot-model snapshot)))
+             (formula-symbol function))]
     [(or (c-node? source) (c-expression? source) (c-part? source))
      (formula-symbol source)]
     [else "unsupported formula"] ))
+
+;; formula-of-tex : semantic-value? calculus-snapshot? -> string?
+;;   Emits conventional Formula-of forms with their actual source data and
+;;   bounds rather than placeholder prose.
+(define (formula-of-tex source snapshot)
+  (define raw (node-raw source))
+  (define environment (and snapshot (calculus-snapshot-values snapshot)))
+  (define model (and snapshot (calculus-snapshot-model snapshot)))
+  (cond
+    [(or (c-function? raw) (c-piecewise? raw))
+     (format "~a(x)" (formula-tex-atom (formula-symbol source)))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'derivative-function))
+     (format "~a^{\\prime}(x)"
+             (formula-tex-atom (formula-symbol (first (c-object-arguments raw)))))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'definite-integral))
+     (format "\\int_{~a}^{~a} ~a(x)\\,dx"
+             (formula-held-tex (hash-ref (c-object-options raw) 'from "?") snapshot environment model)
+             (formula-held-tex (hash-ref (c-object-options raw) 'to "?") snapshot environment model)
+             (formula-tex-atom (formula-symbol (first (c-object-arguments raw)))))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'limit-statement))
+     (format "\\lim_{x\\to ~a} ~a(x)"
+             (formula-held-tex (hash-ref (c-object-options raw) 'to "?") snapshot environment model)
+             (formula-tex-atom (formula-symbol (first (c-object-arguments raw)))))]
+    [else (formula-tex-atom (formula-of-text source snapshot))]))
+
+;; formula-target+model : calculus-snapshot? semantic-value? -> values
+;;   Resolves a Formula presentation target and its component-local model once
+;;   for both text inspection and structured TeX preparation.
+(define (formula-target+model snapshot target)
+  (define model (calculus-snapshot-model snapshot))
+  (define semantic-target
+    (if (or (symbol? target) (and (list? target) (pair? target)))
+        (address->object model target)
+        target))
+  (cond
+    [(c-part? semantic-target)
+     (define component-node
+       (or (calculus-component-part-node semantic-target)
+           (calculus-component-private-part-node semantic-target)))
+     (define instance-result
+       (and component-node
+            (component-instance-model (c-part-parent semantic-target))))
+     (if (and component-node
+              (eq? (calculus-result-status instance-result) 'defined))
+         (values component-node (calculus-result-value instance-result))
+         (values semantic-target model))]
+    [else (values semantic-target model)]))
 
 ;; calculus-snapshot-formula-text : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Private preparation bridge for Formula and value-readout rows. It returns
@@ -4825,11 +5540,6 @@
 (define (calculus-snapshot-formula-text snapshot target)
   (check 'calculus-snapshot-formula-text calculus-snapshot? "calculus-snapshot?" snapshot)
   (define environment (calculus-snapshot-values snapshot))
-  (define model (calculus-snapshot-model snapshot))
-  (define semantic-target
-    (if (or (symbol? target) (and (list? target) (pair? target)))
-        (address->object model target)
-        target))
   ;; A public component export is represented at the caller boundary by a
   ;; c-part, but Formula presentation must retain the declared object that
   ;; lives in the instantiated component model.  Evaluating the c-part itself
@@ -4839,19 +5549,7 @@
   ;; formatting; this remains a presentation lookup and never exposes a new
   ;; public inspection address.
   (define-values (formula-target formula-model)
-    (cond
-      [(c-part? semantic-target)
-       (define component-node
-         (or (calculus-component-part-node semantic-target)
-             (calculus-component-private-part-node semantic-target)))
-       (define instance-result
-         (and component-node
-              (component-instance-model (c-part-parent semantic-target))))
-       (if (and component-node
-                (eq? (calculus-result-status instance-result) 'defined))
-           (values component-node (calculus-result-value instance-result))
-           (values semantic-target model))]
-      [else (values semantic-target model)]))
+    (formula-target+model snapshot target))
   (define raw (node-raw formula-target))
   (cond
     [(and (c-object? raw) (eq? (c-object-kind raw) 'formula))
@@ -4879,6 +5577,121 @@
        (if (eq? (calculus-result-status result) 'defined)
            (defined (formula-number-text (calculus-result-value result) 'exact #f))
            result))]))
+
+;; calculus-snapshot-formula-tex : calculus-snapshot? semantic-value? -> calculus-result?
+;;   Supplies the formula backend with direct structured TeX preparation. The
+;;   parallel text bridge remains for headless inspection and ordinary labels;
+;;   this function deliberately does not parse that flattened text.
+(define (calculus-snapshot-formula-tex snapshot target)
+  (check 'calculus-snapshot-formula-tex calculus-snapshot? "calculus-snapshot?" snapshot)
+  (define environment (calculus-snapshot-values snapshot))
+  (define-values (formula-target formula-model)
+    (formula-target+model snapshot target))
+  (define raw (node-raw formula-target))
+  (cond
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'formula))
+     (defined (formula-held-tex (first (c-object-arguments raw)) snapshot environment formula-model))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'formula-of))
+     (defined (formula-of-tex (first (c-object-arguments raw)) snapshot))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'value-readout))
+     (define text-result (calculus-snapshot-formula-text snapshot target))
+     (if (eq? (calculus-result-status text-result) 'defined)
+         (defined (formula-tex-atom (calculus-result-value text-result)))
+         text-result)]
+    [else
+     (define text-result (calculus-snapshot-formula-text snapshot target))
+     (if (eq? (calculus-result-status text-result) 'defined)
+         (defined (formula-tex-atom (calculus-result-value text-result)))
+         text-result)]))
+
+;; calculus-snapshot-formula-fragments : calculus-snapshot? semantic-value?
+;;                                        -> calculus-result?
+;; Keeps live Formula values as explicit field fragments. The native adapter
+;; prepares fixed-width slots for those fields, so a changing number cannot
+;; request a new whole TeX formula or move the surrounding held notation.
+;; Each successful value is a list of `(text string)` and `(field string)`
+;; records in source order.
+(define (calculus-snapshot-formula-fragments snapshot target)
+  (check 'calculus-snapshot-formula-fragments calculus-snapshot? "calculus-snapshot?" snapshot)
+  (define environment (calculus-snapshot-values snapshot))
+  (define-values (formula-target formula-model)
+    (formula-target+model snapshot target))
+  (define raw (node-raw formula-target))
+  (cond
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'formula))
+     ;; Replace each live leaf with an unforgeable-in-practice private marker,
+     ;; then reuse the exact same precedence-aware held-text renderer. This
+     ;; avoids a second notation grammar for field layout and retains grouped
+     ;; multiplication, powers, fractions, and radicals verbatim.
+     (define nonce (symbol->string (gensym 'calculus-field-)))
+     (define fields '())
+     (define field-index 0)
+     (define (next-marker)
+       (define marker (format "\uE000~a-~a\uE001" nonce field-index))
+       (set! field-index (add1 field-index))
+       marker)
+     (define (replace-live-leaves item)
+       (cond
+         [(c-expression? item)
+          (c-expression (c-expression-op item)
+                        (map replace-live-leaves (c-expression-arguments item)))]
+         [(c-object? item)
+          (cond [(eq? (c-object-kind item) 'value)
+                 (define marker (next-marker))
+                 (set! fields (append fields (list (cons marker item))))
+                 marker]
+                [else
+                 (c-object (c-object-kind item)
+                           (map replace-live-leaves (c-object-arguments item))
+                           (for/hash ([(key value) (in-hash (c-object-options item))])
+                             (values key (replace-live-leaves value))))])]
+         [(pair? item) (cons (replace-live-leaves (car item))
+                             (replace-live-leaves (cdr item)))]
+         [else item]))
+     (define text
+       (formula-held-text (replace-live-leaves (first (c-object-arguments raw)))
+                          snapshot environment formula-model))
+     (define (field-text field)
+       (formula-held-text field snapshot environment formula-model))
+     (define (append-text fragments text-piece)
+       (if (string=? text-piece "")
+           fragments
+           (append fragments (list (list 'text text-piece)))))
+     (define (string-position text needle)
+       ;; `string-contains?` reports only a boolean in racket/base; field
+       ;; splitting needs the exact source-order offset without treating the
+       ;; marker as a regular expression.
+       (for/first ([index (in-range (add1 (- (string-length text)
+                                             (string-length needle))))]
+                   #:when (string=? needle
+                                    (substring text index
+                                               (+ index (string-length needle)))))
+         index))
+     (let loop ([remaining text] [unplaced fields] [fragments '()])
+       (cond
+         [(null? unplaced) (defined (append-text fragments remaining))]
+         [else
+          (define marker (caar unplaced))
+          (define position (string-position remaining marker))
+          ;; A marker generated during this evaluation must survive the held
+          ;; text renderer. If a future renderer changes that invariant, make
+          ;; the row explicitly unresolved instead of shifting glyphs.
+          (if (not position)
+              (unresolved "Formula field marker was not retained during preparation")
+              (let* ([prefix (substring remaining 0 position)]
+                     [after-start (+ position (string-length marker))]
+                     [after (substring remaining after-start)]
+                     [next-fragments
+                      (append (append-text fragments prefix)
+                              (list (list 'field (field-text (cdar unplaced)))))])
+                (loop after (cdr unplaced) next-fragments)))]))]
+    [else
+     ;; A readout is one changing field with no symbolic suffix to stabilize.
+     ;; It still takes this fragment path so drawing never asks the formula
+     ;; backend to typeset a state-dependent whole row.
+     (result-bind
+      (calculus-snapshot-formula-text snapshot target)
+      (lambda (text) (defined (list (list 'field text)))))]))
 
 ;; calculus-snapshot-label-text : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Supplies native annotation text from a held label declaration. It retains

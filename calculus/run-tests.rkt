@@ -25,6 +25,7 @@
 (define-runtime-path component-test "tests/component-declaration-test.rkt")
 (define-runtime-path external-function-test "tests/external-function-test.rkt")
 (define-runtime-path public-api-test "tests/public-api-test.rkt")
+(define-runtime-path audit-regression-test "tests/audit-regression-test.rkt")
 (define-runtime-path native-test "tests/render-smoke-test.rkt")
 (define-runtime-path review-test "tests/review-examples-test.rkt")
 (define-runtime-path process-test "tests/process-render-test.rkt")
@@ -144,7 +145,8 @@
 
 (when run-core?
   (for ([test-module (in-list (list core-test guide-test component-test
-                                     external-function-test public-api-test))])
+                                     external-function-test public-api-test
+                                     audit-regression-test))])
     (run-test-module! test-module)))
 
 (when run-native?
