@@ -295,11 +295,19 @@
 ;; documented presentation state.
 (struct prepared-formula-row-data (text tex fonts picts) #:transparent)
 
-;; prepared-dynamic-formula-row-data records source-order fragments and a
-;; reservation established from the authored parameter-path samples. It
-;; deliberately contains no whole-row backend Pict: live values are painted
-;; through fixed native slots at actual sample time.
-(struct prepared-dynamic-formula-row-data (shape field-reserve skeleton-picts) #:transparent)
+;; prepared-formula-field-geometry is a backend-derived rectangle for one
+;; live occurrence.  Coordinates are local to its prepared TeX skeleton and
+;; retain script style/baseline placement through a colored preparation probe.
+(struct prepared-formula-field-geometry (x y width height) #:transparent)
+
+;; prepared-dynamic-formula-row-data records source-order fragments, a
+;; reservation established from authored route samples, the prepared TeX
+;; skeletons, and one occurrence geometry sequence per presentation state.
+;; It deliberately contains no whole-row backend Pict recomputation: live
+;; values are painted through those prepared slots at actual sample time.
+(struct prepared-dynamic-formula-row-data
+  (shape field-reserve skeleton-picts field-geometries)
+  #:transparent)
 
 ;; prepared-calculus-lesson-data owns one semantic plan and one pixel layout.
 (struct prepared-calculus-lesson-data
@@ -516,6 +524,37 @@
   (define size (formula-row-font-size reference))
   (theme-font size))
 
+;; draw-formula-field-in-slot : drawing-context% string?
+;;                               prepared-formula-field-geometry? real? real? real?
+;;                               -> void?
+;;   Paints a complete live numeric field inside the rectangle measured from a
+;; prepared TeX probe.  The slot controls both horizontal location and local
+;; script-sized vertical position; a very long exact rational is reduced in
+;; native size rather than truncated, re-typeset as a whole row, or allowed to
+;; move the surrounding held notation.
+(define (draw-formula-field-in-slot context text geometry origin-x origin-y reference)
+  (define base-size (formula-row-font-size reference))
+  (send context set-font (theme-font base-size))
+  (define-values (natural-width natural-height _natural-descent _natural-leading)
+    (send context get-text-extent text))
+  (define slot-width (max 1 (prepared-formula-field-geometry-width geometry)))
+  (define slot-height (max 1 (prepared-formula-field-geometry-height geometry)))
+  (define scale
+    (min 1
+         (/ (max 1 (- slot-width 1)) (max 1 natural-width))
+         (/ (max 1 (- slot-height 1)) (max 1 natural-height))))
+  (send context set-font (theme-font (max 1 (* base-size scale))))
+  (define-values (text-width text-height _text-descent _text-leading)
+    (send context get-text-extent text))
+  (send context draw-text
+        text
+        (+ origin-x
+           (prepared-formula-field-geometry-x geometry)
+           (max 0 (/ (- slot-width text-width) 2)))
+        (+ origin-y
+           (prepared-formula-field-geometry-y geometry)
+           (max 0 (/ (- slot-height text-height) 2)))))
+
 ;; formula-row-base-color : symbol? -> string?
 ;; Keeps the same snapshot state palette in static preparation and live panel
 ;; painting, so a cached TeX artifact is never reused under the wrong color.
@@ -658,11 +697,108 @@
                        (if (string? fill) fill base-color))))))))
              next-cache)]))))
 
+;; Formula-field probes are opaque, saturated colors that the normal calculus
+;; themes do not use.  They exist only in a disposable preparation Pict; the
+;; display skeleton remains transparent at every live field.
+(define formula-field-probe-colors
+  '("FF006E" "00A6FB" "06D6A0" "FFB703" "8338EC" "FB5607"
+             "3A86FF" "2A9D8F" "E63946" "7B2CBF" "118AB2" "80B918"))
+
+;; string-index : string? string? -> (or/c exact-nonnegative-integer? #f)
+;;   `racket/base` exposes a boolean `string-contains?`; preparation needs the
+;; first exact occurrence so each repeated field placeholder gets its own ID.
+(define (string-index text needle)
+  (for/first ([index (in-range (add1 (- (string-length text)
+                                       (string-length needle))))]
+              #:when (string=? needle
+                               (substring text index
+                                          (+ index (string-length needle)))))
+    index))
+
+;; formula-field-placeholder : exact-nonnegative-integer? -> string?
+;;   Must agree byte-for-byte with the core Formula skeleton producer.
+(define (formula-field-placeholder reserve)
+  (format "\\phantom{\\rule{~aem}{1.2ex}}" (max 1 reserve)))
+
+;; formula-field-probe-tex : string? exact-nonnegative-integer?
+;;                            exact-nonnegative-integer? -> (or/c string? #f)
+;;   Replaces each transparent field rule with one uniquely coloured, equally
+;; sized rule.  The backend therefore determines both x placement and local
+;; numerator/denominator/exponent style before any frame is drawn.
+(define (formula-field-probe-tex skeleton reserve field-count)
+  (cond
+    [(> field-count (length formula-field-probe-colors)) #f]
+    [else
+     (define placeholder (formula-field-placeholder reserve))
+     (let loop ([remaining skeleton]
+                [colors (take formula-field-probe-colors field-count)]
+                [pieces '()])
+       (cond
+         [(null? colors) (apply string-append (reverse (cons remaining pieces)))]
+         [else
+          (define at (string-index remaining placeholder))
+          (and at
+               (let* ([prefix (substring remaining 0 at)]
+                      [suffix (substring remaining (+ at (string-length placeholder)))]
+                      [replacement
+                       (format "{\\color[HTML]{~a}\\rule{~aem}{1.2ex}}"
+                               (first colors) (max 1 reserve))])
+                 (loop suffix (rest colors) (cons replacement (cons prefix pieces)))))]))]))
+
+;; hex-channel : string? exact-nonnegative-integer? -> exact-nonnegative-integer?
+(define (hex-channel color start)
+  (or (string->number (substring color start (+ start 2)) 16) 0))
+
+;; probe-field-geometry : pict? string? -> (or/c prepared-formula-field-geometry? #f)
+;;   Locates one probe rule in the actual backend raster.  Anti-aliased edge
+;; pixels are accepted with a small RGB tolerance while transparent padding and
+;; the row foreground are ignored.
+(define (probe-field-geometry picture color)
+  (define bitmap (pict:pict->bitmap picture))
+  (define width (send bitmap get-width))
+  (define height (send bitmap get-height))
+  (define pixels (make-bytes (* 4 width height)))
+  (send bitmap get-argb-pixels 0 0 width height pixels)
+  (define target-red (hex-channel color 0))
+  (define target-green (hex-channel color 2))
+  (define target-blue (hex-channel color 4))
+  (define (matches? offset)
+    (define alpha (bytes-ref pixels offset))
+    (define red (bytes-ref pixels (+ offset 1)))
+    (define green (bytes-ref pixels (+ offset 2)))
+    (define blue (bytes-ref pixels (+ offset 3)))
+    (and (>= alpha 96)
+         (<= (abs (- red target-red)) 20)
+         (<= (abs (- green target-green)) 20)
+         (<= (abs (- blue target-blue)) 20)))
+  (define-values (left top right bottom)
+    (for*/fold ([left width] [top height] [right -1] [bottom -1])
+               ([y (in-range height)] [x (in-range width)])
+      (if (matches? (* 4 (+ x (* y width))))
+          (values (min left x) (min top y) (max right x) (max bottom y))
+          (values left top right bottom))))
+  (and (>= right left)
+       (prepared-formula-field-geometry left top
+                                        (add1 (- right left))
+                                        (add1 (- bottom top)))))
+
+;; prepared-probe-geometries : pict? exact-nonnegative-integer?
+;;                              -> (or/c (listof prepared-formula-field-geometry?) #f)
+(define (prepared-probe-geometries picture field-count)
+  (cond
+    [(zero? field-count) '()]
+    [(> field-count (length formula-field-probe-colors)) #f]
+    [else
+     (define geometries
+       (for/list ([color (in-list (take formula-field-probe-colors field-count))])
+         (probe-field-geometry picture color)))
+     (and (andmap prepared-formula-field-geometry? geometries) geometries)]))
+
 ;; prepare-dynamic-formula-layouts : calculus-plan? -> immutable-hash?
-;; Captures source-order text/field topology and every authored event boundary
-;; once. A live field reserves the largest observed authored value, rather than
-;; a fixed character count; a later value that exceeds this declaration raises
-;; an explicit native-layout error instead of overlapping its suffix.
+;; Captures source-order topology, backend-derived field rectangles, and route
+;; samples across each authored interval.  Exact values can grow at arbitrary
+;; rational frame times, so later drawing scales a complete field into its
+;; prepared slot instead of treating an endpoint character count as a proof.
 (define (prepare-dynamic-formula-layouts plan width height formula-backend)
   (define lesson (calculus-plan-lesson plan))
   (define profile (calculus-plan-profile plan))
@@ -670,7 +806,13 @@
     (remove-duplicates
      (append (list 'initial 'final)
              (append-map
-              (lambda (event) (list (c-event-start event) (c-event-end event)))
+              (lambda (event)
+                ;; Boundary-only sampling misses ordinary exact values such as
+                ;; 1/2 and internal route knots.  These are preparation hints,
+                ;; not a claimed finite bound on every possible rational.
+                (for/list ([phase (in-list '(0 1/8 1/4 3/8 1/2 5/8 3/4 7/8 1))])
+                  (+ (c-event-start event)
+                     (* phase (- (c-event-end event) (c-event-start event))))))
               (calculus-plan-events plan)))))
   (define snapshots
     (for/list ([time (in-list sample-times)])
@@ -713,15 +855,20 @@
                               (string-length (second fragment))))
                           all-fragments)
                          '())]
-                    [reserve (if (pair? field-lengths) (apply max field-lengths) 0)])
+                    [reserve (max 1 (if (pair? field-lengths) (apply max field-lengths) 0))]
+                    [field-count (count (lambda (kind) (eq? kind 'field)) shape)])
                (if compatible?
                    (let ([skeleton-result
                           (calculus-snapshot-formula-skeleton-tex
                            (first snapshots) target reserve)])
-                     (define skeleton-picts
+                     (define probe-tex
+                       (and (eq? (calculus-result-status skeleton-result) 'defined)
+                            (formula-field-probe-tex
+                             (calculus-result-value skeleton-result) reserve field-count)))
+                     (define state-assets
                        (if (eq? (calculus-result-status skeleton-result) 'defined)
                            (for/hash ([state (in-list '(normal deemphasized highlighted refining))])
-                             (define pict
+                             (define-values (skeleton-pict probe-pict)
                                (parameterize
                                    ([current-render-theme (calculus-profile-data-theme profile)]
                                     [current-render-reference-size (min width height)]
@@ -731,17 +878,36 @@
                                     [current-render-presentation-state state])
                                  (define base-color (formula-row-base-color state))
                                  (define fill (render-style-value 'fill base-color))
-                                 (render-formula-pict
-                                  formula-backend
-                                  (calculus-result-value skeleton-result)
-                                  (formula-row-font-size (min width height))
-                                  width height
-                                  (if (string? fill) fill base-color))))
-                             (values state pict))
+                                 (values
+                                  (render-formula-pict
+                                   formula-backend
+                                   (calculus-result-value skeleton-result)
+                                   (formula-row-font-size (min width height))
+                                   width height
+                                   (if (string? fill) fill base-color))
+                                  (and probe-tex
+                                       (render-formula-pict
+                                        formula-backend probe-tex
+                                        (formula-row-font-size (min width height))
+                                        width height
+                                        ;; The nested probe colors own field
+                                        ;; pixels; this outer color owns only
+                                        ;; held notation during probing.
+                                        (if (string? fill) fill base-color))))))
+                             (values state
+                                     (list skeleton-pict
+                                           (and probe-pict
+                                                (prepared-probe-geometries probe-pict field-count)))))
                            (hash)))
+                     (define skeleton-picts
+                       (for/hash ([(state asset) (in-hash state-assets)])
+                         (values state (first asset))))
+                     (define field-geometries
+                       (for/hash ([(state asset) (in-hash state-assets)])
+                         (values state (second asset))))
                      (hash-set next key
                                (prepared-dynamic-formula-row-data
-                                shape reserve skeleton-picts)))
+                                shape reserve skeleton-picts field-geometries)))
                    next))
              ;; The strict plan boundary already handles invalid performed
              ;; actions. A malformed optional row gets the ordinary readable
@@ -2876,48 +3042,40 @@
              (define skeleton-pict
                (hash-ref (prepared-dynamic-formula-row-data-skeleton-picts dynamic-layout)
                          presentation-state #f))
+             (define field-geometries
+               (hash-ref (prepared-dynamic-formula-row-data-field-geometries dynamic-layout)
+                         presentation-state #f))
              (if (and (list? fragments)
                       (equal? expected-shape
                               (for/list ([fragment (in-list fragments)]) (first fragment))))
-                 (let* ([reserve (prepared-dynamic-formula-row-data-field-reserve dynamic-layout)]
-                        [overflow
-                         (for/or ([fragment (in-list fragments)])
-                           (and (eq? (first fragment) 'field)
-                                (string? (second fragment))
-                                (> (string-length (second fragment)) reserve)))])
-                   (when overflow
-                     (raise-arguments-error
-                      'prepared-lesson->pict
-                      "a live Formula value within its prepared authored-path reservation"
-                      "address" address
-                      "reserved-characters" reserve))
+                 (let ()
                    (define origin-x (+ left 16))
                    (define origin-y (+ top 16 (* 30 index)))
-                   (define reserve-sample (make-string reserve #\0))
-                   (define-values (reserved-width _reserved-height _reserved-descent _reserved-leading)
-                     (send context get-text-extent reserve-sample))
                    ;; The skeleton preserves TeX fractions, powers, radicals,
-                   ;; and held occurrence layout.  It was created during
-                   ;; preparation with an invisible fixed-width field.
+                   ;; and held occurrence layout. Its colored preparation
+                   ;; probe supplied the local field rectangles below.
                    (when skeleton-pict
                      (pict:draw-pict skeleton-pict context origin-x origin-y))
-                   (let loop ([remaining fragments] [cursor origin-x])
-                     (unless (null? remaining)
-                       (define fragment (first remaining))
-                       (define kind (first fragment))
-                       (define fragment-text (second fragment))
-                       ;; A skeleton already owns every held mathematical
-                       ;; fragment.  Only its live numeric field is drawn at
-                       ;; sampling time; readouts without a skeleton retain
-                       ;; their one-field native path.
-                       (when (or (not skeleton-pict) (eq? kind 'field))
-                         (send context draw-text fragment-text cursor origin-y))
-                       (define-values (text-width _text-height _text-descent _text-leading)
-                         (send context get-text-extent fragment-text))
-                       (loop (rest remaining)
-                             (+ cursor (if (eq? kind 'field)
-                                           reserved-width
-                                           text-width))))))
+                   (define next-field 0)
+                   (for ([fragment (in-list fragments)]
+                         #:when (eq? (first fragment) 'field))
+                     (define geometry
+                       (and (list? field-geometries)
+                            (< next-field (length field-geometries))
+                            (list-ref field-geometries next-field)))
+                     (define field-text (second fragment))
+                     (set! next-field (add1 next-field))
+                     (cond
+                       [(prepared-formula-field-geometry? geometry)
+                        (draw-formula-field-in-slot
+                         context field-text geometry origin-x origin-y (min width height))]
+                       [else
+                        ;; Opaque third-party renderers predate the probe
+                        ;; convention and may return no measurable ink. Keep
+                        ;; their former readable one-field fallback rather
+                        ;; than inventing a cursor from flattened TeX text.
+                        (send context set-font font)
+                        (send context draw-text field-text origin-x origin-y)])))
                  ;; A source-shape mismatch is rendered as the one readable
                  ;; diagnostic field. It does not fall back to a late formula
                  ;; backend call or silently move a trusted symbolic suffix.
@@ -2992,9 +3150,15 @@
   (define semantic-target (if private? target node))
   (case (c-node-kind node)
     [(input-reading output-reading coordinate-reading)
-     (calculus-snapshot-ref
-      snapshot
-      (append (if (list? address) address (list address)) (list 'point)))]
+     ;; The root Reading demands its public point, but a selected `(part R
+     ;; 'point)` already *is* that typed projection.  Appending another part
+     ;; would ask for the nonsensical address `(R point point)` and reject a
+     ;; valid visible point before its painter can run.
+     (if (and (c-part? target) (eq? (c-part-name target) 'point))
+         (calculus-snapshot-ref snapshot address)
+         (calculus-snapshot-ref
+          snapshot
+          (append (if (list? address) address (list address)) (list 'point))))]
     [(interval-marker endpoint-marker approach-marker)
      (calculus-snapshot-marker-geometry snapshot semantic-target)]
     [(riemann-rectangles)

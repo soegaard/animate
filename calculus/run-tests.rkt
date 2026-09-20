@@ -81,11 +81,25 @@
 ;;; Gate Execution
 ;;;
 
+;; raco-executable : -> path-string?
+;;   Finds the `raco` paired with this Racket executable.  Keeping this lookup
+;;   in one place prevents the individual RackUnit gates and the documentation
+;;   gate from accidentally using different toolchains.
+(define (raco-executable)
+  (define current-racket (find-system-path 'exec-file))
+  (or (and (path-only current-racket)
+           (build-path (path-only current-racket) "raco"))
+      (find-executable-path "raco")
+      (build-path (current-directory) "raco")))
+
 ;; run-test-module! : path? -> void?
-;;   Invokes a module's RackUnit test submodule in this process.  A test failure
-;; raises normally and therefore gives the runner its nonzero exit status.
+;;   Runs one RackUnit test submodule through `raco test`.  RackUnit's default
+;;   handler reports a failed check to the test log instead of necessarily
+;;   raising through a direct `dynamic-require`; `raco test` converts that log
+;;   to a process status, which this release gate must propagate.
 (define (run-test-module! path)
-  (dynamic-require (list 'submod path 'test) #f))
+  (unless (system* (raco-executable) "test" (path->string path))
+    (error 'calculus/run-tests "test gate failed: ~a" path)))
 
 ;; run-documentation-gate! : -> void?
 ;;   Builds the calculus reference into an owned temporary destination and
@@ -94,16 +108,10 @@
 ;; this gate keeps the calculus API manual independently runnable.
 (define (run-documentation-gate!)
   (define destination (make-temporary-file "animate-calculus-docs-~a" 'directory))
-  (define current-racket (find-system-path 'exec-file))
-  (define raco-executable
-    (or (and (path-only current-racket)
-             (build-path (path-only current-racket) "raco"))
-        (find-executable-path "raco")
-        (build-path (current-directory) "raco")))
   (dynamic-wind
    void
    (lambda ()
-     (unless (system* raco-executable "scribble" "--html" "--dest"
+     (unless (system* (raco-executable) "scribble" "--html" "--dest"
                       (path->string destination) calculus-reference)
        (error 'calculus/run-tests "documentation gate failed")))
    (lambda ()

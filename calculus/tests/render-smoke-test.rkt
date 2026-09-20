@@ -864,6 +864,44 @@
   (initially (show equation))
   (step change-value (vary a #:to 2 #:duration 1)))
 
+;; render-exact-interior-readout : calculus-lesson?
+;; Exact 0→1 motion has the ordinary interior display `a 1/2`; its endpoint
+;; strings are both shorter, so this guards against endpoint-only reservation.
+(define-calculus-lesson render-exact-interior-readout
+  (model [a (parameter 0 #:domain (closed 0 1))]
+         [reading (value-readout a #:label "a" #:format 'exact)])
+  (views [facts (formula-view #:objects (reading))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show reading))
+  (step move (vary a #:to 1 #:easing 'linear #:duration 1)))
+
+;; render-reading-point-projection : calculus-lesson?
+;; A selected public point is already the Reading's demanded geometry; strict
+;; validation must not append a second `point` projection to its address.
+(define-calculus-lesson render-reading-point-projection
+  (model [f (function (x) (* x x))]
+         [G (graph f)]
+         [R (input-reading G 1)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part R 'point)))])
+  (initially (show (part R 'point)))
+  (step retain (pause 1)))
+
+;; render-positioned-live-fields : calculus-lesson?
+;; Exercises the real backend's prepared field probes in numerator,
+;; denominator, exponent, radical, and nested positions at an interior state.
+(define-calculus-lesson render-positioned-live-fields
+  (model [a (parameter 2 #:domain (closed 2 3))]
+         [numerator (formula (/ (value a) 7))]
+         [denominator (formula (/ 1 (value a)))]
+         [exponent (formula (expt 2 (value a)))]
+         [radical (formula (sqrt (value a)))]
+         [nested (formula (/ (expt 2 (value a)) (+ 1 (value a))))])
+  (views [facts (formula-view #:objects (numerator denominator exponent radical nested))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show numerator denominator exponent radical nested))
+  (step move (vary a #:to 3 #:easing 'linear #:duration 1)))
+
 ;; render-invalid-composite-reading : calculus-lesson?
 ;; A reading root is a descriptor, but its demanded point is undefined at the
 ;; graph's declared hole. Strict native preparation must traverse that part.
@@ -1063,6 +1101,43 @@
      'labelled))
    "l undefined")
   (check-true (pict:pict? (prepared-lesson->pict labelled-readout-prepared #:at 'initial)))
+  ;; R3 native boundaries: an ordinary exact interior value must render, and
+  ;; a selected Reading point must validate as that point rather than R.point.
+  (define exact-readout-prepared
+    (prepare-calculus-lesson render-exact-interior-readout #:width 480 #:height 270))
+  (for ([time (in-list (list 'initial 1/2 'final))])
+    (check-true
+     (pict:pict?
+      (prepared-lesson->pict exact-readout-prepared #:at time))))
+  (define selected-reading-prepared
+    (prepare-calculus-lesson render-reading-point-projection #:width 480 #:height 270))
+  (define selected-reading-snapshot
+    (calculus-plan-sample (prepared-lesson-plan selected-reading-prepared) #:at 'initial))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref selected-reading-snapshot '(R point)))
+                (cons 1 1))
+  (check-true
+   (pict:pict?
+    (prepared-lesson->pict selected-reading-prepared #:at 'initial)))
+  ;; A real mathematical backend, rather than the opaque call-count double,
+  ;; supplies the prepared field geometry used by these nested live formulas.
+  (define positioned-fields-prepared
+    (prepare-calculus-lesson render-positioned-live-fields #:width 960 #:height 540))
+  ;; The transparent prepared value exposes no public renderer API, but its
+  ;; immutable layout record lets this native regression assert that the real
+  ;; backend supplied occurrence rectangles rather than falling back to a
+  ;; flattened slash/caret cursor.  Field four is the geometry map in the
+  ;; internal prepared row record.
+  (define positioned-layouts (vector-ref (struct->vector positioned-fields-prepared) 9))
+  (for ([target (in-list '(numerator denominator exponent radical nested))])
+    (define positioned-layout (hash-ref positioned-layouts (list 'facts target)))
+    (define normal-geometries
+      (hash-ref (vector-ref (struct->vector positioned-layout) 4) 'normal))
+    (check-true (and (list? normal-geometries) (pair? normal-geometries))))
+  (for ([time (in-list (list 'initial 1/2 'final))])
+    (check-true
+     (pict:pict?
+      (prepared-lesson->pict positioned-fields-prepared #:at time))))
   ;; Exercise the shared native preparation path at the two standard review
   ;; sizes. These are real in-memory rasters, not dimension-only Pict checks
   ;; and not image/video artifacts retained in the workspace.

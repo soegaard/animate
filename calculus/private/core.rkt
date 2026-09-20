@@ -1244,6 +1244,21 @@
            ;; one-sided slopes so a symmetric cancellation at a corner cannot
            ;; masquerade as a two-sided derivative.
            (let loop ([h initial-step] [remaining 24])
+             ;; A finite difference has no evidence when machine arithmetic
+             ;; rounds one or more requested stencil inputs back to `input`.
+             ;; In particular, shrinking an already collapsed step can only
+             ;; preserve that collapse, so decline the numerical request
+             ;; rather than manufacturing a stable zero slope.
+             (define (usable-stencil? step)
+               (and (finite-real? step)
+                    (positive? step)
+                    (let ([half-step (/ step 2)])
+                      (and (finite-real? half-step)
+                           (positive? half-step)
+                           (not (= (+ input step) input))
+                           (not (= (- input step) input))
+                           (not (= (+ input half-step) input))
+                           (not (= (- input half-step) input))))))
              (define (centered step)
                (result-bind
                 (evaluate-function source (+ input step) environment model computation lexical)
@@ -1264,29 +1279,31 @@
                       (lambda (left)
                         (defined (list (/ (- right center) step)
                                        (/ (- center left) step))))))))))
-             (result-bind
-              (centered h)
-              (lambda (coarse)
-                (result-bind
-                 (centered (/ h 2))
-                 (lambda (fine)
-                   (result-bind
-                    (one-sided (/ h 2))
-                    (lambda (sides)
-                      (define right-slope (first sides))
-                      (define left-slope (second sides))
-                      (define tolerance
-                        (+ absolute
-                           (* relative
-                              (max (abs coarse) (abs fine)
-                                   (abs right-slope) (abs left-slope)))))
-                      (cond
-                        [(and (<= (abs (- fine coarse)) tolerance)
-                              (<= (abs (- right-slope left-slope)) tolerance))
-                         (finite-number-result fine 'numeric #t)]
-                        [(zero? remaining)
-                         (unresolved "numeric derivative did not establish a stable two-sided slope" 'numeric)]
-                        [else (loop (/ h 2) (sub1 remaining))]))))))))])]
+             (if (not (usable-stencil? h))
+                 (unresolved "numeric derivative stencil collapsed at the requested input" 'numeric)
+                 (result-bind
+                  (centered h)
+                  (lambda (coarse)
+                    (result-bind
+                     (centered (/ h 2))
+                     (lambda (fine)
+                       (result-bind
+                        (one-sided (/ h 2))
+                        (lambda (sides)
+                          (define right-slope (first sides))
+                          (define left-slope (second sides))
+                          (define tolerance
+                            (+ absolute
+                               (* relative
+                                  (max (abs coarse) (abs fine)
+                                       (abs right-slope) (abs left-slope)))))
+                          (cond
+                            [(and (<= (abs (- fine coarse)) tolerance)
+                                  (<= (abs (- right-slope left-slope)) tolerance))
+                             (finite-number-result fine 'numeric #t)]
+                            [(zero? remaining)
+                             (unresolved "numeric derivative did not establish a stable two-sided slope" 'numeric)]
+                            [else (loop (/ h 2) (sub1 remaining))])))))))))])]
        [else
         (define source-function (lookup-function source))
         (if (c-function? source-function)
@@ -2529,6 +2546,97 @@
                      (min a b) (max a b) computation)])]
                 [_ (undefined "region bounds must be scalar values")])))]))))
 
+;; resolved-boundary-expressions : list? hash? calculus-model?
+;;                                  calculus-computation? -> calculus-result?
+;;   Evaluates semantic boundary expressions shared by integration and region
+;; topology. A renderer must never invent a fill strip when a declared boundary
+;; itself cannot be resolved.
+(define (resolved-boundary-expressions expressions environment model computation)
+  (let loop ([expressions expressions] [values '()])
+    (cond
+      [(null? expressions) (defined (immutable-list-copy (reverse values)))]
+      [else
+       (result-bind
+        (eval-domain-number (first expressions) environment model computation)
+        (lambda (value) (loop (rest expressions) (cons value values))))])))
+
+;; resolved-domain-boundaries : c-domain? hash? calculus-model?
+;;                              calculus-computation? -> calculus-result?
+(define (resolved-domain-boundaries domain environment model computation)
+  (resolved-boundary-expressions (domain-boundary-expressions domain)
+                                 environment model computation))
+
+;; piecewise-predicate-boundaries : any/c symbol? -> list?
+;;   Extracts only explicit input thresholds from a held piecewise predicate.
+;; This is topology evidence, not a numerical attempt to discover an arbitrary
+;; discontinuity from rendered samples. Compound predicates retain every
+;; explicit comparison/domain boundary they contain.
+(define (piecewise-predicate-boundaries predicate variable)
+  (define (input-variable? value)
+    (and (c-expression? value)
+         (eq? (c-expression-op value) 'var)
+         (= (length (c-expression-arguments value)) 1)
+         (eq? (first (c-expression-arguments value)) variable)))
+  (cond
+    [(not (c-expression? predicate)) '()]
+    [else
+     (define op (c-expression-op predicate))
+     (define arguments (c-expression-arguments predicate))
+     (case op
+       [(= < <= > >=)
+        (if (= (length arguments) 2)
+            (cond [(input-variable? (first arguments)) (list (second arguments))]
+                  [(input-variable? (second arguments)) (list (first arguments))]
+                  [else '()])
+            '())]
+       [(in-domain?)
+        (if (and (= (length arguments) 2) (input-variable? (first arguments)))
+            (domain-boundary-expressions (second arguments))
+            '())]
+       [else (append-map (lambda (item)
+                            (piecewise-predicate-boundaries item variable))
+                          arguments)])]))
+
+;; function-piecewise-boundaries : semantic-value? -> list?
+;;   Recovers declared branch thresholds through a restriction wrapper. Other
+;; function combinators do not gain inferred breaks merely because a renderer
+;; happens to observe a steep local segment.
+(define (function-piecewise-boundaries function)
+  (define source (lookup-function function))
+  (cond
+    [(c-piecewise? source)
+     (append-map
+      (lambda (branch)
+        (piecewise-predicate-boundaries (car branch) (c-piecewise-variable source)))
+      (c-piecewise-branches source))]
+    [(and (c-object? source) (eq? (c-object-kind source) 'restrict-function))
+     (function-piecewise-boundaries (first (c-object-arguments source)))]
+    [else '()]))
+
+;; region-function-topology : calculus-snapshot? semantic-value? -> calculus-result?
+;;   Supplies explicit split evidence for a graph source: declared domain
+;; boundaries, held piecewise thresholds, and provider discontinuities. Domain
+;; boundaries become evaluated samples (and therefore #f when excluded); a
+;; piecewise/provider break is always an intentional strip separator even if a
+;; selected branch happens to return a finite value at that exact input.
+(define (region-function-topology snapshot function)
+  (define environment (calculus-snapshot-values snapshot))
+  (define model (calculus-snapshot-model snapshot))
+  (define computation (calculus-snapshot-computation snapshot))
+  (result-bind
+   (resolved-domain-boundaries (function-domain function) environment model computation)
+   (lambda (boundaries)
+     (result-bind
+      (resolved-boundary-expressions (function-piecewise-boundaries function)
+                                     environment model computation)
+      (lambda (piecewise-breaks)
+        (result-bind
+         (calculus-snapshot-function-breaks snapshot function)
+         (lambda (provider-breaks)
+           (defined
+            (list (append boundaries piecewise-breaks)
+                  (append piecewise-breaks provider-breaks))))))))))
+
 ;; calculus-snapshot-region-samples : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Provides a fixed, snapshot-derived sequence of (x y-left y-right) samples
 ;;   for one region. #f samples explicitly preserve mathematical gaps for the
@@ -2572,20 +2680,64 @@
                           (define start (min a b))
                           (define end (max a b))
                           (define sample-count 120)
-                          (define samples
-                            (for/list ((index (in-range (add1 sample-count))))
-                              (define x (+ start (* (- end start) (/ index sample-count))))
-                              (define left (evaluate-graph left-graph x environment model computation (hash)))
-                              (define right
-                                (if right-graph
-                                    (evaluate-graph right-graph x environment model computation (hash))
-                                    (defined 0)))
-                              (and (eq? (calculus-result-status left) 'defined)
-                                   (eq? (calculus-result-status right) 'defined)
-                                   (finite-real? (calculus-result-value left))
-                                   (finite-real? (calculus-result-value right))
-                                   (list x (calculus-result-value left) (calculus-result-value right)))))
-                          (defined (immutable-list-copy samples)))))))))))))))
+                          (result-bind
+                           (region-function-topology snapshot left-function)
+                           (lambda (left-topology)
+                             (result-bind
+                              (if right-function
+                                  (region-function-topology snapshot right-function)
+                                  (defined (list '() '())))
+                              (lambda (right-topology)
+                                (define semantic-boundaries
+                                  (sort
+                                   (remove-duplicates
+                                    (filter (lambda (value)
+                                              (and (finite-real? value)
+                                                   (<= start value end)))
+                                            (append (first left-topology)
+                                                    (first right-topology))))
+                                   <))
+                                ;; Insert both boundary values and one point in
+                                ;; every declared interval between them.  The
+                                ;; midpoint makes a narrow union gap explicit
+                                ;; even when a fixed uniform grid would skip it.
+                                (define topology-inputs
+                                  (append
+                                   semantic-boundaries
+                                   (for/list ([left-boundary (in-list semantic-boundaries)]
+                                              [right-boundary (in-list (if (pair? semantic-boundaries)
+                                                                           (rest semantic-boundaries)
+                                                                           '()))]
+                                              #:when (< left-boundary right-boundary))
+                                     (/ (+ left-boundary right-boundary) 2))))
+                                (define forced-breaks
+                                  (remove-duplicates
+                                   (filter (lambda (value) (and (finite-real? value)
+                                                                 (<= start value end)))
+                                           (append (second left-topology)
+                                                   (second right-topology)))))
+                                (define inputs
+                                  (sort
+                                   (remove-duplicates
+                                    (append topology-inputs
+                                            (for/list ([index (in-range (add1 sample-count))])
+                                              (+ start (* (- end start) (/ index sample-count))))))
+                                   <))
+                                (define samples
+                                  (for/list ([x (in-list inputs)])
+                                    (if (member x forced-breaks)
+                                        #f
+                                        (let ([left (evaluate-graph left-graph x environment model computation (hash))]
+                                              [right (if right-graph
+                                                         (evaluate-graph right-graph x environment model computation (hash))
+                                                         (defined 0))])
+                                          (and (eq? (calculus-result-status left) 'defined)
+                                               (eq? (calculus-result-status right) 'defined)
+                                               (finite-real? (calculus-result-value left))
+                                               (finite-real? (calculus-result-value right))
+                                               (list x (calculus-result-value left)
+                                                     (calculus-result-value right)))))))
+                                (defined (immutable-list-copy samples)))))))))))))))))))
 
 (define (eval-sequence-value sequence index environment model computation lexical)
   (define raw (node-raw sequence))
@@ -4158,14 +4310,17 @@
 ;;   Enforces real-valued interpolation and valid paths during pure sampling.
 (define (valid-continuous-parameter-target? parameter start target environment model computation)
   (and (eq? (c-param-spec-kind (c-node-data parameter)) 'real)
+       (finite-real? start)
        (finite-real? target)
-       (let ([inside? (domain-contains? (c-param-spec-domain (c-node-data parameter))
-                                        target environment model computation)])
-         (and (eq? (calculus-result-status inside?) 'defined)
-              (calculus-result-value inside?)
-              (not (domain-path-crosses-exclusion?
-                    (c-param-spec-domain (c-node-data parameter)) start target
-                    environment model computation))))))
+       ;; A continuous action owns the entire closed segment, not merely its
+       ;; endpoint.  Reuse the domain proof used by definite integration so
+       ;; unions, open endpoints, punctures, exclusions, and intersections
+       ;; share one semantic rule.
+       (let ([coverage
+              (domain-path-covered? (c-param-spec-domain (c-node-data parameter))
+                                    start target environment model computation (hash))])
+         (and (eq? (calculus-result-status coverage) 'defined)
+              (calculus-result-value coverage)))))
 
 ;; valid-parameter-assignment? : c-node? any/c hash? calculus-model? calculus-computation? -> boolean?
 ;;   Checks a discrete assignment with the same kind/domain policy as planning.
@@ -5508,13 +5663,22 @@
 ;;   different semantic roles, and every ordinary occurrence is traversed.
 (define (formula-held-text expression snapshot environment model)
   (define computation (and snapshot (calculus-snapshot-computation snapshot)))
-  (define (render-value target)
+  ;; An exact nonintegral rational is a fraction tree, not an atomic sequence
+  ;; of characters.  Preserve its binding strength wherever a literal can
+  ;; occur, especially as the base of a power.
+  (define (render-number value outer-precedence)
+    (cond
+      [(and (exact? value) (rational? value) (not (integer? value)))
+       (define fraction (format "~a/~a" (numerator value) (denominator value)))
+       (if (< 20 outer-precedence) (format "(~a)" fraction) fraction)]
+      [else (number->string value)]))
+  (define (render-value target [outer-precedence 0])
     (if (not snapshot)
         (formula-symbol target)
         (let ([result (eval-raw target environment model computation)])
           (if (eq? (calculus-result-status result) 'defined)
               (string-append (if (calculus-result-approximate? result) "≈" "")
-                             (formula-number-text (calculus-result-value result) 'exact #f))
+                             (render-number (calculus-result-value result) outer-precedence))
               "undefined"))))
   ;; `outer-precedence` preserves the held tree's mathematical grouping in
   ;; plain inspection text. The native adapter receives a separately prepared
@@ -5539,9 +5703,10 @@
           (parenthesize (string-join (map (lambda (value) (render value 20)) args) " · ") 20)]
          [(/)
           (parenthesize
-           (if (= (length args) 2)
-               (format "(~a)/(~a)" (render (first args)) (render (second args)))
-               (string-join (map render args) " / "))
+           (cond [(= (length args) 1) (format "1/(~a)" (render (first args)))]
+                 [(= (length args) 2)
+                  (format "(~a)/(~a)" (render (first args)) (render (second args)))]
+                 [else (string-join (map render args) " / ")])
            20)]
          [(expt)
           (parenthesize
@@ -5559,11 +5724,11 @@
       [(and (c-object? item) (eq? (c-object-kind item) 'ref))
        (formula-symbol (first (c-object-arguments item)))]
       [(and (c-object? item) (eq? (c-object-kind item) 'value))
-       (render-value (first (c-object-arguments item)))]
+       (render-value (first (c-object-arguments item)) outer-precedence)]
       [(or (c-node? item) (c-part? item)) (formula-symbol item)]
       [(string? item) item]
       [(symbol? item) (symbol->string item)]
-      [(number? item) (number->string item)]
+      [(number? item) (render-number item outer-precedence)]
       [else "?"]))
   (render expression))
 
@@ -5595,14 +5760,26 @@
 ;;   tree, so display syntax cannot change the taught expression's meaning.
 (define (formula-held-tex expression snapshot environment model)
   (define computation (and snapshot (calculus-snapshot-computation snapshot)))
-  (define (render-value target)
+  ;; TeX needs the same structural rational literal as inspection text.  A
+  ;; slash string is not an atom: `3/2^{2}` reads as 3 divided by 2 squared.
+  (define (render-number value outer-precedence)
+    (define text
+      (cond [(and (exact? value) (rational? value) (not (integer? value)))
+             (format "\\frac{~a}{~a}" (numerator value) (denominator value))]
+            [else (number->string value)]))
+    (if (and (negative? value) (> outer-precedence 30))
+        (format "\\left(~a\\right)" text)
+        (if (and (exact? value) (rational? value) (not (integer? value))
+                 (> outer-precedence 30))
+            (format "\\left(~a\\right)" text)
+            text)))
+  (define (render-value target [outer-precedence 0])
     (if (not snapshot)
         (formula-tex-atom (formula-symbol target))
         (let ([result (eval-raw target environment model computation)])
           (if (eq? (calculus-result-status result) 'defined)
               (string-append (if (calculus-result-approximate? result) "\\approx " "")
-                             (formula-tex-atom
-                              (formula-number-text (calculus-result-value result) 'exact #f)))
+                             (render-number (calculus-result-value result) outer-precedence))
               "\\mathrm{undefined}"))))
   ;; TeX braces establish parser grouping but are not visible mathematical
   ;; delimiters.  This renderer carries precedence through the held tree and
@@ -5611,11 +5788,6 @@
   (define (render item [outer-precedence 0])
     (define (parenthesize text precedence)
       (if (< precedence outer-precedence)
-          (format "\\left(~a\\right)" text)
-          text))
-    (define (render-negative-number value)
-      (define text (number->string value))
-      (if (and (negative? value) (> outer-precedence 30))
           (format "\\left(~a\\right)" text)
           text))
     (cond
@@ -5659,11 +5831,11 @@
       [(and (c-object? item) (eq? (c-object-kind item) 'ref))
        (formula-tex-atom (formula-symbol (first (c-object-arguments item))))]
       [(and (c-object? item) (eq? (c-object-kind item) 'value))
-       (render-value (first (c-object-arguments item)))]
+       (render-value (first (c-object-arguments item)) outer-precedence)]
       [(or (c-node? item) (c-part? item)) (formula-tex-atom (formula-symbol item))]
       [(string? item) (formula-tex-atom item)]
       [(symbol? item) (formula-tex-atom (symbol->string item))]
-      [(number? item) (render-negative-number item)]
+      [(number? item) (render-number item outer-precedence)]
       [else "?"]))
   (render expression))
 
@@ -5827,7 +5999,7 @@
 ;;                                           exact-nonnegative-integer?
 ;;                                        -> calculus-result?
 ;; Produces one prepared mathematical skeleton for a live Formula.  Each
-;; `(value ...)` occurrence becomes an explicitly sized invisible TeX nucleus;
+;; `(value ...)` occurrence becomes an explicitly sized invisible TeX rule;
 ;; fractions, powers, radicals, and every held glyph therefore stay on the
 ;; configured formula backend while native drawing updates only the field.
 (define (calculus-snapshot-formula-skeleton-tex snapshot target reserve)
@@ -5843,7 +6015,13 @@
     [(not (and (c-object? raw) (eq? (c-object-kind raw) 'formula)))
      (unresolved "Formula skeleton requires a Formula row")]
     [else
-     (define placeholder (format "\\phantom{~a}" (make-string reserve #\0)))
+     ;; A rule gives the native adapter a stable, style-sensitive rectangle to
+     ;; probe during preparation.  Unlike a sequence of zero glyphs, its
+     ;; advance and height are explicit in TeX units and therefore stay valid
+     ;; inside a denominator, exponent, or radical.
+     (define field-width (max 1 reserve))
+     (define placeholder
+       (format "\\phantom{\\rule{~aem}{1.2ex}}" field-width))
      (define (replace-live-leaves item)
        (cond
          [(c-expression? item)

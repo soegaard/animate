@@ -17,6 +17,7 @@
                   calculus-snapshot-formula-tex
                   calculus-snapshot-formula-fragments
                   calculus-snapshot-formula-skeleton-tex
+                  calculus-snapshot-region-samples
                   calculus-snapshot-motion-state
                   calculus-snapshot-presentation-state))
 
@@ -295,6 +296,76 @@
     (step move (vary a #:via (list 2) #:to 1 #:duration 1)))
   (check-true (pair? (calculus-plan-diagnostics
                       (compile-calculus-lesson invalid-route #:profile audit-profile))))
+  ;; R3: numerical agreement is invalid when all requested floating-point
+  ;; stencil inputs collapse to the same large input.
+  (define-calculus-model collapsed-numeric-stencil
+    (model [identity (function (x) x)]
+           [numeric-identity (derivative-function identity #:method 'numeric #:step 1e-5)]
+           [answer (value-at numeric-identity 1e20)]))
+  (check-equal? (calculus-result-status (model-result collapsed-numeric-stencil 'answer))
+                'unresolved)
+  ;; Rational literals and unary division retain their held operation trees in
+  ;; each public inspection spelling.
+  (define-calculus-model rational-notation
+    (model [power (formula (expt 3/2 2))]
+           [reciprocal (formula (/ 2))]))
+  (define rational-snapshot (calculus-model-at rational-notation))
+  (check-equal?
+   (calculus-result-value (calculus-snapshot-formula-tex rational-snapshot 'power))
+   "\\left(\\frac{3}{2}\\right)^{2}")
+  (check-equal?
+   (calculus-result-value (calculus-snapshot-formula-text rational-snapshot 'reciprocal))
+   "1/(2)")
+  ;; Valid endpoints do not license a continuous route through an explicitly
+  ;; excluded union gap or puncture.
+  (define-calculus-lesson union-gap-route
+    (model [a (parameter -2 #:domain (domain-union (closed -2 -1) (closed 1 2)))])
+    (views [axis (number-line-view #:range (closed -2 2) #:objects (a))])
+    (initially (show a))
+    (step move (vary a #:to 2 #:easing 'linear #:duration 1)))
+  (define-calculus-lesson punctured-route
+    (model [a (parameter -1 #:domain (punctured-neighborhood 0 2))])
+    (views [axis (number-line-view #:range (closed -2 2) #:objects (a))])
+    (initially (show a))
+    (step move (vary a #:to 1 #:easing 'linear #:duration 1)))
+  (check-true (pair? (calculus-plan-diagnostics
+                      (compile-calculus-lesson union-gap-route #:profile audit-profile))))
+  (check-true (pair? (calculus-plan-diagnostics
+                      (compile-calculus-lesson punctured-route #:profile audit-profile))))
+  ;; Region fill inputs carry declared topology even when a pole is not on the
+  ;; original fixed sampling grid; no adjacent drawable pair may straddle it.
+  (define-calculus-model off-grid-region-pole
+    (model [f (function (x) (/ 1 (- x 1/7))
+                       #:domain (domain-except real-line 1/7))]
+           [G (graph f)] [R (region-under G #:from 0 #:to 1)]))
+  (define region-snapshot (calculus-model-at off-grid-region-pole))
+  (define region-descriptor
+    (calculus-result-value (calculus-snapshot-ref region-snapshot 'R)))
+  (define region-samples
+    (calculus-result-value
+     (calculus-snapshot-region-samples region-snapshot region-descriptor)))
+  (check-false
+   (for/or ([left (in-list region-samples)] [right (in-list (cdr region-samples))])
+     (and (list? left) (pair? left) (list? right) (pair? right)
+          (< (car left) 1/7 (car right)))))
+  ;; Held piecewise thresholds are the same kind of topology evidence: a
+  ;; non-grid-aligned jump is a separator for a filled region, not an affine
+  ;; zero crossing between two unrelated branches.
+  (define-calculus-model off-grid-piecewise-jump
+    (model [f (piecewise-function (x)
+                [(< x 1/7) -1]
+                [else 1])]
+           [G (graph f)] [R (region-under G #:from 0 #:to 1)]))
+  (define jump-snapshot (calculus-model-at off-grid-piecewise-jump))
+  (define jump-descriptor
+    (calculus-result-value (calculus-snapshot-ref jump-snapshot 'R)))
+  (define jump-samples
+    (calculus-result-value
+     (calculus-snapshot-region-samples jump-snapshot jump-descriptor)))
+  (check-false
+   (for/or ([left (in-list jump-samples)] [right (in-list (cdr jump-samples))])
+     (and (list? left) (pair? left) (list? right) (pair? right)
+          (< (car left) 1/7 (car right)))))
   ;; Dynamic leaves reserve a field inside a prepared TeX skeleton; converting
   ;; one numeric occurrence never flattens the surrounding fraction, power,
   ;; or radical into ordinary slash/caret text.
