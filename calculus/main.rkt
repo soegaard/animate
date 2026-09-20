@@ -161,9 +161,10 @@
               vary set-parameter approach trace refine limit-transition focus restore-view together compare pause
               checkpoint explain)))
 
-  ;; lower-calculus-expression : syntax? (listof symbol?) (listof symbol?) -> syntax?
+  ;; lower-calculus-expression : syntax? (listof symbol?) (listof symbol?) syntax? -> syntax?
   ;;   Recursively lowers contextual source syntax before ordinary Racket expansion.
-  (define (lower-calculus-expression expression [bound-variables '()] [view-names '()])
+  (define (lower-calculus-expression expression [bound-variables '()] [view-names '()]
+                                     [model-reference #f])
     (cond
       [(identifier? expression)
        (define name (syntax-e expression))
@@ -171,6 +172,7 @@
              [(eq? name 'real-line) #'calculus-real-line]
              [(eq? name 'pi) #'calculus-pi]
              [(eq? name 'e) #'calculus-e]
+             [model-reference #`(current-model-node-ref '#,name)]
              [else expression])]
       [else
        (define forms (syntax->list expression))
@@ -183,25 +185,27 @@
             (raise-syntax-error 'external "expects exactly one ordinary Racket expression" expression))
           (second forms)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'function))
-          (lower-function-expression expression bound-variables)]
+          (lower-function-expression expression bound-variables model-reference)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'piecewise-function))
-          (lower-piecewise-expression expression bound-variables)]
+          (lower-piecewise-expression expression bound-variables model-reference)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'sequence))
-          (lower-sequence-expression expression bound-variables)]
+          (lower-sequence-expression expression bound-variables model-reference)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'iteration-map))
-          (lower-iteration-map-expression expression bound-variables)]
+          (lower-iteration-map-expression expression bound-variables model-reference)]
          [(and (identifier? (car forms)) (eq? (syntax-e (car forms)) 'step))
-          (lower-step-expression expression bound-variables view-names)]
+          (lower-step-expression expression bound-variables view-names model-reference)]
          [(and (identifier? (car forms)) (calculus-contextual-name? (syntax-e (car forms))))
-          (lower-generic-expression expression bound-variables view-names)]
-         [else #`(#,(lower-calculus-expression (car forms) bound-variables view-names)
-                 #,@(map (lambda (form) (lower-calculus-expression form bound-variables view-names)) (cdr forms)))])]))
+          (lower-generic-expression expression bound-variables view-names model-reference)]
+         [else #`(#,(lower-calculus-expression (car forms) bound-variables view-names model-reference)
+                 #,@(map (lambda (form)
+                            (lower-calculus-expression form bound-variables view-names model-reference))
+                          (cdr forms)))])]))
 
   ;; lower-generic-expression : syntax? (listof symbol?) -> syntax?
   ;;   Builds a generic descriptor while recursively lowering operands and options.
   ;; lower-snapshot-values : syntax? (listof symbol?) -> syntax?
   ;;   Preserves the documented #:values ([parameter constant] ...) syntax.
-  (define (lower-snapshot-values expression bound-variables)
+  (define (lower-snapshot-values expression bound-variables [model-reference #f])
     (define bindings (syntax->list expression))
     (unless bindings
       (raise-syntax-error 'snapshot-of "#:values expects a parenthesized binding list" expression))
@@ -210,20 +214,31 @@
             (define pieces (syntax->list binding))
             (unless (and pieces (= (length pieces) 2) (identifier? (first pieces)))
               (raise-syntax-error 'snapshot-of "#:values expects [parameter constant]" binding))
-            #`(cons #,(lower-calculus-expression (first pieces) bound-variables)
-                    #,(lower-calculus-expression (second pieces) bound-variables)))))
+            #`(cons #,(lower-calculus-expression (first pieces) bound-variables '() model-reference)
+                    #,(lower-calculus-expression (second pieces) bound-variables '() model-reference)))))
 
-  (define (lower-generic-expression expression bound-variables [view-names '()])
+  (define (lower-generic-expression expression bound-variables [view-names '()] [model-reference #f])
     (define forms (syntax->list expression))
     (define name (syntax-e (car forms)))
     (define-values (positionals options) (split-calculus-arguments (cdr forms) name))
     (define lowered-positionals
       (map (lambda (form)
-             (if (and (memq name '(focus restore-view))
-                      (identifier? form)
-                      (member (syntax-e form) view-names))
-                 #`(make-view-reference '#,(syntax-e form))
-                 (lower-calculus-expression form bound-variables view-names)))
+             (cond
+               [(and (eq? name 'checkpoint) (identifier? form))
+                #`'#,(syntax-e form)]
+               [(and (memq name '(focus restore-view))
+                     (identifier? form)
+                     (member (syntax-e form) view-names))
+                #`(make-view-reference '#,(syntax-e form))]
+               [(and (eq? name 'in-view) (= (length positionals) 2)
+                     (eq? form (first positionals)) (identifier? form))
+                (unless (member (syntax-e form) view-names)
+                  (raise-syntax-error 'in-view "requires a declared view name" form))
+                #`'#,(syntax-e form)]
+               [(and (memq name '(show hide)) (identifier? form)
+                     (member (syntax-e form) view-names))
+                #`(make-view-reference '#,(syntax-e form))]
+               [else (lower-calculus-expression form bound-variables view-names model-reference)]))
            positionals))
     (define option-forms
       (apply append
@@ -235,16 +250,18 @@
                    (define objects (syntax->list (cdr option)))
                    (unless objects
                      (raise-syntax-error name "#:objects expects a parenthesized list" (cdr option)))
-                   #`(list #,@(map (lambda (item) (lower-calculus-expression item bound-variables view-names)) objects))]
+                   #`(list #,@(map (lambda (item)
+                                     (lower-calculus-expression item bound-variables view-names model-reference))
+                                   objects))]
                    [(and (eq? name 'snapshot-of) (eq? (car option) 'values))
-                    (lower-snapshot-values (cdr option) bound-variables)]
-                   [else (lower-calculus-expression (cdr option) bound-variables view-names)]))
+                    (lower-snapshot-values (cdr option) bound-variables model-reference)]
+                   [else (lower-calculus-expression (cdr option) bound-variables view-names model-reference)]))
                (list #`'#,(car option) lowered-value))))
     #`(make-generic '#,name (list #,@lowered-positionals) (hash #,@option-forms)))
 
   ;; lower-function-expression : syntax? (listof symbol?) -> syntax?
   ;;   Builds a held function with explicit lexical mathematical-variable substitution.
-  (define (lower-function-expression expression bound-variables)
+  (define (lower-function-expression expression bound-variables [model-reference #f])
     (define forms (syntax->list expression))
     (unless (>= (length forms) 3)
       (raise-syntax-error 'function "expected a bound variable and body" expression))
@@ -255,14 +272,16 @@
     (define-values (positionals options) (split-calculus-arguments (drop forms 3) 'function))
     (unless (null? positionals)
       (raise-syntax-error 'function "unexpected positional argument" (first positionals)))
-    (define body (lower-calculus-expression (third forms) (cons variable bound-variables)))
-    (define domain (lower-calculus-expression (option-value options 'domain #'calculus-real-line) bound-variables))
-    (define label (lower-calculus-expression (option-value options 'label #'#f) bound-variables))
+    (define body (lower-calculus-expression (third forms) (cons variable bound-variables) '() model-reference))
+    (define domain (lower-calculus-expression (option-value options 'domain #'calculus-real-line)
+                                              bound-variables '() model-reference))
+    (define label (lower-calculus-expression (option-value options 'label #'#f)
+                                             bound-variables '() model-reference))
     #`(make-held-function '#,variable #,body #:domain #,domain #:label #,label))
 
   ;; lower-piecewise-expression : syntax? (listof symbol?) -> syntax?
   ;;   Preserves source branch order and lowers each condition under the bound variable.
-  (define (lower-piecewise-expression expression bound-variables)
+  (define (lower-piecewise-expression expression bound-variables [model-reference #f])
     (define forms (syntax->list expression))
     (define binder (and (>= (length forms) 2) (syntax->list (second forms))))
     (unless (and binder (= (length binder) 1) (identifier? (first binder)))
@@ -276,17 +295,23 @@
         (unless (and pieces (= (length pieces) 2))
           (raise-syntax-error 'piecewise-function "expected [condition expression]" branch))
         (if (and (identifier? (first pieces)) (eq? (syntax-e (first pieces)) 'else))
-            (begin (set! else-expression (lower-calculus-expression (second pieces) (cons variable bound-variables))) result)
+            (begin (set! else-expression (lower-calculus-expression (second pieces)
+                                                                  (cons variable bound-variables)
+                                                                  '() model-reference)) result)
             (append result
-                    (list #`(cons #,(lower-calculus-expression (first pieces) (cons variable bound-variables))
-                                  #,(lower-calculus-expression (second pieces) (cons variable bound-variables))))))))
-    (define domain (lower-calculus-expression (option-value options 'domain #'calculus-real-line) bound-variables))
-    (define label (lower-calculus-expression (option-value options 'label #'#f) bound-variables))
+                    (list #`(cons #,(lower-calculus-expression (first pieces) (cons variable bound-variables)
+                                                               '() model-reference)
+                                  #,(lower-calculus-expression (second pieces) (cons variable bound-variables)
+                                                               '() model-reference)))))))
+    (define domain (lower-calculus-expression (option-value options 'domain #'calculus-real-line)
+                                              bound-variables '() model-reference))
+    (define label (lower-calculus-expression (option-value options 'label #'#f)
+                                             bound-variables '() model-reference))
     #`(make-piecewise-function '#,variable (list #,@branches) #,else-expression #:domain #,domain #:label #,label))
 
   ;; lower-sequence-expression : syntax? (listof symbol?) -> syntax?
   ;;   Holds the integer index as a lexical mathematical variable.
-  (define (lower-sequence-expression expression bound-variables)
+  (define (lower-sequence-expression expression bound-variables [model-reference #f])
     (define forms (syntax->list expression))
     (unless (>= (length forms) 3)
       (raise-syntax-error 'sequence "expected an index binder and expression" expression))
@@ -300,14 +325,14 @@
     #`(make-generic 'sequence
                     (list '#,variable
                           #,(lower-calculus-expression (third forms)
-                                                       (cons variable bound-variables)))
+                                                       (cons variable bound-variables) '() model-reference))
                     (hash 'from
                           #,(lower-calculus-expression (option-value options 'from #'0)
-                                                       bound-variables))))
+                                                       bound-variables '() model-reference))))
 
   ;; lower-iteration-map-expression : syntax? (listof symbol?) -> syntax?
   ;;   Holds an iteration variable while retaining the finite update policy.
-  (define (lower-iteration-map-expression expression bound-variables)
+  (define (lower-iteration-map-expression expression bound-variables [model-reference #f])
     (define forms (syntax->list expression))
     (unless (>= (length forms) 3)
       (raise-syntax-error 'iteration-map "expected a state binder and expression" expression))
@@ -321,30 +346,34 @@
     #`(make-generic 'iteration-map
                     (list '#,variable
                           #,(lower-calculus-expression (third forms)
-                                                       (cons variable bound-variables)))
+                                                       (cons variable bound-variables) '() model-reference))
                     (hash 'start
                           #,(lower-calculus-expression (option-value options 'start #'#f)
-                                                       bound-variables)
+                                                       bound-variables '() model-reference)
                           'steps
                           #,(lower-calculus-expression (option-value options 'steps #'#f)
-                                                       bound-variables))))
+                                                       bound-variables '() model-reference))))
 
   ;; lower-step-expression : syntax? (listof symbol?) -> syntax?
   ;;   Turns a source step identifier into data and recursively lowers action commands.
-  (define (lower-step-expression expression bound-variables [view-names '()])
+  (define (lower-step-expression expression bound-variables [view-names '()] [model-reference #f])
     (define forms (syntax->list expression))
     (unless (and (>= (length forms) 2) (identifier? (second forms)))
       (raise-syntax-error 'step "expected a step identifier" expression))
     (define-values (commands options) (split-calculus-arguments (drop forms 2) 'step))
     (define id (syntax-e (second forms)))
-    (define (option name) (lower-calculus-expression (option-value options name #'#f) bound-variables))
+    (define (option name)
+      (lower-calculus-expression (option-value options name #'#f)
+                                 bound-variables view-names model-reference))
     #`(make-step '#,id #:say #,(option 'say) #:read-delay #,(option 'read-delay)
                  #:duration #,(option 'duration) #:pause #,(option 'pause)
-                 #,@(map (lambda (command) (lower-calculus-expression command bound-variables view-names)) commands)))
+                 #,@(map (lambda (command)
+                            (lower-calculus-expression command bound-variables view-names model-reference))
+                          commands)))
 
   ;; lower-views-clause : syntax? (listof symbol?) -> syntax?
   ;;   Assigns declared view names to their independently lowered view descriptors.
-  (define (lower-views-clause clause bound-variables)
+  (define (lower-views-clause clause bound-variables [model-reference #f])
     (define bindings (cdr (syntax->list clause)))
     (when (null? bindings) (raise-syntax-error 'views "requires at least one view" clause))
     #`(list
@@ -353,11 +382,14 @@
             (unless (and pieces (= (length pieces) 2) (identifier? (first pieces)))
               (raise-syntax-error 'views "expected [identifier view-expression]" binding))
             (define name (syntax-e (first pieces)))
-            #`(cons '#,name (with-view-name #,(lower-calculus-expression (second pieces) bound-variables) '#,name)))))
+            #`(cons '#,name
+                    (with-view-name #,(lower-calculus-expression (second pieces)
+                                                               bound-variables '() model-reference)
+                                    '#,name)))))
 
   ;; lower-roles-clause : syntax? (listof symbol?) -> syntax?
   ;;   Preserves the role declaration's source ordering.
-  (define (lower-roles-clause clause bound-variables)
+  (define (lower-roles-clause clause bound-variables [model-reference #f])
     (if (not clause)
         #'null
         #`(list
@@ -365,20 +397,23 @@
                 (define pieces (syntax->list assignment))
                 (unless (and pieces (= (length pieces) 2))
                   (raise-syntax-error 'roles "expected [target role-symbol]" assignment))
-                #`(cons #,(lower-calculus-expression (first pieces) bound-variables)
-                        #,(lower-calculus-expression (second pieces) bound-variables))))))
+                #`(cons #,(lower-calculus-expression (first pieces)
+                                                     bound-variables '() model-reference)
+                        #,(lower-calculus-expression (second pieces)
+                                                     bound-variables '() model-reference))))))
 
   ;; lower-command-clause : syntax? (listof symbol?) -> syntax?
   ;;   Lowers an initially clause's ordered persistent commands.
-  (define (lower-command-clause clause bound-variables)
+  (define (lower-command-clause clause bound-variables [model-reference #f])
     (if clause
-        #`(list #,@(map (lambda (command) (lower-calculus-expression command bound-variables))
+        #`(list #,@(map (lambda (command)
+                          (lower-calculus-expression command bound-variables '() model-reference))
                          (cdr (syntax->list clause))))
         #'null))
 
   ;; lower-timing-clause : syntax? (listof symbol?) -> syntax?
   ;;   Converts timing fields to constructor keywords while preserving expressions.
-  (define (lower-timing-clause clause bound-variables)
+  (define (lower-timing-clause clause bound-variables [model-reference #f])
     (if (not clause)
         #'#f
         (let ([arguments
@@ -389,7 +424,8 @@
                           (raise-syntax-error 'timing "expected [timing-field seconds]" field))
                         (list (datum->syntax (first pieces)
                                              (string->keyword (symbol->string (syntax-e (first pieces)))))
-                              (lower-calculus-expression (second pieces) bound-variables))))])
+                              (lower-calculus-expression (second pieces)
+                                                         bound-variables '() model-reference))))])
           #`(calculus-timing #,@arguments))))
   )
 
@@ -644,8 +680,12 @@
   (define id (second forms))
   (define clauses (drop forms 2))
   (define model-clause (find-single-clause 'model clauses 'define-calculus-lesson))
+  (define use-model-clause (find-single-clause 'use-model clauses 'define-calculus-lesson))
   (define views-clause (find-single-clause 'views clauses 'define-calculus-lesson))
-  (unless model-clause (raise-syntax-error 'define-calculus-lesson "requires one (model ...) clause" stx))
+  (unless (or model-clause use-model-clause)
+    (raise-syntax-error 'define-calculus-lesson "requires one (model ...) or (use-model ...) clause" stx))
+  (when (and model-clause use-model-clause)
+    (raise-syntax-error 'define-calculus-lesson "cannot combine model and use-model clauses" use-model-clause))
   (unless views-clause (raise-syntax-error 'define-calculus-lesson "requires one (views ...) clause" stx))
   (define roles-clause (find-single-clause 'roles clauses 'define-calculus-lesson))
   (define initially-clause (find-single-clause 'initially clauses 'define-calculus-lesson))
@@ -653,35 +693,58 @@
   (define timing-clause (find-single-clause 'timing clauses 'define-calculus-lesson))
   (define steps (filter (lambda (form) (eq? (declaration-head form) 'step)) clauses))
   (when (null? steps) (raise-syntax-error 'define-calculus-lesson "requires at least one (step ...) clause" stx))
-  (define bindings (cdr (syntax->list model-clause)))
+  (define use-model-forms (and use-model-clause (syntax->list use-model-clause)))
+  (when (and use-model-clause (not (and use-model-forms (= (length use-model-forms) 2))))
+    (raise-syntax-error 'use-model "expects exactly one ordinary lexical model expression" use-model-clause))
+  ;; Imported names are resolved by the declaration-scoped model context.
+  (define model-reference (and use-model-clause #t))
+  (define bindings (if model-clause (cdr (syntax->list model-clause)) '()))
   (define bound-bindings (map model-binding-expression bindings))
   (define pairs (model-pairs-expression bindings))
   (define constraints
     (if constraints-clause
-        (map lower-calculus-expression (cdr (syntax->list constraints-clause)))
+        (map (lambda (expression)
+               (lower-calculus-expression expression '() '() model-reference))
+             (cdr (syntax->list constraints-clause)))
         '()))
-  (define roles (lower-roles-clause roles-clause '()))
-  (define initially (lower-command-clause initially-clause '()))
-  (define timing (lower-timing-clause timing-clause '()))
-  (define lowered-views (lower-views-clause views-clause '()))
+  (define roles (lower-roles-clause roles-clause '() model-reference))
+  (define initially (lower-command-clause initially-clause '() model-reference))
+  (define timing (lower-timing-clause timing-clause '() model-reference))
+  (define lowered-views (lower-views-clause views-clause '() model-reference))
   (define view-names
     (for/list ([binding (in-list (cdr (syntax->list views-clause)))])
       (syntax-e (first (syntax->list binding)))))
   (define lowered-steps
-    (map (lambda (form) (lower-step-expression form '() view-names)) steps))
+    (map (lambda (form) (lower-step-expression form '() view-names model-reference)) steps))
+  (define model-builder
+    (if use-model-clause
+        #`(let ([imported-model #,(second use-model-forms)])
+            (call-with-imported-model
+             imported-model
+             (lambda ()
+               (let ([lesson-model (model-with-constraints imported-model (list #,@constraints))])
+                 (make-lesson lesson-model
+                              #,lowered-views
+                              #,roles
+                              #,initially
+                              #,timing
+                              (list #,@lowered-steps))))))
+        #`(let* (#,@bound-bindings)
+            (define lesson-model (make-model (list #,@pairs) (list #,@constraints)))
+            (make-lesson lesson-model
+                         #,lowered-views
+                         #,roles
+                         #,initially
+                         #,timing
+                         (list #,@lowered-steps)))))
   #`(define #,id
-      (let* (#,@bound-bindings)
-        (define lesson-model (make-model (list #,@pairs) (list #,@constraints)))
-        (make-lesson lesson-model
-                     #,lowered-views
-                     #,roles
-                     #,initially
-                     #,timing
-                     (list #,@lowered-steps))))
+      #,model-builder)
   )
 
 ;; define-calculus-component : identifier component descriptor -> definition
-;;   Records a reusable component declaration; invocation support is completed by the model stage.
+;;   Compiles one lexical, headless component builder. Its inputs remain normal
+;;   semantic descriptors at each call site, so component evaluation reuses the
+;;   caller's mathematical state without taking ownership of it.
 (define-syntax (define-calculus-component stx)
   (define forms (syntax->list stx))
   (unless (and forms (>= (length forms) 2) (identifier? (second forms)))
@@ -695,10 +758,95 @@
     (raise-syntax-error 'define-calculus-component "requires inputs, model, and exports clauses" stx))
   (define constraints-clause (find-single-clause 'constraints clauses 'define-calculus-component))
   (define exposition-clause (find-single-clause 'exposition clauses 'define-calculus-component))
+  (define input-declarations (cdr (syntax->list inputs-clause)))
+  (define input-names
+    (for/list ([declaration (in-list input-declarations)])
+      (define pieces (syntax->list declaration))
+      (unless (and pieces
+                   (= (length pieces) 3)
+                   (identifier? (first pieces))
+                   (identifier? (second pieces))
+                   (eq? (syntax-e (second pieces)) ':))
+        (raise-syntax-error 'inputs "expected [identifier : type]" declaration))
+      (first pieces)))
+  (define input-types
+    (for/list ([declaration (in-list input-declarations)])
+      (define type-expression (third (syntax->list declaration)))
+      (cond
+        [(identifier? type-expression) (syntax-e type-expression)]
+        [else
+         (define type-pieces (syntax->list type-expression))
+         (unless (and type-pieces
+                      (= (length type-pieces) 2)
+                      (identifier? (first type-pieces))
+                      (eq? (syntax-e (first type-pieces)) 'Parameter)
+                      (identifier? (second type-pieces))
+                      (memq (syntax-e (second type-pieces)) '(Scalar Integer)))
+           (raise-syntax-error 'inputs
+                               "type must be an identifier or (Parameter Scalar)/(Parameter Integer)"
+                               type-expression))
+         (list 'Parameter (syntax-e (second type-pieces)))])))
+  (unless (= (length input-names) (length (remove-duplicates (map syntax-e input-names))))
+    (raise-syntax-error 'inputs "duplicate component input name" inputs-clause))
+  (define bindings (cdr (syntax->list model-clause)))
+  (define binding-names
+    (for/list ([binding (in-list bindings)])
+      (define pieces (syntax->list binding))
+      (unless (and pieces (= (length pieces) 2) (identifier? (first pieces)))
+        (raise-syntax-error 'model "expected [identifier expression]" binding))
+      (first pieces)))
+  (unless (= (length binding-names) (length (remove-duplicates (map syntax-e binding-names))))
+    (raise-syntax-error 'model "duplicate component model binding" model-clause))
+  (when (ormap (lambda (name) (member (syntax-e name) (map syntax-e input-names)))
+               binding-names)
+    (raise-syntax-error 'model "component model bindings must not shadow inputs" model-clause))
+  (define exports (cdr (syntax->list exports-clause)))
+  (when (null? exports)
+    (raise-syntax-error 'exports "requires at least one public export" exports-clause))
+  (define exportable-names
+    (append (map syntax-e input-names) (map syntax-e binding-names)))
+  (for ([export (in-list exports)])
+    (unless (and (identifier? export) (member (syntax-e export) exportable-names))
+      (raise-syntax-error 'exports "must name a component input or model binding" export)))
+  (unless (= (length exports) (length (remove-duplicates (map syntax-e exports))))
+    (raise-syntax-error 'exports "duplicate component export" exports-clause))
+  (define bound-bindings (map model-binding-expression bindings))
+  (define pairs (model-pairs-expression bindings))
+  (define input-pairs
+    (for/list ([name (in-list input-names)])
+      #`(cons '#,(syntax-e name)
+              (bind-model-value '#,(syntax-e name) #,name #f))))
+  (define constraints
+    (if constraints-clause
+        (map lower-calculus-expression (cdr (syntax->list constraints-clause)))
+        '()))
+  ;; Component exposition is executable semantic data, not retained source.
+  ;; Lower it inside the same lexical `let*` as the private model so its steps
+  ;; can refer to private construction names while callers never can.
+  (define exposition-steps
+    (if exposition-clause
+        (cdr (syntax->list exposition-clause))
+        '()))
+  (for ([step (in-list exposition-steps)])
+    (unless (eq? (declaration-head step) 'step)
+      (raise-syntax-error 'exposition "expects only (step ...) clauses" step)))
+  (define lowered-exposition
+    (map (lambda (step) (lower-step-expression step '())) exposition-steps))
+  (define exposition-builder
+    (if exposition-clause
+        #`(lambda (#,@input-names)
+            (let* (#,@bound-bindings)
+              (list #,@lowered-exposition)))
+        #'#f))
   #`(define #,id
       (make-component '#,(syntax-e id)
-                      '#,(cdr (syntax->list inputs-clause))
-                      '#,(cdr (syntax->list model-clause))
-                      '#,(cdr (syntax->list exports-clause))
+                      (list #,@(for/list ([name (in-list input-names)]
+                                          [type (in-list input-types)])
+                                 #`(cons '#,(syntax-e name)
+                                          '#,(datum->syntax name type))))
+                      (lambda (#,@input-names)
+                        (let* (#,@bound-bindings)
+                          (make-model (list #,@input-pairs #,@pairs) (list #,@constraints))))
+                      (list #,@(for/list ([export (in-list exports)]) #`'#, (syntax-e export)))
                       '#,(if constraints-clause (cdr (syntax->list constraints-clause)) '())
-                      '#,(if exposition-clause (cdr (syntax->list exposition-clause)) '()))))
+                      #,exposition-builder)))

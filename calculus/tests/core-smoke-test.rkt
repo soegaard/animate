@@ -19,6 +19,7 @@
                   calculus-lesson-views
                   calculus-model-nodes
                   calculus-plan-lesson
+                  calculus-snapshot-region-samples
                   calculus-snapshot-trace-points
                   calculus-snapshot-view-window))
 
@@ -63,6 +64,21 @@
     [S (segment P P)]
     [L (line-through P P)]
     [R (ray-through P P)]))
+
+;; finite-geometry-model : calculus-model?
+;;   Retains each authored geometric extent rather than conflating chords,
+;;   segments, rays, and infinite secants.
+(define-calculus-model finite-geometry-model
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x 1)]
+    [Q (point-on G #:x 2)]
+    [segment-PQ (segment P Q)]
+    [C (chord G P Q)]
+    [S (secant G P Q)]
+    [R (ray-through P Q)]
+    [segment-slope (slope segment-PQ)]))
 
 ;; integer-variation : calculus-lesson?
 ;;   Deliberately attempts to interpolate a discrete parameter.
@@ -160,6 +176,104 @@
   (step invalid-camera
     (focus numbers #:x (closed 0 1) #:y (closed -1 1))))
 
+;; invalid-scale-view : calculus-lesson?
+;;   Graph scaling has two named presentation policies; a typo must not be
+;; silently rendered as independent scale.
+(define-calculus-lesson invalid-scale-view
+  (model [P (point 0 0)])
+  (views [plot (graph-view #:x (closed -1 1) #:y (closed -1 1)
+                           #:scale 'distorted #:objects (P))])
+  (initially (show P))
+  (step retain-point (pause 1)))
+
+;; initial-presentation-state : calculus-lesson?
+;;   Applies persistent visibility/emphasis setup before timeline sampling.
+(define-calculus-lesson initial-presentation-state
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x 1)])
+  (views [plot (graph-view #:x (closed -1 2) #:y (closed -1 4)
+                           #:objects (G P))])
+  (initially (show G P)
+             (deemphasize P)
+             (hide P))
+  (step retain (pause 1)))
+
+;; invalid-initial-presentation : calculus-lesson?
+;;   A transient attention command cannot become zero-time setup state.
+(define-calculus-lesson invalid-initial-presentation
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x 1)])
+  (views [plot (graph-view #:x (closed -1 2) #:y (closed -1 4)
+                           #:objects (G P))])
+  (initially (show G)
+             (highlight P))
+  (step retain (pause 1)))
+
+;; invisible-highlight : calculus-lesson?
+;;   A highlight must not reveal a target that presentation has kept hidden.
+(define-calculus-lesson invisible-highlight
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x 1)])
+  (views [plot (graph-view #:x (closed -1 2) #:y (closed -1 4)
+                           #:objects (G P))])
+  (initially (show G))
+  (step invalid-callout (highlight P)))
+
+;; view-scoped-visibility : calculus-lesson?
+;; One mathematical point has two explicit presentations. `in-view` changes
+;; only one presentation, while a targeted view command masks its container.
+(define-calculus-lesson view-scoped-visibility
+  (model [P (point 1 1)])
+  (views
+    [left (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (P))]
+    [right (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (P))])
+  (initially (show P))
+  (step hide-left-presentation (hide (in-view left P)))
+  (step hide-right-container (hide right)))
+
+;; duplicate-checkpoints : calculus-lesson?
+;;   Same-path checkpoint declarations must not overwrite a prior milestone.
+(define-calculus-lesson duplicate-checkpoints
+  (model [u (parameter 0 #:domain (closed 0 1))])
+  (views [numbers (number-line-view #:range (closed 0 1) #:objects (u))])
+  (step ambiguous-milestone
+    (checkpoint settled)
+    (checkpoint settled)))
+
+;; redundant-persistent-presentation : calculus-lesson?
+;;   Redundant visibility and emphasis commands create neither timeline leaves
+;; nor duration, including a mixed step whose targets are all already settled.
+(define-calculus-lesson redundant-persistent-presentation
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [P (point-on G #:x 1)]
+    [Q (point-on G #:x 2)])
+  (views [plot (graph-view #:x (closed -1 3) #:y (closed -1 5)
+                           #:objects (G P Q))])
+  (initially (show G P)
+             (deemphasize P))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step already-settled
+    (show G P)
+    (hide Q)
+    (deemphasize P)
+    (normalize Q)))
+
+;; eased-parameter : calculus-lesson?
+;;   Isolates profile-selected intermediate parameter timing from its endpoints.
+(define-calculus-lesson eased-parameter
+  (model [u (parameter 0 #:domain (closed 0 2))])
+  (views [numbers (number-line-view #:objects (u))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step vary-u (vary u #:to 2 #:duration 2)))
+
 ;; conflicting-trace : calculus-lesson?
 ;;   A sweep and a simultaneous parameter write would have no single history.
 (define-calculus-lesson conflicting-trace
@@ -222,6 +336,26 @@
   (initially (show S T))
   (step invalid-handoff (limit-transition S T #:claim L)))
 
+;; reusable-reading-model : calculus-model?
+;;   Supplies one immutable mathematical namespace to a later lesson.
+(define-calculus-model reusable-reading-model
+  (model
+    [a (parameter 1 #:domain (closed -2 2))]
+    [f (function (x) (* x x))]
+    [G (graph f)]))
+
+;; reuse-model-lesson : calculus-lesson?
+;;   Exercises lexical `use-model` imports in views, constraints, and actions
+;;   without rebuilding or renaming the shared mathematical identities.
+(define-calculus-lesson reuse-model-lesson
+  (use-model reusable-reading-model)
+  (views [plot (graph-view #:x (closed -2 2)
+                           #:y (closed 0 4)
+                           #:objects (G))])
+  (constraints (>= a -2))
+  (initially (show G))
+  (step move-shared-parameter (vary a #:to -1 #:duration 1)))
+
 ;; partition-model : calculus-model?
 ;;   Covers explicit endpoint/tag checks and an exact trapezoidal quantity.
 (define-calculus-model partition-model
@@ -244,6 +378,36 @@
   (model
     [f (function (x) (* x x))]
     [I (definite-integral f #:from 0 #:to 2)]))
+
+;; area-regions-model : calculus-model?
+;;   Separates nonnegative geometric areas from oriented integral regions.
+(define-calculus-model area-regions-model
+  (model
+    [f (function (x) x)]
+    [g (function (x) (- x))]
+    [F (graph f)]
+    [G (graph g)]
+    [under (region-under F #:from -1 #:to 1)]
+    [between (region-between F G #:from -1 #:to 1)]
+    [oriented (integral-region F #:from 1 #:to -1)]
+    [under-area (area-of under)]
+    [between-area (area-of between)]
+    [oriented-area (area-of oriented)]
+    [bad-under (region-under F #:from 1 #:to -1)]
+    [bad-under-area (area-of bad-under)]))
+
+;; restricted-area-regions-model : calculus-model?
+;; A graph restriction is mathematical input membership, including for regions
+;; and their derived areas; it cannot be bypassed by integrating f directly.
+(define-calculus-model restricted-area-regions-model
+  (model
+    [f (function (x) x)]
+    [F (graph f)]
+    [R (graph-restriction F (closed 0 1))]
+    [inside (region-under R #:from 0 #:to 1)]
+    [spans-outside (region-under R #:from -1 #:to 1)]
+    [inside-area (area-of inside)]
+    [outside-area (area-of spans-outside)]))
 
 ;; nested-refinement : calculus-lesson?
 ;;   Changes one direct integer partition count at two atomic boundaries.
@@ -458,6 +622,31 @@
 ;; run-calculus-core-smoke-tests : -> void?
 ;;   Verifies exact function attachment, deterministic sampling, and parameter motion.
 (define (run-calculus-core-smoke-tests)
+  ;; Style descriptors are pure policy data, but reject misspelled selectors
+  ;; and impossible cosmetic units before native preparation begins.
+  (check-true
+   (calculus-style?
+    (calculus-style #:kind 'point #:role 'primary #:state 'normal
+                    #:stroke "#2166C2" #:marker-radius (calculus-px 4))))
+  (check-exn exn:fail:contract?
+             (lambda () (calculus-style #:kind 'curve)))
+  (check-exn exn:fail:contract?
+             (lambda () (calculus-style #:fill "blue")))
+  (check-exn exn:fail:contract?
+             (lambda () (calculus-theme #:font-size (calculus-em 1))))
+  ;; Selector spelling is lesson-relative, so syntactically valid but unknown
+  ;; targets and views produce compile diagnostics rather than native no-ops.
+  (define invalid-style-profile
+    (calculus-profile
+     #:theme
+     (calculus-theme
+      #:rules
+      (list (calculus-style #:target 'missing-target #:stroke "#2166C2")
+            (calculus-style #:view 'missing-view #:stroke "#2166C2")))))
+  (check-equal? (length (calculus-plan-diagnostics
+                         (compile-calculus-lesson reading-square
+                                                   #:profile invalid-style-profile)))
+                2)
   (define plan (compile-calculus-lesson reading-square))
   (define initial (calculus-plan-sample plan #:at 'initial))
   (check-equal? (calculus-result-value (calculus-snapshot-ref initial '(R output))) 4)
@@ -467,6 +656,47 @@
   (check-equal? (calculus-result-value (calculus-snapshot-ref final 'a)) -2)
   (check-equal? (calculus-result-value (calculus-snapshot-ref final '(R output))) 4)
   (check-true (calculus-snapshot-visible? final 'R))
+  ;; Initial setup contains only persistent presentation state. Its hide and
+  ;; deemphasis take effect before the opening pause, while invalid/transient
+  ;; setup and an invisible highlight receive deterministic diagnostics.
+  (define initial-presentation-plan (compile-calculus-lesson initial-presentation-state))
+  (check-equal? (length (calculus-plan-diagnostics initial-presentation-plan)) 0)
+  (check-false (calculus-snapshot-visible?
+                (calculus-plan-sample initial-presentation-plan #:at 'initial) 'P))
+  (check-equal? (length (calculus-plan-diagnostics
+                         (compile-calculus-lesson invalid-initial-presentation)))
+                1)
+  (check-equal? (length (calculus-plan-diagnostics
+                         (compile-calculus-lesson invisible-highlight)))
+                1)
+  (check-equal? (length (calculus-plan-diagnostics
+                         (compile-calculus-lesson duplicate-checkpoints)))
+                1)
+  (define view-scoped-plan (compile-calculus-lesson view-scoped-visibility))
+  (define view-scoped-initial
+    (calculus-plan-sample view-scoped-plan #:at 'initial))
+  (check-true (calculus-snapshot-visible? view-scoped-initial 'P #:view 'left))
+  (check-true (calculus-snapshot-visible? view-scoped-initial 'P #:view 'right))
+  (define left-hidden
+    (calculus-plan-sample view-scoped-plan
+                          #:at (calculus-step-end 'hide-left-presentation)))
+  ;; The underlying P remains visible in the right panel; its one left-panel
+  ;; preference does not clone or globally hide the mathematical point.
+  (check-false (calculus-snapshot-visible? left-hidden 'P #:view 'left))
+  (check-true (calculus-snapshot-visible? left-hidden 'P #:view 'right))
+  (check-true (calculus-snapshot-visible? left-hidden 'P))
+  (define view-scoped-final (calculus-plan-sample view-scoped-plan #:at 'final))
+  (check-false (calculus-snapshot-visible? view-scoped-final 'P #:view 'left))
+  (check-false (calculus-snapshot-visible? view-scoped-final 'P #:view 'right))
+  (check-false (calculus-snapshot-visible? view-scoped-final 'P))
+  (define redundant-presentation-plan
+    (compile-calculus-lesson redundant-persistent-presentation))
+  (check-equal? (calculus-plan-duration redundant-presentation-plan) 0)
+  (define reused-plan (compile-calculus-lesson reuse-model-lesson))
+  (check-equal? (length (calculus-plan-diagnostics reused-plan)) 0)
+  (define reused-final (calculus-plan-sample reused-plan #:at 'final))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref reused-final 'a)) -1)
+  (check-true (calculus-snapshot-visible? reused-final 'G))
   (check-equal? (length (calculus-plan-diagnostics
                          (compile-calculus-lesson invalid-parameter-path)))
                 1)
@@ -476,6 +706,16 @@
                 (list 'segment (cons 1 1) (cons 1 1)))
   (check-equal? (calculus-result-status (calculus-snapshot-ref coincident 'L)) 'undefined)
   (check-equal? (calculus-result-status (calculus-snapshot-ref coincident 'R)) 'undefined)
+  (define finite-geometry (calculus-model-at finite-geometry-model))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref finite-geometry 'segment-PQ))
+                (list 'segment (cons 1 1) (cons 2 4)))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref finite-geometry 'C))
+                (list 'segment (cons 1 1) (cons 2 4)))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref finite-geometry 'S))
+                (list 'line 3 -2 (cons 1 1)))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref finite-geometry 'R))
+                (list 'ray (cons 1 1) (cons 2 4)))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref finite-geometry 'segment-slope)) 3)
   (define integer-plan (compile-calculus-lesson integer-variation))
   (check-equal? (length (calculus-plan-diagnostics integer-plan)) 1)
   (check-equal? (calculus-result-value
@@ -544,6 +784,22 @@
   (check-equal? (length (calculus-plan-diagnostics
                          (compile-calculus-lesson invalid-focus-window)))
                 1)
+  (check-equal? (length (calculus-plan-diagnostics
+                         (compile-calculus-lesson invalid-scale-view)))
+                1)
+  (define eased-profile
+    (calculus-profile #:motion (calculus-motion #:parameter-easing 'smoothstep)))
+  (define eased-plan (compile-calculus-lesson eased-parameter #:profile eased-profile))
+  (define linear-plan (compile-calculus-lesson eased-parameter))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample eased-plan #:at 1/2) 'u))
+                5/16)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample linear-plan #:at 1/2) 'u))
+                1/2)
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref (calculus-plan-sample eased-plan #:at 'final) 'u))
+                2)
   (define conflicting-trace-plan (compile-calculus-lesson conflicting-trace))
   (check-equal? (length (calculus-plan-diagnostics conflicting-trace-plan)) 1)
   (check-equal? (calculus-result-value
@@ -596,6 +852,30 @@
                                      #:computation (calculus-computation #:integration-budget 2))
                   'I))
                 'unresolved)
+  (define area-snapshot (calculus-model-at area-regions-model))
+  (check-equal? (calculus-result-value (calculus-snapshot-ref area-snapshot 'under-area)) 1)
+  (check-equal? (calculus-result-value (calculus-snapshot-ref area-snapshot 'between-area)) 2)
+  (check-equal? (calculus-result-value (calculus-snapshot-ref area-snapshot 'oriented-area)) 1)
+  (check-equal? (calculus-result-status (calculus-snapshot-ref area-snapshot 'bad-under-area)) 'undefined)
+  (define restricted-area-snapshot (calculus-model-at restricted-area-regions-model))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref restricted-area-snapshot 'inside-area))
+                1/2)
+  ;; The numerical integrator observes R's declared domain at every Simpson
+  ;; input.  It must not silently integrate f over the unavailable interval.
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref restricted-area-snapshot 'outside-area))
+                'outside-domain)
+  (define restricted-samples
+    (calculus-snapshot-region-samples restricted-area-snapshot
+                                      (hash-ref (calculus-model-nodes restricted-area-regions-model)
+                                                'spans-outside)))
+  (check-equal? (calculus-result-status restricted-samples) 'defined)
+  ;; The renderer bridge keeps the unavailable left segment as a gap and
+  ;; starts the drawable region only at the closed boundary x=0.
+  (check-false (car (calculus-result-value restricted-samples)))
+  (check-equal? (list-ref (calculus-result-value restricted-samples) 60)
+                (list 0 0 0))
   (define refinement-plan (compile-calculus-lesson nested-refinement))
   (check-equal? (calculus-result-value
                  (calculus-snapshot-ref (calculus-plan-sample refinement-plan #:at 5/2) 'n))
