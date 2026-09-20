@@ -312,6 +312,20 @@
   (initially (show boxes))
   (step refine-boxes (refine partition #:counts (list 4) #:duration 1)))
 
+;; render-reveal-policies : calculus-lesson?
+;; Starts with both semantic objects hidden so trace/extend and fade can be
+;; compared at an interior sample without changing their final mathematics.
+(define-calculus-lesson render-reveal-policies
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [A (point 0 0)]
+    [B (point 2 2)]
+    [L (segment A B)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4) #:objects (G L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show G L)))
+
 ;; render-trapezoidal-regions : calculus-lesson?
 ;;   A single affine cell crossing zero must retain two signed visual pieces.
 (define-calculus-lesson render-trapezoidal-regions
@@ -850,6 +864,49 @@
   (initially (show equation))
   (step change-value (vary a #:to 2 #:duration 1)))
 
+;; render-invalid-composite-reading : calculus-lesson?
+;; A reading root is a descriptor, but its demanded point is undefined at the
+;; graph's declared hole. Strict native preparation must traverse that part.
+(define-calculus-lesson render-invalid-composite-reading
+  (model
+    [f (function (x) (/ 1 x) #:domain (domain-except real-line 0))]
+    [G (graph f)]
+    [R (input-reading G 0)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -3 3) #:objects (G R))])
+  (initially (show G R))
+  (step retain (pause 1)))
+
+;; render-hidden-composite-reading : calculus-lesson?
+;; The same partial reading is legal when hidden; the graph's visible topology
+;; still contains its ordinary mathematical gap.
+(define-calculus-lesson render-hidden-composite-reading
+  (model
+    [f (function (x) (/ 1 x) #:domain (domain-except real-line 0))]
+    [G (graph f)]
+    [R (input-reading G 0)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -3 3) #:objects (G R))])
+  (initially (show G))
+  (step retain (pause 1)))
+
+;; render-readout-error-policy : calculus-lesson?
+;; Default and explicit error policies are output-blocking; label is the one
+;; author-controlled way to display a nondefined result.
+(define-calculus-lesson render-readout-error-policy
+  (model
+    [default-error (value-readout (/ 1 0) #:label "d")]
+    [explicit-error (value-readout (/ 1 0) #:label "e" #:undefined 'error)]
+    [explicit-label (value-readout (/ 1 0) #:label "l" #:undefined 'label)])
+  (views [facts (formula-view #:objects (default-error explicit-error explicit-label))])
+  (initially (show default-error explicit-error explicit-label))
+  (step retain (pause 1)))
+
+;; render-readout-label-policy : calculus-lesson?
+(define-calculus-lesson render-readout-label-policy
+  (model [labelled (value-readout (/ 1 0) #:label "l" #:undefined 'label)])
+  (views [facts (formula-view #:objects (labelled))])
+  (initially (show labelled))
+  (step retain (pause 1)))
+
 ;; render-newton-diagram : calculus-lesson?
 ;;   Draws finite graph-to-tangent-to-axis construction steps from exact iterates.
 (define-calculus-lesson render-newton-diagram
@@ -975,6 +1032,37 @@
   (check-true (pict:pict? picture))
   (check-equal? (pict:pict-width picture) 480)
   (check-equal? (pict:pict-height picture) 270)
+  ;; Strict native validation evaluates a reading's required point rather than
+  ;; accepting its descriptor root. The same unused partial construction stays
+  ;; legal when it is hidden beside a graph with an ordinary discontinuity.
+  (check-exn exn:fail?
+             (lambda ()
+               (prepared-lesson->pict
+                (prepare-calculus-lesson render-invalid-composite-reading
+                                          #:width 480 #:height 270)
+                #:at 'initial)))
+  (check-true
+   (pict:pict?
+    (prepared-lesson->pict
+     (prepare-calculus-lesson render-hidden-composite-reading #:width 480 #:height 270)
+     #:at 'initial)))
+  ;; Omitted and explicit error policies must block native output; only the
+  ;; author-selected label policy produces an explicit undefined readout.
+  (check-exn exn:fail?
+             (lambda ()
+               (prepared-lesson->pict
+                (prepare-calculus-lesson render-readout-error-policy
+                                          #:width 480 #:height 270)
+                #:at 'initial)))
+  (define labelled-readout-prepared
+    (prepare-calculus-lesson render-readout-label-policy #:width 480 #:height 270))
+  (check-equal?
+   (calculus-result-value
+    (calculus-snapshot-formula-text
+     (calculus-plan-sample (prepared-lesson-plan labelled-readout-prepared) #:at 'initial)
+     'labelled))
+   "l undefined")
+  (check-true (pict:pict? (prepared-lesson->pict labelled-readout-prepared #:at 'initial)))
   ;; Exercise the shared native preparation path at the two standard review
   ;; sizes. These are real in-memory rasters, not dimension-only Pict checks
   ;; and not image/video artifacts retained in the workspace.
@@ -987,7 +1075,28 @@
         (prepare-calculus-lesson render-reading-square #:width width #:height height)
         #:at 'final)
        width height))
-    (check-equal? (bitmap-rgb raster 0 0) #"\xFF\xFF\xFF"))
+  (check-equal? (bitmap-rgb raster 0 0) #"\xFF\xFF\xFF"))
+  ;; Fade paints the complete semantic graph/line at changing opacity, while
+  ;; trace/extend paints changing extents. Interior samples must therefore
+  ;; differ both from completion and from each other.
+  (define fade-reveal-prepared
+    (prepare-calculus-lesson
+     render-reveal-policies
+     #:profile (calculus-profile
+                #:motion (calculus-motion #:graph-reveal 'fade #:line-reveal 'fade)
+                #:timing (calculus-timing #:opening-pause 0 #:read-delay 0
+                                          #:action-duration 1 #:step-pause 0))
+     #:width 480 #:height 270))
+  (define trace-reveal-prepared
+    (prepare-calculus-lesson render-reveal-policies #:width 480 #:height 270))
+  (define fade-quarter
+    (pict->opaque-bitmap (prepared-lesson->pict fade-reveal-prepared #:at 1/4) 480 270))
+  (define fade-final
+    (pict->opaque-bitmap (prepared-lesson->pict fade-reveal-prepared #:at 'final) 480 270))
+  (define trace-quarter
+    (pict->opaque-bitmap (prepared-lesson->pict trace-reveal-prepared #:at 1/4) 480 270))
+  (check-true (bitmap-regions-differ? fade-quarter fade-final 32 448 32 238))
+  (check-true (bitmap-regions-differ? fade-quarter trace-quarter 32 448 32 238))
   ;; Static graph sampling is owned by preparation. Moving the unrelated
   ;; point must not call the opaque graph provider once the prepared cache has
   ;; been constructed; this also keeps the result independent of frame order.
@@ -1057,21 +1166,22 @@
      (prepared-lesson->pict live-formula-prepared #:at 'final) 480 270))
   (check-true (bitmap-regions-differ? live-formula-initial live-formula-final
                                       32 448 32 100))
-  ;; A changing `(value ...)` field is painted from the prepared native field
-  ;; layout. No whole-formula pict renderer is consulted at preparation or at
-  ;; either subsequent snapshot, so this also guards against a cache-masked
-  ;; late TeX invocation.
+  ;; A changing `(value ...)` field prepares a mathematical skeleton through
+  ;; the configured backend, then updates only the reserved numeric field at
+  ;; sampling time. The callback count must remain fixed after preparation.
   (set! dynamic-formula-backend-calls 0)
   (define dynamic-field-prepared
     (prepare-calculus-lesson render-live-formula-value
                              #:formula-backend (counting-formula-renderer)
                              #:width 480 #:height 270))
-  (check-equal? dynamic-formula-backend-calls 0)
+  (check-true (> dynamic-formula-backend-calls 0))
+  (define prepared-dynamic-formula-backend-calls dynamic-formula-backend-calls)
   (void (pict->opaque-bitmap
          (prepared-lesson->pict dynamic-field-prepared #:at 'initial) 480 270))
   (void (pict->opaque-bitmap
          (prepared-lesson->pict dynamic-field-prepared #:at 'final) 480 270))
-  (check-equal? dynamic-formula-backend-calls 0)
+  (check-equal? dynamic-formula-backend-calls
+                prepared-dynamic-formula-backend-calls)
   ;; The six complete Guide modules are not merely headless declarations.
   ;; Exercise their final native preparations as standard 1280×720 in-memory
   ;; rasters, keeping this test free of persisted image or video artifacts.

@@ -259,6 +259,12 @@
   (cond
     [(and (list? record) (= (length record) 3) (eq? (first record) 'fade))
      (or (motion-progress record 'fade) 1)]
+    [(and (list? record) (= (length record) 3)
+          (memq (first record) '(graph line))
+          (eq? (second record) 'fade))
+     ;; Graph and line reveal records keep their kind for the matching extent
+     ;; painter, but fade uses the same alpha semantics as a generic reveal.
+     (or (motion-progress record (first record)) 1)]
     [(and (list? record) (>= (length record) 4) (eq? (first record) 'limit))
      (define policy (second record))
      (define role (third record))
@@ -290,10 +296,10 @@
 (struct prepared-formula-row-data (text tex fonts picts) #:transparent)
 
 ;; prepared-dynamic-formula-row-data records source-order fragments and a
-;; fixed character reservation for every live numeric field. It deliberately
-;; contains no backend-produced Pict: live values are painted through these
-;; prepared native slots at actual sample time.
-(struct prepared-dynamic-formula-row-data (shape field-reserve) #:transparent)
+;; reservation established from the authored parameter-path samples. It
+;; deliberately contains no whole-row backend Pict: live values are painted
+;; through fixed native slots at actual sample time.
+(struct prepared-dynamic-formula-row-data (shape field-reserve skeleton-picts) #:transparent)
 
 ;; prepared-calculus-lesson-data owns one semantic plan and one pixel layout.
 (struct prepared-calculus-lesson-data
@@ -407,7 +413,7 @@
    plan width height formula-renderer quality auto-windows
    (prepare-static-graph-geometries plan auto-windows width height quality)
    (prepare-static-formula-assets plan width height formula-renderer)
-   (prepare-dynamic-formula-layouts plan)))
+   (prepare-dynamic-formula-layouts plan width height formula-renderer)))
 
 ;; prepared-lesson-plan : prepared-calculus-lesson? -> calculus-plan?
 ;;   Returns the exact headless plan that supplied the prepared composition.
@@ -653,14 +659,22 @@
              next-cache)]))))
 
 ;; prepare-dynamic-formula-layouts : calculus-plan? -> immutable-hash?
-;; Captures source-order text/field topology once. A 24-character native field
-;; reserve handles signs, decimals, and ordinary exact fractions while keeping
-;; terms after a `(value ...)` leaf at a stable x coordinate across frames.
-;; It is a layout reservation, not a numerical truncation: a longer result is
-;; still drawn in full inside its field rather than silently changing it.
-(define (prepare-dynamic-formula-layouts plan)
+;; Captures source-order text/field topology and every authored event boundary
+;; once. A live field reserves the largest observed authored value, rather than
+;; a fixed character count; a later value that exceeds this declaration raises
+;; an explicit native-layout error instead of overlapping its suffix.
+(define (prepare-dynamic-formula-layouts plan width height formula-backend)
   (define lesson (calculus-plan-lesson plan))
-  (define snapshot (calculus-plan-sample plan #:at 'initial))
+  (define profile (calculus-plan-profile plan))
+  (define sample-times
+    (remove-duplicates
+     (append (list 'initial 'final)
+             (append-map
+              (lambda (event) (list (c-event-start event) (c-event-end event)))
+              (calculus-plan-events plan)))))
+  (define snapshots
+    (for/list ([time (in-list sample-times)])
+      (calculus-plan-sample plan #:at time)))
   (for/fold ([layouts (hash)])
             ([view (in-hash-values (calculus-lesson-views lesson))]
              #:when (eq? (c-view-kind view) 'formula-view))
@@ -669,23 +683,66 @@
       (cond
         [(or (not key) (static-formula-row? target) (hash-has-key? next key)) next]
         [else
-         (define fragments-result (calculus-snapshot-formula-fragments snapshot target))
+         (define fragments-result
+           (calculus-snapshot-formula-fragments (first snapshots) target))
          (if (and (eq? (calculus-result-status fragments-result) 'defined)
                   (list? (calculus-result-value fragments-result)))
              (let* ([fragments (calculus-result-value fragments-result)]
                     [shape (for/list ([fragment (in-list fragments)]) (first fragment))]
+                    [all-fragments
+                     (for/list ([snapshot (in-list snapshots)])
+                       (calculus-snapshot-formula-fragments snapshot target))]
+                    [compatible?
+                     (andmap
+                      (lambda (result)
+                        (and (eq? (calculus-result-status result) 'defined)
+                             (list? (calculus-result-value result))
+                             (equal? shape
+                                     (for/list ([fragment (in-list (calculus-result-value result))])
+                                       (first fragment)))))
+                      all-fragments)]
                     [field-lengths
-                     (for/list ([fragment (in-list fragments)]
-                                #:when (and (list? fragment)
-                                            (= (length fragment) 2)
-                                            (eq? (first fragment) 'field)
-                                            (string? (second fragment))))
-                       (string-length (second fragment)))]
-                    [reserve (max 24 (if (pair? field-lengths)
-                                         (apply max field-lengths)
-                                         0))])
-               (hash-set next key
-                         (prepared-dynamic-formula-row-data shape reserve)))
+                     (if compatible?
+                         (append-map
+                          (lambda (result)
+                            (for/list ([fragment (in-list (calculus-result-value result))]
+                                       #:when (and (list? fragment)
+                                                   (= (length fragment) 2)
+                                                   (eq? (first fragment) 'field)
+                                                   (string? (second fragment))))
+                              (string-length (second fragment))))
+                          all-fragments)
+                         '())]
+                    [reserve (if (pair? field-lengths) (apply max field-lengths) 0)])
+               (if compatible?
+                   (let ([skeleton-result
+                          (calculus-snapshot-formula-skeleton-tex
+                           (first snapshots) target reserve)])
+                     (define skeleton-picts
+                       (if (eq? (calculus-result-status skeleton-result) 'defined)
+                           (for/hash ([state (in-list '(normal deemphasized highlighted refining))])
+                             (define pict
+                               (parameterize
+                                   ([current-render-theme (calculus-profile-data-theme profile)]
+                                    [current-render-reference-size (min width height)]
+                                    [current-render-style-context
+                                     (list lesson (first snapshots) view target
+                                           (and (c-node? target) target))]
+                                    [current-render-presentation-state state])
+                                 (define base-color (formula-row-base-color state))
+                                 (define fill (render-style-value 'fill base-color))
+                                 (render-formula-pict
+                                  formula-backend
+                                  (calculus-result-value skeleton-result)
+                                  (formula-row-font-size (min width height))
+                                  width height
+                                  (if (string? fill) fill base-color))))
+                             (values state pict))
+                           (hash)))
+                     (hash-set next key
+                               (prepared-dynamic-formula-row-data
+                                shape reserve skeleton-picts)))
+                   next))
              ;; The strict plan boundary already handles invalid performed
              ;; actions. A malformed optional row gets the ordinary readable
              ;; fallback at draw time, but never a late backend invocation.
@@ -1687,62 +1744,94 @@
 (define (draw-riemann-rectangles context snapshot node xmin xmax ymin ymax left top width height
                                  [refinement-state #f])
   (define result (calculus-snapshot-riemann-cells snapshot node))
+  (define refinement-policy
+    (and (list? refinement-state)
+         (= (length refinement-state) 4)
+         (eq? (first refinement-state) 'refinement)
+         (second refinement-state)))
+  (define refinement-progress
+    (and refinement-policy (motion-progress refinement-state 'refinement)))
   (define carrier-count
     (and (list? refinement-state)
          (= (length refinement-state) 4)
          (eq? (first refinement-state) 'refinement)
-         (eq? (second refinement-state) 'subdivide)
          (exact-positive-integer? (fourth refinement-state))
          (fourth refinement-state)))
+  (define carrier-result
+    (and carrier-count
+         (calculus-snapshot-riemann-carrier-cells snapshot node carrier-count)))
   (when (eq? (calculus-result-status result) 'defined)
     (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
     (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
-    (for ([cell (in-list (calculus-result-value result))])
-      (define cell-left (first cell))
-      (define cell-right (second cell))
-      (define signed-height (third cell))
-      (when (and (finite-world-number? cell-left)
-                 (finite-world-number? cell-right)
-                 (finite-world-number? signed-height))
-        (define clipped-left (max xmin cell-left))
-        (define clipped-right (min xmax cell-right))
-        (define lower (max ymin (min 0 signed-height)))
-        (define upper (min ymax (max 0 signed-height)))
-        (when (and (< clipped-left clipped-right) (< lower upper))
-          (define cell-positive? (positive? signed-height))
-          (define default-stroke (if cell-positive? "#2166C2" "#B3261E"))
-          (define default-fill (if cell-positive? "#D9E8FF" "#FFE3E3"))
-          (define stroke (render-style-value 'stroke default-stroke))
-          (define fill (render-style-value 'fill default-fill))
-          (define stroke-width
-            (max 1 (render-style-length 'stroke-width 1 (min width height))))
-          (send context set-pen
-                (new draw:pen% [color (hex-color (if (string? stroke) stroke default-stroke))]
-                     [width stroke-width]
-                     [style (if (eq? stroke 'none) 'transparent 'solid)]))
-          (send context set-brush
-                (new draw:brush% [color (hex-color (if (string? fill) fill default-fill))]
-                     [style (if (eq? fill 'none) 'transparent 'solid)]))
-          (send context draw-rectangle (pixel-x clipped-left) (pixel-y upper)
-                (- (pixel-x clipped-right) (pixel-x clipped-left))
-                (- (pixel-y lower) (pixel-y upper)))
-          ;; A subdivide carrier marks proposed nested cuts while the
-          ;; mathematical rectangle count is still the previous committed
-          ;; integer. The guides are derived from exact cell endpoints, not
-          ;; screen-space subdivision or a new numerical sample.
-          (when (and carrier-count
-                     (positive? (length (calculus-result-value result)))
-                     (zero? (remainder carrier-count
-                                      (length (calculus-result-value result)))))
-            (define subdivisions (/ carrier-count (length (calculus-result-value result))))
-            (when (> subdivisions 1)
-              (for ([index (in-range 1 subdivisions)])
+    (define original-alpha (send context get-alpha))
+    (define (paint-cells cells opacity guides? [bodies? #t])
+      (send context set-alpha (* original-alpha opacity))
+      (for ([cell (in-list cells)])
+        (define cell-left (first cell))
+        (define cell-right (second cell))
+        (define signed-height (third cell))
+        (when (and (finite-world-number? cell-left)
+                   (finite-world-number? cell-right)
+                   (finite-world-number? signed-height))
+          (define clipped-left (max xmin cell-left))
+          (define clipped-right (min xmax cell-right))
+          (define lower (max ymin (min 0 signed-height)))
+          (define upper (min ymax (max 0 signed-height)))
+          (when (and (< clipped-left clipped-right) (< lower upper))
+            (when bodies?
+              (define cell-positive? (positive? signed-height))
+              (define default-stroke (if cell-positive? "#2166C2" "#B3261E"))
+              (define default-fill (if cell-positive? "#D9E8FF" "#FFE3E3"))
+              (define stroke (render-style-value 'stroke default-stroke))
+              (define fill (render-style-value 'fill default-fill))
+              (define stroke-width
+                (max 1 (render-style-length 'stroke-width 1 (min width height))))
+              (send context set-pen
+                    (new draw:pen% [color (hex-color (if (string? stroke) stroke default-stroke))]
+                         [width stroke-width]
+                         [style (if (eq? stroke 'none) 'transparent 'solid)]))
+              (send context set-brush
+                    (new draw:brush% [color (hex-color (if (string? fill) fill default-fill))]
+                         [style (if (eq? fill 'none) 'transparent 'solid)]))
+              (send context draw-rectangle (pixel-x clipped-left) (pixel-y upper)
+                    (- (pixel-x clipped-right) (pixel-x clipped-left))
+                    (- (pixel-y lower) (pixel-y upper))))
+            (when (and guides? carrier-count
+                       (positive? (length cells))
+                       (zero? (remainder carrier-count (length cells))))
+              (define subdivisions (/ carrier-count (length cells)))
+              ;; Cuts appear according to local refinement progress.  Their
+              ;; endpoints are clipped with the same rectangle body bounds.
+              (define visible-cuts
+                (inexact->exact
+                 (ceiling (* (or refinement-progress 1) (sub1 subdivisions)))))
+              (for ([index (in-range 1 (add1 (min (sub1 subdivisions) visible-cuts)))])
                 (define cut (+ cell-left (* (/ index subdivisions)
                                             (- cell-right cell-left))))
                 (when (<= xmin cut xmax)
-                  (draw-line-segment context (pixel-x cut) (pixel-y 0)
-                                     (pixel-x cut) (pixel-y signed-height)
-                                     "#A65E00" 1))))))))))
+                  (draw-line-segment context (pixel-x cut) (pixel-y lower)
+                                     (pixel-x cut) (pixel-y upper)
+                                     "#A65E00" 1)))))))
+      (send context set-alpha original-alpha))
+    (define old-cells (calculus-result-value result))
+    (define new-cells
+      (and carrier-result
+           (eq? (calculus-result-status carrier-result) 'defined)
+           (calculus-result-value carrier-result)))
+    (case refinement-policy
+      [(crossfade)
+       (paint-cells old-cells (- 1 (or refinement-progress 0)) #f)
+       (when new-cells (paint-cells new-cells (or refinement-progress 0) #f))]
+      [(subdivide)
+       (paint-cells old-cells 1 #f)
+       ;; The exact prospective cells fade in behind the committed count;
+       ;; their alpha supplies an actual child-height transition instead of a
+       ;; frame-one grid followed by an endpoint jump.
+       (when new-cells (paint-cells new-cells (or refinement-progress 0) #f))
+       ;; Overlay only the semantic guides after the translucent prospective
+       ;; layer, so a carrier remains legible without repainting old cells.
+       (paint-cells old-cells 1 #t #f)]
+      [else (paint-cells old-cells 1 #f)])))
 
 ;; clip-world-polygon : (listof pair?) real? real? real? real? -> (listof pair?)
 ;;   Clips a world-space polygon against the visible rectangle with
@@ -2767,6 +2856,7 @@
         (send context set-alpha (* original-alpha opacity (motion-opacity motion-state)))
         (send context set-font font)
         (when (string? fill)
+          (send context set-text-foreground (hex-color fill))
           (define prepared-pict
             (and prepared-asset
                  (hash-ref (prepared-formula-row-data-picts prepared-asset)
@@ -2783,22 +2873,45 @@
                     (calculus-result-value fragments-result)))
              (define expected-shape
                (prepared-dynamic-formula-row-data-shape dynamic-layout))
+             (define skeleton-pict
+               (hash-ref (prepared-dynamic-formula-row-data-skeleton-picts dynamic-layout)
+                         presentation-state #f))
              (if (and (list? fragments)
                       (equal? expected-shape
                               (for/list ([fragment (in-list fragments)]) (first fragment))))
-                 (let* ([origin-x (+ left 16)]
-                        [origin-y (+ top 16 (* 30 index))]
-                        [reserve-sample
-                         (make-string (prepared-dynamic-formula-row-data-field-reserve dynamic-layout)
-                                      #\0)])
+                 (let* ([reserve (prepared-dynamic-formula-row-data-field-reserve dynamic-layout)]
+                        [overflow
+                         (for/or ([fragment (in-list fragments)])
+                           (and (eq? (first fragment) 'field)
+                                (string? (second fragment))
+                                (> (string-length (second fragment)) reserve)))])
+                   (when overflow
+                     (raise-arguments-error
+                      'prepared-lesson->pict
+                      "a live Formula value within its prepared authored-path reservation"
+                      "address" address
+                      "reserved-characters" reserve))
+                   (define origin-x (+ left 16))
+                   (define origin-y (+ top 16 (* 30 index)))
+                   (define reserve-sample (make-string reserve #\0))
                    (define-values (reserved-width _reserved-height _reserved-descent _reserved-leading)
                      (send context get-text-extent reserve-sample))
+                   ;; The skeleton preserves TeX fractions, powers, radicals,
+                   ;; and held occurrence layout.  It was created during
+                   ;; preparation with an invisible fixed-width field.
+                   (when skeleton-pict
+                     (pict:draw-pict skeleton-pict context origin-x origin-y))
                    (let loop ([remaining fragments] [cursor origin-x])
                      (unless (null? remaining)
                        (define fragment (first remaining))
                        (define kind (first fragment))
                        (define fragment-text (second fragment))
-                       (send context draw-text fragment-text cursor origin-y)
+                       ;; A skeleton already owns every held mathematical
+                       ;; fragment.  Only its live numeric field is drawn at
+                       ;; sampling time; readouts without a skeleton retain
+                       ;; their one-field native path.
+                       (when (or (not skeleton-pict) (eq? kind 'field))
+                         (send context draw-text fragment-text cursor origin-y))
                        (define-values (text-width _text-height _text-descent _text-leading)
                          (send context get-text-extent fragment-text))
                        (loop (rest remaining)
@@ -2865,7 +2978,43 @@
                      interval-marker endpoint-marker approach-marker slope-triangle
                      epsilon-delta-condition riemann-rectangles trapezoidal-regions
                      integral-region region-under region-between partition-marks
-                     sequence-points newton-diagram trace-of asymptote-line))))
+                     sequence-points newton-diagram trace-of asymptote-line
+                     value-readout))))
+
+;; demanded-native-result : calculus-snapshot? c-node? any/c address? boolean?
+;;                          -> calculus-result?
+;; Uses the same typed semantic bridge consumed by each painter.  Root
+;; descriptors are intentionally insufficient for composites such as readings
+;; and regions: a descriptor may exist while its requested geometry does not.
+(define (demanded-native-result snapshot node target address private?)
+  ;; Typed bridges accept the semantic node/part, while reading parts retain
+  ;; their public address for the ordinary snapshot resolver below.
+  (define semantic-target (if private? target node))
+  (case (c-node-kind node)
+    [(input-reading output-reading coordinate-reading)
+     (calculus-snapshot-ref
+      snapshot
+      (append (if (list? address) address (list address)) (list 'point)))]
+    [(interval-marker endpoint-marker approach-marker)
+     (calculus-snapshot-marker-geometry snapshot semantic-target)]
+    [(riemann-rectangles)
+     (calculus-snapshot-riemann-cells snapshot semantic-target)]
+    [(trapezoidal-regions)
+     (calculus-snapshot-trapezoid-cells snapshot semantic-target)]
+    [(partition-marks)
+     (calculus-snapshot-partition-points snapshot semantic-target)]
+    [(integral-region region-under region-between)
+     (calculus-snapshot-region-samples snapshot semantic-target)]
+    [(asymptote-line)
+     (calculus-snapshot-asymptote-geometry snapshot semantic-target)]
+    [(value-readout)
+     ;; The core bridge preserves an author-selected `#:undefined 'label`,
+     ;; while its default/error policy returns the original nondefined result.
+     (calculus-snapshot-formula-text snapshot semantic-target)]
+    [else
+     (if private?
+         (calculus-snapshot-component-private-ref snapshot target)
+         (calculus-snapshot-ref snapshot address))]))
 
 ;; validate-demanded-snapshot! : prepared-calculus-lesson? calculus-snapshot? -> void?
 ;;   Rejects strict native conversion when a visible named construction lacks
@@ -2893,9 +3042,7 @@
                (calculus-snapshot-visible? snapshot address #:view (c-view-name view)))))
     (when (and address node (demanded-native-node? node) visible?)
       (define result
-        (if private?
-            (calculus-snapshot-component-private-ref snapshot target)
-            (calculus-snapshot-ref snapshot address)))
+        (demanded-native-result snapshot node target address private?))
       (unless (eq? (calculus-result-status result) 'defined)
         (raise-arguments-error
          'prepared-lesson->pict "defined mathematical data for every visible demanded object"

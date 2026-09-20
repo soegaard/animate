@@ -53,11 +53,13 @@
  calculus-snapshot-function-branch calculus-snapshot-function-branch-value
  calculus-snapshot-function-breaks
  calculus-snapshot-trace-points calculus-snapshot-view-window calculus-snapshot-view-window-state calculus-snapshot-riemann-cells
+ calculus-snapshot-riemann-carrier-cells
  calculus-snapshot-trapezoid-cells calculus-snapshot-partition-points
  calculus-snapshot-region-samples calculus-snapshot-sign-chart-intervals
  calculus-snapshot-newton-segments
  calculus-snapshot-asymptote-geometry
  calculus-snapshot-formula-text calculus-snapshot-formula-tex calculus-snapshot-formula-fragments
+ calculus-snapshot-formula-skeleton-tex
  calculus-snapshot-label-text calculus-snapshot-label-anchor
  calculus-snapshot-marker-geometry
  calculus-plan-caption calculus-plan-has-captions?
@@ -1120,6 +1122,12 @@
 ;; differentiate : any/c symbol? -> (or/c c-expression? finite-real? #f)
 ;;   Builds the documented conservative symbolic derivative for a held expression.
 (define (differentiate expression variable)
+  ;; `#f` is the one internal marker for an unsupported rule.  It must be
+  ;; propagated before a new arithmetic expression is built: leaving it as a
+  ;; child would let a later pass mistake the failure for a constant.
+  (define (supported? derivative) (not (eq? derivative #f)))
+  (define (all-supported derivatives)
+    (and (andmap supported? derivatives) derivatives))
   (cond
     [(number? expression) 0]
     [(and (c-expression? expression)
@@ -1132,45 +1140,68 @@
      (define (expression* name . items) (c-expression name items))
      (case op
        [(var) 0]
-       [(+) (apply expression* '+ (map (lambda (item) (differentiate item variable)) arguments))]
-       [(-) (apply expression* '- (map (lambda (item) (differentiate item variable)) arguments))]
+       [(+)
+        (define derivatives (all-supported (map (lambda (item) (differentiate item variable)) arguments)))
+        (and derivatives (apply expression* '+ derivatives))]
+       [(-)
+        (define derivatives (all-supported (map (lambda (item) (differentiate item variable)) arguments)))
+        (and derivatives (apply expression* '- derivatives))]
        [(*)
         (if (null? arguments)
             0
-            (apply expression* '+
-                   (for/list ([index (in-range (length arguments))])
-                     (apply expression* '*
-                            (for/list ([item (in-list arguments)] [position (in-naturals)])
-                              (if (= index position) (differentiate item variable) item))))))]
+            (let ([derivatives
+                   (all-supported
+                    (map (lambda (item) (differentiate item variable)) arguments))])
+              (and derivatives
+                   (apply expression* '+
+                          (for/list ([index (in-range (length arguments))])
+                            (apply expression* '*
+                                   (for/list ([item (in-list arguments)]
+                                              [position (in-naturals)])
+                                     (if (= index position)
+                                         (list-ref derivatives position)
+                                         item))))))))]
        [(expt)
         (cond
           [(not (and (= (length arguments) 2) (exact-integer? (second arguments)))) #f]
           [(zero? (second arguments)) 0]
           [else
-           (expression* '* (second arguments)
-                        (expression* 'expt (first arguments) (sub1 (second arguments)))
-                        (differentiate (first arguments) variable))])]
+           (define base-derivative (differentiate (first arguments) variable))
+           (and (supported? base-derivative)
+                (expression* '* (second arguments)
+                             (expression* 'expt (first arguments) (sub1 (second arguments)))
+                             base-derivative))])]
        [(/)
         (cond
           [(= (length arguments) 1)
-           (expression* '/
-                        (expression* '* -1 (differentiate (first arguments) variable))
-                        (expression* 'expt (first arguments) 2))]
+           (define numerator-derivative (differentiate (first arguments) variable))
+           (and (supported? numerator-derivative)
+                (expression* '/
+                             (expression* '* -1 numerator-derivative)
+                             (expression* 'expt (first arguments) 2)))]
           [(= (length arguments) 2)
            (define numerator (first arguments))
            (define denominator (second arguments))
-           (expression* '/
-                        (expression* '-
-                                     (expression* '* (differentiate numerator variable) denominator)
-                                     (expression* '* numerator (differentiate denominator variable)))
-                        (expression* 'expt denominator 2))]
+           (define numerator-derivative (differentiate numerator variable))
+           (define denominator-derivative (differentiate denominator variable))
+           (and (supported? numerator-derivative)
+                (supported? denominator-derivative)
+                (expression* '/
+                             (expression* '-
+                                          (expression* '* numerator-derivative denominator)
+                                          (expression* '* numerator denominator-derivative))
+                             (expression* 'expt denominator 2)))]
           [else #f])]
-       [(sin) (expression* '* (expression* 'cos (first arguments)) (differentiate (first arguments) variable))]
-       [(cos) (expression* '* -1 (expression* 'sin (first arguments)) (differentiate (first arguments) variable))]
-       [(exp) (expression* '* (expression* 'exp (first arguments)) (differentiate (first arguments) variable))]
-       [(log) (expression* '/ (differentiate (first arguments) variable) (first arguments))]
-       [(sqrt) (expression* '/ (differentiate (first arguments) variable)
-                             (expression* '* 2 (expression* 'sqrt (first arguments))))]
+       [(sin cos exp log sqrt)
+        (define operand-derivative (differentiate (first arguments) variable))
+        (and (supported? operand-derivative)
+             (case op
+               [(sin) (expression* '* (expression* 'cos (first arguments)) operand-derivative)]
+               [(cos) (expression* '* -1 (expression* 'sin (first arguments)) operand-derivative)]
+               [(exp) (expression* '* (expression* 'exp (first arguments)) operand-derivative)]
+               [(log) (expression* '/ operand-derivative (first arguments))]
+               [else (expression* '/ operand-derivative
+                                  (expression* '* 2 (expression* 'sqrt (first arguments))))]))]
        [else #f])]
     [else 0]))
 
@@ -1199,38 +1230,63 @@
          (evaluate-function (hash-ref options 'using) input environment model computation lexical)
          'supplied)]
        [(numeric)
-        (if (not (= order 1))
-            (unresolved "numeric differentiation supports only first derivatives" 'numeric)
-            (let ([initial-step (hash-ref options 'step
-                                           (calculus-computation-data-derivative-step computation))]
-                  [absolute (calculus-computation-data-absolute-tolerance computation)]
-                  [relative (calculus-computation-data-relative-tolerance computation)])
-              ;; A single finite difference is evidence, not certification.
-              ;; Compare it with a half-step estimate and keep refining until
-              ;; the declared numerical policy establishes agreement.
-              (let loop ([h initial-step] [remaining 24])
-                (define (centered step)
+        (cond
+          [(not (= order 1))
+           (unresolved "numeric differentiation supports only first derivatives" 'numeric)]
+          [else
+           (define initial-step
+             (hash-ref options 'step
+                       (calculus-computation-data-derivative-step computation)))
+           (define absolute (calculus-computation-data-absolute-tolerance computation))
+           (define relative (calculus-computation-data-relative-tolerance computation))
+           ;; A single finite difference is evidence, not certification.
+           ;; Compare a centered estimate with its half step and with both
+           ;; one-sided slopes so a symmetric cancellation at a corner cannot
+           ;; masquerade as a two-sided derivative.
+           (let loop ([h initial-step] [remaining 24])
+             (define (centered step)
+               (result-bind
+                (evaluate-function source (+ input step) environment model computation lexical)
+                (lambda (right)
+                  (result-bind
+                   (evaluate-function source (- input step) environment model computation lexical)
+                   (lambda (left)
+                     (finite-number-result (/ (- right left) (* 2 step)) 'numeric #t))))))
+             (define (one-sided step)
+               (result-bind
+                (evaluate-function source input environment model computation lexical)
+                (lambda (center)
                   (result-bind
                    (evaluate-function source (+ input step) environment model computation lexical)
                    (lambda (right)
                      (result-bind
                       (evaluate-function source (- input step) environment model computation lexical)
                       (lambda (left)
-                        (finite-number-result (/ (- right left) (* 2 step)) 'numeric #t))))))
+                        (defined (list (/ (- right center) step)
+                                       (/ (- center left) step))))))))))
+             (result-bind
+              (centered h)
+              (lambda (coarse)
                 (result-bind
-                 (centered h)
-                 (lambda (coarse)
+                 (centered (/ h 2))
+                 (lambda (fine)
                    (result-bind
-                    (centered (/ h 2))
-                    (lambda (fine)
+                    (one-sided (/ h 2))
+                    (lambda (sides)
+                      (define right-slope (first sides))
+                      (define left-slope (second sides))
                       (define tolerance
-                        (+ absolute (* relative (max (abs coarse) (abs fine)))))
+                        (+ absolute
+                           (* relative
+                              (max (abs coarse) (abs fine)
+                                   (abs right-slope) (abs left-slope)))))
                       (cond
-                        [(<= (abs (- fine coarse)) tolerance)
+                        [(and (<= (abs (- fine coarse)) tolerance)
+                              (<= (abs (- right-slope left-slope)) tolerance))
                          (finite-number-result fine 'numeric #t)]
                         [(zero? remaining)
-                         (unresolved "numeric derivative did not stabilize within the evaluation budget" 'numeric)]
-                        [else (loop (/ h 2) (sub1 remaining))]))))))))]
+                         (unresolved "numeric derivative did not establish a stable two-sided slope" 'numeric)]
+                        [else (loop (/ h 2) (sub1 remaining))]))))))))])]
        [else
         (define source-function (lookup-function source))
         (if (c-function? source-function)
@@ -1390,6 +1446,18 @@
     ;; the point value owned by that source.  Resolve the part once rather
     ;; than rejecting its wrapper or manufacturing a detached replacement.
     [(c-part? point) (eval-part point environment model computation lexical)]
+    ;; Binding a public part introduces a scalar `ref` alias.  Geometric
+    ;; consumers follow that alias so `(x-coordinate P)` agrees with the
+    ;; direct `(x-coordinate (part R 'point))` spelling.
+    [(and (c-node? point)
+          (or (c-expression? (c-node-data point))
+              (c-part? (c-node-data point))))
+     (result-bind
+      (eval-raw point environment model computation lexical)
+      (lambda (value)
+        (if (and (pair? value) (finite-real? (car value)) (finite-real? (cdr value)))
+            (defined value)
+            (undefined "named value does not resolve to a point"))))]
     [else
      (define raw (node-raw point))
      (cond
@@ -1462,6 +1530,16 @@
 (define (eval-line line environment model computation lexical)
   (cond
     [(c-part? line) (eval-part line environment model computation lexical)]
+    [(and (c-node? line)
+          (or (c-expression? (c-node-data line))
+              (c-part? (c-node-data line))))
+     (result-bind
+      (eval-raw line environment model computation lexical)
+      (lambda (value)
+        (if (and (list? value) (pair? value)
+                 (memq (first value) '(line vertical segment ray)))
+            (defined value)
+            (undefined "named value does not resolve to a line"))))]
     [else
      (define raw (node-raw line))
      (if (not (c-object? raw)) (undefined "expected a line")
@@ -1495,7 +1573,7 @@
                           (if (eq? (car source) 'vertical)
                               (defined (list 'line 0 (cdr (third source)) (third source)))
                               (if (= (second source) 0)
-                                  (defined (list 'vertical (car (third source)) (third source)))
+                                  (defined (list 'vertical (car (fourth source)) (fourth source)))
                                   ;; Finite lines store `(line slope intercept
                                   ;; anchor)`: their third field is not a
                                   ;; point.  All normal cases retain the
@@ -2077,47 +2155,87 @@
                           (cdr endpoints)
                           (+ total (* height (- (second endpoints) (first endpoints)))))))))))))]))
 
+;; riemann-cells/in-environment : semantic-value? hash? calculus-model?
+;;                                calculus-computation? -> calculus-result?
+;;   Evaluates rectangle geometry against an explicit immutable parameter map.
+;;   Refinement carriers use this same semantic calculation for their proposed
+;;   next count; the renderer never invents child heights from pixels.
+(define (riemann-cells/in-environment rectangles environment model computation)
+  (define raw (node-raw rectangles))
+  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'riemann-rectangles)))
+      (undefined "expected Riemann rectangles")
+      (let* ([sum (first (c-object-arguments raw))]
+             [sum-raw (node-raw sum)])
+        (if (not (and (c-object? sum-raw) (eq? (c-object-kind sum-raw) 'riemann-sum)))
+            (undefined "Riemann rectangles require a Riemann sum")
+            (let ([function (first (c-object-arguments sum-raw))]
+                  [tagged (second (c-object-arguments sum-raw))])
+              (result-bind
+               (eval-tags tagged environment model computation (hash))
+               (lambda (tags)
+                 (define tagged-raw (node-raw tagged))
+                 (result-bind
+                  (eval-partition (first (c-object-arguments tagged-raw))
+                                  environment model computation (hash))
+                  (lambda (points)
+                    (let loop ([lefts points] [rights (rest points)] [samples tags] [cells '()])
+                      (cond
+                        [(null? samples) (defined (immutable-list-copy (reverse cells)))]
+                        [(or (null? lefts) (null? rights))
+                         (undefined "Riemann tags do not match partition cells")]
+                        [else
+                         (result-bind
+                          (evaluate-function function (car samples) environment model computation (hash))
+                          (lambda (height)
+                            (loop (rest lefts) (rest rights) (rest samples)
+                                  (cons (list (car lefts) (car rights) height) cells))))])))))))))))
+
 ;; calculus-snapshot-riemann-cells : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Supplies exact, snapshot-derived rectangle cells to the native adapter.
-;;   Each defined cell is (list left right signed-height); it is deliberately
-;;   separate from the scalar Riemann sum so preparation cannot reverse-engineer
-;;   geometry from formatted output or screen samples.
 (define (calculus-snapshot-riemann-cells snapshot rectangles)
-  (cond
-    [(not (calculus-snapshot? snapshot))
-     (raise-argument-error 'calculus-snapshot-riemann-cells "calculus-snapshot?" snapshot)]
-    [else
-     (define raw (node-raw rectangles))
-     (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'riemann-rectangles)))
-         (undefined "expected Riemann rectangles")
-         (let* ([sum (first (c-object-arguments raw))]
-                [sum-raw (node-raw sum)])
-           (if (not (and (c-object? sum-raw) (eq? (c-object-kind sum-raw) 'riemann-sum)))
-               (undefined "Riemann rectangles require a Riemann sum")
-               (let ([function (first (c-object-arguments sum-raw))]
-                     [tagged (second (c-object-arguments sum-raw))]
-                     [environment (calculus-snapshot-values snapshot)]
-                     [model (calculus-snapshot-model snapshot)]
-                     [computation (calculus-snapshot-computation snapshot)])
-                 (result-bind
-                  (eval-tags tagged environment model computation (hash))
-                  (lambda (tags)
-                    (define tagged-raw (node-raw tagged))
-                    (result-bind
-                     (eval-partition (first (c-object-arguments tagged-raw))
-                                     environment model computation (hash))
-                     (lambda (points)
-                       (let loop ([lefts points] [rights (rest points)] [samples tags] [cells '()])
-                         (cond
-                           [(null? samples) (defined (immutable-list-copy (reverse cells)))]
-                           [(or (null? lefts) (null? rights))
-                            (undefined "Riemann tags do not match partition cells")]
-                           [else
-                            (result-bind
-                             (evaluate-function function (car samples) environment model computation (hash))
-                             (lambda (height)
-                               (loop (rest lefts) (rest rights) (rest samples)
-                                     (cons (list (car lefts) (car rights) height) cells))))]))))))))))]))
+  (unless (calculus-snapshot? snapshot)
+    (raise-argument-error 'calculus-snapshot-riemann-cells "calculus-snapshot?" snapshot))
+  (riemann-cells/in-environment rectangles
+                                (calculus-snapshot-values snapshot)
+                                (calculus-snapshot-model snapshot)
+                                (calculus-snapshot-computation snapshot)))
+
+;; riemann-rectangle-count-parameter : semantic-value? -> (or/c c-node? #f)
+;;   Finds the direct uniform-partition capability used by a rectangle source.
+(define (riemann-rectangle-count-parameter rectangles)
+  (define raw (node-raw rectangles))
+  (define sum (and (c-object? raw) (pair? (c-object-arguments raw))
+                   (first (c-object-arguments raw))))
+  (define sum-raw (node-raw sum))
+  (define tagged (and (c-object? sum-raw) (>= (length (c-object-arguments sum-raw)) 2)
+                      (second (c-object-arguments sum-raw))))
+  (define tagged-raw (node-raw tagged))
+  (define partition (and (c-object? tagged-raw) (pair? (c-object-arguments tagged-raw))
+                         (first (c-object-arguments tagged-raw))))
+  (define partition-raw (node-raw partition))
+  (define count (and (c-object? partition-raw)
+                     (eq? (c-object-kind partition-raw) 'uniform-partition)
+                     (hash-ref (c-object-options partition-raw) 'count #f)))
+  (and (c-node? count) (eq? (c-node-kind count) 'parameter) count))
+
+;; calculus-snapshot-riemann-carrier-cells : calculus-snapshot? semantic-value?
+;;                                             exact-positive-integer? -> calculus-result?
+;;   Supplies the exact prospective nested rectangles used only while a
+;;   refinement transition is active.  The ordinary snapshot remains at its
+;;   committed integer count.
+(define (calculus-snapshot-riemann-carrier-cells snapshot rectangles count)
+  (unless (calculus-snapshot? snapshot)
+    (raise-argument-error 'calculus-snapshot-riemann-carrier-cells "calculus-snapshot?" snapshot))
+  (if (not (exact-positive-integer? count))
+      (undefined "refinement carrier count must be a positive exact integer")
+      (let ([parameter (riemann-rectangle-count-parameter rectangles)])
+        (if (not parameter)
+            (undefined "Riemann rectangles do not use a direct uniform count parameter")
+            (riemann-cells/in-environment
+             rectangles
+             (hash-set (calculus-snapshot-values snapshot) (c-node-id parameter) count)
+             (calculus-snapshot-model snapshot)
+             (calculus-snapshot-computation snapshot))))))
 
 ;; eval-trapezoidal-sum : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
 ;;   Computes the exact signed finite trapezoidal sum from increasing cells.
@@ -2190,9 +2308,20 @@
   (cond
     [(not (c-domain? raw)) '()]
     [(memq (c-domain-kind raw)
-            '(closed open closed-open open-closed singleton integers
-                     neighborhood punctured-neighborhood))
+            '(closed open closed-open open-closed singleton integers))
      (c-domain-arguments raw)]
+    [(memq (c-domain-kind raw) '(neighborhood punctured-neighborhood))
+     ;; A neighborhood stores center/radius, not two boundary coordinates.
+     ;; Include both derived endpoints and (for a puncture) the excluded
+     ;; center, so every membership interval can be proved rather than sampled
+     ;; only at accidental center/radius values.
+     (define center (first (c-domain-arguments raw)))
+     (define radius (second (c-domain-arguments raw)))
+     (append (list (c-expression '- (list center radius))
+                   (c-expression '+ (list center radius)))
+             (if (eq? (c-domain-kind raw) 'punctured-neighborhood)
+                 (list center)
+                 '()))]
     [(eq? (c-domain-kind raw) 'domain-except)
      (append (append-map domain-boundary-expressions
                          (take (c-domain-arguments raw) 1))
@@ -2263,7 +2392,13 @@
          value]))
     (define (estimate left middle right f-left f-middle f-right)
       (* (/ (- right left) 6) (+ f-left (* 4 f-middle) f-right)))
-    (define (refine left middle right f-left f-middle f-right coarse tolerance)
+    ;; A panel records its raw Simpson estimate and sampled endpoints.  Every
+    ;; refinement step expands the complete active partition, then tests the
+    ;; *sum* of its retained error evidence against the current integral
+    ;; estimate.  Relative tolerance is therefore never frozen at a cancelled
+    ;; first estimate.
+    (define (refine-panel panel)
+      (match-define (list left middle right f-left f-middle f-right coarse) panel)
       (define left-middle (/ (+ left middle) 2))
       (define right-middle (/ (+ middle right) 2))
       (define f-left-middle (sample left-middle))
@@ -2273,16 +2408,11 @@
       (define right-estimate
         (estimate middle right-middle right f-middle f-right-middle f-right))
       (define refined (+ left-estimate right-estimate))
-      ;; Simpson's subdivision estimate differs by approximately 15 times the
-      ;; remaining error.  Correct the accepted result rather than discarding
-      ;; the evidence used to establish it.
-      (define error-estimate (/ (abs (- refined coarse)) 15))
-      (if (<= error-estimate tolerance)
-          (+ refined (/ (- refined coarse) 15))
-          (+ (refine left left-middle middle f-left f-left-middle f-middle
-                     left-estimate (/ tolerance 2))
-             (refine middle right-middle right f-middle f-right-middle f-right
-                     right-estimate (/ tolerance 2)))))
+      (define correction (/ (- refined coarse) 15))
+      (values (list (list left left-middle middle f-left f-left-middle f-middle left-estimate)
+                    (list middle right-middle right f-middle f-right-middle f-right right-estimate))
+              (+ refined correction)
+              (abs correction)))
     (cond
       [(= a b) (defined 0 'numeric #t)]
       [(< budget 5)
@@ -2290,10 +2420,19 @@
       [else
        (define middle (/ (+ a b) 2))
        (define coarse (estimate a middle b (sample a) (sample middle) (sample b)))
-       (define tolerance (+ absolute (* relative (abs coarse))))
-       (finite-number-result
-        (refine a middle b (sample a) (sample middle) (sample b) coarse tolerance)
-        'numeric #t)])))
+       (let loop ([panels (list (list a middle b (sample a) (sample middle) (sample b) coarse))])
+         (define next-panels '())
+         (define corrected-total 0)
+         (define total-error 0)
+         (for ([panel (in-list panels)])
+           (define-values (children corrected error) (refine-panel panel))
+           (set! next-panels (append next-panels children))
+           (set! corrected-total (+ corrected-total corrected))
+           (set! total-error (+ total-error error)))
+         (define tolerance (+ absolute (* relative (abs corrected-total))))
+         (if (<= total-error tolerance)
+             (finite-number-result corrected-total 'numeric #t)
+             (loop next-panels)))])))
 
 ;; simpson : semantic-value? finite-real? finite-real? hash? calculus-model?
 ;;           calculus-computation? hash? -> calculus-result?
@@ -4197,21 +4336,38 @@
                  (list (diagnostic 'parameter-kind
                                    "integer parameter assignments require an exact integer endpoint"))]
                 [else
-                 (define inside?
-                   (domain-contains? (c-param-spec-domain (c-node-data parameter))
-                                     target event-values model computation))
+                 ;; `#:via` is part of one authored continuous route, not a
+                 ;; draw-time hint.  Evaluate and validate each knot here as
+                 ;; well as in the sampler so an invalid intermediate value
+                 ;; cannot compile into a silent hold.
+                 (define via-result
+                   (if (eq? kind 'vary)
+                       (eval-raw (hash-ref (c-action-options action) 'via '())
+                                 event-values model computation)
+                       (defined '())))
+                 (define via-values
+                   (and (eq? (calculus-result-status via-result) 'defined)
+                        (calculus-result-value via-result)))
+                 (define continuous?
+                   (memq kind '(vary approach)))
+                 (define knots
+                   (and (list? via-values)
+                        (append (list (hash-ref event-values (c-node-id parameter)))
+                                via-values (list target))))
                  (cond
-                   [(not (and (eq? (calculus-result-status inside?) 'defined)
-                              (calculus-result-value inside?)))
+                   [(not (and (list? via-values) (andmap finite-real? via-values)))
+                    (list (diagnostic 'parameter-domain
+                                      "parameter action has a nonfinite #:via knot"))]
+                   [(and continuous?
+                         (not (valid-continuous-parameter-path?
+                               parameter knots event-values model computation)))
+                    (list (diagnostic 'parameter-path
+                                      "continuous parameter action leaves its declared domain"))]
+                   [(and (not continuous?)
+                         (not (valid-parameter-assignment?
+                               parameter target event-values model computation)))
                     (list (diagnostic 'parameter-domain
                                       "parameter action endpoint is outside its declared domain"))]
-                   [(and (memq kind '(vary approach))
-                         (domain-path-crosses-exclusion?
-                          (c-param-spec-domain (c-node-data parameter))
-                          (hash-ref event-values (c-node-id parameter)) target
-                          event-values model computation))
-                    (list (diagnostic 'parameter-path
-                                      "continuous parameter action crosses an excluded domain value"))]
                    [(and (eq? kind 'approach)
                          (not (valid-approach-side?
                                action (hash-ref event-values (c-node-id parameter)) target
@@ -4576,12 +4732,26 @@
 (define (continuous-action-progress start end time profile [action #f])
   (define linear-progress
     (if (= start end) 1 (min 1 (max 0 (/ (- time start) (- end start))))))
-  (define easing
+  (define easing (action-easing profile action))
+  (ease-progress linear-progress easing))
+
+;; action-easing : calculus-profile? (or/c #f c-action?) -> symbol?
+;; Resolves the explicit `'profile` spelling to the selected profile instead
+;; of accidentally treating it as an unrecognized linear easing.
+(define (action-easing profile action)
+  (define requested
     (if (and action (c-action? action)
              (hash-has-key? (c-action-options action) 'easing))
         (hash-ref (c-action-options action) 'easing)
-        (calculus-motion-data-parameter-easing
-         (calculus-profile-data-motion profile))))
+        'profile))
+  (if (eq? requested 'profile)
+      (calculus-motion-data-parameter-easing
+       (calculus-profile-data-motion profile))
+      requested))
+
+;; ease-progress : real? symbol? -> real?
+;; Applies one documented easing to a local normalized route segment.
+(define (ease-progress linear-progress easing)
   (case easing
     [(smoothstep) (* linear-progress linear-progress (- 3 (* 2 linear-progress)))]
     [else linear-progress]))
@@ -4601,7 +4771,7 @@
 ;;   Moves by cumulative path length, not by the direct endpoint chord.  This
 ;;   keeps authored intermediate knots observable at their distance-proportional
 ;;   time even when a path reverses direction.
-(define (interpolate-parameter-path knots progress)
+(define (interpolate-parameter-path knots progress [easing 'linear])
   (define lengths
     (for/list ([from (in-list knots)] [to (in-list (rest knots))])
       (abs (- to from))))
@@ -4615,10 +4785,13 @@
        (define to (first rest-knots))
        (define length (first remaining))
        (cond
+         [(zero? length)
+          (if (null? (rest remaining)) to
+              (loop to (rest rest-knots) (rest remaining) covered))]
          [(or (null? (rest remaining)) (<= travelled (+ covered length)))
-          (if (zero? length)
-              to
-              (+ from (* (/ (- travelled covered) length) (- to from))))]
+          (define local-progress
+            (ease-progress (/ (- travelled covered) length) easing))
+          (+ from (* local-progress (- to from)))]
          [else (loop to (rest rest-knots) (rest remaining) (+ covered length))]))]))
 
 ;; apply-event : pair? c-event? real? calculus-model? calculus-computation?
@@ -4769,8 +4942,16 @@
                      (let* ([target (calculus-result-value target-result)]
                             [knots (append (list initial) (calculus-result-value via-result)
                                            (list target))]
-                            [progress (continuous-action-progress start end time profile action)])
-                       (cons (hash-set values id (interpolate-parameter-path knots progress)) visible)))))]
+                            ;; Segment selection uses elapsed linear route
+                            ;; distance; easing is applied only inside the
+                            ;; selected segment so authored knots retain their
+                            ;; distance-timed moments under smoothstep.
+                            [progress (if (= start end) 1
+                                          (min 1 (max 0 (/ (- time start) (- end start)))))]
+                            [easing (action-easing profile action)])
+                       (cons (hash-set values id
+                                       (interpolate-parameter-path knots progress easing))
+                             visible)))))]
           [(set-parameter)
            (define parameter (first (c-action-targets action)))
            (define value-result (eval-raw (second (c-action-targets action)) values model computation))
@@ -4803,6 +4984,11 @@
                  (define carrier-count
                    (and (< completed (length counts))
                         (list-ref counts completed)))
+                 (define segment-start (+ start (* completed segment-duration)))
+                 (define segment-progress
+                   (if (zero? segment-duration)
+                       1
+                       (min 1 (max 0 (/ (- time segment-start) segment-duration)))))
                  (define carrier-targets
                    (refinement-dependent-targets model parameter))
                  ;; The count remains a committed mathematical integer until a
@@ -4820,7 +5006,7 @@
                                 (cons target
                                       (list 'refinement
                                             (calculus-motion-data-refinement motion)
-                                            (motion-progress)
+                                            segment-progress
                                             carrier-count)))))
                            (let ([settled
                                   (set-presentation-state
@@ -4836,7 +5022,9 @@
                                         #:lesson lesson #:visible visible)
                (let ([source-key (target-key (first targets))]
                      [target-key* (target-key (second targets))]
-                     [policy (calculus-motion-data-limit-transition motion)]
+                     [policy (if (calculus-motion-data-reduced-motion? motion)
+                                 'crossfade
+                                 (calculus-motion-data-limit-transition motion))]
                      [progress (motion-progress)])
                  (cond
                    [(< time end)
@@ -5416,24 +5604,51 @@
                              (formula-tex-atom
                               (formula-number-text (calculus-result-value result) 'exact #f)))
               "\\mathrm{undefined}"))))
-  (define (render item)
+  ;; TeX braces establish parser grouping but are not visible mathematical
+  ;; delimiters.  This renderer carries precedence through the held tree and
+  ;; writes visible parentheses where a reader needs them to recover the
+  ;; original operation tree.
+  (define (render item [outer-precedence 0])
+    (define (parenthesize text precedence)
+      (if (< precedence outer-precedence)
+          (format "\\left(~a\\right)" text)
+          text))
+    (define (render-negative-number value)
+      (define text (number->string value))
+      (if (and (negative? value) (> outer-precedence 30))
+          (format "\\left(~a\\right)" text)
+          text))
     (cond
       [(c-expression? item)
        (define op (c-expression-op item))
        (define args (c-expression-arguments item))
        (case op
-         [(+) (string-join (map render args) " + ")]
-         [(-) (if (= (length args) 1)
-                  (format "-\\left(~a\\right)" (render (first args)))
-                  (string-join (map render args) " - "))]
-         [(*) (string-join (map (lambda (value) (format "{~a}" (render value))) args) "\\cdot ")]
-         [(/) (if (= (length args) 2)
-                  (format "\\frac{~a}{~a}" (render (first args)) (render (second args)))
-                  (string-join (map render args) " / "))]
-         [(expt) (if (= (length args) 2)
-                     (format "{~a}^{~a}" (render (first args)) (render (second args)))
-                     (string-join (map render args) " ^ "))]
-         [(= < <= > >=) (string-join (map render args) (format " ~a " op))]
+         [(+)
+          (parenthesize (string-join (map (lambda (value) (render value 10)) args) " + ") 10)]
+         [(-)
+          (parenthesize
+           (if (= (length args) 1)
+               (format "-\\left(~a\\right)" (render (first args)))
+               (string-join (map (lambda (value) (render value 11)) args) " - "))
+           10)]
+         [(*)
+          (parenthesize
+           (string-join (map (lambda (value) (render value 21)) args) "\\cdot ")
+           20)]
+         [(/)
+          (parenthesize
+           (cond [(= (length args) 1) (format "\\frac{1}{~a}" (render (first args)))]
+                 [(= (length args) 2)
+                  (format "\\frac{~a}{~a}" (render (first args)) (render (second args)))]
+                 [else (string-join (map render args) " / ")])
+           20)]
+         [(expt)
+          (parenthesize
+           (if (= (length args) 2)
+               (format "~a^{~a}" (render (first args) 31) (render (second args)))
+               (string-join (map render args) " ^ "))
+           30)]
+         [(= < <= > >=) (parenthesize (string-join (map render args) (format " ~a " op)) 5)]
          [(sqrt) (format "\\sqrt{~a}" (render (first args)))]
          [(abs) (format "\\left|~a\\right|" (render (first args)))]
          [(sin cos tan asin acos atan exp log)
@@ -5448,7 +5663,7 @@
       [(or (c-node? item) (c-part? item)) (formula-tex-atom (formula-symbol item))]
       [(string? item) (formula-tex-atom item)]
       [(symbol? item) (formula-tex-atom (symbol->string item))]
-      [(number? item) (number->string item)]
+      [(number? item) (render-negative-number item)]
       [else "?"]))
   (render expression))
 
@@ -5560,6 +5775,7 @@
      (define value-result
        (eval-raw (first (c-object-arguments raw)) environment formula-model
                  (calculus-snapshot-computation snapshot)))
+     (define undefined-policy (hash-ref (c-object-options raw) 'undefined 'error))
      (if (eq? (calculus-result-status value-result) 'defined)
          (let* ([options (c-object-options raw)]
                 [label (hash-ref options 'label (formula-symbol (first (c-object-arguments raw))))]
@@ -5569,9 +5785,12 @@
            (defined (format "~a ~a~a" label prefix
                             (formula-number-text (calculus-result-value value-result)
                                                  format-kind digits))))
-         (defined (format "~a undefined"
-                          (hash-ref (c-object-options raw) 'label
-                                    (formula-symbol (first (c-object-arguments raw)))))))]
+         (cond [(eq? undefined-policy 'label)
+                (defined (format "~a undefined"
+                                 (hash-ref (c-object-options raw) 'label
+                                           (formula-symbol (first (c-object-arguments raw))))))]
+               [(eq? undefined-policy 'error) value-result]
+               [else (undefined "value-readout #:undefined must be 'error or 'label")]))]
     [else
      (let ([result (eval-raw formula-target environment formula-model (calculus-snapshot-computation snapshot))])
        (if (eq? (calculus-result-status result) 'defined)
@@ -5603,6 +5822,47 @@
      (if (eq? (calculus-result-status text-result) 'defined)
          (defined (formula-tex-atom (calculus-result-value text-result)))
          text-result)]))
+
+;; calculus-snapshot-formula-skeleton-tex : calculus-snapshot? semantic-value?
+;;                                           exact-nonnegative-integer?
+;;                                        -> calculus-result?
+;; Produces one prepared mathematical skeleton for a live Formula.  Each
+;; `(value ...)` occurrence becomes an explicitly sized invisible TeX nucleus;
+;; fractions, powers, radicals, and every held glyph therefore stay on the
+;; configured formula backend while native drawing updates only the field.
+(define (calculus-snapshot-formula-skeleton-tex snapshot target reserve)
+  (check 'calculus-snapshot-formula-skeleton-tex calculus-snapshot? "calculus-snapshot?" snapshot)
+  (unless (exact-nonnegative-integer? reserve)
+    (raise-argument-error 'calculus-snapshot-formula-skeleton-tex
+                          "exact-nonnegative-integer? field reservation" reserve))
+  (define environment (calculus-snapshot-values snapshot))
+  (define-values (formula-target formula-model)
+    (formula-target+model snapshot target))
+  (define raw (node-raw formula-target))
+  (cond
+    [(not (and (c-object? raw) (eq? (c-object-kind raw) 'formula)))
+     (unresolved "Formula skeleton requires a Formula row")]
+    [else
+     (define placeholder (format "\\phantom{~a}" (make-string reserve #\0)))
+     (define (replace-live-leaves item)
+       (cond
+         [(c-expression? item)
+          (c-expression (c-expression-op item)
+                        (map replace-live-leaves (c-expression-arguments item)))]
+         [(c-object? item)
+          (if (eq? (c-object-kind item) 'value)
+              placeholder
+              (c-object (c-object-kind item)
+                        (map replace-live-leaves (c-object-arguments item))
+                        (for/hash ([(key value) (in-hash (c-object-options item))])
+                          (values key (replace-live-leaves value)))))]
+         [(pair? item) (cons (replace-live-leaves (car item))
+                             (replace-live-leaves (cdr item)))]
+         [else item]))
+     (defined
+      (formula-held-tex
+       (replace-live-leaves (first (c-object-arguments raw)))
+       snapshot environment formula-model))]))
 
 ;; calculus-snapshot-formula-fragments : calculus-snapshot? semantic-value?
 ;;                                        -> calculus-result?

@@ -9,12 +9,14 @@
 ;; renderer smoke suite because their oracle is a rendered frame.
 
 (require rackunit
+         racket/string
          "../main.rkt"
          (only-in "../private/core.rkt"
                   calculus-snapshot-function-value
                   calculus-snapshot-formula-text
                   calculus-snapshot-formula-tex
                   calculus-snapshot-formula-fragments
+                  calculus-snapshot-formula-skeleton-tex
                   calculus-snapshot-motion-state
                   calculus-snapshot-presentation-state))
 
@@ -186,7 +188,7 @@
     (calculus-plan-sample refinement-plan #:at 1/2))
   (check-value (calculus-snapshot-ref refinement-quarter 'n) 2)
   (check-equal? (calculus-snapshot-motion-state refinement-quarter 'boxes)
-                '(refinement subdivide 1/4 4))
+                '(refinement subdivide 1/2 4))
   (check-equal? (calculus-snapshot-presentation-state refinement-quarter 'boxes)
                 'refining)
   (define-calculus-model notation
@@ -200,13 +202,113 @@
                 "(1 + 2) · 3")
   (check-equal? (calculus-result-value
                  (calculus-snapshot-formula-tex notation-snapshot 'power))
-                "{1 + 2}^{10}")
+                "\\left(1 + 2\\right)^{10}")
   (check-equal? (calculus-result-value
                  (calculus-snapshot-formula-tex notation-snapshot 'root))
                 "\\sqrt{1 + 2}")
   (check-equal? (calculus-result-value
                  (calculus-snapshot-formula-tex notation-snapshot 'nested-fraction))
                 "\\frac{1 + 2}{\\frac{3}{4}}")
+  ;; Follow-up mathematical counterexamples: unsupported symbolic work must
+  ;; remain unresolved through higher orders; numerical agreement must include
+  ;; the two one-sided slopes; and integral evidence is judged on its current
+  ;; cancellation-sensitive total rather than the first coarse estimate.
+  (define-calculus-model followup-derivatives
+    (model
+      [f (function (x) (+ (abs (expt x 3)) (* x x)))]
+      [d2 (derivative-function f #:order 2)]
+      [answer (value-at d2 1)]
+      [corner (function (x) (abs x))]
+      [numeric-corner (derivative-function corner #:method 'numeric #:step 1/10)]
+      [G (graph corner)]
+      [P (point-on G #:x 0)]
+      [T (tangent G #:at P #:derivative numeric-corner #:side 'both)]))
+  (check-equal? (calculus-result-status (model-result followup-derivatives 'answer))
+                'unresolved)
+  (check-true
+   (not (not (memq (calculus-result-status (model-result followup-derivatives 'T))
+                   '(undefined unresolved)))))
+  (define-calculus-model cancellation-integral
+    (model [f (function (x) (- (expt x 6) 1/7))]
+           [I (definite-integral f #:from 0 #:to 1)]))
+  (define cancellation-result
+    (model-result cancellation-integral 'I
+                  (calculus-computation #:absolute-tolerance 1/1000000000000
+                                        #:relative-tolerance 1/100
+                                        #:integration-budget 4096)))
+  (check-true
+   (or (eq? (calculus-result-status cancellation-result) 'unresolved)
+       (and (eq? (calculus-result-status cancellation-result) 'defined)
+            (<= (abs (calculus-result-value cancellation-result))
+                (+ 1/1000000000000
+                   (* 1/100 (abs (calculus-result-value cancellation-result))))))))
+  (define-calculus-model neighborhood-gap
+    (model
+      [D (domain-union (neighborhood 2 1) (neighborhood 5 7/4))]
+      [f (function (x) 1 #:domain D)]
+      [F (antiderivative-function f #:using (function (x) x #:domain D)
+                               #:on D #:justification "each component")]
+      [I (definite-integral f #:from 2 #:to 5 #:antiderivative F)]))
+  (check-equal? (calculus-result-status (model-result neighborhood-gap 'I))
+                'outside-domain)
+  (define-calculus-model normal-and-named-part
+    (model
+      [f (function (x) (+ (expt (- x 2) 2) 1))]
+      [df (derivative-function f)]
+      [G (graph f)]
+      [P (point-on G #:x 2)]
+      [T (tangent G #:at P #:derivative df)]
+      [N (normal T)]
+      [R (input-reading G 2)]
+      [reading-point (part R 'point)]
+      [named-input (x-coordinate reading-point)]))
+  (check-value (model-result normal-and-named-part 'N)
+               (list 'vertical 2 (cons 2 1)))
+  (check-value (model-result normal-and-named-part 'named-input) 2)
+  (define smooth-route-profile
+    (calculus-profile #:timing audit-timing
+                      #:motion (calculus-motion #:parameter-easing 'smoothstep)))
+  (define-calculus-lesson smooth-route
+    (model [a (parameter 0 #:domain (closed 0 2))])
+    (views [axis (number-line-view #:range (closed 0 2) #:objects (a))])
+    (initially (show a))
+    (step move (vary a #:via (list 2) #:to 1 #:easing 'smoothstep #:duration 3)))
+  (check-value
+   (calculus-snapshot-ref
+    (calculus-plan-sample (compile-calculus-lesson smooth-route #:profile audit-profile) #:at 2) 'a)
+   2)
+  (define-calculus-lesson profile-route
+    (model [a (parameter 0 #:domain (closed 0 1))])
+    (views [axis (number-line-view #:range (closed 0 1) #:objects (a))])
+    (initially (show a))
+    (step move (vary a #:to 1 #:easing 'profile #:duration 1)))
+  (check-value
+   (calculus-snapshot-ref
+    (calculus-plan-sample (compile-calculus-lesson profile-route #:profile smooth-route-profile)
+                          #:at 1/4)
+    'a)
+   5/32)
+  (define-calculus-lesson invalid-route
+    (model [a (parameter 0 #:domain (closed 0 1))])
+    (views [axis (number-line-view #:range (closed 0 1) #:objects (a))])
+    (initially (show a))
+    (step move (vary a #:via (list 2) #:to 1 #:duration 1)))
+  (check-true (pair? (calculus-plan-diagnostics
+                      (compile-calculus-lesson invalid-route #:profile audit-profile))))
+  ;; Dynamic leaves reserve a field inside a prepared TeX skeleton; converting
+  ;; one numeric occurrence never flattens the surrounding fraction, power,
+  ;; or radical into ordinary slash/caret text.
+  (define-calculus-model live-structured-notation
+    (model [a (parameter 9 #:domain (closed 0 10))]
+           [E (formula (/ (expt (value a) 2)
+                         (sqrt (+ (ref a) 1))))]))
+  (define structured-skeleton
+    (calculus-result-value
+     (calculus-snapshot-formula-skeleton-tex
+      (calculus-model-at live-structured-notation) 'E 2)))
+  (check-true (string-contains? structured-skeleton "\\frac"))
+  (check-true (string-contains? structured-skeleton "\\sqrt"))
+  (check-true (string-contains? structured-skeleton "^{2}"))
   (define live-initial (calculus-model-at live-field-regressions))
   (define live-final (calculus-model-at live-field-regressions #:values (hash 'a 10)))
   (define initial-fragments
