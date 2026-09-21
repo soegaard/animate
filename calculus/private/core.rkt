@@ -705,9 +705,19 @@
   (cond
     [(c-param-spec? raw) (c-node name 'parameter raw (hash))]
     [(c-node? raw)
-     (if (memq (c-node-kind raw) '(scalar parameter part))
-         (c-node name 'scalar (c-expression 'ref (list raw)) (hash))
-         raw)]
+     (case (c-node-kind raw)
+       ;; A scalar binding is deliberately a new named, read-only quantity,
+       ;; even when it refers to another scalar or parameter.  It therefore
+       ;; keeps the historical reference wrapper rather than borrowing the
+       ;; referent's presentation identity.
+       [(scalar parameter)
+        (c-node name 'scalar (c-expression 'ref (list raw)) (hash))]
+       ;; In contrast, a public Part is a nonscalar object alias.  Retain its
+       ;; semantic sort and transparent referent so chains such as
+       ;; `[P (part ...)] [A P]` share the Point's presentation identity while
+       ;; still exposing `A` as its own public diagnostic address.
+       [(part) (c-node name 'part raw (hash))]
+       [else raw])]
     [(or (c-expression? raw) (number? raw) (boolean? raw) (list? raw))
      (c-node name 'scalar raw (hash))]
     [(c-function? raw) (c-node name 'function raw (hash))]
@@ -1491,12 +1501,14 @@
     ;; the point value owned by that source.  Resolve the part once rather
     ;; than rejecting its wrapper or manufacturing a detached replacement.
     [(c-part? point) (eval-part point environment model computation lexical)]
-    ;; Binding a public part introduces a scalar `ref` alias.  Geometric
-    ;; consumers follow that alias so `(x-coordinate P)` agrees with the
-    ;; direct `(x-coordinate (part R 'point))` spelling.
+    ;; Binding a public part introduces a transparent nonscalar alias.
+    ;; Geometric consumers follow both its direct and chained forms so
+    ;; `(x-coordinate A)` agrees with `(x-coordinate (part R 'point))` when
+    ;; `A` is an alias of a named Point part.
     [(and (c-node? point)
           (or (c-expression? (c-node-data point))
-              (c-part? (c-node-data point))))
+              (c-part? (c-node-data point))
+              (eq? (c-node-kind point) 'part)))
      (result-bind
       (eval-raw point environment model computation lexical)
       (lambda (value)
@@ -3701,9 +3713,13 @@
 ;; presentation identity, visibility, and persistent state.
 (define (target-key target)
   (cond [(and (c-node? target)
-              (eq? (c-node-kind target) 'part)
-              (c-part? (c-node-data target)))
-         (target-key (c-node-data target))]
+              (eq? (c-node-kind target) 'part))
+         ;; Public Part aliases may be chained.  Follow the transparent held
+         ;; value recursively so every alias shares visibility and persistent
+         ;; state with its canonical public part, while scalar wrappers remain
+         ;; independently keyed above.
+         (or (target-key (c-node-data target))
+             (list (c-node-id target)))]
         [(c-node? target) (list (c-node-id target))]
         [(c-part? target) (append (target-key (c-part-parent target)) (if (list? (c-part-name target)) (c-part-name target) (list (c-part-name target))))]
         [(and (c-object? target) (eq? (c-object-kind target) 'in-view)) (target-key (second (c-object-arguments target)))]

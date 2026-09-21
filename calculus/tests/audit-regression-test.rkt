@@ -316,6 +316,28 @@
   (initially (show R P))
   (step dim (deemphasize P) (pause 1)))
 
+;; Thirteenth-audit fixtures extend canonical Part identity through a second
+;; model alias, without changing the distinct named-quantity rule for scalar
+;; references.
+(define-calculus-lesson r13-chained-owned-point-state
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)]
+         [A P]
+         [xA (x-coordinate A)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P A))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P A))
+  (step dim (deemphasize A) (pause 1)))
+
+(define-calculus-lesson r13-distinct-scalar-alias-state
+  (model [a (parameter 1 #:domain (closed 0 2))] [b a])
+  (views [axis (number-line-view #:range (closed 0 2) #:objects (a b))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show a b))
+  (step dim (deemphasize b) (pause 1)))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -920,7 +942,37 @@
   (check-equal? (calculus-snapshot-presentation-state r12-named-state r12-named-point #:view 'plot)
                 'deemphasized)
   (check-equal? (calculus-snapshot-presentation-state r12-named-state r12-canonical-point #:view 'plot)
-                'deemphasized))
+                'deemphasized)
+  ;; R13: a Part alias is a nonscalar alias through every model-binding hop.
+  ;; Its public name remains inspectable while its value, coordinate consumer,
+  ;; and persistent presentation state all resolve to the canonical Point.
+  (define r13-chain-state
+    (calculus-plan-sample (compile-calculus-lesson r13-chained-owned-point-state) #:at 'final))
+  (define r13-chain-model (calculus-lesson-model r13-chained-owned-point-state))
+  (define r13-point-alias (hash-ref (calculus-model-nodes r13-chain-model) 'P))
+  (define r13-second-alias (hash-ref (calculus-model-nodes r13-chain-model) 'A))
+  (define r13-canonical-point
+    (c-part (c-part (hash-ref (calculus-model-nodes r13-chain-model) 'R) '(branches 1))
+            'point))
+  (check-value (calculus-snapshot-ref r13-chain-state 'A) (cons 1 1))
+  (check-value (calculus-snapshot-ref r13-chain-state 'xA) 1)
+  (for ([target (in-list (list r13-point-alias r13-second-alias r13-canonical-point))])
+    (check-equal? (calculus-snapshot-presentation-state r13-chain-state target #:view 'plot)
+                  'deemphasized))
+  ;; Scalar aliases retain their own named read-only presentation identity.
+  (define r13-scalar-state
+    (calculus-plan-sample (compile-calculus-lesson r13-distinct-scalar-alias-state) #:at 'final))
+  (define r13-scalar-model (calculus-lesson-model r13-distinct-scalar-alias-state))
+  (check-equal?
+   (calculus-snapshot-presentation-state r13-scalar-state
+                                         (hash-ref (calculus-model-nodes r13-scalar-model) 'a)
+                                         #:view 'axis)
+   'normal)
+  (check-equal?
+   (calculus-snapshot-presentation-state r13-scalar-state
+                                         (hash-ref (calculus-model-nodes r13-scalar-model) 'b)
+                                         #:view 'axis)
+   'deemphasized))
 
 (module+ test
   (run-calculus-audit-regression-tests))

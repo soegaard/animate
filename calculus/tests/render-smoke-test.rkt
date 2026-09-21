@@ -965,6 +965,63 @@
   (step before (pause 1))
   (step dim (deemphasize (part (reading-branch R 1) 'point)) (pause 1)))
 
+;; R13 keeps whole-Reading validation aligned with individual-guide paint and
+;; resolves all public Point aliases before native presentation decisions.
+(define-calculus-lesson render-r13-mixed-input-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0 1)
+                            #:input-label #f #:output-label #f)]
+         [U (part (reading-branch R 1) 'input-guide)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (U))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show U) (pause 1)))
+
+(define-calculus-lesson render-r13-point-alias-only
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (P))])
+  (roles [P 'comparison])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P) (pause 1)))
+
+(define-calculus-lesson render-r13-point-alias-plus-inline
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (P (part (reading-branch R 1) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P) (pause 1)))
+
+(define-calculus-lesson render-r13-point-alias-with-root
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P))])
+  (roles [P 'comparison])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P)
+             (hide (part (reading-branch R 0) 'input-guide))
+             (hide (part (reading-branch R 0) 'output-guide))
+             (hide (part (reading-branch R 1) 'input-guide))
+             (hide (part (reading-branch R 1) 'output-guide)))
+  (step retain (pause 1)))
+
+(define-calculus-lesson render-r13-chained-point-state
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)] [A P])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P A))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P A))
+  (step before (pause 1))
+  (step dim (deemphasize A) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2015,6 +2072,54 @@
     (check-false (bitmap-regions-differ? (car pair) (cdr pair) 130 142 129 141)))
   (check-true (bytes=? (r11-pixels r12-named-after 338 129 12 12)
                        (r11-pixels r12-inline-after 338 129 12 12)))
+  ;; R13: an individually requested guide needs both its selected branch and
+  ;; the complete reverse-Reading candidate contract.  Native preparation
+  ;; must report the invalid sibling rather than return an accepted blank
+  ;; frame.  Paint deduplication then compares resolved Point identity only
+  ;; within this view, leaving the strict demand traversal above untouched.
+  (check-exn #rx"mathematical|candidate|branch|outside|reading|Reading"
+             (lambda () (r11-raster render-r13-mixed-input-guide)))
+  (define r13-half-opacity-profile
+    (calculus-profile
+     #:theme
+     (calculus-theme #:base light-calculus-theme
+                     #:rules (list (calculus-style #:kind 'point #:opacity 1/2)))))
+  (define r13-alias-only
+    (r11-raster render-r13-point-alias-only r13-half-opacity-profile))
+  (define r13-alias-plus-inline
+    (r11-raster render-r13-point-alias-plus-inline r13-half-opacity-profile))
+  (check-true (bytes=? (r11-pixels r13-alias-only 343 134 2 2)
+                       (r11-pixels r13-alias-plus-inline 343 134 2 2)))
+  ;; The second named alias changes the one marker that the root owns.  This
+  ;; is deliberately compared before/after at the marker only, so unchanged
+  ;; guide ink cannot satisfy the assertion.
+  (define r13-chain-before
+    (r11-raster render-r13-chained-point-state default-calculus-profile
+                (calculus-step-end 'before)))
+  (define r13-chain-after (r11-raster render-r13-chained-point-state))
+  (check-true (bitmap-regions-differ? r13-chain-before r13-chain-after 338 350 129 141))
+  ;; A target or role authored through P must reach the canonical Point that
+  ;; the visible Reading paints, without restoring a duplicate alias draw.
+  (define r13-target-profile
+    (calculus-profile
+     #:theme
+     (calculus-theme #:base light-calculus-theme
+                     #:rules (list (calculus-style #:kind 'point #:target 'P
+                                                   #:marker-radius (calculus-px 12))))))
+  (define r13-role-profile
+    (calculus-profile
+     #:theme
+     (calculus-theme #:base light-calculus-theme
+                     #:rules (list (calculus-style #:kind 'point #:role 'comparison
+                                                   #:marker-radius (calculus-px 12))))))
+  (for ([profile (in-list (list r13-target-profile r13-role-profile))])
+    (define ordinary (r11-raster render-r13-point-alias-only))
+    (define styled-alone (r11-raster render-r13-point-alias-only profile))
+    (define styled-root (r11-raster render-r13-point-alias-with-root profile))
+    (check-false (bytes=? (r11-pixels ordinary 332 123 25 25)
+                          (r11-pixels styled-alone 332 123 25 25)))
+    (check-true (bytes=? (r11-pixels styled-alone 332 123 25 25)
+                         (r11-pixels styled-root 332 123 25 25))))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

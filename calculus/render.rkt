@@ -142,6 +142,20 @@
      (presentation-target-part (first (c-object-arguments target)) (sub1 fuel))]
     [else #f]))
 
+;; presentation-identity : any/c -> any/c
+;;   Resolves a public Part alias before a native-only comparison.  A named
+;; Part, an inline selector, and a chain of named Part aliases identify one
+;; semantic presentation; independently authored coincident Points do not.
+(define (presentation-identity target)
+  (or (presentation-target-part target) target))
+
+;; same-presentation-identity? : any/c any/c -> boolean?
+;;   Keeps native paint deduplication and role/style matching on the same
+;; resolved identity boundary.
+(define (same-presentation-identity? first-target second-target)
+  (equal? (presentation-identity first-target)
+          (presentation-identity second-target)))
+
 ;; presentation-target-raw : any/c -> (or/c c-object? #f)
 ;;   A public part may be owned by a named Reading node rather than the held
 ;; object spelling.  Follow the same transparent alias boundary as
@@ -239,14 +253,21 @@
 
 ;; reading-owned-part-result : calculus-snapshot? reading-owned-part?
 ;;                              -> calculus-result?
-;;   Validates a selected branch through its exact Point rather than allowing
-;; a valid whole Reading to stand in for a nonexistent guide or input label.
+;;   Validates both the complete Reading contract and an exact selected branch.
+;; A guide may not pass strict validation from one correct candidate and then
+;; vanish because native paint discovers an invalid sibling.
 (define (reading-owned-part-result snapshot owner)
   (define branch (reading-owned-part-branch owner))
-  (if branch
-      (calculus-snapshot-ref snapshot (c-part branch 'point))
-      (calculus-snapshot-reading-points snapshot
-                                        (reading-owned-part-reading owner))))
+  (define points-result
+    (calculus-snapshot-reading-points snapshot
+                                      (reading-owned-part-reading owner)))
+  (cond
+    [(not (eq? (calculus-result-status points-result) 'defined)) points-result]
+    ;; Keep the R12 missing-branch protection after the complete Reading has
+    ;; been validated.  This result is also the selected geometry consumed by
+    ;; the individual-owned-part painter.
+    [branch (calculus-snapshot-ref snapshot (c-part branch 'point))]
+    [else points-result]))
 
 ;; reading-point-projection? : any/c -> boolean?
 ;;   Recognizes the public point projection of a Reading through direct parts,
@@ -354,13 +375,40 @@
         [(memq kind '(formula formula-of)) 'formula]
         [else #f]))
 
+;; style-selector-target : calculus-lesson? address? -> (or/c semantic-target? #f)
+;;   Resolves a public style selector only for native identity matching.  Its
+;; original spelling remains available for diagnostics and precedence.
+(define (style-selector-target lesson selector)
+  (define path
+    (cond [(symbol? selector) (list selector)]
+          [(and (list? selector) (pair? selector)) selector]
+          [else #f]))
+  (and path
+       (let ([root (hash-ref (calculus-model-nodes (calculus-lesson-model lesson))
+                             (first path) #f)])
+         (and root
+              (for/fold ([target root]) ([part-name (in-list (rest path))])
+                (and target (c-part target part-name)))))))
+
+;; style-target-matches? : calculus-lesson? address? any/c -> boolean?
+;;   A target selector denotes mathematical identity, not a particular public
+;; wrapper.  Raw-address equality preserves ordinary selectors; resolved
+;; comparison lets a Point alias style the canonical child painted by a
+;; visible Reading without leaking across component-instance scope.
+(define (style-target-matches? lesson selector target)
+  (or (equal? selector (target-address target))
+      (let ([selector-target (style-selector-target lesson selector)])
+        (and selector-target
+             (same-presentation-identity? selector-target target)))))
+
 ;; style-role-for : calculus-lesson? any/c -> (or/c symbol? #f)
-;;   Looks up authored roles by public address. A role remains presentational and
-;; therefore cannot alter the target's mathematical evaluator.
+;;   Looks up authored roles by resolved public identity. A role remains
+;; presentational and therefore cannot alter the target's mathematical
+;; evaluator.
 (define (style-role-for lesson target)
-  (define address (target-address target))
   (or (for/or ([assignment (in-list (calculus-lesson-roles lesson))])
-        (and (equal? (target-address (car assignment)) address) (cdr assignment)))
+        (and (same-presentation-identity? (car assignment) target)
+             (cdr assignment)))
       'primary))
 
 ;; style-specificity : calculus-style? -> exact-nonnegative-integer?
@@ -387,7 +435,6 @@
          (define view (list-ref context 2))
          (define target (list-ref context 3))
          (define node (list-ref context 4))
-         (define address (target-address target))
          (define kind
            (if (and (>= (length context) 6) (symbol? (list-ref context 5)))
                (list-ref context 5)
@@ -415,7 +462,9 @@
                (and (or (not (calculus-style-data-view rule))
                         (eq? (calculus-style-data-view rule) (c-view-name view)))
                     (or (not (calculus-style-data-target rule))
-                        (equal? (calculus-style-data-target rule) address))
+                        (style-target-matches? lesson
+                                               (calculus-style-data-target rule)
+                                               target))
                     (or (not (calculus-style-data-state rule))
                         (eq? (calculus-style-data-state rule) state))
                     (or (not (calculus-style-data-role rule))
@@ -1318,7 +1367,13 @@
                    (calculus-component-private-presentation-parts instance))
            '()))
      declared))
-  (remove-duplicates (append public inherited-reading-children private)))
+  ;; Membership is a per-view list, so deduplicate paint work by resolved
+  ;; semantic identity rather than wrapper structure.  Strict validation uses
+  ;; a separate unsuppressed demand list below, so no invalid selector can
+  ;; disappear as a consequence of this visual optimization.
+  (remove-duplicates (append public inherited-reading-children private)
+                     equal?
+                     #:key presentation-identity))
 
 ;; view-demanded-presentation-objects : calculus-lesson? calculus-snapshot?
 ;;                                      c-view? -> list?
@@ -2854,29 +2909,36 @@
   (define kind (reading-owned-part-kind owner))
   (define branch (reading-owned-part-branch owner))
   (define reading (reading-owned-part-reading owner))
-  (define index (if branch (second (c-part-name branch)) 0))
-  (define result (calculus-snapshot-reading-points snapshot reading))
-  (when (and (eq? (calculus-result-status result) 'defined)
-             (< index (length (calculus-result-value result))))
-    (define point (list-ref (calculus-result-value result) index))
-    (case kind
-      [(input-guide output-guide)
-       (draw-output-reading-guide context kind point xmin xmax ymin ymax left top width height color)]
-      [(input-label output-label)
-       (define raw (presentation-target-raw reading))
-       (define mode
-         (and raw
-              (hash-ref (c-object-options raw)
-                        (if (eq? kind 'input-label) 'input-label 'output-label)
-                        'symbolic)))
-       (define label-part
-         (if (eq? kind 'input-label)
-             (c-part branch 'input-label)
-             (c-part reading 'output-label)))
-       (when (or (not view)
-                 (calculus-snapshot-label-visible? snapshot label-part #:view (c-view-name view)))
-         (draw-output-reading-label context kind point mode xmin xmax ymin ymax left top width height))]
-      [else (void)])))
+  ;; Use the same bridge as strict validation.  A selected guide consumes its
+  ;; selected point only after the complete Reading contract and branch
+  ;; existence have both been established; it never makes a later, stronger
+  ;; request that could silently turn accepted output into a blank frame.
+  (define result (reading-owned-part-result snapshot owner))
+  (when (eq? (calculus-result-status result) 'defined)
+    (define value (calculus-result-value result))
+    (define point
+      (if branch
+          value
+          (and (pair? value) (first value))))
+    (when (and (pair? point) (real? (car point)) (real? (cdr point)))
+      (case kind
+        [(input-guide output-guide)
+         (draw-output-reading-guide context kind point xmin xmax ymin ymax left top width height color)]
+        [(input-label output-label)
+         (define raw (presentation-target-raw reading))
+         (define mode
+           (and raw
+                (hash-ref (c-object-options raw)
+                          (if (eq? kind 'input-label) 'input-label 'output-label)
+                          'symbolic)))
+         (define label-part
+           (if (eq? kind 'input-label)
+               (c-part branch 'input-label)
+               (c-part reading 'output-label)))
+         (when (or (not view)
+                   (calculus-snapshot-label-visible? snapshot label-part #:view (c-view-name view)))
+           (draw-output-reading-label context kind point mode xmin xmax ymin ymax left top width height))]
+        [else (void)]))))
 
 ;; draw-output-reading : drawing-context% calculus-snapshot? semantic-value? ... -> void?
 ;;   A reverse Reading is the explicit choreography output -> selected graph
