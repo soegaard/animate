@@ -877,6 +877,94 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show R)))
 
+;; R12 keeps strict selection validation separate from duplicate painting and
+;; canonicalizes a named reverse-Reading Point before the root draws it.
+(define-calculus-lesson render-r12-visible-root-missing-inline
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (R (part (reading-branch R 7) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step retain (pause 1)))
+
+(define-calculus-lesson render-r12-visible-root-missing-named
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 7) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P))
+  (step retain (pause 1)))
+
+(define-calculus-lesson render-r12-missing-input-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [U (part (reading-branch R 7) 'input-guide)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (U))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show U) (pause 1)))
+
+(define-calculus-lesson render-r12-missing-output-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [U (part (reading-branch R 7) 'output-guide)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (U))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show U) (pause 1)))
+
+(define-calculus-lesson render-r12-inherited-missing-input-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 7) 'input-guide)) (pause 1)))
+
+(define-calculus-lesson render-r12-valid-input-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [U (part (reading-branch R 1) 'input-guide)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (U))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show U) (pause 1)))
+
+(define-calculus-lesson render-r12-valid-output-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [U (part (reading-branch R 1) 'output-guide)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (U))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show U) (pause 1)))
+
+(define-calculus-lesson render-r12-named-point-state
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P))
+  (step before (pause 1))
+  (step dim (deemphasize P) (pause 1)))
+
+(define-calculus-lesson render-r12-inline-point-state
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P))
+  (step before (pause 1))
+  (step dim (deemphasize (part (reading-branch R 1) 'point)) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -1892,6 +1980,41 @@
     (define actual (r11-raster lesson r11-half-opacity-points-profile))
     (check-true (bytes=? (bitmap-argb-bytes r11-root-bitmap 480 270)
                          (bitmap-argb-bytes actual 480 270))))
+  ;; R12: validation visits every visible requested selector before paint
+  ;; suppression. A valid Reading cannot stand in for an out-of-range Point or
+  ;; guide, while valid selected guides retain their independent draw paths.
+  (for ([lesson (in-list (list render-r12-visible-root-missing-inline
+                               render-r12-visible-root-missing-named
+                               render-r12-missing-input-guide
+                               render-r12-missing-output-guide
+                               render-r12-inherited-missing-input-guide))])
+    (check-exn #rx"mathematical|candidate|branch|outside|reading|Reading"
+               (lambda () (r11-raster lesson))))
+  (for ([lesson (in-list (list render-r12-valid-input-guide
+                               render-r12-valid-output-guide))]
+        [region (in-list (list (list 334 354 151 171)
+                               (list 272 292 125 145)))])
+    (define initial (r11-raster lesson default-calculus-profile 'initial))
+    (define final (r11-raster lesson))
+    (check-true (bitmap-regions-differ? initial final
+                                        (first region) (second region)
+                                        (third region) (fourth region))))
+  ;; A named Point and its inline spelling resolve to the same canonical
+  ;; state before the visible Reading paints its single owned marker.
+  (define r12-named-before
+    (r11-raster render-r12-named-point-state default-calculus-profile
+                (calculus-step-end 'before)))
+  (define r12-named-after (r11-raster render-r12-named-point-state))
+  (define r12-inline-before
+    (r11-raster render-r12-inline-point-state default-calculus-profile
+                (calculus-step-end 'before)))
+  (define r12-inline-after (r11-raster render-r12-inline-point-state))
+  (for ([pair (in-list (list (cons r12-named-before r12-named-after)
+                             (cons r12-inline-before r12-inline-after)))])
+    (check-true (bitmap-regions-differ? (car pair) (cdr pair) 338 350 129 141))
+    (check-false (bitmap-regions-differ? (car pair) (cdr pair) 130 142 129 141)))
+  (check-true (bytes=? (r11-pixels r12-named-after 338 129 12 12)
+                       (r11-pixels r12-inline-after 338 129 12 12)))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

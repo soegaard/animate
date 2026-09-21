@@ -286,6 +286,36 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show (part (reading-branch R 7) 'point))))
 
+;; Twelfth-audit fixtures distinguish strict demanded identity from a later
+;; paint deduplication decision, including the canonical state of a named Part.
+(define-calculus-lesson r12-visible-root-missing-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (R (part (reading-branch R 7) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step retain (pause 1)))
+
+(define-calculus-lesson r12-inherited-missing-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 7) 'input-guide))))
+
+(define-calculus-lesson r12-named-owned-point-state
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P))
+  (step dim (deemphasize P) (pause 1)))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -849,7 +879,48 @@
                                                                                 (calculus-lesson-model lesson))
                                                                                'R)
                                                                      #:view 'plot)))
-    (check-not-equal? (calculus-result-status (calculus-snapshot-ref state target)) 'defined))
+    (check-not-equal? (calculus-result-status (calculus-snapshot-ref state target)) 'defined)
+  ;; R12: rendering may deduplicate a Reading child only after the explicitly
+  ;; requested identity is validated, and a named Part's state shares that
+  ;; canonical child's identity when the root performs the one remaining draw.
+  (define r12-missing-state
+    (calculus-plan-sample (compile-calculus-lesson r12-visible-root-missing-point) #:at 'final))
+  (define r12-missing-root
+    (hash-ref (calculus-model-nodes
+               (calculus-lesson-model r12-visible-root-missing-point))
+              'R))
+  (define r12-missing-point (c-part (c-part r12-missing-root '(branches 7)) 'point))
+  (check-true (calculus-snapshot-visible? r12-missing-state r12-missing-root #:view 'plot))
+  (check-true (calculus-snapshot-visible? r12-missing-state r12-missing-point #:view 'plot))
+  (check-not-equal? (calculus-result-status
+                     (calculus-snapshot-ref r12-missing-state r12-missing-point))
+                    'defined)
+  (define r12-guide-state
+    (calculus-plan-sample (compile-calculus-lesson r12-inherited-missing-guide) #:at 'final))
+  (define r12-guide-root
+    (hash-ref (calculus-model-nodes
+               (calculus-lesson-model r12-inherited-missing-guide))
+              'R))
+  (define r12-missing-guide (c-part (c-part r12-guide-root '(branches 7)) 'input-guide))
+  (check-not-false
+   (member r12-missing-guide
+           (calculus-snapshot-reading-owned-parts r12-guide-state r12-guide-root #:view 'plot)))
+  (define r12-named-state
+    (calculus-plan-sample (compile-calculus-lesson r12-named-owned-point-state) #:at 'final))
+  (define r12-named-point
+    (hash-ref (calculus-model-nodes
+               (calculus-lesson-model r12-named-owned-point-state))
+              'P))
+  (define r12-canonical-point
+    (c-part (c-part (hash-ref (calculus-model-nodes
+                                (calculus-lesson-model r12-named-owned-point-state))
+                               'R)
+                    '(branches 1))
+            'point))
+  (check-equal? (calculus-snapshot-presentation-state r12-named-state r12-named-point #:view 'plot)
+                'deemphasized)
+  (check-equal? (calculus-snapshot-presentation-state r12-named-state r12-canonical-point #:view 'plot)
+                'deemphasized))
 
 (module+ test
   (run-calculus-audit-regression-tests))

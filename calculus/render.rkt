@@ -237,6 +237,17 @@
        (memq (reading-owned-part-kind owner) '(input-label output-label))
        owner))
 
+;; reading-owned-part-result : calculus-snapshot? reading-owned-part?
+;;                              -> calculus-result?
+;;   Validates a selected branch through its exact Point rather than allowing
+;; a valid whole Reading to stand in for a nonexistent guide or input label.
+(define (reading-owned-part-result snapshot owner)
+  (define branch (reading-owned-part-branch owner))
+  (if branch
+      (calculus-snapshot-ref snapshot (c-part branch 'point))
+      (calculus-snapshot-reading-points snapshot
+                                        (reading-owned-part-reading owner))))
+
 ;; reading-point-projection? : any/c -> boolean?
 ;;   Recognizes the public point projection of a Reading through direct parts,
 ;; named aliases, and a selected reverse-reading branch. Native validation and
@@ -1308,6 +1319,30 @@
            '()))
      declared))
   (remove-duplicates (append public inherited-reading-children private)))
+
+;; view-demanded-presentation-objects : calculus-lesson? calculus-snapshot?
+;;                                      c-view? -> list?
+;;   Lists every declared or inherited visible semantic demand before the paint
+;; planner suppresses a duplicate Reading child. A draw optimization must not
+;; make a missing selected part escape strict native validation.
+(define (view-demanded-presentation-objects lesson snapshot view)
+  (define declared (view-objects view))
+  (define (reading-root target)
+    (and (output-reading-target? target)
+         (or (presentation-target-part target) target)))
+  (define owned-reading-children
+    (append-map
+     (lambda (target)
+       (define reading (reading-root target))
+       (if reading
+           (calculus-snapshot-reading-owned-parts snapshot reading
+                                                  #:view (c-view-name view))
+           '()))
+     declared))
+  (remove-duplicates
+   (append (view-presentation-objects lesson snapshot view)
+           declared
+           owned-reading-children)))
 
 ;; presentation-visible? : calculus-snapshot? any/c address? c-view? -> boolean?
 ;;   Keeps private expanded leaves out of the public address resolver while
@@ -3782,10 +3817,10 @@
      (calculus-snapshot-ref snapshot target)]
     [(output-reading-guide-part target)
      => (lambda (owner)
-          (calculus-snapshot-reading-points snapshot (reading-owned-part-reading owner)))]
+          (reading-owned-part-result snapshot owner))]
     [(output-reading-label-part target)
      => (lambda (owner)
-          (calculus-snapshot-reading-points snapshot (reading-owned-part-reading owner)))]
+          (reading-owned-part-result snapshot owner))]
     [else
      (case (c-node-kind node)
        [(output-reading)
@@ -3833,7 +3868,7 @@
   (define lesson (calculus-plan-lesson plan))
   (define model (calculus-lesson-model lesson))
   (for* ([view (in-hash-values (calculus-lesson-views lesson))]
-         [target (in-list (view-presentation-objects lesson snapshot view))])
+         [target (in-list (view-demanded-presentation-objects lesson snapshot view))])
     (define address (target-address target))
     (define node
       (or (and (c-part? target)

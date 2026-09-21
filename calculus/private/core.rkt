@@ -3696,9 +3696,15 @@
   (calculus-snapshot model (hash-set initial snapshot-basis-key initial) (hash) '() computation))
 
 ;; target-key : semantic-target? -> (or/c list? #f)
-;;   Normalizes a public target to its stable presentation key.
+;;   Normalizes a public target to its stable presentation key. A named Part
+;; alias retains its public address for diagnostics but shares the referent's
+;; presentation identity, visibility, and persistent state.
 (define (target-key target)
-  (cond [(c-node? target) (list (c-node-id target))]
+  (cond [(and (c-node? target)
+              (eq? (c-node-kind target) 'part)
+              (c-part? (c-node-data target)))
+         (target-key (c-node-data target))]
+        [(c-node? target) (list (c-node-id target))]
         [(c-part? target) (append (target-key (c-part-parent target)) (if (list? (c-part-name target)) (c-part-name target) (list (c-part-name target))))]
         [(and (c-object? target) (eq? (c-object-kind target) 'in-view)) (target-key (second (c-object-arguments target)))]
         [else #f]))
