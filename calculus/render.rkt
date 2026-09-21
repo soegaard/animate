@@ -122,6 +122,38 @@
       "#FAFAFA"
       "#242A35"))
 
+;; presentation-target-part : any/c -> (or/c c-part? #f)
+;;   Follows transparent public-node aliases to their underlying public part.
+;; A bounded walk keeps native presentation dispatch total even when a future
+;; malformed model introduces a reference cycle outside normal compilation.
+(define (presentation-target-part target [fuel 32])
+  (cond
+    [(zero? fuel) #f]
+    [(c-part? target) target]
+    [(c-node? target)
+     (presentation-target-part (c-node-data target) (sub1 fuel))]
+    [(and (c-expression? target)
+          (eq? (c-expression-op target) 'ref)
+          (= (length (c-expression-arguments target)) 1))
+     (presentation-target-part (first (c-expression-arguments target)) (sub1 fuel))]
+    [(and (c-object? target)
+          (eq? (c-object-kind target) 'ref)
+          (= (length (c-object-arguments target)) 1))
+     (presentation-target-part (first (c-object-arguments target)) (sub1 fuel))]
+    [else #f]))
+
+;; reading-point-projection? : any/c -> boolean?
+;;   Recognizes the public point projection of a Reading through direct parts
+;; and named aliases, so native validation and painting share one typed fact.
+(define (reading-point-projection? target)
+  (define part (presentation-target-part target))
+  (and (c-part? part)
+       (eq? (c-part-name part) 'point)
+       (let ([parent (c-part-parent part)])
+         (and (c-node? parent)
+              (memq (c-node-kind parent)
+                    '(input-reading output-reading coordinate-reading))))))
+
 ;; style-theme-rules : calculus-theme? -> list?
 ;;   Flattens inherited rules base-first, so a derived theme's equal-specificity
 ;; rule wins exactly by later source order.
@@ -135,7 +167,8 @@
 ;;   Maps concrete semantic nodes to the small documented selector vocabulary.
 (define (style-kind-for target node)
   (define kind (and node (c-node-kind node)))
-  (cond [(memq kind '(graph graph-restriction)) 'graph]
+  (cond [(reading-point-projection? target) 'point]
+        [(memq kind '(graph graph-restriction)) 'graph]
         [(memq kind '(point point-on axis-point projection root-point intersection-point)) 'point]
         [(memq kind '(segment chord error-segment)) 'segment]
         [(memq kind '(line-through ray-through horizontal-line vertical-line secant tangent vertical-tangent normal)) 'line]
@@ -2888,7 +2921,10 @@
           [(and node (memq (c-node-kind node)
                            '(interval-marker endpoint-marker approach-marker)))
            (draw-marker context snapshot node xmin xmax ymin ymax left top width height)]
-          [(and node (memq (c-node-kind node) '(point point-on axis-point projection root-point intersection-point)))
+          [(or (and node
+                    (memq (c-node-kind node)
+                          '(point point-on axis-point projection root-point intersection-point)))
+               (reading-point-projection? target))
            (draw-point context snapshot value-target xmin xmax ymin ymax left top width height)]
           [(and node
                 (memq (c-node-kind node)
@@ -2928,11 +2964,6 @@
            (draw-newton-diagram context snapshot node xmin xmax ymin ymax left top width height)]
           [(and node (eq? (c-node-kind node) 'trace-of))
            (draw-trace context snapshot node xmin xmax ymin ymax left top width height)]
-          ;; A selected reading's public `point` projection is a point, not a
-          ;; second reading.  Dispatch the typed projection before its root
-          ;; input-reading node so it receives its ordinary point marker.
-          [(and (list? address) (= (length address) 2) (eq? (second address) 'point))
-           (draw-point context snapshot address xmin xmax ymin ymax left top width height)]
           [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
            (draw-reading context snapshot address xmin xmax ymin ymax left top width height
                          "#6A6A6A"
@@ -2942,9 +2973,10 @@
                               (motion-progress motion-state 'reading)))]
           [else (void)])
         (when (eq? presentation-state 'highlighted)
-          (cond [(and node
-                      (memq (c-node-kind node)
-                            '(point point-on axis-point projection root-point intersection-point)))
+          (cond [(or (and node
+                          (memq (c-node-kind node)
+                                '(point point-on axis-point projection root-point intersection-point)))
+                     (reading-point-projection? target))
                  (draw-highlight-ring context snapshot value-target
                                       xmin xmax ymin ymax left top width height)]
                 [(and node
@@ -2955,9 +2987,6 @@
                  ;; extent, not a screen-space approximation of a linked slope.
                  (draw-geometric-line context snapshot node value-target
                                       xmin xmax ymin ymax left top width height "#D97706")]
-                [(and (list? address) (= (length address) 2) (eq? (second address) 'point))
-                 (draw-highlight-ring context snapshot address
-                                      xmin xmax ymin ymax left top width height)]
                 [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
                  (draw-reading context snapshot address
                                xmin xmax ymin ymax left top width height "#D97706")]
@@ -3337,7 +3366,10 @@
           (calculus-snapshot-component-private-visible? snapshot target)
           (and address
                (calculus-snapshot-visible? snapshot address #:view (c-view-name view)))))
-    (when (and address node (demanded-native-node? node) visible?)
+    (when (and address node
+               (or (demanded-native-node? node)
+                   (reading-point-projection? target))
+               visible?)
       (define result
         (demanded-native-result snapshot node target address private?))
       (unless (eq? (calculus-result-status result) 'defined)

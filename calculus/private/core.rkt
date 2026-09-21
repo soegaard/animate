@@ -1289,8 +1289,14 @@
                                        (/ (- center left) (- input left-input)))))))))))
              (define coarse-stencil (effective-stencil h))
              (define fine-stencil (effective-stencil (/ h 2)))
-             (if (not (and coarse-stencil fine-stencil))
-                 (unresolved "numeric derivative stencil collapsed at the requested input" 'numeric)
+             ;; Agreement between the same rounded endpoints is not a
+             ;; refinement check.  A smaller requested h must produce a
+             ;; strictly narrower effective stencil before it can corroborate
+             ;; the coarse estimate.
+             (define (strictly-finer-stencil? coarse fine)
+               (< (- (third fine) input) (- (third coarse) input)))
+             (if (and coarse-stencil fine-stencil
+                      (strictly-finer-stencil? coarse-stencil fine-stencil))
                  (result-bind
                   (centered coarse-stencil)
                   (lambda (coarse)
@@ -1313,7 +1319,8 @@
                              (finite-number-result fine 'numeric #t)]
                             [(zero? remaining)
                              (unresolved "numeric derivative did not establish a stable two-sided slope" 'numeric)]
-                            [else (loop (/ h 2) (sub1 remaining))])))))))))])]
+                            [else (loop (/ h 2) (sub1 remaining))])))))))
+                 (unresolved "numeric derivative refinement did not produce a smaller effective stencil" 'numeric)))])]
        [else
         (define source-function (lookup-function source))
         (if (c-function? source-function)
@@ -1379,8 +1386,13 @@
   (cond [(not (c-object? source)) calculus-real-line]
         [(eq? (c-object-kind source) 'graph)
          (define function (graph-function graph))
-         (hash-ref (c-object-options source) 'on
-                   (function-domain (or (lookup-function function) function)))]
+         ;; `#:on` narrows a graph's declared range; it cannot restore inputs
+         ;; excluded by the source function.  Keep one composed domain for
+         ;; direct evaluation and every topology consumer such as regions.
+         (define source-domain (function-domain (or (lookup-function function) function)))
+         (define declared-domain
+           (hash-ref (c-object-options source) 'on source-domain))
+         (c-domain 'domain-intersection (list source-domain declared-domain))]
         [(eq? (c-object-kind source) 'graph-restriction)
          (define arguments (c-object-arguments source))
          (if (>= (length arguments) 2)

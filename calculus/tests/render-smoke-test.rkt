@@ -888,6 +888,19 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show (part R 'point))))
 
+;; render-named-reading-point-projection : calculus-lesson?
+;; A named public alias to a Reading's point receives the same point marker
+;; dispatch as the literal projection in the preceding lesson.
+(define-calculus-lesson render-named-reading-point-projection
+  (model [f (function (x) (* x x))]
+         [G (graph f)]
+         [R (input-reading G 1)]
+         [P (part R 'point)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects (P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P)))
+
 ;; render-positioned-live-fields : calculus-lesson?
 ;; Exercises the real backend's prepared field probes in numerator,
 ;; denominator, exponent, radical, and nested positions at an interior state.
@@ -927,6 +940,28 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (initially (show r))
   (step move (vary a #:to (expt 10 100) #:easing 'linear #:duration 1)))
+
+;; render-hidden-wide-exact-readout : calculus-lesson?
+;; The initially undefined value is hidden, but its later defined exact form
+;; still participates in preparation-time field bounds and overflow checks.
+(define-calculus-lesson render-hidden-wide-exact-readout
+  (model [a (parameter 0 #:domain (closed 0 1))]
+         [r (value-readout (/ 1 a) #:label "r" #:format 'exact)])
+  (views [facts (formula-view #:objects (r))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step establish
+    (set-parameter a (/ 1 (expt 10 200)))
+    (show r)))
+
+;; render-hidden-small-exact-readout : calculus-lesson?
+;; The companion small final value establishes that becoming defined before
+;; showing a readout remains a supported native rendering path.
+(define-calculus-lesson render-hidden-small-exact-readout
+  (model [a (parameter 0 #:domain (closed 0 1))]
+         [r (value-readout (/ 1 a) #:label "r" #:format 'exact)])
+  (views [facts (formula-view #:objects (r))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step establish (set-parameter a 1/2) (show r)))
 
 ;; render-invalid-composite-reading : calculus-lesson?
 ;; A reading root is a descriptor, but its demanded point is undefined at the
@@ -1152,6 +1187,18 @@
   ;; Reading root, so its marker changes ink at its mathematical coordinate.
   (check-true (bitmap-regions-differ? selected-reading-initial selected-reading-final
                                       230 250 125 145))
+  ;; R5: model naming must not erase the type-directed point projection.
+  (define named-reading-prepared
+    (prepare-calculus-lesson render-named-reading-point-projection
+                             #:width 480 #:height 270))
+  (define named-reading-initial
+    (pict->opaque-bitmap
+     (prepared-lesson->pict named-reading-prepared #:at 'initial) 480 270))
+  (define named-reading-final
+    (pict->opaque-bitmap
+     (prepared-lesson->pict named-reading-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? named-reading-initial named-reading-final
+                                      230 250 125 145))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared
@@ -1315,6 +1362,39 @@
     (prepare-calculus-lesson render-wide-exact-readout #:width 480 #:height 270))
   (check-exn #rx"field|layout|overflow|reservation"
              (lambda () (prepared-lesson->pict wide-readout-prepared #:at 'final)))
+  ;; R5: an initially hidden, undefined readout still has to reserve its
+  ;; later exact value.  The oversized variant fails visibly and the small
+  ;; companion variant renders normally.
+  (define hidden-wide-readout-prepared
+    (prepare-calculus-lesson render-hidden-wide-exact-readout
+                             #:width 480 #:height 270))
+  (define hidden-wide-readout-snapshot
+    (calculus-plan-sample (prepared-lesson-plan hidden-wide-readout-prepared)
+                          #:at 'final))
+  (check-equal?
+   (calculus-result-value
+    (calculus-snapshot-formula-text hidden-wide-readout-snapshot 'r))
+   (string-append "r " (number->string (expt 10 200))))
+  (check-exn #rx"field|layout|fit|minimum"
+             (lambda ()
+               (pict->opaque-bitmap
+                (prepared-lesson->pict hidden-wide-readout-prepared #:at 'final)
+                480 270)))
+  (define hidden-small-readout-prepared
+    (prepare-calculus-lesson render-hidden-small-exact-readout
+                             #:width 480 #:height 270))
+  (define hidden-small-readout-snapshot
+    (calculus-plan-sample (prepared-lesson-plan hidden-small-readout-prepared)
+                          #:at 'final))
+  (check-equal?
+   (calculus-result-value
+    (calculus-snapshot-formula-text hidden-small-readout-snapshot 'r))
+   "r 2")
+  (check-not-exn
+   (lambda ()
+     (pict->opaque-bitmap
+      (prepared-lesson->pict hidden-small-readout-prepared #:at 'final)
+      480 270)))
   ;; The six complete Guide modules are not merely headless declarations.
   ;; Exercise their final native preparations as standard 1280×720 in-memory
   ;; rasters, keeping this test free of persisted image or video artifacts.

@@ -450,7 +450,35 @@
       restricted-region-snapshot
       (calculus-result-value (calculus-snapshot-ref restricted-region-snapshot 'R)))))
   (check-true (no-region-strip-across? restricted-region-samples
-                                       (/ (+ 1/7 29/200) 2))))
+                                       (/ (+ 1/7 29/200) 2)))
+  ;; R5: agreeing finite-difference estimates are only evidence when the
+  ;; refinement really narrowed the floating-point stencil at the input.
+  (define-calculus-model duplicate-effective-numeric-stencil
+    (model [f (function (x) (expt (- x 1e16) 3))]
+           [df (derivative-function f #:method 'numeric #:step 2.5)]
+           [answer (value-at df 1e16)]))
+  (define duplicate-stencil-answer
+    (model-result duplicate-effective-numeric-stencil 'answer))
+  (if (eq? (calculus-result-status duplicate-stencil-answer) 'defined)
+      (check-= (calculus-result-value duplicate-stencil-answer) 0 1e-9)
+      (check-equal? (calculus-result-status duplicate-stencil-answer)
+                    'unresolved))
+  ;; Graph-local `#:on` further restricts the source function's domain; it
+  ;; does not restore a source pole that lies inside that displayed interval.
+  (define-calculus-model explicit-graph-domain-pole
+    (model [f (function (x) (/ 1 (- x 1/7))
+                       #:domain (domain-except real-line 1/7))]
+           [G (graph f #:on (closed 0 1))]
+           [R (region-under G #:from 0 #:to 1)]))
+  (define explicit-domain-snapshot
+    (calculus-model-at explicit-graph-domain-pole))
+  (define explicit-domain-samples
+    (calculus-result-value
+     (calculus-snapshot-region-samples
+      explicit-domain-snapshot
+      (calculus-result-value
+       (calculus-snapshot-ref explicit-domain-snapshot 'R)))))
+  (check-true (no-region-strip-across? explicit-domain-samples 1/7)))
 
 (module+ test
   (run-calculus-audit-regression-tests))
