@@ -355,6 +355,78 @@
   (step dim (deemphasize v) (pause 1))
   (step conceal (hide v) (pause 1)))
 
+;; R15: selected type lookup must cross each finite component-export boundary,
+;; not stop at the first exported Component root.
+(define-calculus-component r15-scalar-leaf
+  (inputs [x : Scalar])
+  (model [s (+ x 0)])
+  (exports s))
+
+(define-calculus-component r15-scalar-shell
+  (inputs [x : Scalar])
+  (model [inner (use-component r15-scalar-leaf x)])
+  (exports inner))
+
+(define-calculus-lesson r15-nested-scalar-export-state
+  (model [a (parameter 1 #:domain (closed 0 2))]
+         [study (use-component r15-scalar-shell a)]
+         [u (part (part study 'inner) 's)] [v u])
+  (views [axis (number-line-view #:range (closed 0 2) #:objects (u v))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show u v))
+  (step dim (deemphasize v) (pause 1))
+  (step conceal (hide v) (pause 1)))
+
+;; R15: component contracts follow a selected object's semantic type instead
+;; of the surface constructor that first carried it into the caller model.
+(define-calculus-component r15-point-consumer
+  (inputs [p : Point])
+  (model [x (x-coordinate p)])
+  (exports x))
+
+(define-calculus-component r15-scalar-pass-through
+  (inputs [x : Scalar])
+  (model [out x])
+  (exports out))
+
+(define-calculus-component r15-integer-pass-through
+  (inputs [n : Integer])
+  (model [out n])
+  (exports out))
+
+(define-calculus-component r15-boolean-pass-through
+  (inputs [b : Boolean])
+  (model [out b])
+  (exports out))
+
+(define-calculus-model r15-typed-component-inputs
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G 1)] [P (part R 'point)]
+         [moving (point a a)] [S (snapshot-of moving #:values ([a 1]))]
+         [H (horizontal-line 1)] [PL (point-on-line H #:x 1)]
+         [g (function (x) (+ (expt (- x 1) 2) 1))] [GG (graph g)]
+         [F (feature-point GG #:at 1 #:kind 'global-minimum
+                           #:justification "(x-1)^2 is nonnegative and vanishes at x=1.")]
+         [projected (use-component r15-point-consumer P)]
+         [inline (use-component r15-point-consumer (part R 'point))]
+         [frozen (use-component r15-point-consumer S)]
+         [on-line (use-component r15-point-consumer PL)]
+         [feature (use-component r15-point-consumer F)]
+         [scalar (use-component r15-scalar-pass-through 1)]
+         [integer (use-component r15-integer-pass-through 2)]
+         [boolean (use-component r15-boolean-pass-through #t)]))
+
+(define-calculus-model r15-named-point-as-scalar
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G 1)] [P (part R 'point)]
+         [bad (use-component r15-scalar-pass-through P)]))
+
+(define-calculus-model r15-inline-point-as-scalar
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G 1)]
+         [bad (use-component r15-scalar-pass-through (part R 'point))]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -1006,7 +1078,44 @@
   (check-equal? (calculus-snapshot-presentation-state r14-scalar-dim r14-v #:view 'axis)
                 'deemphasized)
   (check-true (calculus-snapshot-visible? r14-scalar-final 'u #:view 'axis))
-  (check-false (calculus-snapshot-visible? r14-scalar-final 'v #:view 'axis)))
+  (check-false (calculus-snapshot-visible? r14-scalar-final 'v #:view 'axis))
+  ;; R15: the selected leaf below the outer Component is a Scalar. `u` and
+  ;; `v` therefore remain distinct named quantities even though their values
+  ;; flow through the same finite component chain.
+  (define r15-nested-plan (compile-calculus-lesson r15-nested-scalar-export-state))
+  (define r15-nested-dim
+    (calculus-plan-sample r15-nested-plan #:at (calculus-step-end 'dim)))
+  (define r15-nested-final (calculus-plan-sample r15-nested-plan #:at 'final))
+  (define r15-nested-model (calculus-lesson-model r15-nested-scalar-export-state))
+  (define r15-u (hash-ref (calculus-model-nodes r15-nested-model) 'u))
+  (define r15-v (hash-ref (calculus-model-nodes r15-nested-model) 'v))
+  (for ([address (in-list '((study inner s) u v))])
+    (check-value (calculus-snapshot-ref r15-nested-final address) 1))
+  (define r15-overridden
+    (calculus-plan-sample (compile-calculus-lesson r15-nested-scalar-export-state
+                                                    #:values (hash 'a 2))
+                          #:at 'final))
+  (for ([address (in-list '((study inner s) u v))])
+    (check-value (calculus-snapshot-ref r15-overridden address) 2))
+  (check-equal? (calculus-snapshot-presentation-state r15-nested-dim r15-u #:view 'axis)
+                'normal)
+  (check-equal? (calculus-snapshot-presentation-state r15-nested-dim r15-v #:view 'axis)
+                'deemphasized)
+  (check-true (calculus-snapshot-visible? r15-nested-final 'u #:view 'axis))
+  (check-false (calculus-snapshot-visible? r15-nested-final 'v #:view 'axis))
+  ;; Selected Reading parts, frozen points, line points, and feature points
+  ;; retain Point type at a component boundary.  The separate Scalar contract
+  ;; accepts Scalar/Integer values but never a Point carried by a public Part.
+  (define r15-input-snapshot (calculus-model-at r15-typed-component-inputs))
+  (for ([address (in-list '((projected x) (inline x) (frozen x) (on-line x) (feature x)))])
+    (check-value (calculus-snapshot-ref r15-input-snapshot address) 1))
+  (check-value (calculus-snapshot-ref r15-input-snapshot '(scalar out)) 1)
+  (check-value (calculus-snapshot-ref r15-input-snapshot '(integer out)) 2)
+  (check-value (calculus-snapshot-ref r15-input-snapshot '(boolean out)) #t)
+  (for ([model (in-list (list r15-named-point-as-scalar r15-inline-point-as-scalar))])
+    (check-equal? (calculus-result-status
+                   (calculus-snapshot-ref (calculus-model-at model) '(bad out)))
+                  'undefined)))
 
 (module+ test
   (run-calculus-audit-regression-tests))

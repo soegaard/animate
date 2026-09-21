@@ -1069,6 +1069,96 @@
                    (part (reading-branch R 1) 'output-guide)))
   (step retain (pause 1)))
 
+;; R15 keeps the selected Scalar identity through a finite nested component
+;; export, and carries Point types through component input boundaries.
+(define-calculus-component render-r15-scalar-leaf
+  (inputs [x : Scalar])
+  (model [s (+ x 0)])
+  (exports s))
+
+(define-calculus-component render-r15-scalar-shell
+  (inputs [x : Scalar])
+  (model [inner (use-component render-r15-scalar-leaf x)])
+  (exports inner))
+
+(define-calculus-lesson render-r15-direct-scalar
+  (model [study (use-component render-r15-scalar-leaf 1)]
+         [u (part study 's)] [v u])
+  (views [axis (number-line-view #:range (closed 0 2) #:objects (u v))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show u v))
+  (step conceal (hide v) (pause 1)))
+
+(define-calculus-lesson render-r15-nested-scalar
+  (model [study (use-component render-r15-scalar-shell 1)]
+         [u (part (part study 'inner) 's)] [v u])
+  (views [axis (number-line-view #:range (closed 0 2) #:objects (u v))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show u v))
+  (step conceal (hide v) (pause 1)))
+
+(define-calculus-lesson render-r15-empty-scalar
+  (model [u 1])
+  (views [axis (number-line-view #:range (closed 0 2) #:objects (u))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step retain (pause 1)))
+
+(define-calculus-component render-r15-point-line-consumer
+  (inputs [p : Point])
+  (model [x (x-coordinate p)] [L (horizontal-line x)])
+  (exports L))
+
+(define-calculus-lesson render-r15-literal-point-line
+  (model [P (point 1 1)] [study (use-component render-r15-point-line-consumer P)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r15-projected-point-line
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G 1)] [P (part R 'point)]
+         [study (use-component render-r15-point-line-consumer P)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r15-inline-point-line
+  (model [f (function (x) (* x x))] [G (graph f)] [R (input-reading G 1)]
+         [study (use-component render-r15-point-line-consumer (part R 'point))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r15-frozen-point-line
+  (model [a (parameter 0 #:domain (closed 0 2))] [P (point a a)]
+         [S (snapshot-of P #:values ([a 1]))]
+         [study (use-component render-r15-point-line-consumer S)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r15-point-on-line
+  (model [H (horizontal-line 1)] [P (point-on-line H #:x 1)]
+         [study (use-component render-r15-point-line-consumer P)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r15-feature-point-line
+  (model [f (function (x) (+ (expt (- x 1) 2) 1))] [G (graph f)]
+         [P (feature-point G #:at 1 #:kind 'global-minimum
+                           #:justification "(x-1)^2 is nonnegative and vanishes at x=1.")]
+         [study (use-component render-r15-point-line-consumer P)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2187,6 +2277,31 @@
                           (r11-pixels styled-alone 332 123 25 25)))
     (check-true (bytes=? (r11-pixels styled-alone 332 123 25 25)
                          (r11-pixels styled-root 332 123 25 25))))
+  ;; R15: a selected Scalar below a nested Component export remains a named
+  ;; quantity. Concealing v must leave the same one marker as the direct
+  ;; Scalar control, rather than concealing their shared Part identity.
+  (define r15-empty-scalar (r11-raster render-r15-empty-scalar))
+  (define r15-direct-scalar (r11-raster render-r15-direct-scalar))
+  (define r15-nested-scalar (r11-raster render-r15-nested-scalar))
+  (check-false (bytes=? (r11-pixels r15-empty-scalar 233 128 15 15)
+                        (r11-pixels r15-direct-scalar 233 128 15 15)))
+  (check-true (bytes=? (r11-pixels r15-direct-scalar 233 128 15 15)
+                       (r11-pixels r15-nested-scalar 233 128 15 15)))
+  ;; Every selected Point representation feeds the same Point-typed component
+  ;; consumer. The exported horizontal y=1 line must be native-identical to
+  ;; the literal Point control, not rejected by a constructor-name check.
+  (define r15-line-before
+    (r11-raster render-r15-literal-point-line default-calculus-profile 'initial))
+  (define r15-line-control (r11-raster render-r15-literal-point-line))
+  (check-true (bitmap-regions-differ? r15-line-before r15-line-control 200 280 129 142))
+  (for ([lesson (in-list (list render-r15-projected-point-line
+                               render-r15-inline-point-line
+                               render-r15-frozen-point-line
+                               render-r15-point-on-line
+                               render-r15-feature-point-line))])
+    (define actual (r11-raster lesson))
+    (check-true (bytes=? (r11-pixels r15-line-control 200 129 80 13)
+                         (r11-pixels actual 200 129 80 13))))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

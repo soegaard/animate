@@ -698,38 +698,184 @@
     (raise-arguments-error 'procedure-function "#:key must be immutable datum"
                            "key" (hash-ref options 'key))))
 
+;; semantic-value-type : semantic-value? [exact-positive-integer?]
+;;                        -> (or/c symbol? #f)
+;;   Resolves the mathematical type of a selected descriptor without
+;; evaluating its current value.  Public Parts are paths, not types: this
+;; follows aliases, snapshots, Reading projections, and finite nested
+;; component exports to the selected target.  Presentation identity and
+;; parameter write capability deliberately remain separate concerns.
+(define (semantic-value-type value [fuel 64])
+  (with-handlers ([exn:fail? (lambda (_error) #f)])
+    (define (scalar-join left right)
+      (cond [(equal? left right) left]
+            [(and (memq left '(Scalar Integer))
+                  (memq right '(Scalar Integer))) 'Scalar]
+            [else #f]))
+    (define (expression-type expression remaining)
+      (define op (c-expression-op expression))
+      (define arguments (c-expression-arguments expression))
+      (case op
+        [(ref)
+         (and (= (length arguments) 1)
+              (resolve (first arguments) (sub1 remaining)))]
+        [(if)
+         (and (= (length arguments) 3)
+              (scalar-join (resolve (second arguments) (sub1 remaining))
+                           (resolve (third arguments) (sub1 remaining))))]
+        [(= < <= > >= and or not in-domain?) 'Boolean]
+        [(list) 'List]
+        ;; Calculus expressions other than the Boolean forms above are
+        ;; scalar-producing.  A lexical variable is a mathematical Scalar
+        ;; even though it has no caller-visible c-node.
+        [else 'Scalar]))
+    (define (object-type object remaining)
+      (define kind (c-object-kind object))
+      (define arguments (c-object-arguments object))
+      (case kind
+        [(ref value)
+         (and (= (length arguments) 1)
+              (resolve (first arguments) (sub1 remaining)))]
+        [(snapshot-of)
+         (and (= (length arguments) 1)
+              (resolve (first arguments) (sub1 remaining)))]
+        [(graph graph-restriction) 'Graph]
+        [(restrict-function compose-functions difference-function derivative-function
+                            antiderivative-function accumulation-function
+                            linearization taylor-polynomial approximation-error
+                            procedure-function)
+         'Function]
+        [(point point-on axis-point projection root-point intersection-point
+                point-on-line feature-point)
+         'Point]
+        [(segment line-through ray-through horizontal-line vertical-line chord secant
+                 tangent vertical-tangent normal asymptote-line)
+         'Line]
+        [(use-component) 'Component]
+        [else #f]))
+    (define (branch-selector? name)
+      (and (list? name)
+           (= (length name) 2)
+           (eq? (first name) 'branches)
+           (exact-nonnegative-integer? (second name))))
+    (define (part-parent-source parent remaining)
+      ;; A named nonscalar Part is transparent for selected-type lookup just
+      ;; as it is for mathematical evaluation.  Do not unwrap scalar nodes:
+      ;; their named presentation identity is intentionally independent.
+      (cond
+        [(not (positive? remaining)) parent]
+        [(and (c-node? parent) (eq? (c-node-kind parent) 'part))
+         (part-parent-source (c-node-data parent) (sub1 remaining))]
+        [(and (c-expression? parent)
+              (eq? (c-expression-op parent) 'ref)
+              (= (length (c-expression-arguments parent)) 1))
+         (part-parent-source (first (c-expression-arguments parent))
+                             (sub1 remaining))]
+        [else parent]))
+    (define (object-part-type object name remaining)
+      (define arguments (c-object-arguments object))
+      (case (c-object-kind object)
+        [(input-reading coordinate-reading)
+         (case name
+           [(point) 'Point]
+           [(input output) 'Scalar]
+           [else #f])]
+        [(output-reading)
+         (case name
+           [(branches) 'ReadingBranch]
+           [(output) 'Scalar]
+           [else #f])]
+        [(increment)
+         (case name
+           [(from to corner) 'Point]
+           [(dx dy ratio) 'Scalar]
+           [else #f])]
+        [(slope-triangle)
+         (case name
+           [(horizontal vertical) 'Line]
+           [(corner) 'Point]
+           [(dx dy run-label rise-label) 'Scalar]
+           [else #f])]
+        [(snapshot-of)
+         ;; A selected snapshot part has exactly the source part's type; the
+         ;; frozen environment changes its value, never its semantic sort.
+         (and (= (length arguments) 1)
+              (resolve (c-part (first arguments) name) (sub1 remaining)))]
+        [else #f]))
+    (define (part-type part remaining)
+      (cond
+        [(not (positive? remaining)) #f]
+        [else
+         ;; component-export-target preserves the private lexical target for
+         ;; every selector segment.  Recursing on that target, rather than
+         ;; asking component-export-node for its export root, is what makes
+         ;; `study -> inner -> s` resolve as Scalar rather than Component.
+         (define exported (component-export-target part))
+         (cond
+           [exported
+            (resolve (c-component-export-target-target exported)
+                     (sub1 remaining))]
+           [else
+            (define parent (part-parent-source (c-part-parent part) remaining))
+            (define name (c-part-name part))
+            (cond
+              [(and (c-part? parent) (branch-selector? (c-part-name parent)))
+               (case name
+                 [(point) 'Point]
+                 [(input output) 'Scalar]
+                 [else #f])]
+              [else
+               (define raw-parent (if (c-node? parent) (c-node-data parent) parent))
+               (and (c-object? raw-parent)
+                    (object-part-type raw-parent name remaining))])])]))
+    (define (resolve candidate remaining)
+      (cond
+        [(not (positive? remaining)) #f]
+        [(boolean? candidate) 'Boolean]
+        [(exact-integer? candidate) 'Integer]
+        [(number? candidate) 'Scalar]
+        [(c-param-spec? candidate)
+         (if (eq? (c-param-spec-kind candidate) 'integer) 'Integer 'Scalar)]
+        [(c-domain? candidate) 'Domain]
+        [(or (c-function? candidate) (c-piecewise? candidate)) 'Function]
+        [(c-expression? candidate) (expression-type candidate remaining)]
+        [(c-part? candidate) (part-type candidate remaining)]
+        [(c-object? candidate) (object-type candidate remaining)]
+        [(c-node? candidate)
+         (case (c-node-kind candidate)
+           [(parameter)
+            (resolve (c-node-data candidate) (sub1 remaining))]
+           [(part)
+            (resolve (c-node-data candidate) (sub1 remaining))]
+           ;; Scalar nodes may hold Boolean or Integer literals/expressions,
+           ;; so inspect their held data instead of erasing that distinction.
+           [(scalar)
+            (resolve (c-node-data candidate) (sub1 remaining))]
+           [else
+            (or (resolve (c-node-data candidate) (sub1 remaining))
+                (case (c-node-kind candidate)
+                  [(function) 'Function]
+                  [(graph) 'Graph]
+                  [else #f]))])]
+        [else #f]))
+    (resolve value fuel)))
+
 ;; bind-model-value : symbol? semantic-value? boolean? -> c-node?
 ;;   Gives one ordered model binding its stable public identity.
-(define (part-value-kind value [fuel 32])
-  ;; A public part is a path-shaped carrier, not itself a mathematical type.
-  ;; Component exports retain the declared private node, so inspect that node
-  ;; before deciding whether a later binding is a named scalar quantity or a
-  ;; transparent nonscalar alias.  The bounded alias walk remains total for
-  ;; malformed future data without treating arbitrary parts as Scalars.
-  (cond
-    [(not (positive? fuel)) #f]
-    [(c-part? value)
-     (define export-node (calculus-component-part-node value))
-     (and export-node (c-node-kind export-node))]
-    [(c-node? value)
-     (if (eq? (c-node-kind value) 'part)
-         (part-value-kind (c-node-data value) (sub1 fuel))
-         (c-node-kind value))]
-    [(and (c-expression? value)
-          (eq? (c-expression-op value) 'ref)
-          (= (length (c-expression-arguments value)) 1))
-     (part-value-kind (first (c-expression-arguments value)) (sub1 fuel))]
-    [(and (c-object? value)
-          (eq? (c-object-kind value) 'ref)
-          (= (length (c-object-arguments value)) 1))
-     (part-value-kind (first (c-object-arguments value)) (sub1 fuel))]
-    [else #f]))
+(define (part-value-kind value [fuel 64])
+  ;; Kept as the binding-facing adapter: callers need to distinguish only
+  ;; named scalar quantities from transparent nonscalar aliases, while the
+  ;; shared resolver retains the richer Component input contract categories.
+  (define type (semantic-value-type value fuel))
+  (cond [(memq type '(Scalar Integer)) 'scalar]
+        [(eq? type 'Parameter) 'parameter]
+        [else type]))
 
 (define (scalar-valued-part? value)
   ;; Parameters exported through a component become caller-side read-only
-  ;; named quantities just like ordinary Scalar/Integer/Boolean expressions.
-  ;; They are never promoted to an independently writable parameter.
-  (memq (part-value-kind value) '(scalar parameter)))
+  ;; named quantities just like ordinary Scalar/Integer expressions. They are
+  ;; never promoted to an independently writable parameter.
+  (eq? (part-value-kind value) 'scalar))
 
 (define (bind-model-value name raw direct-reference?)
   (unless (symbol? name) (raise-argument-error 'model "symbol?" name))
@@ -1893,9 +2039,10 @@
               (undefined "component exposition did not produce steps")))])]))
 
 ;; component-input-kind-valid? : symbol? semantic-value? -> boolean?
-;;   Performs the narrow structural input checks that are meaningful before a
-;;   snapshot supplies scalar values. Evaluation and component constraints give
-;;   the corresponding value-level diagnostics later.
+;;   Checks the selected semantic type before a snapshot supplies current
+;; values.  Parameter remains a capability contract and therefore requires a
+;; direct caller parameter; every read-only category follows aliases and
+;; public projections through semantic-value-type.
 (define (component-input-kind-valid? type value)
   (cond
     [(and (list? type) (= (length type) 2) (eq? (first type) 'Parameter))
@@ -1907,21 +2054,17 @@
               [(Integer) (eq? kind 'integer)]
               [else #f])))]
     [else
+     (define actual (semantic-value-type value))
      (case type
-       [(Graph) (and (graph-function value) #t)]
-       [(Function) (and (lookup-function value) #t)]
+       [(Graph) (eq? actual 'Graph)]
+       [(Function) (eq? actual 'Function)]
        [(Parameter) (and (c-node? value) (eq? (c-node-kind value) 'parameter))]
-       [(Point) (or (and (c-node? value)
-                         (memq (c-node-kind value)
-                               '(point point-on axis-point projection root-point intersection-point)))
-                    (and (c-object? value)
-                         (memq (c-object-kind value)
-                               '(point point-on axis-point projection root-point intersection-point))))]
-       [(Scalar)
-        (or (number? value)
-            (c-expression? value)
-            (and (c-node? value) (memq (c-node-kind value) '(scalar parameter part)))
-            (and (c-part? value) #t))]
+       [(Point) (eq? actual 'Point)]
+       ;; Integer is a Scalar subtype for read-only mathematical inputs.
+       ;; Boolean is intentionally disjoint despite Racket truthiness.
+       [(Scalar) (memq actual '(Scalar Integer))]
+       [(Integer) (eq? actual 'Integer)]
+       [(Boolean) (eq? actual 'Boolean)]
        [else #f])]))
 
 ;; component-instance-valid? : semantic-value? calculus-model? ... -> calculus-result?
