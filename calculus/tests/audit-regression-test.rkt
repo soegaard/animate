@@ -478,7 +478,56 @@
       explicit-domain-snapshot
       (calculus-result-value
        (calculus-snapshot-ref explicit-domain-snapshot 'R)))))
-  (check-true (no-region-strip-across? explicit-domain-samples 1/7)))
+  (check-true (no-region-strip-across? explicit-domain-samples 1/7))
+  ;; R6: the named initial phase precedes all timeline actions, whereas a
+  ;; numeric zero remains right-continuous through simultaneous assignments.
+  (define-calculus-lesson initial-phase-boundary
+    (model [a (parameter 0 #:domain (closed 0 2))])
+    (views [axis (number-line-view #:range (closed 0 2) #:objects (a))])
+    (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+    (step setup (set-parameter a 1) (set-parameter a 2) (pause 1)))
+  (define initial-phase-plan (compile-calculus-lesson initial-phase-boundary))
+  (check-value
+   (calculus-snapshot-ref (calculus-plan-sample initial-phase-plan #:at 'initial) 'a)
+   0)
+  (check-value
+   (calculus-snapshot-ref
+    (calculus-plan-sample initial-phase-plan #:at (calculus-step-start 'setup))
+    'a)
+   0)
+  (check-value
+   (calculus-snapshot-ref (calculus-plan-sample initial-phase-plan #:at 0) 'a)
+   2)
+  ;; Chords, secants, and tangents are graph-associated geometry.  They accept
+  ;; independent coordinates only when those coordinates actually belong to
+  ;; the named graph and its effective restriction.
+  (define-calculus-model graph-incidence-regressions
+    (model [f (function (x) (* x x))]
+           [df (derivative-function f)]
+           [G (graph f)]
+           [H (graph f #:on (closed 0 1))]
+           [Pbad (point 1 2)]
+           [Pgood (point 1 1)]
+           [Q (point-on G #:x 2)]
+           [bad-chord (chord G Pbad Q)]
+           [bad-secant (secant G Pbad Q)]
+           [bad-tangent (tangent G #:at Pbad #:derivative df)]
+           [bad-vertical-tangent
+            (vertical-tangent G #:at Pbad
+                              #:justification "A supplied vertical tangent claim.")]
+           [out-of-range-secant (secant H Pgood Q)]
+           [out-of-range-tangent (tangent H #:at Q #:derivative df)]
+           [good-secant (secant G Pgood Q)]
+           [good-tangent (tangent G #:at Pgood #:derivative df)]))
+  (for ([name (in-list '(bad-chord bad-secant bad-tangent bad-vertical-tangent
+                                   out-of-range-secant out-of-range-tangent))])
+    (check-not-equal? (calculus-result-status
+                       (model-result graph-incidence-regressions name))
+                      'defined))
+  (check-value (model-result graph-incidence-regressions 'good-secant)
+               (list 'line 3 -2 (cons 1 1)))
+  (check-value (model-result graph-incidence-regressions 'good-tangent)
+               (list 'line 2 -1 (cons 1 1))))
 
 (module+ test
   (run-calculus-audit-regression-tests))

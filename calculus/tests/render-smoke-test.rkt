@@ -901,6 +901,17 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show P)))
 
+;; render-point-on-line : calculus-lesson?
+;; Every documented Point constructor receives the same native marker dispatch
+;; as literal, graph-derived, and Reading-projection points.
+(define-calculus-lesson render-point-on-line
+  (model [L (horizontal-line 1)]
+         [P (point-on-line L #:x 1)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects (P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P)))
+
 ;; render-positioned-live-fields : calculus-lesson?
 ;; Exercises the real backend's prepared field probes in numerator,
 ;; denominator, exponent, radical, and nested positions at an interior state.
@@ -948,7 +959,7 @@
   (model [a (parameter 0 #:domain (closed 0 1))]
          [r (value-readout (/ 1 a) #:label "r" #:format 'exact)])
   (views [facts (formula-view #:objects (r))])
-  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
   (step establish
     (set-parameter a (/ 1 (expt 10 200)))
     (show r)))
@@ -960,7 +971,7 @@
   (model [a (parameter 0 #:domain (closed 0 1))]
          [r (value-readout (/ 1 a) #:label "r" #:format 'exact)])
   (views [facts (formula-view #:objects (r))])
-  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
   (step establish (set-parameter a 1/2) (show r)))
 
 ;; render-invalid-composite-reading : calculus-lesson?
@@ -1199,6 +1210,18 @@
      (prepared-lesson->pict named-reading-prepared #:at 'final) 480 270))
   (check-true (bitmap-regions-differ? named-reading-initial named-reading-final
                                       230 250 125 145))
+  ;; R6: point-on-line is evaluated as a Point and must paint the same marker
+  ;; ink instead of falling through the graph panel's no-op branch.
+  (define point-on-line-prepared
+    (prepare-calculus-lesson render-point-on-line #:width 480 #:height 270))
+  (define point-on-line-initial
+    (pict->opaque-bitmap
+     (prepared-lesson->pict point-on-line-prepared #:at 'initial) 480 270))
+  (define point-on-line-final
+    (pict->opaque-bitmap
+     (prepared-lesson->pict point-on-line-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? point-on-line-initial point-on-line-final
+                                      230 250 125 145))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared
@@ -1368,6 +1391,17 @@
   (define hidden-wide-readout-prepared
     (prepare-calculus-lesson render-hidden-wide-exact-readout
                              #:width 480 #:height 270))
+  (define hidden-wide-readout-initial
+    (calculus-plan-sample (prepared-lesson-plan hidden-wide-readout-prepared)
+                          #:at 'initial))
+  (check-equal? (calculus-result-value
+                 (calculus-snapshot-ref hidden-wide-readout-initial 'a))
+                0)
+  (check-false (calculus-snapshot-visible? hidden-wide-readout-initial 'r))
+  (check-not-equal?
+   (calculus-result-status
+    (calculus-snapshot-formula-text hidden-wide-readout-initial 'r))
+   'defined)
   (define hidden-wide-readout-snapshot
     (calculus-plan-sample (prepared-lesson-plan hidden-wide-readout-prepared)
                           #:at 'final))

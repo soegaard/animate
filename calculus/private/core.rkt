@@ -1566,6 +1566,19 @@
            (if (= dx 0) (defined (list 'vertical (car p) p))
                (defined (list 'line (/ dy dx) (- (cdr p) (* (/ dy dx) (car p))) p)))]))))
 
+;; eval-point-on-graph : semantic-value? pair? hash? calculus-model?
+;;                        calculus-computation? hash? -> calculus-result?
+;;   Confirms that independently authored coordinates satisfy the graph's
+;; effective domain and function value.  Graph-associated geometry uses this
+;; semantic test rather than relying on the syntactic origin of a point.
+(define (eval-point-on-graph graph point environment model computation lexical)
+  (result-bind
+   (evaluate-graph graph (car point) environment model computation lexical)
+   (lambda (output)
+     (if (scalar-equivalent? (cdr point) output computation)
+         (defined point)
+         (unresolved "point is not on the graph")))))
+
 (define (eval-line line environment model computation lexical)
   (cond
     [(c-part? line) (eval-part line environment model computation lexical)]
@@ -1585,9 +1598,31 @@
       (let ([args (c-object-arguments raw)] [options (c-object-options raw)])
         (case (c-object-kind raw)
           [(line-through ray-through secant chord segment)
-           (result-bind (eval-point (if (memq (c-object-kind raw) '(secant chord)) (second args) (first args)) environment model computation lexical)
-                        (lambda (p) (result-bind (eval-point (if (memq (c-object-kind raw) '(secant chord)) (third args) (second args)) environment model computation lexical)
-                                                 (lambda (q) (line-through-points p q (c-object-kind raw))))))]
+           (define graph-associated?
+             (memq (c-object-kind raw) '(secant chord)))
+           (define graph (and graph-associated? (first args)))
+           (define first-point
+             (if graph-associated? (second args) (first args)))
+           (define second-point
+             (if graph-associated? (third args) (second args)))
+           (result-bind
+            (eval-point first-point environment model computation lexical)
+            (lambda (p)
+              (result-bind
+               (if graph-associated?
+                   (eval-point-on-graph graph p environment model computation lexical)
+                   (defined p))
+               (lambda (checked-p)
+                 (result-bind
+                  (eval-point second-point environment model computation lexical)
+                  (lambda (q)
+                    (result-bind
+                     (if graph-associated?
+                         (eval-point-on-graph graph q environment model computation lexical)
+                         (defined q))
+                     (lambda (checked-q)
+                       (line-through-points checked-p checked-q
+                                            (c-object-kind raw))))))))))]
           [(horizontal-line) (result-bind (eval-raw (first args) environment model computation lexical) (lambda (y) (defined (list 'line 0 y (cons 0 y)))))]
           [(vertical-line) (result-bind (eval-raw (first args) environment model computation lexical) (lambda (x) (defined (list 'vertical x (cons x 0)))))]
           [(tangent)
@@ -1596,16 +1631,26 @@
            (if (not (derivative-compatible? (graph-function graph) derivative))
                (undefined "tangent derivative must be declared for the graph function")
                (result-bind
-                (eval-point (hash-ref options 'at) environment model computation lexical)
+               (eval-point (hash-ref options 'at) environment model computation lexical)
                 (lambda (p)
                   (result-bind
-                   (evaluate-function derivative (car p) environment model computation lexical)
-                   (lambda (m) (defined (list 'line m (- (cdr p) (* m (car p))) p)))))))]
+                   (eval-point-on-graph graph p environment model computation lexical)
+                   (lambda (checked-p)
+                     (result-bind
+                      (evaluate-function derivative (car checked-p) environment model computation lexical)
+                      (lambda (m)
+                        (defined (list 'line m
+                                       (- (cdr checked-p) (* m (car checked-p)))
+                                       checked-p)))))))))]
           [(vertical-tangent)
            (if (not (nonempty-justification? (hash-ref options 'justification #f)))
                (undefined "vertical-tangent requires a nonempty #:justification")
                (result-bind (eval-point (hash-ref options 'at) environment model computation lexical)
-                            (lambda (p) (defined (list 'vertical (car p) p)))))]
+                            (lambda (p)
+                              (result-bind
+                               (eval-point-on-graph (first args) p environment model computation lexical)
+                               (lambda (checked-p)
+                                 (defined (list 'vertical (car checked-p) checked-p)))))))]
           [(normal)
            (result-bind (eval-line (first args) environment model computation lexical)
                         (lambda (source)
@@ -5513,7 +5558,10 @@
 (define (calculus-plan-sample plan #:at [at 'final])
   (check 'calculus-plan-sample calculus-plan? "calculus-plan?" plan)
   (define-values (time cutoff)
-    (cond [(eq? at 'initial) (values 0 0)]
+    ;; `initial` denotes the declared presentation state before every timeline
+    ;; event. Numeric zero remains right-continuous, so a zero-time action is
+    ;; visible at `#:at 0` but never leaks into the named initial phase.
+    (cond [(eq? at 'initial) (values 0 -1)]
           [(eq? at 'final) (values (calculus-plan-duration plan) +inf.0)]
           [(calculus-moment? at) (define entry (resolve-moment plan at)) (values (car entry) (cdr entry))]
           [(and (finite-real? at) (<= 0 at (calculus-plan-duration plan))) (values at +inf.0)]

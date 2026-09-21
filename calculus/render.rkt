@@ -154,6 +154,23 @@
               (memq (c-node-kind parent)
                     '(input-reading output-reading coordinate-reading))))))
 
+;; native-point-node? : any/c -> boolean?
+;;   Shared semantic kind classification for every core Point constructor.
+;; Keeping this list in one place prevents style, fitting, painting, and
+;; validation from accepting different subsets of documented points.
+(define (native-point-node? node)
+  (and (c-node? node)
+       (memq (c-node-kind node)
+             '(point point-on axis-point projection root-point intersection-point
+                     point-on-line))))
+
+;; presentation-point? : any/c any/c -> boolean?
+;;   Extends ordinary Point constructors with Reading's public point part,
+;; including a model-level alias that otherwise has a `part` root kind.
+(define (presentation-point? target node)
+  (or (native-point-node? node)
+      (reading-point-projection? target)))
+
 ;; style-theme-rules : calculus-theme? -> list?
 ;;   Flattens inherited rules base-first, so a derived theme's equal-specificity
 ;; rule wins exactly by later source order.
@@ -167,9 +184,8 @@
 ;;   Maps concrete semantic nodes to the small documented selector vocabulary.
 (define (style-kind-for target node)
   (define kind (and node (c-node-kind node)))
-  (cond [(reading-point-projection? target) 'point]
+  (cond [(presentation-point? target node) 'point]
         [(memq kind '(graph graph-restriction)) 'graph]
-        [(memq kind '(point point-on axis-point projection root-point intersection-point)) 'point]
         [(memq kind '(segment chord error-segment)) 'segment]
         [(memq kind '(line-through ray-through horizontal-line vertical-line secant tangent vertical-tangent normal)) 'line]
         [(memq kind '(input-reading output-reading coordinate-reading)) 'guide]
@@ -925,15 +941,34 @@
       (cond
         [(or (not key) (static-formula-row? target) (hash-has-key? next key)) next]
         [else
-         (define fragments-result
-           (calculus-snapshot-formula-fragments (first snapshots) target))
-         (if (and (eq? (calculus-result-status fragments-result) 'defined)
-                  (list? (calculus-result-value fragments-result)))
-             (let* ([fragments (calculus-result-value fragments-result)]
+         ;; Readouts are one-field rows by construction.  Their lifetime can
+         ;; begin hidden and mathematically partial, so use defined samples
+         ;; only for value width while reserving their panel-local slot even
+         ;; when no initial sample can provide text.
+         (define readout-target? (value-readout-row? target))
+         (define all-fragments
+           (for/list ([snapshot (in-list snapshots)])
+             (calculus-snapshot-formula-fragments snapshot target)))
+         (define defined-fragments
+           (filter (lambda (result)
+                     (and (eq? (calculus-result-status result) 'defined)
+                          (list? (calculus-result-value result))))
+                   all-fragments))
+         (define fragments
+           (cond [readout-target?
+                  (if (pair? defined-fragments)
+                      (calculus-result-value (first defined-fragments))
+                      (list (list 'field "")))]
+                 [(and (pair? all-fragments)
+                       (eq? (calculus-result-status (first all-fragments)) 'defined)
+                       (list? (calculus-result-value (first all-fragments))))
+                  (calculus-result-value (first all-fragments))]
+                 [else #f]))
+         (if (list? fragments)
+             (let* ([fragments fragments]
                     [shape (for/list ([fragment (in-list fragments)]) (first fragment))]
-                    [all-fragments
-                     (for/list ([snapshot (in-list snapshots)])
-                       (calculus-snapshot-formula-fragments snapshot target))]
+                    [compatible-fragments
+                     (if readout-target? defined-fragments all-fragments)]
                     [compatible?
                      (andmap
                       (lambda (result)
@@ -942,7 +977,7 @@
                              (equal? shape
                                      (for/list ([fragment (in-list (calculus-result-value result))])
                                        (first fragment)))))
-                      all-fragments)]
+                      compatible-fragments)]
                     [field-lengths
                      (if compatible?
                          (append-map
@@ -953,11 +988,10 @@
                                                    (eq? (first fragment) 'field)
                                                    (string? (second fragment))))
                               (string-length (second fragment))))
-                          all-fragments)
+                          compatible-fragments)
                          '())]
                     [reserve (max 1 (if (pair? field-lengths) (apply max field-lengths) 0))]
-                    [field-count (count (lambda (kind) (eq? kind 'field)) shape)]
-                    [readout-target? (value-readout-row? target)])
+                    [field-count (count (lambda (kind) (eq? kind 'field)) shape)])
                (if compatible?
                    (let ([skeleton-result
                           (calculus-snapshot-formula-skeleton-tex
@@ -1202,8 +1236,7 @@
     [(not node) '()]
     [(memq (c-node-kind node) '(graph graph-restriction))
      (graph-fit-y-values snapshot node xmin xmax samples)]
-    [(memq (c-node-kind node)
-           '(point point-on axis-point projection root-point intersection-point))
+    [(native-point-node? node)
      (point-y-values (snapshot-defined-value snapshot value-target))]
     [(memq (c-node-kind node) '(input-reading coordinate-reading))
      (point-y-values
@@ -2921,10 +2954,7 @@
           [(and node (memq (c-node-kind node)
                            '(interval-marker endpoint-marker approach-marker)))
            (draw-marker context snapshot node xmin xmax ymin ymax left top width height)]
-          [(or (and node
-                    (memq (c-node-kind node)
-                          '(point point-on axis-point projection root-point intersection-point)))
-               (reading-point-projection? target))
+          [(presentation-point? target node)
            (draw-point context snapshot value-target xmin xmax ymin ymax left top width height)]
           [(and node
                 (memq (c-node-kind node)
@@ -2973,10 +3003,7 @@
                               (motion-progress motion-state 'reading)))]
           [else (void)])
         (when (eq? presentation-state 'highlighted)
-          (cond [(or (and node
-                          (memq (c-node-kind node)
-                                '(point point-on axis-point projection root-point intersection-point)))
-                     (reading-point-projection? target))
+          (cond [(presentation-point? target node)
                  (draw-highlight-ring context snapshot value-target
                                       xmin xmax ymin ymax left top width height)]
                 [(and node
@@ -3290,16 +3317,16 @@
   ;; explanatory object below, however, has requested concrete mathematical
   ;; data and must not disappear merely because a painter received `#f`.
   (and (c-node? node)
-       (memq (c-node-kind node)
-             '(point point-on axis-point projection root-point intersection-point
-                     point-on-line segment line-through ray-through horizontal-line
+       (or (native-point-node? node)
+           (memq (c-node-kind node)
+             '(segment line-through ray-through horizontal-line
                      vertical-line chord secant tangent vertical-tangent normal
                      error-segment input-reading output-reading coordinate-reading
                      interval-marker endpoint-marker approach-marker slope-triangle
                      epsilon-delta-condition riemann-rectangles trapezoidal-regions
                      integral-region region-under region-between partition-marks
                      sequence-points newton-diagram trace-of asymptote-line
-                     value-readout))))
+                     value-readout)))))
 
 ;; demanded-native-result : calculus-snapshot? c-node? any/c address? boolean?
 ;;                          -> calculus-result?
