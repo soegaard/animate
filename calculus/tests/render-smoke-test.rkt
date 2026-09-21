@@ -537,6 +537,64 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step read-backwards (read R)))
 
+;; R8 preserves Point presentation through both public Reading-point snapshot
+;; spellings, and through a named reverse-Reading branch intermediate.
+(define-calculus-lesson render-r8-named-projection-snapshot
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G a)] [P (part R 'point)]
+         [S (snapshot-of P #:values ([a 1]))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (S))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show S)))
+
+(define-calculus-lesson render-r8-direct-projection-snapshot
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G a)]
+         [S (snapshot-of (part R 'point) #:values ([a 1]))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (S))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show S)))
+
+(define-calculus-lesson render-r8-named-reverse-branch-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+              #:completeness 'all
+              #:justification "x^2=1 exactly when x=-1 or x=1.")]
+         [B (reading-branch R 0)] [Q (part B 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (Q))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show Q)))
+
+;; These intentionally invalid constructions are demanded only by their
+;; native views. They prove strict preparation cannot silently turn an invalid
+;; Reading declaration into a blank successful picture.
+(define-calculus-lesson render-r8-empty-reverse-reading
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R)))
+
+(define-calculus-lesson render-r8-reverse-reading-without-evidence
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1) #:completeness 'all)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R)))
+
+(define-calculus-lesson render-r8-colliding-reverse-branches
+  (model [h (parameter 1 #:domain (closed 0 1))]
+         [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G (* h h) #:inputs (list (- h) h)
+              #:completeness 'all
+              #:justification "The two distinct roots are -h and h for h>0.")])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step meet (vary h #:to 0 #:duration 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -1320,12 +1378,54 @@
     (pict->opaque-bitmap (prepared-lesson->pict r7-reverse-prepared #:at 'final) 480 270))
   (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-final 126 146 125 145))
   (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-final 334 354 125 145))
+  ;; R8: reverse Reading's settled construction has explicit horizontal
+  ;; output and vertical input guides, not just the two point markers. At an
+  ;; early guided frame only the output stage has begun, preserving the
+  ;; documented output -> graph -> input choreography.
+  (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-final
+                                      282 302 125 145))
+  (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-final
+                                      334 354 151 171))
+  (define r7-reverse-early
+    (pict->opaque-bitmap (prepared-lesson->pict r7-reverse-prepared #:at 1/6) 480 270))
+  (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-early
+                                      282 302 125 145))
+  (check-false (bitmap-regions-differ? r7-reverse-initial r7-reverse-early
+                                       334 354 151 171))
   (check-exn exn:fail?
              (lambda ()
                (prepared-lesson->pict
                 (prepare-calculus-lesson render-r7-invalid-reverse-reading
                                           #:width 480 #:height 270)
                 #:at 'final)))
+  ;; R8: a public Reading Point retains its native marker sort through both
+  ;; frozen wrappers, and a named reverse-branch Point remains a Point rather
+  ;; than falling through the generic `part` renderer case.
+  (for ([lesson (in-list (list render-r8-named-projection-snapshot
+                               render-r8-direct-projection-snapshot))])
+    (define prepared (prepare-calculus-lesson lesson #:width 480 #:height 270))
+    (define initial
+      (pict->opaque-bitmap (prepared-lesson->pict prepared #:at 'initial) 480 270))
+    (define final
+      (pict->opaque-bitmap (prepared-lesson->pict prepared #:at 'final) 480 270))
+    (check-true (bitmap-regions-differ? initial final 230 250 125 145)))
+  (define r8-branch-prepared
+    (prepare-calculus-lesson render-r8-named-reverse-branch-point #:width 480 #:height 270))
+  (define r8-branch-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r8-branch-prepared #:at 'initial) 480 270))
+  (define r8-branch-final
+    (pict->opaque-bitmap (prepared-lesson->pict r8-branch-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r8-branch-initial r8-branch-final 126 146 125 145))
+  ;; Every declaration failure becomes a native-output error when its Reading
+  ;; is visible, rather than an empty-but-successful graph panel.
+  (for ([lesson (in-list (list render-r8-empty-reverse-reading
+                               render-r8-reverse-reading-without-evidence
+                               render-r8-colliding-reverse-branches))])
+    (check-exn #rx"reading|candidate|empty|completeness|justification|collid"
+               (lambda ()
+                 (prepared-lesson->pict
+                  (prepare-calculus-lesson lesson #:width 480 #:height 270)
+                  #:at 'final))))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

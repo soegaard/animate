@@ -2061,6 +2061,35 @@
               (exact-nonnegative-integer? (second name))
               (second name)))))
 
+;; part-alias : semantic-value? -> (or/c c-part? #f)
+;;   Model bindings may name a public part.  Keep that alias transparent when
+;; a later projection composes on it, rather than requiring the original
+;; `reading-branch` expression to remain textually inlined.
+(define (part-alias value [fuel 32])
+  (cond
+    [(not (positive? fuel)) #f]
+    [(c-part? value) value]
+    [(c-node? value) (part-alias (c-node-data value) (sub1 fuel))]
+    [(and (c-expression? value)
+          (eq? (c-expression-op value) 'ref)
+          (= (length (c-expression-arguments value)) 1))
+     (part-alias (first (c-expression-arguments value)) (sub1 fuel))]
+    [(and (c-object? value)
+          (eq? (c-object-kind value) 'ref)
+          (= (length (c-object-arguments value)) 1))
+     (part-alias (first (c-object-arguments value)) (sub1 fuel))]
+    [else #f]))
+
+;; reading-branch-part : semantic-value? -> (or/c c-part? #f)
+;;   Recognizes an indexed branch only when its parent is an output Reading.
+;; This keeps a generic `(branches i)` part from impersonating Reading data.
+(define (reading-branch-part value)
+  (define branch (part-alias value))
+  (and branch
+       (reading-branch-index branch)
+       (output-reading-raw (c-part-parent branch))
+       branch))
+
 ;; output-reading-raw : semantic-value? -> (or/c c-object? #f)
 ;;   Resolves only the descriptor needed by the branch protocol below.
 (define (output-reading-raw reading)
@@ -2069,89 +2098,122 @@
        (eq? (c-object-kind raw) 'output-reading)
        raw))
 
-;; eval-output-reading-branch : semantic-value? exact-nonnegative-integer?
-;;                              hash? calculus-model? calculus-computation? hash?
-;;                              -> calculus-result?
-;;   Validates one author-supplied reverse-reading candidate against both the
-;; effective graph domain and its requested output, preserving source order.
-(define (eval-output-reading-branch reading index environment model computation lexical)
+;; c-output-reading-data is the shared demanded Reading contract.  Keeping
+;; metadata, output, and source-order candidates together prevents a branch
+;; evaluator from accepting a local point while the whole Reading is invalid.
+(struct c-output-reading-data (graph output inputs) #:transparent)
+
+;; eval-output-reading-data : semantic-value? hash? calculus-model?
+;;                            calculus-computation? hash? -> calculus-result?
+;;   Validates the invariant shared by a root Reading and every branch before
+;; any point is constructed or painted. It never tries to infer omitted roots
+;; or prove an author's `#:completeness 'all` assertion.
+(define (eval-output-reading-data reading environment model computation lexical)
   (define raw (output-reading-raw reading))
   (cond
     ((not raw) (undefined "expected an output reading"))
     (else
      (let* ((args (c-object-arguments raw))
-            (graph (and (pair? args) (first args)))
-            (requested-output (and (>= (length args) 2) (second args)))
-            (inputs-expression (hash-ref (c-object-options raw) 'inputs #f)))
+            (options (c-object-options raw)))
        (cond
-         ((not (and graph requested-output inputs-expression))
-          (undefined "output-reading requires a graph, output, and #:inputs"))
+         ((< (length args) 2)
+          (undefined "output-reading requires a graph and requested output"))
+         ((not (hash-has-key? options 'inputs))
+          (undefined "output-reading requires #:inputs"))
          (else
-          (result-bind
-           (eval-raw inputs-expression environment model computation lexical)
-           (lambda (inputs)
-             (cond
-               ((not (and (list? inputs) (andmap finite-real? inputs)))
-                (undefined "output-reading #:inputs must be an ordered list of finite values"))
-               ((>= index (length inputs))
-                (undefined "output-reading branch index is outside #:inputs"))
-               (else
-                (let ((input (list-ref inputs index)))
-                  (result-bind
-                   (eval-raw requested-output environment model computation lexical)
-                   (lambda (output)
-                     (cond
-                       ((not (finite-real? output))
-                        (undefined "output-reading output must be finite"))
-                       (else
-                        (result-bind
-                         (evaluate-graph graph input environment model computation lexical)
-                         (lambda (actual)
-                           (if (scalar-equivalent? actual output computation)
-                               (defined (cons input actual))
-                               (undefined
-                                "output-reading candidate does not satisfy the requested output")))))))))))))))))))
+          (let ((completeness (hash-ref options 'completeness 'selected))
+                (justification (hash-ref options 'justification #f)))
+            (cond
+              ((not (memq completeness '(selected all)))
+               (undefined "output-reading #:completeness must be 'selected or 'all"))
+              ((and (eq? completeness 'all)
+                    (not (nonempty-justification? justification)))
+               (undefined "output-reading #:completeness 'all requires a nonempty justification"))
+              (else
+               ;; Evaluate y independently of candidates, so an empty list cannot
+               ;; hide an invalid output behind a vacuous validation loop.
+               (result-bind
+                (eval-raw (second args) environment model computation lexical)
+                (lambda (output)
+                  (cond
+                    ((not (finite-real? output))
+                     (undefined "output-reading output must be finite"))
+                    (else
+                     (result-bind
+                      (eval-raw (hash-ref options 'inputs) environment model computation lexical)
+                      (lambda (inputs)
+                        (cond
+                          ((not (and (list? inputs) (andmap finite-real? inputs)))
+                           (undefined "output-reading #:inputs must be an ordered list of finite values"))
+                          ((null? inputs)
+                           (undefined "output-reading requires a nonempty candidate list"))
+                          ((not (= (length inputs) (length (remove-duplicates inputs))))
+                           (undefined "output-reading candidate branches collide"))
+                          (else
+                           (defined (c-output-reading-data
+                                     (first args) output (immutable-list-copy inputs))))))))))))))))))))
+
+;; eval-output-reading-branch/data : c-output-reading-data?
+;;                                    exact-nonnegative-integer? hash?
+;;                                    calculus-model? calculus-computation? hash?
+;;                                    -> calculus-result?
+(define (eval-output-reading-branch/data data index environment model computation lexical)
+  (define inputs (c-output-reading-data-inputs data))
+  (cond
+    [(>= index (length inputs))
+     (undefined "output-reading branch index is outside #:inputs")]
+    [else
+     (define input (list-ref inputs index))
+     (result-bind
+      (evaluate-graph (c-output-reading-data-graph data)
+                      input environment model computation lexical)
+      (lambda (actual)
+        (if (scalar-equivalent? actual (c-output-reading-data-output data) computation)
+            (defined (cons input actual))
+            (undefined "output-reading candidate does not satisfy the requested output"))))]))
+
+;; eval-output-reading-branch : semantic-value? exact-nonnegative-integer?
+;;                              hash? calculus-model? calculus-computation? hash?
+;;                              -> calculus-result?
+(define (eval-output-reading-branch reading index environment model computation lexical)
+  (result-bind
+   (eval-output-reading-data reading environment model computation lexical)
+   (lambda (data)
+     (eval-output-reading-branch/data data index environment model computation lexical))))
 
 ;; eval-output-reading-points : semantic-value? hash? calculus-model?
 ;;                             calculus-computation? hash? -> calculus-result?
 ;;   Produces every source-ordered reverse-reading point for native drawing and
-;; demanded-value validation.  One invalid candidate makes the construction
+;; demanded-value validation. One invalid candidate makes the construction
 ;; nondefined instead of letting a blank partial guide pass as successful.
 (define (eval-output-reading-points reading environment model computation lexical)
-  (define raw (output-reading-raw reading))
-  (cond
-    ((not raw) (undefined "expected an output reading"))
-    (else
-     (let ((inputs-expression (hash-ref (c-object-options raw) 'inputs #f)))
-       (if (not inputs-expression)
-           (undefined "output-reading requires #:inputs")
+  (result-bind
+   (eval-output-reading-data reading environment model computation lexical)
+   (lambda (data)
+     (let loop ([index 0]
+                [remaining (c-output-reading-data-inputs data)]
+                [points '()])
+       (if (null? remaining)
+           (defined (immutable-list-copy (reverse points)))
            (result-bind
-            (eval-raw inputs-expression environment model computation lexical)
-            (lambda (inputs)
-              (if (not (and (list? inputs) (andmap finite-real? inputs)))
-                  (undefined "output-reading #:inputs must be an ordered list of finite values")
-                  (let loop ((index 0) (remaining inputs) (points '()))
-                    (if (null? remaining)
-                        (defined (immutable-list-copy (reverse points)))
-                        (result-bind
-                         (eval-output-reading-branch reading index environment model computation lexical)
-                         (lambda (point)
-                           (loop (add1 index) (rest remaining)
-                                 (cons point points))))))))))))))
+            (eval-output-reading-branch/data data index environment model computation lexical)
+            (lambda (point)
+              (loop (add1 index) (rest remaining) (cons point points)))))))))
 
 (define (eval-part part environment model computation lexical)
   (define parent-target (c-part-parent part))
   (define parent (node-raw parent-target))
   (define name (c-part-name part))
+  (define branch-self (reading-branch-part part))
+  (define parent-branch (reading-branch-part parent-target))
   (cond
-    [(and (list? name) (pair? name) (eq? (car name) 'branches))
-     (defined part)]
-    ;; A `(reading-branch R i)` is a typed intermediate public part.  Its
-    ;; nested point/input/output projections must resolve against R rather
-    ;; than asking a c-part wrapper to pretend it is a root object.
-    [(reading-branch-index parent-target)
-     (define index (reading-branch-index parent-target))
-     (define reading (c-part-parent parent-target))
+    [branch-self (defined branch-self)]
+    ;; A `(reading-branch R i)` is a typed intermediate public part. Named
+    ;; aliases are unwrapped above, so a later projection has exactly the same
+    ;; meaning as the original inline spelling.
+    [parent-branch
+     (define index (reading-branch-index parent-branch))
+     (define reading (c-part-parent parent-branch))
      (case name
        [(point) (eval-output-reading-branch reading index environment model computation lexical)]
        [(input)
@@ -2162,7 +2224,9 @@
         (result-bind
          (eval-output-reading-branch reading index environment model computation lexical)
          (lambda (point) (defined (cdr point))))]
-       [else (undefined "output-reading branches expose point, input, and output parts")])]
+       [(input-guide output-guide input-label)
+        (defined (c-part parent-branch name))]
+       [else (undefined "output-reading branches expose input, point, guides, and input-label parts")])]
     [(and (c-object? parent) (eq? (c-object-kind parent) 'use-component))
      (result-bind
       (component-instance-valid? (c-part-parent part) environment model computation lexical)
@@ -2198,8 +2262,12 @@
           [else (defined (c-part parent name))])]
        [(output-reading)
         (case name
-          [(output) (eval-raw (second args) environment model computation lexical)]
-          [else (undefined "output-reading points are available through indexed reading-branch parts")])]
+          [(output)
+           (if (>= (length args) 2)
+               (eval-raw (second args) environment model computation lexical)
+               (undefined "output-reading requires a requested output"))]
+          [(branches output-label) (defined (c-part parent name))]
+          [else (undefined "output-reading points and guides are available through indexed reading-branch parts")])]
        [(increment)
         (case name
           [(from) (eval-point (first args) environment model computation lexical)]
@@ -4381,6 +4449,20 @@
                 (c-action-options action))
       action))
 
+;; checkpoint-with-owner : c-action? list? -> c-action?
+;;   Carries the authored timeline owner through lowering without changing the
+;; public checkpoint address.  A component checkpoint's address is qualified
+;; for uniqueness, while its caption owner is its local step path; an author
+;; chosen multi-segment checkpoint name must never be mistaken for either.
+(define (checkpoint-with-owner action owner-path)
+  (if (eq? (c-action-kind action) 'checkpoint)
+      (c-action 'checkpoint
+                (c-action-targets action)
+                (hash-set (c-action-options action)
+                          'calculus-checkpoint-owner
+                          (immutable-list-copy owner-path)))
+      action))
+
 ;; compile-component-exposition : c-node? calculus-component? list? symbol? real? real?
 ;;                                exact-nonnegative-integer? any/c list? procedure? procedure? -> values
 ;;   Inserts lexical component steps into the ordinary event timeline.  Nested
@@ -4454,7 +4536,10 @@
                                        start fallback ordinal group path
                                        milestone-sink caption-sink)
          (let ([span (duration-of command fallback)])
-           (values (list (c-event ordinal start (+ start span) command group)) span (add1 ordinal))))]))
+           (define lowered-command (checkpoint-with-owner command path))
+           (values (list (c-event ordinal start (+ start span) lowered-command group))
+                   span
+                   (add1 ordinal))))]))
 
 ;; action-parameter : c-action? -> (or/c c-node? #f)
 ;;   Returns the writable semantic target when an action begins with one.
@@ -4987,7 +5072,7 @@
   ;; the resulting leaves covers both ordinary outer steps and checkpoints
   ;; introduced by expanded component expositions, while preserving the
   ;; source-order cutoff that distinguishes simultaneous zero-time actions.
-  (define (record-checkpoints! new-events owner-path)
+  (define (record-checkpoints! new-events fallback-owner)
     (for ([event (in-list new-events)]
           #:when (eq? (c-action-kind (c-event-action event)) 'checkpoint))
       (define targets (c-action-targets (c-event-action event)))
@@ -5013,12 +5098,12 @@
          ;; A moment names one exact authored boundary.  Retain its caption
          ;; owner as well as its time so simultaneous zero-duration commands
          ;; do not accidentally select a later caption at that same time.
-         ;; Expanded component checkpoints have a final checkpoint segment;
-         ;; their preceding path is the local step that owns the caption.
+         ;; The lowerer records this actual lexical/timeline owner separately
+         ;; from the public checkpoint name, which may be any symbol path.
          (hash-set! moments (cons 'caption-owner address)
-                    (if (> (length address) 1)
-                        (reverse (rest (reverse address)))
-                        owner-path))])))
+                    (hash-ref (c-action-options (c-event-action event))
+                              'calculus-checkpoint-owner
+                              fallback-owner))])))
   (for ([step (in-list (calculus-lesson-steps lesson))])
     (define outer-path (list (c-step-id step)))
     (define outer-start time)
@@ -5681,13 +5766,25 @@
                       (cons 'caption-owner (calculus-moment-address at))
                       #f)]
            [else #f])))
+  ;; Component-local steps inherit an enclosing caption when they have no
+  ;; local narration.  Resolve only along the recorded owner path; a missing
+  ;; owner caption is absence, never a license to select a sibling whose time
+  ;; interval happens to touch this exact milestone.
+  (define (path-prefix? prefix path)
+    (and (<= (length prefix) (length path))
+         (equal? prefix (take path (length prefix)))))
   (define owned-caption
     (and moment-owner
-         (for/first ([caption (in-list (calculus-plan-captions plan))]
-                     #:when (equal? (c-caption-path caption) moment-owner))
-           caption)))
+         (for/fold ([best #f]) ([caption (in-list (calculus-plan-captions plan))]
+                                 #:when (path-prefix? (c-caption-path caption) moment-owner))
+           (if (or (not best)
+                   (> (length (c-caption-path caption))
+                      (length (c-caption-path best))))
+               caption
+               best))))
   (define selected
-    (or owned-caption
+    (if moment-owner
+        owned-caption
         (for/fold ([best #f]) ([caption (in-list (calculus-plan-captions plan))]
                                    #:when (and (<= (c-caption-start caption) caption-time)
                                                (<= caption-time (c-caption-end caption))))

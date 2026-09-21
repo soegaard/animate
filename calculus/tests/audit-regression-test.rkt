@@ -174,6 +174,53 @@
     [left-input (part (reading-branch R 0) 'input)]
     [output (part R 'output)]))
 
+;; Eighth-audit fixtures retain the public composition boundary: checkpoint
+;; names are independent from ownership, and Reading parts stay typed through
+;; aliases and frozen snapshots.
+(define-calculus-lesson r8-qualified-checkpoint-caption
+  (model [a (parameter 0 #:domain (closed 0 1))])
+  (views [axis (number-line-view #:range (closed 0 1) #:objects (a))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show a))
+  (step first #:say "a = 0" (pause 1) (checkpoint '(review before)))
+  (step second #:say "a = 1" (set-parameter a 1) (pause 1)))
+
+(define-calculus-lesson r8-colliding-checkpoint-caption
+  (model [a (parameter 0 #:domain (closed 0 1))])
+  (views [axis (number-line-view #:range (closed 0 1) #:objects (a))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step first #:say "a = 0"
+    (pause 1/2) (checkpoint '(second before)) (pause 1/2))
+  (step second #:say "a = 1" (set-parameter a 1) (pause 1)))
+
+(define-calculus-model r8-projection-snapshots
+  (model
+    [a (parameter 0 #:domain (closed 0 2))]
+    [f (function (x) (* x x))] [G (graph f)]
+    [R (input-reading G a)] [P (part R 'point)]
+    [S (snapshot-of P #:values ([a 1]))]
+    [D (snapshot-of (part R 'point) #:values ([a 1]))]
+    [xS (x-coordinate S)] [yD (y-coordinate D)]))
+
+(define-calculus-model r8-reverse-branch-protocol
+  (model
+    [f (function (x) (* x x))] [G (graph f)]
+    [R (output-reading G 1 #:inputs (list -1 1)
+         #:completeness 'all
+         #:justification "x^2=1 exactly when x=-1 or x=1.")]
+    [P (part (reading-branch R 0) 'point)]
+    [B (reading-branch R 0)] [Q (part B 'point)]
+    [input-guide (part B 'input-guide)]
+    [output-guide (part B 'output-guide)]
+    [input-label (part B 'input-label)]
+    [branches (part R 'branches)] [output-label (part R 'output-label)]))
+
+;; check-reading-rejected : calculus-result? -> void?
+;; Reads through the same result bridge used by strict native preparation.
+(define (check-reading-rejected result)
+  (check-true (calculus-result? result))
+  (check-not-equal? (calculus-result-status result) 'defined))
+
 ;; run-calculus-audit-regression-tests : -> void?
 ;;   Exercises each repaired headless semantic contract at its public boundary.
 (define (run-calculus-audit-regression-tests)
@@ -595,7 +642,76 @@
   (check-value (calculus-snapshot-ref r7-reverse-snapshot 'left-input) -1)
   (check-value (calculus-snapshot-ref r7-reverse-snapshot 'output) 1)
   (check-value (calculus-snapshot-reading-points r7-reverse-snapshot 'R)
-               (list (cons -1 1) (cons 1 1))))
+               (list (cons -1 1) (cons 1 1)))
+  ;; R8: a checkpoint's public name is an address, not an implicit owner path.
+  ;; Both a qualified name and one colliding with a future step retain first's
+  ;; lexical caption, while numeric sampling remains right-continuous.
+  (define r8-qualified-plan (compile-calculus-lesson r8-qualified-checkpoint-caption))
+  (check-value
+   (calculus-snapshot-ref
+    (calculus-plan-sample r8-qualified-plan
+                          #:at (calculus-checkpoint '(review before)))
+    'a)
+   0)
+  (check-equal?
+   (calculus-plan-caption r8-qualified-plan (calculus-checkpoint '(review before)))
+   "a = 0")
+  (check-equal? (calculus-plan-caption r8-qualified-plan 1) "a = 1")
+  (define r8-colliding-plan (compile-calculus-lesson r8-colliding-checkpoint-caption))
+  (check-value
+   (calculus-snapshot-ref
+    (calculus-plan-sample r8-colliding-plan
+                          #:at (calculus-checkpoint '(second before)))
+    'a)
+   0)
+  (check-equal?
+   (calculus-plan-caption r8-colliding-plan (calculus-checkpoint '(second before)))
+   "a = 0")
+  ;; A frozen Point preserves Reading's Point sort whether its source used a
+  ;; named public projection or the direct public part spelling.
+  (define r8-projection-snapshot
+    (calculus-model-at r8-projection-snapshots #:values (hash 'a 2)))
+  (check-value (calculus-snapshot-ref r8-projection-snapshot 'S) (cons 1 1))
+  (check-value (calculus-snapshot-ref r8-projection-snapshot 'D) (cons 1 1))
+  (check-value (calculus-snapshot-ref r8-projection-snapshot 'xS) 1)
+  (check-value (calculus-snapshot-ref r8-projection-snapshot 'yD) 1)
+  ;; Named intermediate branches compose exactly as the inline branch.  The
+  ;; semantic guide and label parts remain addressable instead of becoming
+  ;; renderer-only approximations.
+  (define r8-branch-snapshot (calculus-model-at r8-reverse-branch-protocol))
+  (check-value (calculus-snapshot-ref r8-branch-snapshot 'P) (cons -1 1))
+  (check-value (calculus-snapshot-ref r8-branch-snapshot 'Q) (cons -1 1))
+  (for ([name (in-list '(input-guide output-guide input-label branches output-label))])
+    (check-equal? (calculus-result-status
+                   (calculus-snapshot-ref r8-branch-snapshot name))
+                  'defined))
+  ;; A reverse Reading is an explicit candidate construction. Empty lists,
+  ;; unsupported evidence, invalid outputs, and coalesced branch identities
+  ;; are all structured partiality at the shared demanded-value boundary.
+  (define-calculus-model r8-empty-reading
+    (model [f (function (x) (* x x))] [G (graph f)]
+           [R (output-reading G 1 #:inputs (list))]))
+  (define-calculus-model r8-undefined-empty-reading
+    (model [f (function (x) (* x x))] [G (graph f)]
+           [R (output-reading G (/ 1 0) #:inputs (list))]))
+  (define-calculus-model r8-missing-evidence-reading
+    (model [f (function (x) (* x x))] [G (graph f)]
+           [R (output-reading G 1 #:inputs (list -1 1) #:completeness 'all)]))
+  (define-calculus-model r8-invalid-completeness-reading
+    (model [f (function (x) (* x x))] [G (graph f)]
+           [R (output-reading G 1 #:inputs (list -1 1) #:completeness 'typo)]))
+  (define-calculus-model r8-colliding-branches-reading
+    (model [h (parameter 0 #:domain (closed 0 1))]
+           [f (function (x) (* x x))] [G (graph f)]
+           [R (output-reading G (* h h) #:inputs (list (- h) h)
+              #:completeness 'all
+              #:justification "For h>0 these are the two square roots of h^2.")]))
+  (for ([model (in-list (list r8-empty-reading r8-undefined-empty-reading
+                              r8-missing-evidence-reading
+                              r8-invalid-completeness-reading
+                              r8-colliding-branches-reading))])
+    (check-reading-rejected
+     (calculus-snapshot-reading-points (calculus-model-at model) 'R))))
 
 (module+ test
   (run-calculus-audit-regression-tests))

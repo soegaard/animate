@@ -142,17 +142,62 @@
      (presentation-target-part (first (c-object-arguments target)) (sub1 fuel))]
     [else #f]))
 
+;; presentation-target-raw : any/c -> (or/c c-object? #f)
+;;   A public part may be owned by a named Reading node rather than the held
+;; object spelling.  Follow the same transparent alias boundary as
+;; `presentation-target-part` before asking for the owner's semantic kind.
+(define (presentation-target-raw target [fuel 32])
+  (cond
+    [(zero? fuel) #f]
+    [(c-node? target)
+     (presentation-target-raw (c-node-data target) (sub1 fuel))]
+    [(and (c-expression? target)
+          (eq? (c-expression-op target) 'ref)
+          (= (length (c-expression-arguments target)) 1))
+     (presentation-target-raw (first (c-expression-arguments target)) (sub1 fuel))]
+    [(and (c-object? target)
+          (eq? (c-object-kind target) 'ref)
+          (= (length (c-object-arguments target)) 1))
+     (presentation-target-raw (first (c-object-arguments target)) (sub1 fuel))]
+    [(c-object? target) target]
+    [else #f]))
+
+;; output-reading-target? : any/c -> boolean?
+;;   Does not mistake a structurally similar ordinary part for an output
+;; Reading branch.  This is the common semantic predicate for direct and
+;; named Reading projections.
+(define (output-reading-target? target)
+  (define raw (presentation-target-raw target))
+  (and (c-object? raw) (eq? (c-object-kind raw) 'output-reading)))
+
+;; output-reading-branch? : any/c -> boolean?
+;;   Branches use the public `(branches index)` spelling.  Their parent can be
+;; a named Reading alias, so inspect the resolved public part rather than the
+;; outer node kind.
+(define (output-reading-branch? target)
+  (define branch (presentation-target-part target))
+  (and (c-part? branch)
+       (let ([name (c-part-name branch)])
+         (and (list? name)
+              (= (length name) 2)
+              (eq? (first name) 'branches)
+              (exact-nonnegative-integer? (second name))
+              (output-reading-target? (c-part-parent branch))))))
+
 ;; reading-point-projection? : any/c -> boolean?
-;;   Recognizes the public point projection of a Reading through direct parts
-;; and named aliases, so native validation and painting share one typed fact.
+;;   Recognizes the public point projection of a Reading through direct parts,
+;; named aliases, and a selected reverse-reading branch. Native validation and
+;; painting must share this one typed fact.
 (define (reading-point-projection? target)
   (define part (presentation-target-part target))
   (and (c-part? part)
        (eq? (c-part-name part) 'point)
        (let ([parent (c-part-parent part)])
-         (and (c-node? parent)
-              (memq (c-node-kind parent)
-                    '(input-reading output-reading coordinate-reading))))))
+         (or (output-reading-branch? parent)
+             (let ([raw (presentation-target-raw parent)])
+               (and (c-object? raw)
+                    (memq (c-object-kind raw)
+                          '(input-reading output-reading coordinate-reading))))))))
 
 ;; presentation-semantic-node : any/c -> (or/c c-node? #f)
 ;;   Component exports retain a caller-facing c-part for visibility and
@@ -187,7 +232,13 @@
                                         (sub1 fuel))))))))
   (define (point-source? source fuel)
     (cond [(not (positive? fuel)) #f]
-          [(c-node? source) (point-node? source fuel)]
+          ;; A snapshot may capture a public Reading point through a named
+          ;; model node.  The node's surface kind is `part`, so unwrap its held
+          ;; value as well as testing ordinary Point nodes.
+          [(c-node? source)
+           (or (point-node? source fuel)
+               (point-source? (c-node-data source) (sub1 fuel)))]
+          [(c-part? source) (reading-point-projection? source)]
           [(c-object? source)
            (or (memq (c-object-kind source)
                      '(point point-on axis-point projection root-point
@@ -2546,15 +2597,53 @@
       (draw-guide 0 y (* output-progress x) y))))
 
 ;; draw-output-reading : drawing-context% calculus-snapshot? semantic-value? ... -> void?
-;;   A reverse reading has one point per author-supplied input candidate.  Its
-;; semantic bridge validates all candidates first, then exposes the complete
-;; source-order list for ordinary point painting; it never guesses roots from
-;; rendered graph pixels.
-(define (draw-output-reading context snapshot target xmin xmax ymin ymax left top width height)
+;;   A reverse Reading is the explicit choreography output -> selected graph
+;; point -> input for every author-supplied candidate.  Its semantic bridge
+;; validates all candidates first, then exposes the complete source-order list;
+;; this painter never guesses roots from rendered graph pixels.
+(define (draw-output-reading context snapshot target xmin xmax ymin ymax left top width height
+                             [color "#6A6A6A"] [guided-progress #f])
   (define result (calculus-snapshot-reading-points snapshot target))
   (when (eq? (calculus-result-status result) 'defined)
     (for ([point (in-list (calculus-result-value result))])
-      (draw-point-value context point xmin xmax ymin ymax left top width height))))
+      (when (and (pair? point) (real? (car point)) (real? (cdr point))
+                 (<= xmin (car point) xmax) (<= ymin (cdr point) ymax))
+        (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
+        (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
+        (define styled-color
+          (if (equal? color "#6A6A6A")
+              (render-style-value 'stroke color)
+              color))
+        (define guide-color (if (string? styled-color) styled-color color))
+        (define guide-width
+          (max 1 (render-style-length 'stroke-width 1 (min width height))))
+        (define dash (render-style-value 'dash 'inherit))
+        (define guided? (real? guided-progress))
+        (define progress (if guided? (max 0 (min 1 guided-progress)) 1))
+        ;; The reverse direction deliberately differs from input readings:
+        ;; output guide first, then the graph marker, then the input guide.
+        (define output-progress (min 1 (* 3 progress)))
+        (define point-visible? (or (not guided?) (>= progress 1/3)))
+        (define input-progress (max 0 (min 1 (* 3 (- progress 2/3)))))
+        (define x (car point))
+        (define y (cdr point))
+        (define (draw-guide from-x from-y to-x to-y)
+          (cond [(eq? dash 'inherit)
+                 (send context set-pen
+                       (new draw:pen% [color (hex-color guide-color)]
+                            [width guide-width] [style 'dot]))
+                 (send context draw-line (pixel-x from-x) (pixel-y from-y)
+                       (pixel-x to-x) (pixel-y to-y))]
+                [else
+                 (draw-line-segment context (pixel-x from-x) (pixel-y from-y)
+                                    (pixel-x to-x) (pixel-y to-y)
+                                    guide-color guide-width)]))
+        (when (positive? output-progress)
+          (draw-guide 0 y (* output-progress x) y))
+        (when point-visible?
+          (draw-point-value context point xmin xmax ymin ymax left top width height))
+        (when (positive? input-progress)
+          (draw-guide x y x (* (- 1 input-progress) y)))))))
 
 ;; label-node? : any/c -> boolean?
 ;;   Limits native annotation handling to the three explicitly anchored label
@@ -3060,7 +3149,12 @@
            (draw-trace context snapshot node xmin xmax ymin ymax left top width height)]
           [(and node (eq? (c-node-kind node) 'output-reading))
            (draw-output-reading context snapshot value-target
-                                xmin xmax ymin ymax left top width height)]
+                                xmin xmax ymin ymax left top width height
+                                "#6A6A6A"
+                                (and (list? motion-state)
+                                     (eq? (first motion-state) 'reading)
+                                     (eq? (second motion-state) 'guided)
+                                     (motion-progress motion-state 'reading)))]
           [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
            (draw-reading context snapshot address xmin xmax ymin ymax left top width height
                          "#6A6A6A"
@@ -3083,7 +3177,7 @@
                                       xmin xmax ymin ymax left top width height "#D97706")]
                 [(and node (eq? (c-node-kind node) 'output-reading))
                  (draw-output-reading context snapshot value-target
-                                      xmin xmax ymin ymax left top width height)]
+                                      xmin xmax ymin ymax left top width height "#D97706")]
                 [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
                  (draw-reading context snapshot address
                                xmin xmax ymin ymax left top width height "#D97706")]
