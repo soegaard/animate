@@ -20,6 +20,9 @@
                   calculus-snapshot-region-samples
                   calculus-snapshot-motion-state
                   calculus-snapshot-presentation-state
+                  calculus-snapshot-label-visible?
+                  calculus-model-nodes
+                  c-part
                   calculus-plan-caption
                   calculus-snapshot-reading-points))
 
@@ -239,6 +242,19 @@
   (model [f (function (x) (* x x))] [G (graph f)]
          [study (use-component r9-selected-roots-component G)]
          [right-point (part (reading-branch (part study 'R) 1) 'point)]))
+
+;; Tenth-audit fixture: an output Reading's child state and generated label
+;; preferences are independent presentation facts, with the root remaining a
+;; visible mathematical owner throughout.
+(define-calculus-lesson r10-reading-owned-presentation
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R))
+  (step dim (deemphasize (part (reading-branch R 1) 'input-guide)))
+  (step suppress (hide-label R)))
 
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
@@ -754,6 +770,26 @@
                (list (cons -1 1) (cons 1 1)))
   (check-value (calculus-snapshot-ref r9-exported-snapshot 'right-point)
                (cons 1 1)))
+  ;; R10: a generated Reading child inherits its root's label preference while
+  ;; keeping its own visibility and presentation state. These are headless
+  ;; preconditions for the native owned-part compositor tests.
+  (define r10-plan (compile-calculus-lesson r10-reading-owned-presentation))
+  (define r10-snapshot (calculus-plan-sample r10-plan #:at 'final))
+  (define r10-root
+    (hash-ref (calculus-model-nodes
+               (calculus-lesson-model r10-reading-owned-presentation))
+              'R))
+  (define r10-branch (c-part r10-root '(branches 1)))
+  (define r10-point (c-part r10-branch 'point))
+  (define r10-guide (c-part r10-branch 'input-guide))
+  (define r10-input-label (c-part r10-branch 'input-label))
+  (define r10-output-label (c-part r10-root 'output-label))
+  (check-true (calculus-snapshot-visible? r10-snapshot r10-root #:view 'plot))
+  (check-true (calculus-snapshot-visible? r10-snapshot r10-point #:view 'plot))
+  (check-equal? (calculus-snapshot-presentation-state r10-snapshot r10-guide #:view 'plot)
+                'deemphasized)
+  (check-false (calculus-snapshot-label-visible? r10-snapshot r10-input-label #:view 'plot))
+  (check-false (calculus-snapshot-label-visible? r10-snapshot r10-output-label #:view 'plot))
 
 (module+ test
   (run-calculus-audit-regression-tests))

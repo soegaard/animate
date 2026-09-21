@@ -651,6 +651,132 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (read R)))
 
+;; R10 exercises strict region geometry and the remaining Reading-part
+;; composition paths: selected labels, inherited membership, per-part state,
+;; owner label preferences, and projected Point auto-fit evidence.
+(define-calculus-lesson render-r10-invalid-region-order
+  (model [f (function (x) (+ x 1))] [G (graph f)]
+         [A (region-under G #:from 1 #:to 0)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (A))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show A)))
+
+(define-calculus-lesson render-r10-hidden-invalid-region
+  (model [f (function (x) (+ x 1))] [G (graph f)]
+         [A (region-under G #:from 1 #:to 0)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (A))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step retain (pause 1)))
+
+(define-calculus-component render-r10-region-component
+  (inputs [source : Graph])
+  (model [A (region-under source #:from 0 #:to 1)])
+  (exports A))
+
+(define-calculus-lesson render-r10-exported-region
+  (model [f (function (x) (+ x 1))] [G (graph f)]
+         [study (use-component render-r10-region-component G)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects ((part study 'A)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'A))))
+
+(define-calculus-lesson render-r10-selected-input-label
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)]
+         [L (part (reading-branch R 1) 'input-label)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step select (show L)))
+
+(define-calculus-lesson render-r10-inline-input-label
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (R (part (reading-branch R 1) 'input-label)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step retain (pause 1)))
+
+(define-calculus-component render-r10-roots-component
+  (inputs [source : Graph])
+  (model [R (output-reading source 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (exports R))
+
+(define-calculus-lesson render-r10-exported-output-label
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [study (use-component render-r10-roots-component G)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects ((part study 'R)
+                                      (part (part study 'R) 'output-label)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show (part study 'R)))
+  (step retain (pause 1)))
+
+(define-calculus-lesson render-r10-inherited-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 1) 'point))))
+
+(define-calculus-lesson render-r10-inherited-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 1) 'input-guide))))
+
+(define-calculus-lesson render-r10-owned-guide-state
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R))
+  (step dim (deemphasize (part (reading-branch R 1) 'input-guide))))
+
+(define-calculus-lesson render-r10-owner-label-preference
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R))
+  (step suppress (hide-label R)))
+
+(define-calculus-lesson render-r10-literal-auto-point
+  (model [P (point 1 1)])
+  (views [plot (graph-view #:x (closed -2 2) #:y 'auto #:objects (P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P)))
+
+(define-calculus-lesson render-r10-forward-auto-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (input-reading G 1)] [P (part R 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y 'auto #:objects (P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P)))
+
+(define-calculus-lesson render-r10-reverse-auto-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))]
+         [P (part (reading-branch R 1) 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y 'auto #:objects (P))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P)))
+
+(define-calculus-lesson render-r10-inline-reverse-auto-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))])
+  (views [plot (graph-view #:x (closed -2 2) #:y 'auto
+                           #:objects ((part (reading-branch R 1) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 1) 'point))))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -1534,6 +1660,91 @@
      480 270))
   (check-false (bytes=? (bitmap-argb-bytes r9-labels-on 480 270)
                         (bitmap-argb-bytes r9-labels-off 480 270)))
+  ;; R10: a visible geometric region must demand sampled geometry rather than
+  ;; accepting only its descriptor. Hidden partial geometry remains legal, and
+  ;; a component export retains its lexical model while it is sampled.
+  (check-exn #rx"region|bound|increasing|mathematical"
+             (lambda ()
+               (prepared-lesson->pict
+                (prepare-calculus-lesson render-r10-invalid-region-order #:width 480 #:height 270)
+                #:at 'final)))
+  (check-not-exn
+   (lambda ()
+     (prepared-lesson->pict
+      (prepare-calculus-lesson render-r10-hidden-invalid-region #:width 480 #:height 270)
+      #:at 'final)))
+  (define r10-exported-region-prepared
+    (prepare-calculus-lesson render-r10-exported-region #:width 480 #:height 270))
+  (define r10-exported-region-initial
+    (pict->opaque-bitmap
+     (prepared-lesson->pict r10-exported-region-prepared #:at 'initial) 480 270))
+  (define r10-exported-region-final
+    (pict->opaque-bitmap
+     (prepared-lesson->pict r10-exported-region-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r10-exported-region-initial r10-exported-region-final
+                                      282 302 151 171))
+  ;; Selected input labels and an exported output label retain their distinct
+  ;; owners during strict validation and native painting.
+  (for ([lesson (in-list (list render-r10-selected-input-label
+                               render-r10-inline-input-label
+                               render-r10-exported-output-label))])
+    (check-not-exn
+     (lambda ()
+       (pict->opaque-bitmap
+        (prepared-lesson->pict
+         (prepare-calculus-lesson lesson #:width 480 #:height 270)
+         #:at 'final)
+        480 270))))
+  ;; A Reading child may inherit its declared view membership without its root
+  ;; being shown. It paints exactly that child, not the whole root composite.
+  (for ([lesson (in-list (list render-r10-inherited-point render-r10-inherited-guide))]
+        [region (in-list (list (list 334 354 125 145) (list 334 354 151 171)))])
+    (define prepared (prepare-calculus-lesson lesson #:width 480 #:height 270))
+    (define initial (pict->opaque-bitmap (prepared-lesson->pict prepared #:at 'initial) 480 270))
+    (define final (pict->opaque-bitmap (prepared-lesson->pict prepared #:at 'final) 480 270))
+    (check-true (bitmap-regions-differ? initial final (first region) (second region)
+                                       (third region) (fourth region))))
+  ;; Root composition re-enters the selected guide's state/style context:
+  ;; deemphasizing that guide changes it while leaving the marker untouched.
+  (define r10-guide-state-prepared
+    (prepare-calculus-lesson render-r10-owned-guide-state #:width 480 #:height 270))
+  (define r10-guide-state-before
+    (pict->opaque-bitmap
+     (prepared-lesson->pict r10-guide-state-prepared #:at (calculus-step-end 'reveal)) 480 270))
+  (define r10-guide-state-after
+    (pict->opaque-bitmap (prepared-lesson->pict r10-guide-state-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r10-guide-state-before r10-guide-state-after 334 354 151 171))
+  (check-false (bitmap-regions-differ? r10-guide-state-before r10-guide-state-after 338 350 129 141))
+  ;; An owner-level label preference masks generated Reading labels but not
+  ;; their graph point or guide geometry.
+  (define r10-label-prepared
+    (prepare-calculus-lesson render-r10-owner-label-preference #:width 480 #:height 270))
+  (define r10-label-before
+    (pict->opaque-bitmap
+     (prepared-lesson->pict r10-label-prepared #:at (calculus-step-end 'reveal)) 480 270))
+  (define r10-label-after
+    (pict->opaque-bitmap (prepared-lesson->pict r10-label-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r10-label-before r10-label-after 347 383 188 218))
+  (check-false (bitmap-regions-differ? r10-label-before r10-label-after 338 350 129 141))
+  ;; Equivalent direct and selected Point semantics use the same finite auto
+  ;; evidence, so their isolated final rasters are identical.
+  (define r10-literal-auto-bitmap
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson render-r10-literal-auto-point #:width 480 #:height 270)
+      #:at 'final)
+     480 270))
+  (for ([lesson (in-list (list render-r10-forward-auto-point
+                               render-r10-reverse-auto-point
+                               render-r10-inline-reverse-auto-point))])
+    (define actual
+      (pict->opaque-bitmap
+       (prepared-lesson->pict
+        (prepare-calculus-lesson lesson #:width 480 #:height 270)
+        #:at 'final)
+       480 270))
+    (check-true (bytes=? (bitmap-argb-bytes r10-literal-auto-bitmap 480 270)
+                         (bitmap-argb-bytes actual 480 270))))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

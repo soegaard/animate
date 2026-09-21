@@ -197,28 +197,45 @@
 (define (output-reading-branch? target)
   (and (output-reading-branch target) #t))
 
-;; output-reading-guide-part : any/c -> (or/c (cons/c c-part? symbol?) #f)
-;;   Identifies an individually presented input or output guide and retains
-;; its exact public branch owner for visibility and value lookup.
-(define (output-reading-guide-part target)
-  (define part (presentation-target-part target))
-  (and (c-part? part)
-       (memq (c-part-name part) '(input-guide output-guide))
-       (let ([branch (output-reading-branch (c-part-parent part))])
-         (and branch (cons branch (c-part-name part))))))
+;; reading-owned-part : c-part? (or/c c-part? #f) symbol? -> reading-owned-part?
+;;   Retains all three distinct Reading identities needed by native drawing:
+;; the whole Reading for its point collection, an optional selected branch for
+;; its source index, and the specific persistent part being presented.
+(struct reading-owned-part (reading branch kind) #:transparent)
 
-;; output-reading-label-part : any/c -> (or/c (cons/c semantic-value? symbol?) #f)
-;;   Identifies a Reading-owned label without inferring it from screen text.
-(define (output-reading-label-part target)
+;; output-reading-owned-part : any/c -> (or/c reading-owned-part? #f)
+;;   Resolves a Reading child through direct, named, and component-export
+;; aliases.  The root and branch must remain separate: reverse input labels
+;; are branch-owned while the one output label is owned by the whole Reading.
+(define (output-reading-owned-part target)
   (define part (presentation-target-part target))
   (cond
-    [(and (c-part? part) (eq? (c-part-name part) 'input-label))
+    [(and (c-part? part)
+          (memq (c-part-name part) '(input-guide output-guide input-label)))
      (define branch (output-reading-branch (c-part-parent part)))
-     (and branch (cons branch 'input-label))]
+     (and branch
+          (reading-owned-part (c-part-parent branch) branch (c-part-name part)))]
     [(and (c-part? part) (eq? (c-part-name part) 'output-label)
           (output-reading-target? (c-part-parent part)))
-     (cons (c-part-parent part) 'output-label)]
+     (reading-owned-part (c-part-parent part) #f 'output-label)]
     [else #f]))
+
+;; output-reading-guide-part : any/c -> (or/c reading-owned-part? #f)
+;;   Identifies an individually presented input or output guide and retains
+;; its exact Reading and branch owners for visibility and value lookup.
+(define (output-reading-guide-part target)
+  (define owner (output-reading-owned-part target))
+  (and owner
+       (memq (reading-owned-part-kind owner) '(input-guide output-guide))
+       owner))
+
+;; output-reading-label-part : any/c -> (or/c reading-owned-part? #f)
+;;   Identifies a Reading-owned label without inferring it from screen text.
+(define (output-reading-label-part target)
+  (define owner (output-reading-owned-part target))
+  (and owner
+       (memq (reading-owned-part-kind owner) '(input-label output-label))
+       owner))
 
 ;; reading-point-projection? : any/c -> boolean?
 ;;   Recognizes the public point projection of a Reading through direct parts,
@@ -1244,6 +1261,51 @@
 ;; leaves, and ambiguous placement is left absent for the compiler diagnostic.
 (define (view-presentation-objects lesson snapshot view)
   (define declared (view-objects view))
+  ;; A reverse Reading is normally painted as one root composite.  If that
+  ;; root is hidden while one owned child is explicitly shown, enumerate the
+  ;; effective visible children instead.  This keeps view membership as the
+  ;; outer mask, honors child presentation state, and avoids a second draw
+  ;; when the root composite remains visible.
+  (define (reading-root target)
+    (and (output-reading-target? target)
+         (or (presentation-target-part target) target)))
+  (define (same-reading? left right)
+    (equal? left right))
+  (define (declared-visible-reading? reading)
+    (for/or ([candidate (in-list declared)])
+      (and (same-reading? reading (reading-root candidate))
+           (calculus-snapshot-visible? snapshot candidate #:view (c-view-name view)))))
+  (define (owned-reading-children reading)
+    (define result (calculus-snapshot-reading-points snapshot reading))
+    (if (eq? (calculus-result-status result) 'defined)
+        (append
+         (append-map
+          (lambda (index)
+            (define branch (c-part reading (list 'branches index)))
+            (list (c-part branch 'output-guide)
+                  (c-part branch 'input-guide)
+                  (c-part branch 'point)
+                  (c-part branch 'input-label)))
+          (range (length (calculus-result-value result))))
+         (list (c-part reading 'output-label)))
+        '()))
+  (define (suppressed-by-visible-reading? target)
+    (define owner (output-reading-owned-part target))
+    (and owner
+         (declared-visible-reading? (reading-owned-part-reading owner))))
+  (define public
+    (filter (lambda (target) (not (suppressed-by-visible-reading? target)))
+            declared))
+  (define inherited-reading-children
+    (append-map
+     (lambda (target)
+       (define reading (reading-root target))
+       (if (and reading (not (declared-visible-reading? reading)))
+           (filter (lambda (part)
+                     (calculus-snapshot-visible? snapshot part #:view (c-view-name view)))
+                   (owned-reading-children reading))
+           '()))
+     declared))
   (define private
     (append-map
      (lambda (target)
@@ -1257,7 +1319,7 @@
                    (calculus-component-private-presentation-parts instance))
            '()))
      declared))
-  (remove-duplicates (append declared private)))
+  (remove-duplicates (append public inherited-reading-children private)))
 
 ;; presentation-visible? : calculus-snapshot? any/c address? c-view? -> boolean?
 ;;   Keeps private expanded leaves out of the public address resolver while
@@ -1375,6 +1437,12 @@
         '()))
   (cond
     [(not node) '()]
+    ;; A selected Reading point is already exact finite evidence.  Test this
+    ;; before classifying its owning Reading root, otherwise a forward point
+    ;; is projected a second time and a reverse branch is passed to the
+    ;; whole-Reading bridge.
+    [(presentation-point? target node)
+     (point-y-values (snapshot-defined-value snapshot value-target))]
     [(memq (c-node-kind node) '(graph graph-restriction))
      (graph-fit-y-values snapshot node xmin xmax samples)]
     [(native-point-node? node)
@@ -1395,7 +1463,7 @@
     [(eq? (c-node-kind node) 'trace-of)
      (append-map point-y-values (calculus-snapshot-trace-points snapshot node))]
     [(memq (c-node-kind node) '(integral-region region-under region-between))
-     (define result (calculus-snapshot-region-samples snapshot node))
+     (define result (calculus-snapshot-region-samples snapshot value-target))
      (if (eq? (calculus-result-status result) 'defined)
          (append-map
           (lambda (sample)
@@ -2456,12 +2524,12 @@
           #:when (and (finite-world-number? point) (<= xmin point xmax)))
       (draw-line-segment context (pixel-x point) (- axis-y 4) (pixel-x point) (+ axis-y 4) "#5F6368" 1))))
 
-;; draw-region : drawing-context% calculus-snapshot? c-node? ... -> void?
+;; draw-region : drawing-context% calculus-snapshot? semantic-value? c-node? ... -> void?
 ;;   Paints snapshot-derived region strips. Undefined samples reset the strip,
 ;;   and crossings are split at their affine mathematical intersection so no
 ;;   polygon pretends one graph is globally above the other.
-(define (draw-region context snapshot node xmin xmax ymin ymax left top width height)
-  (define result (calculus-snapshot-region-samples snapshot node))
+(define (draw-region context snapshot target node xmin xmax ymin ymax left top width height)
+  (define result (calculus-snapshot-region-samples snapshot target))
   (define kind (c-node-kind node))
   (define (paint-under points sign)
     (draw-world-polygon context points
@@ -2722,16 +2790,47 @@
       [(output-label)
        (send context draw-text text (+ (pixel-x 0) gap) (- (pixel-y (cdr point)) gap size))])))
 
+;; call-with-reading-owned-part-presentation : drawing-context% calculus-snapshot?
+;;                                             c-view? c-part? symbol? (-> any/c) -> any/c
+;;   The root Reading painter expands persistent children itself.  Re-enter the
+;; native style context for each child so a child-only state or style does not
+;; silently inherit the root's appearance.  The enclosing root alpha remains
+;; multiplicative, preserving an explicit root deemphasis or fade.
+(define (call-with-reading-owned-part-presentation context snapshot view part kind thunk)
+  (define outer-context (current-render-style-context))
+  (cond
+    [(and (list? outer-context) (>= (length outer-context) 5) (c-view? view))
+     (define state
+       (calculus-snapshot-presentation-state snapshot part #:view (c-view-name view)))
+     (define motion
+       (calculus-snapshot-motion-state snapshot part #:view (c-view-name view)))
+     (define original-alpha (send context get-alpha))
+     (parameterize ([current-render-style-context
+                     (list (list-ref outer-context 0) snapshot view part
+                           (list-ref outer-context 4) kind)]
+                    [current-render-presentation-state state])
+       (dynamic-wind
+        void
+        (lambda ()
+          (define style-opacity (render-style-value 'opacity 1))
+          (send context set-alpha
+                (* original-alpha
+                   (if (eq? state 'deemphasized) 0.32 1)
+                   (motion-opacity motion)
+                   style-opacity))
+          (thunk))
+        (lambda () (send context set-alpha original-alpha))))]
+    [else (thunk)]))
+
 ;; draw-output-reading-owned-part : drawing-context% calculus-snapshot?
-;;                                  (cons/c c-part? symbol?) ... -> void?
+;;                                  reading-owned-part? ... -> void?
 ;;   Realizes an individually presented Reading guide or label without drawing
 ;; its siblings; its enclosing root's visibility remains the ownership gate.
 (define (draw-output-reading-owned-part context snapshot owner xmin xmax ymin ymax left top width height
                                         [color "#6A6A6A"] [view #f])
-  (define owner-target (car owner))
-  (define kind (cdr owner))
-  (define branch (and (c-part? owner-target) owner-target))
-  (define reading (if branch (c-part-parent branch) owner-target))
+  (define kind (reading-owned-part-kind owner))
+  (define branch (reading-owned-part-branch owner))
+  (define reading (reading-owned-part-reading owner))
   (define index (if branch (second (c-part-name branch)) 0))
   (define result (calculus-snapshot-reading-points snapshot reading))
   (when (and (eq? (calculus-result-status result) 'defined)
@@ -2786,28 +2885,43 @@
       (define input-label (c-part branch 'input-label))
       (define point-part (c-part branch 'point))
       (when (part-visible? output-guide)
-        (draw-output-reading-guide context 'output-guide point xmin xmax ymin ymax left top width height
-                                   color output-progress))
+        (call-with-reading-owned-part-presentation
+         context snapshot view output-guide 'guide
+         (lambda ()
+           (draw-output-reading-guide context 'output-guide point xmin xmax ymin ymax left top width height
+                                      color output-progress))))
       (when (part-visible? input-guide)
-        (draw-output-reading-guide context 'input-guide point xmin xmax ymin ymax left top width height
-                                   color input-progress #t))
+        (call-with-reading-owned-part-presentation
+         context snapshot view input-guide 'guide
+         (lambda ()
+           (draw-output-reading-guide context 'input-guide point xmin xmax ymin ymax left top width height
+                                      color input-progress #t))))
       ;; The guide's final endpoint is mathematically the point, but the point
       ;; marker draws last so hiding one owned guide cannot change the marker's
       ;; own pixels or make it look as though the selected point disappeared.
       (when (and point-visible? (part-visible? point-part))
-        (draw-point-value context point xmin xmax ymin ymax left top width height))
+        (call-with-reading-owned-part-presentation
+         context snapshot view point-part 'point
+         (lambda ()
+           (draw-point-value context point xmin xmax ymin ymax left top width height))))
       (when (and (part-visible? input-label)
                  (or (not view)
                      (calculus-snapshot-label-visible? snapshot input-label #:view (c-view-name view))))
-        (draw-output-reading-label context 'input-label point input-label-mode
-                                   xmin xmax ymin ymax left top width height)))
+        (call-with-reading-owned-part-presentation
+         context snapshot view input-label 'label
+         (lambda ()
+           (draw-output-reading-label context 'input-label point input-label-mode
+                                      xmin xmax ymin ymax left top width height)))))
     (when (pair? (calculus-result-value result))
       (define output-label (c-part target 'output-label))
       (when (and (part-visible? output-label)
                  (or (not view)
                      (calculus-snapshot-label-visible? snapshot output-label #:view (c-view-name view))))
-        (draw-output-reading-label context 'output-label (first (calculus-result-value result)) output-label-mode
-                                   xmin xmax ymin ymax left top width height)))))
+        (call-with-reading-owned-part-presentation
+         context snapshot view output-label 'label
+         (lambda ()
+           (draw-output-reading-label context 'output-label (first (calculus-result-value result)) output-label-mode
+                                      xmin xmax ymin ymax left top width height)))))))
 
 ;; label-node? : any/c -> boolean?
 ;;   Limits native annotation handling to the three explicitly anchored label
@@ -3312,7 +3426,7 @@
           [(and node (eq? (c-node-kind node) 'partition-marks))
            (draw-partition-marks context snapshot node xmin xmax ymin ymax left top width height)]
           [(and node (memq (c-node-kind node) '(integral-region region-under region-between)))
-           (draw-region context snapshot node xmin xmax ymin ymax left top width height)]
+           (draw-region context snapshot value-target node xmin xmax ymin ymax left top width height)]
           [(and node (eq? (c-node-kind node) 'sequence-points))
            (draw-sequence-points context snapshot address xmin xmax ymin ymax left top width height)]
           [(and node (eq? (c-node-kind node) 'newton-diagram))
@@ -3680,10 +3794,10 @@
      (calculus-snapshot-ref snapshot target)]
     [(output-reading-guide-part target)
      => (lambda (owner)
-          (calculus-snapshot-reading-points snapshot (c-part-parent (car owner))))]
+          (calculus-snapshot-reading-points snapshot (reading-owned-part-reading owner)))]
     [(output-reading-label-part target)
      => (lambda (owner)
-          (calculus-snapshot-reading-points snapshot (car owner)))]
+          (calculus-snapshot-reading-points snapshot (reading-owned-part-reading owner)))]
     [else
      (case (c-node-kind node)
        [(output-reading)
@@ -3707,6 +3821,8 @@
         (calculus-snapshot-riemann-cells snapshot semantic-target)]
        [(trapezoidal-regions)
         (calculus-snapshot-trapezoid-cells snapshot semantic-target)]
+       [(integral-region region-under region-between)
+        (calculus-snapshot-region-samples snapshot semantic-target)]
        [(partition-marks)
         (calculus-snapshot-partition-points snapshot semantic-target)]
        [(asymptote-line)

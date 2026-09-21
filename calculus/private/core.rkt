@@ -2961,7 +2961,7 @@
 ;;   Provides a fixed, snapshot-derived sequence of (x y-left y-right) samples
 ;;   for one region. #f samples explicitly preserve mathematical gaps for the
 ;;   native adapter; no drawing path may bridge them.
-(define (calculus-snapshot-region-samples snapshot region)
+(define (snapshot-region-samples snapshot region)
   (cond
     ((not (calculus-snapshot? snapshot))
      (raise-argument-error 'calculus-snapshot-region-samples "calculus-snapshot?" snapshot))
@@ -3058,6 +3058,37 @@
                                                (list x (calculus-result-value left)
                                                      (calculus-result-value right)))))))
                                 (defined (immutable-list-copy samples)))))))))))))))))))
+
+;; calculus-snapshot-region-samples : calculus-snapshot? semantic-value? -> calculus-result?
+;;   Resolves a public component export before sampling its region geometry.
+;; The transient lexical snapshot carries the caller's values but the
+;; component model, exactly as the Reading geometry bridge does; public
+;; inspection identity and native strict-output diagnostics remain caller-side.
+(define (calculus-snapshot-region-samples snapshot region)
+  (check 'calculus-snapshot-region-samples calculus-snapshot? "calculus-snapshot?" snapshot)
+  (define model (calculus-snapshot-model snapshot))
+  (define semantic-region
+    (if (or (symbol? region) (and (list? region) (pair? region)))
+        (address->object model region)
+        region))
+  (define exported
+    (and (c-part? semantic-region) (component-export-target semantic-region)))
+  (if exported
+      (result-bind
+       (component-instance-valid? (c-component-export-target-instance exported)
+                                  (calculus-snapshot-values snapshot)
+                                  model
+                                  (calculus-snapshot-computation snapshot)
+                                  (hash))
+       (lambda (private-model)
+         (snapshot-region-samples
+          (calculus-snapshot private-model
+                             (calculus-snapshot-values snapshot)
+                             (hash)
+                             '()
+                             (calculus-snapshot-computation snapshot))
+          (c-component-export-target-target exported))))
+      (snapshot-region-samples snapshot semantic-region)))
 
 (define (eval-sequence-value sequence index environment model computation lexical)
   (define raw (node-raw sequence))
@@ -3765,6 +3796,28 @@
   (and key
        (list 'calculus-presentation-state 'label-visible
              (if view (view-target-key view key) (presentation-target-key target)))))
+
+;; inherited-label-preference-value : hash? semantic-target? [symbol?] -> any/c
+;;   Looks through label-owning composite parts from the selected label to its
+;; enclosing Reading/component root.  It deliberately shares visibility's
+;; nearest-owner rule while remaining in the separate label-preference
+;; namespace, so hiding a Reading label cannot hide its point or guides.
+(define (inherited-label-preference-value presentation target [view #f])
+  (define key (target-key target))
+  (let loop ([keys (target-ancestor-keys key)])
+    (cond [(null? keys) missing-presentation-value]
+          [else
+           (define storage-key
+             (if view
+                 (view-target-key view (first keys))
+                 (first keys)))
+           (define preference-key
+             (list 'calculus-presentation-state 'label-visible storage-key))
+           (define value
+             (hash-ref presentation preference-key missing-presentation-value))
+           (if (eq? value missing-presentation-value)
+               (loop (rest keys))
+               value)])))
 ;; set-presentation-state : hash? symbol? list? boolean? -> hash?
 ;;   Applies one persistent or sampled presentation property to direct target
 ;;   identities without changing visibility inheritance.
@@ -3797,8 +3850,8 @@
 ;;   Reads the persistent label preference, defaulting to visible without
 ;;   granting any visibility to the associated mathematical owner.
 (define (label-preferred? presentation target)
-  (define key (label-preference-key target))
-  (if key (hash-ref presentation key #t) #t))
+  (define value (inherited-label-preference-value presentation target))
+  (if (eq? value missing-presentation-value) #t value))
 ;; set-label-preference : hash? list? boolean? -> hash?
 ;;   Commits a label-only command without changing the parent object's state.
 (define (set-label-preference presentation targets on?)
@@ -6082,10 +6135,14 @@
   (check 'calculus-snapshot-label-visible? calculus-snapshot? "calculus-snapshot?" snapshot)
   (when view (check 'calculus-snapshot-label-visible? symbol? "view symbol" view))
   (define presentation (calculus-snapshot-visible snapshot))
-  (define global-key (label-preference-key target))
-  (define global-value (if global-key (hash-ref presentation global-key #t) #t))
-  (define local-key (and view (label-preference-key target view)))
-  (if local-key (hash-ref presentation local-key global-value) global-value))
+  (define global-value (inherited-label-preference-value presentation target))
+  (define local-value
+    (if view
+        (inherited-label-preference-value presentation target view)
+        missing-presentation-value))
+  (cond [(and view (not (eq? local-value missing-presentation-value))) local-value]
+        [(not (eq? global-value missing-presentation-value)) global-value]
+        [else #t]))
 
 ;; formula-symbol : semantic-value? -> string?
 ;;   Retains a quantity's semantic identity in prepared text instead of trying
