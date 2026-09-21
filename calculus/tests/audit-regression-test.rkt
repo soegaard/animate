@@ -338,6 +338,23 @@
   (initially (show a b))
   (step dim (deemphasize b) (pause 1)))
 
+;; Fourteenth-audit fixture: public Parts are carriers, so a component export
+;; must be classified by its declared value type before a later binding chooses
+;; between named-scalar and nonscalar-alias identity.
+(define-calculus-component r14-scalar-export
+  (inputs [x : Scalar])
+  (model [s (+ x 0)])
+  (exports s))
+
+(define-calculus-lesson r14-scalar-export-alias-state
+  (model [study (use-component r14-scalar-export 1)]
+         [u (part study 's)] [v u])
+  (views [axis (number-line-view #:range (closed 0 2) #:objects (u v))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show u v))
+  (step dim (deemphasize v) (pause 1))
+  (step conceal (hide v) (pause 1)))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -972,7 +989,24 @@
    (calculus-snapshot-presentation-state r13-scalar-state
                                          (hash-ref (calculus-model-nodes r13-scalar-model) 'b)
                                          #:view 'axis)
-   'deemphasized))
+   'deemphasized)
+  ;; R14: scalar-valued component exports remain named, read-only scalar
+  ;; quantities through subsequent bindings, unlike an exported Point alias.
+  (define r14-scalar-plan (compile-calculus-lesson r14-scalar-export-alias-state))
+  (define r14-scalar-dim
+    (calculus-plan-sample r14-scalar-plan #:at (calculus-step-end 'dim)))
+  (define r14-scalar-final (calculus-plan-sample r14-scalar-plan #:at 'final))
+  (define r14-scalar-model (calculus-lesson-model r14-scalar-export-alias-state))
+  (define r14-u (hash-ref (calculus-model-nodes r14-scalar-model) 'u))
+  (define r14-v (hash-ref (calculus-model-nodes r14-scalar-model) 'v))
+  (for ([name (in-list '(u v))])
+    (check-value (calculus-snapshot-ref r14-scalar-final name) 1))
+  (check-equal? (calculus-snapshot-presentation-state r14-scalar-dim r14-u #:view 'axis)
+                'normal)
+  (check-equal? (calculus-snapshot-presentation-state r14-scalar-dim r14-v #:view 'axis)
+                'deemphasized)
+  (check-true (calculus-snapshot-visible? r14-scalar-final 'u #:view 'axis))
+  (check-false (calculus-snapshot-visible? r14-scalar-final 'v #:view 'axis)))
 
 (module+ test
   (run-calculus-audit-regression-tests))

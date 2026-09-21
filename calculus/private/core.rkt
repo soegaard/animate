@@ -700,6 +700,37 @@
 
 ;; bind-model-value : symbol? semantic-value? boolean? -> c-node?
 ;;   Gives one ordered model binding its stable public identity.
+(define (part-value-kind value [fuel 32])
+  ;; A public part is a path-shaped carrier, not itself a mathematical type.
+  ;; Component exports retain the declared private node, so inspect that node
+  ;; before deciding whether a later binding is a named scalar quantity or a
+  ;; transparent nonscalar alias.  The bounded alias walk remains total for
+  ;; malformed future data without treating arbitrary parts as Scalars.
+  (cond
+    [(not (positive? fuel)) #f]
+    [(c-part? value)
+     (define export-node (calculus-component-part-node value))
+     (and export-node (c-node-kind export-node))]
+    [(c-node? value)
+     (if (eq? (c-node-kind value) 'part)
+         (part-value-kind (c-node-data value) (sub1 fuel))
+         (c-node-kind value))]
+    [(and (c-expression? value)
+          (eq? (c-expression-op value) 'ref)
+          (= (length (c-expression-arguments value)) 1))
+     (part-value-kind (first (c-expression-arguments value)) (sub1 fuel))]
+    [(and (c-object? value)
+          (eq? (c-object-kind value) 'ref)
+          (= (length (c-object-arguments value)) 1))
+     (part-value-kind (first (c-object-arguments value)) (sub1 fuel))]
+    [else #f]))
+
+(define (scalar-valued-part? value)
+  ;; Parameters exported through a component become caller-side read-only
+  ;; named quantities just like ordinary Scalar/Integer/Boolean expressions.
+  ;; They are never promoted to an independently writable parameter.
+  (memq (part-value-kind value) '(scalar parameter)))
+
 (define (bind-model-value name raw direct-reference?)
   (unless (symbol? name) (raise-argument-error 'model "symbol?" name))
   (cond
@@ -712,11 +743,15 @@
        ;; referent's presentation identity.
        [(scalar parameter)
         (c-node name 'scalar (c-expression 'ref (list raw)) (hash))]
-       ;; In contrast, a public Part is a nonscalar object alias.  Retain its
+       ;; A resolved nonscalar public Part is an object alias.  Retain its
        ;; semantic sort and transparent referent so chains such as
        ;; `[P (part ...)] [A P]` share the Point's presentation identity while
-       ;; still exposing `A` as its own public diagnostic address.
-       [(part) (c-node name 'part raw (hash))]
+       ;; still exposing `A` as its own public diagnostic address.  Scalar
+       ;; component exports take the named-quantity branch instead.
+       [(part)
+        (if (scalar-valued-part? raw)
+            (c-node name 'scalar (c-expression 'ref (list raw)) (hash))
+            (c-node name 'part raw (hash)))]
        [else raw])]
     [(or (c-expression? raw) (number? raw) (boolean? raw) (list? raw))
      (c-node name 'scalar raw (hash))]
@@ -727,7 +762,11 @@
      (when (eq? (c-object-kind raw) 'procedure-function)
        (validate-procedure-function raw))
      (c-node name (semantic-kind raw) raw (hash))]
-    [(c-part? raw) (c-node name (semantic-kind raw) raw (hash))]
+    ;; A component may export a scalar through a public Part.  The new model
+    ;; binding still names a distinct read-only quantity; only a resolved
+    ;; nonscalar part is a transparent object alias.
+    [(c-part? raw)
+     (c-node name (if (scalar-valued-part? raw) 'scalar (semantic-kind raw)) raw (hash))]
     [else (raise-arguments-error 'model "unsupported immutable mathematical value" "binding" name "value" raw)]))
 
 ;; make-model : list? list? -> calculus-model?

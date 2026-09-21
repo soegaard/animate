@@ -129,9 +129,23 @@
 (define (presentation-target-part target [fuel 32])
   (cond
     [(zero? fuel) #f]
-    [(c-part? target) target]
+    [(c-part? target)
+     ;; A selector's parent can itself be a named public Part, e.g. a named
+     ;; Reading branch followed by a named Point.  Normalize the entire path,
+     ;; not only the outer spelling, so native identity agrees with the core's
+     ;; recursive target key while component-instance parents remain intact.
+     (define canonical-parent
+       (presentation-target-part (c-part-parent target) (sub1 fuel)))
+     (if canonical-parent
+         (c-part canonical-parent (c-part-name target))
+         target)]
     [(c-node? target)
-     (presentation-target-part (c-node-data target) (sub1 fuel))]
+     ;; Only a nonscalar public Part binding is transparent presentation
+     ;; identity.  A scalar binding may refer to an exported part for its
+     ;; value while retaining its own named-quantity identity and therefore
+     ;; must not be collapsed with another scalar wrapper around that export.
+     (and (eq? (c-node-kind target) 'part)
+          (presentation-target-part (c-node-data target) (sub1 fuel)))]
     [(and (c-expression? target)
           (eq? (c-expression-op target) 'ref)
           (= (length (c-expression-arguments target)) 1))

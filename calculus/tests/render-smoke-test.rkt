@@ -1022,6 +1022,53 @@
   (step before (pause 1))
   (step dim (deemphasize A) (pause 1)))
 
+;; R14 resolves the full public selector path.  Here the Point's parent is a
+;; named Reading branch rather than the inline `(reading-branch R 1)` spelling.
+(define-calculus-lesson render-r14-branch-parent-alone
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [B (reading-branch R 1)] [P (part B 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (P))])
+  (roles [P 'comparison])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P) (pause 1)))
+
+(define-calculus-lesson render-r14-branch-parent-plus-inline
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [B (reading-branch R 1)] [P (part B 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (P (part (reading-branch R 1) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P) (pause 1)))
+
+(define-calculus-lesson render-r14-two-branch-parents
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [B (reading-branch R 1)] [P (part B 'point)]
+         [C (reading-branch R 1)] [A (part C 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (P A))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show P) (pause 1)))
+
+(define-calculus-lesson render-r14-branch-parent-with-root
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)]
+         [B (reading-branch R 1)] [P (part B 'point)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R P))])
+  (roles [P 'comparison])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R P)
+             (hide (part (reading-branch R 0) 'input-guide)
+                   (part (reading-branch R 0) 'output-guide)
+                   (part (reading-branch R 1) 'input-guide)
+                   (part (reading-branch R 1) 'output-guide)))
+  (step retain (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2116,6 +2163,26 @@
     (define ordinary (r11-raster render-r13-point-alias-only))
     (define styled-alone (r11-raster render-r13-point-alias-only profile))
     (define styled-root (r11-raster render-r13-point-alias-with-root profile))
+    (check-false (bytes=? (r11-pixels ordinary 332 123 25 25)
+                          (r11-pixels styled-alone 332 123 25 25)))
+    (check-true (bytes=? (r11-pixels styled-alone 332 123 25 25)
+                         (r11-pixels styled-root 332 123 25 25))))
+  ;; R14: normalize aliases in selector parents as well as the outer Part.
+  ;; The named branch form, its inline equivalent, and two independently
+  ;; named branch parents all identify one point in one view.
+  (define r14-branch-alone
+    (r11-raster render-r14-branch-parent-alone r13-half-opacity-profile))
+  (for ([lesson (in-list (list render-r14-branch-parent-plus-inline
+                               render-r14-two-branch-parents))])
+    (define actual (r11-raster lesson r13-half-opacity-profile))
+    (check-true (bytes=? (r11-pixels r14-branch-alone 343 134 2 2)
+                         (r11-pixels actual 343 134 2 2))))
+  ;; Target and role matching use that same fully resolved identity when the
+  ;; Reading owns the surviving marker draw.
+  (for ([profile (in-list (list r13-target-profile r13-role-profile))])
+    (define ordinary (r11-raster render-r14-branch-parent-alone))
+    (define styled-alone (r11-raster render-r14-branch-parent-alone profile))
+    (define styled-root (r11-raster render-r14-branch-parent-with-root profile))
     (check-false (bytes=? (r11-pixels ordinary 332 123 25 25)
                           (r11-pixels styled-alone 332 123 25 25)))
     (check-true (bytes=? (r11-pixels styled-alone 332 123 25 25)
