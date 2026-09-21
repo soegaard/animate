@@ -715,6 +715,10 @@
     (define (expression-type expression remaining)
       (define op (c-expression-op expression))
       (define arguments (c-expression-arguments expression))
+      (define (all-integers?)
+        (andmap (lambda (argument)
+                  (eq? (resolve argument (sub1 remaining)) 'Integer))
+                arguments))
       (case op
         [(ref)
          (and (= (length arguments) 1)
@@ -725,6 +729,12 @@
                            (resolve (third arguments) (sub1 remaining))))]
         [(= < <= > >= and or not in-domain?) 'Boolean]
         [(list) 'List]
+        ;; These operations preserve exact integer values when every operand
+        ;; is an Integer.  This is a static type fact, not constant folding:
+        ;; `(+ n 1)` stays live when integer parameter n changes.
+        [(+ *) (if (all-integers?) 'Integer 'Scalar)]
+        [(-) (if (and (pair? arguments) (all-integers?)) 'Integer 'Scalar)]
+        [(abs) (if (and (= (length arguments) 1) (all-integers?)) 'Integer 'Scalar)]
         ;; Calculus expressions other than the Boolean forms above are
         ;; scalar-producing.  A lexical variable is a mathematical Scalar
         ;; even though it has no caller-visible c-node.
@@ -795,6 +805,14 @@
            [(horizontal vertical) 'Line]
            [(corner) 'Point]
            [(dx dy run-label rise-label) 'Scalar]
+           [else #f])]
+        [(riemann-sum)
+         (case name
+           [(value) 'Scalar]
+           [else #f])]
+        [(epsilon-delta-condition)
+         (case name
+           [(epsilon delta) 'Scalar]
            [else #f])]
         [(snapshot-of)
          ;; A selected snapshot part has exactly the source part's type; the
@@ -1213,8 +1231,21 @@
         [else calculus-real-line]))
 
 (define (evaluate-function function input environment model computation [lexical (hash)])
-  (define source (lookup-function function))
+  ;; A public component export is a caller-facing path, while its held
+  ;; Function lives in the producer's private model.  Resolve that path before
+  ;; inspecting the descriptor so the body, domain, and captured dependencies
+  ;; are evaluated in the lexical model that owns them.
+  (define part (part-alias function))
+  (define exported (and part (component-export-target part)))
+  (define source (and (not exported) (lookup-function function)))
   (cond
+    [exported
+     (result-bind
+      (component-instance-valid? (c-component-export-target-instance exported)
+                                 environment model computation lexical)
+      (lambda (private-model)
+        (evaluate-function (c-component-export-target-target exported)
+                           input environment private-model computation lexical)))]
     [(not source) (undefined "expected a calculus function")]
     [else
      (result-bind (domain-contains? (function-domain source) input environment model computation)
@@ -1607,8 +1638,19 @@
 ;;   Evaluates a graph only inside its composed declared restriction before
 ;; asking its held source function for a value.
 (define (evaluate-graph graph input environment model computation [lexical (hash)])
-  (define function (graph-function graph))
-  (cond [(not function) (undefined "expected a calculus graph")]
+  ;; Like Functions, exported Graphs must retain the producer's lexical model
+  ;; for both their held source Function and composed declared domain.
+  (define part (part-alias graph))
+  (define exported (and part (component-export-target part)))
+  (define function (and (not exported) (graph-function graph)))
+  (cond [exported
+         (result-bind
+          (component-instance-valid? (c-component-export-target-instance exported)
+                                     environment model computation lexical)
+          (lambda (private-model)
+            (evaluate-graph (c-component-export-target-target exported)
+                            input environment private-model computation lexical)))]
+        [(not function) (undefined "expected a calculus graph")]
         [else
          (result-bind
           (domain-contains? (graph-domain graph) input environment model computation)

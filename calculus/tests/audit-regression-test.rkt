@@ -427,6 +427,82 @@
          [R (input-reading G 1)]
          [bad (use-component r15-scalar-pass-through (part R 'point))]))
 
+;; R16: existing numerical public parts remain Scalar inputs; selected
+;; Function and Graph exports retain their producer's lexical model when a
+;; consuming component evaluates them.
+(define-calculus-component r16-scalar-pass-through
+  (inputs [x : Scalar])
+  (model [out x])
+  (exports out))
+
+(define-calculus-component r16-integer-pass-through
+  (inputs [n : Integer])
+  (model [out n])
+  (exports out))
+
+(define-calculus-model r16-scalar-part-inputs
+  (model [f (function (x) (* x x))]
+         [P (uniform-partition 0 1 #:count 2)]
+         [tags (tag-partition P #:sample 'midpoint)] [S (riemann-sum f tags)]
+         [u (part S 'value)] [ordinary (sum-value S)]
+         [identity (function (x) x)]
+         [condition (epsilon-delta-condition identity #:at 0 #:limit 0
+                    #:epsilon 1 #:delta 1
+                    #:justification "For the identity, delta=epsilon=1.")]
+         [through-expression (use-component r16-scalar-pass-through ordinary)]
+         [through-part (use-component r16-scalar-pass-through (part S 'value))]
+         [through-name (use-component r16-scalar-pass-through u)]
+         [through-epsilon (use-component r16-scalar-pass-through
+                            (part condition 'epsilon))]))
+
+(define-calculus-model r16-integer-expression-inputs
+  (model [n (parameter 2 #:domain (integers 0 8) #:kind 'integer)]
+         [sum (+ 1 1)] [next (+ n 1)] [product (* n 2)] [negative (- n)]
+         [literal (use-component r16-integer-pass-through 2)]
+         [choice (use-component r16-integer-pass-through (if #t 2 3))]
+         [constant-sum (use-component r16-integer-pass-through (+ 1 1))]
+         [named-next (use-component r16-integer-pass-through next)]
+         [named-product (use-component r16-integer-pass-through product)]
+         [named-negative (use-component r16-integer-pass-through negative)]
+         [scalar-supertype (use-component r16-scalar-pass-through next)]))
+
+(define-calculus-model r16-noninteger-input
+  (model [bad (use-component r16-integer-pass-through 3/2)]))
+
+(define-calculus-component r16-function-and-graph
+  (inputs [c : Scalar])
+  (model [f (function (x) (+ x c) #:domain (closed -2 2))]
+         [G (graph f)])
+  (exports f G))
+
+(define-calculus-component r16-function-consumer
+  (inputs [source : Function])
+  (model [out (value-at source 1)])
+  (exports out))
+
+(define-calculus-component r16-graph-consumer
+  (inputs [source : Graph])
+  (model [P (point-on source #:x 1)] [out (y-coordinate P)])
+  (exports out))
+
+(define-calculus-component r16-function-at-three
+  (inputs [source : Function])
+  (model [out (value-at source 3)])
+  (exports out))
+
+(define-calculus-model r16-export-consumers
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (+ x a) #:domain (closed -2 2))] [G (graph f)]
+         [producer (use-component r16-function-and-graph a)]
+         [F (part producer 'f)] [H (part producer 'G)]
+         [direct-function (use-component r16-function-consumer f)]
+         [direct-graph (use-component r16-graph-consumer G)]
+         [export-function (use-component r16-function-consumer (part producer 'f))]
+         [named-function (use-component r16-function-consumer F)]
+         [export-graph (use-component r16-graph-consumer (part producer 'G))]
+         [named-graph (use-component r16-graph-consumer H)]
+         [outside-domain (use-component r16-function-at-three (part producer 'f))]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -1115,7 +1191,53 @@
   (for ([model (in-list (list r15-named-point-as-scalar r15-inline-point-as-scalar))])
     (check-equal? (calculus-result-status
                    (calculus-snapshot-ref (calculus-model-at model) '(bad out)))
-                  'undefined)))
+                  'undefined))
+  ;; R16: evaluable numerical public parts keep their Scalar type at a
+  ;; component boundary. Their type says nothing about definedness; these
+  ;; controls establish the existing exact values independently.
+  (define r16-scalar-parts (calculus-model-at r16-scalar-part-inputs))
+  (for ([address (in-list '((S value) u ordinary))])
+    (check-value (calculus-snapshot-ref r16-scalar-parts address) 5/16))
+  (check-value (calculus-snapshot-ref r16-scalar-parts '(condition epsilon)) 1)
+  (for ([address (in-list '((through-expression out) (through-part out)
+                             (through-name out)))])
+    (check-value (calculus-snapshot-ref r16-scalar-parts address) 5/16))
+  (check-value (calculus-snapshot-ref r16-scalar-parts '(through-epsilon out)) 1)
+  ;; Integer-preserving arithmetic remains live and valid for Integer inputs,
+  ;; while a nonintegral Scalar stays outside that narrower contract.
+  (define r16-integers (calculus-model-at r16-integer-expression-inputs))
+  (for ([name (in-list '(sum next product negative))]
+        [expected (in-list '(2 3 4 -2))])
+    (check-value (calculus-snapshot-ref r16-integers name) expected))
+  (for ([address (in-list '((literal out) (choice out) (constant-sum out)))])
+    (check-value (calculus-snapshot-ref r16-integers address) 2))
+  (check-value (calculus-snapshot-ref r16-integers '(named-next out)) 3)
+  (check-value (calculus-snapshot-ref r16-integers '(named-product out)) 4)
+  (check-value (calculus-snapshot-ref r16-integers '(named-negative out)) -2)
+  (check-value (calculus-snapshot-ref r16-integers '(scalar-supertype out)) 3)
+  (check-value
+   (calculus-snapshot-ref
+    (calculus-model-at r16-integer-expression-inputs #:values (hash 'n 4))
+    '(named-next out))
+   5)
+  (check-equal? (calculus-result-status
+                 (calculus-snapshot-ref (calculus-model-at r16-noninteger-input) '(bad out)))
+                'undefined)
+  ;; An admitted exported Function or Graph is evaluated in its producer's
+  ;; private lexical model, retaining both the caller parameter dependency and
+  ;; the declared source domain rather than unwrapping a scope-less descriptor.
+  (define r16-exports (calculus-model-at r16-export-consumers))
+  (for ([address (in-list '((direct-function out) (direct-graph out)
+                             (export-function out) (named-function out)
+                             (export-graph out) (named-graph out)))])
+    (check-value (calculus-snapshot-ref r16-exports address) 1))
+  (define r16-live-exports
+    (calculus-model-at r16-export-consumers #:values (hash 'a 1)))
+  (check-value (calculus-snapshot-ref r16-live-exports '(export-function out)) 2)
+  (check-value (calculus-snapshot-ref r16-live-exports '(export-graph out)) 2)
+  (define r16-outside (calculus-snapshot-ref r16-exports '(outside-domain out)))
+  (check-not-equal? (calculus-result-status r16-outside) 'defined)
+  (check-true (regexp-match? #rx"domain" (or (calculus-result-message r16-outside) ""))))
 
 (module+ test
   (run-calculus-audit-regression-tests))

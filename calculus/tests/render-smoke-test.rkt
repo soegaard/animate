@@ -1159,6 +1159,97 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show (part study 'L)) (pause 1)))
 
+;; R16 renders the same line for equivalent public Scalar/Integer inputs and
+;; for Function/Graph sources reached through a component export.
+(define-calculus-component render-r16-scalar-line-consumer
+  (inputs [x : Scalar])
+  (model [L (horizontal-line x)])
+  (exports L))
+
+(define-calculus-component render-r16-integer-line-consumer
+  (inputs [n : Integer])
+  (model [L (horizontal-line n)])
+  (exports L))
+
+(define-calculus-component render-r16-function-and-graph
+  (inputs [c : Scalar])
+  (model [f (function (x) (+ x c) #:domain (closed -2 2))] [G (graph f)])
+  (exports f G))
+
+(define-calculus-component render-r16-function-line-consumer
+  (inputs [source : Function])
+  (model [out (value-at source 1)] [L (horizontal-line out)])
+  (exports L))
+
+(define-calculus-component render-r16-graph-line-consumer
+  (inputs [source : Graph])
+  (model [P (point-on source #:x 1)] [out (y-coordinate P)] [L (horizontal-line out)])
+  (exports L))
+
+(define-calculus-lesson render-r16-riemann-expression-line
+  (model [f (function (x) (* x x))] [P (uniform-partition 0 1 #:count 2)]
+         [tags (tag-partition P #:sample 'midpoint)] [S (riemann-sum f tags)]
+         [study (use-component render-r16-scalar-line-consumer (sum-value S))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 1)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-riemann-part-line
+  (model [f (function (x) (* x x))] [P (uniform-partition 0 1 #:count 2)]
+         [tags (tag-partition P #:sample 'midpoint)] [S (riemann-sum f tags)]
+         [study (use-component render-r16-scalar-line-consumer (part S 'value))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 1)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-integer-literal-line
+  (model [study (use-component render-r16-integer-line-consumer 2)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-integer-expression-line
+  (model [study (use-component render-r16-integer-line-consumer (+ 1 1))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 4)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-direct-function-line
+  (model [f (function (x) x #:domain (closed -2 2))]
+         [study (use-component render-r16-function-line-consumer f)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-exported-function-line
+  (model [producer (use-component render-r16-function-and-graph 0)]
+         [study (use-component render-r16-function-line-consumer (part producer 'f))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-direct-graph-line
+  (model [f (function (x) x #:domain (closed -2 2))] [G (graph f)]
+         [study (use-component render-r16-graph-line-consumer G)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r16-exported-graph-line
+  (model [producer (use-component render-r16-function-and-graph 0)]
+         [study (use-component render-r16-graph-line-consumer (part producer 'G))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2302,6 +2393,22 @@
     (define actual (r11-raster lesson))
     (check-true (bytes=? (r11-pixels r15-line-control 200 129 80 13)
                          (r11-pixels actual 200 129 80 13))))
+  ;; R16: public RiemannSum.value and integer arithmetic cross the same
+  ;; component boundary as their expression/literal controls.  Exported
+  ;; Function and Graph inputs retain their producer scope through native use.
+  (define (r16-equivalent-line control candidate center-y)
+    (define before (r11-raster control default-calculus-profile 'initial))
+    (define expected (r11-raster control))
+    (check-true (bitmap-regions-differ? before expected 200 280 (- center-y 6) (+ center-y 7)))
+    (define actual (r11-raster candidate))
+    (check-true (bytes=? (r11-pixels expected 200 (- center-y 6) 80 13)
+                         (r11-pixels actual 200 (- center-y 6) 80 13))))
+  ;; 5/16 in the [0,1] y window maps to y≈174; the remaining values map to
+  ;; the centers of their respective [0,4] and [0,2] panels.
+  (r16-equivalent-line render-r16-riemann-expression-line render-r16-riemann-part-line 174)
+  (r16-equivalent-line render-r16-integer-literal-line render-r16-integer-expression-line 135)
+  (r16-equivalent-line render-r16-direct-function-line render-r16-exported-function-line 135)
+  (r16-equivalent-line render-r16-direct-graph-line render-r16-exported-graph-line 135)
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared
