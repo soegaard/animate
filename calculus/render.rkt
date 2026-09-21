@@ -298,7 +298,7 @@
 ;; prepared-formula-field-geometry is a backend-derived rectangle for one
 ;; live occurrence.  Coordinates are local to its prepared TeX skeleton and
 ;; retain script style/baseline placement through a colored preparation probe.
-(struct prepared-formula-field-geometry (x y width height) #:transparent)
+(struct prepared-formula-field-geometry (x y width height baseline) #:transparent)
 
 ;; prepared-dynamic-formula-row-data records source-order fragments, a
 ;; reservation established from authored route samples, the prepared TeX
@@ -306,7 +306,7 @@
 ;; It deliberately contains no whole-row backend Pict recomputation: live
 ;; values are painted through those prepared slots at actual sample time.
 (struct prepared-dynamic-formula-row-data
-  (shape field-reserve skeleton-picts field-geometries)
+  (shape field-reserve skeleton-picts field-geometries readout?)
   #:transparent)
 
 ;; prepared-calculus-lesson-data owns one semantic plan and one pixel layout.
@@ -509,6 +509,14 @@
   (define address (target-address target))
   (and address (list (c-view-name view) address)))
 
+;; value-readout-row? : any/c -> boolean?
+;;   Readouts have one complete changing field, but no held TeX skeleton. They
+;; still receive a prepared panel-local slot so a long exact result cannot
+;; reuse the Formula fallback at an unconstrained origin.
+(define (value-readout-row? target)
+  (define raw (and (c-node? target) (c-node-data target)))
+  (and (c-object? raw) (eq? (c-object-kind raw) 'value-readout)))
+
 ;; formula-row-font : real? -> font%
 ;;   Resolves a Formula font from the current immutable presentation context.
 ;; It is shared by live rows while static rows receive the same work during
@@ -532,7 +540,8 @@
 ;; script-sized vertical position; a very long exact rational is reduced in
 ;; native size rather than truncated, re-typeset as a whole row, or allowed to
 ;; move the surrounding held notation.
-(define (draw-formula-field-in-slot context text geometry origin-x origin-y reference)
+(define (draw-formula-field-in-slot context text geometry origin-x origin-y reference
+                                    #:minimum-font-size [minimum-font-size 1])
   (define base-size (formula-row-font-size reference))
   (send context set-font (theme-font base-size))
   (define-values (natural-width natural-height _natural-descent _natural-leading)
@@ -543,17 +552,31 @@
     (min 1
          (/ (max 1 (- slot-width 1)) (max 1 natural-width))
          (/ (max 1 (- slot-height 1)) (max 1 natural-height))))
-  (send context set-font (theme-font (max 1 (* base-size scale))))
-  (define-values (text-width text-height _text-descent _text-leading)
+  (define actual-size (* base-size scale))
+  (when (< actual-size minimum-font-size)
+    ;; A complete result is more useful as a deterministic diagnostic than as
+    ;; illegible one-pixel text or ink outside its owning formula panel.
+    (raise-arguments-error
+     'prepared-lesson->pict
+     "a complete live field that fits its prepared layout"
+     "text" text
+     "slot-width" slot-width
+     "minimum-font-size" minimum-font-size))
+  (send context set-font (theme-font (max 1 actual-size)))
+  (define-values (text-width text-height text-descent _text-leading)
     (send context get-text-extent text))
   (send context draw-text
         text
         (+ origin-x
            (prepared-formula-field-geometry-x geometry)
            (max 0 (/ (- slot-width text-width) 2)))
+        ;; The colored TeX rule's lower edge is the backend-measured baseline.
+        ;; This preserves numerator/denominator/exponent vertical placement;
+        ;; centering the field rectangle cannot do that.
         (+ origin-y
            (prepared-formula-field-geometry-y geometry)
-           (max 0 (/ (- slot-height text-height) 2)))))
+           (prepared-formula-field-geometry-baseline geometry)
+           (- (- text-height text-descent)))))
 
 ;; formula-row-base-color : symbol? -> string?
 ;; Keeps the same snapshot state palette in static preparation and live panel
@@ -697,12 +720,31 @@
                        (if (string? fill) fill base-color))))))))
              next-cache)]))))
 
-;; Formula-field probes are opaque, saturated colors that the normal calculus
-;; themes do not use.  They exist only in a disposable preparation Pict; the
-;; display skeleton remains transparent at every live field.
-(define formula-field-probe-colors
-  '("FF006E" "00A6FB" "06D6A0" "FFB703" "8338EC" "FB5607"
-             "3A86FF" "2A9D8F" "E63946" "7B2CBF" "118AB2" "80B918"))
+;; Formula-field probes are generated from a permutation of 24-bit RGB space.
+;; The old fixed twelve-color list turned a valid thirteenth occurrence into
+;; unmeasured overprint.  A backend probe remains disposable, collision-safe
+;; against its fixed outer ink, and scales to ordinary authored field counts.
+(define formula-field-probe-modulus #x1000000)
+(define formula-field-probe-step #x9E3779) ; odd: a permutation modulo 2^24
+
+;; hex-byte : exact-nonnegative-integer? -> string?
+(define (hex-byte value)
+  (define text (string-upcase (number->string value 16)))
+  (if (= (string-length text) 1) (string-append "0" text) text))
+
+;; formula-field-probe-color : exact-nonnegative-integer? -> string?
+(define (formula-field-probe-color index)
+  (define rgb
+    (modulo (* (add1 index) formula-field-probe-step)
+            formula-field-probe-modulus))
+  (string-append (hex-byte (bitwise-and (arithmetic-shift rgb -16) #xFF))
+                 (hex-byte (bitwise-and (arithmetic-shift rgb -8) #xFF))
+                 (hex-byte (bitwise-and rgb #xFF))))
+
+;; formula-field-probe-colors : exact-nonnegative-integer? -> (listof string?)
+(define (formula-field-probe-colors field-count)
+  (for/list ([index (in-range field-count)])
+    (formula-field-probe-color index)))
 
 ;; string-index : string? string? -> (or/c exact-nonnegative-integer? #f)
 ;;   `racket/base` exposes a boolean `string-contains?`; preparation needs the
@@ -718,7 +760,31 @@
 ;; formula-field-placeholder : exact-nonnegative-integer? -> string?
 ;;   Must agree byte-for-byte with the core Formula skeleton producer.
 (define (formula-field-placeholder reserve)
-  (format "\\phantom{\\rule{~aem}{1.2ex}}" (max 1 reserve)))
+  (define field-width (max 1 reserve))
+  (define (style-width scale)
+    (real->decimal-string (* (exact->inexact field-width) scale) 3))
+  ;; Keep this byte-for-byte aligned with the core skeleton producer.  The
+  ;; explicit choices reserve less width and height in script styles rather
+  ;; than making every occurrence a text-style rule.
+  (format
+   "\\mathchoice{\\phantom{\\rule{~aem}{1.2ex}}}{\\phantom{\\rule{~aem}{1.2ex}}}{\\phantom{\\rule{~aem}{0.9ex}}}{\\phantom{\\rule{~aem}{0.7ex}}}"
+   (style-width 1.0) (style-width 1.0)
+   (style-width 0.7) (style-width 0.5)))
+
+;; formula-field-probe-rule : string? exact-nonnegative-integer? -> string?
+;;   Replaces a transparent placeholder with the same four style branches,
+;; making the chosen branch measurable in the backend raster.
+(define (formula-field-probe-rule color reserve)
+  (define field-width (max 1 reserve))
+  (define (style-width scale)
+    (real->decimal-string (* (exact->inexact field-width) scale) 3))
+  (define (rule width height)
+    (format "{\\color[HTML]{~a}\\rule{~aem}{~aex}}" color width height))
+  (format "\\mathchoice{~a}{~a}{~a}{~a}"
+          (rule (style-width 1.0) "1.2")
+          (rule (style-width 1.0) "1.2")
+          (rule (style-width 0.7) "0.9")
+          (rule (style-width 0.5) "0.7")))
 
 ;; formula-field-probe-tex : string? exact-nonnegative-integer?
 ;;                            exact-nonnegative-integer? -> (or/c string? #f)
@@ -727,11 +793,10 @@
 ;; numerator/denominator/exponent style before any frame is drawn.
 (define (formula-field-probe-tex skeleton reserve field-count)
   (cond
-    [(> field-count (length formula-field-probe-colors)) #f]
     [else
      (define placeholder (formula-field-placeholder reserve))
      (let loop ([remaining skeleton]
-                [colors (take formula-field-probe-colors field-count)]
+                [colors (formula-field-probe-colors field-count)]
                 [pieces '()])
        (cond
          [(null? colors) (apply string-append (reverse (cons remaining pieces)))]
@@ -741,8 +806,7 @@
                (let* ([prefix (substring remaining 0 at)]
                       [suffix (substring remaining (+ at (string-length placeholder)))]
                       [replacement
-                       (format "{\\color[HTML]{~a}\\rule{~aem}{1.2ex}}"
-                               (first colors) (max 1 reserve))])
+                       (formula-field-probe-rule (first colors) reserve)])
                  (loop suffix (rest colors) (cons replacement (cons prefix pieces)))))]))]))
 
 ;; hex-channel : string? exact-nonnegative-integer? -> exact-nonnegative-integer?
@@ -780,6 +844,10 @@
   (and (>= right left)
        (prepared-formula-field-geometry left top
                                         (add1 (- right left))
+                                        (add1 (- bottom top))
+                                        ;; TeX places a rule on its baseline;
+                                        ;; its lower ink edge therefore records
+                                        ;; the local baseline for the field.
                                         (add1 (- bottom top)))))
 
 ;; prepared-probe-geometries : pict? exact-nonnegative-integer?
@@ -787,10 +855,9 @@
 (define (prepared-probe-geometries picture field-count)
   (cond
     [(zero? field-count) '()]
-    [(> field-count (length formula-field-probe-colors)) #f]
     [else
      (define geometries
-       (for/list ([color (in-list (take formula-field-probe-colors field-count))])
+       (for/list ([color (in-list (formula-field-probe-colors field-count))])
          (probe-field-geometry picture color)))
      (and (andmap prepared-formula-field-geometry? geometries) geometries)]))
 
@@ -856,17 +923,29 @@
                           all-fragments)
                          '())]
                     [reserve (max 1 (if (pair? field-lengths) (apply max field-lengths) 0))]
-                    [field-count (count (lambda (kind) (eq? kind 'field)) shape)])
+                    [field-count (count (lambda (kind) (eq? kind 'field)) shape)]
+                    [readout-target? (value-readout-row? target)])
                (if compatible?
                    (let ([skeleton-result
                           (calculus-snapshot-formula-skeleton-tex
                            (first snapshots) target reserve)])
+                     ;; Component presentations can retain only the public
+                     ;; field projection, not the outer value-readout node.
+                     ;; A one-field dynamic row with no Formula skeleton is
+                     ;; nevertheless a readout layout, never an origin draw.
+                     (define readout-layout?
+                       (or readout-target?
+                           (and (= field-count 1)
+                                (equal? shape '(field))
+                                (not (eq? (calculus-result-status skeleton-result)
+                                          'defined)))))
                      (define probe-tex
                        (and (eq? (calculus-result-status skeleton-result) 'defined)
                             (formula-field-probe-tex
                              (calculus-result-value skeleton-result) reserve field-count)))
                      (define state-assets
-                       (if (eq? (calculus-result-status skeleton-result) 'defined)
+                       (cond
+                         [(eq? (calculus-result-status skeleton-result) 'defined)
                            (for/hash ([state (in-list '(normal deemphasized highlighted refining))])
                              (define-values (skeleton-pict probe-pict)
                                (parameterize
@@ -891,23 +970,54 @@
                                         (formula-row-font-size (min width height))
                                         width height
                                         ;; The nested probe colors own field
-                                        ;; pixels; this outer color owns only
-                                        ;; held notation during probing.
-                                        (if (string? fill) fill base-color))))))
+                                        ;; pixels.  A fixed unrelated outer
+                                        ;; color prevents authored row fills
+                                        ;; from masking a probe channel.
+                                        "#111111")))))
                              (values state
                                      (list skeleton-pict
                                            (and probe-pict
-                                                (prepared-probe-geometries probe-pict field-count)))))
-                           (hash)))
+                                                (prepared-probe-geometries probe-pict field-count)))))]
+                         [readout-layout?
+                          ;; A readout has no symbolic TeX shell.  Its one
+                          ;; field nevertheless owns a prepared local panel
+                          ;; reservation, later clamped to that panel's width.
+                          (for/hash ([state (in-list '(normal deemphasized highlighted refining))])
+                            (define font-size
+                              (parameterize
+                                  ([current-render-theme (calculus-profile-data-theme profile)]
+                                   [current-render-reference-size (min width height)]
+                                   [current-render-style-context
+                                    (list lesson (first snapshots) view target
+                                          (and (c-node? target) target))]
+                                   [current-render-presentation-state state])
+                                (formula-row-font-size (min width height))))
+                            (values state
+                                    (list #f
+                                          (list (prepared-formula-field-geometry
+                                                 0 0 (max 1 (- width 32))
+                                                 (max 1 (* 1.3 font-size))
+                                                 font-size)))))]
+                         [else (hash)]))
                      (define skeleton-picts
                        (for/hash ([(state asset) (in-hash state-assets)])
                          (values state (first asset))))
                      (define field-geometries
                        (for/hash ([(state asset) (in-hash state-assets)])
                          (values state (second asset))))
+                     (when (and (eq? (calculus-result-status skeleton-result) 'defined)
+                                (or (not probe-tex)
+                                    (for/or ([geometries (in-hash-values field-geometries)])
+                                      (not (and (list? geometries)
+                                                (= (length geometries) field-count)
+                                                (andmap prepared-formula-field-geometry? geometries))))))
+                       (raise-arguments-error
+                        'prepare-calculus-lesson
+                        "backend-generated geometry for every live Formula field"
+                        "field-count" field-count))
                      (hash-set next key
                                (prepared-dynamic-formula-row-data
-                                shape reserve skeleton-picts field-geometries)))
+                                shape reserve skeleton-picts field-geometries readout-layout?)))
                    next))
              ;; The strict plan boundary already handles invalid performed
              ;; actions. A malformed optional row gets the ordinary readable
@@ -2818,6 +2928,11 @@
            (draw-newton-diagram context snapshot node xmin xmax ymin ymax left top width height)]
           [(and node (eq? (c-node-kind node) 'trace-of))
            (draw-trace context snapshot node xmin xmax ymin ymax left top width height)]
+          ;; A selected reading's public `point` projection is a point, not a
+          ;; second reading.  Dispatch the typed projection before its root
+          ;; input-reading node so it receives its ordinary point marker.
+          [(and (list? address) (= (length address) 2) (eq? (second address) 'point))
+           (draw-point context snapshot address xmin xmax ymin ymax left top width height)]
           [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
            (draw-reading context snapshot address xmin xmax ymin ymax left top width height
                          "#6A6A6A"
@@ -2825,8 +2940,6 @@
                               (eq? (first motion-state) 'reading)
                               (eq? (second motion-state) 'guided)
                               (motion-progress motion-state 'reading)))]
-          [(and (list? address) (= (length address) 2) (eq? (second address) 'point))
-           (draw-point context snapshot address xmin xmax ymin ymax left top width height)]
           [else (void)])
         (when (eq? presentation-state 'highlighted)
           (cond [(and node
@@ -2842,6 +2955,9 @@
                  ;; extent, not a screen-space approximation of a linked slope.
                  (draw-geometric-line context snapshot node value-target
                                       xmin xmax ymin ymax left top width height "#D97706")]
+                [(and (list? address) (= (length address) 2) (eq? (second address) 'point))
+                 (draw-highlight-ring context snapshot address
+                                      xmin xmax ymin ymax left top width height)]
                 [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
                  (draw-reading context snapshot address
                                xmin xmax ymin ymax left top width height "#D97706")]
@@ -3045,6 +3161,8 @@
              (define field-geometries
                (hash-ref (prepared-dynamic-formula-row-data-field-geometries dynamic-layout)
                          presentation-state #f))
+             (define readout?
+               (prepared-dynamic-formula-row-data-readout? dynamic-layout))
              (if (and (list? fragments)
                       (equal? expected-shape
                               (for/list ([fragment (in-list fragments)]) (first fragment))))
@@ -3067,15 +3185,30 @@
                      (set! next-field (add1 next-field))
                      (cond
                        [(prepared-formula-field-geometry? geometry)
+                        ;; Readout reservations are prepared once and then
+                        ;; bounded by their owning panel at draw time.  This
+                        ;; keeps a small side panel from accepting ink in its
+                        ;; neighbour merely because the output bitmap is wide.
+                        (define effective-geometry
+                          (if readout?
+                              (struct-copy prepared-formula-field-geometry geometry
+                                           [width (min
+                                                   (prepared-formula-field-geometry-width geometry)
+                                                   (max 1 (- width 32)))])
+                              geometry))
                         (draw-formula-field-in-slot
-                         context field-text geometry origin-x origin-y (min width height))]
+                         context field-text effective-geometry origin-x origin-y (min width height)
+                         #:minimum-font-size (if readout? 10 1))]
                        [else
-                        ;; Opaque third-party renderers predate the probe
-                        ;; convention and may return no measurable ink. Keep
-                        ;; their former readable one-field fallback rather
-                        ;; than inventing a cursor from flattened TeX text.
-                        (send context set-font font)
-                        (send context draw-text field-text origin-x origin-y)])))
+                        ;; Preparation is required to reject an opaque Formula
+                        ;; renderer before it reaches this branch.  Retaining a
+                        ;; diagnostic here protects prepared artifacts loaded
+                        ;; from an older process without drawing overlapping
+                        ;; fields at the shared row origin.
+                        (raise-arguments-error
+                         'prepared-lesson->pict
+                         "backend-generated field geometry"
+                         "field-index" (sub1 next-field))])))
                  ;; A source-shape mismatch is rendered as the one readable
                  ;; diagnostic field. It does not fall back to a late formula
                  ;; backend call or silently move a trusted symbolic suffix.

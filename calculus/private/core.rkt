@@ -1244,51 +1244,61 @@
            ;; one-sided slopes so a symmetric cancellation at a corner cannot
            ;; masquerade as a two-sided derivative.
            (let loop ([h initial-step] [remaining 24])
-             ;; A finite difference has no evidence when machine arithmetic
-             ;; rounds one or more requested stencil inputs back to `input`.
-             ;; In particular, shrinking an already collapsed step can only
-             ;; preserve that collapse, so decline the numerical request
-             ;; rather than manufacturing a stable zero slope.
-             (define (usable-stencil? step)
+             ;; At large magnitudes the two representable neighbours need not
+             ;; be the requested distance from `input`.  Use only a symmetric
+             ;; *effective* stencil, and divide by its actual endpoints.
+             ;; Otherwise retrying could turn f(x)=x into a 4/3 derivative.
+             (define (effective-stencil step)
                (and (finite-real? step)
                     (positive? step)
-                    (let ([half-step (/ step 2)])
-                      (and (finite-real? half-step)
-                           (positive? half-step)
-                           (not (= (+ input step) input))
-                           (not (= (- input step) input))
-                           (not (= (+ input half-step) input))
-                           (not (= (- input half-step) input))))))
-             (define (centered step)
+                    (let* ([left (- input step)]
+                           [right (+ input step)]
+                           [left-distance (- input left)]
+                           [right-distance (- right input)])
+                      (and (finite-real? left)
+                           (finite-real? right)
+                           (finite-real? left-distance)
+                           (finite-real? right-distance)
+                           (positive? left-distance)
+                           (positive? right-distance)
+                           (= left-distance right-distance)
+                           (list left input right)))))
+             (define (centered stencil)
+               (define left-input (first stencil))
+               (define right-input (third stencil))
                (result-bind
-                (evaluate-function source (+ input step) environment model computation lexical)
+                (evaluate-function source right-input environment model computation lexical)
                 (lambda (right)
                   (result-bind
-                   (evaluate-function source (- input step) environment model computation lexical)
+                   (evaluate-function source left-input environment model computation lexical)
                    (lambda (left)
-                     (finite-number-result (/ (- right left) (* 2 step)) 'numeric #t))))))
-             (define (one-sided step)
+                     (finite-number-result (/ (- right left) (- right-input left-input)) 'numeric #t))))))
+             (define (one-sided stencil)
+               (define left-input (first stencil))
+               (define right-input (third stencil))
                (result-bind
                 (evaluate-function source input environment model computation lexical)
                 (lambda (center)
                   (result-bind
-                   (evaluate-function source (+ input step) environment model computation lexical)
+                   (evaluate-function source right-input environment model computation lexical)
                    (lambda (right)
                      (result-bind
-                      (evaluate-function source (- input step) environment model computation lexical)
+                      (evaluate-function source left-input environment model computation lexical)
                       (lambda (left)
-                        (defined (list (/ (- right center) step)
-                                       (/ (- center left) step))))))))))
-             (if (not (usable-stencil? h))
+                        (defined (list (/ (- right center) (- right-input input))
+                                       (/ (- center left) (- input left-input)))))))))))
+             (define coarse-stencil (effective-stencil h))
+             (define fine-stencil (effective-stencil (/ h 2)))
+             (if (not (and coarse-stencil fine-stencil))
                  (unresolved "numeric derivative stencil collapsed at the requested input" 'numeric)
                  (result-bind
-                  (centered h)
+                  (centered coarse-stencil)
                   (lambda (coarse)
                     (result-bind
-                     (centered (/ h 2))
+                     (centered fine-stencil)
                      (lambda (fine)
                        (result-bind
-                        (one-sided (/ h 2))
+                        (one-sided fine-stencil)
                         (lambda (sides)
                           (define right-slope (first sides))
                           (define left-slope (second sides))
@@ -2613,29 +2623,33 @@
      (function-piecewise-boundaries (first (c-object-arguments source)))]
     [else '()]))
 
-;; region-function-topology : calculus-snapshot? semantic-value? -> calculus-result?
-;;   Supplies explicit split evidence for a graph source: declared domain
-;; boundaries, held piecewise thresholds, and provider discontinuities. Domain
-;; boundaries become evaluated samples (and therefore #f when excluded); a
-;; piecewise/provider break is always an intentional strip separator even if a
-;; selected branch happens to return a finite value at that exact input.
-(define (region-function-topology snapshot function)
+;; region-graph-topology : calculus-snapshot? semantic-value? -> calculus-result?
+;;   Supplies explicit split evidence for the presented graph: composed graph
+;; domain boundaries, held piecewise thresholds, and provider discontinuities.
+;; A region is rendered from graphs, so inspecting only its source function
+;; would incorrectly erase an intervening graph-restriction.
+(define (region-graph-topology snapshot graph)
   (define environment (calculus-snapshot-values snapshot))
   (define model (calculus-snapshot-model snapshot))
   (define computation (calculus-snapshot-computation snapshot))
-  (result-bind
-   (resolved-domain-boundaries (function-domain function) environment model computation)
-   (lambda (boundaries)
-     (result-bind
-      (resolved-boundary-expressions (function-piecewise-boundaries function)
-                                     environment model computation)
-      (lambda (piecewise-breaks)
-        (result-bind
-         (calculus-snapshot-function-breaks snapshot function)
-         (lambda (provider-breaks)
-           (defined
-            (list (append boundaries piecewise-breaks)
-                  (append piecewise-breaks provider-breaks))))))))))
+  (define function (graph-function graph))
+  (if (not function)
+      (undefined "region requires a graph")
+      (result-bind
+       (resolved-domain-boundaries (graph-domain graph) environment model computation)
+       (lambda (boundaries)
+         (result-bind
+          (resolved-boundary-expressions (function-piecewise-boundaries function)
+                                         environment model computation)
+          (lambda (piecewise-breaks)
+            (result-bind
+             (calculus-snapshot-function-breaks snapshot function)
+             (lambda (provider-breaks)
+               ;; Provider evidence must also be sampled: a forced break that
+               ;; never appears in `inputs` cannot separate a painted strip.
+               (defined
+                (list (append boundaries piecewise-breaks provider-breaks)
+                      (append piecewise-breaks provider-breaks)))))))))))
 
 ;; calculus-snapshot-region-samples : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Provides a fixed, snapshot-derived sequence of (x y-left y-right) samples
@@ -2681,11 +2695,11 @@
                           (define end (max a b))
                           (define sample-count 120)
                           (result-bind
-                           (region-function-topology snapshot left-function)
+                           (region-graph-topology snapshot left-graph)
                            (lambda (left-topology)
                              (result-bind
                               (if right-function
-                                  (region-function-topology snapshot right-function)
+                                  (region-graph-topology snapshot right-graph)
                                   (defined (list '() '())))
                               (lambda (right-topology)
                                 (define semantic-boundaries
@@ -5721,6 +5735,11 @@
           (format "~a(~a)" op (string-join (map render args) ", "))]
          [(list) (format "(~a)" (string-join (map render args) ", "))]
          [else (format "~a(~a)" op (string-join (map render args) ", "))])]
+      [(and (c-object? item) (eq? (c-object-kind item) 'formula-field-placeholder))
+       ;; A live field is an atomic value with multiplicative precedence.
+       ;; Keep visible grouping when an enclosing held operation requires it;
+       ;; splitting the marker later must not turn (3/2)^2 into 3/2^2.
+       (parenthesize (first (c-object-arguments item)) 20)]
       [(and (c-object? item) (eq? (c-object-kind item) 'ref))
        (formula-symbol (first (c-object-arguments item)))]
       [(and (c-object? item) (eq? (c-object-kind item) 'value))
@@ -5828,6 +5847,10 @@
          [(list) (format "\\left(~a\\right)" (string-join (map render args) ", "))]
          [else (format "\\operatorname{~a}\\left(~a\\right)"
                        op (string-join (map render args) ", "))])]
+      [(and (c-object? item) (eq? (c-object-kind item) 'formula-field-placeholder))
+       ;; This is already TeX emitted by the skeleton/probe producer, not a
+       ;; text atom to escape.  Its precedence mirrors the text path above.
+       (parenthesize (first (c-object-arguments item)) 20)]
       [(and (c-object? item) (eq? (c-object-kind item) 'ref))
        (formula-tex-atom (formula-symbol (first (c-object-arguments item))))]
       [(and (c-object? item) (eq? (c-object-kind item) 'value))
@@ -6020,8 +6043,16 @@
      ;; advance and height are explicit in TeX units and therefore stay valid
      ;; inside a denominator, exponent, or radical.
      (define field-width (max 1 reserve))
+     ;; `\\rule` does not by itself inherit a useful script-sized reservation
+     ;; in every TeX backend.  Make every math style explicit so a live value
+     ;; in x^value, a denominator, or a radical owns a matching local slot.
+     (define (style-width scale)
+       (real->decimal-string (* (exact->inexact field-width) scale) 3))
      (define placeholder
-       (format "\\phantom{\\rule{~aem}{1.2ex}}" field-width))
+       (format
+        "\\mathchoice{\\phantom{\\rule{~aem}{1.2ex}}}{\\phantom{\\rule{~aem}{1.2ex}}}{\\phantom{\\rule{~aem}{0.9ex}}}{\\phantom{\\rule{~aem}{0.7ex}}}"
+        (style-width 1.0) (style-width 1.0)
+        (style-width 0.7) (style-width 0.5)))
      (define (replace-live-leaves item)
        (cond
          [(c-expression? item)
@@ -6029,7 +6060,7 @@
                         (map replace-live-leaves (c-expression-arguments item)))]
          [(c-object? item)
           (if (eq? (c-object-kind item) 'value)
-              placeholder
+              (c-object 'formula-field-placeholder (list placeholder) (hash))
               (c-object (c-object-kind item)
                         (map replace-live-leaves (c-object-arguments item))
                         (for/hash ([(key value) (in-hash (c-object-options item))])
@@ -6077,7 +6108,7 @@
           (cond [(eq? (c-object-kind item) 'value)
                  (define marker (next-marker))
                  (set! fields (append fields (list (cons marker item))))
-                 marker]
+                 (c-object 'formula-field-placeholder (list marker) (hash))]
                 [else
                  (c-object (c-object-kind item)
                            (map replace-live-leaves (c-object-arguments item))

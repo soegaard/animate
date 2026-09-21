@@ -393,7 +393,64 @@
   (check-equal? (map car initial-fragments) (map car final-fragments))
   (check-equal? (map car initial-fragments) '(field text))
   (check-equal? (cadr (car initial-fragments)) "9")
-  (check-equal? (cadr (car final-fragments)) "10"))
+  (check-equal? (cadr (car final-fragments)) "10")
+  ;; R4: a distinct floating-point stencil must use its effective spacing,
+  ;; not certify 4/3 for the identity function at a large input.
+  (define-calculus-model effective-numeric-stencil
+    (model [identity (function (x) x)]
+           [numeric-identity (derivative-function identity #:method 'numeric #:step 3.0)]
+           [answer (value-at numeric-identity 1e16)]))
+  (define effective-stencil-answer (model-result effective-numeric-stencil 'answer))
+  (if (eq? (calculus-result-status effective-stencil-answer) 'defined)
+      (check-= (calculus-result-value effective-stencil-answer) 1 1e-9)
+      (check-equal? (calculus-result-status effective-stencil-answer) 'unresolved))
+  ;; A live field inherits the same visible precedence grouping as the fully
+  ;; resolved Formula.  In particular its rational value is the power base.
+  (define-calculus-model live-rational-power
+    (model [a (parameter 3/2 #:domain (closed 1 2))]
+           [E (formula (expt (value a) 2))]))
+  (define live-rational-snapshot (calculus-model-at live-rational-power))
+  (define live-rational-text
+    (calculus-result-value
+     (calculus-snapshot-formula-text live-rational-snapshot 'E)))
+  (define live-rational-fragments
+    (calculus-result-value
+     (calculus-snapshot-formula-fragments live-rational-snapshot 'E)))
+  (check-equal? live-rational-text "(3/2)^2")
+  (check-equal? (apply string-append (map cadr live-rational-fragments))
+                live-rational-text)
+  ;; Filled regions are graph topology consumers: provider-declared breaks
+  ;; and graph-only restrictions both become samples and hard separators.
+  (define (r4-jump-provider x) (if (< x 1/7) -1 1))
+  (define (no-region-strip-across? samples cut)
+    (not
+     (for/or ([left (in-list samples)] [right (in-list (cdr samples))])
+       (and (list? left) (list? right) (< (car left) cut (car right))))))
+  (define-calculus-model provider-break-region
+    (model [f (procedure-function (external r4-jump-provider)
+                #:domain (closed 0 1) #:key 'r4-jump #:breaks (list 1/7))]
+           [G (graph f)] [R (region-under G #:from 0 #:to 1)]))
+  (define provider-region-snapshot (calculus-model-at provider-break-region))
+  (define provider-region-samples
+    (calculus-result-value
+     (calculus-snapshot-region-samples
+      provider-region-snapshot
+      (calculus-result-value (calculus-snapshot-ref provider-region-snapshot 'R)))))
+  (check-true (no-region-strip-across? provider-region-samples 1/7))
+  (define-calculus-model restricted-graph-region
+    (model [f (function (x) 1 #:domain (closed 0 1))]
+           [G (graph f)]
+           [H (graph-restriction G
+                                 (domain-union (closed 0 1/7) (closed 29/200 1)))]
+           [R (region-under H #:from 0 #:to 1)]))
+  (define restricted-region-snapshot (calculus-model-at restricted-graph-region))
+  (define restricted-region-samples
+    (calculus-result-value
+     (calculus-snapshot-region-samples
+      restricted-region-snapshot
+      (calculus-result-value (calculus-snapshot-ref restricted-region-snapshot 'R)))))
+  (check-true (no-region-strip-across? restricted-region-samples
+                                       (/ (+ 1/7 29/200) 2))))
 
 (module+ test
   (run-calculus-audit-regression-tests))

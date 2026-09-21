@@ -168,6 +168,14 @@ with live values and readouts remain snapshot-dependent. Native formula rows
 are typeset through the selected existing Formula/Pict backend (the default is
 the project's TeX backend), including dark-profile foreground color; ordinary
 graph annotations remain upright native text.
+
+Each live Formula occurrence has a separately measured TeX slot, including
+fraction, radical, and script styles. A Formula backend that cannot provide
+that geometry is rejected during preparation instead of overprinting fields at
+one fallback coordinate. Readouts similarly own a panel-local value slot. If a
+complete exact value would need to fall below the readable native size to fit,
+rendering reports a layout error rather than truncating it or drawing into a
+neighboring panel.
 Visible `newton-diagram` objects draw each available finite update as its
 semantic graph-point-to-next-axis-intercept construction. A failed or
 unavailable update is not extrapolated by the renderer.

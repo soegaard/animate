@@ -18,6 +18,7 @@
          (prefix-in native: "../../main.rkt")
          racket/class
          racket/draw
+         racket/list
          (only-in "../../private/pict-renderer.rkt" gen:pict-renderer)
          (only-in "../private/core.rkt"
                   calculus-plan-caption
@@ -884,8 +885,8 @@
          [R (input-reading G 1)])
   (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2)
                            #:objects ((part R 'point)))])
-  (initially (show (part R 'point)))
-  (step retain (pause 1)))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part R 'point))))
 
 ;; render-positioned-live-fields : calculus-lesson?
 ;; Exercises the real backend's prepared field probes in numerator,
@@ -901,6 +902,31 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (initially (show numerator denominator exponent radical nested))
   (step move (vary a #:to 3 #:easing 'linear #:duration 1)))
+
+;; render-too-many-live-fields : calculus-lesson?
+;; A field color/probe namespace is an explicit preparation capability, never
+;; permission to paint an unmeasured thirteenth value at the formula origin.
+(define-calculus-lesson render-too-many-live-fields
+  (model [a (parameter 1 #:domain (closed 1 2))]
+         [E (formula (+ (value a) (value (+ a 1)) (value (+ a 2))
+                        (value (+ a 3)) (value (+ a 4)) (value (+ a 5))
+                        (value (+ a 6)) (value (+ a 7)) (value (+ a 8))
+                        (value (+ a 9)) (value (+ a 10)) (value (+ a 11))
+                        (value (+ a 12))))])
+  (views [facts (formula-view #:objects (E))])
+  (initially (show E))
+  (step retain (pause 1)))
+
+;; render-wide-exact-readout : calculus-lesson?
+;; An arbitrarily wide exact result must receive a layout diagnostic, not draw
+;; through the formula panel's outer margin.
+(define-calculus-lesson render-wide-exact-readout
+  (model [a (parameter 1 #:domain (closed 1 (expt 10 100)))]
+         [r (value-readout a #:label "a" #:format 'exact)])
+  (views [facts (formula-view #:objects (r))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show r))
+  (step move (vary a #:to (expt 10 100) #:easing 'linear #:duration 1)))
 
 ;; render-invalid-composite-reading : calculus-lesson?
 ;; A reading root is a descriptor, but its demanded point is undefined at the
@@ -1116,9 +1142,16 @@
   (check-equal? (calculus-result-value
                  (calculus-snapshot-ref selected-reading-snapshot '(R point)))
                 (cons 1 1))
-  (check-true
-   (pict:pict?
-    (prepared-lesson->pict selected-reading-prepared #:at 'initial)))
+  (define selected-reading-initial
+    (pict->opaque-bitmap
+     (prepared-lesson->pict selected-reading-prepared #:at 'initial) 480 270))
+  (define selected-reading-final
+    (pict->opaque-bitmap
+     (prepared-lesson->pict selected-reading-prepared #:at 'final) 480 270))
+  ;; R4: the public `(part R 'point)` is dispatched as a point before the
+  ;; Reading root, so its marker changes ink at its mathematical coordinate.
+  (check-true (bitmap-regions-differ? selected-reading-initial selected-reading-final
+                                      230 250 125 145))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared
@@ -1134,6 +1167,18 @@
     (define normal-geometries
       (hash-ref (vector-ref (struct->vector positioned-layout) 4) 'normal))
     (check-true (and (list? normal-geometries) (pair? normal-geometries))))
+  ;; A field in an exponent has a genuinely script-sized prepared reservation,
+  ;; rather than reusing the display-style rectangle of a top-level numerator.
+  (define numerator-geometry
+    (car (hash-ref (vector-ref (struct->vector
+                                (hash-ref positioned-layouts '(facts numerator))) 4)
+                   'normal)))
+  (define exponent-geometry
+    (car (hash-ref (vector-ref (struct->vector
+                                (hash-ref positioned-layouts '(facts exponent))) 4)
+                   'normal)))
+  (check-true (< (vector-ref (struct->vector exponent-geometry) 3)
+                 (vector-ref (struct->vector numerator-geometry) 3)))
   (for ([time (in-list (list 'initial 1/2 'final))])
     (check-true
      (pict:pict?
@@ -1241,22 +1286,35 @@
      (prepared-lesson->pict live-formula-prepared #:at 'final) 480 270))
   (check-true (bitmap-regions-differ? live-formula-initial live-formula-final
                                       32 448 32 100))
-  ;; A changing `(value ...)` field prepares a mathematical skeleton through
-  ;; the configured backend, then updates only the reserved numeric field at
-  ;; sampling time. The callback count must remain fixed after preparation.
+  ;; A backend that cannot expose probe geometry is now rejected during
+  ;; preparation.  It must not silently fall back to a shared row origin.
   (set! dynamic-formula-backend-calls 0)
-  (define dynamic-field-prepared
-    (prepare-calculus-lesson render-live-formula-value
-                             #:formula-backend (counting-formula-renderer)
-                             #:width 480 #:height 270))
+  (define opaque-formula-outcome
+    (with-handlers ([exn:fail? values])
+      (prepare-calculus-lesson render-live-formula-value
+                               #:formula-backend (counting-formula-renderer)
+                               #:width 480 #:height 270)))
+  (check-true (exn:fail? opaque-formula-outcome))
+  (check-true (regexp-match? #rx"field|geometry|layout"
+                             (exn-message opaque-formula-outcome)))
   (check-true (> dynamic-formula-backend-calls 0))
-  (define prepared-dynamic-formula-backend-calls dynamic-formula-backend-calls)
-  (void (pict->opaque-bitmap
-         (prepared-lesson->pict dynamic-field-prepared #:at 'initial) 480 270))
-  (void (pict->opaque-bitmap
-         (prepared-lesson->pict dynamic-field-prepared #:at 'final) 480 270))
-  (check-equal? dynamic-formula-backend-calls
-                prepared-dynamic-formula-backend-calls)
+  ;; R4: probe identifiers are generated per occurrence; the thirteenth
+  ;; field gets its own prepared rectangle instead of an arbitrary rejection
+  ;; or a shared-origin fallback.
+  (define many-fields-prepared
+    (prepare-calculus-lesson render-too-many-live-fields #:width 480 #:height 270))
+  (define many-fields-layout
+    (hash-ref (vector-ref (struct->vector many-fields-prepared) 9) '(facts E)))
+  (define many-fields-geometries
+    (hash-ref (vector-ref (struct->vector many-fields-layout) 4) 'normal))
+  (check-equal? (length many-fields-geometries) 13)
+  (check-equal? (length (remove-duplicates many-fields-geometries)) 13)
+  ;; Exact readouts do not smear long values through their owning panel's
+  ;; margin.  A readable-layout diagnostic is the deliberate policy here.
+  (define wide-readout-prepared
+    (prepare-calculus-lesson render-wide-exact-readout #:width 480 #:height 270))
+  (check-exn #rx"field|layout|overflow|reservation"
+             (lambda () (prepared-lesson->pict wide-readout-prepared #:at 'final)))
   ;; The six complete Guide modules are not merely headless declarations.
   ;; Exercise their final native preparations as standard 1280×720 in-memory
   ;; rasters, keeping this test free of persisted image or video artifacts.
