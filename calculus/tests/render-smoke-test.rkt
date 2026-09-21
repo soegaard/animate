@@ -777,6 +777,106 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show (part (reading-branch R 1) 'point))))
 
+;; r11-half-opacity-points-profile : calculus-profile?
+;;   Makes repeated marker painting observable without depending on a
+;; platform-specific anti-aliased outline colour.
+(define r11-half-opacity-points-profile
+  (calculus-profile
+   #:theme
+   (calculus-theme #:base light-calculus-theme
+                   #:rules (list (calculus-style #:kind 'point #:opacity 1/2)))))
+
+;; R11 renders view-local label restoration, explicitly demanded reverse
+;; Reading children whose geometry cannot be obtained, and root/child
+;; membership combinations that must paint an owned marker only once.
+(define-calculus-lesson render-r11-scoped-hide-show
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [left (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))]
+         [right (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step masked (hide-label (in-view left R)) (pause 1))
+  (step restored (show-label (in-view left R)) (pause 1)))
+
+(define-calculus-lesson render-r11-scoped-show-hide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [left (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))]
+         [right (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R) (hide-label R))
+  (step unmasked (show-label (in-view left R)) (pause 1))
+  (step remasked (hide-label (in-view left R)) (pause 1)))
+
+(define-calculus-lesson render-r11-inherited-invalid-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 0) 'point))))
+
+(define-calculus-lesson render-r11-inherited-invalid-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 0) 'input-guide))))
+
+(define-calculus-lesson render-r11-inherited-invalid-index
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 7) 'point))))
+
+(define-calculus-lesson render-r11-hidden-invalid-reading
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step retain (pause 1)))
+
+(define-calculus-lesson render-r11-reading-root
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show R)))
+
+(define-calculus-lesson render-r11-reading-root-plus-point
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (R (part (reading-branch R 1) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show R)))
+
+(define-calculus-lesson render-r11-reading-root-plus-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects (R (part (reading-branch R 1) 'input-guide)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show R)))
+
+(define-calculus-lesson render-r11-reading-root-twice
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show R)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -1744,6 +1844,53 @@
         #:at 'final)
        480 270))
     (check-true (bytes=? (bitmap-argb-bytes r10-literal-auto-bitmap 480 270)
+                         (bitmap-argb-bytes actual 480 270))))
+  ;; R11: a view-local label setting has priority within its own view but must
+  ;; fall back to—and restore—the common owner preference after a later
+  ;; opposite operation.
+  (define (r11-raster lesson [profile default-calculus-profile] [at 'final])
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson lesson #:profile profile #:width 480 #:height 270)
+      #:at at)
+     480 270))
+  (define (r11-pixels bitmap x y width height)
+    (define data (make-bytes (* 4 width height)))
+    (send bitmap get-argb-pixels x y width height data)
+    data)
+  (define (check-r11-label-cycle lesson middle)
+    (define initial (r11-raster lesson default-calculus-profile 'initial))
+    (define changed (r11-raster lesson default-calculus-profile middle))
+    (define final (r11-raster lesson))
+    (check-false (bytes=? (bitmap-argb-bytes initial 480 270)
+                          (bitmap-argb-bytes changed 480 270)))
+    (check-true (bytes=? (bitmap-argb-bytes initial 480 270)
+                         (bitmap-argb-bytes final 480 270))))
+  (check-r11-label-cycle render-r11-scoped-hide-show (calculus-step-end 'masked))
+  (check-r11-label-cycle render-r11-scoped-show-hide (calculus-step-end 'unmasked))
+  ;; A visible inherited Reading child is output demand even when resolving
+  ;; its parent geometry fails. Conversely, a hidden invalid root is not a
+  ;; demand and remains legal.
+  (for ([lesson (in-list (list render-r11-inherited-invalid-point
+                               render-r11-inherited-invalid-guide
+                               render-r11-inherited-invalid-index))])
+    (check-exn #rx"mathematical|candidate|branch|outside|reading|Reading"
+               (lambda () (r11-raster lesson))))
+  (check-not-exn (lambda () (r11-raster render-r11-hidden-invalid-reading)))
+  ;; A Reading root already owns its generated Point and guide. Declaring the
+  ;; same object again in its view must not darken a translucent marker or
+  ;; redraw either of the pre-existing owned children.
+  (define r11-root-bitmap
+    (r11-raster render-r11-reading-root r11-half-opacity-points-profile))
+  (define r11-root-plus-point-bitmap
+    (r11-raster render-r11-reading-root-plus-point r11-half-opacity-points-profile))
+  (for ([x (in-list '(134 342))])
+    (check-true (bytes=? (r11-pixels r11-root-bitmap x 133 4 4)
+                         (r11-pixels r11-root-plus-point-bitmap x 133 4 4))))
+  (for ([lesson (in-list (list render-r11-reading-root-twice
+                               render-r11-reading-root-plus-guide))])
+    (define actual (r11-raster lesson r11-half-opacity-points-profile))
+    (check-true (bytes=? (bitmap-argb-bytes r11-root-bitmap 480 270)
                          (bitmap-argb-bytes actual 480 270))))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.

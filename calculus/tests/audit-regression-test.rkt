@@ -21,6 +21,7 @@
                   calculus-snapshot-motion-state
                   calculus-snapshot-presentation-state
                   calculus-snapshot-label-visible?
+                  calculus-snapshot-reading-owned-parts
                   calculus-model-nodes
                   c-part
                   calculus-plan-caption
@@ -255,6 +256,35 @@
   (step reveal (read R))
   (step dim (deemphasize (part (reading-branch R 1) 'input-guide)))
   (step suppress (hide-label R)))
+
+;; Eleventh-audit fixtures preserve view-local label preference cycles and
+;; explicit inherited child demands even if the parent Reading is invalid.
+(define-calculus-lesson r11-scoped-label-cycle
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [left (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))]
+         [right (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show R))
+  (step masked (hide-label (in-view left R)) (pause 1))
+  (step restored (show-label (in-view left R)) (pause 1)))
+
+(define-calculus-lesson r11-inherited-invalid-child
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 0) 'point))))
+
+(define-calculus-lesson r11-inherited-missing-branch
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 7) 'point))))
 
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
@@ -790,6 +820,36 @@
                 'deemphasized)
   (check-false (calculus-snapshot-label-visible? r10-snapshot r10-input-label #:view 'plot))
   (check-false (calculus-snapshot-label-visible? r10-snapshot r10-output-label #:view 'plot))
+  ;; R11: local label actions consult and update the same scoped preference,
+  ;; then fall back to the global owner state. Explicit inherited children are
+  ;; retained as demand identities even when Reading geometry is nondefined.
+  (define r11-label-plan (compile-calculus-lesson r11-scoped-label-cycle))
+  (define r11-label-root
+    (hash-ref (calculus-model-nodes
+               (calculus-lesson-model r11-scoped-label-cycle))
+              'R))
+  (define r11-label-masked
+    (calculus-plan-sample r11-label-plan #:at (calculus-step-end 'masked)))
+  (define r11-label-final (calculus-plan-sample r11-label-plan #:at 'final))
+  (check-false (calculus-snapshot-label-visible? r11-label-masked r11-label-root #:view 'left))
+  (check-true (calculus-snapshot-label-visible? r11-label-masked r11-label-root #:view 'right))
+  (check-true (calculus-snapshot-label-visible? r11-label-final r11-label-root #:view 'left))
+  (define (r11-child lesson index)
+    (define root (hash-ref (calculus-model-nodes (calculus-lesson-model lesson)) 'R))
+    (c-part (c-part root (list 'branches index)) 'point))
+  (for ([lesson (in-list (list r11-inherited-invalid-child
+                               r11-inherited-missing-branch))]
+        [index (in-list '(0 7))])
+    (define state (calculus-plan-sample (compile-calculus-lesson lesson) #:at 'final))
+    (define target (r11-child lesson index))
+    (check-true (calculus-snapshot-visible? state target #:view 'plot))
+    (check-not-false (member target
+                             (calculus-snapshot-reading-owned-parts state
+                                                                     (hash-ref (calculus-model-nodes
+                                                                                (calculus-lesson-model lesson))
+                                                                               'R)
+                                                                     #:view 'plot)))
+    (check-not-equal? (calculus-result-status (calculus-snapshot-ref state target)) 'defined))
 
 (module+ test
   (run-calculus-audit-regression-tests))

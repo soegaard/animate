@@ -211,7 +211,7 @@
   (define part (presentation-target-part target))
   (cond
     [(and (c-part? part)
-          (memq (c-part-name part) '(input-guide output-guide input-label)))
+          (memq (c-part-name part) '(point input-guide output-guide input-label)))
      (define branch (output-reading-branch (c-part-parent part)))
      (and branch
           (reading-owned-part (c-part-parent branch) branch (c-part-name part)))]
@@ -1276,19 +1276,7 @@
       (and (same-reading? reading (reading-root candidate))
            (calculus-snapshot-visible? snapshot candidate #:view (c-view-name view)))))
   (define (owned-reading-children reading)
-    (define result (calculus-snapshot-reading-points snapshot reading))
-    (if (eq? (calculus-result-status result) 'defined)
-        (append
-         (append-map
-          (lambda (index)
-            (define branch (c-part reading (list 'branches index)))
-            (list (c-part branch 'output-guide)
-                  (c-part branch 'input-guide)
-                  (c-part branch 'point)
-                  (c-part branch 'input-label)))
-          (range (length (calculus-result-value result))))
-         (list (c-part reading 'output-label)))
-        '()))
+    (calculus-snapshot-reading-owned-parts snapshot reading #:view (c-view-name view)))
   (define (suppressed-by-visible-reading? target)
     (define owner (output-reading-owned-part target))
     (and owner

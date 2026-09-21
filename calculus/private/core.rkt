@@ -58,7 +58,7 @@
  calculus-snapshot-region-samples calculus-snapshot-sign-chart-intervals
  calculus-snapshot-newton-segments
  calculus-snapshot-asymptote-geometry
- calculus-snapshot-reading-points
+ calculus-snapshot-reading-points calculus-snapshot-reading-owned-parts
  calculus-snapshot-formula-text calculus-snapshot-formula-tex calculus-snapshot-formula-fragments
  calculus-snapshot-formula-skeleton-tex
  calculus-snapshot-label-text calculus-snapshot-label-anchor
@@ -3797,6 +3797,14 @@
        (list 'calculus-presentation-state 'label-visible
              (if view (view-target-key view key) (presentation-target-key target)))))
 
+;; unscoped-presentation-target : semantic-target? -> semantic-target?
+;;   Removes only an `in-view` wrapper so scoped label lookup can fall back to
+;; the same global owner preference without losing the underlying identity.
+(define (unscoped-presentation-target target)
+  (if (in-view-name target)
+      (second (c-object-arguments target))
+      target))
+
 ;; inherited-label-preference-value : hash? semantic-target? [symbol?] -> any/c
 ;;   Looks through label-owning composite parts from the selected label to its
 ;; enclosing Reading/component root.  It deliberately shares visibility's
@@ -3804,12 +3812,13 @@
 ;; namespace, so hiding a Reading label cannot hide its point or guides.
 (define (inherited-label-preference-value presentation target [view #f])
   (define key (target-key target))
+  (define scope (or view (in-view-name target)))
   (let loop ([keys (target-ancestor-keys key)])
     (cond [(null? keys) missing-presentation-value]
           [else
            (define storage-key
-             (if view
-                 (view-target-key view (first keys))
+             (if scope
+                 (view-target-key scope (first keys))
                  (first keys)))
            (define preference-key
              (list 'calculus-presentation-state 'label-visible storage-key))
@@ -3850,8 +3859,13 @@
 ;;   Reads the persistent label preference, defaulting to visible without
 ;;   granting any visibility to the associated mathematical owner.
 (define (label-preferred? presentation target)
-  (define value (inherited-label-preference-value presentation target))
-  (if (eq? value missing-presentation-value) #t value))
+  (define scoped-value (inherited-label-preference-value presentation target))
+  (define global-value
+    (inherited-label-preference-value presentation
+                                      (unscoped-presentation-target target)))
+  (cond [(not (eq? scoped-value missing-presentation-value)) scoped-value]
+        [(not (eq? global-value missing-presentation-value)) global-value]
+        [else #t]))
 ;; set-label-preference : hash? list? boolean? -> hash?
 ;;   Commits a label-only command without changing the parent object's state.
 (define (set-label-preference presentation targets on?)
@@ -6045,6 +6059,76 @@
                            (calculus-snapshot-computation snapshot)
                            (hash))))
 
+;; calculus-snapshot-reading-owned-parts : calculus-snapshot? semantic-target?
+;;                                         [#:view (or/c symbol? #f)] -> list?
+;;   Lists effective visible reverse-Reading children without using successful
+;; geometry as evidence that an explicitly shown child exists.  This preserves
+;; invalid and out-of-range selectors for strict native validation while still
+;; synthesizing ordinary children when a Reading has a defined point list.
+(define (calculus-snapshot-reading-owned-parts snapshot reading #:view [view #f])
+  (check 'calculus-snapshot-reading-owned-parts calculus-snapshot? "calculus-snapshot?" snapshot)
+  (when view
+    (check 'calculus-snapshot-reading-owned-parts symbol? "view symbol" view))
+  (define model (calculus-snapshot-model snapshot))
+  (define semantic-reading
+    (if (or (symbol? reading) (and (list? reading) (pair? reading)))
+        (address->object model reading)
+        reading))
+  (define reading-key (target-key semantic-reading))
+  (define (part-from-suffix suffix)
+    (match suffix
+      [(list 'output-label) (c-part semantic-reading 'output-label)]
+      [(list 'branches index kind)
+       #:when (and (exact-nonnegative-integer? index)
+                   (memq kind '(point input-guide output-guide input-label)))
+       (c-part (c-part semantic-reading (list 'branches index)) kind)]
+      [_ #f]))
+  (define (visible-child-key storage-key)
+    (cond
+      [(and view
+            (list? storage-key)
+            (= (length storage-key) 3)
+            (eq? (first storage-key) 'calculus-view-target)
+            (eq? (second storage-key) view)
+            (list? (third storage-key)))
+       (third storage-key)]
+      [(and (pair? storage-key)
+            (list? storage-key)
+            (not (memq (first storage-key)
+                       '(calculus-view-target calculus-view-membership
+                                              calculus-view-container
+                                              calculus-presentation-state))))
+       storage-key]
+      [else #f]))
+  (define explicitly-shown
+    (filter values
+            (for/list ([(storage-key shown?)
+                        (in-hash (calculus-snapshot-visible snapshot))]
+                       #:when shown?)
+              (define key (visible-child-key storage-key))
+              (and key reading-key (target-key-prefix? reading-key key)
+                   (< (length reading-key) (length key))
+                   (part-from-suffix (drop key (length reading-key)))))))
+  (define points-result
+    (calculus-snapshot-reading-points snapshot semantic-reading))
+  (define synthesized
+    (if (eq? (calculus-result-status points-result) 'defined)
+        (append
+         (append-map
+          (lambda (index)
+            (define branch (c-part semantic-reading (list 'branches index)))
+            (list (c-part branch 'output-guide)
+                  (c-part branch 'input-guide)
+                  (c-part branch 'point)
+                  (c-part branch 'input-label)))
+          (range (length (calculus-result-value points-result))))
+         (list (c-part semantic-reading 'output-label)))
+        '()))
+  (remove-duplicates
+   (filter (lambda (part)
+             (calculus-snapshot-visible? snapshot part #:view view))
+           (append explicitly-shown synthesized))))
+
 ;; calculus-snapshot-component-private-ref : calculus-snapshot? c-part? -> calculus-result?
 ;;   Evaluates a renderer-only private presentation in its component's lexical
 ;;   model. Public inspection still rejects the same `(private ...)` address.
@@ -6135,12 +6219,15 @@
   (check 'calculus-snapshot-label-visible? calculus-snapshot? "calculus-snapshot?" snapshot)
   (when view (check 'calculus-snapshot-label-visible? symbol? "view symbol" view))
   (define presentation (calculus-snapshot-visible snapshot))
-  (define global-value (inherited-label-preference-value presentation target))
+  (define global-value
+    (inherited-label-preference-value presentation
+                                      (unscoped-presentation-target target)))
+  (define local-view (or view (in-view-name target)))
   (define local-value
-    (if view
-        (inherited-label-preference-value presentation target view)
+    (if local-view
+        (inherited-label-preference-value presentation target local-view)
         missing-presentation-value))
-  (cond [(and view (not (eq? local-value missing-presentation-value))) local-value]
+  (cond [(and local-view (not (eq? local-value missing-presentation-value))) local-value]
         [(not (eq? global-value missing-presentation-value)) global-value]
         [else #t]))
 
