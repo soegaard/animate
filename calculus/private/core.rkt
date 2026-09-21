@@ -39,7 +39,7 @@
  calculus-model-nodes calculus-lesson-views calculus-lesson-roles calculus-lesson-steps
  c-domain? c-domain-kind c-domain-arguments
  c-object? c-object-kind c-object-arguments c-object-options
- c-part? c-part-parent c-part-name
+ c-part c-part? c-part-parent c-part-name
  c-action? c-action-kind c-action-targets c-action-options
  c-step? make-step c-view? c-view-name c-view-kind c-view-arguments c-view-options
  c-param-spec? make-param-spec
@@ -140,6 +140,11 @@
 (struct c-part (parent name) #:transparent)
 ;;  - parent        root descriptor or another part
 ;;  - name          documented part symbol or stable nested part path
+;; c-component-export-target keeps an instantiated component's caller-facing
+;; part together with the corresponding target in its lexical model.
+(struct c-component-export-target (instance target) #:transparent)
+;;  - instance      caller-owned use-component node
+;;  - target        matching root or part inside the component model
 ;; c-view holds a named abstract representation with no pixel geometry.
 (struct c-view (name kind arguments options) #:transparent)
 ;;  - name          lesson-local stable view symbol
@@ -1898,27 +1903,75 @@
                     (loop (cdr constraints))
                     (unresolved "component constraint failed"))))]))]))))
 
+;; component-export-target : c-part? -> (or/c c-component-export-target? #f)
+;;   Resolves a caller-visible component export and any public projections of
+;; it to their corresponding lexical target.  The caller-facing part remains
+;; the public identity; this helper merely preserves its component scope while
+;; evaluating or presenting it.
+(define (component-export-target part)
+  (define (collect target names)
+    (cond
+      [(c-part? target) (collect (c-part-parent target)
+                                 (cons (c-part-name target) names))]
+      [(c-node? target) (values target names)]
+      [else (values #f '())]))
+  (define-values (instance names) (collect part '()))
+  (cond
+    [(or (not instance) (null? names) (not (symbol? (first names)))) #f]
+    [else
+     (define raw (node-raw instance))
+     (cond
+       [(not (and (c-object? raw)
+                  (eq? (c-object-kind raw) 'use-component)
+                  (pair? (c-object-arguments raw))))
+        #f]
+       [else
+        (define component (first (c-object-arguments raw)))
+        (define export-name (first names))
+        (define model-result (component-instance-model instance))
+        (cond
+          [(or (not (calculus-component? component))
+               (not (member export-name (calculus-component-exports component)))
+               (not (eq? (calculus-result-status model-result) 'defined)))
+           #f]
+          [else
+           (define private-model (calculus-result-value model-result))
+           (define exported
+             (hash-ref (calculus-model-nodes private-model) export-name #f))
+           (and exported
+                (c-component-export-target
+                 instance
+                 (for/fold ([target exported]) ([name (in-list (rest names))])
+                   (c-part target name))))])])]))
+
+;; component-export-node : c-component-export-target? -> c-node?
+;;   Recovers the declared export root even when native presentation targets a
+;; nested public projection such as a selected Reading branch.
+(define (component-export-node exported)
+  (let loop ([target (c-component-export-target-target exported)])
+    (cond [(c-node? target) target]
+          [(c-part? target) (loop (c-part-parent target))]
+          [else #f])))
+
+;; eval-component-export-target : c-component-export-target? hash?
+;;                                calculus-model? calculus-computation? hash?
+;;                                -> calculus-result?
+;;   Checks the caller instance before evaluating its matching lexical target.
+(define (eval-component-export-target exported environment model computation lexical)
+  (result-bind
+   (component-instance-valid? (c-component-export-target-instance exported)
+                              environment model computation lexical)
+   (lambda (private-model)
+     (eval-raw (c-component-export-target-target exported)
+               environment private-model computation lexical))))
+
 ;; calculus-component-part-node : c-part? -> (or/c c-node? #f)
-;;   Gives the native adapter the declared kind of one public component export
-;;   without evaluating its values or crossing the semantic/native boundary.
+;;   Gives the native adapter the declared kind of a public component export
+;; or one of its public projections without evaluating caller values.
 (define (calculus-component-part-node part)
   (and (c-part? part)
-       (symbol? (c-part-name part))
-       (let ([parent (c-part-parent part)])
-         (and (c-node? parent)
-              (let ([raw (node-raw parent)])
-                (and (c-object? raw)
-                     (eq? (c-object-kind raw) 'use-component)
-                     (pair? (c-object-arguments raw))
-                     (let ([component (first (c-object-arguments raw))])
-                       (and (calculus-component? component)
-                            (member (c-part-name part) (calculus-component-exports component))
-                            (let ([instance-result (component-instance-model parent)])
-                              (and (eq? (calculus-result-status instance-result) 'defined)
-                                   (hash-ref (calculus-model-nodes
-                                              (calculus-result-value instance-result))
-                                             (c-part-name part)
-                                             #f)))))))))))
+       (let ([exported (component-export-target part)])
+         (and exported (component-export-node exported)))))
 
 ;; component-private-part-address : c-part? -> (or/c (listof symbol?) #f)
 ;;   Decodes the renderer-only `(private ...)` presentation path. This path is
@@ -2103,6 +2156,16 @@
 ;; evaluator from accepting a local point while the whole Reading is invalid.
 (struct c-output-reading-data (graph output inputs) #:transparent)
 
+;; numerically-duplicate? : (listof finite-real?) -> boolean?
+;;   Detects repeated mathematical inputs with numeric `=`.  This deliberately
+;; treats exact and inexact equal values, including signed zero, as one branch
+;; while retaining the source spelling and order of every distinct candidate.
+(define (numerically-duplicate? inputs)
+  (let loop ([remaining inputs] [seen '()])
+    (cond [(null? remaining) #f]
+          [(for/or ([prior (in-list seen)]) (= (first remaining) prior)) #t]
+          [else (loop (rest remaining) (cons (first remaining) seen))])))
+
 ;; eval-output-reading-data : semantic-value? hash? calculus-model?
 ;;                            calculus-computation? hash? -> calculus-result?
 ;;   Validates the invariant shared by a root Reading and every branch before
@@ -2147,7 +2210,7 @@
                            (undefined "output-reading #:inputs must be an ordered list of finite values"))
                           ((null? inputs)
                            (undefined "output-reading requires a nonempty candidate list"))
-                          ((not (= (length inputs) (length (remove-duplicates inputs))))
+                          ((numerically-duplicate? inputs)
                            (undefined "output-reading candidate branches collide"))
                           (else
                            (defined (c-output-reading-data
@@ -2204,9 +2267,12 @@
   (define parent-target (c-part-parent part))
   (define parent (node-raw parent-target))
   (define name (c-part-name part))
+  (define exported (component-export-target part))
   (define branch-self (reading-branch-part part))
   (define parent-branch (reading-branch-part parent-target))
   (cond
+    [exported
+     (eval-component-export-target exported environment model computation lexical)]
     [branch-self (defined branch-self)]
     ;; A `(reading-branch R i)` is a typed intermediate public part. Named
     ;; aliases are unwrapped above, so a later projection has exactly the same
@@ -2228,19 +2294,7 @@
         (defined (c-part parent-branch name))]
        [else (undefined "output-reading branches expose input, point, guides, and input-label parts")])]
     [(and (c-object? parent) (eq? (c-object-kind parent) 'use-component))
-     (result-bind
-      (component-instance-valid? (c-part-parent part) environment model computation lexical)
-      (lambda (private-model)
-        (define component (first (c-object-arguments parent)))
-        (cond
-          [(not (and (symbol? name)
-                     (member name (calculus-component-exports component))))
-           (undefined "component part is not a public export")]
-          [else
-           (define exported (hash-ref (calculus-model-nodes private-model) name #f))
-           (if exported
-               (eval-raw exported environment private-model computation lexical)
-               (undefined "component export is not declared in its model"))]))) ]
+     (undefined "component part is not a public export")]
     [(not (c-object? parent)) (undefined "object has no public parts")]
     [else
      (define args (c-object-arguments parent))
@@ -3661,6 +3715,41 @@
 ;; target-root-key : list? -> list?
 ;;   Selects a target's root key for inherited visibility.
 (define (target-root-key key) (and key (list (first key))))
+
+;; target-ancestor-keys : list? -> (listof list?)
+;;   Lists a target and each enclosing public owner from most to least specific.
+;; Composite-owned parts inherit presentation membership and visibility from
+;; the nearest explicit owner, while an explicit child preference still wins.
+(define (target-ancestor-keys key)
+  (if (and (list? key) (pair? key))
+      (for/list ([length (in-range (length key) 0 -1)])
+        (take key length))
+      '()))
+
+;; target-key-prefix? : list? list? -> boolean?
+;;   Determines whether an owning public target contains a nested part key.
+(define (target-key-prefix? prefix key)
+  (and (list? prefix)
+       (list? key)
+       (<= (length prefix) (length key))
+       (equal? prefix (take key (length prefix)))))
+
+;; inherited-presentation-value : hash? list? (or/c #f symbol?) -> any/c
+;;   Retrieves the nearest global or view-scoped visibility preference, keeping
+;; the missing sentinel distinct from an explicit `#f` hide.
+(define (inherited-presentation-value visible key [view #f])
+  (let loop ([keys (target-ancestor-keys key)])
+    (cond [(null? keys) missing-presentation-value]
+          [else
+           (define storage-key
+             (if view
+                 (view-target-key view (first keys))
+                 (first keys)))
+           (define value (hash-ref visible storage-key missing-presentation-value))
+           (if (eq? value missing-presentation-value)
+               (loop (rest keys))
+               value)])))
+
 ;; presentation-state-key : symbol? semantic-target? -> (or/c list? #f)
 ;;   Separates non-visibility presentation state from public target paths. The
 ;;   semantic target still owns identity; this private prefix simply prevents a
@@ -3823,20 +3912,16 @@
      candidate)
    same-semantic-target?))
 ;; presentation-visible? : hash? semantic-target? -> boolean?
-;;   Evaluates the same direct-or-root visibility inheritance used by public
+;;   Evaluates the same nearest-owner visibility inheritance used by public
 ;; snapshots, but for compiler diagnostics before a snapshot exists.
 (define (presentation-visible? presentation target)
   (define (global-visible? key)
-    ;; An explicit #f must mask inherited root visibility.  `hash-ref` with
-    ;; #f as its default would accidentally turn a direct hide back into a
-    ;; visible inherited root.
-    (define direct (hash-ref presentation key missing-presentation-value))
-    (if (eq? direct missing-presentation-value)
-        (hash-ref presentation (target-root-key key) #f)
-        direct))
+    ;; The sentinel retains an explicit #f child hide rather than falling back
+    ;; to an enclosing component or Reading owner.
+    (define value (inherited-presentation-value presentation key))
+    (if (eq? value missing-presentation-value) #f value))
   (define (view-visible? view key)
-    (define scoped (hash-ref presentation (view-target-key view key)
-                             missing-presentation-value))
+    (define scoped (inherited-presentation-value presentation key view))
     (if (eq? scoped missing-presentation-value)
         (global-visible? key)
         scoped))
@@ -5156,13 +5241,19 @@
 
 ;; address->object : calculus-model? address? -> semantic-target?
 ;;   Resolves a public root/part address without consulting rendered geometry.
+;; Native presentation may also supply the already-typed `c-node` or `c-part`
+;; that authored a view; this keeps non-symbol nested selectors internal rather
+;; than accidentally extending the public address syntax.
 (define (address->object model address)
-  (define pieces (if (symbol? address) (list address) address))
-  (unless (and (list? pieces) (pair? pieces) (andmap symbol? pieces))
-    (raise-argument-error 'calculus-snapshot-ref "symbol? or nonempty list of symbols" address))
-  (define root (hash-ref (calculus-model-nodes model) (first pieces) #f))
-  (unless root (raise-arguments-error 'calculus-snapshot-ref "known public mathematical address" "address" address))
-  (for/fold ([value root]) ([part (in-list (rest pieces))]) (c-part value part)))
+  (cond
+    [(or (c-node? address) (c-part? address)) address]
+    [else
+     (define pieces (if (symbol? address) (list address) address))
+     (unless (and (list? pieces) (pair? pieces) (andmap symbol? pieces))
+       (raise-argument-error 'calculus-snapshot-ref "symbol? or nonempty list of symbols" address))
+     (define root (hash-ref (calculus-model-nodes model) (first pieces) #f))
+     (unless root (raise-arguments-error 'calculus-snapshot-ref "known public mathematical address" "address" address))
+     (for/fold ([value root]) ([part (in-list (rest pieces))]) (c-part value part))]))
 
 ;; interpolate-window : list? list? real? -> list?
 ;;   Produces one purely presentational camera window without changing any
@@ -5850,6 +5941,23 @@
             (calculus-snapshot-values snapshot) (calculus-snapshot-model snapshot)
             (calculus-snapshot-computation snapshot)))
 
+;; eval-reading-points : semantic-value? hash? calculus-model?
+;;                       calculus-computation? hash? -> calculus-result?
+;;   Supplies the source-ordered points of one Reading in its own lexical
+;; model.  Component exports call this only after their caller instance has
+;; been validated and their private model selected.
+(define (eval-reading-points reading environment model computation lexical)
+  (define raw (node-raw reading))
+  (cond
+    [(not (c-object? raw)) (undefined "expected a reading")]
+    [(eq? (c-object-kind raw) 'output-reading)
+     (eval-output-reading-points reading environment model computation lexical)]
+    [(memq (c-object-kind raw) '(input-reading coordinate-reading))
+     (result-bind
+      (eval-part (c-part reading 'point) environment model computation lexical)
+      (lambda (point) (defined (list point))))]
+    [else (undefined "expected a reading")]))
+
 ;; calculus-snapshot-reading-points : calculus-snapshot? semantic-value?
 ;;                                     -> calculus-result?
 ;;   Supplies complete, source-ordered Reading geometry to native consumers.
@@ -5862,24 +5970,27 @@
     (if (or (symbol? reading) (and (list? reading) (pair? reading)))
         (address->object model reading)
         reading))
-  (define raw (node-raw semantic-reading))
-  (cond
-    [(not (c-object? raw)) (undefined "expected a reading")]
-    [(eq? (c-object-kind raw) 'output-reading)
-     (eval-output-reading-points semantic-reading
-                                 (calculus-snapshot-values snapshot)
-                                 model
-                                 (calculus-snapshot-computation snapshot)
-                                 (hash))]
-    [(memq (c-object-kind raw) '(input-reading coordinate-reading))
-     (result-bind
-      (eval-part (c-part semantic-reading 'point)
-                 (calculus-snapshot-values snapshot)
-                 model
-                 (calculus-snapshot-computation snapshot)
-                 (hash))
-      (lambda (point) (defined (list point))))]
-    [else (undefined "expected a reading")]))
+  (define exported
+    (and (c-part? semantic-reading)
+         (component-export-target semantic-reading)))
+  (if exported
+      (result-bind
+       (component-instance-valid? (c-component-export-target-instance exported)
+                                  (calculus-snapshot-values snapshot)
+                                  model
+                                  (calculus-snapshot-computation snapshot)
+                                  (hash))
+       (lambda (private-model)
+         (eval-reading-points (c-component-export-target-target exported)
+                              (calculus-snapshot-values snapshot)
+                              private-model
+                              (calculus-snapshot-computation snapshot)
+                              (hash))))
+      (eval-reading-points semantic-reading
+                           (calculus-snapshot-values snapshot)
+                           model
+                           (calculus-snapshot-computation snapshot)
+                           (hash))))
 
 ;; calculus-snapshot-component-private-ref : calculus-snapshot? c-part? -> calculus-result?
 ;;   Evaluates a renderer-only private presentation in its component's lexical
@@ -7057,6 +7168,7 @@
 ;; snapshot-view-names : hash? list? -> list?
 ;;   Recovers declared presentation memberships carried in the immutable
 ;; snapshot, so public inspection does not need a renderer or live lesson.
+;; A declared composite presentation also owns its nested public parts.
 (define (snapshot-view-names visible key)
   (sort
    (remove-duplicates
@@ -7064,29 +7176,27 @@
                #:when (and (list? candidate)
                            (= (length candidate) 3)
                            (eq? (first candidate) 'calculus-view-membership)
-                           (equal? (third candidate) key)))
+                           (target-key-prefix? (third candidate) key)))
       (second candidate)))
    symbol<?))
 
 ;; effective-global-visibility : hash? list? -> boolean?
-;;   A direct child preference overrides its root/container preference; absent
-;; preferences remain hidden. This prevents a global component show from
+;;   A direct child preference overrides its nearest owning preference; absent
+;; preferences remain hidden. This prevents a component-level show from
 ;; resurrecting an explicitly hidden public part.
 (define (effective-global-visibility visible key)
-  (define direct (hash-ref visible key missing-presentation-value))
-  (cond [(not (eq? direct missing-presentation-value)) direct]
-        [else
-         (define root (target-root-key key))
-         (define inherited (and root (hash-ref visible root missing-presentation-value)))
-         (and (not (eq? inherited missing-presentation-value)) inherited)]))
+  (define value (inherited-presentation-value visible key))
+  (and (not (eq? value missing-presentation-value)) value))
 
 ;; effective-view-visibility : hash? symbol? list? -> boolean?
 ;;   Combines immutable membership, a view-container mask, a qualified child
 ;; preference, and the shared object's global preference in that order.
 (define (effective-view-visibility visible view key)
-  (define member? (hash-ref visible (view-membership-key view key) #f))
+  (define member?
+    (for/or ([owner (in-list (target-ancestor-keys key))])
+      (hash-ref visible (view-membership-key view owner) #f)))
   (define container (hash-ref visible (view-container-key view) #t))
-  (define local (hash-ref visible (view-target-key view key) missing-presentation-value))
+  (define local (inherited-presentation-value visible key view))
   (and member? container
        (if (eq? local missing-presentation-value)
            (effective-global-visibility visible key)

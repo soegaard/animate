@@ -149,6 +149,11 @@
 (define (presentation-target-raw target [fuel 32])
   (cond
     [(zero? fuel) #f]
+    [(c-part? target)
+     (define component-node (calculus-component-part-node target))
+     (presentation-target-raw
+      (or component-node (c-part-parent target))
+      (sub1 fuel))]
     [(c-node? target)
      (presentation-target-raw (c-node-data target) (sub1 fuel))]
     [(and (c-expression? target)
@@ -174,7 +179,7 @@
 ;;   Branches use the public `(branches index)` spelling.  Their parent can be
 ;; a named Reading alias, so inspect the resolved public part rather than the
 ;; outer node kind.
-(define (output-reading-branch? target)
+(define (output-reading-branch target)
   (define branch (presentation-target-part target))
   (and (c-part? branch)
        (let ([name (c-part-name branch)])
@@ -182,7 +187,38 @@
               (= (length name) 2)
               (eq? (first name) 'branches)
               (exact-nonnegative-integer? (second name))
-              (output-reading-target? (c-part-parent branch))))))
+              (output-reading-target? (c-part-parent branch))
+              branch))))
+
+;; output-reading-branch? : any/c -> boolean?
+;;   Reports whether a target is a typed, source-ordered reverse Reading
+;; branch.  `output-reading-branch` retains the part when its caller needs
+;; the branch owner for guide or label presentation.
+(define (output-reading-branch? target)
+  (and (output-reading-branch target) #t))
+
+;; output-reading-guide-part : any/c -> (or/c (cons/c c-part? symbol?) #f)
+;;   Identifies an individually presented input or output guide and retains
+;; its exact public branch owner for visibility and value lookup.
+(define (output-reading-guide-part target)
+  (define part (presentation-target-part target))
+  (and (c-part? part)
+       (memq (c-part-name part) '(input-guide output-guide))
+       (let ([branch (output-reading-branch (c-part-parent part))])
+         (and branch (cons branch (c-part-name part))))))
+
+;; output-reading-label-part : any/c -> (or/c (cons/c semantic-value? symbol?) #f)
+;;   Identifies a Reading-owned label without inferring it from screen text.
+(define (output-reading-label-part target)
+  (define part (presentation-target-part target))
+  (cond
+    [(and (c-part? part) (eq? (c-part-name part) 'input-label))
+     (define branch (output-reading-branch (c-part-parent part)))
+     (and branch (cons branch 'input-label))]
+    [(and (c-part? part) (eq? (c-part-name part) 'output-label)
+          (output-reading-target? (c-part-parent part)))
+     (cons (c-part-parent part) 'output-label)]
+    [else #f]))
 
 ;; reading-point-projection? : any/c -> boolean?
 ;;   Recognizes the public point projection of a Reading through direct parts,
@@ -1229,7 +1265,7 @@
 (define (presentation-visible? snapshot target address view)
   (if (private-component-presentation? target)
       (calculus-snapshot-component-private-visible? snapshot target)
-      (and address (calculus-snapshot-visible? snapshot address #:view (c-view-name view)))))
+      (and address (calculus-snapshot-visible? snapshot target #:view (c-view-name view)))))
 
 ;; snapshot-defined-value : calculus-snapshot? address -> any/c
 ;;   Returns a defined public result's value or #f for partial mathematical data.
@@ -1237,11 +1273,7 @@
   (define result
     (if (private-component-presentation? target)
         (calculus-snapshot-component-private-ref snapshot target)
-        (calculus-snapshot-ref snapshot
-                              (if (or (symbol? target)
-                                      (and (list? target) (pair? target)))
-                                  target
-                                  (target-address target)))))
+        (calculus-snapshot-ref snapshot target)))
   (and (eq? (calculus-result-status result) 'defined)
        (calculus-result-value result)))
 
@@ -1268,6 +1300,21 @@
               (< lower upper)
               (list lower upper)))))
 
+;; presentation-target-root-node : any/c -> (or/c c-node? #f)
+;;   Follows named public part aliases to their owning declaration so a
+;; renderer can classify an inline nested selector without flattening it into
+;; an inspection address.
+(define (presentation-target-root-node target [fuel 32])
+  (cond
+    [(zero? fuel) #f]
+    [(c-part? target)
+     (presentation-target-root-node (c-part-parent target) (sub1 fuel))]
+    [(c-node? target)
+     (if (eq? (c-node-kind target) 'part)
+         (presentation-target-root-node (c-node-data target) (sub1 fuel))
+         target)]
+    [else #f]))
+
 ;; presentation-target-node : calculus-model? any/c address? -> (or/c c-node? #f)
 ;;   Shares the graph-panel lookup for ordinary targets and expanded component
 ;; leaves, while values themselves still come only from the outer snapshot.
@@ -1276,6 +1323,7 @@
   (or (and (c-part? target)
            (or (calculus-component-part-node target)
                (calculus-component-private-part-node target)))
+      (presentation-target-root-node target)
       (hash-ref (calculus-model-nodes model) root #f)))
 
 ;; graph-fit-y-values : calculus-snapshot? c-node? real? real? integer? -> list?
@@ -1317,7 +1365,7 @@
 (define (target-fit-y-values snapshot model target xmin xmax samples)
   (define address (target-address target))
   (define node (and address (presentation-target-node model target address)))
-  (define value-target (if (private-component-presentation? target) target address))
+  (define value-target target)
   (define (point-y-values value)
     (if (and (pair? value)
              (finite-world-number? (car value))
@@ -1335,7 +1383,7 @@
      (point-y-values
       (snapshot-defined-value
        snapshot
-       (append (if (list? address) address (list address)) (list 'point))))]
+       (c-part target 'point)))]
     [(eq? (c-node-kind node) 'output-reading)
      (define result (calculus-snapshot-reading-points snapshot value-target))
      (if (eq? (calculus-result-status result) 'defined)
@@ -2596,54 +2644,170 @@
     (when (positive? output-progress)
       (draw-guide 0 y (* output-progress x) y))))
 
+;; draw-output-reading-guide : drawing-context% symbol? pair? ... -> void?
+;;   Draws one exact guide leg from a validated Reading point.  The native
+;; adapter never samples a graph or reconstructs a root from pixels.
+(define (draw-output-reading-guide context kind point xmin xmax ymin ymax left top width height
+                                   [color "#6A6A6A"] [progress 1] [mask-point? #f])
+  (when (and (pair? point) (real? (car point)) (real? (cdr point))
+             (<= xmin (car point) xmax) (<= ymin (cdr point) ymax)
+             (positive? progress))
+    (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
+    (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
+    (define styled-color
+      (if (equal? color "#6A6A6A")
+          (render-style-value 'stroke color)
+          color))
+    (define guide-color (if (string? styled-color) styled-color color))
+    (define guide-width
+      (max 1 (render-style-length 'stroke-width 1 (min width height))))
+    (define dash (render-style-value 'dash 'inherit))
+    (define x (car point))
+    (define y (cdr point))
+    ;; The point marker is authoritative at a guide endpoint.  Reserve its
+    ;; small screen-space footprint only when the root painter also draws that
+    ;; marker; a guide shown alone remains geometrically complete.
+    (define marker-clearance
+      (if (and mask-point? (eq? kind 'input-guide) (positive? (abs y)))
+          (min 1 (/ (* 10 (/ (- ymax ymin) height)) (abs y)))
+          0))
+    (when (or (not (eq? kind 'input-guide)) (> progress marker-clearance))
+      (define-values (from-x from-y to-x to-y)
+        (case kind
+          [(output-guide) (values 0 y (* (min 1 progress) x) y)]
+          [(input-guide) (values x (* (- 1 marker-clearance) y)
+                                 x (* (- 1 (min 1 progress)) y))]
+          [else (values x y x y)]))
+      (cond [(eq? dash 'inherit)
+             (send context set-pen
+                   (new draw:pen% [color (hex-color guide-color)]
+                        [width guide-width] [style 'dot]))
+             (send context draw-line (pixel-x from-x) (pixel-y from-y)
+                   (pixel-x to-x) (pixel-y to-y))]
+            [else
+             (draw-line-segment context (pixel-x from-x) (pixel-y from-y)
+                                (pixel-x to-x) (pixel-y to-y)
+                                guide-color guide-width)]))))
+
+;; reading-label-text : symbol? any/c pair? -> (or/c string? #f)
+;;   Chooses an authored Reading label form from its documented option without
+;; using rendered glyphs as a source of mathematical information.
+(define (reading-label-text kind mode point)
+  (define value (if (eq? kind 'input-label) (car point) (cdr point)))
+  (case mode
+    [(#f) #f]
+    [(symbolic) (if (eq? kind 'input-label) "x" "y")]
+    [(numeric) (number->string value)]
+    [(both) (format "~a = ~a" (if (eq? kind 'input-label) "x" "y") value)]
+    [else #f]))
+
+;; draw-output-reading-label : drawing-context% symbol? pair? symbol? ... -> void?
+;;   Places one selected Reading label beside its exact axis projection.
+(define (draw-output-reading-label context kind point mode xmin xmax ymin ymax left top width height)
+  (define text (reading-label-text kind mode point))
+  (when (and text (pair? point) (real? (car point)) (real? (cdr point)))
+    (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
+    (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
+    (define size
+      (max 1 (inexact->exact
+              (round (render-style-length 'font-size 11 (min width height))))))
+    (define gap
+      (render-style-length 'label-gap 4 (min width height)))
+    (define color (render-style-value 'stroke "#4A4A4A"))
+    (send context set-font (theme-font size))
+    (send context set-text-foreground (hex-color (if (string? color) color "#4A4A4A")))
+    (case kind
+      [(input-label)
+       (send context draw-text text (+ (pixel-x (car point)) gap) (+ (pixel-y 0) gap))]
+      [(output-label)
+       (send context draw-text text (+ (pixel-x 0) gap) (- (pixel-y (cdr point)) gap size))])))
+
+;; draw-output-reading-owned-part : drawing-context% calculus-snapshot?
+;;                                  (cons/c c-part? symbol?) ... -> void?
+;;   Realizes an individually presented Reading guide or label without drawing
+;; its siblings; its enclosing root's visibility remains the ownership gate.
+(define (draw-output-reading-owned-part context snapshot owner xmin xmax ymin ymax left top width height
+                                        [color "#6A6A6A"] [view #f])
+  (define owner-target (car owner))
+  (define kind (cdr owner))
+  (define branch (and (c-part? owner-target) owner-target))
+  (define reading (if branch (c-part-parent branch) owner-target))
+  (define index (if branch (second (c-part-name branch)) 0))
+  (define result (calculus-snapshot-reading-points snapshot reading))
+  (when (and (eq? (calculus-result-status result) 'defined)
+             (< index (length (calculus-result-value result))))
+    (define point (list-ref (calculus-result-value result) index))
+    (case kind
+      [(input-guide output-guide)
+       (draw-output-reading-guide context kind point xmin xmax ymin ymax left top width height color)]
+      [(input-label output-label)
+       (define raw (presentation-target-raw reading))
+       (define mode
+         (and raw
+              (hash-ref (c-object-options raw)
+                        (if (eq? kind 'input-label) 'input-label 'output-label)
+                        'symbolic)))
+       (define label-part
+         (if (eq? kind 'input-label)
+             (c-part branch 'input-label)
+             (c-part reading 'output-label)))
+       (when (or (not view)
+                 (calculus-snapshot-label-visible? snapshot label-part #:view (c-view-name view)))
+         (draw-output-reading-label context kind point mode xmin xmax ymin ymax left top width height))]
+      [else (void)])))
+
 ;; draw-output-reading : drawing-context% calculus-snapshot? semantic-value? ... -> void?
 ;;   A reverse Reading is the explicit choreography output -> selected graph
 ;; point -> input for every author-supplied candidate.  Its semantic bridge
 ;; validates all candidates first, then exposes the complete source-order list;
 ;; this painter never guesses roots from rendered graph pixels.
 (define (draw-output-reading context snapshot target xmin xmax ymin ymax left top width height
-                             [color "#6A6A6A"] [guided-progress #f])
+                             [color "#6A6A6A"] [guided-progress #f] [view #f])
   (define result (calculus-snapshot-reading-points snapshot target))
   (when (eq? (calculus-result-status result) 'defined)
-    (for ([point (in-list (calculus-result-value result))])
-      (when (and (pair? point) (real? (car point)) (real? (cdr point))
-                 (<= xmin (car point) xmax) (<= ymin (cdr point) ymax))
-        (define (pixel-x x) (+ left (* width (/ (- x xmin) (- xmax xmin)))))
-        (define (pixel-y y) (+ top height (* -1 height (/ (- y ymin) (- ymax ymin)))))
-        (define styled-color
-          (if (equal? color "#6A6A6A")
-              (render-style-value 'stroke color)
-              color))
-        (define guide-color (if (string? styled-color) styled-color color))
-        (define guide-width
-          (max 1 (render-style-length 'stroke-width 1 (min width height))))
-        (define dash (render-style-value 'dash 'inherit))
-        (define guided? (real? guided-progress))
-        (define progress (if guided? (max 0 (min 1 guided-progress)) 1))
-        ;; The reverse direction deliberately differs from input readings:
-        ;; output guide first, then the graph marker, then the input guide.
-        (define output-progress (min 1 (* 3 progress)))
-        (define point-visible? (or (not guided?) (>= progress 1/3)))
-        (define input-progress (max 0 (min 1 (* 3 (- progress 2/3)))))
-        (define x (car point))
-        (define y (cdr point))
-        (define (draw-guide from-x from-y to-x to-y)
-          (cond [(eq? dash 'inherit)
-                 (send context set-pen
-                       (new draw:pen% [color (hex-color guide-color)]
-                            [width guide-width] [style 'dot]))
-                 (send context draw-line (pixel-x from-x) (pixel-y from-y)
-                       (pixel-x to-x) (pixel-y to-y))]
-                [else
-                 (draw-line-segment context (pixel-x from-x) (pixel-y from-y)
-                                    (pixel-x to-x) (pixel-y to-y)
-                                    guide-color guide-width)]))
-        (when (positive? output-progress)
-          (draw-guide 0 y (* output-progress x) y))
-        (when point-visible?
-          (draw-point-value context point xmin xmax ymin ymax left top width height))
-        (when (positive? input-progress)
-          (draw-guide x y x (* (- 1 input-progress) y)))))))
+    (define raw (presentation-target-raw target))
+    (define input-label-mode (and raw (hash-ref (c-object-options raw) 'input-label 'symbolic)))
+    (define output-label-mode (and raw (hash-ref (c-object-options raw) 'output-label 'symbolic)))
+    (define guided? (real? guided-progress))
+    (define progress (if guided? (max 0 (min 1 guided-progress)) 1))
+    ;; The reverse direction deliberately differs from input readings:
+    ;; output guide first, then the graph marker, then the input guide.
+    (define output-progress (min 1 (* 3 progress)))
+    (define point-visible? (or (not guided?) (>= progress 1/3)))
+    (define input-progress (max 0 (min 1 (* 3 (- progress 2/3)))))
+    (define (part-visible? part)
+      (or (not view)
+          (calculus-snapshot-visible? snapshot part #:view (c-view-name view))))
+    (for ([point (in-list (calculus-result-value result))]
+          [index (in-naturals)])
+      (define branch (c-part target (list 'branches index)))
+      (define input-guide (c-part branch 'input-guide))
+      (define output-guide (c-part branch 'output-guide))
+      (define input-label (c-part branch 'input-label))
+      (define point-part (c-part branch 'point))
+      (when (part-visible? output-guide)
+        (draw-output-reading-guide context 'output-guide point xmin xmax ymin ymax left top width height
+                                   color output-progress))
+      (when (part-visible? input-guide)
+        (draw-output-reading-guide context 'input-guide point xmin xmax ymin ymax left top width height
+                                   color input-progress #t))
+      ;; The guide's final endpoint is mathematically the point, but the point
+      ;; marker draws last so hiding one owned guide cannot change the marker's
+      ;; own pixels or make it look as though the selected point disappeared.
+      (when (and point-visible? (part-visible? point-part))
+        (draw-point-value context point xmin xmax ymin ymax left top width height))
+      (when (and (part-visible? input-label)
+                 (or (not view)
+                     (calculus-snapshot-label-visible? snapshot input-label #:view (c-view-name view))))
+        (draw-output-reading-label context 'input-label point input-label-mode
+                                   xmin xmax ymin ymax left top width height)))
+    (when (pair? (calculus-result-value result))
+      (define output-label (c-part target 'output-label))
+      (when (and (part-visible? output-label)
+                 (or (not view)
+                     (calculus-snapshot-label-visible? snapshot output-label #:view (c-view-name view))))
+        (draw-output-reading-label context 'output-label (first (calculus-result-value result)) output-label-mode
+                                   xmin xmax ymin ymax left top width height)))))
 
 ;; label-node? : any/c -> boolean?
 ;;   Limits native annotation handling to the three explicitly anchored label
@@ -3074,8 +3238,6 @@
       (define motion-state
         (calculus-snapshot-motion-state snapshot target #:view (c-view-name view)))
       (define original-alpha (send context get-alpha))
-      (define root (if (list? address) (first address) address))
-      (define root-node (hash-ref (calculus-model-nodes model) root #f))
       ;; A component export keeps its caller-visible address, but its declared
       ;; kind lives in the lexical component model. Native preparation reads
       ;; that kind only; all values still come from the outer snapshot address.
@@ -3083,8 +3245,10 @@
         (or (and (c-part? target)
                  (or (calculus-component-part-node target)
                      (calculus-component-private-part-node target)))
-            root-node))
-      (define value-target (if (private-component-presentation? target) target address))
+            (presentation-target-node model target address)))
+      (define value-target target)
+      (define owned-guide (output-reading-guide-part target))
+      (define owned-label (output-reading-label-part target))
       (parameterize ([current-render-style-context
                       (list lesson snapshot view target node)])
         (define style-opacity (render-style-value 'opacity 1))
@@ -3101,6 +3265,14 @@
                             (eq? (first motion-state) 'graph)
                             (eq? (second motion-state) 'trace)
                             (motion-progress motion-state 'graph)))]
+          [owned-guide
+           (draw-output-reading-owned-part context snapshot owned-guide
+                                            xmin xmax ymin ymax left top width height
+                                            "#6A6A6A" view)]
+          [owned-label
+           (draw-output-reading-owned-part context snapshot owned-label
+                                            xmin xmax ymin ymax left top width height
+                                            "#6A6A6A" view)]
           [(label-node? node)
            (draw-label context snapshot node xmin xmax ymin ymax left top width height
                        (hash-ref label-placements (c-node-id node) #f))]
@@ -3154,7 +3326,8 @@
                                 (and (list? motion-state)
                                      (eq? (first motion-state) 'reading)
                                      (eq? (second motion-state) 'guided)
-                                     (motion-progress motion-state 'reading)))]
+                                     (motion-progress motion-state 'reading))
+                                view)]
           [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
            (draw-reading context snapshot address xmin xmax ymin ymax left top width height
                          "#6A6A6A"
@@ -3177,7 +3350,7 @@
                                       xmin xmax ymin ymax left top width height "#D97706")]
                 [(and node (eq? (c-node-kind node) 'output-reading))
                  (draw-output-reading context snapshot value-target
-                                      xmin xmax ymin ymax left top width height "#D97706")]
+                                      xmin xmax ymin ymax left top width height "#D97706" #f view)]
                 [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
                  (draw-reading context snapshot address
                                xmin xmax ymin ymax left top width height "#D97706")]
@@ -3498,45 +3671,54 @@
 ;; descriptors are intentionally insufficient for composites such as readings
 ;; and regions: a descriptor may exist while its requested geometry does not.
 (define (demanded-native-result snapshot node target address private?)
-  ;; Typed bridges accept the semantic node/part, while reading parts retain
-  ;; their public address for the ordinary snapshot resolver below.
-  (define semantic-target (if private? target node))
-  (case (c-node-kind node)
-    [(output-reading)
+  ;; Typed bridges retain the authored semantic node or part.  In particular,
+  ;; selected Reading branches may contain an integer source index that is not
+  ;; part of the public symbol-only inspection-address syntax.
+  (define semantic-target target)
+  (cond
+    [(reading-point-projection? target)
+     (calculus-snapshot-ref snapshot target)]
+    [(output-reading-guide-part target)
+     => (lambda (owner)
+          (calculus-snapshot-reading-points snapshot (c-part-parent (car owner))))]
+    [(output-reading-label-part target)
+     => (lambda (owner)
+          (calculus-snapshot-reading-points snapshot (car owner)))]
+    [else
+     (case (c-node-kind node)
+       [(output-reading)
      ;; Reverse readings expose a complete list of validated points rather
      ;; than the singular public `(part R 'point)` protocol used by forward
      ;; readings.  This is also the strict-native validation path.
-     (calculus-snapshot-reading-points snapshot semantic-target)]
-    [(input-reading coordinate-reading)
+        (calculus-snapshot-reading-points snapshot semantic-target)]
+       [(input-reading coordinate-reading)
      ;; The root Reading demands its public point, but a selected `(part R
      ;; 'point)` already *is* that typed projection.  Appending another part
      ;; would ask for the nonsensical address `(R point point)` and reject a
      ;; valid visible point before its painter can run.
-     (if (and (c-part? target) (eq? (c-part-name target) 'point))
-         (calculus-snapshot-ref snapshot address)
-         (calculus-snapshot-ref
-          snapshot
-          (append (if (list? address) address (list address)) (list 'point))))]
-    [(interval-marker endpoint-marker approach-marker)
-     (calculus-snapshot-marker-geometry snapshot semantic-target)]
-    [(riemann-rectangles)
-     (calculus-snapshot-riemann-cells snapshot semantic-target)]
-    [(trapezoidal-regions)
-     (calculus-snapshot-trapezoid-cells snapshot semantic-target)]
-    [(partition-marks)
-     (calculus-snapshot-partition-points snapshot semantic-target)]
-    [(integral-region region-under region-between)
-     (calculus-snapshot-region-samples snapshot semantic-target)]
-    [(asymptote-line)
-     (calculus-snapshot-asymptote-geometry snapshot semantic-target)]
-    [(value-readout)
+        (if (and (c-part? target) (eq? (c-part-name target) 'point))
+            (calculus-snapshot-ref snapshot target)
+            (calculus-snapshot-ref
+             snapshot
+             (append (if (list? address) address (list address)) (list 'point))))]
+       [(interval-marker endpoint-marker approach-marker)
+        (calculus-snapshot-marker-geometry snapshot semantic-target)]
+       [(riemann-rectangles)
+        (calculus-snapshot-riemann-cells snapshot semantic-target)]
+       [(trapezoidal-regions)
+        (calculus-snapshot-trapezoid-cells snapshot semantic-target)]
+       [(partition-marks)
+        (calculus-snapshot-partition-points snapshot semantic-target)]
+       [(asymptote-line)
+        (calculus-snapshot-asymptote-geometry snapshot semantic-target)]
+       [(value-readout)
      ;; The core bridge preserves an author-selected `#:undefined 'label`,
      ;; while its default/error policy returns the original nondefined result.
-     (calculus-snapshot-formula-text snapshot semantic-target)]
-    [else
-     (if private?
-         (calculus-snapshot-component-private-ref snapshot target)
-         (calculus-snapshot-ref snapshot address))]))
+        (calculus-snapshot-formula-text snapshot semantic-target)]
+       [else
+        (if private?
+            (calculus-snapshot-component-private-ref snapshot target)
+            (calculus-snapshot-ref snapshot target))])]))
 
 ;; validate-demanded-snapshot! : prepared-calculus-lesson? calculus-snapshot? -> void?
 ;;   Rejects strict native conversion when a visible named construction lacks
@@ -3553,6 +3735,7 @@
       (or (and (c-part? target)
                (or (calculus-component-part-node target)
                    (calculus-component-private-part-node target)))
+          (presentation-target-root-node target)
           (and address
                (hash-ref (calculus-model-nodes model)
                          (if (list? address) (first address) address) #f))))
@@ -3561,7 +3744,7 @@
       (if private?
           (calculus-snapshot-component-private-visible? snapshot target)
           (and address
-               (calculus-snapshot-visible? snapshot address #:view (c-view-name view)))))
+               (calculus-snapshot-visible? snapshot target #:view (c-view-name view)))))
     (when (and address node
                (or (demanded-native-node? node)
                    (reading-point-projection? target))

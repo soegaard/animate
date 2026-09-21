@@ -595,6 +595,62 @@
   (initially (show R))
   (step meet (vary h #:to 0 #:duration 1)))
 
+;; R9 keeps inline selected branches typed through native preparation, paints
+;; owned Reading parts independently, and resolves component exports without
+;; flattening their lexical target into a public address.
+(define-calculus-lesson render-r9-inline-reverse-branch
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects ((part (reading-branch R 1) 'point)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part (reading-branch R 1) 'point))))
+
+(define-calculus-lesson render-r9-input-guide-only
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))]
+         [B (reading-branch R 1)] [U (part B 'input-guide)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (U))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show U)))
+
+(define-calculus-lesson render-r9-hide-owned-guide
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R #:duration 1))
+  (step conceal (hide (part (reading-branch R 1) 'input-guide))))
+
+(define-calculus-component render-r9-selected-roots-component
+  (inputs [source-graph : Graph])
+  (model [R (output-reading source-graph 1 #:inputs (list -1 1))])
+  (exports R))
+
+(define-calculus-lesson render-r9-exported-reverse-reading
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [study (use-component render-r9-selected-roots-component G)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3)
+                           #:objects ((part study 'R)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read (part study 'R))))
+
+(define-calculus-lesson render-r9-reading-labels-on
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label 'numeric #:output-label 'numeric)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R)))
+
+(define-calculus-lesson render-r9-reading-labels-off
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+                            #:input-label #f #:output-label #f)])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (read R)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -1426,6 +1482,58 @@
                  (prepared-lesson->pict
                   (prepare-calculus-lesson lesson #:width 480 #:height 270)
                   #:at 'final))))
+  ;; R9: native presentation preserves typed inline branch selectors, paints
+  ;; a named owned guide without its siblings, and lets an explicit child hide
+  ;; remove only that guide—not the selected point marker.
+  (define r9-inline-prepared
+    (prepare-calculus-lesson render-r9-inline-reverse-branch #:width 480 #:height 270))
+  (define r9-inline-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r9-inline-prepared #:at 'initial) 480 270))
+  (define r9-inline-final
+    (pict->opaque-bitmap (prepared-lesson->pict r9-inline-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r9-inline-initial r9-inline-final 334 354 125 145))
+  (define r9-guide-prepared
+    (prepare-calculus-lesson render-r9-input-guide-only #:width 480 #:height 270))
+  (define r9-guide-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r9-guide-prepared #:at 'initial) 480 270))
+  (define r9-guide-final
+    (pict->opaque-bitmap (prepared-lesson->pict r9-guide-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r9-guide-initial r9-guide-final 334 354 151 171))
+  (define r9-hide-prepared
+    (prepare-calculus-lesson render-r9-hide-owned-guide #:width 480 #:height 270))
+  (define r9-hide-before
+    (pict->opaque-bitmap
+     (prepared-lesson->pict r9-hide-prepared #:at (calculus-step-end 'reveal)) 480 270))
+  (define r9-hide-after
+    (pict->opaque-bitmap (prepared-lesson->pict r9-hide-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r9-hide-before r9-hide-after 334 354 151 171))
+  (check-false (bitmap-regions-differ? r9-hide-before r9-hide-after 334 354 125 145))
+  ;; Component exports bridge their Reading geometry through the component
+  ;; model, while the caller remains responsible for the visible export.
+  (define r9-exported-prepared
+    (prepare-calculus-lesson render-r9-exported-reverse-reading #:width 480 #:height 270))
+  (define r9-exported-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r9-exported-prepared #:at 'initial) 480 270))
+  (define r9-exported-final
+    (pict->opaque-bitmap (prepared-lesson->pict r9-exported-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r9-exported-initial r9-exported-final 126 146 125 145))
+  (check-true (bitmap-regions-differ? r9-exported-initial r9-exported-final 334 354 125 145))
+  ;; Numeric Reading labels are real native glyphs; #f disables those owned
+  ;; labels without changing the underlying points and guides.
+  (define r9-labels-on
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson render-r9-reading-labels-on #:width 480 #:height 270)
+      #:at 'final)
+     480 270))
+  (define r9-labels-off
+    (pict->opaque-bitmap
+     (prepared-lesson->pict
+      (prepare-calculus-lesson render-r9-reading-labels-off #:width 480 #:height 270)
+      #:at 'final)
+     480 270))
+  (check-false (bytes=? (bitmap-argb-bytes r9-labels-on 480 270)
+                        (bitmap-argb-bytes r9-labels-off 480 270)))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

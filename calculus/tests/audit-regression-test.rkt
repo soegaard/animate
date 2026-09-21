@@ -215,6 +215,31 @@
     [input-label (part B 'input-label)]
     [branches (part R 'branches)] [output-label (part R 'output-label)]))
 
+;; Ninth-audit fixtures distinguish mathematical duplicate candidates from
+;; merely similar source spellings, and retain a component-exported Reading's
+;; lexical model through both root and selected-branch evaluation.
+(define-calculus-model r9-mixed-input-collision
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 1 1.0))]))
+
+(define-calculus-model r9-signed-zero-collision
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [R (output-reading G 0 #:inputs (list 0.0 -0.0))]))
+
+(define-calculus-model r9-distinct-close-inputs
+  (model [f (function (x) 1)] [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0 1/1000000000000))]))
+
+(define-calculus-component r9-selected-roots-component
+  (inputs [source-graph : Graph])
+  (model [R (output-reading source-graph 1 #:inputs (list -1 1))])
+  (exports R))
+
+(define-calculus-model r9-exported-reading
+  (model [f (function (x) (* x x))] [G (graph f)]
+         [study (use-component r9-selected-roots-component G)]
+         [right-point (part (reading-branch (part study 'R) 1) 'point)]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -711,7 +736,24 @@
                               r8-invalid-completeness-reading
                               r8-colliding-branches-reading))])
     (check-reading-rejected
-     (calculus-snapshot-reading-points (calculus-model-at model) 'R))))
+     (calculus-snapshot-reading-points (calculus-model-at model) 'R)))
+  ;; R9: reverse candidates collide by mathematical numeric equality, not by
+  ;; their printed exactness or the sign bit of zero. Distinct close values
+  ;; stay independently selected with no tolerance-based deduplication.
+  (for ([model (in-list (list r9-mixed-input-collision r9-signed-zero-collision))])
+    (check-reading-rejected
+     (calculus-snapshot-reading-points (calculus-model-at model) 'R)))
+  (check-value
+   (calculus-snapshot-reading-points (calculus-model-at r9-distinct-close-inputs) 'R)
+   (list (cons 0 1) (cons 1/1000000000000 1)))
+  ;; A public component export remains caller-addressed while its Reading
+  ;; geometry and branch projections evaluate in the component's lexical
+  ;; model. The integer branch selector is typed internally, not public text.
+  (define r9-exported-snapshot (calculus-model-at r9-exported-reading))
+  (check-value (calculus-snapshot-reading-points r9-exported-snapshot '(study R))
+               (list (cons -1 1) (cons 1 1)))
+  (check-value (calculus-snapshot-ref r9-exported-snapshot 'right-point)
+               (cons 1 1)))
 
 (module+ test
   (run-calculus-audit-regression-tests))
