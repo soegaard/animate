@@ -154,15 +154,55 @@
               (memq (c-node-kind parent)
                     '(input-reading output-reading coordinate-reading))))))
 
+;; presentation-semantic-node : any/c -> (or/c c-node? #f)
+;;   Component exports retain a caller-facing c-part for visibility and
+;; addressing, while their mathematical/presentation kind lives in the
+;; component model.  Formula layout must inspect that inner node just as graph
+;; painting already does, otherwise an initially partial exported readout gets
+;; no reserved row at all.
+(define (presentation-semantic-node target)
+  (or (and (c-node? target) target)
+      (and (c-part? target)
+           (or (calculus-component-part-node target)
+               (calculus-component-private-part-node target)))))
+
 ;; native-point-node? : any/c -> boolean?
 ;;   Shared semantic kind classification for every core Point constructor.
 ;; Keeping this list in one place prevents style, fitting, painting, and
 ;; validation from accepting different subsets of documented points.
 (define (native-point-node? node)
-  (and (c-node? node)
-       (memq (c-node-kind node)
-             '(point point-on axis-point projection root-point intersection-point
-                     point-on-line))))
+  (define (point-node? candidate fuel)
+    (and (positive? fuel)
+         (c-node? candidate)
+         (or (memq (c-node-kind candidate)
+                   '(point point-on axis-point projection root-point intersection-point
+                           point-on-line feature-point))
+             ;; Snapshot preserves the semantic sort of the captured source.
+             ;; It is point-like only when that source is point-like too.
+             (and (eq? (c-node-kind candidate) 'snapshot-of)
+                  (let ([raw (c-node-data candidate)])
+                    (and (c-object? raw)
+                         (pair? (c-object-arguments raw))
+                         (point-source? (first (c-object-arguments raw))
+                                        (sub1 fuel))))))))
+  (define (point-source? source fuel)
+    (cond [(not (positive? fuel)) #f]
+          [(c-node? source) (point-node? source fuel)]
+          [(c-object? source)
+           (or (memq (c-object-kind source)
+                     '(point point-on axis-point projection root-point
+                             intersection-point point-on-line feature-point))
+               (and (eq? (c-object-kind source) 'snapshot-of)
+                    (pair? (c-object-arguments source))
+                    (point-source? (first (c-object-arguments source))
+                                   (sub1 fuel))))]
+          [(c-expression? source)
+           (and (eq? (c-expression-op source) 'ref)
+                (= (length (c-expression-arguments source)) 1)
+                (point-source? (first (c-expression-arguments source))
+                               (sub1 fuel)))]
+          [else #f]))
+  (point-node? node 32))
 
 ;; presentation-point? : any/c any/c -> boolean?
 ;;   Extends ordinary Point constructors with Reading's public point part,
@@ -541,7 +581,8 @@
 ;; conventional notation and therefore static; value-readout and unknown rows
 ;; remain live by construction.
 (define (static-formula-row? target)
-  (define raw (and (c-node? target) (c-node-data target)))
+  (define node (presentation-semantic-node target))
+  (define raw (and node (c-node-data node)))
   (and (c-object? raw)
        (case (c-object-kind raw)
          [(formula)
@@ -563,7 +604,8 @@
 ;; still receive a prepared panel-local slot so a long exact result cannot
 ;; reuse the Formula fallback at an unconstrained origin.
 (define (value-readout-row? target)
-  (define raw (and (c-node? target) (c-node-data target)))
+  (define node (presentation-semantic-node target))
+  (define raw (and node (c-node-data node)))
   (and (c-object? raw) (eq? (c-object-kind raw) 'value-readout)))
 
 ;; formula-row-font : real? -> font%
@@ -1243,6 +1285,11 @@
       (snapshot-defined-value
        snapshot
        (append (if (list? address) address (list address)) (list 'point))))]
+    [(eq? (c-node-kind node) 'output-reading)
+     (define result (calculus-snapshot-reading-points snapshot value-target))
+     (if (eq? (calculus-result-status result) 'defined)
+         (append-map point-y-values (calculus-result-value result))
+         '())]
     [(eq? (c-node-kind node) 'sequence-points)
      (define points (snapshot-defined-value snapshot value-target))
      (if (list? points) (append-map point-y-values points) '())]
@@ -1836,10 +1883,10 @@
                                   left top width height graph-color graph-width
                                   reveal-progress)))
 
-;; draw-point : drawing-context% calculus-snapshot? address ... -> void?
-;;   Draws one defined point and intentionally omits partial point values.
-(define (draw-point context snapshot address xmin xmax ymin ymax left top width height)
-  (define point (snapshot-defined-value snapshot address))
+;; draw-point-value : drawing-context% point? ... -> void?
+;;   Draws already-resolved point data.  Readings with several public points
+;; (notably reverse/output readings) share the exact same marker policy.
+(define (draw-point-value context point xmin xmax ymin ymax left top width height)
   (when (and (pair? point) (real? (car point)) (real? (cdr point))
              (<= xmin (car point) xmax) (<= ymin (cdr point) ymax))
     (define x (+ left (* width (/ (- (car point) xmin) (- xmax xmin)))))
@@ -1860,6 +1907,12 @@
           (new draw:brush% [color (hex-color fill-color)]
                [style (if (eq? fill 'none) 'transparent 'solid)]))
     (send context draw-ellipse (- x radius) (- y radius) (* 2 radius) (* 2 radius))))
+
+;; draw-point : drawing-context% calculus-snapshot? address ... -> void?
+;;   Draws one defined point and intentionally omits partial point values.
+(define (draw-point context snapshot address xmin xmax ymin ymax left top width height)
+  (draw-point-value context (snapshot-defined-value snapshot address)
+                    xmin xmax ymin ymax left top width height))
 
 ;; finite-world-number? : any/c -> boolean?
 ;;   Keeps malformed or nonfinite semantic values out of native coordinates.
@@ -2492,6 +2545,17 @@
     (when (positive? output-progress)
       (draw-guide 0 y (* output-progress x) y))))
 
+;; draw-output-reading : drawing-context% calculus-snapshot? semantic-value? ... -> void?
+;;   A reverse reading has one point per author-supplied input candidate.  Its
+;; semantic bridge validates all candidates first, then exposes the complete
+;; source-order list for ordinary point painting; it never guesses roots from
+;; rendered graph pixels.
+(define (draw-output-reading context snapshot target xmin xmax ymin ymax left top width height)
+  (define result (calculus-snapshot-reading-points snapshot target))
+  (when (eq? (calculus-result-status result) 'defined)
+    (for ([point (in-list (calculus-result-value result))])
+      (draw-point-value context point xmin xmax ymin ymax left top width height))))
+
 ;; label-node? : any/c -> boolean?
 ;;   Limits native annotation handling to the three explicitly anchored label
 ;; constructions. Their text/anchor semantics stay in the headless core.
@@ -2994,6 +3058,9 @@
            (draw-newton-diagram context snapshot node xmin xmax ymin ymax left top width height)]
           [(and node (eq? (c-node-kind node) 'trace-of))
            (draw-trace context snapshot node xmin xmax ymin ymax left top width height)]
+          [(and node (eq? (c-node-kind node) 'output-reading))
+           (draw-output-reading context snapshot value-target
+                                xmin xmax ymin ymax left top width height)]
           [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
            (draw-reading context snapshot address xmin xmax ymin ymax left top width height
                          "#6A6A6A"
@@ -3014,6 +3081,9 @@
                  ;; extent, not a screen-space approximation of a linked slope.
                  (draw-geometric-line context snapshot node value-target
                                       xmin xmax ymin ymax left top width height "#D97706")]
+                [(and node (eq? (c-node-kind node) 'output-reading))
+                 (draw-output-reading context snapshot value-target
+                                      xmin xmax ymin ymax left top width height)]
                 [(and node (memq (c-node-kind node) '(input-reading coordinate-reading)))
                  (draw-reading context snapshot address
                                xmin xmax ymin ymax left top width height "#D97706")]
@@ -3338,7 +3408,12 @@
   ;; their public address for the ordinary snapshot resolver below.
   (define semantic-target (if private? target node))
   (case (c-node-kind node)
-    [(input-reading output-reading coordinate-reading)
+    [(output-reading)
+     ;; Reverse readings expose a complete list of validated points rather
+     ;; than the singular public `(part R 'point)` protocol used by forward
+     ;; readings.  This is also the strict-native validation path.
+     (calculus-snapshot-reading-points snapshot semantic-target)]
+    [(input-reading coordinate-reading)
      ;; The root Reading demands its public point, but a selected `(part R
      ;; 'point)` already *is* that typed projection.  Appending another part
      ;; would ask for the nonsensical address `(R point point)` and reject a

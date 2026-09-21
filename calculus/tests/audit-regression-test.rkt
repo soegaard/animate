@@ -19,7 +19,9 @@
                   calculus-snapshot-formula-skeleton-tex
                   calculus-snapshot-region-samples
                   calculus-snapshot-motion-state
-                  calculus-snapshot-presentation-state))
+                  calculus-snapshot-presentation-state
+                  calculus-plan-caption
+                  calculus-snapshot-reading-points))
 
 (provide run-calculus-audit-regression-tests)
 
@@ -133,6 +135,44 @@
   (model
     [a (parameter 9 #:domain (closed -20 20))]
     [equation (formula (= (value a) (+ (ref a) 1)))]))
+
+;; Seventh-audit fixtures keep phase narration, point wrappers, and reverse
+;; readings at the public semantic boundary independently of native painting.
+(define-calculus-lesson r7-caption-phases
+  (model [a (parameter 0 #:domain (closed 0 1))])
+  (views [axis (number-line-view #:range (closed 0 1) #:objects (a))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show a))
+  (step first #:say "a = 0" (pause 1) (checkpoint first-done))
+  (step second #:say "a = 1" (set-parameter a 1) (pause 1)))
+
+(define-calculus-model r7-wrapped-points
+  (model
+    [a (parameter 0 #:domain (closed 0 2))]
+    [f (function (x) (+ (expt (- x 1) 2) 1))]
+    [df (derivative-function f)]
+    [G (graph f)]
+    [F (feature-point G #:at 1 #:kind 'global-minimum
+         #:justification "(x-1)^2 is nonnegative, with equality at x=1.")]
+    [P (point a a)]
+    [S (snapshot-of P #:values ([a 1]))]
+    [feature-x (x-coordinate F)]
+    [feature-projection (projection F #:onto 'x)]
+    [feature-tangent (tangent G #:at F #:derivative df)]
+    [frozen-x (x-coordinate S)]
+    [frozen-projection (projection S #:onto 'x)]))
+
+(define-calculus-model r7-reverse-reading
+  (model
+    [f (function (x) (* x x))]
+    [G (graph f)]
+    [R (output-reading G 1 #:inputs (list -1 1)
+         #:completeness 'all
+         #:justification "x^2=1 exactly when x=-1 or x=1.")]
+    [left-point (part (reading-branch R 0) 'point)]
+    [right-point (part (reading-branch R 1) 'point)]
+    [left-input (part (reading-branch R 0) 'input)]
+    [output (part R 'output)]))
 
 ;; run-calculus-audit-regression-tests : -> void?
 ;;   Exercises each repaired headless semantic contract at its public boundary.
@@ -527,7 +567,35 @@
   (check-value (model-result graph-incidence-regressions 'good-secant)
                (list 'line 3 -2 (cons 1 1)))
   (check-value (model-result graph-incidence-regressions 'good-tangent)
-               (list 'line 2 -1 (cons 1 1))))
+               (list 'line 2 -1 (cons 1 1)))
+  ;; R7: a symbolic phase preserves its authored caption at a shared numeric
+  ;; boundary, whereas direct numeric sampling remains right-continuous.
+  (define r7-caption-plan (compile-calculus-lesson r7-caption-phases))
+  (check-equal? (calculus-plan-caption r7-caption-plan (calculus-step-end 'first))
+                "a = 0")
+  (check-equal? (calculus-plan-caption r7-caption-plan (calculus-checkpoint 'first-done))
+                "a = 0")
+  (check-equal? (calculus-plan-caption r7-caption-plan (calculus-step-start 'second))
+                "a = 1")
+  (check-equal? (calculus-plan-caption r7-caption-plan 1) "a = 1")
+  ;; Feature points and frozen snapshots retain Point sort, so all ordinary
+  ;; point consumers use their exact coordinates rather than a raw wrapper.
+  (check-value (model-result r7-wrapped-points 'feature-x) 1)
+  (check-value (model-result r7-wrapped-points 'feature-projection) (cons 1 0))
+  (check-value (model-result r7-wrapped-points 'feature-tangent)
+               (list 'line 0 1 (cons 1 1)))
+  (check-value (model-result r7-wrapped-points 'frozen-x) 1)
+  (check-value (model-result r7-wrapped-points 'frozen-projection) (cons 1 0))
+  ;; Reverse readings enumerate author-supplied candidates in source order.
+  ;; Their `#:completeness` claim remains authored metadata; each individual
+  ;; candidate is nevertheless checked against graph domain and requested y.
+  (define r7-reverse-snapshot (calculus-model-at r7-reverse-reading))
+  (check-value (calculus-snapshot-ref r7-reverse-snapshot 'left-point) (cons -1 1))
+  (check-value (calculus-snapshot-ref r7-reverse-snapshot 'right-point) (cons 1 1))
+  (check-value (calculus-snapshot-ref r7-reverse-snapshot 'left-input) -1)
+  (check-value (calculus-snapshot-ref r7-reverse-snapshot 'output) 1)
+  (check-value (calculus-snapshot-reading-points r7-reverse-snapshot 'R)
+               (list (cons -1 1) (cons 1 1))))
 
 (module+ test
   (run-calculus-audit-regression-tests))

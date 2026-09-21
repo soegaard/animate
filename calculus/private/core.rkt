@@ -58,6 +58,7 @@
  calculus-snapshot-region-samples calculus-snapshot-sign-chart-intervals
  calculus-snapshot-newton-segments
  calculus-snapshot-asymptote-geometry
+ calculus-snapshot-reading-points
  calculus-snapshot-formula-text calculus-snapshot-formula-tex calculus-snapshot-formula-fragments
  calculus-snapshot-formula-skeleton-tex
  calculus-snapshot-label-text calculus-snapshot-label-anchor
@@ -1551,6 +1552,20 @@
                          [else
                           (result-bind (eval-raw (hash-ref options 'x) environment model computation lexical)
                                        (lambda (x) (defined (cons x (+ (third line) (* (second line) x))))))])))]
+       [(feature-point)
+        (eval-feature-point point environment model computation lexical)]
+       [(snapshot-of)
+        ;; A snapshot keeps the type of its frozen target.  Point consumers
+        ;; therefore validate the frozen result rather than treating the
+        ;; wrapper itself as an unsupported constructor or a live alias.
+        (result-bind
+         (eval-snapshot point environment model computation lexical)
+         (lambda (value)
+           (if (and (pair? value)
+                    (finite-real? (car value))
+                    (finite-real? (cdr value)))
+               (defined value)
+               (undefined "snapshot does not resolve to a point"))))]
        [else (undefined (format "unsupported point kind ~a" (c-object-kind raw)))] )])]))
 
 (define (line-through-points p q kind)
@@ -2034,12 +2049,120 @@
       '()
       (sort candidate-names symbol<?)))
 
+;; reading-branch-index : any/c -> (or/c exact-nonnegative-integer? #f)
+;;   Decodes the internal public-part spelling emitted by `reading-branch`.
+;; The index stays source ordered; it is never inferred from a rendered graph.
+(define (reading-branch-index branch)
+  (and (c-part? branch)
+       (let ([name (c-part-name branch)])
+         (and (list? name)
+              (= (length name) 2)
+              (eq? (first name) 'branches)
+              (exact-nonnegative-integer? (second name))
+              (second name)))))
+
+;; output-reading-raw : semantic-value? -> (or/c c-object? #f)
+;;   Resolves only the descriptor needed by the branch protocol below.
+(define (output-reading-raw reading)
+  (define raw (node-raw reading))
+  (and (c-object? raw)
+       (eq? (c-object-kind raw) 'output-reading)
+       raw))
+
+;; eval-output-reading-branch : semantic-value? exact-nonnegative-integer?
+;;                              hash? calculus-model? calculus-computation? hash?
+;;                              -> calculus-result?
+;;   Validates one author-supplied reverse-reading candidate against both the
+;; effective graph domain and its requested output, preserving source order.
+(define (eval-output-reading-branch reading index environment model computation lexical)
+  (define raw (output-reading-raw reading))
+  (cond
+    ((not raw) (undefined "expected an output reading"))
+    (else
+     (let* ((args (c-object-arguments raw))
+            (graph (and (pair? args) (first args)))
+            (requested-output (and (>= (length args) 2) (second args)))
+            (inputs-expression (hash-ref (c-object-options raw) 'inputs #f)))
+       (cond
+         ((not (and graph requested-output inputs-expression))
+          (undefined "output-reading requires a graph, output, and #:inputs"))
+         (else
+          (result-bind
+           (eval-raw inputs-expression environment model computation lexical)
+           (lambda (inputs)
+             (cond
+               ((not (and (list? inputs) (andmap finite-real? inputs)))
+                (undefined "output-reading #:inputs must be an ordered list of finite values"))
+               ((>= index (length inputs))
+                (undefined "output-reading branch index is outside #:inputs"))
+               (else
+                (let ((input (list-ref inputs index)))
+                  (result-bind
+                   (eval-raw requested-output environment model computation lexical)
+                   (lambda (output)
+                     (cond
+                       ((not (finite-real? output))
+                        (undefined "output-reading output must be finite"))
+                       (else
+                        (result-bind
+                         (evaluate-graph graph input environment model computation lexical)
+                         (lambda (actual)
+                           (if (scalar-equivalent? actual output computation)
+                               (defined (cons input actual))
+                               (undefined
+                                "output-reading candidate does not satisfy the requested output")))))))))))))))))))
+
+;; eval-output-reading-points : semantic-value? hash? calculus-model?
+;;                             calculus-computation? hash? -> calculus-result?
+;;   Produces every source-ordered reverse-reading point for native drawing and
+;; demanded-value validation.  One invalid candidate makes the construction
+;; nondefined instead of letting a blank partial guide pass as successful.
+(define (eval-output-reading-points reading environment model computation lexical)
+  (define raw (output-reading-raw reading))
+  (cond
+    ((not raw) (undefined "expected an output reading"))
+    (else
+     (let ((inputs-expression (hash-ref (c-object-options raw) 'inputs #f)))
+       (if (not inputs-expression)
+           (undefined "output-reading requires #:inputs")
+           (result-bind
+            (eval-raw inputs-expression environment model computation lexical)
+            (lambda (inputs)
+              (if (not (and (list? inputs) (andmap finite-real? inputs)))
+                  (undefined "output-reading #:inputs must be an ordered list of finite values")
+                  (let loop ((index 0) (remaining inputs) (points '()))
+                    (if (null? remaining)
+                        (defined (immutable-list-copy (reverse points)))
+                        (result-bind
+                         (eval-output-reading-branch reading index environment model computation lexical)
+                         (lambda (point)
+                           (loop (add1 index) (rest remaining)
+                                 (cons point points))))))))))))))
+
 (define (eval-part part environment model computation lexical)
-  (define parent (node-raw (c-part-parent part)))
+  (define parent-target (c-part-parent part))
+  (define parent (node-raw parent-target))
   (define name (c-part-name part))
   (cond
     [(and (list? name) (pair? name) (eq? (car name) 'branches))
-     (c-part (c-part-parent part) name)]
+     (defined part)]
+    ;; A `(reading-branch R i)` is a typed intermediate public part.  Its
+    ;; nested point/input/output projections must resolve against R rather
+    ;; than asking a c-part wrapper to pretend it is a root object.
+    [(reading-branch-index parent-target)
+     (define index (reading-branch-index parent-target))
+     (define reading (c-part-parent parent-target))
+     (case name
+       [(point) (eval-output-reading-branch reading index environment model computation lexical)]
+       [(input)
+        (result-bind
+         (eval-output-reading-branch reading index environment model computation lexical)
+         (lambda (point) (defined (car point))))]
+       [(output)
+        (result-bind
+         (eval-output-reading-branch reading index environment model computation lexical)
+         (lambda (point) (defined (cdr point))))]
+       [else (undefined "output-reading branches expose point, input, and output parts")])]
     [(and (c-object? parent) (eq? (c-object-kind parent) 'use-component))
      (result-bind
       (component-instance-valid? (c-part-parent part) environment model computation lexical)
@@ -2073,6 +2196,10 @@
           [(input) (result-bind (eval-point (first args) environment model computation lexical) (lambda (p) (defined (car p))))]
           [(output) (result-bind (eval-point (first args) environment model computation lexical) (lambda (p) (defined (cdr p))))]
           [else (defined (c-part parent name))])]
+       [(output-reading)
+        (case name
+          [(output) (eval-raw (second args) environment model computation lexical)]
+          [else (undefined "output-reading points are available through indexed reading-branch parts")])]
        [(increment)
         (case name
           [(from) (eval-point (first args) environment model computation lexical)]
@@ -4860,7 +4987,7 @@
   ;; the resulting leaves covers both ordinary outer steps and checkpoints
   ;; introduced by expanded component expositions, while preserving the
   ;; source-order cutoff that distinguishes simultaneous zero-time actions.
-  (define (record-checkpoints! new-events)
+  (define (record-checkpoints! new-events owner-path)
     (for ([event (in-list new-events)]
           #:when (eq? (c-action-kind (c-event-action event)) 'checkpoint))
       (define targets (c-action-targets (c-event-action event)))
@@ -4882,7 +5009,16 @@
                      checkpoint-diagnostics))]
         [else
          (hash-set! moments (cons 'checkpoint address)
-                    (cons (c-event-start event) (c-event-ordinal event)))])))
+                    (cons (c-event-start event) (c-event-ordinal event)))
+         ;; A moment names one exact authored boundary.  Retain its caption
+         ;; owner as well as its time so simultaneous zero-duration commands
+         ;; do not accidentally select a later caption at that same time.
+         ;; Expanded component checkpoints have a final checkpoint segment;
+         ;; their preceding path is the local step that owns the caption.
+         (hash-set! moments (cons 'caption-owner address)
+                    (if (> (length address) 1)
+                        (reverse (rest (reverse address)))
+                        owner-path))])))
   (for ([step (in-list (calculus-lesson-steps lesson))])
     (define outer-path (list (c-step-id step)))
     (define outer-start time)
@@ -4901,7 +5037,7 @@
             (compile-command (or persistent-delta command) time fallback ordinal #f
                              (= (length step-commands) 1)
                              outer-path record-milestone! record-caption!)))
-      (record-checkpoints! new-events)
+      (record-checkpoints! new-events outer-path)
       (set! events (append events new-events))
       (set! time (+ time span))
       (set! ordinal next)
@@ -5533,15 +5669,33 @@
            (raise-arguments-error 'calculus-plan-caption
                                   "a valid time, 'initial, 'final, or calculus moment"
                                   "at" at)]))
+  ;; A named phase is not merely a number: at an exact transition it carries
+  ;; the caption belonging to its authored step.  Numeric samples deliberately
+  ;; retain the ordinary right-continuous time selection below.
+  (define moment-owner
+    (and (calculus-moment? at)
+         (case (calculus-moment-kind at)
+           [(step-start step-end) (calculus-moment-address at)]
+           [(checkpoint)
+            (hash-ref (calculus-plan-moments plan)
+                      (cons 'caption-owner (calculus-moment-address at))
+                      #f)]
+           [else #f])))
+  (define owned-caption
+    (and moment-owner
+         (for/first ([caption (in-list (calculus-plan-captions plan))]
+                     #:when (equal? (c-caption-path caption) moment-owner))
+           caption)))
   (define selected
-    (for/fold ([best #f]) ([caption (in-list (calculus-plan-captions plan))]
-                               #:when (and (<= (c-caption-start caption) caption-time)
-                                           (<= caption-time (c-caption-end caption))))
-      (cond [(not best) caption]
-            [(> (length (c-caption-path caption)) (length (c-caption-path best))) caption]
-            [(and (= (length (c-caption-path caption)) (length (c-caption-path best)))
-                  (> (c-caption-start caption) (c-caption-start best))) caption]
-            [else best])))
+    (or owned-caption
+        (for/fold ([best #f]) ([caption (in-list (calculus-plan-captions plan))]
+                                   #:when (and (<= (c-caption-start caption) caption-time)
+                                               (<= caption-time (c-caption-end caption))))
+          (cond [(not best) caption]
+                [(> (length (c-caption-path caption)) (length (c-caption-path best))) caption]
+                [(and (= (length (c-caption-path caption)) (length (c-caption-path best)))
+                      (> (c-caption-start caption) (c-caption-start best))) caption]
+                [else best]))))
   (and selected (c-caption-text selected)))
 
 ;; calculus-plan-has-captions? : calculus-plan? -> boolean?
@@ -5598,6 +5752,37 @@
   (eval-raw (address->object (calculus-snapshot-model snapshot) address)
             (calculus-snapshot-values snapshot) (calculus-snapshot-model snapshot)
             (calculus-snapshot-computation snapshot)))
+
+;; calculus-snapshot-reading-points : calculus-snapshot? semantic-value?
+;;                                     -> calculus-result?
+;;   Supplies complete, source-ordered Reading geometry to native consumers.
+;; Reverse readings have several public points, while forward readings retain
+;; their ordinary one-point protocol.
+(define (calculus-snapshot-reading-points snapshot reading)
+  (check 'calculus-snapshot-reading-points calculus-snapshot? "calculus-snapshot?" snapshot)
+  (define model (calculus-snapshot-model snapshot))
+  (define semantic-reading
+    (if (or (symbol? reading) (and (list? reading) (pair? reading)))
+        (address->object model reading)
+        reading))
+  (define raw (node-raw semantic-reading))
+  (cond
+    [(not (c-object? raw)) (undefined "expected a reading")]
+    [(eq? (c-object-kind raw) 'output-reading)
+     (eval-output-reading-points semantic-reading
+                                 (calculus-snapshot-values snapshot)
+                                 model
+                                 (calculus-snapshot-computation snapshot)
+                                 (hash))]
+    [(memq (c-object-kind raw) '(input-reading coordinate-reading))
+     (result-bind
+      (eval-part (c-part semantic-reading 'point)
+                 (calculus-snapshot-values snapshot)
+                 model
+                 (calculus-snapshot-computation snapshot)
+                 (hash))
+      (lambda (point) (defined (list point))))]
+    [else (undefined "expected a reading")]))
 
 ;; calculus-snapshot-component-private-ref : calculus-snapshot? c-part? -> calculus-result?
 ;;   Evaluates a renderer-only private presentation in its component's lexical

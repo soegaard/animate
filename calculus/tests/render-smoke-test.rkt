@@ -483,6 +483,60 @@
   (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
   (step retain-export (pause 1)))
 
+;; render-r7-inverse-readout : calculus-component?
+;; An exported readout begins hidden and undefined, so native preparation must
+;; still reserve a component-local live field before its exact result appears.
+(define-calculus-component render-r7-inverse-readout
+  (inputs [x : Scalar])
+  (model [r (value-readout (/ 1 x) #:label "r" #:format 'exact)])
+  (exports r))
+
+(define-calculus-lesson render-r7-component-readout
+  (model [a (parameter 0 #:domain (closed 0 1))]
+         [study (use-component render-r7-inverse-readout a)])
+  (views [facts (formula-view #:objects ((part study 'r)))])
+  (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step establish
+    (set-parameter a (/ 1 (expt 10 200)))
+    (show (part study 'r))))
+
+;; R7 point-sort and reverse-reading rendering fixtures.  The graph is absent
+;; from the reverse view so every observed marker must come from the Reading.
+(define-calculus-lesson render-r7-feature-point
+  (model [f (function (x) (+ (expt (- x 1) 2) 1))]
+         [G (graph f)]
+         [F (feature-point G #:at 1 #:kind 'global-minimum
+              #:justification "(x-1)^2 is nonnegative, with equality at x=1.")])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (F))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show F)))
+
+(define-calculus-lesson render-r7-frozen-point
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [P (point a a)]
+         [S (snapshot-of P #:values ([a 1]))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (S))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show S)))
+
+(define-calculus-lesson render-r7-reverse-reading
+  (model [f (function (x) (* x x))]
+         [G (graph f)]
+         [R (output-reading G 1 #:inputs (list -1 1)
+              #:completeness 'all
+              #:justification "x^2=1 exactly when x=-1 or x=1.")])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step read-backwards (read R)))
+
+(define-calculus-lesson render-r7-invalid-reverse-reading
+  (model [f (function (x) (* x x))]
+         [G (graph f)]
+         [R (output-reading G 1 #:inputs (list 0))])
+  (views [plot (graph-view #:x (closed -2 2) #:y (closed -1 3) #:objects (R))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step read-backwards (read R)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -1222,6 +1276,56 @@
      (prepared-lesson->pict point-on-line-prepared #:at 'final) 480 270))
   (check-true (bitmap-regions-differ? point-on-line-initial point-on-line-final
                                       230 250 125 145))
+  ;; R7: an exported Readout whose initial value is partial still owns a
+  ;; prepared live field.  The later 201-digit exact result therefore reaches
+  ;; the same explicit overflow policy as a direct Readout instead of being
+  ;; silently drawn through the unconstrained Formula fallback.
+  (define r7-component-readout-prepared
+    (prepare-calculus-lesson render-r7-component-readout #:width 480 #:height 270))
+  (define r7-component-readout-initial
+    (calculus-plan-sample (prepared-lesson-plan r7-component-readout-prepared) #:at 'initial))
+  (check-false (calculus-snapshot-visible? r7-component-readout-initial '(study r)))
+  (check-not-equal?
+   (calculus-result-status
+    (calculus-snapshot-formula-text r7-component-readout-initial '(study r)))
+   'defined)
+  (check-exn #rx"field|layout|fit|minimum"
+             (lambda ()
+               (prepared-lesson->pict r7-component-readout-prepared #:at 'final)))
+  ;; Feature points and point snapshots are ordinary native Point consumers.
+  ;; The initial symbolic phase has no marker; final marker ink is observed at
+  ;; their exact world coordinate (1,1), not on a sampled graph segment.
+  (define r7-feature-prepared
+    (prepare-calculus-lesson render-r7-feature-point #:width 480 #:height 270))
+  (define r7-feature-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r7-feature-prepared #:at 'initial) 480 270))
+  (define r7-feature-final
+    (pict->opaque-bitmap (prepared-lesson->pict r7-feature-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r7-feature-initial r7-feature-final 230 250 125 145))
+  (define r7-frozen-prepared
+    (prepare-calculus-lesson render-r7-frozen-point #:width 480 #:height 270))
+  (define r7-frozen-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r7-frozen-prepared #:at 'initial) 480 270))
+  (define r7-frozen-final
+    (pict->opaque-bitmap (prepared-lesson->pict r7-frozen-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r7-frozen-initial r7-frozen-final 230 250 125 145))
+  ;; Reverse readings paint every explicitly declared candidate in source
+  ;; order. Invalid candidates are demanded native values, so a blank picture
+  ;; is never accepted as a successful reverse construction.
+  (define r7-reverse-prepared
+    (prepare-calculus-lesson render-r7-reverse-reading #:width 480 #:height 270))
+  (define r7-reverse-initial
+    (pict->opaque-bitmap (prepared-lesson->pict r7-reverse-prepared #:at 'initial) 480 270))
+  (define r7-reverse-final
+    (pict->opaque-bitmap (prepared-lesson->pict r7-reverse-prepared #:at 'final) 480 270))
+  (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-final 126 146 125 145))
+  (check-true (bitmap-regions-differ? r7-reverse-initial r7-reverse-final 334 354 125 145))
+  (check-exn exn:fail?
+             (lambda ()
+               (prepared-lesson->pict
+                (prepare-calculus-lesson render-r7-invalid-reverse-reading
+                                          #:width 480 #:height 270)
+                #:at 'final)))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared
