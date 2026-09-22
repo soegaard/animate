@@ -929,7 +929,9 @@
     (format "{\\color[HTML]{~a} ~a}" rgb tex)
     #:id 'calculus-formula-row
     #:font-size (max 1 font-size)
-    #:preamble "\\usepackage{xcolor}")
+    ;; Calculus expression serialization uses \operatorname for generic
+    ;; semantic operations such as value-at; amsmath defines that command.
+    #:preamble "\\usepackage{xcolor}\n\\usepackage{amsmath}")
    camera))
 
 ;; prepare-static-formula-assets : calculus-plan? exact-positive-integer?
