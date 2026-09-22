@@ -128,8 +128,8 @@ prover must honor its documented callback contract.
 
 
 @defproc[(math [datum math-datum?]
-         #:id [id symbol? 'math]
-         #:context [ctx math-context? (math-context)])
+         [#:id id symbol? 'math]
+         [#:context ctx math-context? (math-context)])
          math?]{
 Constructs a held mathematical state with deterministic occurrence identities.
 
@@ -195,7 +195,7 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 @defproc[(math-with-context [state math?]
          [requested-context math-context?]
-         #:scope [scope (or/c symbol? #f) #f])
+         [#:scope scope (or/c symbol? #f) #f])
          math?]{
 Creates a scoped state while retaining the original domain restrictions.
 
@@ -343,9 +343,9 @@ The callback is used during construction and is not retained in a native scene.
 @subsection{Contexts and evidence}
 
 
-@defproc[(math-context #:real [real (listof symbol?) '()]
-         #:assuming [assumptions (listof math-datum?) '()]
-         #:definitions [definitions (or/c hash? list?) '()])
+@defproc[(math-context [#:real real (listof symbol?) '()]
+         [#:assuming assumptions (listof math-datum?) '()]
+         [#:definitions definitions (or/c hash? list?) '()])
          math-context?]{
 Validates real variables, ordered assumptions, and acyclic scoped definitions.
 
@@ -638,8 +638,8 @@ specific held expression when the selector is resolved.
 
 
 @defproc[(matching [datum math-datum?]
-         #:occurrence [ordinal (or/c exact-positive-integer? #f) #f]
-         #:within [within selector? (whole)])
+         [#:occurrence ordinal (or/c exact-positive-integer? #f) #f]
+         [#:within within selector? (whole)])
          selector?]{
 Selects structural matches, optionally choosing a one-based occurrence ordinal.
 
@@ -650,7 +650,7 @@ operation requiring one match diagnoses ambiguity instead of selecting the first
 
 
 @defproc[(all-matching [datum math-datum?]
-         #:within [within selector? (whole)])
+         [#:within within selector? (whole)])
          selector?]{
 Selects every structural match in held preorder within the containing selection.
 
@@ -723,7 +723,7 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 @defproc[(apply-math-operation [state math?]
          [op math-operation?]
-         #:name [name symbol? (math-operation-name op)])
+         [#:name name symbol? (math-operation-name op)])
          rewrite-step?]{
 Applies and verifies one named operation before committing a new state.
 
@@ -735,8 +735,8 @@ new immutable state. No animation or typesetting is performed.
 
 @defproc[(both-sides [op symbol?]
          [operand math-datum?]
-         #:at [focus selector? (whole)]
-         #:relationship [relationship symbol? 'equivalence])
+         [#:at focus selector? (whole)]
+         [#:relationship relationship symbol? 'equivalence])
          math-operation?]{
 Applies a held operation to both relation operands with explicit invertibility guards.
 
@@ -749,8 +749,8 @@ an undecided sign is not guessed. Squaring is available as an explicit
 }
 
 
-@defproc[(cancel-addends #:at [focus selector? (whole)]
-         #:pair [pair (or/c list? #f) #f])
+@defproc[(cancel-addends [#:at focus selector? (whole)]
+         [#:pair pair (or/c list? #f) #f])
          math-operation?]{
 Cancels one specified or uniquely identified pair of additive inverses.
 
@@ -760,9 +760,9 @@ requires a unique match. More than one eligible pair is an ambiguity error.
 }
 
 
-@defproc[(cancel-factor #:at [focus selector? (whole)]
-         #:factor [factor math-datum?]
-         #:keep-one? [keep-one? boolean? #f])
+@defproc[(cancel-factor [#:at focus selector? (whole)]
+         [#:factor factor math-datum?]
+         [#:keep-one? keep-one? boolean? #f])
          math-operation?]{
 Cancels a selected common factor only under an established nonzero condition.
 
@@ -773,7 +773,7 @@ for a subsequent @racket[remove-unit] step.
 }
 
 
-@defproc[(remove-unit #:at [focus selector? (whole)])
+@defproc[(remove-unit [#:at focus selector? (whole)])
          math-operation?]{
 Removes an explicitly displayed unit factor as its own teaching step.
 
@@ -782,7 +782,7 @@ from cancellation so its disappearance can receive its own animation phase.
 }
 
 
-@defproc[(reduce-identities #:at [focus selector? (whole)])
+@defproc[(reduce-identities [#:at focus selector? (whole)])
          math-operation?]{
 Reduces supported identities only inside the explicit focus.
 
@@ -791,8 +791,8 @@ selected focus. Unrelated portions of the held expression are not normalized.
 }
 
 
-@defproc[(evaluate #:at [focus selector? (whole)]
-         #:mode [mode symbol? 'all])
+@defproc[(evaluate [#:at focus selector? (whole)]
+         [#:mode mode symbol? 'all])
          math-operation?]{
 Evaluates exact arithmetic at the selected focus, optionally one deepest layer.
 
@@ -803,8 +803,8 @@ visible equations instead of collapsing to booleans.
 
 
 @defproc[(rewrite-to [target math-datum?]
-         #:at [focus selector? (whole)]
-         #:using [rule symbol? 'rational-identity])
+         [#:at focus selector? (whole)]
+         [#:using rule symbol? 'rational-identity])
          math-operation?]{
 Requests a checked focused target and records an honest coarse rewrite event.
 
@@ -815,8 +815,8 @@ Target equivalence does not authorize discarding domain restrictions.
 }
 
 
-@defproc[(reorder-addends #:at [focus selector? (whole)]
-         #:order [order (listof exact-nonnegative-integer?)])
+@defproc[(reorder-addends [#:at focus selector? (whole)]
+         [#:order order (listof exact-nonnegative-integer?)])
          math-operation?]{
 Permutes signed addends by explicit zero-based indices.
 
@@ -825,7 +825,7 @@ Signs travel with the terms. Missing, repeated, or out-of-range indices are reje
 }
 
 
-@defproc[(zero-product #:at [focus selector? (whole)])
+@defproc[(zero-product [#:at focus selector? (whole)])
          math-operation?]{
 Splits a real product equation into the direct zero-factor alternatives.
 
@@ -834,7 +834,7 @@ is an explicit disjunction of factor equations, retaining all alternatives.
 }
 
 
-@defproc[(square-solutions #:at [focus selector? (whole)])
+@defproc[(square-solutions [#:at focus selector? (whole)])
          math-operation?]{
 Solves a real square equation using explicit positive, zero, or negative cases.
 
@@ -846,7 +846,7 @@ implicit choice of the positive branch.
 
 
 @defproc[(abbreviate [name symbol?]
-         #:at [focus selector? (whole)])
+         [#:at focus selector? (whole)])
          math-operation?]{
 Replaces a selected expression by an equivalent scoped definition name.
 
@@ -866,7 +866,7 @@ It does not recursively search arbitrary nested case trees.
 
 
 @defproc[(substitute [replacements (or/c hash? list?)]
-         #:at [focus selector? (whole)])
+         [#:at focus selector? (whole)])
          math-operation?]{
 Snapshots a replacement map and constructs a held specialization operation.
 
@@ -878,7 +878,7 @@ The recorded relationship is specialization, not equation equivalence.
 
 
 @defproc[(conclude [classification symbol?]
-         #:for [variable symbol?])
+         [#:for variable symbol?])
          math-operation?]{
 Requests a checked classification as all real values or no real solutions.
 
@@ -889,8 +889,8 @@ incorrect claim that every real value is allowed.
 
 
 @defproc[(assert-step [target math-datum?]
-         #:at [focus selector? (whole)]
-         #:reason [reason string? "Author-supplied target."])
+         [#:at focus selector? (whole)]
+         [#:reason reason string? "Author-supplied target."])
          math-operation?]{
 Creates a deliberately unverified author target that strict mode cannot certify.
 
@@ -925,10 +925,10 @@ Several source occurrences contributing to a target require @racket[#:merge 'mer
          [variables (listof symbol?)]
          [before math-datum?]
          [after math-datum?]
-         #:requires [requires (listof math-datum?) '()]
-         #:merge [merge (or/c symbol? #f) #f]
-         #:version [version exact-positive-integer? 1]
-         #:check [check symbol? 'polynomial-identity])
+         [#:requires requires (listof math-datum?) '()]
+         [#:merge merge (or/c symbol? #f) #f]
+         [#:version version exact-positive-integer? 1]
+         [#:check check symbol? 'polynomial-identity])
          math-rule?]{
 Validates held templates, metavariables, merge policy, and rule version.
 
@@ -955,7 +955,7 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 
 @defproc[(use-rule [rule math-rule?]
-         #:at [focus selector? (whole)])
+         [#:at focus selector? (whole)])
          math-operation?]{
 Creates an operation from a trace-aware held rule template.
 
@@ -965,7 +965,7 @@ is checked only when the operation is applied to a mathematical state.
 
 
 @defproc[(apply-rule [rule math-rule?]
-         #:at [focus selector? (whole)])
+         [#:at focus selector? (whole)])
          math-operation?]{
 Creates an operation from a trace-aware held rule template.
 
@@ -976,8 +976,8 @@ rewrite step. Use @racket[apply-rewrite] for immediate application.
 
 @defproc[(apply-rewrite [rule math-rule?]
          [state math?]
-         #:name [name symbol? (math-rule-name rule)]
-         #:at [focus selector? (whole)])
+         [#:name name symbol? (math-rule-name rule)]
+         [#:at focus selector? (whole)])
          rewrite-step?]{
 Applies a traceable template rule directly to a mathematical state.
 
@@ -1313,8 +1313,8 @@ Combines rewrite evidence and parameter-case coverage without external CAS calls
 
 
 @defproc[(check-solution [problem math?]
-         #:for [variable symbol?]
-         #:value [value math-datum?])
+         [#:for variable symbol?]
+         [#:value value math-datum?])
          solution-check?]{
 Checks a candidate in the original domain before constructing visible substitution steps.
 
@@ -1515,7 +1515,7 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 
 
 @defproc[(math->tex [d (or/c math? math-datum?)]
-         #:multiplication [m symbol? 'school])
+         [#:multiplication m symbol? 'school])
          string?]{
 Returns complete TeX source without evaluating or normalizing the expression.
 
@@ -1525,14 +1525,14 @@ are accepted, and neither is normalized for display.
 
 
 @defproc[(datum->tex [d (or/c math? math-datum?)]
-         #:multiplication [m symbol? 'school])
+         [#:multiplication m symbol? 'school])
          string?]{
 Returns complete TeX source without evaluating or normalizing the expression.
 }
 
 
 @defproc[(format-math-source [datum (or/c math? math-datum?)]
-         #:multiplication [multiplication symbol? 'school])
+         [#:multiplication multiplication symbol? 'school])
          math-source?]{
 Formats one complete formula and retains half-open source spans for its occurrences.
 
@@ -1615,18 +1615,18 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
 @subsection{Presentation policy and schedules}
 
 
-@defproc[(math-presentation #:anchor [anchor symbol? 'relation]
-         #:history [history symbol? 'keep-completed-groups]
-         #:start-group [start-group symbol? 'copy]
-         #:new-parts [new-parts symbol? 'fade]
-         #:removed-parts [removed-parts symbol? 'fade]
-         #:reflow [reflow symbol? 'staged]
-         #:multiplication [multiplication symbol? 'school]
-         #:pause-between-groups [pause (and/c real? (>=/c 0)) 3/5]
-         #:duration [step-duration (and/c real? positive?) 4/5]
-         #:font-size [font-size (and/c real? positive?) 11/20]
-         #:row-gap [row-gap (and/c real? positive?) 21/20]
-         #:max-visible-rows [max-rows (and/c exact-integer? (>=/c 2)) 5])
+@defproc[(math-presentation [#:anchor anchor symbol? 'relation]
+         [#:history history symbol? 'keep-completed-groups]
+         [#:start-group start-group symbol? 'copy]
+         [#:new-parts new-parts symbol? 'fade]
+         [#:removed-parts removed-parts symbol? 'fade]
+         [#:reflow reflow symbol? 'staged]
+         [#:multiplication multiplication symbol? 'school]
+         [#:pause-between-groups pause (and/c real? (>=/c 0)) 3/5]
+         [#:duration step-duration (and/c real? positive?) 4/5]
+         [#:font-size font-size (and/c real? positive?) 11/20]
+         [#:row-gap row-gap (and/c real? positive?) 21/20]
+         [#:max-visible-rows max-rows (and/c exact-integer? (>=/c 2)) 5])
          math-presentation?]{
 Constructs validated layout and timing policy with exact rational defaults.
 
@@ -1654,11 +1654,11 @@ Provides the exact-time, staged, retained-history classroom style.
 }
 
 @defproc[(present [source (or/c derivation? case-derivation? solution-check?)]
-         #:style [style math-presentation? classroom]
-         #:groups [groups (or/c 'top-level 'steps list? hash? #f) #f]
-         #:case [case-path (or/c symbol? (listof symbol?) #f) #f]
-         #:case-layout [case-layout (or/c 'complete-paths 'shared-prefix) 'complete-paths]
-         #:allow-unverified? [allow? boolean? #f])
+         [#:style style math-presentation? classroom]
+         [#:groups groups (or/c 'top-level 'steps list? hash? #f) #f]
+         [#:case case-path (or/c symbol? (listof symbol?) #f) #f]
+         [#:case-layout case-layout (or/c 'complete-paths 'shared-prefix) 'complete-paths]
+         [#:allow-unverified? allow? boolean? #f])
          presentation-plan?]{
 Builds an explicit presentation while retaining verification status and case context.
 
@@ -2102,7 +2102,7 @@ Active phase intervals are half-open. The total endpoint returns the final phase
 }
 
 
-@defproc[(prepare-space #:duration [d (and/c real? positive?) 1/2])
+@defproc[(prepare-space [#:duration d (and/c real? positive?) 1/2])
          presentation-phase?]{
 Moves preserved material to reserve space before revealing new parts.
 
@@ -2111,8 +2111,8 @@ The duration is measured in seconds and must be positive and finite.
 }
 
 
-@defproc[(reveal-created #:effect [effect symbol? 'fade]
-         #:duration [d (and/c real? positive?) 2/5])
+@defproc[(reveal-created [#:effect effect symbol? 'fade]
+         [#:duration d (and/c real? positive?) 2/5])
          presentation-phase?]{
 Fades in newly introduced material after space has been prepared.
 
@@ -2121,9 +2121,9 @@ Only @racket['fade] is supported in this release.
 }
 
 
-@defproc[(retire-cancelled #:effect [effect symbol? 'fade]
-         #:layout [layout symbol? 'hold]
-         #:duration [d (and/c real? positive?) 2/5])
+@defproc[(retire-cancelled [#:effect effect symbol? 'fade]
+         [#:layout layout symbol? 'hold]
+         [#:duration d (and/c real? positive?) 2/5])
          presentation-phase?]{
 Fades cancelled material while holding the surrounding layout fixed.
 
@@ -2133,9 +2133,9 @@ Fades cancelled material out without moving surviving parts. Only
 }
 
 
-@defproc[(retire-removed #:effect [effect symbol? 'fade]
-         #:layout [layout symbol? 'hold]
-         #:duration [d (and/c real? positive?) 2/5])
+@defproc[(retire-removed [#:effect effect symbol? 'fade]
+         [#:layout layout symbol? 'hold]
+         [#:duration d (and/c real? positive?) 2/5])
          presentation-phase?]{
 Fades removed material while holding the surrounding layout fixed.
 
@@ -2144,7 +2144,7 @@ names a general removal event. It does not implicitly compact the expression.
 }
 
 
-@defproc[(compact #:duration [d (and/c real? positive?) 2/5])
+@defproc[(compact [#:duration d (and/c real? positive?) 2/5])
          presentation-phase?]{
 Closes reserved gaps by moving survivors to their prepared positions.
 
@@ -2166,8 +2166,8 @@ scene-state mutation.
 
 
 @defproc[(explain-math [state (or/c math? math-datum?)]
-         #:caption [caption string? ""]
-         #:duration [duration (and/c real? positive?) 2])
+         [#:caption caption string? ""]
+         [#:duration duration (and/c real? positive?) 2])
          presentation-phase?]{
 Introduces a held mathematical inset without changing the working derivation.
 The caption must be a single line. Native preparation typesets the complete
@@ -2186,7 +2186,7 @@ proof rule or an implicit CAS calculation.
 }
 
 
-@defproc[(transition #:duration [d (and/c real? positive?) 4/5])
+@defproc[(transition [#:duration d (and/c real? positive?) 4/5])
          presentation-phase?]{
 Performs a semantic replacement without displaying a hybrid expression.
 The outgoing mathematical unit fades out during the first @math{9/20} of the
@@ -2219,11 +2219,11 @@ These functions may load native dependencies and create cached assets. They are 
 
 
 @defproc[(math-plan->scene! [plan-or-prepared (or/c presentation-plan? prepared-math-plan?)]
-         #:camera [camera any/c #f]
-         #:theme [theme (or/c #f 'light 'dark) #f]
-         #:title [title string? "Mathematical derivation"]
-         #:id [id symbol? 'math-lesson]
-         #:cache-directory [directory path-string? default-math-cache-directory])
+         [#:camera camera any/c #f]
+         [#:theme theme (or/c #f 'light 'dark) #f]
+         [#:title title string? "Mathematical derivation"]
+         [#:id id symbol? 'math-lesson]
+         [#:cache-directory directory path-string? default-math-cache-directory])
          scene?]{
 Prepares when necessary and compiles the lesson into the existing native scene engine.
 
@@ -2236,9 +2236,9 @@ that scene performs no mathematical rewrites, CAS calls, or TeX execution.
 
 
 @defproc[(prepare-math-plan! [plan presentation-plan?]
-         #:camera [camera any/c #f]
-         #:theme [theme symbol? 'light]
-         #:cache-directory [cache-directory path-string? default-math-cache-directory])
+         [#:camera camera any/c #f]
+         [#:theme theme symbol? 'light]
+         [#:cache-directory cache-directory path-string? default-math-cache-directory])
          prepared-math-plan?]{
 Typesets and measures all checkpoints before native scene construction or sampling.
 
@@ -2252,10 +2252,10 @@ adapter data; it is not a new mathematical AST.
 
 
 @defproc[(math->visual! [state math?]
-         #:id [id symbol? 'math-snapshot]
-         #:font-size [font-size (and/c real? positive?) 11/20]
-         #:theme [theme (or/c 'light 'dark) 'light]
-         #:cache-directory [directory path-string? default-math-cache-directory])
+         [#:id id symbol? 'math-snapshot]
+         [#:font-size font-size (and/c real? positive?) 11/20]
+         [#:theme theme (or/c 'light 'dark) 'light]
+         [#:cache-directory directory path-string? default-math-cache-directory])
          visual?]{
 Typesets one complete mathematical state and creates an ordinary native group.
 
@@ -2267,9 +2267,9 @@ is rendered. Font size is measured in world units.
 
 @defproc[(math-plan->pict! [plan (or/c presentation-plan? prepared-math-plan?)]
          [time (and/c real? (>=/c 0))]
-         #:theme [theme (or/c #f 'light 'dark) #f]
-         #:camera [camera any/c #f]
-         #:renderers [renderers (or/c list? #f) #f])
+         [#:theme theme (or/c #f 'light 'dark) #f]
+         [#:camera camera any/c #f]
+         [#:renderers renderers (or/c list? #f) #f])
          pict?]{
 Renders one sampled native frame using the explicit camera and renderer selection.
 
@@ -2515,8 +2515,8 @@ Verification reports copy the status, evidence, and diagnostics only; the opaque
 value is not retained inside the mathematical evidence.
 }
 
-@defproc[(math-services #:local [local (or/c cas-service? #f) #f]
-         #:extended [extended (or/c cas-service? #f) #f])
+@defproc[(math-services [#:local local (or/c cas-service? #f) #f]
+         [#:extended extended (or/c cas-service? #f) #f])
          math-services?]{
 Collects optional local and extended service descriptors without executing them.
 
@@ -2552,7 +2552,7 @@ This accessor is pure. It does not copy, reorder, render, or mutate the record.
          [capability symbol?]
          [payload any/c]
          [context math-context?]
-         #:timeout [timeout (and/c real? positive?) 10])
+         [#:timeout timeout (and/c real? positive?) 10])
          cas-result?]{
 Runs one bounded backend query and shuts down its custodian after every outcome.
 
@@ -2569,8 +2569,8 @@ become explicit error results.
 @defproc[(cas-calculate! [service cas-service?]
          [operation symbol?]
          [datum math-datum?]
-         #:context [context math-context? (math-context)]
-         #:timeout [timeout (and/c real? positive?) 10])
+         [#:context context math-context? (math-context)]
+         [#:timeout timeout (and/c real? positive?) 10])
          cas-result?]{
 Requests a backend calculation without changing held presentation syntax.
 
@@ -2580,8 +2580,8 @@ value is a proposed calculation result, never an invented pedagogical trace.
 
 
 @defproc[(verify-derivation! [d (or/c derivation? case-derivation?)]
-         #:services [backends math-services? (math-services)]
-         #:timeout [timeout (and/c real? positive?) 10])
+         [#:services backends math-services? (math-services)]
+         [#:timeout timeout (and/c real? positive?) 10])
          verification?]{
 Rechecks pending obligations without mutating the recorded derivation or its evidence.
 
@@ -2594,8 +2594,8 @@ deadline.
 
 @defproc[(verify-proposition! [proposition math-datum?]
          [context math-context?]
-         #:services [backends math-services? (math-services)]
-         #:timeout [timeout (and/c real? positive?) 10])
+         [#:services backends math-services? (math-services)]
+         [#:timeout timeout (and/c real? positive?) 10])
          verification?]{
 Checks definedness and queries explicit CAS services without silently resolving disagreements.
 
@@ -2607,7 +2607,7 @@ established/refuted service reports remain unknown; no backend silently wins.
 
 @defproc[(call-with-math-services! [backends math-services?]
          [thunk procedure?]
-         #:timeout [timeout (and/c real? positive?) 10])
+         [#:timeout timeout (and/c real? positive?) 10])
          any]{
 Installs explicit CAS services only for the dynamic extent of one construction callback.
 
@@ -2622,10 +2622,10 @@ The service callbacks are not retained in the resulting animation scene.
 @defmodule[animate/math/cas/calcura]
 
 
-@defproc[(calcura-service #:module [module any/c #f]
-         #:version [version any/c 'configured]
-         #:query [query (or/c procedure? #f) #f]
-         #:loader [loader procedure? dynamic-require])
+@defproc[(calcura-service [#:module module any/c #f]
+         [#:version version any/c 'configured]
+         [#:query query (or/c procedure? #f) #f]
+         [#:loader loader procedure? dynamic-require])
          cas-service?]{
 Configures a lazy Calcura parser/Eval bridge without claiming unavailable capabilities.
 
@@ -2653,9 +2653,9 @@ or operators are rejected rather than interpolated as arbitrary executable input
 @defmodule[animate/math/cas/racket-cas]
 
 
-@defproc[(racket-cas-service #:module [module any/c 'racket-cas]
-         #:version [version any/c 'installed]
-         #:loader [loader procedure? dynamic-require])
+@defproc[(racket-cas-service [#:module module any/c 'racket-cas]
+         [#:version version any/c 'installed]
+         [#:loader loader procedure? dynamic-require])
          cas-service?]{
 Configures a lazy racket-cas bridge without importing it during construction.
 

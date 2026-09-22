@@ -834,6 +834,39 @@
          [v-frozen-tags (sum-value sum-frozen-tags)]
          [v-frozen-sum (sum-value frozen-sum)]))
 
+;; R21: a finite integer set is not a real integration interval; Region
+;; topology cannot invent a composition preimage; and Domain endpoint
+;; expressions retain the local mathematical variables that use them.
+(define-calculus-model r21-domain-regressions
+  (model [integer-function (function (x) 1 #:domain (integers 0 4))]
+         [continuous-function (function (x) 1 #:domain (closed 0 4))]
+         [completed-function
+          (function (x) 1 #:domain (domain-union (integers 0 4) (closed 0 4)))]
+         [integer-integral (definite-integral integer-function #:from 0 #:to 4)]
+         [continuous-integral (definite-integral continuous-function #:from 0 #:to 4)]
+         [completed-integral (definite-integral completed-function #:from 0 #:to 4)]
+         [gapped (function (x) 1
+                  #:domain (domain-union (closed 0 1/7) (closed 29/200 1)))]
+         [identity (function (x) x)] [one (function (x) 1)]
+         [composite (compose-functions gapped identity)]
+         [total-composite (compose-functions identity one)]
+         [direct-region (region-under (graph gapped) #:from 0 #:to 1)]
+         [composite-region (region-under (graph composite) #:from 0 #:to 1)]
+         [total-region (region-under (graph total-composite) #:from 0 #:to 1)]
+         [direct-area (area-of direct-region)]
+         [composite-area (area-of composite-region)]
+         [total-area (area-of total-region)]
+         [local-singleton (function (x) (if (in-domain? x (singleton x)) 7 -7))]
+         [local-singleton-value (value-at local-singleton 2)]
+         [local-sequence
+          (sequence (k) (if (in-domain? k (integers 0 k)) k -1) #:from 0)]
+         [local-sequence-value (sequence-value local-sequence 2)]
+         [local-iteration
+          (iteration-map (u)
+                         (if (in-domain? u (closed u (+ u 1))) (+ u 1) -1)
+                         #:start 0 #:steps 2)]
+         [local-iteration-value (iterate-value local-iteration 2)]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -1718,7 +1751,34 @@
                                      (hash-ref (calculus-model-nodes r20-context-regressions)
                                                'B-frozen-sum)))
   (check-value r20-frozen-sum-cells '((0 1/2 1/4) (1/2 1 3/4)))
-  (check-value (calculus-snapshot-ref r20-live 'v-frozen-sum) 1/2))
+  (check-value (calculus-snapshot-ref r20-live 'v-frozen-sum) 1/2)
+  ;; R21: an integer-only Domain cannot establish a nontrivial real
+  ;; integration path, while a continuous union member still can.
+  (define r21-domain (calculus-model-at r21-domain-regressions))
+  (check-domain-rejected (calculus-snapshot-ref r21-domain 'integer-integral))
+  (check-value (calculus-snapshot-ref r21-domain 'continuous-integral) 4)
+  (check-value (calculus-snapshot-ref r21-domain 'completed-integral) 4)
+  ;; Explicit boundaries make a direct gapped Region safe to sample. A
+  ;; composition with a non-total outer Domain has no inferred preimage, so it
+  ;; returns a meaningful nondefined topology/area result instead of drawing
+  ;; or integrating across the gap.
+  (define r21-direct-samples
+    (calculus-snapshot-region-samples r21-domain 'direct-region))
+  (check-equal? (calculus-result-status r21-direct-samples) 'defined)
+  (check-not-false (member #f (calculus-result-value r21-direct-samples)))
+  (check-not-equal?
+   (calculus-result-status
+    (calculus-snapshot-region-samples r21-domain 'composite-region))
+   'defined)
+  (for ([name (in-list '(direct-area composite-area))])
+    (check-not-equal? (calculus-result-status (calculus-snapshot-ref r21-domain name))
+                      'defined))
+  (check-value (calculus-snapshot-ref r21-domain 'total-area) 1)
+  ;; Endpoint terms in membership Domains evaluate with their Function,
+  ;; Sequence, or Iteration lexical binding rather than an empty environment.
+  (check-value (calculus-snapshot-ref r21-domain 'local-singleton-value) 7)
+  (check-value (calculus-snapshot-ref r21-domain 'local-sequence-value) 2)
+  (check-value (calculus-snapshot-ref r21-domain 'local-iteration-value) 2))
 
 (module+ test
   (run-calculus-audit-regression-tests))

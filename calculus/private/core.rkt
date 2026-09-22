@@ -1084,7 +1084,11 @@
     [(not (finite-real? value)) (defined #f)]
     [else
      (define (endpoint index)
-       (eval-domain-number (list-ref (c-domain-arguments raw) index) environment model computation))
+       ;; Endpoint expressions are evaluated at the same occurrence as the
+       ;; membership query.  A Function, Sequence, or Iteration body can bind
+       ;; its own mathematical variable inside a Domain constructor.
+       (eval-domain-number (list-ref (c-domain-arguments raw) index)
+                           environment model computation lexical))
      (case (c-domain-kind raw)
        [(real-line) (defined #t)]
        [(empty) (defined #f)]
@@ -1565,6 +1569,60 @@
 ;; effective-domain-path-covered? : effective-domain? finite-real? finite-real?
 ;;                                   calculus-computation? -> calculus-result?
 
+;; coverage-probes : (listof finite-real?) -> (listof finite-real?)
+;;   A finite set of declared boundaries is sufficient only when membership is
+;; stable between them. Integer domains are an important exception: the usual
+;; midpoint of a path such as [0,4] is itself an integer. For every nontrivial
+;; strip with integral endpoints, include a half-step witness as well. A union
+;; completed by an actual interval accepts that witness; an integer-only set
+;; does not silently acquire a real-interval extension.
+(define (coverage-probes ordered)
+  (remove-duplicates
+   (append
+   ordered
+   (append-map
+     (lambda (pair)
+       (define left (first pair))
+       (define right (second pair))
+       (append
+        (list (/ (+ left right) 2))
+        (if (and (exact-integer? left) (exact-integer? right))
+            (list (+ left 1/2))
+            '())))
+     (for/list ([left (in-list ordered)] [right (in-list (rest ordered))])
+       (list left right))))))
+
+;; effective-domain-topology-established? : effective-domain?
+;;                                             calculus-computation?
+;;                                             -> calculus-result?
+;;   Region sampling can preserve an explicit Domain gap by splitting at its
+;; declared boundaries. A composition whose outer Domain is non-total instead
+;; needs an inverse image to find those input splits. Do not turn the absence
+;; of that inverse-image proof into an empty, successful split list.
+(define (effective-domain-topology-established? effective computation)
+  (cond
+    [(c-effective-domain? effective) (defined #t)]
+    [(c-effective-domain-intersection? effective)
+     (let loop ([domains (c-effective-domain-intersection-domains effective)])
+       (cond [(null? domains) (defined #t)]
+             [else
+              (result-bind
+               (effective-domain-topology-established? (first domains) computation)
+               (lambda (_) (loop (rest domains))))]))]
+    [(c-effective-domain-composition? effective)
+     (result-bind
+      (effective-domain-topology-established?
+       (c-effective-domain-composition-inner effective) computation)
+      (lambda (_)
+        (result-bind
+         (effective-domain-real-line?
+          (c-effective-domain-composition-outer effective) computation)
+         (lambda (total?)
+           (if total?
+               (defined #t)
+               (unresolved "composition domain topology is not established"))))))]
+    [else (undefined "expected an effective function domain")]))
+
 (define (effective-domain-path-covered? effective a b computation)
   (cond
     [(c-effective-domain-intersection? effective)
@@ -1605,11 +1663,7 @@
                                         (<= (min a b) value (max a b))))
                                  boundaries)))
                 <))
-        (define probes
-          (append ordered
-                  (for/list ([left (in-list ordered)] [right (in-list (rest ordered))]
-                             #:when (< left right))
-                    (/ (+ left right) 2))))
+        (define probes (coverage-probes ordered))
         (let loop ([remaining probes])
           (cond [(null? remaining) (defined #t)]
                 [else
@@ -3533,11 +3587,7 @@
                                                       (<= (min a b) value (max a b))))
                                                boundaries)))
             <))
-    (define probes
-      (append ordered
-              (for/list ([left (in-list ordered)] [right (in-list (rest ordered))]
-                         #:when (< left right))
-                (/ (+ left right) 2))))
+    (define probes (coverage-probes ordered))
     (for ([probe (in-list probes)])
       (define membership
         (domain-contains? domain probe environment model computation))
@@ -3678,9 +3728,22 @@
                     [antiderivative (evaluate-supplied a b)]
                     [else (simpson function a b environment model computation lexical)]))))))))))
 
+;; graph-path-covered? : semantic-value? finite-real? finite-real? hash?
+;;                        calculus-model? calculus-computation? hash?
+;;                        -> calculus-result?
+;;   A Region is a graph consumer, so its numeric area must establish the same
+;; declared graph-domain path as an integral. Simpson samples alone cannot
+;; certify a gap that those samples happen not to visit.
+(define (graph-path-covered? graph a b environment model computation lexical)
+  (result-bind
+   (resolve-graph-domain graph environment model computation lexical)
+   (lambda (effective-domain)
+     (effective-domain-path-covered? effective-domain a b computation))))
+
 (define (eval-area/in-context region environment model computation lexical)
   (define raw (node-raw region))
-  (if (not (and (c-object? raw) (memq (c-object-kind raw) '(region-under integral-region region-between))))
+  (if (not (and (c-object? raw)
+                (memq (c-object-kind raw) '(region-under integral-region region-between))))
       (undefined "expected a region")
       (let* ([arguments (c-object-arguments raw)]
              [left-graph (first arguments)]
@@ -3706,18 +3769,30 @@
                    [(and (memq (c-object-kind raw) '(region-under region-between)) (> a b))
                     (undefined "geometric region bounds must be increasing")]
                    [else
-                    (simpson/evaluate
-                     (lambda (input)
+                    (define start (min a b))
+                    (define end (max a b))
+                    (result-bind
+                     (graph-path-covered? left-graph start end
+                                           environment model computation lexical)
+                     (lambda (_)
                        (result-bind
-                        (evaluate-graph left-graph input environment model computation lexical)
-                        (lambda (left-value)
-                          (if right-graph
-                              (result-bind
-                               (evaluate-graph right-graph input environment model computation lexical)
-                               (lambda (right-value)
-                                 (defined (abs (- left-value right-value)))))
-                              (defined (abs left-value))))))
-                     (min a b) (max a b) computation)])]
+                        (if right-graph
+                            (graph-path-covered? right-graph start end
+                                                  environment model computation lexical)
+                            (defined #t))
+                        (lambda (_)
+                          (simpson/evaluate
+                           (lambda (input)
+                             (result-bind
+                              (evaluate-graph left-graph input environment model computation lexical)
+                              (lambda (left-value)
+                                (if right-graph
+                                    (result-bind
+                                     (evaluate-graph right-graph input environment model computation lexical)
+                                     (lambda (right-value)
+                                       (defined (abs (- left-value right-value)))))
+                                    (defined (abs left-value))))))
+                           start end computation)))))] )]
                 [_ (undefined "region bounds must be scalar values")])))]))))
 
 ;; Region area is an ordinary consumer of an exported or frozen Region.
@@ -3822,28 +3897,31 @@
          (resolve-graph-domain/in-context graph-context computation)
          (lambda (effective-domain)
            (result-bind
-            (effective-domain-boundaries effective-domain computation)
-            (lambda (boundaries)
+            (effective-domain-topology-established? effective-domain computation)
+            (lambda (_)
               (result-bind
-               (resolved-boundary-expressions
-                (function-piecewise-boundaries function)
-                (c-selected-context-environment graph-context)
-                (c-selected-context-model graph-context)
-                computation)
-               (lambda (piecewise-breaks)
+               (effective-domain-boundaries effective-domain computation)
+               (lambda (boundaries)
                  (result-bind
-                  (calculus-snapshot-function-breaks
-                   (calculus-snapshot
-                    (c-selected-context-model graph-context)
-                    (c-selected-context-environment graph-context)
-                    (hash) '() computation)
-                   function)
-                  (lambda (provider-breaks)
-                    ;; Provider evidence must also be sampled: a forced break
-                    ;; that never appears in `inputs` cannot split a strip.
-                    (defined
-                     (list (append boundaries piecewise-breaks provider-breaks)
-                           (append piecewise-breaks provider-breaks)))))))))))
+                  (resolved-boundary-expressions
+                   (function-piecewise-boundaries function)
+                   (c-selected-context-environment graph-context)
+                   (c-selected-context-model graph-context)
+                   computation)
+                  (lambda (piecewise-breaks)
+                    (result-bind
+                     (calculus-snapshot-function-breaks
+                      (calculus-snapshot
+                       (c-selected-context-model graph-context)
+                       (c-selected-context-environment graph-context)
+                       (hash) '() computation)
+                      function)
+                     (lambda (provider-breaks)
+                       ;; Provider evidence must also be sampled: a forced break
+                       ;; that never appears in `inputs` cannot split a strip.
+                       (defined
+                        (list (append boundaries piecewise-breaks provider-breaks)
+                              (append piecewise-breaks provider-breaks)))))))))))))
        ]))))
 
 ;; calculus-snapshot-region-samples : calculus-snapshot? semantic-value? -> calculus-result?
