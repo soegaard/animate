@@ -19,6 +19,7 @@
          racket/class
          racket/draw
          racket/list
+         "../../text-content.rkt"
          (only-in "../../private/pict-renderer.rkt" gen:pict-renderer)
          (only-in "../private/core.rkt"
                   calculus-plan-caption
@@ -1569,6 +1570,37 @@
   (initially (show P))
   (timing [opening-pause 1] [read-delay 0] [action-duration 1] [step-pause 0])
   (step describe-point #:say "Point P stays fixed." (pause 1)))
+
+;; render-inline-tex-caption : calculus-lesson?
+;; Keeps the graph stable while the shared caption preparation path typesets
+;; inline mathematics before Pict or Scene frame sampling.
+(define-calculus-lesson render-inline-tex-caption
+  (model
+    [P (point 1 1)])
+  (views
+    [plot (graph-view #:x (closed 0 2)
+                      #:y (closed 0 2)
+                      #:objects (P))])
+  (initially (show P))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step describe-point
+    #:say "At $x_0$, the slope is $\\frac{1}{2}$."
+    (pause 1)))
+
+;; render-structured-inline-caption : calculus-lesson?
+;; Exercises the same headless caption timing with explicit immutable content.
+(define-calculus-lesson render-structured-inline-caption
+  (model
+    [P (point 1 1)])
+  (views
+    [plot (graph-view #:x (closed 0 2)
+                      #:y (closed 0 2)
+                      #:objects (P))])
+  (initially (show P))
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step describe-point
+    #:say (inline-text "At " (tex-span "x_0" #:plain "x zero") ".")
+    (pause 1)))
 
 ;; render-styled-point : calculus-lesson?
 ;;   A one-marker fixture for property-by-property native style cascading.
@@ -3673,6 +3705,37 @@
   (check-false (bitmap-regions-differ? captions-disabled-initial-bitmap
                                        captions-disabled-final-bitmap
                                        24 220 200 220))
+  ;; Inline TeX captions use the same prepared paragraph Pict in every output
+  ;; sample. A counting backend proves that frame draws never rerun typesetting.
+  (set! dynamic-formula-backend-calls 0)
+  (define inline-caption-prepared
+    (prepare-calculus-lesson render-inline-tex-caption
+                             #:width 480 #:height 270
+                             #:formula-backend (counting-formula-renderer)))
+  (define caption-preparation-calls dynamic-formula-backend-calls)
+  (check-true (positive? caption-preparation-calls))
+  (check-true
+   (pict:pict? (prepared-lesson->pict inline-caption-prepared #:at 1/2)))
+  (check-true
+   (pict:pict?
+    (native:scene-state->pict
+     (native:scene-sample (prepared-lesson->scene inline-caption-prepared) 1/2)
+     #:camera (native:scene-camera-at
+                (prepared-lesson->scene inline-caption-prepared)
+                1/2))))
+  (check-equal? dynamic-formula-backend-calls caption-preparation-calls)
+  (define structured-caption-plan
+    (prepared-lesson-plan
+     (prepare-calculus-lesson render-structured-inline-caption
+                              #:width 480 #:height 270
+                              #:formula-backend (counting-formula-renderer))))
+  (check-true
+   (text-content?
+    (calculus-plan-caption structured-caption-plan 'final)))
+  (check-equal?
+   (text-content->plain
+    (calculus-plan-caption structured-caption-plan 'final))
+   "At x zero.")
   (define formula-snapshot
     (calculus-plan-sample
      (prepared-lesson-plan

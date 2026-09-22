@@ -7,7 +7,8 @@
 (require racket/list
          racket/match
          racket/math
-         racket/string)
+         racket/string
+         "../../text-content.rkt")
 
 (provide
  ;; Public values and inspection API.
@@ -64,6 +65,7 @@
  calculus-snapshot-label-text calculus-snapshot-label-anchor
  calculus-snapshot-marker-geometry
  calculus-plan-caption calculus-plan-has-captions?
+ calculus-plan-captions c-caption? c-caption-path c-caption-text
  calculus-plan-lesson calculus-plan-profile calculus-plan-events c-event-start c-event-end
  calculus-profile-data-theme calculus-theme-data-background calculus-theme-data-foreground
  calculus-theme-data-font-family calculus-theme-data-font-size
@@ -159,7 +161,7 @@
 ;; c-step is one named caption and ordered group of exposition commands.
 (struct c-step (id say read-delay duration pause commands) #:transparent)
 ;;  - id            stable step symbol
-;;  - say           optional caption string
+;;  - say           optional string or immutable mixed text content
 ;;  - read-delay    optional pre-command delay
 ;;  - duration      optional default command duration
 ;;  - pause         optional post-step pause
@@ -1035,6 +1037,11 @@
 (define (make-step id #:say [say #f] #:read-delay [read-delay #f] #:duration [duration #f]
                    #:pause [pause #f] . commands)
   (unless (symbol? id) (raise-argument-error 'step "symbol?" id))
+  (unless (or (not say) (string? say) (text-content? say) (tex-span? say))
+    (raise-argument-error
+     'step
+     "#f, string?, text-content?, or tex-span? as #:say"
+     say))
   (for ([value (in-list (filter values (list read-delay duration pause)))])
     (check 'step nonnegative-finite? "nonnegative finite seconds" value))
   (when (and duration (not (positive? duration)))
@@ -6216,10 +6223,12 @@
   (define (record-milestone! phase path at-time at-ordinal)
     (hash-set! moments (cons phase path) (cons at-time at-ordinal)))
   ;; record-caption! : list? any/c real? real? -> void?
-  ;;   Captions are optional source strings; absent local captions simply let
+  ;;   Captions are optional source content; absent local captions simply let
   ;; an enclosing outer caption remain active during that component interval.
   (define (record-caption! path text start-time end-time)
-    (when (and (string? text) (not (string=? text "")))
+    (when (and text
+               (or (not (string? text))
+                   (not (string=? text ""))))
       (set! captions (cons (c-caption path text start-time end-time) captions))))
   ;; Every checkpoint is compiled as a zero-duration event.  Recording it from
   ;; the resulting leaves covers both ordinary outer steps and checkpoints
@@ -6898,7 +6907,8 @@
   (unless entry (raise-arguments-error 'calculus-plan-sample "known step or checkpoint address" "address" (calculus-moment-address moment)))
   entry)
 
-;; calculus-plan-caption : calculus-plan? location? -> (or/c string? #f)
+;; calculus-plan-caption : calculus-plan? location? ->
+;;                          (or/c string? text-content? tex-span? #f)
 ;;   Selects the innermost active authored caption for a time or semantic
 ;; milestone. It reads immutable compilation records only, so native drawing
 ;; never needs frame history to reconstruct component narration.

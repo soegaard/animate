@@ -6,7 +6,7 @@
                               color-spec? typography-theme? text-style?)
                      (only-in animate/authoring authored-timeline?)
                      (only-in animate/colors color-theme?)
-                     animate/slides animate/slides/pict animate/slides/scene
+                     animate/slides animate/text-content animate/slides/pict animate/slides/scene
                      animate/slides/render animate/slides/math
                      animate/slides/geometry animate/slides/project
                      animate/slides/gallery))
@@ -61,7 +61,7 @@ Wraps content with slot options. False options inherit the layout choice. A
 nonfalse continuity key must be unique within the slide. It names the same
 concept across slides, independently of the slot's role.}
 
-@defproc[(paragraph-content [text string?]
+@defproc[(paragraph-content [text (or/c string? text-content? tex-span?)]
                             [#:role role (or/c #f symbol?) #f]
                             [#:align align (or/c #f 'left 'center 'right) #f]) content?]{
 Declares text to measure later. A plain string already adopts the slot's text
@@ -72,12 +72,121 @@ selected size; it is not silently shrunk. This is not the native
 @defform[(bullets option ... [item-name content] ...)]{
 Creates named text items. The optional @racket[#:ordered?] defaults to false.
 Item names are literal identifiers and must be unique. Select an item with a
-path such as @racket['(body check)]. Items currently accept strings and
-@racket[paragraph-content], not arbitrary nested figures.}
+path such as @racket['(body check)]. Items accept strings,
+@racket[paragraph-content], @racket[text-content?], and @racket[tex-span?],
+not arbitrary nested figures.}
 
 @defproc[(make-bullets [entries list?] [#:ordered? ordered? boolean? #f]) content?]{
 The procedural form of @racket[bullets]. Each entry is a pair made with
 @racket[cons]: an item symbol and its content.}
+
+@section[#:tag "reference-inline-tex-content"]{Inline TeX text content}
+
+@defmodule[animate/text-content]
+
+The normal slide text surfaces accept mixed ordinary prose and TeX mathematics.
+This module also provides explicit immutable content values for programmatic
+authoring. It is pure: parsing a string does not load a Pict renderer, invoke
+TeX, or create a file.
+
+In an ordinary slot string, @tt{$...$} and @tt{\(...\)} create inline
+mathematics. @tt{$$...$$} and @tt{\[...\]} create display mathematics on a
+line of their own. Write @tt{\$} for a literal dollar sign. A bare or
+mismatched delimiter, nested delimiters, and empty mathematics are errors;
+use @racket[literal-text] for code, currency, or other content that must remain
+literal. TeX comments inside a mathematical fragment are respected while the
+closing delimiter is found.
+
+Racket and markup escaping are separate. For example,
+@racket["As $h\\to0$"] supplies one runtime TeX backslash, while
+@racket["Price: \\$5; position: $x_0$"] keeps the price literal and typesets
+the position. Formula source is trusted TeX input; the native preparation
+adapter invokes the configured TeX backend and is not a sandbox.
+
+@defproc[(literal-text [source string?]
+                       [#:plain plain (or/c #f string?) #f]) text-content?]{
+Creates one literal prose value. No delimiter in @racket[source] is parsed.
+The optional whole-content @racket[plain] value is used for plain-text export.}
+
+@defproc[(tex-span [source string?]
+                   [#:plain plain (or/c #f string?) #f]) tex-span?]{
+Creates one nonempty, delimiter-free inline TeX fragment. Its optional
+@racket[plain] fallback is used by @racket[text-content->plain].}
+
+@defproc[(inline-text [#:plain plain (or/c #f string?) #f]
+                      [piece (or/c string? tex-span? text-content?)] ...)
+         text-content?]{
+Joins literal string pieces, explicit mathematical fragments, and existing
+content values. String pieces are literal here, not recursively parsed. Use
+this advanced constructor when a formula needs an authored plain-text fallback
+or when literal dollars are common.}
+
+@defproc[(text-content? [value any/c]) boolean?]{
+Recognizes a normalized immutable mixed-content value.}
+
+@defproc[(tex-span? [value any/c]) boolean?]{
+Recognizes an explicit TeX fragment.}
+
+@defproc[(tex-span-source [value tex-span?]) string?]{
+Returns delimiter-free TeX source.}
+
+@defproc[(tex-span-plain [value tex-span?]) (or/c #f string?)]{
+Returns the optional fragment plain-text fallback.}
+
+@defproc[(parse-inline-text [source string?]) text-content?]{
+Parses one markup-enabled ordinary string. It reports an
+@racket[exn:fail:inline-tex?] with runtime source offsets for malformed input.}
+
+@defproc[(normalize-text-content [value (or/c string? tex-span? text-content?)])
+         text-content?]{
+Converts either shorthand or explicit input to the common immutable normal
+form.}
+
+@defproc[(text-content-runs [value text-content?]) list?]{
+Returns source-ordered text, inline-math, display-math, and hard-break runs.
+Repeated equal formulas remain separate occurrences.}
+
+@defproc[(text-content-source [value text-content?]) (or/c #f string?)]{
+Returns the original shorthand string when one exists.}
+
+@defproc[(text-content->plain [value text-content?]) string?]{
+Returns a whole-content fallback when authored, otherwise joins ordinary prose,
+hard breaks, and each fragment fallback (or its TeX source). This operation
+does not typeset TeX.}
+
+@defproc[(text-run? [value any/c]) boolean?]{Recognizes a normalized run.}
+@defproc[(text-run-kind [run text-run?]) symbol?]{
+Returns @racket['text], @racket['inline-math], @racket['display-math], or
+@racket['hard-break].}
+@defproc[(text-run-content [run text-run?]) string?]{
+Returns prose or delimiter-free TeX source.}
+@defproc[(text-run-plain [run text-run?]) string?]{
+Returns the run's deterministic plain-text representation.}
+@defproc[(text-run-start [run text-run?]) exact-nonnegative-integer?]{
+Returns the inclusive runtime-string character offset.}
+@defproc[(text-run-end [run text-run?]) exact-nonnegative-integer?]{
+Returns the exclusive runtime-string character offset.}
+
+@defproc[(exn:fail:inline-tex? [value any/c]) boolean?]{
+Recognizes a source-local inline-TeX parser error.}
+@defproc[(exn:fail:inline-tex-code [value exn:fail:inline-tex?]) symbol?]{
+Returns the error category.}
+@defproc[(exn:fail:inline-tex-start [value exn:fail:inline-tex?])
+         exact-nonnegative-integer?]{
+Returns the inclusive error offset.}
+@defproc[(exn:fail:inline-tex-end [value exn:fail:inline-tex?])
+         exact-nonnegative-integer?]{
+Returns the exclusive error offset.}
+
+Mixed text is measured and typeset only by @racket[prepare-slide!] or
+@racket[prepare-storyboard!]. Calling a conversion that has not prepared
+TeX-bearing text reports @racket['preparation-required]. Prepared prose and
+formula runs share line baselines; a fraction or radical can increase line
+height, but cannot be split or silently scaled to fit. An atom wider than its
+line is a measured overflow error. Theme role, foreground, width, alignment,
+and line spacing are part of preparation, so later reveal, replacement, and
+Scene sampling replay fixed geometry without TeX calls or reflow. Raw
+@racket[draw-text] calls, speaker notes, and SRT/WebVTT text remain literal.
 
 @defproc[(pict-content [picture-or-factory any/c]
                        [#:fit fit (or/c 'contain 'cover 'natural) 'contain]) content?]{

@@ -4,11 +4,13 @@
          (prefix-in p: pict)
          file/sha1
          "data.rkt" "check.rkt" "appearance.rkt" "text.rkt" "media.rkt" "semantic-model.rkt")
+(require "../../text-content.rkt")
 (provide prepare-content intrinsic-content content-fit asset-cue-time native-operation)
 (define-runtime-path native-module "native.rkt")
 (define (native-operation name) (dynamic-require native-module name))
 (define (content-fit content)
   (cond [(string? content) 'natural]
+        [(or (text-content? content) (tex-span? content)) 'natural]
         [(content-value? content)
          (hash-ref (content-value-options content) 'fit
                    (if (memq (content-value-kind content) '(text bullets)) 'natural 'contain))]
@@ -22,19 +24,22 @@
         [(hash-ref (asset-cues a) cue #f) => values]
         [else (slides-error 'unknown-content-cue (list cue) "embedded content has no such cue")]))
 (define (text-source c default-role)
-  (cond [(string? c) (values c default-role #f)]
+  (cond [(or (string? c) (text-content? c) (tex-span? c))
+         (values c default-role #f)]
         [(and (content-value? c) (eq? (content-value-kind c) 'text))
          (values (content-value-payload c)
                  (or (hash-ref (content-value-options c) 'role #f) default-role)
                  (hash-ref (content-value-options c) 'align #f))]
         [else (slides-error 'bullet-content '() "bullet items must be strings or paragraph-content values")]))
-(define (single-asset content role rectangle ctx #:align [alignment #f])
+(define (single-asset content role rectangle ctx #:align [alignment #f] #:path [path '()])
   (define width (box-value-width rectangle))
   (define theme (content-context-value-theme ctx))
   (cond
-    [(or (string? content) (and (content-value? content) (eq? (content-value-kind content) 'text)))
+    [(or (string? content) (text-content? content) (tex-span? content)
+         (and (content-value? content) (eq? (content-value-kind content) 'text)))
      (define-values (text selected-role align) (text-source content role))
-     (text-asset text selected-role width theme #:align (or align alignment))]
+     (text-asset text selected-role width theme #:align (or align alignment)
+                 #:effects? (content-context-value-effects? ctx) #:path path)]
     [(p:pict? content) (pict-asset content #f)]
     [(and (content-value? content) (eq? (content-value-kind content) 'pict))
      (define value (content-value-payload content))
@@ -69,13 +74,20 @@
   (define x (+ (box-value-x rectangle) (case align [(center) (/ (- aw fw) 2)] [(right) (- aw fw)] [else 0])))
   (define y (+ (box-value-y rectangle) (case valign [(center) (/ (- ah fh) 2)] [(bottom) (- ah fh)] [else 0])))
   (prepared-leaf path (box-value x y fw fh) a key (and (eq? fit 'cover) rectangle)))
-(define (bullet-assets content role width theme)
+(define (bullet-assets content role width ctx path)
+  (define theme (content-context-value-theme ctx))
   (define ordered? (hash-ref (content-value-options content) 'ordered? #f))
   (define indent 0.48)
   (for/list ([entry (in-list (content-value-payload content))] [i (in-naturals 1)])
     (define-values (text selected-role align) (text-source (cdr entry) role))
-    (define body (text-asset text selected-role (max 0 (- width indent)) theme #:align align))
-    (define marker (text-asset (if ordered? (format "~a." i) "•") selected-role indent theme))
+    (define body
+      (text-asset text selected-role (max 0 (- width indent)) theme #:align align
+                  #:effects? (content-context-value-effects? ctx)
+                  #:path (append path (list (car entry)))))
+    (define marker
+      (text-asset (if ordered? (format "~a." i) "•") selected-role indent theme
+                  #:effects? (content-context-value-effects? ctx)
+                  #:path (append path (list (car entry) 'marker))))
     (define y (- (asset-baseline body) (asset-baseline marker)))
     (define hh (max (asset-height body) (+ y (asset-height marker))))
     (define ww (+ indent (asset-width body)))
@@ -95,7 +107,7 @@
     [(and (content-value? content) (eq? (content-value-kind content) 'bullets))
      (when (not (eq? fit 'natural))
        (slides-error 'text-fitting path "bullet lists use natural typography; edit the font size instead of scaling the list"))
-     (define entries (bullet-assets content role (box-value-width rectangle) theme))
+     (define entries (bullet-assets content role (box-value-width rectangle) ctx path))
      (define gap (theme-spacing theme 'bullet-gap))
      (define total (+ (apply + (map (lambda (e) (asset-height (cdr e))) entries))
                       (* gap (max 0 (sub1 (length entries))))))
@@ -113,7 +125,7 @@
                  (+ y (asset-height a) gap))))
      (reverse leaves)]
     [else
-     (define a (single-asset content role rectangle ctx #:align align))
+     (define a (single-asset content role rectangle ctx #:align align #:path path))
      (list (place-asset a rectangle path key align valign fit))]))
 (define (intrinsic-content content role width ctx)
   (cond
@@ -130,12 +142,13 @@
      ;; merely to ask for intrinsic dimensions (notably in portrait columns).
      (values width (/ width (hash-ref (content-value-options content) 'aspect 16/9)))]
     [(and (content-value? content) (eq? (content-value-kind content) 'bullets))
-         (define entries (bullet-assets content role width (content-context-value-theme ctx)))
+         (define entries (bullet-assets content role width ctx '(intrinsic)))
          (values (apply max 0 (map (lambda (e) (asset-width (cdr e))) entries))
                  (+ (apply + (map (lambda (e) (asset-height (cdr e))) entries))
                     (* (theme-spacing (content-context-value-theme ctx) 'bullet-gap) (max 0 (sub1 (length entries))))))]
         [else
-         (define a (single-asset content role (box-value 0 0 width 1000000) ctx))
+         (define a (single-asset content role (box-value 0 0 width 1000000) ctx
+                                 #:path '(intrinsic)))
          (values (asset-width a) (asset-height a))]))
 
 

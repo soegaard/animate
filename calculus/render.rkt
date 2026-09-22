@@ -22,6 +22,8 @@
          (only-in "../private/formula-visual.rkt" latex-formula)
          (only-in "../private/latex-formula-pict-renderer.rkt"
                   default-latex-formula-pict-renderer)
+         "../text-content.rkt"
+         "../private/inline-tex-pict.rkt"
          (only-in "../private/pict-renderer.rkt"
                   pict-renderer?
                   render-visual-with-pict-renderer)
@@ -576,10 +578,16 @@
   (shape field-reserve skeleton-picts field-geometries readout?)
   #:transparent)
 
+;; prepared-caption-data is one frozen mixed prose/TeX caption paragraph.
+;; It is constructed during lesson preparation and is replayed unchanged by
+;; still, Scene, and project frame sampling.
+(struct prepared-caption-data (content pict width height ascent descent)
+  #:transparent)
+
 ;; prepared-calculus-lesson-data owns one semantic plan and one pixel layout.
 (struct prepared-calculus-lesson-data
   (plan width height formula-backend quality auto-windows static-graph-geometries
-        static-formula-assets dynamic-formula-layouts)
+        static-formula-assets dynamic-formula-layouts caption-assets)
   #:transparent)
 ;;  - plan             calculus-plan?  immutable headless plan prepared for output
 ;;  - width            exact-positive-integer?  target output width in pixels
@@ -597,6 +605,8 @@
 ;;  - dynamic-formula-layouts prepared source-order native text/field slots
 ;;                     for live values; fields reserve width without invoking
 ;;                     a formula backend during later frame drawing
+;;  - caption-assets immutable caption-source to prepared-caption-data map;
+;;                     formulas are typeset before any frame is sampled
 
 ;; calculus-render-quality? : any/c -> boolean?
 ;;   Recognizes a validated native curve-sampling policy.
@@ -688,7 +698,8 @@
    plan width height formula-renderer quality auto-windows
    (prepare-static-graph-geometries plan auto-windows width height quality)
    (prepare-static-formula-assets plan width height formula-renderer)
-   (prepare-dynamic-formula-layouts plan width height formula-renderer)))
+   (prepare-dynamic-formula-layouts plan width height formula-renderer)
+   (prepare-caption-assets plan width height formula-renderer)))
 
 ;; prepared-lesson-plan : prepared-calculus-lesson? -> calculus-plan?
 ;;   Returns the exact headless plan that supplied the prepared composition.
@@ -696,6 +707,91 @@
   (unless (prepared-calculus-lesson? prepared)
     (raise-argument-error 'prepared-lesson-plan "prepared-calculus-lesson?" prepared))
   (prepared-calculus-lesson-data-plan prepared))
+
+;; prepare-caption-assets : calculus-plan? exact-positive-integer?
+;;                           exact-positive-integer? pict-renderer?
+;;                           -> immutable-hash?
+;; Prepares every finite lesson caption once in the shared mixed-text adapter.
+(define (prepare-caption-assets plan width height formula-renderer)
+  (define profile (calculus-plan-profile plan))
+  (define layout (calculus-profile-data-layout profile))
+  (cond
+    [(or (not (calculus-plan-has-captions? plan))
+         (not (calculus-layout-data-captions? layout)))
+     #hasheq()]
+    [else
+     (parameterize
+         ([current-render-theme (calculus-profile-data-theme profile)]
+          [current-render-reference-size (min width height)])
+       (define reference (min width height))
+       (define margin
+         (max 32
+              (layout-length->pixels (calculus-layout-data-margin layout)
+                                     reference)))
+       (define caption-height
+         (layout-length->pixels (calculus-layout-data-caption-height layout)
+                                reference))
+       (define caption-width (max 1 (- width (* 2 margin))))
+       (define caption-font-size (theme-font-size reference))
+       (define caption-font (theme-font caption-font-size))
+       (define caption-color (hex-color (theme-color 'foreground "#202124")))
+       (for/fold ([assets #hasheq()])
+                 ([caption (in-list (calculus-plan-captions plan))])
+         (define source (c-caption-text caption))
+         (cond
+           [(hash-has-key? assets source) assets]
+           [else
+            (define content
+              (with-handlers
+                  ([exn:fail:inline-tex?
+                    (lambda (exception)
+                      (raise-arguments-error
+                       'prepare-calculus-plan
+                       "a syntactically valid inline-TeX lesson caption"
+                       "step" (c-caption-path caption)
+                       "source" source
+                       "character range"
+                       (format "~a..~a"
+                               (exn:fail:inline-tex-start exception)
+                               (exn:fail:inline-tex-end exception))
+                       "message" (exn-message exception)))])
+                (normalize-text-content source)))
+            (define prepared
+              (with-handlers
+                  ([exn:fail?
+                    (lambda (exception)
+                      (raise-arguments-error
+                       'prepare-calculus-plan
+                       "a lesson caption that fits and typesets in its reserved band"
+                       "step" (c-caption-path caption)
+                       "source" source
+                       "original error" (exn-message exception)))])
+                (prepare-inline-text content
+                                     caption-font
+                                     caption-color
+                                     caption-font-size
+                                     caption-width
+                                     6/5
+                                     'left
+                                     #:formula-renderer formula-renderer)))
+            (when (> (prepared-inline-text-height prepared)
+                     (+ caption-height 1e-6))
+              (raise-arguments-error
+               'prepare-calculus-plan
+               "a caption that fits the configured caption band"
+               "step" (c-caption-path caption)
+               "measured height" (prepared-inline-text-height prepared)
+               "available height" caption-height
+               "source" source))
+            (hash-set
+             assets source
+             (prepared-caption-data
+              content
+              (prepared-inline-text-pict prepared)
+              (prepared-inline-text-width prepared)
+              (prepared-inline-text-height prepared)
+              (prepared-inline-text-ascent prepared)
+              (prepared-inline-text-descent prepared)))])))]))
 
 
 ;;;
@@ -3860,7 +3956,8 @@
     [(em) (* em-size (calculus-length-value length))]
     [else 0]))
 
-;; render-snapshot->pict : prepared-calculus-lesson? calculus-snapshot? [#:caption (or/c string? #f)] -> pict?
+;; render-snapshot->pict : prepared-calculus-lesson? calculus-snapshot?
+;;                         [#:caption (or/c string? text-content? tex-span? #f)] -> pict?
 ;;   Creates one native pict from one semantic state and its already-resolved
 ;; semantic caption, without consulting prior frames.
 (define (demanded-native-node? node)
@@ -3996,6 +4093,8 @@
     (prepared-calculus-lesson-data-dynamic-formula-layouts prepared))
   (define formula-backend
     (prepared-calculus-lesson-data-formula-backend prepared))
+  (define caption-assets
+    (prepared-calculus-lesson-data-caption-assets prepared))
   (define width (prepared-calculus-lesson-data-width prepared))
   (define height (prepared-calculus-lesson-data-height prepared))
   (define quality (prepared-calculus-lesson-data-quality prepared))
@@ -4068,12 +4167,21 @@
                                      static-formula-assets formula-backend width height
                                      dynamic-formula-layouts)]))
         (when (and captions? caption)
-          (send context set-text-foreground
-                (hex-color (theme-color 'foreground "#202124")))
-          (send context set-font (make-object draw:font% 15 'modern 'normal 'normal))
-          (send context draw-text caption
-                (+ x margin)
-                (+ y (- height margin caption-height) 4))))
+          (define prepared-caption
+            (hash-ref caption-assets caption #f))
+          (unless prepared-caption
+            (raise-arguments-error
+             'render-snapshot->pict
+             "a caption prepared with this calculus lesson"
+             "caption" caption))
+          ;; The paragraph was measured and TeX was typeset during
+          ;; prepare-calculus-plan. Drawing this Pict performs no source
+          ;; parsing, font measurement, TeX process, or caption reflow.
+          (pict:draw-pict
+           (prepared-caption-data-pict prepared-caption)
+           context
+           (+ x margin)
+           (+ y (- height margin caption-height) 4))))
         (lambda ()
           (send context set-pen original-pen)
           (send context set-brush original-brush)

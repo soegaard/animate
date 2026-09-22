@@ -320,7 +320,7 @@ records the new probes' entry, category, theme, format, and exact requested time
 Pict/Scene mean channel difference retains the 0.05 failure threshold; deterministic
 repeats must be byte-identical within each rendering path.
 
-The preparation payload schema is now `animate-slides-preparation-v4`; older
+The preparation payload schema is now `animate-slides-preparation-v5`; older
 payloads are rejected and must be prepared again. Recorded drawing artifacts
 still use their unchanged version-one format.
 

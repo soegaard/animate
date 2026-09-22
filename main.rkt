@@ -84,6 +84,7 @@
          "private/svg-image-visual.rkt"
          "private/text-visual.rkt"
          "private/text-style.rkt"
+         "text-content.rkt"
          "private/typography-theme.rkt"
          "private/typography-theme-data.rkt"
          "private/semantic-text-visual.rkt"
@@ -582,6 +583,31 @@
  semantic-text-override-inherited?
  semantic-text-visual-width
  resolve-semantic-text-style
+
+ ;; Pure inline TeX text content
+ literal-text
+ inline-text
+ tex-span
+ tex-span?
+ tex-span-source
+ tex-span-plain
+ text-content?
+ text-content-runs
+ text-content-source
+ text-content->plain
+ text-run?
+ text-run-kind
+ text-run-content
+ text-run-plain
+ text-run-start
+ text-run-end
+ parse-inline-text
+ normalize-text-content
+ exn:fail:inline-tex?
+ exn:fail:inline-tex-code
+ exn:fail:inline-tex-start
+ exn:fail:inline-tex-end
+
  formula-mode?
  latex-option?
  latex-formula

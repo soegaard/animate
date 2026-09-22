@@ -4,6 +4,7 @@
                      racket/contract
                      animate/calculus
                      animate/calculus/render
+                     animate/text-content
                      (only-in pict pict?)))
 
 @title[#:tag "reference-calculus"]{Calculus lessons}
@@ -41,6 +42,25 @@ Optional clauses are @racket[roles], @racket[initially],
 @racket[constraints], and @racket[timing]. A lesson declaration constructs data
 only; compile it explicitly before inspecting values or preparing output.
 }
+
+@section{Caption text}
+
+A @racket[step] may supply @racket[#:say] ordinary display text. Strings use
+the shared inline-TeX grammar: @tt{$...$} and @tt{\(...\)} are inline
+mathematics, while @tt{$$...$$} and @tt{\[...\]} are display mathematics.
+Write @tt{\$} for a literal dollar sign. The headless calculus plan retains
+caption source without loading TeX; parsing and the formula backend run only in
+@racket[prepare-calculus-plan]. The prepared caption is reused by Pict,
+Visual, and Scene sampling, so a frame never initiates TeX typesetting or
+caption reflow.
+
+For literal source or a programmatic plain-text fallback, require
+@racketmodname[animate/text-content] and supply @racket[inline-text],
+@racket[tex-span], or @racket[literal-text] as the @racket[#:say] value.
+Ordinary string captions still inspect as their authored string through
+@racket[calculus-plan-caption]. Structured values inspect as
+@racket[text-content?]. Audio narration, speaker notes, and subtitle export
+remain plain-text channels; no TeX source is treated as speech automatically.
 
 @defform[(define-calculus-component component-id
            (inputs [name : type] ...)

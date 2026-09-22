@@ -11,11 +11,14 @@
  [("--media") "Include actual audio probing with ffprobe" (set! optional (cons "media-test.rkt" optional))]
  [("--project") "Include subprocess project rendering" (set! optional (cons "project-test.rkt" optional))]
  #:args () (void))
-(define suites (append '("model-test.rkt" "layout-test.rkt" "timing-test.rkt" "native-test.rkt" "codec-test.rkt" "transitions-test.rkt" "gallery-test.rkt" "semantic-match-test.rkt")
+(define suites (append '("model-test.rkt" "layout-test.rkt" "timing-test.rkt" "native-test.rkt" "codec-test.rkt" "transitions-test.rkt" "gallery-test.rkt" "semantic-match-test.rkt" "inline-tex-content-test.rkt")
+                       (if (member "math-test.rkt" optional) '("inline-tex-test.rkt" "inline-tex-conformance-test.rkt") '())
                        (reverse optional)
                        (if (member "geometry-test.rkt" optional) '("geometry-codec-test.rkt") '())
                        (if (and (member "geometry-test.rkt" optional) (member "project-test.rkt" optional))
                            '("geometry-worker-test.rkt") '())
+                       (if (and (member "math-test.rkt" optional) (member "project-test.rkt" optional))
+                           '("inline-tex-worker-test.rkt") '())
                        (if (and (member "math-test.rkt" optional) (member "geometry-test.rkt" optional))
                            '("gallery-integration-test.rkt" "semantic-domain-test.rkt") '())))
 (define failed 0)

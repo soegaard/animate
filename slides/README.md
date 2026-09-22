@@ -85,6 +85,29 @@ A plain slide has no implicit movie duration. `hold-slide` or `build-slide`
 supplies time. Deferred slide paragraphs are `paragraph-content`, leaving
 Animate's existing native `paragraph` operation unchanged.
 
+## Inline TeX in text slots
+
+Every built-in and custom slide text slot, bullet item, replacement, and
+footer accepts inline TeX once the slide is explicitly prepared. Use `$...$`
+or `\\(...\\)` inline, and `$$...$$` or `\\[...\\]` for display mathematics.
+Write `\\$` for currency. For programmatic content or wholly literal text,
+require `animate/text-content` and use `inline-text`, `tex-span`, or
+`literal-text`:
+
+```racket
+(require animate/slides animate/text-content)
+
+(slide #:layout 'title
+  [title (inline-text "The slope at " (tex-span "x_0" #:plain "x zero"))]
+  [subtitle "As $h\\to0$, the difference quotient approaches $f'(x_0)$." ])
+```
+
+Parsing is pure. The TeX backend runs only in `prepare-slide!` (or a
+rendering helper that explicitly prepares); `slide->pict` on unprepared TeX
+reports `preparation-required`. See the [API reference](docs/api.md) and the
+reference manual for delimiter, literal, plain-text-export, and backend
+requirements.
+
 ## Slide transitions
 
 ```racket
@@ -144,6 +167,12 @@ RACO="/Applications/Racket v9.3.0.2/bin/raco"
 
 "$RACKET" slides/run-probes.rkt --repeat 2 --math --geometry --gallery \
   slides-output/review-v040
+
+# Consolidated TeX-in-text review: light/dark stills, portrait/wide layouts,
+# baseline overlays, actual x-squared lesson frames, a project-rendered
+# transition, HTML index, environment metadata, and ZIP.
+"$RACKET" slides/run-inline-tex-review.rkt \
+  slides-output/inline-tex-review
 ```
 
 The complete runner now contains **105 named cases across sixteen suite files**; these are

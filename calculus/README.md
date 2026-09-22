@@ -34,6 +34,16 @@ Visual, or scene.
 (prepared-lesson->scene prepared)
 ```
 
+## Inline TeX captions
+
+Step `#:say` captions accept the same `$...$`, `\\(...\\)`, `$$...$$`, and
+`\\[...\\]` shorthand as slide text. Use `\\$` for a literal dollar. The
+headless plan retains caption source without loading TeX; parsing and
+typesetting occur only in `prepare-calculus-plan`, where every finite caption
+occurrence is prepared once and reused by Pict, Visual, and Scene samples. The
+pure structured API is available from `animate/text-content` when literal text
+or an authored plain-text fallback is needed.
+
 The core module performs no typesetting, native drawing, GUI work, file I/O,
 or frame rendering. Results preserve ordinary mathematical partiality:
 `'outside-domain`, `'undefined`, and `'unresolved` are distinct from a defined

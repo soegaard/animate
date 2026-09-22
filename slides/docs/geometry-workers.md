@@ -118,7 +118,7 @@ manifest additionally verifies the source/adapter files and assets before frame
 execution. Geometry's lazily loaded native adapter dependencies are included
 explicitly rather than silently omitted from that manifest.
 
-The outer slide preparation schema is now `animate-slides-preparation-v4`.
+The outer slide preparation schema is now `animate-slides-preparation-v5`.
 The internal geometry record schema is `animate-geometry-render-preparation-v1`.
 Old slide payloads are rejected: prepare again rather than mixing schemas.
 No manual deletion of old content-addressed artifacts is needed to use the new

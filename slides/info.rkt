@@ -11,6 +11,8 @@
     "tests/geometry-test.rkt"
     "tests/media-test.rkt"
     "tests/project-test.rkt"
+    "tests/inline-tex-conformance-test.rkt"
+    "tests/inline-tex-worker-test.rkt"
     "tests/semantic-domain-test.rkt"
     "tests/gallery-integration-test.rkt"
     "tests/geometry-codec-test.rkt"

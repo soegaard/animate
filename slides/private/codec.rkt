@@ -152,7 +152,10 @@
             (prepared-clip-value-duration clip) (prepared-clip-value-initial clip) (prepared-clip-value-poster clip)
             (prepared-clip-value-hold? clip))))
   (values
-   (hash 'schema 'animate-slides-preparation-v4 'racket-version (version)
+   ;; v5 marks that prepared text drawings may include recorded mixed TeX
+   ;; paragraphs.  They replay only from the staged drawing artifact; workers
+   ;; must reject an older payload rather than attempting fresh layout.
+   (hash 'schema 'animate-slides-preparation-v5 'racket-version (version)
          'id (storyboard-value-id (prepared-storyboard-value-source board))
          'duration (prepared-storyboard-value-duration board) 'shots shots
          'bridges (for/list ([b (in-list (prepared-storyboard-value-bridges board))])
@@ -164,7 +167,7 @@
                           (transition-value-depth tr))))
    (remove-duplicates artifacts equal?) (remove-duplicates dependencies equal?)))
 (define (payload->prepared-storyboard payload source)
-  (unless (and (hash? payload) (eq? (hash-ref payload 'schema #f) 'animate-slides-preparation-v4)
+  (unless (and (hash? payload) (eq? (hash-ref payload 'schema #f) 'animate-slides-preparation-v5)
                (equal? (hash-ref payload 'racket-version #f) (version))
                (eq? (hash-ref payload 'id #f) (storyboard-value-id source)))
     (slides-error 'invalid-payload '() "prepared storyboard schema, runtime, or source identity differs"))

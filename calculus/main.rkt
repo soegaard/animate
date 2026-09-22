@@ -365,7 +365,10 @@
     (define (option name)
       (lower-calculus-expression (option-value options name #'#f)
                                  bound-variables view-names model-reference))
-    #`(make-step '#,id #:say #,(option 'say) #:read-delay #,(option 'read-delay)
+    ;; Captions are ordinary display content rather than calculus expressions.
+    ;; Keep structured inline-text/tex-span values intact for the headless
+    ;; caption record; the native renderer normalizes them at preparation.
+    #`(make-step '#,id #:say #,(option-value options 'say #'#f) #:read-delay #,(option 'read-delay)
                  #:duration #,(option 'duration) #:pause #,(option 'pause)
                  #,@(map (lambda (command)
                             (lower-calculus-expression command bound-variables view-names model-reference))

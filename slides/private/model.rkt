@@ -1,5 +1,6 @@
 #lang racket/base
 (require racket/list racket/match "data.rkt" "check.rkt" "appearance.rkt" "layout.rkt"
+         "../../text-content.rkt"
          (only-in "../../colors.rkt" color-spec? color-spec->datum datum->color-spec))
 (provide make-slide slide? slide-id slide-layout slide-slots slide-appearance slide-notes slide-ref
          make-slot slot-content paragraph-content pict-content image-content/proc make-bullets
@@ -11,12 +12,18 @@
          storyboard-ref storyboard-with-theme storyboard-with-format check-storyboard
          slide-action? content? bound-source)
 
-(define (content? x) (or (string? x) (content-value? x)))
+(define (content? x)
+  (or (string? x) (text-content? x) (tex-span? x) (content-value? x)))
 (define (paragraph-content text #:role [role #f] #:align [align #f])
-  (unless (string? text) (raise-argument-error 'paragraph-content "string?" text))
+  (unless (or (string? text) (text-content? text) (tex-span? text))
+    (raise-argument-error 'paragraph-content "(or/c string? text-content? tex-span?)" text))
   (when role (check-id 'paragraph-content role))
   (when align (check-enum 'paragraph-content align '(left center right)))
-  (content-value 'text (string->immutable-string text) (hash 'role role 'align align)))
+  ;; Preserve shorthand until preparation so malformed markup receives the
+  ;; same slide/slot source context as every other raw text surface.  Explicit
+  ;; structured values are already normalized immutable content.
+  (content-value 'text (if (string? text) text (normalize-text-content text))
+                 (hash 'role role 'align align)))
 (define (pict-content value #:fit [fit 'contain])
   (check-enum 'pict-content fit '(contain cover natural))
   (content-value 'pict value (hash 'fit fit)))
@@ -27,7 +34,17 @@
 (define (make-bullets entries #:ordered? [ordered? #f])
   (unless (and (list? entries) (andmap pair? entries))
     (raise-argument-error 'make-bullets "list of (cons symbol content)" entries))
-  (for ([e (in-list entries)]) (check-id 'make-bullets (car e)))
+  (for ([e (in-list entries)])
+    (check-id 'make-bullets (car e))
+    (unless (or (string? (cdr e))
+                (text-content? (cdr e))
+                (tex-span? (cdr e))
+                (and (content-value? (cdr e))
+                     (eq? (content-value-kind (cdr e)) 'text)))
+      (raise-argument-error
+       'make-bullets
+       "text strings, text-content values, tex-span values, or paragraph-content values"
+       (cdr e))))
   (unique! 'bullets (map car entries))
   (unless (boolean? ordered?) (raise-argument-error 'make-bullets "boolean?" ordered?))
   (content-value 'bullets (immutable-copy entries) (hash 'ordered? ordered?)))

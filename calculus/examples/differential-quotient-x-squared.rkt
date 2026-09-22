@@ -138,7 +138,7 @@
 
   ;; 1. State the target
   (step introduce-problem
-    #:say "We want to understand why the derivative of x squared is two x."
+    #:say "We want to understand why the derivative of $x^2$ is $2x$."
     (highlight goal)
     (pause 1/2))
 
@@ -162,46 +162,46 @@
 
   ;; 4. Choose a nearby point and build the secant
   (step choose-neighbour
-    #:say "Choose a nearby point Q with horizontal change h, and draw the secant through P and Q."
+    #:say "Choose a nearby point $Q$ with horizontal change $h$, and draw the secant through $P$ and $Q$."
     (show Q Q-name S triangle))
 
   ;; 5. Compute Δy
   (step define-dy
-    #:say "The vertical change is f of x sub zero plus h, minus f of x sub zero."
+    #:say "The vertical change is $f(x_0+h)-f(x_0)$."
     (show dy-def))
 
   (step expand-dy
-    #:say "Since f of x is x squared, this becomes x sub zero plus h, all squared, minus x sub zero squared."
+    #:say "Since $f(x)=x^2$, this becomes $(x_0+h)^2-x_0^2$."
     (together
       (hide dy-def)
       (show dy-expand)))
 
   (step simplify-dy
-    #:say "Expanding and simplifying gives two x sub zero h plus h squared."
+    #:say "Expanding and simplifying gives $2x_0h+h^2$."
     (together
       (hide dy-expand)
       (show dy-simplify)))
 
   ;; 6. Form the difference quotient
   (step define-dq
-    #:say "The secant slope is delta y divided by delta x."
+    #:say "The secant slope is $\\Delta y/\\Delta x$."
     (show dq-def))
 
   (step substitute-dq
-    #:say "Substitute the expression for delta y."
+    #:say "Substitute the expression for $\\Delta y$."
     (together
       (hide dq-def)
       (show dq-subst)))
 
   (step simplify-dq
-    #:say "Since delta x is h, the secant slope simplifies to two x sub zero plus h."
+    #:say "Since $\\Delta x=h$, the secant slope simplifies to $2x_0+h$."
     (together
       (hide dq-subst)
       (show dq-simplify m-readout)))
 
   ;; 7. Let Q approach P, and zoom again
   (step approach-point
-    #:say "Now let Q approach P. The secant line approaches the tangent."
+    #:say "Now let $Q$ approach $P$. The secant line approaches the tangent."
     (together
       (approach h #:to 0 #:side 'right #:until 1/50 #:duration 5)
       (focus detail
@@ -213,11 +213,11 @@
 
   ;; 8. Make the limit explicit, then reveal the tangent everywhere
   (step identify-limit
-    #:say "As h approaches zero, the secant slope two x sub zero plus h approaches two x sub zero."
+    #:say "As $h\\to0$, the secant slope $2x_0+h$ approaches $2x_0$."
     (show limit-formula))
 
   (step reveal-tangent
-    #:say "That limiting line is the tangent, so f prime of x sub zero is two x sub zero."
+    #:say "That limiting line is the tangent, so $f'(x_0)=2x_0$."
     (limit-transition S T #:claim L)
     (hide Q Q-name triangle m-readout
           dy-simplify dq-simplify)
@@ -225,7 +225,7 @@
 
   ;; 9. x0 was arbitrary: generalize
   (step generalize
-    #:say "And because x sub zero was arbitrary, the derivative of x squared is two x."
+    #:say "And because $x_0$ was arbitrary, the derivative of $x^2$ is $2x$."
     (restore-view detail #:duration 1)
     (vary x0
           #:via (list -2 -1 0 1 3/2)
