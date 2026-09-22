@@ -1333,6 +1333,113 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show L) (pause 1)))
 
+;; R18: Function metadata must keep the selected snapshot/producer context at
+;; native demand sites.  The small line lessons below make invalid quantities
+;; output-blocking, and use visible controls for the valid graph/value paths.
+(define-calculus-component render-r18-tagged-line-consumer
+  (inputs [source : TaggedPartition])
+  (model [f (function (x) x)] [S (riemann-sum f source)]
+         [L (horizontal-line (sum-value S))])
+  (exports L))
+
+(define-calculus-component render-r18-sequence-line-consumer
+  (inputs [source : Sequence])
+  (model [L (horizontal-line (sequence-value source 1))])
+  (exports L))
+
+(define-calculus-component render-r18-quantity-line-consumer
+  (inputs [source : Quantity])
+  (model [L (horizontal-line (+ source 0))])
+  (exports L))
+
+(define-calculus-lesson render-r18-quarter-line
+  (model [L (horizontal-line 1/4)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-half-line
+  (model [L (horizontal-line 1/2)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-one-line
+  (model [L (horizontal-line 1)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-frozen-gap-integral-line
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [f (function (x) 1
+              #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [F (snapshot-of f #:values ([a 1/7]))]
+         [I (definite-integral F #:from 0 #:to 1/4)] [L (horizontal-line I)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-frozen-gap-supplied-line
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [f (function (x) 1
+              #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [F (snapshot-of f #:values ([a 1/7]))] [zero (function (x) 0)]
+         [df (derivative-function F #:method 'supplied #:using zero
+              #:justification "The source is constant on each declared interval.")]
+         [L (horizontal-line (value-at df 403/2800))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-frozen-gap-symbolic-line
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [f (function (x) 1
+              #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [F (snapshot-of f #:values ([a 1/7]))] [df (derivative-function F)]
+         [L (horizontal-line (value-at df 403/2800))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-frozen-graph-line
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [f (function (x) 1
+              #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [F (snapshot-of f #:values ([a 1/7]))] [G (graph F)]
+         [P (point-on G #:x 1403/2800)] [L (horizontal-line (y-coordinate P))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r18-tagged-line
+  (model [mesh (uniform-partition 0 1 #:count 2)]
+         [tags (tag-partition mesh #:sample 'midpoint)]
+         [study (use-component render-r18-tagged-line-consumer tags)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r18-sequence-line
+  (model [source (sequence (k) k #:from 0)]
+         [study (use-component render-r18-sequence-line-consumer source)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r18-quantity-line
+  (model [f (function (x) x)]
+         [A (antiderivative-function f #:using (function (x) (/ (* x x) 2))
+              #:justification "The derivative is x.")]
+         [I (definite-integral f #:from 0 #:to 1 #:antiderivative A)]
+         [study (use-component render-r18-quantity-line-consumer I)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2517,6 +2624,27 @@
   (for ([lesson (in-list (list render-r17-gap-integral-line
                                render-r17-outside-derivative-line))])
     (check-exn #rx"domain|outside|path" (lambda () (r11-raster lesson))))
+  ;; R18: native demand blocks lines backed by a frozen-domain error, while a
+  ;; graph made from the held Function still paints its valid y=1 line.  The
+  ;; new input vocabulary reaches real component consumers, not merely the
+  ;; headless admission switch.  In the [-1,2] window the centers for 1/4,
+  ;; 1/2, and 1 are about 152, 135, and 101 respectively.
+  (define (r18-equivalent-line control candidate center-y)
+    (define before (r11-raster control default-calculus-profile 'initial))
+    (define expected (r11-raster control))
+    (check-true (bitmap-regions-differ? before expected 200 280
+                                        (- center-y 6) (+ center-y 7)))
+    (define actual (r11-raster candidate))
+    (check-true (bytes=? (r11-pixels expected 200 (- center-y 6) 80 13)
+                         (r11-pixels actual 200 (- center-y 6) 80 13))))
+  (for ([lesson (in-list (list render-r18-frozen-gap-integral-line
+                               render-r18-frozen-gap-supplied-line
+                               render-r18-frozen-gap-symbolic-line))])
+    (check-exn #rx"domain|outside|path" (lambda () (r11-raster lesson))))
+  (r18-equivalent-line render-r18-one-line render-r18-frozen-graph-line 101)
+  (r18-equivalent-line render-r18-half-line render-r18-tagged-line 135)
+  (r18-equivalent-line render-r18-one-line render-r18-sequence-line 101)
+  (r18-equivalent-line render-r18-half-line render-r18-quantity-line 135)
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

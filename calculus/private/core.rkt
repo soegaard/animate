@@ -709,8 +709,8 @@
   (with-handlers ([exn:fail? (lambda (_error) #f)])
     (define (scalar-join left right)
       (cond [(equal? left right) left]
-            [(and (memq left '(Scalar Integer))
-                  (memq right '(Scalar Integer))) 'Scalar]
+            [(and (memq left '(Scalar Integer Quantity))
+                  (memq right '(Scalar Integer Quantity))) 'Scalar]
             [else #f]))
     (define (expression-type expression remaining)
       (define op (c-expression-op expression))
@@ -728,13 +728,21 @@
               (scalar-join (resolve (second arguments) (sub1 remaining))
                            (resolve (third arguments) (sub1 remaining))))]
         [(= < <= > >= and or not in-domain?) 'Boolean]
-        [(list) 'List]
+        [(list)
+         (if (andmap (lambda (argument)
+                       (memq (resolve argument (sub1 remaining))
+                             '(Scalar Integer Quantity)))
+                     arguments)
+             'ScalarList
+             'List)]
         ;; These operations preserve exact integer values when every operand
         ;; is an Integer.  This is a static type fact, not constant folding:
         ;; `(+ n 1)` stays live when integer parameter n changes.
         [(+ *) (if (all-integers?) 'Integer 'Scalar)]
         [(-) (if (and (pair? arguments) (all-integers?)) 'Integer 'Scalar)]
         [(abs) (if (and (= (length arguments) 1) (all-integers?)) 'Integer 'Scalar)]
+        [(difference-quotient sum-value area-of sequence-value partial-sum iterate-value)
+         'Quantity]
         ;; Calculus expressions other than the Boolean forms above are
         ;; scalar-producing.  A lexical variable is a mathematical Scalar
         ;; even though it has no caller-visible c-node.
@@ -749,10 +757,11 @@
         [(snapshot-of)
          (and (= (length arguments) 1)
               (resolve (first arguments) (sub1 remaining)))]
-        ;; Quantity constructors produce Scalar-compatible numerical values.
+        ;; Quantity constructors retain their mathematical identity while
+        ;; remaining admissible wherever a Scalar is required.
         ;; Their current definedness is evaluated later; this is only the
         ;; stable mathematical type carried through a component boundary.
-        [(definite-integral trapezoidal-sum partial-sum) 'Scalar]
+        [(definite-integral trapezoidal-sum partial-sum) 'Quantity]
         [(graph graph-restriction) 'Graph]
         [(restrict-function compose-functions difference-function derivative-function
                             antiderivative-function accumulation-function
@@ -767,10 +776,25 @@
          'Line]
         [(segment chord) 'Segment]
         [(ray-through) 'Ray]
+        [(increment) 'Increment]
+        [(sign-claim monotonicity-claim concavity-claim limit-statement
+                     epsilon-delta-condition continuity-condition)
+         'Claim]
         [(input-reading output-reading coordinate-reading) 'Reading]
+        [(point-label graph-label quantity-label) 'Label]
+        [(interval-marker endpoint-marker approach-marker) 'Marker]
+        [(value-readout) 'Readout]
+        [(formula formula-of formula-occurrence) 'Formula]
         [(region-under region-between integral-region) 'Region]
+        [(riemann-rectangles) 'Rectangles]
+        [(partition-marks) 'PartitionMarks]
+        [(trace-of) 'Locus]
         [(uniform-partition partition) 'Partition]
         [(tag-partition) 'TaggedPartition]
+        [(riemann-sum) 'RiemannSum]
+        [(level-set) 'SolutionSet]
+        [(sequence) 'Sequence]
+        [(iteration-map newton-iteration) 'Iteration]
         [(use-component) 'Component]
         [else #f]))
     (define (branch-selector? name)
@@ -895,7 +919,7 @@
   ;; named scalar quantities from transparent nonscalar aliases, while the
   ;; shared resolver retains the richer Component input contract categories.
   (define type (semantic-value-type value fuel))
-  (cond [(memq type '(Scalar Integer)) 'scalar]
+  (cond [(memq type '(Scalar Integer Quantity)) 'scalar]
         [(eq? type 'Parameter) 'parameter]
         [else type]))
 
@@ -1264,6 +1288,163 @@
      (static-selected-target (first (c-object-arguments value)) (sub1 fuel))]
     [else value]))
 
+;; An effective domain is evaluated in the context that owns the declaration.
+;; Intersections are retained structurally because an outer restriction may be
+;; live while a selected Function beneath it is frozen or component-private.
+(struct c-effective-domain (domain environment model lexical) #:transparent)
+(struct c-effective-domain-intersection (domains) #:transparent)
+
+(define (effective-domain-leaf domain context)
+  (c-effective-domain domain
+                      (c-selected-context-environment context)
+                      (c-selected-context-model context)
+                      (c-selected-context-lexical context)))
+
+(define (effective-domain-intersection domains)
+  (cond [(null? domains) #f]
+        [(null? (rest domains)) (first domains)]
+        [else (c-effective-domain-intersection domains)]))
+
+;; resolve-function-domain : semantic-value? hash? calculus-model?
+;;                           calculus-computation? hash? -> calculus-result?
+;;   Resolves a Function's domain together with the environment that gives its
+;; boundary expressions meaning.  It is intentionally distinct from the
+;; static `function-domain` helper: the latter discovers descriptor shape for
+;; topology inspection, while this operation governs mathematical demands.
+(define (resolve-function-domain value environment model computation lexical)
+  (result-bind
+   (resolve-selected-context value environment model computation lexical)
+   (lambda (context)
+     (resolve-function-domain/in-context context computation))))
+
+(define (resolve-function-domain/in-context context computation)
+  (define value (c-selected-context-target context))
+  (define environment (c-selected-context-environment context))
+  (define model (c-selected-context-model context))
+  (define lexical (c-selected-context-lexical context))
+  (define raw (node-raw value))
+  (define (source-domain source)
+    (resolve-function-domain source environment model computation lexical))
+  (define (local-domain domain)
+    (effective-domain-leaf domain context))
+  (cond
+    [(c-function? raw) (defined (local-domain (c-function-domain raw)))]
+    [(c-piecewise? raw) (defined (local-domain (c-piecewise-domain raw)))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'restrict-function))
+     (result-bind
+      (source-domain (first (c-object-arguments raw)))
+      (lambda (source)
+        (defined
+         (effective-domain-intersection
+          (list source (local-domain (second (c-object-arguments raw))))))))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'difference-function))
+     ;; A difference can be evaluated only where both operands are defined.
+     (result-bind
+      (source-domain (first (c-object-arguments raw)))
+      (lambda (left)
+        (result-bind
+         (source-domain (second (c-object-arguments raw)))
+         (lambda (right)
+           (defined (effective-domain-intersection (list left right)))))))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'derivative-function))
+     (result-bind
+      (source-domain (first (c-object-arguments raw)))
+      (lambda (source)
+        (define requested (hash-ref (c-object-options raw) 'on #f))
+        (defined
+         (if requested
+             (effective-domain-intersection (list source (local-domain requested)))
+             source))))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'antiderivative-function))
+     (define using (hash-ref (c-object-options raw) 'using #f))
+     (if using
+         (result-bind
+          (source-domain using)
+          (lambda (source)
+            (define requested (hash-ref (c-object-options raw) 'on #f))
+            (defined
+             (if requested
+                 (effective-domain-intersection (list source (local-domain requested)))
+                 source))))
+         (defined (local-domain calculus-real-line)))]
+    [(and (c-object? raw) (hash-has-key? (c-object-options raw) 'domain))
+     (defined (local-domain (hash-ref (c-object-options raw) 'domain)))]
+    [else (defined (local-domain calculus-real-line))]))
+
+;; effective-domain-contains? : effective-domain? finite-real?
+;;                               calculus-computation? -> calculus-result?
+(define (effective-domain-contains? effective value computation)
+  (cond
+    [(c-effective-domain? effective)
+     (domain-contains? (c-effective-domain-domain effective) value
+                       (c-effective-domain-environment effective)
+                       (c-effective-domain-model effective)
+                       computation)]
+    [(c-effective-domain-intersection? effective)
+     (let loop ([domains (c-effective-domain-intersection-domains effective)])
+       (cond [(null? domains) (defined #t)]
+             [else
+              (result-bind
+               (effective-domain-contains? (first domains) value computation)
+               (lambda (inside?)
+                 (if inside? (loop (rest domains)) (defined #f))))]))]
+    [else (undefined "expected an effective function domain")]))
+
+(define (effective-domain-boundaries effective computation)
+  (cond
+    [(c-effective-domain? effective)
+     (let loop ([expressions
+                 (domain-boundary-expressions (c-effective-domain-domain effective))]
+                [values '()])
+       (cond [(null? expressions) (defined (reverse values))]
+             [else
+              (result-bind
+               (eval-domain-number (first expressions)
+                                   (c-effective-domain-environment effective)
+                                   (c-effective-domain-model effective)
+                                   computation)
+               (lambda (boundary)
+                 (loop (rest expressions) (cons boundary values))))]))]
+    [(c-effective-domain-intersection? effective)
+     (let loop ([domains (c-effective-domain-intersection-domains effective)]
+                [values '()])
+       (cond [(null? domains) (defined (reverse values))]
+             [else
+              (result-bind
+               (effective-domain-boundaries (first domains) computation)
+               (lambda (boundaries)
+                 (loop (rest domains) (append (reverse boundaries) values))))]))]
+    [else (undefined "expected an effective function domain")]))
+
+;; effective-domain-path-covered? : effective-domain? finite-real? finite-real?
+;;                                   calculus-computation? -> calculus-result?
+(define (effective-domain-path-covered? effective a b computation)
+  (result-bind
+   (effective-domain-boundaries effective computation)
+   (lambda (boundaries)
+     (define ordered
+       (sort (remove-duplicates
+              (append (list a b)
+                      (filter (lambda (value)
+                                (and (finite-real? value)
+                                     (<= (min a b) value (max a b))))
+                              boundaries)))
+             <))
+     (define probes
+       (append ordered
+               (for/list ([left (in-list ordered)] [right (in-list (rest ordered))]
+                          #:when (< left right))
+                 (/ (+ left right) 2))))
+     (let loop ([remaining probes])
+       (cond [(null? remaining) (defined #t)]
+             [else
+              (result-bind
+               (effective-domain-contains? effective (first remaining) computation)
+               (lambda (inside?)
+                 (if inside?
+                     (loop (rest remaining))
+                     (outside "integration path leaves the declared function domain"))))])))))
+
 (define (function-domain function)
   (define raw (node-raw (static-selected-target function)))
   (cond [(c-function? raw) (c-function-domain raw)]
@@ -1311,30 +1492,35 @@
   (cond
     [(not source) (undefined "expected a calculus function")]
     [else
-     (result-bind (domain-contains? (function-domain source) input environment model computation)
-                  (lambda (inside?)
-                    (if (not inside?)
-                        (outside "input is outside the declared function domain")
-                        (cond
-                          [(c-function? source)
-                           (define body (c-function-body source))
-                           (cond [(c-expression? body) (eval-raw body environment model computation (hash-set lexical (c-function-variable source) (defined input)))]
-                                 [(procedure? body) (with-handlers ([exn:fail? (lambda (error) (undefined (exn-message error)))])
-                                                        (finite-number-result (body input) 'definition #t))]
-                                 [(c-object? body) (eval-function-object body input environment model computation lexical)]
-                                 [else (eval-raw body environment model computation (hash-set lexical (c-function-variable source) (defined input)))])]
-                          [(c-piecewise? source)
-                           (let loop ([branches (c-piecewise-branches source)])
-                             (cond [(null? branches)
-                                    (if (c-piecewise-else source)
-                                        (eval-raw (c-piecewise-else source) environment model computation (hash-set lexical (c-piecewise-variable source) (defined input)))
-                                        (undefined "no piecewise branch applies"))]
-                                   [else (result-bind (eval-raw (caar branches) environment model computation (hash-set lexical (c-piecewise-variable source) (defined input)))
-                                                      (lambda (matches?)
-                                                        (if matches?
-                                                            (eval-raw (cdar branches) environment model computation (hash-set lexical (c-piecewise-variable source) (defined input)))
-                                                            (loop (cdr branches)))))]))]
-                          [else (eval-function-object source input environment model computation lexical)]))))]))
+     (result-bind
+      (resolve-function-domain/in-context
+       (c-selected-context function environment model lexical) computation)
+      (lambda (effective-domain)
+        (result-bind
+         (effective-domain-contains? effective-domain input computation)
+         (lambda (inside?)
+           (if (not inside?)
+               (outside "input is outside the declared function domain")
+               (cond
+                 [(c-function? source)
+                  (define body (c-function-body source))
+                  (cond [(c-expression? body) (eval-raw body environment model computation (hash-set lexical (c-function-variable source) (defined input)))]
+                        [(procedure? body) (with-handlers ([exn:fail? (lambda (error) (undefined (exn-message error)))])
+                                               (finite-number-result (body input) 'definition #t))]
+                        [(c-object? body) (eval-function-object body input environment model computation lexical)]
+                        [else (eval-raw body environment model computation (hash-set lexical (c-function-variable source) (defined input)))])]
+                 [(c-piecewise? source)
+                  (let loop ([branches (c-piecewise-branches source)])
+                    (cond [(null? branches)
+                           (if (c-piecewise-else source)
+                               (eval-raw (c-piecewise-else source) environment model computation (hash-set lexical (c-piecewise-variable source) (defined input)))
+                               (undefined "no piecewise branch applies"))]
+                          [else (result-bind (eval-raw (caar branches) environment model computation (hash-set lexical (c-piecewise-variable source) (defined input)))
+                                             (lambda (matches?)
+                                               (if matches?
+                                                   (eval-raw (cdar branches) environment model computation (hash-set lexical (c-piecewise-variable source) (defined input)))
+                                                   (loop (cdr branches)))))]))]
+                 [else (eval-function-object source input environment model computation lexical)]))))))]))
 
 (define (eval-function-object source input environment model computation lexical)
   (define args (c-object-arguments source))
@@ -1708,6 +1894,51 @@
              calculus-real-line)]
         [else calculus-real-line]))
 
+;; resolve-graph-domain/in-context : c-selected-context? calculus-computation?
+;;                                    -> calculus-result?
+;;   Keeps a graph's source Function domain in the source's selected context,
+;; while an authored graph restriction remains in the graph caller's context.
+(define (resolve-graph-domain/in-context context computation)
+  (define graph (c-selected-context-target context))
+  (define environment (c-selected-context-environment context))
+  (define model (c-selected-context-model context))
+  (define lexical (c-selected-context-lexical context))
+  (define raw (node-raw graph))
+  (define (source-domain source)
+    (resolve-graph-domain source environment model computation lexical))
+  (define (local-domain domain)
+    (effective-domain-leaf domain context))
+  (cond
+    [(not (c-object? raw)) (undefined "expected a calculus graph")]
+    [(eq? (c-object-kind raw) 'graph)
+     (result-bind
+      (resolve-function-domain (first (c-object-arguments raw))
+                               environment model computation lexical)
+      (lambda (function-domain)
+        (if (hash-has-key? (c-object-options raw) 'on)
+            (defined
+             (effective-domain-intersection
+              (list function-domain
+                    (local-domain (hash-ref (c-object-options raw) 'on)))))
+            (defined function-domain))))]
+    [(eq? (c-object-kind raw) 'graph-restriction)
+     (define arguments (c-object-arguments raw))
+     (if (< (length arguments) 2)
+         (undefined "graph-restriction requires a graph and domain")
+         (result-bind
+          (source-domain (first arguments))
+          (lambda (source)
+            (defined
+             (effective-domain-intersection
+              (list source (local-domain (second arguments))))))))]
+    [else (undefined "expected a calculus graph")]))
+
+(define (resolve-graph-domain graph environment model computation lexical)
+  (result-bind
+   (resolve-selected-context graph environment model computation lexical)
+   (lambda (context)
+     (resolve-graph-domain/in-context context computation))))
+
 ;; evaluate-graph : semantic-value? finite-real? hash? calculus-model?
 ;;                  calculus-computation? [hash?] -> calculus-result?
 ;;   Evaluates a graph only inside its composed declared restriction before
@@ -1740,15 +1971,20 @@
                 (evaluate-graph (first arguments) input environment model computation lexical)
                 (outside "input is outside the declared graph domain")))))]
     [else
-     (define function (graph-function graph))
-     (cond [(not function) (undefined "expected a calculus graph")]
-           [else
+     (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'graph)
+                   (pair? (c-object-arguments raw))))
+         (undefined "expected a calculus graph")
+         (result-bind
+          (resolve-graph-domain/in-context
+           (c-selected-context graph environment model lexical) computation)
+          (lambda (effective-domain)
             (result-bind
-             (domain-contains? (graph-domain graph) input environment model computation)
+             (effective-domain-contains? effective-domain input computation)
              (lambda (inside?)
                (if inside?
-                   (evaluate-function function input environment model computation lexical)
-                   (outside "input is outside the declared graph domain"))))])]))
+                   (evaluate-function (first (c-object-arguments raw))
+                                      input environment model computation lexical)
+                   (outside "input is outside the declared graph domain")))))))]))
 
 ;; scalar-equivalent? : finite-real? finite-real? calculus-computation? -> boolean?
 ;;   Preserves exact equality while making an explicitly inexact candidate's
@@ -2189,18 +2425,20 @@
     [else
      (define actual (semantic-value-type value))
      (case type
-       [(Graph) (eq? actual 'Graph)]
-       [(Function) (eq? actual 'Function)]
+       ;; All non-capability categories are exact semantic contracts. This
+       ;; table deliberately contains the complete documented vocabulary so a
+       ;; new kind cannot be silently admitted through Scalar or Point.
+       [(Graph Function Point Line Segment Ray Increment Claim Reading Label
+               Marker Readout Formula Region Rectangles PartitionMarks Locus
+               Partition TaggedPartition RiemannSum SolutionSet Sequence
+               Iteration Component ScalarList Domain)
+        (eq? actual type)]
        [(Parameter) (and (c-node? value) (eq? (c-node-kind value) 'parameter))]
-       [(Point) (eq? actual 'Point)]
-       [(Line) (eq? actual 'Line)]
-       [(Domain) (eq? actual 'Domain)]
-       [(Reading) (eq? actual 'Reading)]
-       [(Region) (eq? actual 'Region)]
-       [(Partition) (eq? actual 'Partition)]
-       ;; Integer is a Scalar subtype for read-only mathematical inputs.
-       ;; Boolean is intentionally disjoint despite Racket truthiness.
-       [(Scalar) (memq actual '(Scalar Integer))]
+       ;; Integer and Quantity are Scalar subtypes for read-only mathematical
+       ;; inputs. Boolean remains intentionally disjoint despite Racket
+       ;; truthiness.
+       [(Quantity) (eq? actual 'Quantity)]
+       [(Scalar) (memq actual '(Scalar Integer Quantity))]
        [(Integer) (eq? actual 'Integer)]
        [(Boolean) (eq? actual 'Boolean)]
        [else #f])]))
@@ -3122,6 +3360,26 @@
        (same-semantic-source? function (first (c-object-arguments raw)))))
 
 (define (eval-integral function from to antiderivative environment model computation lexical)
+  (define (evaluate-supplied a b)
+    (cond
+      [(not (antiderivative-for? function antiderivative))
+       (undefined "integral #:antiderivative is not registered for its integrand")]
+      [else
+       (result-bind
+        (resolve-function-domain antiderivative environment model computation lexical)
+        (lambda (antiderivative-domain)
+          (result-bind
+           (effective-domain-path-covered? antiderivative-domain a b computation)
+           (lambda (_)
+             (result-bind
+              (evaluate-function antiderivative b environment model computation lexical)
+              (lambda (fb)
+                (result-bind
+                 (evaluate-function antiderivative a environment model computation lexical)
+                 (lambda (fa)
+                   (result-with-method
+                    (finite-number-result (- fb fa) 'supplied #f)
+                    'supplied)))))))))]))
   (result-bind
    (eval-raw from environment model computation lexical)
    (lambda (a)
@@ -3129,28 +3387,17 @@
       (eval-raw to environment model computation lexical)
       (lambda (b)
         (result-bind
-         (domain-path-covered? (function-domain function) a b environment model computation lexical)
-         (lambda (_)
-           (cond
-             [(= a b) (defined 0)]
-             [antiderivative
-              (cond
-                [(not (antiderivative-for? function antiderivative))
-                 (undefined "integral #:antiderivative is not registered for its integrand")]
-                [else
-                 (result-bind
-                  (domain-path-covered? (function-domain antiderivative) a b environment model computation lexical)
-                  (lambda (_)
-                    (result-bind
-                     (evaluate-function antiderivative b environment model computation lexical)
-                     (lambda (fb)
-                       (result-bind
-                        (evaluate-function antiderivative a environment model computation lexical)
-                        (lambda (fa)
-                          (result-with-method
-                           (finite-number-result (- fb fa) 'supplied #f)
-                           'supplied)))))))])]
-             [else (simpson function a b environment model computation lexical)]))))))))
+         (resolve-function-domain function environment model computation lexical)
+         (lambda (effective-domain)
+           ;; Bounds above are caller-authored and therefore remain live;
+           ;; only the Function's declared path is checked in its owning
+           ;; selected context.
+           (result-bind
+            (effective-domain-path-covered? effective-domain a b computation)
+            (lambda (_)
+              (cond [(= a b) (defined 0)]
+                    [antiderivative (evaluate-supplied a b)]
+                    [else (simpson function a b environment model computation lexical)]))))))))))
 
 (define (eval-area region environment model computation lexical)
   (define raw (node-raw region))

@@ -589,6 +589,120 @@
          [area (use-component r17-region-area region)]
          [partition (use-component r17-partition-sum P)]))
 
+;; R18: metadata checks retain the selected Function's frozen context, while
+;; independently authored bounds and restrictions remain in their live scope.
+(define-calculus-model r18-frozen-domain-context
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [f (function (x) 1
+              #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [F (snapshot-of f #:values ([a 1/7]))]
+         [graph-of-F (graph F)] [zero (function (x) 0)]
+         [across (definite-integral F #:from 0 #:to 1/4)]
+         [safe-live-gap (definite-integral F #:from 49/100 #:to 51/100)]
+         [ds (derivative-function F #:method 'supplied #:using zero
+              #:justification "The frozen function is constant on each declared interval.")]
+         [dy (derivative-function F)]
+         [supplied-gap (value-at ds 403/2800)] [symbolic-gap (value-at dy 403/2800)]
+         [supplied-valid (value-at ds 1403/2800)] [symbolic-valid (value-at dy 1403/2800)]
+         [frozen-graph-point (point-on graph-of-F #:x 1403/2800)]
+         [frozen-graph-y (y-coordinate frozen-graph-point)]
+         [fixed (function (x) 1
+                  #:domain (domain-union (closed 0 1/7) (closed 29/200 1)))]
+         [difference (difference-function fixed zero)]
+         [difference-across (definite-integral difference #:from 0 #:to 1/4)]))
+
+(define-calculus-component r18-constrained-producer
+  (inputs [height : Scalar])
+  (model [f (function (x) height #:domain (closed 0 1))])
+  (exports f)
+  (constraints (> height 0)))
+
+(define-calculus-model r18-constrained-context
+  (model [a (parameter 1 #:domain (closed -1 1))]
+         [producer (use-component r18-constrained-producer a)]
+         [F (part producer 'f)] [zero (function (x) 0)]
+         [ds (derivative-function F #:method 'supplied #:using zero
+              #:justification "The function is constant when its producer is valid.")]
+         [out (value-at ds 1/2)]))
+
+;; R18 closes the inventory beyond the five categories exercised by R17.
+;; These consumers retain the category-specific mathematical operation where
+;; one exists, and otherwise verify that an admitted descriptor survives the
+;; component's public boundary unchanged.
+(define-calculus-component r18-segment-consumer
+  (inputs [value : Segment]) (model [out (slope value)]) (exports out))
+(define-calculus-component r18-tagged-consumer
+  (inputs [value : TaggedPartition])
+  (model [f (function (x) x)] [S (riemann-sum f value)] [out (sum-value S)])
+  (exports out))
+(define-calculus-component r18-sequence-consumer
+  (inputs [value : Sequence]) (model [out (sequence-value value 1)]) (exports out))
+(define-calculus-component r18-quantity-consumer
+  (inputs [value : Quantity]) (model [out (+ value 0)]) (exports out))
+(define-calculus-component r18-riemann-consumer
+  (inputs [value : RiemannSum]) (model [out (sum-value value)]) (exports out))
+(define-calculus-component r18-component-consumer
+  (inputs [value : Component]) (model [out (part value 's)]) (exports out))
+(define-calculus-component r18-increment-pass
+  (inputs [value : Increment]) (model [out value]) (exports out))
+(define-calculus-component r18-claim-pass
+  (inputs [value : Claim]) (model [out value]) (exports out))
+(define-calculus-component r18-label-pass
+  (inputs [value : Label]) (model [out value]) (exports out))
+(define-calculus-component r18-marker-pass
+  (inputs [value : Marker]) (model [out value]) (exports out))
+(define-calculus-component r18-readout-pass
+  (inputs [value : Readout]) (model [out value]) (exports out))
+(define-calculus-component r18-formula-pass
+  (inputs [value : Formula]) (model [out value]) (exports out))
+(define-calculus-component r18-rectangles-pass
+  (inputs [value : Rectangles]) (model [out value]) (exports out))
+(define-calculus-component r18-partition-marks-pass
+  (inputs [value : PartitionMarks]) (model [out value]) (exports out))
+(define-calculus-component r18-locus-pass
+  (inputs [value : Locus]) (model [out value]) (exports out))
+(define-calculus-component r18-solution-set-pass
+  (inputs [value : SolutionSet]) (model [out value]) (exports out))
+(define-calculus-component r18-iteration-pass
+  (inputs [value : Iteration]) (model [out value]) (exports out))
+(define-calculus-component r18-scalar-list-pass
+  (inputs [value : ScalarList]) (model [out value]) (exports out))
+
+(define-calculus-component r18-leaf-component
+  (inputs [value : Scalar]) (model [s (+ value 0)]) (exports s))
+
+(define-calculus-model r18-vocabulary-regressions
+  (model [a (parameter 0 #:domain (closed 0 1))]
+         [p (point 0 0)] [q (point 1 2)] [f (function (x) x)] [G (graph f)]
+         [mesh (uniform-partition 0 1 #:count 2)]
+         [tags (tag-partition mesh #:sample 'midpoint)] [sum (riemann-sum f tags)]
+         [seq (sequence (k) k #:from 0)]
+         [A (antiderivative-function f #:using (function (x) (/ (* x x) 2))
+              #:justification "The derivative of x^2/2 is x.")]
+         [integral (definite-integral f #:from 0 #:to 1 #:antiderivative A)]
+         [leaf (use-component r18-leaf-component 1)]
+         [segment (use-component r18-segment-consumer (segment p q))]
+         [tagged (use-component r18-tagged-consumer tags)]
+         [sequence (use-component r18-sequence-consumer seq)]
+         [quantity (use-component r18-quantity-consumer integral)]
+         [riemann (use-component r18-riemann-consumer sum)]
+         [component (use-component r18-component-consumer leaf)]
+         [increment (use-component r18-increment-pass (increment p q))]
+         [claim (use-component r18-claim-pass
+                               (sign-claim f #:on (closed 0 1) #:sign 'nonnegative
+                                           #:justification "x is nonnegative on [0,1]."))]
+         [label (use-component r18-label-pass (point-label q "Q"))]
+         [marker (use-component r18-marker-pass (interval-marker (closed 0 1) #:axis 'x))]
+         [readout (use-component r18-readout-pass (value-readout 1 #:label "one"))]
+         [formula (use-component r18-formula-pass (formula (+ 1 2)))]
+         [rectangles (use-component r18-rectangles-pass (riemann-rectangles sum))]
+         [marks (use-component r18-partition-marks-pass (partition-marks mesh))]
+         [locus (use-component r18-locus-pass (trace-of (point a a) #:parameter a #:over (closed 0 1)))]
+         [solutions (use-component r18-solution-set-pass
+                                   (level-set f 1 #:within (closed 0 2) #:inputs (list 1)))]
+         [iteration (use-component r18-iteration-pass (iteration-map (u) (+ u 1) #:start 0 #:steps 3))]
+         [scalar-list (use-component r18-scalar-list-pass (list 1 2))]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -1353,7 +1467,46 @@
   (check-value (calculus-snapshot-ref r17-types '(domain out)) #t)
   (check-value (calculus-snapshot-ref r17-types '(reading out)) 1)
   (check-value (calculus-snapshot-ref r17-types '(area out)) 1/2)
-  (check-value (calculus-snapshot-ref r17-types '(partition out)) 1/2))
+  (check-value (calculus-snapshot-ref r17-types '(partition out)) 1/2)
+  ;; R18: a frozen source keeps its declared domain in its snapshot context;
+  ;; caller-authored bounds remain live.  Domain composition also retains both
+  ;; operands, and derivative/graph consumers cannot lose producer checks.
+  (define r18-frozen (calculus-model-at r18-frozen-domain-context))
+  (check-domain-rejected (calculus-snapshot-ref r18-frozen 'across))
+  (check-value (calculus-snapshot-ref r18-frozen 'safe-live-gap) 1/50)
+  (check-domain-rejected (calculus-snapshot-ref r18-frozen 'supplied-gap))
+  (check-domain-rejected (calculus-snapshot-ref r18-frozen 'symbolic-gap))
+  (check-value (calculus-snapshot-ref r18-frozen 'supplied-valid) 0)
+  (check-value (calculus-snapshot-ref r18-frozen 'symbolic-valid) 0)
+  (check-value (calculus-snapshot-ref r18-frozen 'frozen-graph-y) 1)
+  (check-domain-rejected (calculus-snapshot-ref r18-frozen 'difference-across))
+  (define r18-invalid-producer
+    (calculus-snapshot-ref
+     (calculus-model-at r18-constrained-context #:values (hash 'a -1))
+     'out))
+  (check-not-equal? (calculus-result-status r18-invalid-producer) 'defined)
+  (check-true
+   (regexp-match? #rx"constraint|component|input"
+                  (or (calculus-result-message r18-invalid-producer) "")))
+  ;; The complete R18 vocabulary has explicit root kinds.  Representative
+  ;; mathematical consumers prove the values survive a component boundary;
+  ;; the remainder verifies the individual category contracts directly.
+  (define r18-vocabulary (calculus-model-at r18-vocabulary-regressions))
+  (check-value (calculus-snapshot-ref r18-vocabulary '(segment out)) 2)
+  (check-value (calculus-snapshot-ref r18-vocabulary '(tagged out)) 1/2)
+  (check-value (calculus-snapshot-ref r18-vocabulary '(sequence out)) 1)
+  (check-value (calculus-snapshot-ref r18-vocabulary '(quantity out)) 1/2)
+  (check-value (calculus-snapshot-ref r18-vocabulary '(riemann out)) 1/2)
+  (check-value (calculus-snapshot-ref r18-vocabulary '(component out)) 1)
+  (for ([address (in-list '((increment out) (claim out) (label out)
+                             (marker out) (readout out) (formula out)
+                             (rectangles out) (marks out) (locus out)
+                             (solutions out) (iteration out)))])
+    (check-equal? (calculus-result-status
+                   (calculus-snapshot-ref r18-vocabulary address))
+                  'defined))
+  (check-value (calculus-snapshot-ref r18-vocabulary '(scalar-list out))
+               '(1 2)))
 
 (module+ test
   (run-calculus-audit-regression-tests))
