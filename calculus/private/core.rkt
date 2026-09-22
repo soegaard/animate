@@ -749,6 +749,10 @@
         [(snapshot-of)
          (and (= (length arguments) 1)
               (resolve (first arguments) (sub1 remaining)))]
+        ;; Quantity constructors produce Scalar-compatible numerical values.
+        ;; Their current definedness is evaluated later; this is only the
+        ;; stable mathematical type carried through a component boundary.
+        [(definite-integral trapezoidal-sum partial-sum) 'Scalar]
         [(graph graph-restriction) 'Graph]
         [(restrict-function compose-functions difference-function derivative-function
                             antiderivative-function accumulation-function
@@ -758,9 +762,15 @@
         [(point point-on axis-point projection root-point intersection-point
                 point-on-line feature-point)
          'Point]
-        [(segment line-through ray-through horizontal-line vertical-line chord secant
-                 tangent vertical-tangent normal asymptote-line)
+        [(line-through horizontal-line vertical-line secant tangent vertical-tangent
+                       normal asymptote-line)
          'Line]
+        [(segment chord) 'Segment]
+        [(ray-through) 'Ray]
+        [(input-reading output-reading coordinate-reading) 'Reading]
+        [(region-under region-between integral-region) 'Region]
+        [(uniform-partition partition) 'Partition]
+        [(tag-partition) 'TaggedPartition]
         [(use-component) 'Component]
         [else #f]))
     (define (branch-selector? name)
@@ -1199,8 +1209,63 @@
                             (lambda (item) (loop (cdr remaining) (cons item values))))))]
         [else (unresolved "unsupported mathematical value")]))
 
+;; c-selected-context pairs a selected descriptor with the lexical model and
+;; parameter environment that own it.  A public component Part and a snapshot
+;; are both paths to a value; neither may be unwrapped while discarding this
+;; context.
+(struct c-selected-context (target environment model lexical) #:transparent)
+
+;; resolve-selected-context : semantic-value? hash? calculus-model?
+;;                             calculus-computation? hash? -> calculus-result?
+;;   Resolves finite component-export and snapshot boundaries before a
+;; mathematical consumer inspects an object's domain or held body.  Ordinary
+;; wrappers such as restrict-function deliberately remain held targets: their
+;; operands are resolved by the consumer that evaluates them.
+(define (resolve-selected-context value environment model computation lexical)
+  (define part (part-alias value))
+  (define exported (and part (component-export-target part)))
+  (define raw (node-raw value))
+  (cond
+    [exported
+     (result-bind
+      (component-instance-valid? (c-component-export-target-instance exported)
+                                 environment model computation lexical)
+      (lambda (private-model)
+        (resolve-selected-context (c-component-export-target-target exported)
+                                  environment private-model computation lexical)))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'snapshot-of))
+     (result-bind
+      (snapshot-frozen-environment value environment model computation lexical)
+      (lambda (frozen)
+        (resolve-selected-context (first (c-object-arguments raw))
+                                  frozen model computation lexical)))]
+    [else (defined (c-selected-context value environment model lexical))]))
+
+;; static-selected-target : semantic-value? -> semantic-value?
+;;   Recovers held Function metadata for structural consumers such as domain
+;; composition and symbolic differentiation. Dynamic consumers use
+;; resolve-selected-context above so the recovered metadata is evaluated in
+;; its owning lexical context.
+(define (static-selected-target value [fuel 64])
+  (cond
+    [(not (positive? fuel)) value]
+    [(c-part? value)
+     (define exported (component-export-target value))
+     (if exported
+         (static-selected-target (c-component-export-target-target exported)
+                                 (sub1 fuel))
+         value)]
+    [(c-node? value) (static-selected-target (c-node-data value) (sub1 fuel))]
+    [(and (c-expression? value) (eq? (c-expression-op value) 'ref)
+          (= (length (c-expression-arguments value)) 1))
+     (static-selected-target (first (c-expression-arguments value)) (sub1 fuel))]
+    [(and (c-object? value) (eq? (c-object-kind value) 'snapshot-of)
+          (= (length (c-object-arguments value)) 1))
+     (static-selected-target (first (c-object-arguments value)) (sub1 fuel))]
+    [else value]))
+
 (define (function-domain function)
-  (define raw (node-raw function))
+  (define raw (node-raw (static-selected-target function)))
   (cond [(c-function? raw) (c-function-domain raw)]
         [(c-piecewise? raw) (c-piecewise-domain raw)]
         [(and (c-object? raw) (eq? (c-object-kind raw) 'restrict-function))
@@ -1231,21 +1296,19 @@
         [else calculus-real-line]))
 
 (define (evaluate-function function input environment model computation [lexical (hash)])
-  ;; A public component export is a caller-facing path, while its held
-  ;; Function lives in the producer's private model.  Resolve that path before
-  ;; inspecting the descriptor so the body, domain, and captured dependencies
-  ;; are evaluated in the lexical model that owns them.
-  (define part (part-alias function))
-  (define exported (and part (component-export-target part)))
-  (define source (and (not exported) (lookup-function function)))
+  (result-bind
+   (resolve-selected-context function environment model computation lexical)
+   (lambda (context)
+     (evaluate-function/in-context (c-selected-context-target context)
+                                   input
+                                   (c-selected-context-environment context)
+                                   (c-selected-context-model context)
+                                   computation
+                                   (c-selected-context-lexical context)))))
+
+(define (evaluate-function/in-context function input environment model computation lexical)
+  (define source (lookup-function function))
   (cond
-    [exported
-     (result-bind
-      (component-instance-valid? (c-component-export-target-instance exported)
-                                 environment model computation lexical)
-      (lambda (private-model)
-        (evaluate-function (c-component-export-target-target exported)
-                           input environment private-model computation lexical)))]
     [(not source) (undefined "expected a calculus function")]
     [else
      (result-bind (domain-contains? (function-domain source) input environment model computation)
@@ -1554,23 +1617,35 @@
                             [else (loop (/ h 2) (sub1 remaining))])))))))
                  (unresolved "numeric derivative refinement did not produce a smaller effective stencil" 'numeric)))])]
        [else
-        (define source-function (lookup-function source))
-        (if (c-function? source-function)
-            (let ([derived (differentiate-order (c-function-body source-function)
-                                                (c-function-variable source-function) order)])
-              (if derived
-                  (result-with-method
-                   (eval-raw derived environment model computation
-                             (hash-set lexical (c-function-variable source-function) (defined input)))
-                   'symbolic)
-                  (unresolved "symbolic differentiation is unsupported for this expression" 'symbolic)))
-            (unresolved "symbolic differentiation requires a held function" 'symbolic))])]))
+        ;; Symbolic differentiation needs the held body, not merely the
+        ;; caller-facing public Part. Resolve first so an exported Function's
+        ;; body and captured component inputs remain in their lexical scope.
+        (result-bind
+         (resolve-selected-context source environment model computation lexical)
+         (lambda (context)
+           (define source-function
+             (lookup-function (c-selected-context-target context)))
+           (if (c-function? source-function)
+               (let ([derived (differentiate-order (c-function-body source-function)
+                                                   (c-function-variable source-function) order)])
+                 (if derived
+                     (result-with-method
+                      (eval-raw derived
+                                (c-selected-context-environment context)
+                                (c-selected-context-model context)
+                                computation
+                                (hash-set (c-selected-context-lexical context)
+                                          (c-function-variable source-function)
+                                          (defined input)))
+                      'symbolic)
+                     (unresolved "symbolic differentiation is unsupported for this expression" 'symbolic)))
+               (unresolved "symbolic differentiation requires a held function" 'symbolic))))])]))
 
 ;; graph-function : semantic-value? -> (or/c semantic-value? #f)
 ;;   Resolves a graph restriction through its source graph rather than treating
 ;; the graph record itself as a function descriptor.
 (define (graph-function graph)
-  (define source (node-raw graph))
+  (define source (node-raw (static-selected-target graph)))
   (cond [(not (c-object? source)) #f]
         [(eq? (c-object-kind source) 'graph)
          (and (pair? (c-object-arguments source))
@@ -1614,7 +1689,7 @@
 ;; restriction. This preserves a restriction as mathematical membership, not a
 ;; merely native clipping preference.
 (define (graph-domain graph)
-  (define source (node-raw graph))
+  (define source (node-raw (static-selected-target graph)))
   (cond [(not (c-object? source)) calculus-real-line]
         [(eq? (c-object-kind source) 'graph)
          (define function (graph-function graph))
@@ -1638,26 +1713,42 @@
 ;;   Evaluates a graph only inside its composed declared restriction before
 ;; asking its held source function for a value.
 (define (evaluate-graph graph input environment model computation [lexical (hash)])
-  ;; Like Functions, exported Graphs must retain the producer's lexical model
-  ;; for both their held source Function and composed declared domain.
-  (define part (part-alias graph))
-  (define exported (and part (component-export-target part)))
-  (define function (and (not exported) (graph-function graph)))
-  (cond [exported
+  (result-bind
+   (resolve-selected-context graph environment model computation lexical)
+   (lambda (context)
+     (evaluate-graph/in-context (c-selected-context-target context)
+                                input
+                                (c-selected-context-environment context)
+                                (c-selected-context-model context)
+                                computation
+                                (c-selected-context-lexical context)))))
+
+(define (evaluate-graph/in-context graph input environment model computation lexical)
+  (define raw (node-raw graph))
+  (cond
+    ;; Keep a restriction's local domain alongside the resolved source Graph.
+    ;; Delegating only to graph-function would unwrap the source Part but lose
+    ;; this declared narrowing boundary.
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'graph-restriction))
+     (define arguments (c-object-arguments raw))
+     (if (< (length arguments) 2)
+         (undefined "graph-restriction requires a graph and domain")
          (result-bind
-          (component-instance-valid? (c-component-export-target-instance exported)
-                                     environment model computation lexical)
-          (lambda (private-model)
-            (evaluate-graph (c-component-export-target-target exported)
-                            input environment private-model computation lexical)))]
-        [(not function) (undefined "expected a calculus graph")]
-        [else
-         (result-bind
-          (domain-contains? (graph-domain graph) input environment model computation)
+          (domain-contains? (second arguments) input environment model computation)
           (lambda (inside?)
             (if inside?
-                (evaluate-function function input environment model computation lexical)
-                (outside "input is outside the declared graph domain"))))]))
+                (evaluate-graph (first arguments) input environment model computation lexical)
+                (outside "input is outside the declared graph domain")))))]
+    [else
+     (define function (graph-function graph))
+     (cond [(not function) (undefined "expected a calculus graph")]
+           [else
+            (result-bind
+             (domain-contains? (graph-domain graph) input environment model computation)
+             (lambda (inside?)
+               (if inside?
+                   (evaluate-function function input environment model computation lexical)
+                   (outside "input is outside the declared graph domain"))))])]))
 
 ;; scalar-equivalent? : finite-real? finite-real? calculus-computation? -> boolean?
 ;;   Preserves exact equality while making an explicitly inexact candidate's
@@ -2102,6 +2193,11 @@
        [(Function) (eq? actual 'Function)]
        [(Parameter) (and (c-node? value) (eq? (c-node-kind value) 'parameter))]
        [(Point) (eq? actual 'Point)]
+       [(Line) (eq? actual 'Line)]
+       [(Domain) (eq? actual 'Domain)]
+       [(Reading) (eq? actual 'Reading)]
+       [(Region) (eq? actual 'Region)]
+       [(Partition) (eq? actual 'Partition)]
        ;; Integer is a Scalar subtype for read-only mathematical inputs.
        ;; Boolean is intentionally disjoint despite Racket truthiness.
        [(Scalar) (memq actual '(Scalar Integer))]

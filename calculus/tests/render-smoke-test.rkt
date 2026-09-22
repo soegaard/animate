@@ -1250,6 +1250,89 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show (part study 'L)) (pause 1)))
 
+;; R17 keeps structural consumers on the resolved Function/Graph context and
+;; admits the remaining shared component input categories to native lessons.
+(define-calculus-component render-r17-line-slope-consumer
+  (inputs [source : Line])
+  (model [L (horizontal-line (slope source))])
+  (exports L))
+
+(define-calculus-component render-r17-gapped-producer
+  (inputs [height : Scalar])
+  (model [f (function (x) height
+               #:domain (domain-union (closed 0 1/7) (closed 29/200 1)))])
+  (exports f))
+
+(define-calculus-lesson render-r17-exported-graph-restriction-line
+  (model [producer (use-component render-r16-function-and-graph 0)]
+         [H (graph-restriction (part producer 'G) (closed 0 1))]
+         [P (point-on H #:x 1)] [L (horizontal-line (y-coordinate P))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 3) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r17-exported-symbolic-derivative-line
+  (model [producer (use-component render-r16-function-and-graph 0)]
+         [df (derivative-function (part producer 'f))]
+         [L (horizontal-line (value-at df 1))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 3) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r17-function-snapshot-line
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (+ x a))] [S (snapshot-of f #:values ([a 1]))]
+         [L (horizontal-line (value-at S 1))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 3) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r17-graph-snapshot-line
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (+ x a))] [G (graph f)]
+         [S (snapshot-of G #:values ([a 1]))]
+         [P (point-on S #:x 1)] [L (horizontal-line (y-coordinate P))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 3) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r17-quantity-input-line
+  (model [f (function (x) x)]
+         [A (antiderivative-function f #:using (function (x) (/ (* x x) 2))
+              #:justification "The derivative is x.")]
+         [I (definite-integral f #:from 0 #:to 1 #:antiderivative A)]
+         [study (use-component render-r16-scalar-line-consumer I)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 3)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r17-line-input-line
+  (model [source (line-through (point 0 0) (point 1 1))]
+         [study (use-component render-r17-line-slope-consumer source)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 3)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r17-gap-integral-line
+  (model [producer (use-component render-r17-gapped-producer 1)]
+         [F (part producer 'f)] [I (definite-integral F #:from 0 #:to 1)]
+         [L (horizontal-line I)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed 0 2) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
+(define-calculus-lesson render-r17-outside-derivative-line
+  (model [producer (use-component render-r17-gapped-producer 1)]
+         [F (part producer 'f)] [zero (function (x) 0)]
+         [df (derivative-function F #:method 'supplied #:using zero
+              #:justification "The source is constant on its declared domain.")]
+         [L (horizontal-line (value-at df 2))])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 1) #:objects (L))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show L) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2409,6 +2492,31 @@
   (r16-equivalent-line render-r16-integer-literal-line render-r16-integer-expression-line 135)
   (r16-equivalent-line render-r16-direct-function-line render-r16-exported-function-line 135)
   (r16-equivalent-line render-r16-direct-graph-line render-r16-exported-graph-line 135)
+  ;; R17: the selected lexical context survives both structural consumers and
+  ;; snapshots. The common [0,3] window maps y=1, 2, and 1/2 near 169, 101,
+  ;; and 204 respectively.
+  (define (r17-equivalent-line control candidate center-y)
+    (define before (r11-raster control default-calculus-profile 'initial))
+    (define expected (r11-raster control))
+    (check-true (bitmap-regions-differ? before expected 200 280
+                                        (- center-y 6) (+ center-y 7)))
+    (define actual (r11-raster candidate))
+    (check-true (bytes=? (r11-pixels expected 200 (- center-y 6) 80 13)
+                         (r11-pixels actual 200 (- center-y 6) 80 13))))
+  (r17-equivalent-line render-r17-exported-graph-restriction-line
+                       render-r17-exported-symbolic-derivative-line 169)
+  (r17-equivalent-line render-r17-exported-graph-restriction-line
+                       render-r17-line-input-line 169)
+  (r17-equivalent-line render-r17-function-snapshot-line
+                       render-r17-graph-snapshot-line 101)
+  (define r17-quantity-before
+    (r11-raster render-r17-quantity-input-line default-calculus-profile 'initial))
+  (define r17-quantity-after (r11-raster render-r17-quantity-input-line))
+  (check-true (bitmap-regions-differ? r17-quantity-before r17-quantity-after
+                                      200 280 198 210))
+  (for ([lesson (in-list (list render-r17-gap-integral-line
+                               render-r17-outside-derivative-line))])
+    (check-exn #rx"domain|outside|path" (lambda () (r11-raster lesson))))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

@@ -503,11 +503,102 @@
          [named-graph (use-component r16-graph-consumer H)]
          [outside-domain (use-component r16-function-at-three (part producer 'f))]))
 
+;; R17: Function and Graph consumers must retain a selected public target's
+;; lexical context, including its producer boundary or snapshot environment.
+(define-calculus-component r17-producer
+  (inputs [c : Scalar])
+  (model [f (function (x) (+ x c) #:domain (closed -2 2))]
+         [G (graph f)])
+  (exports f G))
+
+(define-calculus-component r17-function-at-one
+  (inputs [source : Function])
+  (model [out (value-at source 1)])
+  (exports out))
+
+(define-calculus-component r17-graph-at-one
+  (inputs [source : Graph])
+  (model [P (point-on source #:x 1)] [out (y-coordinate P)])
+  (exports out))
+
+(define-calculus-model r17-selected-context-regressions
+  (model [a (parameter 0 #:domain (closed 0 2))]
+         [f (function (x) (+ x a) #:domain (closed -2 2))] [G (graph f)]
+         [producer (use-component r17-producer a)]
+         [F (part producer 'f)] [H (part producer 'G)]
+         [SF (snapshot-of f #:values ([a 1]))]
+         [SG (snapshot-of G #:values ([a 1]))]
+         [restricted (graph-restriction H (closed 0 1))]
+         [from-restriction (use-component r17-graph-at-one restricted)]
+         [from-function-snapshot (use-component r17-function-at-one SF)]
+         [from-graph-snapshot (use-component r17-graph-at-one SG)]
+         [df (derivative-function F)] [slope (value-at df 1)]))
+
+;; A gap wide enough to matter is deliberately invisible to first-level
+;; numerical samples; consumers must inspect the whole declared source path.
+(define-calculus-component r17-gapped-producer
+  (inputs [height : Scalar])
+  (model [f (function (x) height
+               #:domain (domain-union (closed 0 1/7) (closed 29/200 1)))])
+  (exports f))
+
+(define-calculus-model r17-domain-regressions
+  (model [producer (use-component r17-gapped-producer 1)]
+         [F (part producer 'f)]
+         [across-gap (definite-integral F #:from 0 #:to 1)]
+         [safe (definite-integral F #:from 1/4 #:to 1)]
+         [zero (function (x) 0)]
+         [df (derivative-function F #:method 'supplied #:using zero
+              #:justification "The source is constant on each declared interval.")]
+         [outside-slope (value-at df 2)] [inside-slope (value-at df 1/2)]))
+
+;; R17 completes the shared read-only component input vocabulary for ordinary
+;; calculus values, rather than treating every nonnumeric value as a Point.
+(define-calculus-component r17-scalar-pass
+  (inputs [q : Scalar]) (model [out q]) (exports out))
+(define-calculus-component r17-line-slope
+  (inputs [q : Line]) (model [out (slope q)]) (exports out))
+(define-calculus-component r17-domain-member
+  (inputs [q : Domain]) (model [out (in-domain? 1 q)]) (exports out))
+(define-calculus-component r17-reading-output
+  (inputs [q : Reading]) (model [out (part q 'output)]) (exports out))
+(define-calculus-component r17-region-area
+  (inputs [q : Region]) (model [out (area-of q)]) (exports out))
+(define-calculus-component r17-partition-sum
+  (inputs [q : Partition])
+  (model [f (function (x) x)] [tags (tag-partition q #:sample 'midpoint)]
+         [S (riemann-sum f tags)] [out (sum-value S)])
+  (exports out))
+
+(define-calculus-model r17-component-types
+  (model [f (function (x) x)] [G (graph f)]
+         [A (antiderivative-function f #:using (function (x) (/ (* x x) 2))
+              #:justification "The derivative of x^2/2 is x.")]
+         [I (definite-integral f #:from 0 #:to 1 #:antiderivative A)]
+         [P (uniform-partition 0 1 #:count 2)] [T (trapezoidal-sum f P)]
+         [seq (sequence (n) n #:from 0)] [total (partial-sum seq #:from 1 #:to 3)]
+         [L (line-through (point 0 0) (point 1 1))]
+         [D (closed 0 2)] [R (input-reading G 1)]
+         [region (region-under G #:from 0 #:to 1)]
+         [integral (use-component r17-scalar-pass I)]
+         [trapezoid (use-component r17-scalar-pass T)]
+         [partial (use-component r17-scalar-pass total)]
+         [line (use-component r17-line-slope L)]
+         [domain (use-component r17-domain-member D)]
+         [reading (use-component r17-reading-output R)]
+         [area (use-component r17-region-area region)]
+         [partition (use-component r17-partition-sum P)]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
   (check-true (calculus-result? result))
   (check-not-equal? (calculus-result-status result) 'defined))
+
+(define (check-domain-rejected result)
+  (check-not-equal? (calculus-result-status result) 'defined)
+  (check-true (regexp-match? #rx"domain|outside|path"
+                             (or (calculus-result-message result) ""))))
 
 ;; run-calculus-audit-regression-tests : -> void?
 ;;   Exercises each repaired headless semantic contract at its public boundary.
@@ -1237,7 +1328,32 @@
   (check-value (calculus-snapshot-ref r16-live-exports '(export-graph out)) 2)
   (define r16-outside (calculus-snapshot-ref r16-exports '(outside-domain out)))
   (check-not-equal? (calculus-result-status r16-outside) 'defined)
-  (check-true (regexp-match? #rx"domain" (or (calculus-result-message r16-outside) ""))))
+  (check-true (regexp-match? #rx"domain" (or (calculus-result-message r16-outside) "")))
+  ;; R17: selections retain producer/snapshot context before Function or
+  ;; Graph consumers inspect metadata; source-domain obligations remain true
+  ;; after an export boundary.
+  (define r17-selected-live
+    (calculus-model-at r17-selected-context-regressions #:values (hash 'a 2)))
+  (check-value (calculus-snapshot-ref r17-selected-live '(from-restriction out)) 3)
+  (check-value (calculus-snapshot-ref r17-selected-live '(from-function-snapshot out)) 2)
+  (check-value (calculus-snapshot-ref r17-selected-live '(from-graph-snapshot out)) 2)
+  (check-value (calculus-snapshot-ref r17-selected-live 'slope) 1)
+  (define r17-domain (calculus-model-at r17-domain-regressions))
+  (check-domain-rejected (calculus-snapshot-ref r17-domain 'across-gap))
+  (check-value (calculus-snapshot-ref r17-domain 'safe) 3/4)
+  (check-domain-rejected (calculus-snapshot-ref r17-domain 'outside-slope))
+  (check-value (calculus-snapshot-ref r17-domain 'inside-slope) 0)
+  ;; Quantity constructors are Scalar-compatible and the remaining semantic
+  ;; categories cross their corresponding explicit component contracts.
+  (define r17-types (calculus-model-at r17-component-types))
+  (for ([address (in-list '((integral out) (trapezoid out)))])
+    (check-value (calculus-snapshot-ref r17-types address) 1/2))
+  (check-value (calculus-snapshot-ref r17-types '(partial out)) 6)
+  (check-value (calculus-snapshot-ref r17-types '(line out)) 1)
+  (check-value (calculus-snapshot-ref r17-types '(domain out)) #t)
+  (check-value (calculus-snapshot-ref r17-types '(reading out)) 1)
+  (check-value (calculus-snapshot-ref r17-types '(area out)) 1/2)
+  (check-value (calculus-snapshot-ref r17-types '(partition out)) 1/2))
 
 (module+ test
   (run-calculus-audit-regression-tests))
