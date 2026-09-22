@@ -44,6 +44,11 @@
                         (visit (build-path (path-only key) relative))))]))
   (visit entry))
 
+(define (source-has-tagged-title? source)
+  ;; A stable title tag may be one string or a list of aliases. Its quoting
+  ;; representation is not part of the documentation contract.
+  (regexp-match? #px"(?m:^@title\\[#:tag[[:space:]]+.+\\])" source))
+
 (module+ test
   (define manual-text (manual-source-tree-text manual-path))
   (check-true (< (file-size manual-path) 10000)
@@ -69,7 +74,7 @@
                     "reference/visuals-and-relations.scrbl"
                     "reference/experimental.scrbl"
                     "reference/rendering.scrbl"
-                    "cookbook/canonical-examples.scrbl"
+                    "complete-examples/catalog.scrbl"
                     "guide/package-source.scrbl"
                     "reference/coordinate-decorations.scrbl"
                     "reference/markers-scatter-and-areas.scrbl"
@@ -81,7 +86,10 @@
                     "cookbook/path-correspondence-recipes.scrbl"
                     "cookbook/topology-morph-recipes.scrbl"
                     "cookbook/plot-styling-recipes.scrbl"))])
-    (check-true (regexp-match? (regexp (regexp-quote include)) manual-text)))
+    (check-true
+     (regexp-match? (regexp (regexp-quote include)) manual-text)
+     (format "registered manual include is missing from its source tree: ~a"
+             include)))
   (for ([path (in-list
                (list (chapter guide-root "getting-started.scrbl")
                      (chapter guide-root "source-programs.scrbl")
@@ -103,7 +111,8 @@
                      (chapter reference-root "visuals-and-relations.scrbl")
                      (chapter reference-root "experimental.scrbl")
                      (chapter reference-root "rendering.scrbl")
-                     (chapter cookbook-root "canonical-examples.scrbl")
+                     (build-path (path-only manual-path)
+                                 "complete-examples/catalog.scrbl")
                      (chapter guide-root "package-source.scrbl")
                      (chapter reference-root "coordinate-decorations.scrbl")
                      (chapter reference-root "markers-scatter-and-areas.scrbl")
@@ -121,6 +130,5 @@
     ;; renders as `???` in the table of contents.  Stable titled pages also
     ;; give the generated manual readable, durable URLs.
     (check-true
-     (regexp-match? #rx"(?m:^@title\\[#:tag \\\"[^\\\"]+\\\".*\\])"
-                    (file->string path))
+     (source-has-tagged-title? (file->string path))
      (format "included manual chapter needs a tagged @title: ~a" path))))

@@ -8,6 +8,13 @@
          "../main.rkt")
 
 (module+ test
+  ;; Midpoint of blue and red in the documented linear-light default space.
+  (define (check-linear-rgba actual red green blue)
+    (check-true (rgba-color? actual))
+    (check-= (rgba-color-red actual) red 1e-9)
+    (check-= (rgba-color-green actual) green 1e-9)
+    (check-= (rgba-color-blue actual) blue 1e-9)
+    (check-equal? (rgba-color-alpha actual) 1))
   (define marker
     (circle #:id 'marker #:center origin #:radius 1 #:fill "blue"))
   (define label
@@ -32,8 +39,9 @@
   (define midpoint (scene-sample animated 1))
   (check-equal? (visual-position (scene-state-ref midpoint '(scatter marker)))
                 (vec2 2 0))
-  (check-equal? (visual-fill-color (scene-state-ref midpoint '(scatter marker)))
-                (rgba-color 255/2 0 255/2 1))
+  (check-linear-rgba
+   (visual-fill-color (scene-state-ref midpoint '(scatter marker)))
+   187.51603067837462 0 187.51603067837462)
   (check-equal? (visual-opacity (scene-state-ref midpoint '(scatter nested label)))
                 3/4)
   (check-equal? (visual-position (scene-state-ref (scene-current-state animated)

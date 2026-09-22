@@ -37,6 +37,16 @@
          (= (bytes-ref pixels (+ index 2)) green)
          (= (bytes-ref pixels (+ index 3)) blue))))
 
+;; IEC 61966-2-1 linear-light midpoint values, independently calculated from
+;; the transfer curve. Formula style animation uses the same default as every
+;; other semantic color animation.
+(define (check-linear-rgba actual red green blue)
+  (check-true (rgba-color? actual))
+  (check-= (rgba-color-red actual) red 1e-9)
+  (check-= (rgba-color-green actual) green 1e-9)
+  (check-= (rgba-color-blue actual) blue 1e-9)
+  (check-equal? (rgba-color-alpha actual) 1))
+
 (module+ test
   (define base (assembly-at -1))
 
@@ -87,9 +97,9 @@
      (scene-add (make-scene) highlighted)
      (fill-color-to '(equation x) "blue")
      #:duration 2))
-  (check-equal?
+  (check-linear-rgba
    (visual-fill-color (part-formula (scene-visual-at recoloured 'equation 1) 'x))
-   (rgba-color 255/2 215/2 255/2 1))
+   187.51603067837462 157.54988914084095 187.51603067837462)
   (check-equal?
    (visual-fill-color (part-formula (scene-visual-at recoloured 'equation 2) 'x))
    "blue")

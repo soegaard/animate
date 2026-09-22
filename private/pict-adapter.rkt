@@ -201,6 +201,14 @@
   (unless (camera? camera)
     (raise-argument-error 'visual->pict "camera?" camera))
   (check-pict-renderer-list 'visual->pict renderers)
+  ;; The ordinary default context has always returned the exact Pict supplied
+  ;; by a custom renderer at opacity one. Capture only an explicitly supplied
+  ;; or dynamically selected context; otherwise a wrapper would break that
+  ;; same-context reuse guarantee without preserving non-default appearance.
+  (define capture-context?
+    (or theme color-context typography typography-context
+        (current-render-color-context)
+        (current-render-typography-context)))
   (define selected-color-context
     (select-render-color-context 'visual->pict theme color-context))
   (define selected-typography-context
@@ -212,10 +220,14 @@
       (visual-render-camera visual camera))
     (define rendered-pict
       (render-visual-or-composite visual render-camera renderers))
-    (pict-with-render-color-context
-     (apply-semantic-opacity visual rendered-pict)
-     selected-color-context
-     selected-typography-context)))
+    (define opacity-applied
+      (apply-semantic-opacity visual rendered-pict))
+    (if capture-context?
+        (pict-with-render-color-context
+         opacity-applied
+         selected-color-context
+         selected-typography-context)
+        opacity-applied)))
 
 ; visual-render-camera : visual? camera? -> camera?
 ;;   Returns the world camera or the stable frame camera selected by visual.

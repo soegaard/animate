@@ -12,6 +12,14 @@
          "../render.rkt")
 
 (module+ test
+  ;; IEC 61966-2-1 linear-light midpoint values, independently calculated
+  ;; from the transfer curve used by the documented default color policy.
+  (define (check-linear-rgba actual red green blue)
+    (check-true (rgba-color? actual))
+    (check-= (rgba-color-red actual) red 1e-9)
+    (check-= (rgba-color-green actual) green 1e-9)
+    (check-= (rgba-color-blue actual) blue 1e-9)
+    (check-equal? (rgba-color-alpha actual) 1))
   (define (bitmap->argb-bytes bitmap)
     (define width (send bitmap get-width))
     (define height (send bitmap get-height))
@@ -63,10 +71,10 @@
   (define mid-visual
     (scene-state-ref (scene-sample scene 1) 'disk))
   (check-equal? (visual-position mid-visual) origin)
-  (check-equal? (visual-fill-color mid-visual)
-                (rgba-color 255/2 0 255/2 1))
-  (check-equal? (visual-stroke-color mid-visual)
-                (rgba-color 255/2 215/2 0 1))
+  (check-linear-rgba (visual-fill-color mid-visual)
+                     187.51603067837462 0 187.51603067837462)
+  (check-linear-rgba (visual-stroke-color mid-visual)
+                     187.51603067837462 157.54988914084095 0)
   (check-equal? (visual-stroke-width mid-visual) 6)
   (check-equal? (visual-opacity mid-visual) 3/4)
 

@@ -10,7 +10,8 @@ Animate is a Racket library for making animations and videos. You describe the
 objects, give them names, and say how they change over time. The same animation
 can produce a still picture, a preview, or a video.
 
-This manual describes version @tt{@|animate-version|} of the checked-out source.
+This manual describes version @tt{@|animate-version|} of the checked-out source,
+at implementation stage @tt{@(symbol->string animate-stage)}.
 Examples use ordinary Racket. You do not need a special language.
 
 @bold{Choose a starting point}

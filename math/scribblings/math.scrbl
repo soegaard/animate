@@ -2,12 +2,12 @@
 
 @(require (for-label (except-in racket/base numerator denominator)
                      racket/contract
-                     "../main.rkt"
-                     "../render.rkt"
-                     "../cas.rkt"
-                     "../cas/calcura.rkt"
-                     "../cas/racket-cas.rkt"
-                     (only-in "../../main.rkt" scene? camera? visual?)
+                     animate/math
+                     animate/math/render
+                     animate/math/cas
+                     animate/math/cas/calcura
+                     animate/math/cas/racket-cas
+                     (only-in animate scene? camera? visual?)
                      (only-in pict pict?)))
 
 @title[#:tag "animate-math"]{Semantic Mathematics for Animate}

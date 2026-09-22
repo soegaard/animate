@@ -12,6 +12,13 @@
 (define-runtime-path fixture "scene-bg-fixture.svg")
 
 (module+ test
+  ;; Midpoint of the SVG's navy stroke and red in linear-light sRGB.
+  (define (check-linear-rgba actual red green blue)
+    (check-true (rgba-color? actual))
+    (check-= (rgba-color-red actual) red 1e-9)
+    (check-= (rgba-color-green actual) green 1e-9)
+    (check-= (rgba-color-blue actual) blue 1e-9)
+    (check-equal? (rgba-color-alpha actual) 1))
   (define imported
     (svg->visual fixture
                  #:id 'diagram
@@ -54,9 +61,9 @@
     (scene-play scene
                 (stroke-color-to '(diagram orbit triangle) "red")
                 #:duration 2))
-  (check-equal? (visual-stroke-color
-                 (scene-visual-at animated '(diagram orbit triangle) 1))
-                (rgba-color 255/2 0 64 1))
+  (check-linear-rgba
+   (visual-stroke-color (scene-visual-at animated '(diagram orbit triangle) 1))
+   187.51603067837462 0 92.37353129670535)
   (define rendered
     (scene->pict scene 0
                  #:camera (make-camera #:width 120 #:height 80 #:world-width 20)))
