@@ -1,273 +1,208 @@
 #lang racket/base
-(require animate/calculus/render
-         animate/project)
+;; Differentiation af x^2 — a slides production following the original video.
+;; Revised from f1bd4f983bffbedddbeed18864f082b71651c5ce, same example path.
+;; Requiring this module never starts TeX, video rendering, or file output.
+(require racket/list racket/class racket/file racket/path racket/cmdline json
+         (prefix-in p: pict)
+         (prefix-in a: animate)
+         animate/slides animate/slides/render animate/slides/pict animate/slides/scene
+         animate/project
+         "private/differentiation-model.rkt"
+         "private/differentiation-script.rkt"
+         "private/differentiation-visuals.rkt")
+(provide make-differentiate-x-squared-film!
+         prepare-differentiate-x-squared!
+         make-differentiate-x-squared-project!
+         differentiate-x-squared-model
+         script film-duration theorem-duration transition-duration
+         write-differentiation-review!)
 
-(provide differentiate-x-squared
-         differentiate-x-squared-project)
+;; Use the same named theorem content in both layouts. It moves to the left;
+;; it is not abbreviated or replaced by f'(x)=2x alone.
+(define theorem-layout
+  (layout #:id 'differentiation-theorem
+          #:slots (list (slot-spec 'title #:required? #t #:role 'title)
+                        (slot-spec 'theorem #:required? #t #:role 'body)
+                        (slot-spec 'caption #:role 'caption))
+          #:arrange
+          (vbox #:gap .25
+                (region 'title #:basis .9 #:align 'center #:valign 'center)
+                (region 'theorem #:grow 1 #:align 'center #:valign 'center)
+                (region 'caption #:basis .7 #:align 'center #:valign 'center))
+          #:fallback 'wide))
+(define split-layout
+  (layout #:id 'differentiation-split
+          #:slots (list (slot-spec 'title #:required? #t #:role 'title)
+                        (slot-spec 'theorem #:required? #t #:role 'body)
+                        (slot-spec 'graph #:required? #t #:role 'body)
+                        (slot-spec 'caption #:role 'caption))
+          #:arrange
+          (vbox #:gap .25
+                (region 'title #:basis .9 #:align 'center #:valign 'center)
+                (hbox #:grow 1 #:gap .5
+                      (region 'theorem #:basis 6.3 #:valign 'center)
+                      (region 'graph #:grow 1 #:align 'center #:valign 'center))
+                (region 'caption #:basis .7 #:align 'center #:valign 'center))
+          #:fallback 'wide))
 
-(define-calculus-lesson differentiate-x-squared
-  (model
-    ;; Mathematical core
-    [f (function (x) (* x x))]
-    [df (derivative-function
-         f
-         #:method 'supplied
-         #:using (function (x) (* 2 x))
-         #:justification "Using the difference quotient, the derivative of x² is 2x.")]
+(define (make-differentiate-x-squared-film! #:theme [theme lecture-light])
+  (define assets (prepare-example-assets! theme))
+  (define panel-picts (example-assets-panels assets))
+  (define theorem-content
+    (content-state
+     (scene-content (make-paper-scene (hash-ref panel-picts 'theorem)))
+     #:at 0 #:viewport '(6.3 5.2)))
+  (define (panel key)
+    (if (eq? key 'theorem) theorem-content
+        (pict-content (hash-ref panel-picts key) #:fit 'natural)))
+  (define title-content (pict-content (example-assets-title assets) #:fit 'natural))
+  (define opening
+    (slide #:id 'theorem #:layout theorem-layout
+      [title title-content]
+      [theorem #:key 'theorem #:fit 'natural theorem-content]
+      [caption ""]))
+  (define explanation
+    (slide #:id 'explanation #:layout split-layout
+      [title title-content]
+      [theorem #:key 'theorem #:fit 'natural theorem-content]
+      [graph (scene-content (make-graph-scene assets) #:fit 'contain)]
+      [caption (pict-content (hash-ref (example-assets-captions assets) 'graf) #:fit 'natural)]))
+  (define opening-clip
+    (build-slide opening
+      (beat 'introduce-theorem
+            #:narration
+            (make-narration
+             "Vi skal se på, hvordan man differentierer x i anden. Funktionen f af x lig med x i anden er differentiabel i hele R, og den afledede funktion er f mærke x lig med to x. Lad os først se på, hvad sætningen betyder."
+             #:draft-duration theorem-duration #:captions '()))))
+  (define-values (beats ignored-time ignored-panel)
+    (for/fold ([beats '()] [offset 0] [previous-panel 'theorem]) ([s (in-list script)])
+      (define duration (shot-duration s))
+      (define actions
+        (append
+         (list (play-content 'graph #:from offset #:to (+ offset duration)
+                                    #:duration duration))
+         (if (eq? previous-panel (shot-panel s)) '()
+             (list (replace-content 'theorem (panel (shot-panel s))
+                                    #:duration 1/2)))
+         (list (replace-content 'caption
+                                (pict-content (hash-ref (example-assets-captions assets) (shot-id s))
+                                              #:fit 'natural)
+                                #:duration 2/5))))
+      (values
+       (append beats
+               (list (apply beat (shot-id s)
+                            #:duration duration
+                            #:narration (make-narration (shot-narration s)
+                                                       #:draft-duration duration #:captions '())
+                            actions)))
+       (+ offset duration) (shot-panel s))))
+  (storyboard #:id 'differential-quotient-x-squared
+              #:theme theme #:format widescreen #:subtitles? #f
+    (storyboard-shot 'saetning opening-clip)
+    ;; Witnessed time-0 -> time-0 replay moves the same theorem scene. There
+    ;; is no guessed glyph matching or double-painted text crossfade.
+    (slide-transition #:effect 'match #:keys '(theorem)
+                      #:depth 'semantic #:duration transition-duration #:easing 'smooth)
+    (storyboard-shot 'forklaring (apply build-slide explanation beats))))
 
-    ;; Live parameters
-    ;; x0 is the chosen point on the graph.
-    ;; h is the secant increment.
-    [x0 (parameter 1 #:domain (closed -2 2))]
-    [h  (parameter 1 #:domain (open-closed 0 1))]
+(define (prepare-differentiate-x-squared! #:theme [theme lecture-light])
+  (prepare-storyboard! (make-differentiate-x-squared-film! #:theme theme)))
 
-    ;; Main graph objects
-    [G (graph f)]
-    [P (point-on G #:x x0)]
-    [Q (point-on G #:x (+ x0 h))]
-    [P-name (point-label P "P")]
-    [Q-name (point-label Q "Q")]
-
-    ;; Secant/tangent objects
-    [S (secant G P Q)]
-    [T (tangent G #:at P #:derivative df)]
-
-    ;; Increments and slope
-    [change (increment P Q)]
-    [triangle (slope-triangle change #:labels 'both)]
-    [m (difference-quotient f x0 h)]
-    [m-readout (value-readout m
-                              #:label "m"
-                              #:format 'decimal
-                              #:digits 3)]
-    [tangent-slope (slope T)]
-    [answer (value-readout tangent-slope
-                           #:label "f′(x₀)"
-                           #:format 'decimal
-                           #:digits 3)]
-
-    ;; Goal/result formulas
-    [goal (formula-of df)]
-
-    ;; Δy expansion
-    [dy-def
-     (formula
-      (= (ref (part change 'dy))
-         (- (value-at f (+ x0 h))
-            (value-at f x0))))]
-
-    [dy-expand
-     (formula
-      (= (ref (part change 'dy))
-         (- (expt (+ x0 h) 2)
-            (expt x0 2))))]
-
-    [dy-simplify
-     (formula
-      (= (ref (part change 'dy))
-         (+ (* 2 x0 h)
-            (expt h 2))))]
-
-    ;; Difference quotient
-    [dq-def
-     (formula
-      (= (ref m)
-         (/ (ref (part change 'dy))
-            (ref (part change 'dx)))))]
-
-    [dq-subst
-     (formula
-      (= (ref m)
-         (/ (+ (* 2 x0 h)
-               (expt h 2))
-            h)))]
-
-    [dq-simplify
-     (formula
-      (= (ref m)
-         (+ (* 2 x0) h)))]
-
-    ;; Limit statement
-    [L (limit-statement
-        (slope S)
-        #:parameter h
-        #:to 0
-        #:side 'right
-        #:value (value-at df x0)
-        #:justification
-        "The secant slope is 2x₀+h, so as h approaches 0 the slope approaches 2x₀.")]
-    [limit-formula (formula-of L)])
-
-  (views
-    ;; Main overview graph
-    [main
-     (graph-view
-      #:x (closed -5/2 5/2)
-      #:y (closed -1/2 13/2)
-      #:objects (G P Q P-name Q-name S triangle T))]
-
-    ;; Zoom/detail graph: same mathematical objects, second camera
-    [detail
-     (graph-view
-      #:x (closed -5/2 5/2)
-      #:y (closed -1/2 13/2)
-      #:objects (G P Q S triangle T))]
-
-    ;; Formula panel
-    [facts
-     (formula-view
-      #:objects (goal
-                 dy-def dy-expand dy-simplify
-                 dq-def dq-subst dq-simplify
-                 m-readout
-                 limit-formula
-                 answer))])
-
-  (roles
-    [G 'primary]
-    [P 'input]
-    [Q 'comparison]
-    [S 'comparison]
-    [triangle 'increment]
-    [T 'result]
-    [goal 'result]
-    [answer 'result])
-
-  (initially
-    (show G P P-name goal))
-
-  ;; 1. State the target
-  (step introduce-problem
-    #:say "We want to understand why the derivative of $x^2$ is $2x$."
-    (highlight goal)
-    (pause 1/2))
-
-  ;; 2. Show the tangent early, graphically, using a second camera
-  (step preview-tangent
-    #:say "Graphically, the tangent is the line the graph looks like when we zoom in near the point."
-    (show (in-view detail T))
-    (focus detail
-           #:x (closed (- x0 1/4) (+ x0 1/4))
-           #:y (closed (- (value-at f x0) 1/4)
-                       (+ (value-at f x0) 3/4))
-           #:duration 3)
-    (highlight (in-view detail P))
-    (pause 1))
-
-  ;; 3. Back out: now explain how to compute that slope
-  (step ask-how
-    #:say "So the question is: how do we compute the slope of that tangent?"
-    (restore-view detail #:duration 1)
-    (hide (in-view detail T)))
-
-  ;; 4. Choose a nearby point and build the secant
-  (step choose-neighbour
-    #:say "Choose a nearby point $Q$ with horizontal change $h$, and draw the secant through $P$ and $Q$."
-    (show Q Q-name S triangle))
-
-  ;; 5. Compute Δy
-  (step define-dy
-    #:say "The vertical change is $f(x_0+h)-f(x_0)$."
-    (show dy-def))
-
-  (step expand-dy
-    #:say "Since $f(x)=x^2$, this becomes $(x_0+h)^2-x_0^2$."
-    (together
-      (hide dy-def)
-      (show dy-expand)))
-
-  (step simplify-dy
-    #:say "Expanding and simplifying gives $2x_0h+h^2$."
-    (together
-      (hide dy-expand)
-      (show dy-simplify)))
-
-  ;; 6. Form the difference quotient
-  (step define-dq
-    #:say "The secant slope is $\\Delta y/\\Delta x$."
-    (show dq-def))
-
-  (step substitute-dq
-    #:say "Substitute the expression for $\\Delta y$."
-    (together
-      (hide dq-def)
-      (show dq-subst)))
-
-  (step simplify-dq
-    #:say "Since $\\Delta x=h$, the secant slope simplifies to $2x_0+h$."
-    (together
-      (hide dq-subst)
-      (show dq-simplify m-readout)))
-
-  ;; 7. Let Q approach P, and zoom again
-  (step approach-point
-    #:say "Now let $Q$ approach $P$. The secant line approaches the tangent."
-    (together
-      (approach h #:to 0 #:side 'right #:until 1/50 #:duration 5)
-      (focus detail
-             #:x (closed (- x0 1/10) (+ x0 1/10))
-             #:y (closed (- (value-at f x0) 1/10)
-                         (+ (value-at f x0) 3/10))
-             #:duration 5))
-    (checkpoint near-tangent))
-
-  ;; 8. Make the limit explicit, then reveal the tangent everywhere
-  (step identify-limit
-    #:say "As $h\\to0$, the secant slope $2x_0+h$ approaches $2x_0$."
-    (show limit-formula))
-
-  (step reveal-tangent
-    #:say "That limiting line is the tangent, so $f'(x_0)=2x_0$."
-    (limit-transition S T #:claim L)
-    (hide Q Q-name triangle m-readout
-          dy-simplify dq-simplify)
-    (show T answer (in-view detail T)))
-
-  ;; 9. x0 was arbitrary: generalize
-  (step generalize
-    #:say "And because $x_0$ was arbitrary, the derivative of $x^2$ is $2x$."
-    (restore-view detail #:duration 1)
-    (vary x0
-          #:via (list -2 -1 0 1 3/2)
-          #:to 2
-          #:duration 6)
-    (highlight goal)))
-
-;; Project declaration for the reproducible MP4 shown in the examples gallery.
-;; Run with:
-;;   raco animate render calculus/examples/differential-quotient-x-squared.rkt
-;;                       differentiate-x-squared-project
-(define differentiate-x-squared-project
+;; Existing project/render pipeline; explicit in-process execution avoids
+;; promising serialization of this example's custom prepared viewport closure.
+(define (make-differentiate-x-squared-project! #:theme [theme lecture-light]
+                                              #:width [width 1920] #:height [height 1080]
+                                              #:fps [fps 30]
+                                              #:output [output "rendered-examples"])
+  (define prepared (prepare-differentiate-x-squared! #:theme theme))
   (animate-project
    #:id 'differential-quotient-x-squared
-   #:source
-   (scene-source
-    (lesson->scene differentiate-x-squared #:width 1280 #:height 720))
-   #:render
-   (render-spec #:fps 20 #:width 1280 #:height 720 #:workers 1 #:quality 'final)
-   #:output
-   (output-spec #:root "rendered-examples"
-                 #:name "differential-quotient-x-squared"
-                 #:format 'mp4
-                 #:write-frame-sequence? #f
-                 #:overwrite-policy 'replace)
-   #:encoder
-   (encoder-spec #:codec 'h264
-                 #:pixel-format 'yuv420p
-                 #:options #hasheq((crf . "20")))
-   #:cache
-   (cache-spec #:root ".animate-cache"
-                #:policy 'read-write)))
+   #:source (timeline-source (storyboard->timeline prepared #:size (list width height)))
+   #:render (render-spec #:fps fps #:width width #:height height
+                         #:workers 1 #:worker-mode 'in-process #:quality 'final
+                         #:theme (slide-theme-colors theme)
+                         #:typography (slide-theme-typography theme))
+   #:output (output-spec #:root output #:name "differential-quotient-x-squared"
+                         #:format 'mp4 #:write-frame-sequence? #f #:overwrite-policy 'replace)
+   #:encoder (encoder-spec #:codec 'h264 #:pixel-format 'yuv420p
+                           #:options #hasheq((crf . "20")))
+   #:cache (cache-spec #:policy 'off)))
 
-;; Optional convenience definitions for stills/scenes:
+(define review-shots
+  '(vaelg-punkt hold-foerste andet-punkt hold-andet tangent-i-lup
+    haeldning eksempel-et eksempel-to dy-kvadrat dq-del-broek
+    graense-approach graense-regn tilbage-til-saetning opsamling))
+(define (write-differentiation-review! destination #:theme [theme lecture-light]
+                                     #:width [width 1280] #:height [height 720])
+  (when (directory-exists? destination)
+    (raise-user-error 'review "Choose a fresh review directory: ~a" destination))
+  (make-directory* destination)
+  (define prepared (prepare-differentiate-x-squared! #:theme theme))
+  (define selected
+    (append (list (cons 'saetning 8)
+                  (cons 'overgang (+ theorem-duration (/ transition-duration 2))))
+            (for/list ([id (in-list review-shots)])
+              (define s (findf (lambda (s) (eq? id (shot-id s))) script))
+              (cons id (+ theorem-duration transition-duration
+                          (hash-ref shot-offsets id) (shot-duration s) -1/4)))))
+  (define rows
+    (for/list ([entry (in-list selected)] [i (in-naturals 1)])
+      (define filename (format "~a-~a.png" i (car entry)))
+      (define picture (storyboard->pict prepared #:at (cdr entry) #:size (list width height)))
+      (unless (send (p:pict->bitmap picture) save-file (build-path destination filename) 'png)
+        (raise-user-error 'review "Could not write ~a" filename))
+      (hash 'id (symbol->string (car entry)) 'time (exact->inexact (cdr entry)) 'file filename)))
+  (call-with-output-file (build-path destination "manifest.json") #:exists 'error
+    (lambda (out)
+      (write-json (hash 'racket (version) 'title "Differentiation af x^2"
+                        'duration (exact->inexact (prepared-duration prepared))
+                        'theme (symbol->string (slide-theme-id theme)) 'frames rows) out)))
+  (call-with-output-file (build-path destination "index.html") #:exists 'error
+    (lambda (out)
+      (display "<!doctype html><meta charset='utf-8'><title>Differentiation af x²</title><style>body{font:18px system-ui;margin:2rem;max-width:1400px}figure{margin:2rem 0}img{max-width:100%;height:auto;border:1px solid #888}</style><h1>Differentiation af x²</h1>" out)
+      (for ([r (in-list rows)])
+        (fprintf out "<figure><img src='~a'><figcaption>~a — ~as</figcaption></figure>"
+                 (hash-ref r 'file) (hash-ref r 'id) (hash-ref r 'time)))))
+  destination)
 
-;; (define final-pict
-;;   (lesson->pict differentiate-x-squared
-;;                 #:at 'final
-;;                 #:width 1920
-;;                 #:height 1080))
-;;
-;; (define final-scene
-;;   (lesson->scene differentiate-x-squared
-;;                  #:width 1920
-;;                  #:height 1080))
+(module+ main
+  (define mode 'review)
+  (define output #f)
+  (define theme lecture-light)
+  (define width 1920) (define height 1080) (define fps 30)
+  (define (integer-option text who)
+    (define n (string->number text))
+    (unless (exact-positive-integer? n)
+      (raise-user-error who "expected a positive integer: ~a" text)) n)
+  (command-line
+   #:program "differential-quotient-x-squared.rkt"
+   #:once-any
+   [("--review") "Render selected storyboard PNGs and HTML (default)." (set! mode 'review)]
+   [("--render") "Render the complete MP4 through animate/project." (set! mode 'render)]
+   [("--list") "Print manuscript beats without preparing TeX." (set! mode 'list)]
+   #:once-each
+   [("--output") path "Fresh review directory, or video output root." (set! output path)]
+   [("--dark") "Use lecture-dark." (set! theme lecture-dark)]
+   [("--width") w "Output width." (set! width (integer-option w 'width))]
+   [("--height") h "Output height." (set! height (integer-option h 'height))]
+   [("--fps") f "Video frames per second." (set! fps (integer-option f 'fps))]
+   #:args () (void))
+  (unless (= (* width 9) (* height 16))
+    (raise-user-error 'output "This authored example uses 16:9; supply a matching width and height."))
+  (case mode
+    [(list)
+     (printf "Differentiation af x^2 — ~a seconds (silent draft narration)\n" film-duration)
+     (printf "0 — saetning (~as)\n" theorem-duration)
+     (for ([s (in-list script)])
+       (printf "~a — ~a (~as): ~a\n"
+               (+ theorem-duration transition-duration (hash-ref shot-offsets (shot-id s)))
+               (shot-id s) (shot-duration s) (shot-narration s)))]
+    [(review)
+     (displayln (write-differentiation-review! (or output "slides-output/differentiation-review")
+                                              #:theme theme #:width width #:height height))]
+    [(render)
+     ;; Load the effectful renderer only for an explicit video request.
+     (define render! (dynamic-require 'animate/render 'render-project!))
+     (render! (make-differentiate-x-squared-project! #:theme theme
+                                                   #:width width #:height height #:fps fps
+                                                   #:output (or output "rendered-examples")))]))
