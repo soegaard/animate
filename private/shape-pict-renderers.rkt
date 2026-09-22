@@ -115,24 +115,26 @@
 
 (struct arrow-pict-renderer ()
   #:transparent
-  #:property prop:pict-renderer-cache-identity '(animate-arrow-pict-renderer-v1)
+  #:property prop:pict-renderer-cache-identity '(animate-arrow-pict-renderer-v2-smoothed)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (arrow-visual? visual))
    (define (pict-renderer-render _renderer visual camera)
-     (arrow-visual->pict visual camera))])
+     (shape-pict-with-smoothed-drawing
+      (arrow-visual->pict visual camera)))])
 
 ;; arrow-pict-renderer renders semantic shafts and triangular tips through the
 ;; shared path backend.
 
 (struct axes-pict-renderer ()
   #:transparent
-  #:property prop:pict-renderer-cache-identity '(animate-axes-pict-renderer-v1)
+  #:property prop:pict-renderer-cache-identity '(animate-axes-pict-renderer-v2-smoothed)
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (axes-visual? visual))
    (define (pict-renderer-render _renderer visual camera)
-     (axes-visual->pict visual camera))])
+     (shape-pict-with-smoothed-drawing
+      (axes-visual->pict visual camera)))])
 
 ;; axes-pict-renderer renders semantic axis shafts, ticks, and maximum-end tips
 ;; through the shared path backend.

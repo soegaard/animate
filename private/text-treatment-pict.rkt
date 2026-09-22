@@ -98,9 +98,15 @@
             ;; Picts used by text effects.
             (define old-brush (send drawing-context get-brush))
             (define old-pen (send drawing-context get-pen))
+            (define old-smoothing (send drawing-context get-smoothing))
             (dynamic-wind
               void
               (lambda ()
+                ;; Text-treatment backgrounds and borders are continuous vector
+                ;; geometry. Choose smoothed drawing inside this delayed Pict
+                ;; callback so fill and border share one unsnapped device-space
+                ;; interpretation regardless of the caller's current mode.
+                (send drawing-context set-smoothing 'smoothed)
                 (when background
                   (send drawing-context set-brush
                         (make-paint-brush
@@ -128,7 +134,8 @@
                         (max 0 (- height (* 2 pen-inset))))))
               (lambda ()
                 (send drawing-context set-brush old-brush)
-                (send drawing-context set-pen old-pen))))
+                (send drawing-context set-pen old-pen)
+                (send drawing-context set-smoothing old-smoothing))))
           width height ascent descent))]))
 
 ;; apply-text-treatment-to-pict : pict? (or/c #f text-treatment?) positive-real? camera?
@@ -205,9 +212,14 @@
           (lambda (drawing-context x y)
             (define old-brush (send drawing-context get-brush))
             (define old-pen (send drawing-context get-pen))
+            (define old-smoothing (send drawing-context get-smoothing))
             (dynamic-wind
               void
               (lambda ()
+                ;; The cosmetic treatment border should follow the same precise
+                ;; geometry after semantic scaling instead of inheriting a
+                ;; caller-selected aligned/unsmoothed device snap.
+                (send drawing-context set-smoothing 'smoothed)
                 (send drawing-context set-brush
                       (make-brush #:color "black" #:style 'transparent))
                 (send drawing-context set-pen
@@ -223,7 +235,8 @@
                       (max 0 (- source-scaled-height (* 2 inset)))))
               (lambda ()
                 (send drawing-context set-brush old-brush)
-                (send drawing-context set-pen old-pen))))
+                (send drawing-context set-pen old-pen)
+                (send drawing-context set-smoothing old-smoothing))))
           full-width full-height
           (pict-ascent anchored-scaled)
           (pict-descent anchored-scaled))]))

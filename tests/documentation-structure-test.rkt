@@ -11,6 +11,7 @@
 
 (require rackunit
          racket/file
+         racket/path
          racket/runtime-path)
 
 (define-runtime-path manual-path "../scribblings/animate.scrbl")
@@ -22,8 +23,29 @@
 (define (chapter root name)
   (build-path root name))
 
+
+;; Inspect the include tree, not only the five-part manual entry point.
+(define (manual-source-tree-text entry)
+  (define seen (make-hash))
+  (define (visit path)
+    (define key (simplify-path (path->complete-path path)))
+    (cond
+      [(hash-ref seen key #f) ""]
+      [(not (file-exists? key)) ""]
+      [else
+       (hash-set! seen key #t)
+       (define text (file->string key))
+       (for/fold ([result text])
+                 ([relative (in-list
+                             (regexp-match*
+                              #px"@include-section\\[\"([^\"\r\n]+)\"\\]"
+                              text #:match-select cadr))])
+         (string-append result "\n"
+                        (visit (build-path (path-only key) relative))))]))
+  (visit entry))
+
 (module+ test
-  (define manual-text (file->string manual-path))
+  (define manual-text (manual-source-tree-text manual-path))
   (check-true (< (file-size manual-path) 10000)
               "the registered manual should be an entry point, not a monolith")
   (for ([include (in-list
@@ -49,7 +71,16 @@
                     "reference/rendering.scrbl"
                     "cookbook/canonical-examples.scrbl"
                     "guide/package-source.scrbl"
-                    "cookbook/reference-recipes.scrbl"))])
+                    "reference/coordinate-decorations.scrbl"
+                    "reference/markers-scatter-and-areas.scrbl"
+                    "reference/statistical-diagrams.scrbl"
+                    "cookbook/appearance-and-text-effects.scrbl"
+                    "cookbook/camera-views-and-overlays.scrbl"
+                    "cookbook/animation-timing-recipes.scrbl"
+                    "cookbook/path-motion-recipes.scrbl"
+                    "cookbook/path-correspondence-recipes.scrbl"
+                    "cookbook/topology-morph-recipes.scrbl"
+                    "cookbook/plot-styling-recipes.scrbl"))])
     (check-true (regexp-match? (regexp (regexp-quote include)) manual-text)))
   (for ([path (in-list
                (list (chapter guide-root "getting-started.scrbl")
@@ -74,13 +105,22 @@
                      (chapter reference-root "rendering.scrbl")
                      (chapter cookbook-root "canonical-examples.scrbl")
                      (chapter guide-root "package-source.scrbl")
-                     (chapter cookbook-root "reference-recipes.scrbl")))])
+                     (chapter reference-root "coordinate-decorations.scrbl")
+                     (chapter reference-root "markers-scatter-and-areas.scrbl")
+                     (chapter reference-root "statistical-diagrams.scrbl")
+                     (chapter cookbook-root "appearance-and-text-effects.scrbl")
+                     (chapter cookbook-root "camera-views-and-overlays.scrbl")
+                     (chapter cookbook-root "animation-timing-recipes.scrbl")
+                     (chapter cookbook-root "path-motion-recipes.scrbl")
+                     (chapter cookbook-root "path-correspondence-recipes.scrbl")
+                     (chapter cookbook-root "topology-morph-recipes.scrbl")
+                     (chapter cookbook-root "plot-styling-recipes.scrbl")))])
     (check-true (file-exists? path))
     ;; `include-section` turns each included document into a top-level HTML
     ;; page.  A section fragment has an anonymous parent there, which Scribble
     ;; renders as `???` in the table of contents.  Stable titled pages also
     ;; give the generated manual readable, durable URLs.
     (check-true
-     (regexp-match? #rx"(?m:^@title\\[#:tag \\\"[^\\\"]+\\\"\\])"
+     (regexp-match? #rx"(?m:^@title\\[#:tag \\\"[^\\\"]+\\\".*\\])"
                     (file->string path))
      (format "included manual chapter needs a tagged @title: ~a" path))))

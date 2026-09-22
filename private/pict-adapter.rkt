@@ -1459,9 +1459,13 @@
   (dc
    (lambda (drawing-context x y)
      (define old-pen (send drawing-context get-pen))
+     (define old-smoothing (send drawing-context get-smoothing))
      (dynamic-wind
        void
        (lambda ()
+         ;; Leader lines should terminate at their measured anchor geometry,
+         ;; not at a device-snapped approximation chosen by the outer caller.
+         (send drawing-context set-smoothing 'smoothed)
          (send drawing-context set-pen
                (make-pen #:color "gray" #:width 1 #:style 'solid
                          #:cap 'round #:join 'round))
@@ -1478,7 +1482,9 @@
                 (send drawing-context draw-line
                       (+ x start-x) (+ y start-y)
                       (+ x anchor-x) (+ y anchor-y))]))
-       (lambda () (send drawing-context set-pen old-pen))))
+       (lambda ()
+         (send drawing-context set-pen old-pen)
+         (send drawing-context set-smoothing old-smoothing))))
    frame-width frame-height))
 
 ; place-camera-view-on-pict : pict? scene-state? camera-view-visual? camera?
@@ -1571,19 +1577,27 @@
      (define old-region (send drawing-context get-clipping-region))
      (define old-pen (send drawing-context get-pen))
      (define old-brush (send drawing-context get-brush))
+     (define old-smoothing (send drawing-context get-smoothing))
      (define rounded-path (rounded-rectangle-dc-path width height radius))
      (define clip-region (new region% [dc drawing-context]))
      (send clip-region set-path rounded-path x y 'odd-even)
      (when old-region (send clip-region intersect old-region))
      (dynamic-wind
-       (lambda () (send drawing-context set-clipping-region clip-region))
-       (lambda () (draw-pict inset drawing-context x y))
-       (lambda () (send drawing-context set-clipping-region old-region)))
-     (send drawing-context set-pen (make-pen #:color "black" #:width 1))
-     (send drawing-context set-brush (make-brush #:color "black" #:style 'transparent))
-     (send drawing-context draw-path rounded-path x y)
-     (send drawing-context set-pen old-pen)
-     (send drawing-context set-brush old-brush))
+       void
+       (lambda ()
+         ;; The rounded viewport clip and its visible outline should share one
+         ;; continuous device-space interpretation.
+         (send drawing-context set-smoothing 'smoothed)
+         (send drawing-context set-clipping-region clip-region)
+         (draw-pict inset drawing-context x y)
+         (send drawing-context set-pen (make-pen #:color "black" #:width 1))
+         (send drawing-context set-brush (make-brush #:color "black" #:style 'transparent))
+         (send drawing-context draw-path rounded-path x y))
+       (lambda ()
+         (send drawing-context set-clipping-region old-region)
+         (send drawing-context set-pen old-pen)
+         (send drawing-context set-brush old-brush)
+         (send drawing-context set-smoothing old-smoothing))))
    width height))
 
 (define (rounded-rectangle-dc-path width height radius)
@@ -1879,9 +1893,13 @@
   (dc (lambda (drawing-context x y)
         (define old-pen
           (send drawing-context get-pen))
+        (define old-smoothing
+          (send drawing-context get-smoothing))
         (dynamic-wind
           void
           (lambda ()
+            ;; Callout connectors should end exactly on the measured anchor.
+            (send drawing-context set-smoothing 'smoothed)
             (send drawing-context
                   set-pen
                   (make-pen #:color
@@ -1899,6 +1917,7 @@
                   (+ x to-x)
                   (+ y to-y)))
           (lambda ()
-            (send drawing-context set-pen old-pen))))
+            (send drawing-context set-pen old-pen)
+            (send drawing-context set-smoothing old-smoothing))))
       frame-width
       frame-height))

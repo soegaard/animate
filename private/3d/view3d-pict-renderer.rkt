@@ -49,7 +49,7 @@
     (define backend-identity
       (renderer3d-cache-identity (current-view3d-renderer3d)))
     (and backend-identity
-         (list 'animate-view3d-pict-renderer-v2 backend-identity)))
+         (list 'animate-view3d-pict-renderer-v3-smoothed-wireframe backend-identity)))
   #:methods gen:pict-renderer
   [(define (pict-renderer-supports? _renderer visual)
      (view3d? visual))
@@ -123,9 +123,14 @@
      (define old-pen (send drawing-context get-pen))
      (define old-brush (send drawing-context get-brush))
      (define old-region (send drawing-context get-clipping-region))
+     (define old-smoothing (send drawing-context get-smoothing))
      (dynamic-wind
        void
        (lambda ()
+         ;; Projected wireframe segments are continuous vector geometry. Keep
+         ;; them in smoothed device space so rendered endpoints do not drift
+         ;; relative to other measured overlays.
+         (send drawing-context set-smoothing 'smoothed)
          (send drawing-context set-pen
                (make-pen #:color (draw-color-spec background)
                          #:style 'transparent))
@@ -148,7 +153,8 @@
        (lambda ()
          (send drawing-context set-clipping-region old-region)
          (send drawing-context set-pen old-pen)
-         (send drawing-context set-brush old-brush))))
+         (send drawing-context set-brush old-brush)
+         (send drawing-context set-smoothing old-smoothing))))
    width height))
 
 (define (draw-wireframe-segment! drawing-context x-offset y-offset width height segment)
