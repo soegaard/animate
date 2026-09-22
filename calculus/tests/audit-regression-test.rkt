@@ -18,11 +18,13 @@
                   calculus-snapshot-formula-fragments
                   calculus-snapshot-formula-skeleton-tex
                   calculus-snapshot-region-samples
+                  calculus-snapshot-riemann-cells
                   calculus-snapshot-motion-state
                   calculus-snapshot-presentation-state
                   calculus-snapshot-label-visible?
                   calculus-snapshot-reading-owned-parts
                   calculus-model-nodes
+                  make-generic
                   c-part
                   calculus-plan-caption
                   calculus-snapshot-reading-points))
@@ -779,6 +781,58 @@
           (region-under (snapshot-of (graph live) #:values ([a 1/7])) #:from 0 #:to 1)]
          [composite-integral (definite-integral composite #:from 0 #:to 1/4)]
          [composite-safe (definite-integral composite #:from 0 #:to 1/8)]))
+
+;; R20: nested coverage obligations, selected Domain operands, caller-owned
+;; read indices, and Riemann cells all retain the context of their own source.
+(define-calculus-model r20-context-regressions
+  (model [a (parameter 1 #:domain (closed 1 2))]
+         [n (parameter 1 #:kind 'integer #:domain (integers 0 5))]
+         [g (function (x) 1
+              #:domain (domain-union (closed 0 1/7) (closed 29/200 1)))]
+         [id (function (x) x)] [one (function (x) 1)] [zero (function (x) 0)]
+         [composite (compose-functions g id)]
+         [wide (restrict-function composite real-line)]
+         [narrow (restrict-function composite (closed 0 1))]
+         [delta (difference-function composite zero)]
+         [nested (restrict-function delta (closed 0 1))]
+         [total (compose-functions id one)]
+         [I-wide (definite-integral wide #:from 0 #:to 1)]
+         [I-narrow (definite-integral narrow #:from 0 #:to 1)]
+         [I-delta (definite-integral delta #:from 0 #:to 1)]
+         [I-nested (definite-integral nested #:from 0 #:to 1)]
+         [I-total (definite-integral total #:from 0 #:to 1)]
+         [cut (parameter 1/2 #:domain (closed 0 3/4))]
+         [D (domain-union (closed 0 cut) (closed (+ cut 3/1400) 1))]
+         [FD (snapshot-of D #:values ([cut 1/7]))]
+         [union-FD (domain-union FD (singleton 2))]
+         [intersection-FD (domain-intersection FD (closed 0 1))]
+         [except-FD (domain-except FD 1/2)]
+         [union-FD-safe (in-domain? 1/8 union-FD)]
+         [intersection-FD-safe (in-domain? 1/8 intersection-FD)]
+         [except-FD-safe (in-domain? 1/8 except-FD)]
+         [union-FD-gap (in-domain? 403/2800 union-FD)]
+         [intersection-FD-gap (in-domain? 403/2800 intersection-FD)]
+         [except-FD-gap (in-domain? 403/2800 except-FD)]
+         [f-FD (function (x) 1 #:domain FD)] [G-FD (graph f-FD)]
+         [I-FD (definite-integral f-FD #:from 0 #:to 1)]
+         [A-FD (region-under G-FD #:from 0 #:to 1)]
+         [S (sequence (k) (+ k n) #:from 1)]
+         [J (iteration-map (u) (+ u n) #:start 0 #:steps 3)]
+         [FS (snapshot-of S #:values ([n 1]))]
+         [FJ (snapshot-of J #:values ([n 1]))]
+         [sequence-query (sequence-value FS n)]
+         [sequence-sum (partial-sum FS #:from n #:to n)]
+         [iteration-query (iterate-value FJ n)]
+         [f (function (x) (* a x))]
+         [P (uniform-partition 0 a #:count 2)]
+         [T (tag-partition P #:sample 'midpoint)]
+         [FT (snapshot-of T #:values ([a 1]))]
+         [sum-frozen-tags (riemann-sum f FT)]
+         [frozen-sum (snapshot-of sum-frozen-tags #:values ([a 1]))]
+         [B-frozen-tags (riemann-rectangles sum-frozen-tags)]
+         [B-frozen-sum (riemann-rectangles frozen-sum)]
+         [v-frozen-tags (sum-value sum-frozen-tags)]
+         [v-frozen-sum (sum-value frozen-sum)]))
 
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
@@ -1614,7 +1668,57 @@
   (for ([address (in-list '(fixed-region frozen-region graph-snapshot-region))])
     (define samples (calculus-snapshot-region-samples r19-topology address))
     (check-equal? (calculus-result-status samples) 'defined)
-    (check-not-false (member #f (calculus-result-value samples)))))
+    (check-not-false (member #f (calculus-result-value samples))))
+  ;; R20: coverage obligations cannot be discarded by an enclosing
+  ;; intersection, while a composition with a total outer domain is valid.
+  (define r20-live
+    (calculus-model-at r20-context-regressions #:values (hash 'a 2 'n 2)))
+  (for ([name (in-list '(I-wide I-narrow I-delta I-nested I-FD))])
+    (check-domain-rejected (calculus-snapshot-ref r20-live name)))
+  (check-value (calculus-snapshot-ref r20-live 'I-total) 1)
+  ;; Selected Domain operands retain their own frozen context inside every
+  ;; algebra constructor, and the same fixed gap becomes region topology.
+  (for ([name (in-list '(union-FD-safe intersection-FD-safe except-FD-safe))])
+    (check-value (calculus-snapshot-ref r20-live name) #t))
+  (for ([name (in-list '(union-FD-gap intersection-FD-gap except-FD-gap))])
+    (check-value (calculus-snapshot-ref r20-live name) #f))
+  ;; Snapshot inspection also accepts a held query expression, so a caller can
+  ;; inspect an algebra operand without first adding a temporary model root.
+  (check-value
+   (calculus-snapshot-ref
+    r20-live
+    (make-generic 'in-domain?
+                  (list 1/8
+                        (hash-ref (calculus-model-nodes r20-context-regressions)
+                                  'union-FD))))
+   #t)
+  (define r20-region (calculus-snapshot-region-samples r20-live 'A-FD))
+  (check-equal? (calculus-result-status r20-region) 'defined)
+  (check-not-false (member #f (calculus-result-value r20-region)))
+  ;; The selected Sequence/Iteration remains frozen while its queried index is
+  ;; evaluated in the caller's live context.
+  (check-value (calculus-snapshot-ref r20-live 'sequence-query) 3)
+  (check-value (calculus-snapshot-ref r20-live 'sequence-sum) 3)
+  (check-value (calculus-snapshot-ref r20-live 'iteration-query) 2)
+  (define r20-invalid
+    (calculus-model-at r20-context-regressions #:values (hash 'a 2 'n 4)))
+  (check-not-equal?
+   (calculus-result-status (calculus-snapshot-ref r20-invalid 'iteration-query))
+   'defined)
+  ;; Exact cells and their weighted areas share the selected function, tag,
+  ;; and partition contexts used by the corresponding numeric Riemann sum.
+  (define r20-frozen-tag-cells
+    (calculus-snapshot-riemann-cells r20-live
+                                     (hash-ref (calculus-model-nodes r20-context-regressions)
+                                               'B-frozen-tags)))
+  (check-value r20-frozen-tag-cells '((0 1/2 1/2) (1/2 1 3/2)))
+  (check-value (calculus-snapshot-ref r20-live 'v-frozen-tags) 1)
+  (define r20-frozen-sum-cells
+    (calculus-snapshot-riemann-cells r20-live
+                                     (hash-ref (calculus-model-nodes r20-context-regressions)
+                                               'B-frozen-sum)))
+  (check-value r20-frozen-sum-cells '((0 1/2 1/4) (1/2 1 3/4)))
+  (check-value (calculus-snapshot-ref r20-live 'v-frozen-sum) 1/2))
 
 (module+ test
   (run-calculus-audit-regression-tests))

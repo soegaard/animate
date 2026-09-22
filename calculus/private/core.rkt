@@ -1070,8 +1070,8 @@
          (defined raw)
          (undefined "expected a domain")))))
 
-(define (eval-domain-number value environment model computation)
-  (result-bind (eval-raw value environment model computation)
+(define (eval-domain-number value environment model computation [lexical (hash)])
+  (result-bind (eval-raw value environment model computation lexical)
                (lambda (number)
                  (if (finite-real? number)
                      (defined number)
@@ -1120,36 +1120,95 @@
        [(domain-union)
         (let loop ([items (c-domain-arguments raw)])
           (cond [(null? items) (defined #f)]
-                [else (result-bind (domain-contains?/in-context (car items) value environment model computation lexical)
+                ;; Every operand can independently be a component export or a
+                ;; snapshot.  Re-enter through the selected-domain boundary
+                ;; rather than treating a selected child as raw syntax in the
+                ;; parent's context.
+                [else (result-bind (domain-contains? (car items) value environment model computation lexical)
                                    (lambda (inside?) (if inside? (defined #t) (loop (cdr items)))))]))]
        [(domain-intersection)
         (let loop ([items (c-domain-arguments raw)])
           (cond [(null? items) (defined #t)]
-                [else (result-bind (domain-contains?/in-context (car items) value environment model computation lexical)
+                [else (result-bind (domain-contains? (car items) value environment model computation lexical)
                                    (lambda (inside?) (if inside? (loop (cdr items)) (defined #f))))]))]
        [(domain-except)
         (define base (first (c-domain-arguments raw)))
         (define holes (rest (c-domain-arguments raw)))
-        (result-bind (domain-contains?/in-context base value environment model computation lexical)
+        (result-bind (domain-contains? base value environment model computation lexical)
                      (lambda (inside?)
                        (if (not inside?) (defined #f)
                            (let loop ([items holes])
                              (cond [(null? items) (defined #t)]
-                                   [else (result-bind (eval-domain-number (car items) environment model computation)
+                                   [else (result-bind (eval-domain-number (car items) environment model computation lexical)
                                                       (lambda (hole) (if (= value hole) (defined #f) (loop (cdr items)))))])))))]
        [else (unresolved (format "unsupported domain kind ~a" (c-domain-kind raw)))] )]))
 
 ;; domain-contains? : semantic-value? finite-real? hash? calculus-model?
 ;;                    calculus-computation? [hash?] -> calculus-result?
-;; Domain membership is an ordinary consumer.  Its inner recursion deliberately
-;; stays in one resolved context; the outer entry point crosses selected public
-;; exports and snapshots exactly once.
+;; Domain membership is an ordinary consumer. Its structural recursion remains
+;; in one resolved context, while each Domain operand crosses its own selected
+;; boundary so a live algebra node can contain frozen or exported children.
 (define (domain-contains? domain value environment model computation [lexical (hash)])
   (result-bind
    (resolve-selected-context domain environment model computation lexical)
    (lambda (context)
      (domain-contains?/in-context
       (c-selected-context-target context) value
+      (c-selected-context-environment context)
+      (c-selected-context-model context)
+      computation
+      (c-selected-context-lexical context)))))
+
+;; domain-boundaries/in-context : semantic-value? hash? calculus-model?
+;;                                 calculus-computation? hash? -> calculus-result?
+;;   Produces exact finite boundary candidates in the context that owns each
+;; Domain.  Domain algebra is structural, but its operands can independently
+;; cross a component-export or snapshot boundary.  In particular, an absent
+;; shallow representation is not evidence that a selected Domain has no
+;; boundaries.
+(define (domain-boundaries/in-context domain environment model computation lexical)
+  (define raw (node-raw domain))
+  (cond
+    [(not (c-domain? raw)) (undefined "expected a domain")]
+    [(memq (c-domain-kind raw) '(domain-union domain-intersection))
+     (let loop ([items (c-domain-arguments raw)] [values '()])
+       (cond
+         [(null? items) (defined (immutable-list-copy (reverse values)))]
+         [else
+          (result-bind
+           (domain-boundaries (first items) environment model computation lexical)
+           (lambda (boundaries)
+             (loop (rest items) (append (reverse boundaries) values))))]))]
+    [(eq? (c-domain-kind raw) 'domain-except)
+     (result-bind
+      (domain-boundaries (first (c-domain-arguments raw))
+                         environment model computation lexical)
+      (lambda (base-boundaries)
+        (let loop ([holes (rest (c-domain-arguments raw))]
+                   [values (reverse base-boundaries)])
+          (cond
+            [(null? holes) (defined (immutable-list-copy (reverse values)))]
+            [else
+             (result-bind
+              (eval-domain-number (first holes) environment model computation lexical)
+              (lambda (hole) (loop (rest holes) (cons hole values))))]))))]
+    [else
+     (let loop ([expressions (domain-boundary-expressions raw)] [values '()])
+       (cond
+         [(null? expressions) (defined (immutable-list-copy (reverse values)))]
+         [else
+          (result-bind
+           (eval-domain-number (first expressions) environment model computation lexical)
+           (lambda (boundary) (loop (rest expressions) (cons boundary values))))]))]))
+
+;; domain-boundaries : semantic-value? hash? calculus-model?
+;;                      calculus-computation? [hash?] -> calculus-result?
+(define (domain-boundaries domain environment model computation [lexical (hash)])
+  (result-bind
+   (resolve-selected-context domain environment model computation lexical)
+   (lambda (context)
+     (domain-boundaries/in-context
+      (c-selected-context-target context)
       (c-selected-context-environment context)
       (c-selected-context-model context)
       computation
@@ -1451,18 +1510,11 @@
 (define (effective-domain-boundaries effective computation)
   (cond
     [(c-effective-domain? effective)
-     (let loop ([expressions
-                 (domain-boundary-expressions (c-effective-domain-domain effective))]
-                [values '()])
-       (cond [(null? expressions) (defined (reverse values))]
-             [else
-              (result-bind
-               (eval-domain-number (first expressions)
-                                   (c-effective-domain-environment effective)
-                                   (c-effective-domain-model effective)
-                                   computation)
-               (lambda (boundary)
-                 (loop (rest expressions) (cons boundary values))))]))]
+     (domain-boundaries (c-effective-domain-domain effective)
+                        (c-effective-domain-environment effective)
+                        (c-effective-domain-model effective)
+                        computation
+                        (c-effective-domain-lexical effective))]
     [(c-effective-domain-intersection? effective)
      (let loop ([domains (c-effective-domain-intersection-domains effective)]
                 [values '()])
@@ -1480,19 +1532,52 @@
       (c-effective-domain-composition-inner effective) computation)]
     [else (undefined "expected an effective function domain")]))
 
-;; effective-domain-path-covered? : effective-domain? finite-real? finite-real?
-;;                                   calculus-computation? -> calculus-result?
-(define (effective-domain-real-line? effective)
+;; effective-domain-real-line? : effective-domain? calculus-computation?
+;;                                -> calculus-result?
+;;   Totality is also a selected-Domain query. A snapshot or component export
+;; may denote real-line, so inspecting the held wrapper is neither safe nor
+;; sufficient evidence for a composition's outer-domain obligation.
+(define (effective-domain-real-line? effective computation)
   (cond
     [(c-effective-domain? effective)
-     (eq? (c-domain-kind (c-effective-domain-domain effective)) 'real-line)]
+     (result-bind
+      (resolve-selected-context
+       (c-effective-domain-domain effective)
+       (c-effective-domain-environment effective)
+       (c-effective-domain-model effective)
+       computation
+       (c-effective-domain-lexical effective))
+      (lambda (context)
+        (define raw (node-raw (c-selected-context-target context)))
+        (if (c-domain? raw)
+            (defined (eq? (c-domain-kind raw) 'real-line))
+            (undefined "expected a domain"))))]
     [(c-effective-domain-intersection? effective)
-     (andmap effective-domain-real-line?
-             (c-effective-domain-intersection-domains effective))]
-    [else #f]))
+     (let loop ([domains (c-effective-domain-intersection-domains effective)])
+       (cond [(null? domains) (defined #t)]
+             [else
+              (result-bind
+               (effective-domain-real-line? (first domains) computation)
+               (lambda (total?)
+                 (if total? (loop (rest domains)) (defined #f))))]))]
+    [else (defined #f)]))
+
+;; effective-domain-path-covered? : effective-domain? finite-real? finite-real?
+;;                                   calculus-computation? -> calculus-result?
 
 (define (effective-domain-path-covered? effective a b computation)
   (cond
+    [(c-effective-domain-intersection? effective)
+     ;; Coverage is a proof obligation, not a union of convenient split
+     ;; points. A restriction or difference must establish every constituent
+     ;; in its own context, so it cannot conceal a composition's unresolved
+     ;; outer-domain preimage behind generic probing.
+     (let loop ([domains (c-effective-domain-intersection-domains effective)])
+       (cond [(null? domains) (defined #t)]
+             [else
+              (result-bind
+               (effective-domain-path-covered? (first domains) a b computation)
+               (lambda (_) (loop (rest domains))))]))]
     [(c-effective-domain-composition? effective)
      ;; Prove the inner path using its actual input boundaries.  If the outer
      ;; domain is not total, a proper-integral proof would require its
@@ -1501,10 +1586,13 @@
       (effective-domain-path-covered?
        (c-effective-domain-composition-inner effective) a b computation)
       (lambda (_)
-        (if (effective-domain-real-line?
-             (c-effective-domain-composition-outer effective))
-            (defined #t)
-            (unresolved "composition outer-domain path coverage is not established"))))]
+        (result-bind
+         (effective-domain-real-line?
+          (c-effective-domain-composition-outer effective) computation)
+         (lambda (total?)
+           (if total?
+               (defined #t)
+               (unresolved "composition outer-domain path coverage is not established"))))))]
     [else
      (result-bind
       (effective-domain-boundaries effective computation)
@@ -3172,7 +3260,15 @@
                            computation
                            (c-selected-context-lexical context)))))
 
-(define (eval-sum-value/in-context sum environment model computation lexical)
+(struct c-riemann-sum-data (function tags points) #:transparent)
+
+;; resolve-riemann-sum-data/in-context : semantic-value? hash? calculus-model?
+;;                                        calculus-computation? hash? -> calculus-result?
+;;   Separates the three independently selected sources of a Riemann sum:
+;; the Function belongs to the sum context, and the tags and partition belong
+;; to the selected TaggedPartition context. Both numeric summation and native
+;; rectangle geometry consume this one representation.
+(define (resolve-riemann-sum-data/in-context sum environment model computation lexical)
   (define raw (node-raw sum))
   (cond
     [(not (and (c-object? raw) (eq? (c-object-kind raw) 'riemann-sum)))
@@ -3195,21 +3291,30 @@
                                    (c-selected-context-lexical tag-context))
              (lambda (tags)
                (result-bind
-                (eval-partition (first (c-object-arguments tag-source))
+             (eval-partition (first (c-object-arguments tag-source))
                                 (c-selected-context-environment tag-context)
                                 (c-selected-context-model tag-context)
                                 computation
                                 (c-selected-context-lexical tag-context))
                 (lambda (points)
-                  (let loop ([samples tags] [endpoints points] [total 0])
-                    (if (null? samples)
-                        (defined total)
-                        (result-bind
-                         (evaluate-function function (car samples) environment model computation lexical)
-                         (lambda (height)
-                           (loop (cdr samples)
-                                 (cdr endpoints)
-                                 (+ total (* height (- (second endpoints) (first endpoints))))))))))))))))]))
+                  (defined (c-riemann-sum-data function tags points)))))))))]))
+
+(define (eval-sum-value/in-context sum environment model computation lexical)
+  (result-bind
+   (resolve-riemann-sum-data/in-context sum environment model computation lexical)
+   (lambda (data)
+     (let loop ([samples (c-riemann-sum-data-tags data)]
+                [endpoints (c-riemann-sum-data-points data)]
+                [total 0])
+       (if (null? samples)
+           (defined total)
+           (result-bind
+            (evaluate-function (c-riemann-sum-data-function data) (car samples)
+                               environment model computation lexical)
+            (lambda (height)
+              (loop (cdr samples)
+                    (cdr endpoints)
+                    (+ total (* height (- (second endpoints) (first endpoints))))))))))))
 
 (define (eval-sum-value sum environment model computation lexical)
   (result-bind
@@ -3227,34 +3332,45 @@
 ;;   Refinement carriers use this same semantic calculation for their proposed
 ;;   next count; the renderer never invents child heights from pixels.
 (define (riemann-cells/in-environment rectangles environment model computation)
-  (define raw (node-raw rectangles))
-  (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'riemann-rectangles)))
-      (undefined "expected Riemann rectangles")
-      (let* ([sum (first (c-object-arguments raw))]
-             [sum-raw (node-raw sum)])
-        (if (not (and (c-object? sum-raw) (eq? (c-object-kind sum-raw) 'riemann-sum)))
-            (undefined "Riemann rectangles require a Riemann sum")
-            (let ([function (first (c-object-arguments sum-raw))]
-                  [tagged (second (c-object-arguments sum-raw))])
-              (result-bind
-               (eval-tags tagged environment model computation (hash))
-               (lambda (tags)
-                 (define tagged-raw (node-raw tagged))
-                 (result-bind
-                  (eval-partition (first (c-object-arguments tagged-raw))
-                                  environment model computation (hash))
-                  (lambda (points)
-                    (let loop ([lefts points] [rights (rest points)] [samples tags] [cells '()])
-                      (cond
-                        [(null? samples) (defined (immutable-list-copy (reverse cells)))]
-                        [(or (null? lefts) (null? rights))
-                         (undefined "Riemann tags do not match partition cells")]
-                        [else
-                         (result-bind
-                          (evaluate-function function (car samples) environment model computation (hash))
-                          (lambda (height)
-                            (loop (rest lefts) (rest rights) (rest samples)
-                                  (cons (list (car lefts) (car rights) height) cells))))])))))))))))
+  (result-bind
+   (resolve-selected-context rectangles environment model computation (hash))
+   (lambda (rectangle-context)
+     (define raw (node-raw (c-selected-context-target rectangle-context)))
+     (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'riemann-rectangles)))
+         (undefined "expected Riemann rectangles")
+         (result-bind
+          (resolve-selected-context (first (c-object-arguments raw))
+                                    (c-selected-context-environment rectangle-context)
+                                    (c-selected-context-model rectangle-context)
+                                    computation
+                                    (c-selected-context-lexical rectangle-context))
+          (lambda (sum-context)
+            (result-bind
+             (resolve-riemann-sum-data/in-context
+              (c-selected-context-target sum-context)
+              (c-selected-context-environment sum-context)
+              (c-selected-context-model sum-context)
+              computation
+              (c-selected-context-lexical sum-context))
+             (lambda (data)
+               (let loop ([lefts (c-riemann-sum-data-points data)]
+                          [rights (rest (c-riemann-sum-data-points data))]
+                          [samples (c-riemann-sum-data-tags data)]
+                          [cells '()])
+                 (cond
+                   [(null? samples) (defined (immutable-list-copy (reverse cells)))]
+                   [(or (null? lefts) (null? rights))
+                    (undefined "Riemann tags do not match partition cells")]
+                   [else
+                    (result-bind
+                     (evaluate-function (c-riemann-sum-data-function data) (car samples)
+                                        (c-selected-context-environment sum-context)
+                                        (c-selected-context-model sum-context)
+                                        computation
+                                        (c-selected-context-lexical sum-context))
+                     (lambda (height)
+                       (loop (rest lefts) (rest rights) (rest samples)
+                             (cons (list (car lefts) (car rights) height) cells))))]))))))))))
 
 ;; calculus-snapshot-riemann-cells : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Supplies exact, snapshot-derived rectangle cells to the native adapter.
@@ -3877,16 +3993,20 @@
                          (hash-set lexical variable (defined n)))
                (undefined "sequence index must be an integer at or above #:from"))))))]))
 
-;; A Sequence's body and starting index belong to its selected context.
+;; The query index belongs to the caller; the selected Sequence owns its body
+;; and starting index. Freezing a source must not freeze a later read request.
 (define (eval-sequence-value sequence index environment model computation lexical)
   (result-bind
-   (resolve-selected-context sequence environment model computation lexical)
-   (lambda (context)
-     (eval-sequence-value/in-context (c-selected-context-target context) index
-                                     (c-selected-context-environment context)
-                                     (c-selected-context-model context)
-                                     computation
-                                     (c-selected-context-lexical context)))))
+   (eval-raw index environment model computation lexical)
+   (lambda (query-index)
+     (result-bind
+      (resolve-selected-context sequence environment model computation lexical)
+      (lambda (context)
+        (eval-sequence-value/in-context (c-selected-context-target context) query-index
+                                        (c-selected-context-environment context)
+                                        (c-selected-context-model context)
+                                        computation
+                                        (c-selected-context-lexical context)))))))
 
 ;; eval-partial-sum : semantic-value? semantic-value? semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
 ;;   Computes an inclusive finite sum over valid integer sequence indices.
@@ -3981,17 +4101,20 @@
                                  (undefined "Newton derivative is zero")
                                  (loop (add1 position) (- current (/ fx dx)))))))))))))))))))))
 
-;; Iteration bodies, seeds, and step counts likewise stay with the selected
-;; exported or frozen descriptor.
+;; The caller supplies the read index; iteration bodies, seeds, and step counts
+;; stay with the selected exported or frozen descriptor.
 (define (eval-iterate-value iteration index environment model computation lexical)
   (result-bind
-   (resolve-selected-context iteration environment model computation lexical)
-   (lambda (context)
-     (eval-iterate-value/in-context (c-selected-context-target context) index
-                                    (c-selected-context-environment context)
-                                    (c-selected-context-model context)
-                                    computation
-                                    (c-selected-context-lexical context)))))
+   (eval-raw index environment model computation lexical)
+   (lambda (query-index)
+     (result-bind
+      (resolve-selected-context iteration environment model computation lexical)
+      (lambda (context)
+        (eval-iterate-value/in-context (c-selected-context-target context) query-index
+                                       (c-selected-context-environment context)
+                                       (c-selected-context-model context)
+                                       computation
+                                       (c-selected-context-lexical context)))))))
 
 ;; eval-sequence-points : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
 ;;   Returns only authored integer-indexed samples, never an interpolated curve.
@@ -6108,12 +6231,12 @@
 
 ;; address->object : calculus-model? address? -> semantic-target?
 ;;   Resolves a public root/part address without consulting rendered geometry.
-;; Native presentation may also supply the already-typed `c-node` or `c-part`
-;; that authored a view; this keeps non-symbol nested selectors internal rather
-;; than accidentally extending the public address syntax.
+;; Native presentation and semantic inspection may also supply an already-typed
+;; node, Part, or held expression. This keeps non-symbol nested selectors
+;; internal while permitting a snapshot to evaluate an authored query directly.
 (define (address->object model address)
   (cond
-    [(or (c-node? address) (c-part? address)) address]
+    [(or (c-node? address) (c-part? address) (c-expression? address)) address]
     [else
      (define pieces (if (symbol? address) (list address) address))
      (unless (and (list? pieces) (pair? pieces) (andmap symbol? pieces))
@@ -6800,8 +6923,9 @@
 ;;   Selects the semantic state named by a checkpoint action.
 (define (calculus-checkpoint address) (calculus-moment 'checkpoint (if (symbol? address) (list address) address)))
 
-;; calculus-snapshot-ref : calculus-snapshot? address? -> calculus-result?
-;;   Evaluates one public mathematical root or part in the snapshot environment.
+;; calculus-snapshot-ref : calculus-snapshot? (or/c address? c-expression?) -> calculus-result?
+;;   Evaluates one public mathematical root, Part, or held query expression in
+;; the snapshot environment.
 (define (calculus-snapshot-ref snapshot address)
   (check 'calculus-snapshot-ref calculus-snapshot? "calculus-snapshot?" snapshot)
   (eval-raw (address->object (calculus-snapshot-model snapshot) address)
