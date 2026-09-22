@@ -1440,6 +1440,40 @@
   (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
   (step reveal (show (part study 'L)) (pause 1)))
 
+;; R19: native consumers follow named exports, while region topology uses the
+;; frozen graph domain to preserve a genuine unpainted gap.
+(define-calculus-component render-r19-tagged-producer
+  (inputs [height : Scalar])
+  (model [mesh (uniform-partition 0 height #:count 2)]
+         [tags (tag-partition mesh #:sample 'midpoint)])
+  (exports tags))
+
+(define-calculus-component render-r19-tagged-line-consumer
+  (inputs [source : TaggedPartition])
+  (model [f (function (x) x)] [S (riemann-sum f source)]
+         [L (horizontal-line (sum-value S))])
+  (exports L))
+
+(define-calculus-lesson render-r19-tagged-export-line
+  (model [producer (use-component render-r19-tagged-producer 1)]
+         [named (part producer 'tags)]
+         [study (use-component render-r19-tagged-line-consumer named)])
+  (views [plot (graph-view #:x (closed 0 2) #:y (closed -1 2)
+                           #:objects ((part study 'L)))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show (part study 'L)) (pause 1)))
+
+(define-calculus-lesson render-r19-frozen-region-gap
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [live (function (x) 1
+                #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [G (snapshot-of (graph live) #:values ([a 1/7]))]
+         [region (region-under G #:from 0 #:to 1)])
+  (views [plot (graph-view #:x (closed 7/50 3/20) #:y (closed 0 2)
+                           #:objects (region))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (step reveal (show region) (pause 1)))
+
 ;; render-private-chord-component : calculus-component?
 ;;   Keeps the chord private to callers while its own expanded explanation can
 ;;   present it in the compatible graph view of the exported secant geometry.
@@ -2645,6 +2679,18 @@
   (r18-equivalent-line render-r18-half-line render-r18-tagged-line 135)
   (r18-equivalent-line render-r18-one-line render-r18-sequence-line 101)
   (r18-equivalent-line render-r18-half-line render-r18-quantity-line 135)
+  ;; R19: a named exported TaggedPartition remains usable by a real consumer,
+  ;; and a Graph snapshot's positive-width frozen gap is a native fill break.
+  (r18-equivalent-line render-r18-half-line render-r19-tagged-export-line 135)
+  (define r19-region-before
+    (r11-raster render-r19-frozen-region-gap default-calculus-profile 'initial))
+  (define r19-region-after (r11-raster render-r19-frozen-region-gap))
+  ;; In the zoomed x=[.14,.15] panel, x=.141 is safe fill and the frozen gap
+  ;; midpoint is near x=195.  The latter must remain identical to initial.
+  (check-false (bytes=? (r11-pixels r19-region-before 69 178 8 14)
+                        (r11-pixels r19-region-after 69 178 8 14)))
+  (check-true (bytes=? (r11-pixels r19-region-before 190 178 10 14)
+                       (r11-pixels r19-region-after 190 178 10 14)))
   ;; A real mathematical backend, rather than the opaque call-count double,
   ;; supplies the prepared field geometry used by these nested live formulas.
   (define positioned-fields-prepared

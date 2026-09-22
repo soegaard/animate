@@ -703,6 +703,83 @@
          [iteration (use-component r18-iteration-pass (iteration-map (u) (+ u 1) #:start 0 #:steps 3))]
          [scalar-list (use-component r18-scalar-list-pass (list 1 2))]))
 
+;; R19: selected values must remain usable by ordinary consumers after named,
+;; nested, and frozen boundaries—not merely pass their input declaration.
+(define-calculus-component r19-producer
+  (inputs [height : Scalar])
+  (model [D (closed 0 height)] [f (function (x) (* height x))] [G (graph f)]
+         [P (point 1 height)] [L (line-through (point 0 0) P)]
+         [R (input-reading G 1)] [region (region-under G #:from 0 #:to 1)]
+         [mesh (uniform-partition 0 height #:count 2)]
+         [tags (tag-partition mesh #:sample 'midpoint)] [sum (riemann-sum f tags)]
+         [seq (sequence (k) (+ k height) #:from 0)]
+         [iter (iteration-map (u) (+ u height) #:start 0 #:steps 3)])
+  (exports D L R region mesh tags sum seq iter))
+
+(define-calculus-component r19-shell
+  (inputs [height : Scalar])
+  (model [inner (use-component r19-producer height)])
+  (exports inner))
+
+(define-calculus-component r19-consumer
+  (inputs [D : Domain] [L : Line] [R : Reading] [region : Region]
+          [mesh : Partition] [tags : TaggedPartition] [sum : RiemannSum]
+          [seq : Sequence] [iter : Iteration])
+  (model [domain (in-domain? 3/2 D)] [line (slope L)] [reading (part R 'output)]
+         [area (area-of region)]
+         [partition (sum-value (riemann-sum (function (x) x)
+                                               (tag-partition mesh #:sample 'midpoint)))]
+         [tagged (sum-value (riemann-sum (function (x) x) tags))]
+         [riemann (sum-value sum)] [sequence (sequence-value seq 1)]
+         [iteration (iterate-value iter 2)])
+  (exports domain line reading area partition tagged riemann sequence iteration))
+
+(define-calculus-model r19-consumer-context
+  (model [a (parameter 1 #:domain (closed 1 2))]
+         [producer (use-component r19-producer a)] [shell (use-component r19-shell a)]
+         [named-D (part producer 'D)] [named-L (part producer 'L)]
+         [named-R (part producer 'R)] [named-region (part producer 'region)]
+         [named-mesh (part producer 'mesh)] [named-tags (part producer 'tags)]
+         [named-sum (part producer 'sum)] [named-seq (part producer 'seq)]
+         [named-iter (part producer 'iter)]
+         [named (use-component r19-consumer named-D named-L named-R named-region
+                               named-mesh named-tags named-sum named-seq named-iter)]
+         [nested (use-component r19-consumer
+                                (part (part shell 'inner) 'D)
+                                (part (part shell 'inner) 'L)
+                                (part (part shell 'inner) 'R)
+                                (part (part shell 'inner) 'region)
+                                (part (part shell 'inner) 'mesh)
+                                (part (part shell 'inner) 'tags)
+                                (part (part shell 'inner) 'sum)
+                                (part (part shell 'inner) 'seq)
+                                (part (part shell 'inner) 'iter))]
+         [frozen (use-component r19-consumer
+                                (snapshot-of named-D #:values ([a 1]))
+                                (snapshot-of named-L #:values ([a 1]))
+                                (snapshot-of named-R #:values ([a 1]))
+                                (snapshot-of named-region #:values ([a 1]))
+                                (snapshot-of named-mesh #:values ([a 1]))
+                                (snapshot-of named-tags #:values ([a 1]))
+                                (snapshot-of named-sum #:values ([a 1]))
+                                (snapshot-of named-seq #:values ([a 1]))
+                                (snapshot-of named-iter #:values ([a 1])))]))
+
+(define-calculus-model r19-topology-context
+  (model [a (parameter 1/2 #:domain (closed 0 3/4))]
+         [live (function (x) 1
+                #:domain (domain-union (closed 0 a) (closed (+ a 3/1400) 1)))]
+         [frozen (snapshot-of live #:values ([a 1/7]))]
+         [fixed (function (x) 1
+                #:domain (domain-union (closed 0 1/7) (closed 29/200 1)))]
+         [identity (function (x) x)] [composite (compose-functions identity fixed)]
+         [fixed-region (region-under (graph fixed) #:from 0 #:to 1)]
+         [frozen-region (region-under (graph frozen) #:from 0 #:to 1)]
+         [graph-snapshot-region
+          (region-under (snapshot-of (graph live) #:values ([a 1/7])) #:from 0 #:to 1)]
+         [composite-integral (definite-integral composite #:from 0 #:to 1/4)]
+         [composite-safe (definite-integral composite #:from 0 #:to 1/8)]))
+
 ;; check-reading-rejected : calculus-result? -> void?
 ;; Reads through the same result bridge used by strict native preparation.
 (define (check-reading-rejected result)
@@ -1506,7 +1583,38 @@
                    (calculus-snapshot-ref r18-vocabulary address))
                   'defined))
   (check-value (calculus-snapshot-ref r18-vocabulary '(scalar-list out))
-               '(1 2)))
+               '(1 2))
+  ;; R19: each selected representation reaches its ordinary numerical
+  ;; consumer in the owning live or frozen environment.
+  (define (check-r19-consumer state instance height)
+    (for ([entry (in-list
+                  (list (cons 'domain (>= height 3/2))
+                        (cons 'line height) (cons 'reading height)
+                        (cons 'area (/ height 2))
+                        (cons 'partition (/ (* height height) 2))
+                        (cons 'tagged (/ (* height height) 2))
+                        (cons 'riemann (/ (* height height height) 2))
+                        (cons 'sequence (+ height 1))
+                        (cons 'iteration (* height 2))))])
+      (check-value (calculus-snapshot-ref state (list instance (car entry)))
+                   (cdr entry))))
+  (define r19-live-1 (calculus-model-at r19-consumer-context))
+  (check-r19-consumer r19-live-1 'named 1)
+  (check-r19-consumer r19-live-1 'nested 1)
+  (check-r19-consumer r19-live-1 'frozen 1)
+  (define r19-live-2 (calculus-model-at r19-consumer-context #:values (hash 'a 2)))
+  (check-r19-consumer r19-live-2 'named 2)
+  (check-r19-consumer r19-live-2 'nested 2)
+  (check-r19-consumer r19-live-2 'frozen 1)
+  ;; Region sampling shares the effective-domain boundaries used for path
+  ;; validation, so all equivalent frozen/fixed gaps retain a #f split.
+  (define r19-topology (calculus-model-at r19-topology-context #:values (hash 'a 2/3)))
+  (check-domain-rejected (calculus-snapshot-ref r19-topology 'composite-integral))
+  (check-value (calculus-snapshot-ref r19-topology 'composite-safe) 1/8)
+  (for ([address (in-list '(fixed-region frozen-region graph-snapshot-region))])
+    (define samples (calculus-snapshot-region-samples r19-topology address))
+    (check-equal? (calculus-result-status samples) 'defined)
+    (check-not-false (member #f (calculus-result-value samples)))))
 
 (module+ test
   (run-calculus-audit-regression-tests))

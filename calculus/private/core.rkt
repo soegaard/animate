@@ -1057,11 +1057,18 @@
   (cond [(and (real? value) (rational? value)) (defined value method approximate?)]
         [else (undefined "expression did not produce a finite real value")]))
 
-(define (eval-domain domain environment model computation)
-  (define raw (node-raw domain))
-  (if (c-domain? raw)
-      (defined raw)
-      (undefined "expected a domain")))
+(define (eval-domain domain environment model computation [lexical (hash)])
+  ;; Domains, like every other mathematical descriptor, may reach a consumer
+  ;; through an export, alias, or snapshot.  Resolve that selection before
+  ;; checking its representation so a frozen endpoint is never re-read in the
+  ;; caller's live environment.
+  (result-bind
+   (resolve-selected-context domain environment model computation lexical)
+   (lambda (context)
+     (define raw (node-raw (c-selected-context-target context)))
+     (if (c-domain? raw)
+         (defined raw)
+         (undefined "expected a domain")))))
 
 (define (eval-domain-number value environment model computation)
   (result-bind (eval-raw value environment model computation)
@@ -1070,7 +1077,7 @@
                      (defined number)
                      (undefined "domain endpoint is not a finite real number")))))
 
-(define (domain-contains? domain value environment model computation)
+(define (domain-contains?/in-context domain value environment model computation lexical)
   (define raw (node-raw domain))
   (cond
     [(not (c-domain? raw)) (undefined "expected a domain")]
@@ -1113,17 +1120,17 @@
        [(domain-union)
         (let loop ([items (c-domain-arguments raw)])
           (cond [(null? items) (defined #f)]
-                [else (result-bind (domain-contains? (car items) value environment model computation)
+                [else (result-bind (domain-contains?/in-context (car items) value environment model computation lexical)
                                    (lambda (inside?) (if inside? (defined #t) (loop (cdr items)))))]))]
        [(domain-intersection)
         (let loop ([items (c-domain-arguments raw)])
           (cond [(null? items) (defined #t)]
-                [else (result-bind (domain-contains? (car items) value environment model computation)
+                [else (result-bind (domain-contains?/in-context (car items) value environment model computation lexical)
                                    (lambda (inside?) (if inside? (loop (cdr items)) (defined #f))))]))]
        [(domain-except)
         (define base (first (c-domain-arguments raw)))
         (define holes (rest (c-domain-arguments raw)))
-        (result-bind (domain-contains? base value environment model computation)
+        (result-bind (domain-contains?/in-context base value environment model computation lexical)
                      (lambda (inside?)
                        (if (not inside?) (defined #f)
                            (let loop ([items holes])
@@ -1131,6 +1138,22 @@
                                    [else (result-bind (eval-domain-number (car items) environment model computation)
                                                       (lambda (hole) (if (= value hole) (defined #f) (loop (cdr items)))))])))))]
        [else (unresolved (format "unsupported domain kind ~a" (c-domain-kind raw)))] )]))
+
+;; domain-contains? : semantic-value? finite-real? hash? calculus-model?
+;;                    calculus-computation? [hash?] -> calculus-result?
+;; Domain membership is an ordinary consumer.  Its inner recursion deliberately
+;; stays in one resolved context; the outer entry point crosses selected public
+;; exports and snapshots exactly once.
+(define (domain-contains? domain value environment model computation [lexical (hash)])
+  (result-bind
+   (resolve-selected-context domain environment model computation lexical)
+   (lambda (context)
+     (domain-contains?/in-context
+      (c-selected-context-target context) value
+      (c-selected-context-environment context)
+      (c-selected-context-model context)
+      computation
+      (c-selected-context-lexical context)))))
 
 (define (numeric-values values)
   (andmap finite-real? values))
@@ -1176,7 +1199,7 @@
                                 (lambda (value) (if value (defined #t) (loop (cdr rest)))))]))]
     [(c-expression 'in-domain? (list value domain))
      (result-bind (eval-raw value environment model computation lexical)
-                  (lambda (number) (domain-contains? domain number environment model computation)))]
+                  (lambda (number) (domain-contains? domain number environment model computation lexical)))]
     [(c-expression 'value-at (list function input))
      (result-bind (eval-raw input environment model computation lexical)
                   (lambda (number) (evaluate-function function number environment model computation lexical)))]
@@ -1293,6 +1316,11 @@
 ;; live while a selected Function beneath it is frozen or component-private.
 (struct c-effective-domain (domain environment model lexical) #:transparent)
 (struct c-effective-domain-intersection (domains) #:transparent)
+;; Composition retains both its input-domain and output-domain obligations.
+;; The outer domain is checked against the evaluated inner output, never
+;; confused with another restriction over the original input coordinate.
+(struct c-effective-domain-composition
+  (inner outer inner-function environment model lexical) #:transparent)
 
 (define (effective-domain-leaf domain context)
   (c-effective-domain domain
@@ -1346,6 +1374,18 @@
          (source-domain (second (c-object-arguments raw)))
          (lambda (right)
            (defined (effective-domain-intersection (list left right)))))))]
+    [(and (c-object? raw) (eq? (c-object-kind raw) 'compose-functions))
+     (define outer (first (c-object-arguments raw)))
+     (define inner (second (c-object-arguments raw)))
+     (result-bind
+      (source-domain inner)
+      (lambda (inner-domain)
+        (result-bind
+         (source-domain outer)
+         (lambda (outer-domain)
+           (defined
+            (c-effective-domain-composition inner-domain outer-domain inner
+                                            environment model lexical))))))]
     [(and (c-object? raw) (eq? (c-object-kind raw) 'derivative-function))
      (result-bind
       (source-domain (first (c-object-arguments raw)))
@@ -1388,6 +1428,24 @@
                (effective-domain-contains? (first domains) value computation)
                (lambda (inside?)
                  (if inside? (loop (rest domains)) (defined #f))))]))]
+    [(c-effective-domain-composition? effective)
+     (result-bind
+      (effective-domain-contains?
+       (c-effective-domain-composition-inner effective) value computation)
+      (lambda (inside?)
+        (if (not inside?)
+            (defined #f)
+            (result-bind
+             (evaluate-function
+              (c-effective-domain-composition-inner-function effective) value
+              (c-effective-domain-composition-environment effective)
+              (c-effective-domain-composition-model effective)
+              computation
+              (c-effective-domain-composition-lexical effective))
+             (lambda (inner-value)
+               (effective-domain-contains?
+                (c-effective-domain-composition-outer effective)
+                inner-value computation))))))]
     [else (undefined "expected an effective function domain")]))
 
 (define (effective-domain-boundaries effective computation)
@@ -1414,36 +1472,65 @@
                (effective-domain-boundaries (first domains) computation)
                (lambda (boundaries)
                  (loop (rest domains) (append (reverse boundaries) values))))]))]
+    [(c-effective-domain-composition? effective)
+     ;; Only inner boundaries are input split points. Pulling back an outer
+     ;; boundary would require inverse-image solving and is handled as a
+     ;; coverage obligation rather than guessed from a rendered sample.
+     (effective-domain-boundaries
+      (c-effective-domain-composition-inner effective) computation)]
     [else (undefined "expected an effective function domain")]))
 
 ;; effective-domain-path-covered? : effective-domain? finite-real? finite-real?
 ;;                                   calculus-computation? -> calculus-result?
+(define (effective-domain-real-line? effective)
+  (cond
+    [(c-effective-domain? effective)
+     (eq? (c-domain-kind (c-effective-domain-domain effective)) 'real-line)]
+    [(c-effective-domain-intersection? effective)
+     (andmap effective-domain-real-line?
+             (c-effective-domain-intersection-domains effective))]
+    [else #f]))
+
 (define (effective-domain-path-covered? effective a b computation)
-  (result-bind
-   (effective-domain-boundaries effective computation)
-   (lambda (boundaries)
-     (define ordered
-       (sort (remove-duplicates
-              (append (list a b)
-                      (filter (lambda (value)
-                                (and (finite-real? value)
-                                     (<= (min a b) value (max a b))))
-                              boundaries)))
-             <))
-     (define probes
-       (append ordered
-               (for/list ([left (in-list ordered)] [right (in-list (rest ordered))]
-                          #:when (< left right))
-                 (/ (+ left right) 2))))
-     (let loop ([remaining probes])
-       (cond [(null? remaining) (defined #t)]
-             [else
-              (result-bind
-               (effective-domain-contains? effective (first remaining) computation)
-               (lambda (inside?)
-                 (if inside?
-                     (loop (rest remaining))
-                     (outside "integration path leaves the declared function domain"))))])))))
+  (cond
+    [(c-effective-domain-composition? effective)
+     ;; Prove the inner path using its actual input boundaries.  If the outer
+     ;; domain is not total, a proper-integral proof would require its
+     ;; preimage under the inner Function; report that obligation explicitly.
+     (result-bind
+      (effective-domain-path-covered?
+       (c-effective-domain-composition-inner effective) a b computation)
+      (lambda (_)
+        (if (effective-domain-real-line?
+             (c-effective-domain-composition-outer effective))
+            (defined #t)
+            (unresolved "composition outer-domain path coverage is not established"))))]
+    [else
+     (result-bind
+      (effective-domain-boundaries effective computation)
+      (lambda (boundaries)
+        (define ordered
+          (sort (remove-duplicates
+                 (append (list a b)
+                         (filter (lambda (value)
+                                   (and (finite-real? value)
+                                        (<= (min a b) value (max a b))))
+                                 boundaries)))
+                <))
+        (define probes
+          (append ordered
+                  (for/list ([left (in-list ordered)] [right (in-list (rest ordered))]
+                             #:when (< left right))
+                    (/ (+ left right) 2))))
+        (let loop ([remaining probes])
+          (cond [(null? remaining) (defined #t)]
+                [else
+                 (result-bind
+                  (effective-domain-contains? effective (first remaining) computation)
+                  (lambda (inside?)
+                    (if inside?
+                        (loop (rest remaining))
+                        (outside "integration path leaves the declared function domain"))))]))))]))
 
 (define (function-domain function)
   (define raw (node-raw (static-selected-target function)))
@@ -2049,7 +2136,7 @@
       (undefined "expected solution inputs")
       (eval-raw (first (c-object-arguments raw)) environment model computation lexical)))
 
-(define (eval-point point environment model computation lexical)
+(define (eval-point/in-context point environment model computation lexical)
   (cond
     ;; Public parts retain their source identity, but point consumers require
     ;; the point value owned by that source.  Resolve the part once rather
@@ -2139,6 +2226,18 @@
                (undefined "snapshot does not resolve to a point"))))]
        [else (undefined (format "unsupported point kind ~a" (c-object-kind raw)))] )])]))
 
+;; Point consumers cross export and snapshot boundaries before inspecting a
+;; constructor, so their coordinates are evaluated in the owner context.
+(define (eval-point point environment model computation lexical)
+  (result-bind
+   (resolve-selected-context point environment model computation lexical)
+   (lambda (context)
+     (eval-point/in-context (c-selected-context-target context)
+                            (c-selected-context-environment context)
+                            (c-selected-context-model context)
+                            computation
+                            (c-selected-context-lexical context)))))
+
 (define (line-through-points p q kind)
   (if (equal? p q)
       (if (memq kind '(segment chord))
@@ -2165,7 +2264,7 @@
          (defined point)
          (unresolved "point is not on the graph")))))
 
-(define (eval-line line environment model computation lexical)
+(define (eval-line/in-context line environment model computation lexical)
   (cond
     [(c-part? line) (eval-part line environment model computation lexical)]
     [(and (c-node? line)
@@ -2257,6 +2356,18 @@
                                                          (car anchor)))
                                                    anchor)))))))]
           [else (undefined "expected a line")])))]))
+
+;; Lines have the same selected-object boundary as Points.  This preserves a
+;; snapshot's frozen parameter map for slope and downstream constructions.
+(define (eval-line line environment model computation lexical)
+  (result-bind
+   (resolve-selected-context line environment model computation lexical)
+   (lambda (context)
+     (eval-line/in-context (c-selected-context-target context)
+                           (c-selected-context-environment context)
+                           (c-selected-context-model context)
+                           computation
+                           (c-selected-context-lexical context)))))
 
 (define (eval-slope line environment model computation lexical)
   (result-bind (eval-line line environment model computation lexical)
@@ -2834,11 +2945,19 @@
               (loop (add1 index) (rest remaining) (cons point points)))))))))
 
 (define (eval-part part environment model computation lexical)
-  (define parent-target (c-part-parent part))
+  ;; A named public Part is a transparent alias for projection purposes.  In
+  ;; particular, `(part named-reading 'output)` must retain the component
+  ;; export path carried by `named-reading`, not project from its wrapper node.
+  (define aliased-parent (part-alias (c-part-parent part)))
+  (define effective-part
+    (if aliased-parent
+        (c-part aliased-parent (c-part-name part))
+        part))
+  (define parent-target (c-part-parent effective-part))
   (define parent (node-raw parent-target))
-  (define name (c-part-name part))
-  (define exported (component-export-target part))
-  (define branch-self (reading-branch-part part))
+  (define name (c-part-name effective-part))
+  (define exported (component-export-target effective-part))
+  (define branch-self (reading-branch-part effective-part))
   (define parent-branch (reading-branch-part parent-target))
   (cond
     [exported
@@ -2910,7 +3029,7 @@
           [else (defined (c-part parent name))])]
        [(snapshot-of)
         (result-bind
-         (snapshot-frozen-environment (c-part-parent part)
+         (snapshot-frozen-environment (c-part-parent effective-part)
                                       environment model computation lexical)
          (lambda (frozen)
            (eval-part (c-part (first args) name)
@@ -2958,7 +3077,7 @@
         (case name [(value) (eval-sum-value parent environment model computation lexical)] [else (defined (c-part parent name))])]
        [else (defined (c-part parent name))])]))
 
-(define (eval-partition partition environment model computation lexical)
+(define (eval-partition/in-context partition environment model computation lexical)
   (define raw (node-raw partition))
   (cond
     [(not (c-object? raw)) (undefined "expected a partition")]
@@ -2985,6 +3104,16 @@
                                                                                   (undefined "uniform partition needs increasing bounds and a positive integer count"))))))))]
     [else (undefined "expected a partition")]))
 
+(define (eval-partition partition environment model computation lexical)
+  (result-bind
+   (resolve-selected-context partition environment model computation lexical)
+   (lambda (context)
+     (eval-partition/in-context (c-selected-context-target context)
+                                (c-selected-context-environment context)
+                                (c-selected-context-model context)
+                                computation
+                                (c-selected-context-lexical context)))))
+
 ;; calculus-snapshot-partition-points : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Resolves a partition-marks object's exact endpoints for native axis marks.
 (define (calculus-snapshot-partition-points snapshot marks)
@@ -3001,7 +3130,7 @@
                          (calculus-snapshot-computation snapshot)
                          (hash)))]))
 
-(define (eval-tags tagged environment model computation lexical)
+(define (eval-tags/in-context tagged environment model computation lexical)
   (define raw (node-raw tagged))
   (if (not (and (c-object? raw) (eq? (c-object-kind raw) 'tag-partition)))
       (undefined "expected a tagged partition")
@@ -3033,7 +3162,17 @@
                                    (defined (immutable-list-copy tags))
                                    (undefined "explicit tags require one finite tag in each closed subinterval")))))])))))
 
-(define (eval-sum-value sum environment model computation lexical)
+(define (eval-tags tagged environment model computation lexical)
+  (result-bind
+   (resolve-selected-context tagged environment model computation lexical)
+   (lambda (context)
+     (eval-tags/in-context (c-selected-context-target context)
+                           (c-selected-context-environment context)
+                           (c-selected-context-model context)
+                           computation
+                           (c-selected-context-lexical context)))))
+
+(define (eval-sum-value/in-context sum environment model computation lexical)
   (define raw (node-raw sum))
   (cond
     [(not (and (c-object? raw) (eq? (c-object-kind raw) 'riemann-sum)))
@@ -3042,21 +3181,45 @@
      (define tagged (second (c-object-arguments raw)))
      (define function (first (c-object-arguments raw)))
      (result-bind
-      (eval-tags tagged environment model computation lexical)
-      (lambda (tags)
-        (define tag-source (node-raw tagged))
-        (result-bind
-         (eval-partition (first (c-object-arguments tag-source)) environment model computation lexical)
-         (lambda (points)
-           (let loop ([samples tags] [endpoints points] [total 0])
-             (if (null? samples)
-                 (defined total)
-                 (result-bind
-                  (evaluate-function function (car samples) environment model computation lexical)
-                  (lambda (height)
-                    (loop (cdr samples)
-                          (cdr endpoints)
-                          (+ total (* height (- (second endpoints) (first endpoints)))))))))))))]))
+      (resolve-selected-context tagged environment model computation lexical)
+      (lambda (tag-context)
+        (define tag-source (node-raw (c-selected-context-target tag-context)))
+        (if (not (and (c-object? tag-source)
+                      (eq? (c-object-kind tag-source) 'tag-partition)))
+            (undefined "expected a tagged partition")
+            (result-bind
+             (eval-tags/in-context (c-selected-context-target tag-context)
+                                   (c-selected-context-environment tag-context)
+                                   (c-selected-context-model tag-context)
+                                   computation
+                                   (c-selected-context-lexical tag-context))
+             (lambda (tags)
+               (result-bind
+                (eval-partition (first (c-object-arguments tag-source))
+                                (c-selected-context-environment tag-context)
+                                (c-selected-context-model tag-context)
+                                computation
+                                (c-selected-context-lexical tag-context))
+                (lambda (points)
+                  (let loop ([samples tags] [endpoints points] [total 0])
+                    (if (null? samples)
+                        (defined total)
+                        (result-bind
+                         (evaluate-function function (car samples) environment model computation lexical)
+                         (lambda (height)
+                           (loop (cdr samples)
+                                 (cdr endpoints)
+                                 (+ total (* height (- (second endpoints) (first endpoints))))))))))))))))]))
+
+(define (eval-sum-value sum environment model computation lexical)
+  (result-bind
+   (resolve-selected-context sum environment model computation lexical)
+   (lambda (context)
+     (eval-sum-value/in-context (c-selected-context-target context)
+                                (c-selected-context-environment context)
+                                (c-selected-context-model context)
+                                computation
+                                (c-selected-context-lexical context)))))
 
 ;; riemann-cells/in-environment : semantic-value? hash? calculus-model?
 ;;                                calculus-computation? -> calculus-result?
@@ -3399,7 +3562,7 @@
                     [antiderivative (evaluate-supplied a b)]
                     [else (simpson function a b environment model computation lexical)]))))))))))
 
-(define (eval-area region environment model computation lexical)
+(define (eval-area/in-context region environment model computation lexical)
   (define raw (node-raw region))
   (if (not (and (c-object? raw) (memq (c-object-kind raw) '(region-under integral-region region-between))))
       (undefined "expected a region")
@@ -3440,6 +3603,17 @@
                               (defined (abs left-value))))))
                      (min a b) (max a b) computation)])]
                 [_ (undefined "region bounds must be scalar values")])))]))))
+
+;; Region area is an ordinary consumer of an exported or frozen Region.
+(define (eval-area region environment model computation lexical)
+  (result-bind
+   (resolve-selected-context region environment model computation lexical)
+   (lambda (context)
+     (eval-area/in-context (c-selected-context-target context)
+                           (c-selected-context-environment context)
+                           (c-selected-context-model context)
+                           computation
+                           (c-selected-context-lexical context)))))
 
 ;; resolved-boundary-expressions : list? hash? calculus-model?
 ;;                                  calculus-computation? -> calculus-result?
@@ -3517,24 +3691,44 @@
   (define environment (calculus-snapshot-values snapshot))
   (define model (calculus-snapshot-model snapshot))
   (define computation (calculus-snapshot-computation snapshot))
-  (define function (graph-function graph))
-  (if (not function)
-      (undefined "region requires a graph")
-      (result-bind
-       (resolved-domain-boundaries (graph-domain graph) environment model computation)
-       (lambda (boundaries)
-         (result-bind
-          (resolved-boundary-expressions (function-piecewise-boundaries function)
-                                         environment model computation)
-          (lambda (piecewise-breaks)
-            (result-bind
-             (calculus-snapshot-function-breaks snapshot function)
-             (lambda (provider-breaks)
-               ;; Provider evidence must also be sampled: a forced break that
-               ;; never appears in `inputs` cannot separate a painted strip.
-               (defined
-                (list (append boundaries piecewise-breaks provider-breaks)
-                      (append piecewise-breaks provider-breaks)))))))))))
+  ;; Region topology is a mathematical consumer, not a static descriptor
+  ;; inspection.  Resolve the graph first so its source-domain boundaries are
+  ;; evaluated with the captured component/snapshot parameter environment.
+  (result-bind
+   (resolve-selected-context graph environment model computation (hash))
+   (lambda (graph-context)
+     (define resolved-graph (c-selected-context-target graph-context))
+     (define function (graph-function resolved-graph))
+     (cond
+       [(not function) (undefined "region requires a graph")]
+       [else
+        (result-bind
+         (resolve-graph-domain/in-context graph-context computation)
+         (lambda (effective-domain)
+           (result-bind
+            (effective-domain-boundaries effective-domain computation)
+            (lambda (boundaries)
+              (result-bind
+               (resolved-boundary-expressions
+                (function-piecewise-boundaries function)
+                (c-selected-context-environment graph-context)
+                (c-selected-context-model graph-context)
+                computation)
+               (lambda (piecewise-breaks)
+                 (result-bind
+                  (calculus-snapshot-function-breaks
+                   (calculus-snapshot
+                    (c-selected-context-model graph-context)
+                    (c-selected-context-environment graph-context)
+                    (hash) '() computation)
+                   function)
+                  (lambda (provider-breaks)
+                    ;; Provider evidence must also be sampled: a forced break
+                    ;; that never appears in `inputs` cannot split a strip.
+                    (defined
+                     (list (append boundaries piecewise-breaks provider-breaks)
+                           (append piecewise-breaks provider-breaks)))))))))))
+       ]))))
 
 ;; calculus-snapshot-region-samples : calculus-snapshot? semantic-value? -> calculus-result?
 ;;   Provides a fixed, snapshot-derived sequence of (x y-left y-right) samples
@@ -3639,10 +3833,9 @@
                                 (defined (immutable-list-copy samples)))))))))))))))))))
 
 ;; calculus-snapshot-region-samples : calculus-snapshot? semantic-value? -> calculus-result?
-;;   Resolves a public component export before sampling its region geometry.
-;; The transient lexical snapshot carries the caller's values but the
-;; component model, exactly as the Reading geometry bridge does; public
-;; inspection identity and native strict-output diagnostics remain caller-side.
+;;   Resolves every selected Region before sampling its geometry.  The transient
+;; snapshot carries the selected lexical model and live/frozen parameter map,
+;; so exported, named, nested, and frozen regions share one consumer path.
 (define (calculus-snapshot-region-samples snapshot region)
   (check 'calculus-snapshot-region-samples calculus-snapshot? "calculus-snapshot?" snapshot)
   (define model (calculus-snapshot-model snapshot))
@@ -3650,26 +3843,21 @@
     (if (or (symbol? region) (and (list? region) (pair? region)))
         (address->object model region)
         region))
-  (define exported
-    (and (c-part? semantic-region) (component-export-target semantic-region)))
-  (if exported
-      (result-bind
-       (component-instance-valid? (c-component-export-target-instance exported)
-                                  (calculus-snapshot-values snapshot)
-                                  model
-                                  (calculus-snapshot-computation snapshot)
-                                  (hash))
-       (lambda (private-model)
-         (snapshot-region-samples
-          (calculus-snapshot private-model
+  (result-bind
+   (resolve-selected-context semantic-region
                              (calculus-snapshot-values snapshot)
-                             (hash)
-                             '()
-                             (calculus-snapshot-computation snapshot))
-          (c-component-export-target-target exported))))
-      (snapshot-region-samples snapshot semantic-region)))
+                             model
+                             (calculus-snapshot-computation snapshot)
+                             (hash))
+   (lambda (context)
+     (snapshot-region-samples
+      (calculus-snapshot (c-selected-context-model context)
+                         (c-selected-context-environment context)
+                         (hash) '()
+                         (calculus-snapshot-computation snapshot))
+      (c-selected-context-target context)))))
 
-(define (eval-sequence-value sequence index environment model computation lexical)
+(define (eval-sequence-value/in-context sequence index environment model computation lexical)
   (define raw (node-raw sequence))
   (cond
     [(not (and (c-object? raw) (eq? (c-object-kind raw) 'sequence)))
@@ -3688,6 +3876,17 @@
                (eval-raw body environment model computation
                          (hash-set lexical variable (defined n)))
                (undefined "sequence index must be an integer at or above #:from"))))))]))
+
+;; A Sequence's body and starting index belong to its selected context.
+(define (eval-sequence-value sequence index environment model computation lexical)
+  (result-bind
+   (resolve-selected-context sequence environment model computation lexical)
+   (lambda (context)
+     (eval-sequence-value/in-context (c-selected-context-target context) index
+                                     (c-selected-context-environment context)
+                                     (c-selected-context-model context)
+                                     computation
+                                     (c-selected-context-lexical context)))))
 
 ;; eval-partial-sum : semantic-value? semantic-value? semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
 ;;   Computes an inclusive finite sum over valid integer sequence indices.
@@ -3728,7 +3927,7 @@
        (= (hash-ref (c-object-options raw) 'order 1) 1)
        (same-semantic-source? function (first (c-object-arguments raw)))))
 
-(define (eval-iterate-value iteration index environment model computation lexical)
+(define (eval-iterate-value/in-context iteration index environment model computation lexical)
   (define raw (node-raw iteration))
   (cond
     ((not (and (c-object? raw) (memq (c-object-kind raw) '(iteration-map newton-iteration))))
@@ -3781,6 +3980,18 @@
                              (if (= dx 0)
                                  (undefined "Newton derivative is zero")
                                  (loop (add1 position) (- current (/ fx dx)))))))))))))))))))))
+
+;; Iteration bodies, seeds, and step counts likewise stay with the selected
+;; exported or frozen descriptor.
+(define (eval-iterate-value iteration index environment model computation lexical)
+  (result-bind
+   (resolve-selected-context iteration environment model computation lexical)
+   (lambda (context)
+     (eval-iterate-value/in-context (c-selected-context-target context) index
+                                    (c-selected-context-environment context)
+                                    (c-selected-context-model context)
+                                    computation
+                                    (c-selected-context-lexical context)))))
 
 ;; eval-sequence-points : semantic-value? hash? calculus-model? calculus-computation? hash? -> calculus-result?
 ;;   Returns only authored integer-indexed samples, never an interpolated curve.
@@ -7879,24 +8090,32 @@
 ;; substitute for the provider's actual mathematical definedness.
 (define (calculus-snapshot-function-breaks snapshot function)
   (check 'calculus-snapshot-function-breaks calculus-snapshot? "calculus-snapshot?" snapshot)
-  (define source (lookup-function function))
-  (cond
-    [(not source) (undefined "expected a calculus function")]
-    [(not (and (c-object? source) (eq? (c-object-kind source) 'procedure-function)))
-     (defined '())]
-    [else
-     (define breaks (hash-ref (c-object-options source) 'breaks #f))
-     (if (not breaks)
-         (defined '())
-         (result-bind
-          (eval-raw breaks
-                    (calculus-snapshot-values snapshot)
-                    (calculus-snapshot-model snapshot)
-                    (calculus-snapshot-computation snapshot))
-          (lambda (values)
-            (if (and (list? values) (andmap finite-real? values))
-                (defined (immutable-list-copy (sort (remove-duplicates values) <)))
-                (undefined "procedure-function #:breaks must evaluate to finite real inputs")))))]))
+  (result-bind
+   (resolve-selected-context function
+                             (calculus-snapshot-values snapshot)
+                             (calculus-snapshot-model snapshot)
+                             (calculus-snapshot-computation snapshot)
+                             (hash))
+   (lambda (context)
+     (define source (lookup-function (c-selected-context-target context)))
+     (cond
+       [(not source) (undefined "expected a calculus function")]
+       [(not (and (c-object? source) (eq? (c-object-kind source) 'procedure-function)))
+        (defined '())]
+       [else
+        (define breaks (hash-ref (c-object-options source) 'breaks #f))
+        (if (not breaks)
+            (defined '())
+            (result-bind
+             (eval-raw breaks
+                       (c-selected-context-environment context)
+                       (c-selected-context-model context)
+                       (calculus-snapshot-computation snapshot)
+                       (c-selected-context-lexical context))
+             (lambda (values)
+               (if (and (list? values) (andmap finite-real? values))
+                   (defined (immutable-list-copy (sort (remove-duplicates values) <)))
+                   (undefined "procedure-function #:breaks must evaluate to finite real inputs")))))]))))
 
 ;; snapshot-view-names : hash? list? -> list?
 ;;   Recovers declared presentation memberships carried in the immutable
