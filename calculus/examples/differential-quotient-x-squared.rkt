@@ -5,6 +5,7 @@
 (require racket/list racket/class racket/file racket/path racket/system racket/cmdline json
          (prefix-in p: pict)
          (prefix-in a: animate)
+         animate/calculus
          animate/slides animate/slides/render animate/slides/pict animate/slides/scene
          animate/project
          "private/differentiation-model.rkt"
@@ -14,8 +15,24 @@
          prepare-differentiate-x-squared!
          make-differentiate-x-squared-project!
          differentiate-x-squared-model
+         differentiate-x-squared
          script film-duration theorem-duration transition-duration
          write-differentiation-review!)
+
+;;; The calculus lesson referenced by slides/run-inline-tex-review.rkt.
+;;; Reuses the shared x^2 differentiation model: the secant through P and Q
+;;; slides along the graph, then h approaches 0 and the secant meets the
+;;; tangent. Stays inside the model domains (x0 in [-3,3], h in (0,1]).
+(define-calculus-lesson differentiate-x-squared
+  (use-model differentiate-x-squared-model)
+  (views
+    [plot (graph-view #:x (closed -3 3)
+                      #:y (closed -1 10)
+                      #:objects (G P Q S T))])
+  (timing [opening-pause 0] [read-delay 0] [action-duration 1] [step-pause 0])
+  (initially (show G P Q S T))
+  (step slide-secant (vary x0 #:to 2 #:duration 1))
+  (step approach-limit (vary h #:to 1/8 #:duration 1)))
 
 ;; Use the same named theorem content in both layouts. It moves to the left;
 ;; it is not abbreviated or replaced by f'(x)=2x alone.
