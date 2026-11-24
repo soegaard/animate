@@ -24,7 +24,7 @@
 ;; accidentally checking only the root entry point.
 (define registered-animate-manuals
   '("scribblings/animate.scrbl"
-    "math/scribblings/math.scrbl"))
+    "math/scribblings/animate-math.scrbl"))
 
 ;; racket-raco-main-arguments : (listof string?) -> (listof string?)
 ;; Uses the raco implementation belonging to one exact Racket executable.

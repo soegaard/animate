@@ -177,7 +177,7 @@
 (define (reference-coverage-checks!)
   (define api
     (call-with-input-file (build-path math-directory "docs/public-api.json") read-json))
-  (define manual (file->string (build-path math-directory "scribblings/math.scrbl")))
+  (define manual (file->string (build-path math-directory "scribblings/animate-math.scrbl")))
   (for ([relative (in-list public-modules)])
     (define module-path (build-path math-directory relative))
     (define exported (actual-exports module-path))

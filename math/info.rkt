@@ -18,7 +18,7 @@
 ; scribblings : list?
 ;;   Registers the subcollection reference with package documentation setup.
 (define scribblings
-  '(("scribblings/math.scrbl" (multi-page) ("Animation"))))
+  '(("scribblings/animate-math.scrbl" (multi-page) ("Animation"))))
 
 ;;;
 ;;; Optional Environment-Dependent Sources

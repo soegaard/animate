@@ -213,7 +213,7 @@ previously assumed every scheduled step was a symbol should handle both forms.
 - [Concept gallery guide](docs/gallery.md)
 - [Composite design and user guide](docs/composite-moves.md)
 - [Full mathematical API guide](docs/user-guide.md)
-- [Public reference](scribblings/math.scrbl)
+- [Public reference](scribblings/animate-math.scrbl)
 - [Integration boundaries](INTEGRATION.md)
 - [Executed validation and limitations](docs/validation.md)
 - [Gallery review-repair record](docs/gallery-review-fix-progress.md)

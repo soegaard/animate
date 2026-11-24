@@ -648,7 +648,7 @@ adjust the layout explicitly rather than assuming automatic remeasurement.
 ## 14. Validation and practical boundaries
 
 The defining reference for every public binding is
-[`scribblings/math.scrbl`](../scribblings/math.scrbl). The JSON API index is in
+[`scribblings/math.scrbl`](../scribblings/animate-math.scrbl). The JSON API index is in
 [`public-api.json`](public-api.json). For changes from 0.1.1, read
 [`house-style-review.md`](house-style-review.md).
 

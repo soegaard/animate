@@ -2672,7 +2672,7 @@ explanatory trace. The injected loader accepts a module path and export name.
 The manual is registered by @tt{math/info.rkt}. A normal setup discovers the
 subcollection manual without rewriting the parent package metadata. It can also
 be built from the repository root:
-@verbatim{scribble --htmls --dest math-output/docs math/scribblings/math.scrbl}
+@verbatim{scribble --htmls --dest math-output/docs math/scribblings/animate-math.scrbl}
 
 The parent @tt{scribblings/animate.scrbl} remains unchanged in this folder-only
 delivery. It can link to this registered reference, or explicitly include its
